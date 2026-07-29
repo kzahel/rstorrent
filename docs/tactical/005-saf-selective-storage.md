@@ -356,6 +356,9 @@ Implementation landed in incremental commits:
   explicit SAF runner modes.
 - `195795c` hardened exact-target picker and failure-injection timing,
   including the ChromeOS `My files` hierarchy.
+- `18aed43` made physical-device picker automation start at the external
+  storage `Download` document, ignore covered accessibility nodes, and wake
+  without unlocking the display.
 
 Host validation currently passes all engine and Android native tests. It
 covers duplicate and out-of-range descriptor indices, nonempty part
@@ -374,8 +377,10 @@ Recorded device evidence:
 - Physical Chromebook ARCVM, API 33, `nami_cheets`: three normal SAF internal
   cycles passed. Each final document was reopened through document IDs under
   the persisted grant, verified in Rust, and deleted with the part document.
-- The optional Pixel 7a was visible at the expected serial but securely
-  locked, so no picker or transfer result is claimed.
+- Physical Pixel 7a, API 37, `lynx`: three normal SAF internal cycles passed.
+  Each cycle transferred 97,232 bytes with an exact 32 KiB payload high-water,
+  reopened and hash-verified all five selected documents in Rust after
+  force-stop, and deleted the published and compact-part trees.
 - The required Moto X4 serial `ZY224JN8D2` was not present in `adb devices`.
   Internal and removable exFAT rows, including removable cancellation and
   allocation observations, remain unrun.
@@ -396,6 +401,9 @@ experiments/android-engine-bootstrap/build.sh
 ANDROID_HOME=/home/kgraehl/Android/Sdk \
   experiments/android-engine-bootstrap/gradlew \
   -p experiments/android-engine-bootstrap testDebugUnitTest lintDebug
+ANDROID_HOME=/home/kgraehl/Android/Sdk \
+  experiments/android-storage-probe/gradlew \
+  -p experiments/android-storage-probe testDebugUnitTest lintDebug
 python3 -m py_compile \
   experiments/android-engine-bootstrap/run_bootstrap.py \
   experiments/android-storage-probe/run_probe.py
@@ -420,11 +428,15 @@ python3 experiments/android-engine-bootstrap/run_bootstrap.py \
 python3 experiments/android-engine-bootstrap/run_bootstrap.py \
   --target chromeos --storage saf-internal \
   --runs 3 --profile success --no-build
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target pixel7a --storage saf-internal \
+  --runs 3 --profile success
 scripts/references.py status
 cargo tree --workspace --locked
 git diff --check
 ```
 
 The final audit found no AVD, bootstrap package on the Pixel or Chromebook,
-ChromeOS grant child, ChromeOS reverse port, or generated APK/binding tree.
-The Quest serial `2G0YC1ZF93041Z` remained explicitly excluded and untouched.
+Pixel or ChromeOS grant child, ChromeOS reverse port, or generated APK/binding
+tree. The Quest serial `2G0YC1ZF93041Z` remained explicitly excluded and
+untouched.

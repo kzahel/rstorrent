@@ -5,7 +5,7 @@ Topic: `product-direction`
 Status: initial direction and successor vision accepted. Android storage
 foundations are proven on an AVD, Chromebook ARCVM, Pixel 7a, and Moto X4
 internal and removable exFAT storage; the in-process engine bootstrap is
-proven on the AVD, Chromebook, and Moto.
+proven on the AVD, Chromebook, Pixel 7a, and Moto.
 
 ## Scope
 
@@ -207,14 +207,14 @@ success. Kotlin performs only coarse provider renames; after process death a
 fresh process reopens every published document and a fixed 16 KiB Rust loop
 checks exact length and a native-produced per-file SHA-1 before cleanup.
 
-Three complete publication/restart cycles passed on the API 34 AVD and the
-physical Chromebook's API 33 ARCVM. AVD evidence also covers slow storage at
-the 32 KiB payload high-water, peer failure after a real request, duplicate
-start, activity recreation, and cancellation before and after stored
-progress. The required Moto internal and removable rows remain unrun because
-the previously identified Moto X4 was no longer attached. Tactical `005`
-therefore remains in progress even though its main descriptor and publication
-thread is implemented.
+Three complete publication/restart cycles passed on the API 34 AVD, the
+physical Chromebook's API 33 ARCVM, and the physical API 37 Pixel 7a. AVD
+evidence also covers slow storage at the 32 KiB payload high-water, peer
+failure after a real request, duplicate start, activity recreation, and
+cancellation before and after stored progress. The required Moto internal and
+removable rows remain unrun because the previously identified Moto X4 was no
+longer attached. Tactical `005` therefore remains in progress even though its
+main descriptor and publication thread is implemented.
 
 This is an accepted starting shape backed by unit and libtorrent
 interoperability evidence, not a promise that two crates are the final engine
