@@ -35,6 +35,11 @@ is complete. It established bounded multi-file parsing and mapping, selected
 staging, compact skipped-file part slots, streamed mixed-source verification,
 padding omission, durable reopen, and verified materialization.
 
+[`003-android-storage-feasibility.md`](docs/tactical/003-android-storage-feasibility.md)
+is ready. It will measure the native file-descriptor and SAF operations behind
+that storage model on `jstorrent-tablet` and Chromebook ARCVM without claiming
+ordinary physical Android-device support.
+
 ## Toolchain
 
 On the maintainer's configured development machines, load installed Rust,

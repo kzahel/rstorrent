@@ -44,5 +44,8 @@ direction belongs in `../topics/`.
   completed cross-file mapping, skipped-file part storage, mixed-source
   verification, durable reopen, and materialization through an edge-rich
   libtorrent fixture.
+- [`003-android-storage-feasibility.md`](003-android-storage-feasibility.md):
+  ready plan for native descriptor, SAF, sparse-offset, reopen, cancellation,
+  publication, and allocation evidence on an AVD and Chromebook ARCVM.
 
-The next tactical number is `003`.
+The next tactical number is `004`.

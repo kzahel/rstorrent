@@ -3,7 +3,8 @@
 Topic: `product-direction`
 
 Status: initial direction and successor vision accepted; bounded large-piece
-and selective multi-file storage foundations proven.
+and selective multi-file storage foundations proven; Android storage
+feasibility tactical ready.
 
 ## Scope
 
@@ -194,11 +195,13 @@ does not distort the protocol vertical slice.
 
 ## Recommended Next Work
 
-Draft a bounded Android/ChromeOS storage feasibility tactical before treating
-the desktop part-file layout as a product format. It should test direct Rust
-file-descriptor I/O through SAF, random access, truncation and reopen behavior,
-large sparse logical slot offsets, provider allocation cost, cancellation,
-and foreground lifetime on the physical Chromebook testbed. Keep resume
-format, general peer discovery, UI architecture, and broad session scheduling
-outside that platform evidence slice unless the observed storage seam requires
-an explicit decision.
+Execute
+[`003-android-storage-feasibility.md`](../tactical/003-android-storage-feasibility.md)
+before treating the desktop part-file layout as a product format. It compares
+direct Rust file-descriptor I/O through app-private and SAF storage, random
+access, truncation, reopen, large sparse logical slot offsets, provider
+allocation cost, descriptor ownership, cancellation, and publication
+operations on `jstorrent-tablet` and Chromebook ARCVM. Keep resume format,
+general peer discovery, UI architecture, and broad session scheduling outside
+that platform evidence slice. Repeat the resulting probe on an ordinary
+physical Android phone or tablet before making a general Android claim.
