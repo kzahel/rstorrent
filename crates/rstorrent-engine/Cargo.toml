@@ -5,6 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 publish = false
 
+[[bin]]
+name = "rstorrent-download-piece"
+path = "src/main.rs"
+
 [dependencies]
 rstorrent-protocol = { path = "../rstorrent-protocol" }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "time"] }
