@@ -4,6 +4,8 @@ use std::fmt;
 use std::io;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use rstorrent_protocol::bencode::MAX_BENCODE_INPUT_LENGTH;
@@ -18,6 +20,7 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
+use tokio_util::sync::CancellationToken;
 
 use crate::selective_storage::{
     SelectiveStorage, SelectiveStorageError, remove_selective_part_if_present,
@@ -39,6 +42,81 @@ pub struct DownloadConfig {
     pub max_buffered_payload_bytes: usize,
     pub skip_files: Vec<usize>,
     pub materialize_files: Vec<usize>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DownloadControl {
+    inner: Arc<DownloadControlInner>,
+}
+
+#[derive(Debug)]
+struct DownloadControlInner {
+    cancellation: CancellationToken,
+    buffered_payload_bytes: AtomicUsize,
+    payload_high_water: AtomicUsize,
+    stored_bytes: AtomicUsize,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DownloadProgress {
+    pub buffered_payload_bytes: usize,
+    pub payload_high_water: usize,
+    pub stored_bytes: usize,
+}
+
+impl DownloadControl {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(DownloadControlInner {
+                cancellation: CancellationToken::new(),
+                buffered_payload_bytes: AtomicUsize::new(0),
+                payload_high_water: AtomicUsize::new(0),
+                stored_bytes: AtomicUsize::new(0),
+            }),
+        }
+    }
+
+    pub fn cancel(&self) {
+        self.inner.cancellation.cancel();
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.inner.cancellation.is_cancelled()
+    }
+
+    pub fn snapshot(&self) -> DownloadProgress {
+        DownloadProgress {
+            buffered_payload_bytes: self.inner.buffered_payload_bytes.load(Ordering::Acquire),
+            payload_high_water: self.inner.payload_high_water.load(Ordering::Acquire),
+            stored_bytes: self.inner.stored_bytes.load(Ordering::Acquire),
+        }
+    }
+
+    fn observe(&self, download: &OnePieceDownload) {
+        let budget = download.payload_budget();
+        self.inner
+            .buffered_payload_bytes
+            .store(budget.reserved, Ordering::Release);
+        self.inner
+            .payload_high_water
+            .fetch_max(budget.high_water, Ordering::AcqRel);
+    }
+
+    fn record_stored(&self, bytes: usize) {
+        self.inner.stored_bytes.fetch_add(bytes, Ordering::AcqRel);
+    }
+
+    fn clear_buffered_payload(&self) {
+        self.inner
+            .buffered_payload_bytes
+            .store(0, Ordering::Release);
+    }
+}
+
+impl Default for DownloadControl {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -84,6 +162,7 @@ pub enum DownloadError {
     Storage(StorageError),
     SelectiveStorage(SelectiveStorageError),
     PeerClosed,
+    Cancelled,
     TimedOut {
         timeout: Duration,
     },
@@ -115,6 +194,7 @@ impl fmt::Display for DownloadError {
             Self::Storage(error) => write!(formatter, "storage: {error}"),
             Self::SelectiveStorage(error) => write!(formatter, "selective storage: {error}"),
             Self::PeerClosed => write!(formatter, "peer closed before piece verification"),
+            Self::Cancelled => write!(formatter, "download cancelled"),
             Self::TimedOut { timeout } => {
                 write!(
                     formatter,
@@ -150,6 +230,13 @@ impl Error for DownloadError {
 pub async fn download_verified_piece(
     config: DownloadConfig,
 ) -> Result<DownloadReport, DownloadError> {
+    download_verified_piece_with_control(config, DownloadControl::new()).await
+}
+
+pub async fn download_verified_piece_with_control(
+    config: DownloadConfig,
+    control: DownloadControl,
+) -> Result<DownloadReport, DownloadError> {
     if !config.peer.ip().is_loopback() {
         return Err(DownloadError::NonLoopbackPeer(config.peer));
     }
@@ -160,12 +247,19 @@ pub async fn download_verified_piece(
     let configured_timeout = config.timeout;
     let staging = staging_path(&config.output_path).map_err(DownloadError::Storage)?;
     let output_path = config.output_path.clone();
-    let result = timeout(configured_timeout, run_download(config))
-        .await
-        .map_err(|_| DownloadError::TimedOut {
-            timeout: configured_timeout,
-        })
-        .and_then(|result| result);
+    let result = tokio::select! {
+        biased;
+        _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
+        result = timeout(
+            configured_timeout,
+            run_download(config, control.clone()),
+        ) => result
+            .map_err(|_| DownloadError::TimedOut {
+                timeout: configured_timeout,
+            })
+            .and_then(|result| result),
+    };
+    control.clear_buffered_payload();
 
     match result {
         Ok(report) => Ok(report),
@@ -202,7 +296,10 @@ fn preserves_existing_artifact(error: &DownloadError) -> bool {
     )
 }
 
-async fn run_download(config: DownloadConfig) -> Result<DownloadReport, DownloadError> {
+async fn run_download(
+    config: DownloadConfig,
+    control: DownloadControl,
+) -> Result<DownloadReport, DownloadError> {
     let metainfo_bytes = read_bounded_metainfo(&config.metainfo_path).await?;
     let metainfo = Metainfo::from_bytes(&metainfo_bytes).map_err(DownloadError::Metainfo)?;
     match metainfo.mode {
@@ -215,10 +312,10 @@ async fn run_download(config: DownloadConfig) -> Result<DownloadReport, Download
                     "multi-piece single-file or selected single-file diagnostic execution",
                 )));
             }
-            run_single_download(config, metainfo).await
+            run_single_download(config, metainfo, control).await
         }
         rstorrent_protocol::metainfo::MetainfoMode::MultiFile => {
-            run_selective_download(config, metainfo).await
+            run_selective_download(config, metainfo, control).await
         }
     }
 }
@@ -226,6 +323,7 @@ async fn run_download(config: DownloadConfig) -> Result<DownloadReport, Download
 async fn run_single_download(
     config: DownloadConfig,
     metainfo: Metainfo,
+    control: DownloadControl,
 ) -> Result<DownloadReport, DownloadError> {
     let piece_length = u32::try_from(metainfo.total_length)
         .map_err(|_| DownloadError::Metainfo(MetainfoError::InvalidField("info.length")))?;
@@ -254,6 +352,7 @@ async fn run_single_download(
             })?;
         if read == 0 {
             download.cancel_pending();
+            control.observe(&download);
             return Err(DownloadError::PeerClosed);
         }
 
@@ -262,8 +361,9 @@ async fn run_single_download(
             .map_err(DownloadError::Frame)?;
         for message in messages {
             let actions = download.on_message(message).map_err(DownloadError::Piece)?;
+            control.observe(&download);
             if let Some(piece) =
-                process_actions(&mut peer, &mut storage, &mut download, actions).await?
+                process_actions(&mut peer, &mut storage, &mut download, actions, &control).await?
             {
                 let budget = download.payload_budget();
                 let block_count = download.block_count();
@@ -298,6 +398,7 @@ async fn run_single_download(
 async fn run_selective_download(
     config: DownloadConfig,
     metainfo: Metainfo,
+    control: DownloadControl,
 ) -> Result<DownloadReport, DownloadError> {
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let selection =
@@ -398,6 +499,7 @@ async fn run_selective_download(
                     .map_err(DownloadError::Piece)?,
             );
         }
+        control.observe(&download);
         if let Some(piece) = process_selective_actions(
             &mut peer,
             &mut storage,
@@ -405,6 +507,7 @@ async fn run_selective_download(
             initial_actions,
             &mut selected_written_bytes,
             &mut part_written_bytes,
+            &control,
         )
         .await?
         {
@@ -427,6 +530,7 @@ async fn run_selective_download(
                         })?;
                 if read == 0 {
                     download.cancel_pending();
+                    control.observe(&download);
                     return Err(DownloadError::PeerClosed);
                 }
                 queued_messages.extend(
@@ -441,6 +545,7 @@ async fn run_selective_download(
                 .expect("message queue is nonempty after receive loop");
             let availability_update = availability_update(&message);
             let actions = download.on_message(message).map_err(DownloadError::Piece)?;
+            control.observe(&download);
             match availability_update {
                 AvailabilityUpdate::None => {}
                 AvailabilityUpdate::Choke(choking) => peer_choking = choking,
@@ -461,6 +566,7 @@ async fn run_selective_download(
                 actions,
                 &mut selected_written_bytes,
                 &mut part_written_bytes,
+                &control,
             )
             .await?
             {
@@ -615,6 +721,7 @@ async fn process_actions(
     storage: &mut StagingFile,
     download: &mut OnePieceDownload,
     actions: Vec<DownloadAction>,
+    control: &DownloadControl,
 ) -> Result<Option<VerifiedPiece>, DownloadError> {
     let mut pending = VecDeque::from(actions);
     while let Some(action) = pending.pop_front() {
@@ -628,17 +735,21 @@ async fn process_actions(
             DownloadAction::StoreBlock(block) => {
                 let index = block.index;
                 let begin = block.begin;
+                let length = block.bytes.len();
                 if let Err(error) = storage.write_block(u64::from(begin), block.bytes).await {
                     download
                         .on_block_write_failed(index, begin)
                         .map_err(DownloadError::Piece)?;
+                    control.observe(download);
                     return Err(DownloadError::Storage(error));
                 }
+                control.record_stored(length);
                 pending.extend(
                     download
                         .on_block_stored(index, begin)
                         .map_err(DownloadError::Piece)?,
                 );
+                control.observe(download);
             }
             DownloadAction::VerifyPiece { index, length } => {
                 let actual_hash = storage
@@ -664,6 +775,7 @@ async fn process_selective_actions(
     actions: Vec<DownloadAction>,
     selected_written_bytes: &mut usize,
     part_written_bytes: &mut usize,
+    control: &DownloadControl,
 ) -> Result<Option<VerifiedPiece>, DownloadError> {
     let mut pending = VecDeque::from(actions);
     while let Some(action) = pending.pop_front() {
@@ -677,15 +789,18 @@ async fn process_selective_actions(
             DownloadAction::StoreBlock(block) => {
                 let index = block.index;
                 let begin = block.begin;
+                let length = block.bytes.len();
                 let stats = match storage.write_block(index, begin, block.bytes).await {
                     Ok(stats) => stats,
                     Err(error) => {
                         download
                             .on_block_write_failed(index, begin)
                             .map_err(DownloadError::Piece)?;
+                        control.observe(download);
                         return Err(DownloadError::SelectiveStorage(error));
                     }
                 };
+                control.record_stored(length);
                 *selected_written_bytes += stats.wanted_bytes;
                 *part_written_bytes += stats.skipped_bytes;
                 pending.extend(
@@ -693,6 +808,7 @@ async fn process_selective_actions(
                         .on_block_stored(index, begin)
                         .map_err(DownloadError::Piece)?,
                 );
+                control.observe(download);
             }
             DownloadAction::VerifyPiece { index, .. } => {
                 let actual_hash = storage
@@ -719,8 +835,12 @@ mod tests {
 
     use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
     use tokio::net::TcpListener;
+    use tokio::time::timeout;
 
-    use super::{DownloadConfig, DownloadError, download_verified_piece};
+    use super::{
+        DownloadConfig, DownloadControl, DownloadError, download_verified_piece,
+        download_verified_piece_with_control,
+    };
     use crate::selective_storage::{
         SelectiveStorageError, selective_part_path, selective_staging_path,
     };
@@ -827,6 +947,68 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         .await;
 
         assert!(matches!(result, Err(DownloadError::TimedOut { .. })));
+        assert!(!tokio::fs::try_exists(&output_path).await.expect("output"));
+        assert!(!tokio::fs::try_exists(&staging).await.expect("staging"));
+        assert!(!tokio::fs::try_exists(&part).await.expect("part"));
+
+        peer_task.abort();
+        let _ = peer_task.await;
+        let _ = tokio::fs::remove_file(metainfo_path).await;
+    }
+
+    #[tokio::test]
+    async fn cancellation_is_terminal_and_removes_owned_artifacts() {
+        let metainfo_path = test_path("selective-cancel.torrent");
+        let output_path = test_path("selective-cancel");
+        let staging = selective_staging_path(&output_path).expect("staging path");
+        let part = selective_part_path(&output_path).expect("part path");
+        tokio::fs::write(&metainfo_path, two_file_metainfo())
+            .await
+            .expect("write metainfo");
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind scripted peer");
+        let address = listener.local_addr().expect("listener address");
+        let peer_task = tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.expect("accept diagnostic");
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        });
+
+        let control = DownloadControl::new();
+        let download_control = control.clone();
+        let download_task = tokio::spawn(download_verified_piece_with_control(
+            DownloadConfig {
+                metainfo_path: metainfo_path.clone(),
+                peer: address,
+                output_path: output_path.clone(),
+                timeout: Duration::from_secs(5),
+                max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+                skip_files: vec![1],
+                materialize_files: Vec::new(),
+            },
+            download_control,
+        ));
+
+        timeout(Duration::from_secs(1), async {
+            loop {
+                if tokio::fs::try_exists(&staging).await.expect("staging")
+                    && tokio::fs::try_exists(&part).await.expect("part")
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("engine created owned artifacts");
+
+        control.cancel();
+        control.cancel();
+        let result = download_task.await.expect("download task");
+        assert!(matches!(result, Err(DownloadError::Cancelled)));
+        assert!(control.is_cancelled());
+        assert_eq!(control.snapshot().buffered_payload_bytes, 0);
         assert!(!tokio::fs::try_exists(&output_path).await.expect("output"));
         assert!(!tokio::fs::try_exists(&staging).await.expect("staging"));
         assert!(!tokio::fs::try_exists(&part).await.expect("part"));

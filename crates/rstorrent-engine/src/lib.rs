@@ -7,7 +7,10 @@ mod part_file;
 mod selective_storage;
 mod storage;
 
-pub use driver::{DownloadConfig, DownloadError, DownloadReport, download_verified_piece};
+pub use driver::{
+    DownloadConfig, DownloadControl, DownloadError, DownloadProgress, DownloadReport,
+    download_verified_piece, download_verified_piece_with_control,
+};
 pub use part_file::{PartFile, PartFileError, PartFileIdentity};
 pub use selective_storage::{
     MaterializationReport, SelectiveStorage, SelectiveStorageError, SelectiveWriteStats,

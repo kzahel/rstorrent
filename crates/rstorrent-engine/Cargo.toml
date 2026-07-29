@@ -13,3 +13,4 @@ path = "src/main.rs"
 rstorrent-protocol = { path = "../rstorrent-protocol" }
 sha1 = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "time"] }
+tokio-util = { workspace = true, features = ["rt"] }
