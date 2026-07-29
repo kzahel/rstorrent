@@ -36,6 +36,31 @@ a living topic records an accepted replacement:
 These are direction guardrails, not permission to invent a complete
 architecture before the relevant tactical.
 
+## Architecture And Module Boundaries
+
+Treat code placement and dependency direction as part of correctness. Keep
+protocol values, codecs, and deterministic state transitions independent from
+async runtimes, sockets, filesystems, task handles, channels, and platform
+adapters. Runtime and platform layers may depend inward on those components;
+the dependency must not point back outward.
+
+While working, keep an eye out for concrete refactoring opportunities:
+
+- Does each type and operation live with the layer that owns its invariant?
+- Did an infrastructure type leak into protocol or domain state?
+- Is a module accumulating unrelated responsibilities or becoming a difficult
+  to understand "god module"?
+- Would a smaller boundary make important behavior testable without networking,
+  storage, a clock, or a platform runtime?
+- Is duplicated policy revealing a missing shared concept?
+
+Refactor when the benefit is concrete and the work remains proportionate to the
+current tactical. Do not interrupt bounded progress for speculative reshaping.
+Extract a module or crate when ownership, dependencies, lifecycle, reuse, or
+testing justify it; do not create speculative abstractions or
+one-file-per-type layouts merely in anticipation of future features. Record a
+deferral only when a material known problem is deliberately left in place.
+
 ## Documentation Ownership
 
 Active documentation has these roles:

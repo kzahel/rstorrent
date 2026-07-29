@@ -34,4 +34,8 @@ direction belongs in `../topics/`.
 
 ## Current Tacticals
 
-None. The next tactical number is `000`.
+- [`000-first-verified-piece.md`](000-first-verified-piece.md): draft plan for
+  downloading and verifying one multi-block piece from a controlled libtorrent
+  peer while establishing the pure protocol/runtime boundary.
+
+The next tactical number is `001`.

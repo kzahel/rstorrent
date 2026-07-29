@@ -26,6 +26,28 @@ Do not copy code between implementations merely because both are open source.
 Reading an implementation does not make its internal API or architecture an
 RSTorrent requirement.
 
+## Local Reference Set
+
+RSTorrent keeps reproducible external source checkouts under the gitignored
+`reference/` directory and continues to use JSTorrent as a first-party sibling.
+The tracked [`reference/pins.toml`](../reference/pins.toml) records exact
+external revisions and the sibling branch; the
+[`reference map`](../reference/README.md) records why each source exists,
+license expectations, and useful distinctions between source-reading and
+executable-oracle roles.
+
+Use:
+
+```bash
+python3 scripts/references.py sync
+python3 scripts/references.py status
+```
+
+The sync command refuses to overwrite local changes or divergent repositories.
+External checkouts stay at detached exact revisions. The JSTorrent sibling may
+fast-forward only when it is clean, on `main`, and its fetched `origin/main`
+descends from the locally checked-out commit.
+
 ## Protocol Specifications
 
 The [BitTorrent Enhancement Proposal index](https://www.bittorrent.org/beps/bep_0000.html)
@@ -36,11 +58,45 @@ and interoperability evidence.
 Where deployed clients disagree with a specification, record the observed
 compatibility behavior rather than silently replacing the documented contract.
 
+## License Posture
+
+This inventory was checked against the managed revisions on 2026-07-29. It
+describes the reference set; it is not a substitute for checking the precise
+file before importing material.
+
+- rqbit and its librqbit crates are Apache-2.0.
+- Rasterbar libtorrent's main library is BSD-3-Clause. Its root `LICENSE`
+  identifies separately licensed files; notably, its Python binding source is
+  Boost Software License 1.0, while its optional `simulation/libsimulator`
+  submodule is GPL-3.0.
+- JSTorrent is MIT.
+- The official BitTorrent BEP repository does not currently state a
+  repository-wide license. Cite and independently summarize protocol behavior
+  rather than copying BEP prose or bundled material.
+
+Reading these sources and running a reference implementation as a separate
+test peer does not make it an RSTorrent product dependency. If source, fixtures,
+test data, or a reference binary will be copied, linked, vendored, or
+distributed, stop and record the exact origin, revision, file-level license,
+required notices, modification status, and reason for inclusion first.
+
+The GPL-3.0 libsimulator submodule is not part of the planned oracle harness and
+must not be linked into or distributed with RSTorrent without a separate
+license and architecture decision. The similarly named
+[libTorrent used by rTorrent](https://github.com/rakshasa/libtorrent) is
+GPL-2.0 and is not the managed Rasterbar libtorrent reference.
+
+RSTorrent itself does not yet have a public license. Select one before public
+distribution and audit the licenses of actual Rust, Python, Android, and
+desktop dependencies once their lockfiles exist.
+
 ## JSTorrent
 
 Repository: [kzahel/jstorrent](https://github.com/kzahel/jstorrent)
 
 Typical local checkout: `~/code/jstorrent`
+
+Managed reference entry: `../jstorrent`, first-party `main`
 
 JSTorrent is the closest product reference because it captures the maintainer's
 existing torrent behavior and platform lessons. High-value areas include:
@@ -67,6 +123,8 @@ Project: [libtorrent](https://libtorrent.org/)
 
 Source: [arvidn/libtorrent](https://github.com/arvidn/libtorrent)
 
+Managed source checkout: `reference/libtorrent`, pinned to `v2.0.13`
+
 Rasterbar libtorrent is the primary external interoperability oracle. It can
 seed to RSTorrent, leech from it, create fixtures, enforce encryption modes,
 and expose peer/session state for black-box assertions.
@@ -82,6 +140,9 @@ This is distinct from the similarly named libTorrent used by rTorrent.
 Project: [rqbit](https://github.com/ikatson/rqbit)
 
 Library documentation: [librqbit](https://docs.rs/librqbit/)
+
+Managed source checkout: `reference/rqbit`, pinned to the exact current 9.0
+release-candidate development revision recorded in `reference/pins.toml`
 
 rqbit is a BitTorrent client written natively in Rust. `librqbit` is its
 reusable engine crate and exposes torrent sessions, torrent and magnet inputs,

@@ -1,0 +1,26 @@
+schema_version = 1
+
+[[checkout]]
+name = "rqbit"
+path = "reference/rqbit"
+repository = "https://github.com/ikatson/rqbit.git"
+revision = "4e5f94cbcf1d57ec500885c77cf1e24d70232d89"
+purpose = "Native Rust and Tokio engine, application API, storage, uTP, and implementation comparison"
+required = true
+
+[[checkout]]
+name = "libtorrent"
+path = "reference/libtorrent"
+repository = "https://github.com/arvidn/libtorrent.git"
+revision = "7d7fc38fac61177fa5e02148f791b2f65250b09d"
+purpose = "Primary external interoperability oracle and broad protocol reference"
+required = true
+submodules = true
+
+[[sibling]]
+name = "jstorrent"
+path = "../jstorrent"
+repository = "git@github.com:kzahel/JSTorrent.git"
+branch = "main"
+purpose = "First-party product behavior, fixtures, integration scenarios, and Android and ChromeOS lessons"
+required = true

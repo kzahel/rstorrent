@@ -21,3 +21,6 @@ local.properties
 .idea/
 .vscode/
 .DS_Store
+
+# Reproducible external source references
+/reference/*/

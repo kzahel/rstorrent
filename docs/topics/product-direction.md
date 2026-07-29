@@ -2,7 +2,7 @@
 
 Topic: `product-direction`
 
-Status: initial direction accepted; implementation planning not yet started.
+Status: initial direction accepted; first implementation tactical drafted.
 
 ## Scope
 
@@ -84,6 +84,20 @@ may work deeply within that slice, but it should not silently expand the
 feature or platform surface. The next slice begins only after the prior
 tactical records its outcome and validation honestly.
 
+### Pure protocol and domain boundaries
+
+Protocol values, codecs, and deterministic state transitions remain independent
+from async runtimes, sockets, filesystems, task handles, and platform adapters.
+Tokio is the expected initial execution environment, not a dependency that may
+leak into lower-layer contracts. Runtime and platform code depend inward on the
+pure layers.
+
+Keep an eye out for module and crate boundaries as implementation provides
+evidence, especially runtime leakage, poor test seams, and modules accumulating
+unrelated responsibilities. Refactor when the benefit is concrete and
+proportionate to the active tactical. Speculative abstraction is not a
+substitute for evidence.
+
 ## Initial Non-Goals
 
 - Chrome extension or Chrome native-messaging integration.
@@ -105,33 +119,31 @@ tactical records its outcome and validation honestly.
 - The first desktop UI approach.
 - The Android Rust/Kotlin binding generator and ownership model.
 - The exact minimum useful BitTorrent feature set.
-- Whether the first tactical should prove platform boundaries or the smallest
-  libtorrent-backed download.
 - Which JSTorrent fixtures can be reused directly and which should be
   independently recreated.
 
 ## Candidate Bring-Up Sequence
 
-This is recommended direction, not yet an implementation plan:
+This is recommended direction beyond the accepted first slice:
 
-1. Prove Rust TCP/UDP and random-access local storage on desktop.
-2. Prove Rust networking, Android foreground lifetime, and SAF-backed bulk I/O
-   on a physical Chromebook.
-3. Establish an independently tested bencode, metainfo, and peer-wire layer.
-4. Download and hash-verify a small single-file torrent from an explicitly
-   supplied libtorrent peer.
-5. Turn that vertical thread into a usable CLI before adding trackers,
+1. Execute
+   [`000-first-verified-piece.md`](../tactical/000-first-verified-piece.md) to
+   establish an independently tested bencode, metainfo, peer-wire, and
+   libtorrent-interoperable vertical thread.
+2. Turn that vertical thread into a usable CLI before adding trackers,
    metadata exchange, DHT, multi-file storage, resume, and seeding.
-6. Define the application command/snapshot/event boundary from real CLI needs.
-7. Add the first Android and desktop product clients.
+3. Prove Rust networking, Android foreground lifetime, and SAF-backed bulk I/O
+   on a physical Chromebook before assuming the desktop storage seam transfers.
+4. Define the application command/snapshot/event boundary from real CLI needs.
+5. Add the first Android and desktop product clients.
 
-The platform feasibility probe and protocol vertical slice may become separate
-tacticals so failure in one does not distort the other.
+The platform feasibility probe remains a separate tactical so failure in it
+does not distort the protocol vertical slice.
 
 ## Recommended Next Work
 
-Use the next session to refine this topic and create
-`docs/tactical/000-<bounded-slice>.md`. That tactical should select one
-falsifiable bring-up result, state explicit non-goals, and identify the exact
-libtorrent or physical-device evidence required before any broad scaffold is
-generated.
+Review and activate
+[`000-first-verified-piece.md`](../tactical/000-first-verified-piece.md), then
+implement only its bounded loopback result. Record any boundary changes and the
+exact libtorrent interoperability evidence in that tactical before selecting
+the next slice.
