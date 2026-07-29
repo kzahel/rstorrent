@@ -155,16 +155,23 @@ pub async fn download_verified_piece(
 async fn run_download(config: DownloadConfig) -> Result<DownloadReport, DownloadError> {
     let metainfo_bytes = read_bounded_metainfo(&config.metainfo_path).await?;
     let metainfo = Metainfo::from_bytes(&metainfo_bytes).map_err(DownloadError::Metainfo)?;
-    let piece_length = u32::try_from(metainfo.file_length)
+    if metainfo.piece_count() != 1
+        || metainfo.mode != rstorrent_protocol::metainfo::MetainfoMode::SingleFile
+    {
+        return Err(DownloadError::Metainfo(MetainfoError::Unsupported(
+            "multi-file or multi-piece diagnostic execution",
+        )));
+    }
+    let piece_length = u32::try_from(metainfo.total_length)
         .map_err(|_| DownloadError::Metainfo(MetainfoError::InvalidField("info.length")))?;
     let mut download = OnePieceDownload::new(
         0,
         piece_length,
-        metainfo.piece_hash,
+        metainfo.piece_hashes[0],
         config.max_buffered_payload_bytes,
     )
     .map_err(DownloadError::Piece)?;
-    let mut storage = StagingFile::create(config.output_path.clone(), metainfo.file_length)
+    let mut storage = StagingFile::create(config.output_path.clone(), metainfo.total_length)
         .await
         .map_err(DownloadError::Storage)?;
 
