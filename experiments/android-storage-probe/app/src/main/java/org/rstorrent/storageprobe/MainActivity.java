@@ -90,7 +90,10 @@ public final class MainActivity extends Activity {
                 | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
         try {
             getContentResolver().takePersistableUriPermission(treeUri, flags);
-            preferences().edit().putString(TREE_URI, treeUri.toString()).apply();
+            requirePreferenceCommit(
+                    preferences().edit().putString(TREE_URI, treeUri.toString()),
+                    "persist tree URI"
+            );
             runInBackground(() -> runInitial(treeUri));
         } catch (Throwable error) {
             writeFailure("initial", error);
@@ -193,11 +196,13 @@ public final class MainActivity extends Activity {
                         cancellationAfterRename
                 );
             }
-            preferences().edit()
-                    .putString(PROBE_ROOT_URI, probeRoot.toString())
-                    .putString(SPARSE_URI, sparseUri.toString())
-                    .putString(MATERIALIZED_URI, materializedUri.toString())
-                    .apply();
+            requirePreferenceCommit(
+                    preferences().edit()
+                            .putString(PROBE_ROOT_URI, probeRoot.toString())
+                            .putString(SPARSE_URI, sparseUri.toString())
+                            .putString(MATERIALIZED_URI, materializedUri.toString()),
+                    "persist restart state"
+            );
 
             snapshotMemory(result, "memory_after");
             result.put("descriptor_count_after", descriptorCount());
@@ -211,7 +216,9 @@ public final class MainActivity extends Activity {
             writeResult(result);
         } catch (Throwable error) {
             if (probeRoot != null) {
-                preferences().edit().putString(PROBE_ROOT_URI, probeRoot.toString()).apply();
+                preferences().edit()
+                        .putString(PROBE_ROOT_URI, probeRoot.toString())
+                        .commit();
             }
             writeFailure("initial", error, result);
         }
@@ -255,7 +262,10 @@ public final class MainActivity extends Activity {
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                             | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             );
-            preferences.edit().clear().apply();
+            requirePreferenceCommit(
+                    preferences.edit().clear(),
+                    "clear completed probe state"
+            );
 
             snapshotMemory(result, "memory_after");
             result.put("descriptor_count_after", descriptorCount());
@@ -302,7 +312,10 @@ public final class MainActivity extends Activity {
             }
             File privateFile = new File(getFilesDir(), PRIVATE_FILE);
             deleteIfPresent(privateFile);
-            preferences.edit().clear().apply();
+            requirePreferenceCommit(
+                    preferences.edit().clear(),
+                    "clear recovery state"
+            );
             result.put("probe_tree_deleted", deleted);
             result.put("private_file_deleted", !privateFile.exists());
             result.put("success", deleted && !privateFile.exists());
@@ -618,6 +631,15 @@ public final class MainActivity extends Activity {
 
     private SharedPreferences preferences() {
         return getSharedPreferences(PREFERENCES, MODE_PRIVATE);
+    }
+
+    private void requirePreferenceCommit(
+            SharedPreferences.Editor editor,
+            String operation
+    ) throws IOException {
+        if (!editor.commit()) {
+            throw new IOException(operation + " failed");
+        }
     }
 
     private void runInBackground(ThrowingRunnable runnable) {

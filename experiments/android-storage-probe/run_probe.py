@@ -465,11 +465,12 @@ def read_result(target: AdbTarget, expected_phase: str) -> dict:
 
 
 def launch_phase(target: AdbTarget, phase: str) -> None:
-    target.shell(
+    launched = target.shell(
         [
             "am",
             "start",
             "-W",
+            "--activity-clear-task",
             "-n",
             ACTIVITY,
             "--es",
@@ -478,6 +479,12 @@ def launch_phase(target: AdbTarget, phase: str) -> None:
         ],
         timeout=30,
     )
+    if "Status: ok" not in launched.stdout:
+        raise ProbeFailure(
+            f"activity launch did not report success for phase {phase}\n"
+            f"stdout:\n{launched.stdout}\n"
+            f"stderr:\n{launched.stderr}"
+        )
 
 
 def cleanup_after_failure(target: AdbTarget) -> None:
@@ -569,7 +576,7 @@ def main() -> int:
                 raise
             result["identity"] = identity
             results.append(result)
-            print(json.dumps(result, sort_keys=True))
+            print(json.dumps(result, sort_keys=True), flush=True)
     except BaseException as error:
         failure = error
     finally:
