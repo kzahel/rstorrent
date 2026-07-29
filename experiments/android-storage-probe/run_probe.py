@@ -29,6 +29,15 @@ PIXEL_SERIAL = "33031JEHN17672"
 EXPECTED_PIXEL_API = "37"
 EXPECTED_PIXEL_MODEL = "Pixel 7a"
 EXPECTED_PIXEL_DEVICE = "lynx"
+MOTO_SERIAL = "ZY224JN8D2"
+EXPECTED_MOTO_API = "28"
+EXPECTED_MOTO_MODEL = "moto x4"
+EXPECTED_MOTO_DEVICE = "payton_sprout"
+MOTO_SD_VOLUME = "F69D-D340"
+MOTO_SD_INITIAL_URI = (
+    f"content://com.android.externalstorage.documents/root/{MOTO_SD_VOLUME}"
+)
+MOTO_SD_ROOT_LABELS = [MOTO_SD_VOLUME, "SD card", "New Volume"]
 RESULT_PATH = "files/result.json"
 POLL_SECONDS = 45
 GRANT_FOLDER = "RSTorrentStorageProbeGrant"
@@ -303,6 +312,21 @@ def prepare_pixel() -> AdbTarget:
     return target
 
 
+def prepare_moto() -> AdbTarget:
+    adb = local_adb_path()
+    if MOTO_SERIAL not in adb_devices(adb):
+        raise ProbeFailure(
+            f"the expected Moto X4 is not ready as serial {MOTO_SERIAL}"
+        )
+    target = AdbTarget(
+        [str(adb), "-s", MOTO_SERIAL],
+        f"Moto X4 {MOTO_SERIAL}",
+    )
+    if target.run(["get-state"]).stdout.strip() != "device":
+        raise ProbeFailure("the expected Moto X4 ADB target is not ready")
+    return target
+
+
 def verify_target(target: AdbTarget, kind: str) -> dict[str, str]:
     api = target.property("ro.build.version.sdk")
     model = target.property("ro.product.model")
@@ -328,6 +352,12 @@ def verify_target(target: AdbTarget, kind: str) -> dict[str, str]:
             EXPECTED_PIXEL_DEVICE,
             "arm64-v8a",
         ),
+        "motox4": (
+            EXPECTED_MOTO_API,
+            EXPECTED_MOTO_MODEL,
+            EXPECTED_MOTO_DEVICE,
+            "arm64-v8a",
+        ),
     }
     expected_api, expected_model, expected_device, expected_abi = expected[kind]
     if (
@@ -351,6 +381,48 @@ def verify_target(target: AdbTarget, kind: str) -> dict[str, str]:
     }
 
 
+def verify_storage(
+    target: AdbTarget,
+    kind: str,
+    storage: str,
+) -> dict[str, str]:
+    if storage == "internal":
+        return {"storage_volume": "primary"}
+    if kind != "motox4":
+        raise ProbeFailure("removable storage is supported only on motox4")
+    volumes = target.shell(["sm", "list-volumes", "all"]).stdout
+    mounted = False
+    for line in volumes.splitlines():
+        fields = line.split()
+        if (
+            len(fields) >= 3
+            and fields[0].startswith("public:")
+            and fields[1:] == ["mounted", MOTO_SD_VOLUME]
+        ):
+            mounted = True
+            break
+    if not mounted:
+        raise ProbeFailure(
+            f"removable volume {MOTO_SD_VOLUME} is not mounted\n{volumes}"
+        )
+    mount_path = f"/mnt/media_rw/{MOTO_SD_VOLUME}"
+    underlying_filesystem = ""
+    mounts = target.shell(["cat", "/proc/mounts"]).stdout
+    for line in mounts.splitlines():
+        fields = line.split()
+        if len(fields) >= 3 and fields[1] == mount_path:
+            underlying_filesystem = fields[2]
+            break
+    if not underlying_filesystem:
+        raise ProbeFailure(
+            f"could not resolve the filesystem mounted at {mount_path}"
+        )
+    return {
+        "storage_volume": MOTO_SD_VOLUME,
+        "underlying_filesystem": underlying_filesystem,
+    }
+
+
 def install_apk(target: AdbTarget, kind: str, apk: Path) -> None:
     if kind == "chromeos":
         testbed = Path.home() / "code" / "chromeos-testbed" / "bin" / "chromeos"
@@ -368,9 +440,10 @@ def parse_bounds(value: str) -> tuple[int, int]:
 
 
 def ui_nodes(target: AdbTarget) -> list[ET.Element]:
-    remote = "/data/local/tmp/rstorrent-storage-probe-window.xml"
+    remote = "/sdcard/rstorrent-storage-probe-window.xml"
     target.shell(["uiautomator", "dump", remote], timeout=15, check=False)
     xml = target.shell(["cat", remote], timeout=10, check=False).stdout
+    target.shell(["rm", "-f", remote], timeout=10, check=False)
     if not xml.lstrip().startswith("<?xml"):
         return []
     try:
@@ -398,12 +471,14 @@ def click_from_nodes(
     return False
 
 
-def grant_path() -> str:
+def grant_path(storage: str) -> str:
+    if storage == "sdcard":
+        return f"/storage/{MOTO_SD_VOLUME}/{GRANT_FOLDER}"
     return f"/sdcard/Download/{GRANT_FOLDER}"
 
 
-def remove_grant_folder(target: AdbTarget) -> None:
-    path = grant_path()
+def remove_grant_folder(target: AdbTarget, storage: str) -> None:
+    path = grant_path(storage)
     exists = target.shell(["test", "-e", path], check=False)
     if exists.returncode != 0:
         return
@@ -415,52 +490,77 @@ def remove_grant_folder(target: AdbTarget) -> None:
         raise ProbeFailure(f"probe grant directory is not empty: {path}")
 
 
-def prepare_grant_folder(target: AdbTarget) -> None:
-    remove_grant_folder(target)
-    created = target.shell(["mkdir", grant_path()], check=False)
+def prepare_grant_folder(target: AdbTarget, storage: str) -> None:
+    remove_grant_folder(target, storage)
+    path = grant_path(storage)
+    created = target.shell(["mkdir", path], check=False)
     if created.returncode != 0:
         raise ProbeFailure(
-            f"could not create probe grant directory: {grant_path()}\n"
+            f"could not create probe grant directory: {path}\n"
             f"stdout:\n{created.stdout}\n"
             f"stderr:\n{created.stderr}"
         )
 
 
-def automate_tree_grant(target: AdbTarget) -> None:
+def automate_tree_grant(target: AdbTarget, storage: str) -> None:
     deadline = time.monotonic() + 30
     used_folder = False
+    entered_folder = False
+    opened_roots = False
+    selected_root = False
     while time.monotonic() < deadline:
         nodes = ui_nodes(target)
         if not nodes:
             time.sleep(0.4)
             continue
-        if not used_folder and click_from_nodes(
+        if entered_folder and not used_folder and click_from_nodes(
             target,
             nodes,
-            ["Use this folder", "USE THIS FOLDER"],
+            ["Use this folder", "USE THIS FOLDER", "Select", "SELECT"],
         ):
             used_folder = True
             time.sleep(0.5)
             continue
         if used_folder and click_from_nodes(target, nodes, ["Allow", "ALLOW"]):
             return
-        in_download = any(
-            node.attrib.get("text", "").strip().casefold().startswith("files in download")
+        if used_folder and not any(
+            "documentsui" in node.attrib.get("package", "")
             for node in nodes
-        )
-        if not used_folder and in_download:
-            if click_from_nodes(target, nodes, [GRANT_FOLDER]):
-                time.sleep(0.5)
-                continue
-        elif not used_folder and click_from_nodes(
-            target,
-            nodes,
-            ["Download", "Downloads"],
         ):
+            return
+        root_labels = (
+            ["Download", "Downloads"]
+            if storage == "internal"
+            else MOTO_SD_ROOT_LABELS
+        )
+        if (
+            not selected_root
+            and opened_roots
+            and click_from_nodes(target, nodes, root_labels)
+        ):
+            selected_root = True
+            time.sleep(0.5)
+            continue
+        if (
+            not selected_root
+            and not opened_roots
+            and click_from_nodes(target, nodes, ["Show roots"])
+        ):
+            opened_roots = True
+            time.sleep(0.5)
+            continue
+        if (
+            selected_root
+            and not used_folder
+            and click_from_nodes(target, nodes, [GRANT_FOLDER])
+        ):
+            entered_folder = True
             time.sleep(0.5)
             continue
         time.sleep(0.4)
-    raise ProbeFailure("could not grant the Downloads document tree through system UI")
+    raise ProbeFailure(
+        f"could not grant the {storage} document tree through system UI"
+    )
 
 
 def remove_result(target: AdbTarget) -> None:
@@ -500,20 +600,23 @@ def read_result(target: AdbTarget, expected_phase: str) -> dict:
     )
 
 
-def launch_phase(target: AdbTarget, phase: str) -> None:
-    launched = target.shell(
-        [
-            "am",
-            "start",
-            "--activity-clear-task",
-            "-n",
-            ACTIVITY,
-            "--es",
-            "mode",
-            phase,
-        ],
-        timeout=30,
-    )
+def launch_phase(target: AdbTarget, phase: str, storage: str) -> None:
+    arguments = [
+        "am",
+        "start",
+        "--activity-clear-task",
+        "-n",
+        ACTIVITY,
+        "--es",
+        "mode",
+        phase,
+        "--es",
+        "storage",
+        storage,
+    ]
+    if phase == "acquire" and storage == "sdcard":
+        arguments.extend(["--es", "tree_initial_uri", MOTO_SD_INITIAL_URI])
+    launched = target.shell(arguments, timeout=30)
     if "Starting:" not in launched.stdout or "Error:" in launched.stdout:
         raise ProbeFailure(
             f"activity launch did not report success for phase {phase}\n"
@@ -522,36 +625,55 @@ def launch_phase(target: AdbTarget, phase: str) -> None:
         )
 
 
-def cleanup_after_failure(target: AdbTarget) -> None:
+def cleanup_after_failure(target: AdbTarget, storage: str) -> None:
     try:
         remove_result(target)
-        launch_phase(target, "cleanup")
+        launch_phase(target, "cleanup", storage)
         read_result(target, "cleanup")
     except Exception as error:
         print(f"probe application cleanup failed: {error}", file=sys.stderr)
     try:
-        remove_grant_folder(target)
+        remove_grant_folder(target, storage)
     except Exception as error:
         print(f"probe grant cleanup failed: {error}", file=sys.stderr)
 
 
-def run_cycle(target: AdbTarget, target_name: str, ordinal: int) -> dict:
+def run_cycle(
+    target: AdbTarget,
+    target_name: str,
+    storage: str,
+    ordinal: int,
+) -> dict:
     target.shell(["am", "force-stop", PACKAGE], check=False)
     cleared = target.shell(["pm", "clear", PACKAGE], check=False)
     if cleared.returncode != 0 or "Success" not in cleared.stdout:
         raise ProbeFailure(f"could not clear probe application data: {cleared.stdout}")
     target.run(["logcat", "-c"], check=False)
-    prepare_grant_folder(target)
+    prepare_grant_folder(target, storage)
     remove_result(target)
-    launch_phase(target, "acquire")
-    automate_tree_grant(target)
+    launch_phase(target, "acquire", storage)
+    automate_tree_grant(target, storage)
     initial = read_result(target, "initial")
     if not initial.get("success"):
         raise ProbeFailure(f"initial probe failed: {json.dumps(initial, indent=2)}")
+    document_id = initial.get("provider", {}).get("document_id", "")
+    if target_name == "motox4":
+        expected_prefix = (
+            f"raw:/storage/emulated/0/Download/{GRANT_FOLDER}/"
+            if storage == "internal"
+            else f"{MOTO_SD_VOLUME}:{GRANT_FOLDER}/"
+        )
+    else:
+        expected_prefix = "primary:"
+    if not document_id.startswith(expected_prefix):
+        raise ProbeFailure(
+            f"{storage} grant resolved to unexpected document {document_id!r}; "
+            f"expected prefix {expected_prefix!r}"
+        )
 
     target.shell(["am", "force-stop", PACKAGE])
     remove_result(target)
-    launch_phase(target, "verify")
+    launch_phase(target, "verify", storage)
     restart = read_result(target, "restart")
     if not restart.get("success"):
         raise ProbeFailure(f"restart probe failed: {json.dumps(restart, indent=2)}")
@@ -560,9 +682,10 @@ def run_cycle(target: AdbTarget, target_name: str, ordinal: int) -> dict:
 
     target.shell(["am", "force-stop", PACKAGE], check=False)
     target.shell(["pm", "clear", PACKAGE], check=False)
-    remove_grant_folder(target)
+    remove_grant_folder(target, storage)
     return {
         "target": target_name,
+        "storage": storage,
         "run": ordinal,
         "initial": initial,
         "restart": restart,
@@ -573,10 +696,15 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--target",
-        choices=["avd", "chromeos", "pixel7a"],
+        choices=["avd", "chromeos", "pixel7a", "motox4"],
         required=True,
     )
     parser.add_argument("--avd", default=EXPECTED_AVD)
+    parser.add_argument(
+        "--storage",
+        choices=["internal", "sdcard"],
+        default="internal",
+    )
     parser.add_argument("--runs", type=int, choices=range(1, 6), default=1)
     parser.add_argument("--no-build", action="store_true")
     return parser.parse_args()
@@ -584,6 +712,12 @@ def parse_arguments() -> argparse.Namespace:
 
 def main() -> int:
     arguments = parse_arguments()
+    if arguments.storage == "sdcard" and arguments.target != "motox4":
+        print(
+            "the removable SD-card profile is available only on motox4",
+            file=sys.stderr,
+        )
+        return 1
     apk = (
         probe_root() / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
         if arguments.no_build
@@ -603,15 +737,29 @@ def main() -> int:
             target = avd_session.target
         elif arguments.target == "chromeos":
             target = prepare_chromeos()
-        else:
+        elif arguments.target == "pixel7a":
             target = prepare_pixel()
+        else:
+            target = prepare_moto()
         identity = verify_target(target, arguments.target)
+        identity.update(
+            verify_storage(
+                target,
+                arguments.target,
+                arguments.storage,
+            )
+        )
         install_apk(target, arguments.target, apk)
         for ordinal in range(1, arguments.runs + 1):
             try:
-                result = run_cycle(target, arguments.target, ordinal)
+                result = run_cycle(
+                    target,
+                    arguments.target,
+                    arguments.storage,
+                    ordinal,
+                )
             except BaseException:
-                cleanup_after_failure(target)
+                cleanup_after_failure(target, arguments.storage)
                 raise
             result["identity"] = identity
             results.append(result)
@@ -629,6 +777,7 @@ def main() -> int:
         return 1
     summary = {
         "target": arguments.target,
+        "storage": arguments.storage,
         "runs": len(results),
         "result": "pass",
         "cleanup": "ok",

@@ -19,6 +19,8 @@ final class NativeProbe {
     static native int closeOwned(int fd);
     static native long logicalBytes(int fd);
     static native long allocatedBytes(int fd);
+    static native long filesystemType(int fd);
+    static native long filesystemBlockBytes(int fd);
     static native int startCancellable(int fd, long maximumBytes);
     static native long cancellableProgress();
     static native long cancelAndJoin();

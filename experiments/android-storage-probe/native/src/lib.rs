@@ -222,6 +222,24 @@ pub extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_allocatedByte
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_filesystemType(
+    _environment: JNIEnv,
+    _class: JClass,
+    borrowed_fd: i32,
+) -> i64 {
+    statfs_value(borrowed_fd, |stat| stat.f_type as u64)
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_filesystemBlockBytes(
+    _environment: JNIEnv,
+    _class: JClass,
+    borrowed_fd: i32,
+) -> i64 {
+    statfs_value(borrowed_fd, |stat| stat.f_bsize as u64)
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_startCancellable(
     _environment: JNIEnv,
     _class: JClass,
@@ -445,6 +463,15 @@ fn stat_value(fd: RawFd, select: impl FnOnce(&libc::stat) -> i64) -> i64 {
     }
 }
 
+fn statfs_value(fd: RawFd, select: impl FnOnce(&libc::statfs) -> u64) -> i64 {
+    let mut stat = unsafe { std::mem::zeroed::<libc::statfs>() };
+    if unsafe { libc::fstatfs(fd, &mut stat) } != 0 {
+        -(last_errno() as i64)
+    } else {
+        i64::try_from(select(&stat)).unwrap_or(i64::MAX)
+    }
+}
+
 fn last_errno() -> i32 {
     io::Error::last_os_error()
         .raw_os_error()
@@ -456,7 +483,7 @@ mod tests {
     use std::fs::OpenOptions;
     use std::os::fd::AsRawFd;
 
-    use super::{BLOCK_LENGTH, run_sparse, verify_sparse};
+    use super::{BLOCK_LENGTH, run_sparse, statfs_value, verify_sparse};
 
     #[test]
     fn sparse_round_trip_uses_fixed_blocks() {
@@ -474,6 +501,8 @@ mod tests {
         let logical_length = (4 * BLOCK_LENGTH) as i64;
         assert_eq!(run_sparse(file.as_raw_fd(), logical_length), 0);
         assert_eq!(verify_sparse(file.as_raw_fd(), logical_length), 0);
+        assert!(statfs_value(file.as_raw_fd(), |stat| stat.f_type as u64) > 0);
+        assert!(statfs_value(file.as_raw_fd(), |stat| stat.f_bsize as u64) > 0);
         drop(file);
         std::fs::remove_file(path).expect("remove probe file");
     }

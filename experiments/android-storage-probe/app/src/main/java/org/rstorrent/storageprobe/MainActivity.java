@@ -101,16 +101,19 @@ public final class MainActivity extends Activity {
     }
 
     private void acquireTree() {
-        updateStatus("Choose Downloads, then approve “Use this folder”.");
+        updateStatus("Choose the probe directory, then approve “Use this folder”.");
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
         intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         intent.addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
-        intent.putExtra(
-                "android.provider.extra.INITIAL_URI",
-                Uri.parse("content://com.android.providers.downloads.documents/root/downloads")
-        );
+        String requestedInitialUri = getIntent().getStringExtra("tree_initial_uri");
+        Uri initialUri = requestedInitialUri == null
+                ? Uri.parse(
+                        "content://com.android.providers.downloads.documents/root/downloads"
+                )
+                : Uri.parse(requestedInitialUri);
+        intent.putExtra("android.provider.extra.INITIAL_URI", initialUri);
         startActivityForResult(intent, TREE_REQUEST);
     }
 
@@ -118,8 +121,8 @@ public final class MainActivity extends Activity {
         JSONObject result = baseResult("initial");
         Uri probeRoot = null;
         try {
+            result.put("tree_uri", treeUri.toString());
             snapshotMemory(result, "memory_before");
-            cleanupOwnProbeTrees(treeUri);
             String runId = Long.toString(System.currentTimeMillis());
             probeRoot = requireUri(DocumentsContract.createDocument(
                     getContentResolver(),
@@ -338,6 +341,7 @@ public final class MainActivity extends Activity {
 
         ParcelFileDescriptor descriptor = opener.open();
         int borrowedFd = descriptor.getFd();
+        putFilesystem(result, borrowedFd, "");
         result.put("logical_before", NativeProbe.logicalBytes(borrowedFd));
         result.put("allocated_before", NativeProbe.allocatedBytes(borrowedFd));
         long runStarted = SystemClock.elapsedRealtimeNanos();
@@ -380,6 +384,7 @@ public final class MainActivity extends Activity {
         long reopenedStarted = SystemClock.elapsedRealtimeNanos();
         long reopenMask;
         try {
+            putFilesystem(result, reopened.getFd(), "_reopened");
             reopenMask = NativeProbe.verifySparse(reopened.getFd(), LOGICAL_LENGTH);
             result.put("logical_reopened", NativeProbe.logicalBytes(reopened.getFd()));
             result.put("allocated_reopened", NativeProbe.allocatedBytes(reopened.getFd()));
@@ -399,6 +404,7 @@ public final class MainActivity extends Activity {
         ParcelFileDescriptor descriptor = opener.open();
         long started = SystemClock.elapsedRealtimeNanos();
         try {
+            putFilesystem(result, descriptor.getFd(), "");
             result.put("error_mask",
                     NativeProbe.verifySparse(descriptor.getFd(), LOGICAL_LENGTH));
             result.put("logical_bytes", NativeProbe.logicalBytes(descriptor.getFd()));
@@ -534,15 +540,6 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void cleanupOwnProbeTrees(Uri treeUri) throws Exception {
-        Uri root = documentUri(treeUri);
-        for (Child child : listChildren(root)) {
-            if (child.name.startsWith(PROBE_PREFIX)) {
-                DocumentsContract.deleteDocument(getContentResolver(), child.uri);
-            }
-        }
-    }
-
     private Uri findChild(Uri parent, String displayName) throws Exception {
         for (Child child : listChildren(parent)) {
             if (displayName.equals(child.name)) {
@@ -622,6 +619,10 @@ public final class MainActivity extends Activity {
             result.put("device", Build.DEVICE);
             result.put("fingerprint", Build.FINGERPRINT);
             result.put("abis", new JSONArray(Arrays.asList(Build.SUPPORTED_ABIS)));
+            String storage = getIntent().getStringExtra("storage");
+            if (storage != null) {
+                result.put("storage", storage);
+            }
             result.put("logical_length", LOGICAL_LENGTH);
             result.put("sparse_offset", SPARSE_OFFSET);
             result.put("block_length", BLOCK_LENGTH);
@@ -646,6 +647,22 @@ public final class MainActivity extends Activity {
     private int descriptorCount() {
         String[] descriptors = new File("/proc/self/fd").list();
         return descriptors == null ? -1 : descriptors.length;
+    }
+
+    private void putFilesystem(
+            JSONObject result,
+            int descriptor,
+            String suffix
+    ) throws JSONException {
+        long type = NativeProbe.filesystemType(descriptor);
+        result.put("filesystem_type" + suffix, type);
+        if (type >= 0) {
+            result.put("filesystem_type_hex" + suffix, Long.toHexString(type));
+        }
+        result.put(
+                "filesystem_block_bytes" + suffix,
+                NativeProbe.filesystemBlockBytes(descriptor)
+        );
     }
 
     private Uri preferenceUri(SharedPreferences preferences, String key) {
