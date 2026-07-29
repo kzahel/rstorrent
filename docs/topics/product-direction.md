@@ -256,7 +256,9 @@ This is recommended direction beyond the accepted first slice:
    foreground-service ownership, direct Rust networking, bounded app-private
    storage, cancellation, and failure cleanup on Android.
 6. Connect the real selective-storage engine to Android SAF capabilities
-   without moving payloads through Kotlin.
+   without moving payloads through Kotlin:
+   [`005-saf-selective-storage.md`](../tactical/005-saf-selective-storage.md)
+   records the active slice.
 7. Define the broader application command/snapshot/event boundary from the
    bootstrap and storage evidence.
 8. Add the first Android and desktop product clients.
@@ -268,12 +270,11 @@ does not distort the protocol vertical slice.
 
 ## Recommended Next Work
 
-Draft the next bounded tactical around a real SAF selective-storage adapter.
-Retain Tactical `003`'s duplicated-descriptor ownership and provider
-capability observations together with Tactical `004`'s service, UniFFI,
-cancellation, and byte-accounting contracts. Define partial creation,
-publication, provider failure, cancellation, and pre-existing-document
-behavior before implementation. Keep payloads in Rust and storage work off
-network and UI executors. Permanent resume format, alternate allocation
-modes, broad provider compatibility, general peer discovery, and UI
-architecture remain separate tacticals.
+Execute Tactical `005` around a real SAF selective-storage adapter. Retain
+Tactical `003`'s duplicated-descriptor ownership and provider capability
+observations together with Tactical `004`'s service, UniFFI, cancellation, and
+byte-accounting contracts. Keep native preparation distinct from provider
+publication and application success, and preserve exact cleanup across
+descriptor, provider, and restart failures. Permanent resume format, alternate
+allocation modes, broad provider compatibility, general peer discovery, and
+UI architecture remain separate tacticals.

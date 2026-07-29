@@ -44,10 +44,16 @@ cleanup. The exFAT result also showed that sparse-mode file growth may perform
 full allocation and block on a destination that does not preserve holes.
 
 [`004-android-engine-bootstrap.md`](docs/tactical/004-android-engine-bootstrap.md)
-is planned. It will package the actual engine behind UniFFI in a foreground
-service, run the edge-rich selective fixture through direct Rust networking
-and app-private storage, and require bounded lifecycle, cancellation, failure,
-and cleanup evidence on the AVD, Chromebook ARCVM, and Moto X4.
+is complete. It packaged the actual engine behind UniFFI in a foreground
+service and passed the edge-rich selective fixture, bounded lifecycle,
+cancellation, failure, and cleanup matrix on the AVD, Chromebook ARCVM, and
+Moto X4.
+
+[`005-saf-selective-storage.md`](docs/tactical/005-saf-selective-storage.md)
+is active. It connects the same real selective engine to user-granted SAF
+documents through synchronously duplicated descriptors, explicit native
+preparation and provider publication phases, restart verification, and
+edge-first provider failure cleanup.
 
 ## Toolchain
 
