@@ -23,5 +23,14 @@
             android:exported="false"
             android:foregroundServiceType="dataSync"
             android:stopWithTask="false" />
+        <receiver
+            android:name=".CommandReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="org.rstorrent.bootstrap.START" />
+                <action android:name="org.rstorrent.bootstrap.CANCEL" />
+                <action android:name="org.rstorrent.bootstrap.OBSERVE" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

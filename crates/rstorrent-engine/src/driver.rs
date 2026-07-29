@@ -5,7 +5,7 @@ use std::io;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use rstorrent_protocol::bencode::MAX_BENCODE_INPUT_LENGTH;
@@ -55,6 +55,7 @@ struct DownloadControlInner {
     buffered_payload_bytes: AtomicUsize,
     payload_high_water: AtomicUsize,
     stored_bytes: AtomicUsize,
+    storage_write_delay_millis: AtomicU64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -72,6 +73,7 @@ impl DownloadControl {
                 buffered_payload_bytes: AtomicUsize::new(0),
                 payload_high_water: AtomicUsize::new(0),
                 stored_bytes: AtomicUsize::new(0),
+                storage_write_delay_millis: AtomicU64::new(0),
             }),
         }
     }
@@ -92,6 +94,13 @@ impl DownloadControl {
         }
     }
 
+    pub fn set_storage_write_delay(&self, delay: Duration) {
+        let millis = delay.as_millis().try_into().unwrap_or(u64::MAX);
+        self.inner
+            .storage_write_delay_millis
+            .store(millis, Ordering::Release);
+    }
+
     fn observe(&self, download: &OnePieceDownload) {
         let budget = download.payload_budget();
         self.inner
@@ -110,6 +119,16 @@ impl DownloadControl {
         self.inner
             .buffered_payload_bytes
             .store(0, Ordering::Release);
+    }
+
+    async fn wait_before_storage(&self) {
+        let millis = self
+            .inner
+            .storage_write_delay_millis
+            .load(Ordering::Acquire);
+        if millis != 0 {
+            tokio::time::sleep(Duration::from_millis(millis)).await;
+        }
     }
 }
 
@@ -742,6 +761,7 @@ async fn process_actions(
                 let index = block.index;
                 let begin = block.begin;
                 let length = block.bytes.len();
+                control.wait_before_storage().await;
                 if let Err(error) = storage.write_block(u64::from(begin), block.bytes).await {
                     download
                         .on_block_write_failed(index, begin)
@@ -796,6 +816,7 @@ async fn process_selective_actions(
                 let index = block.index;
                 let begin = block.begin;
                 let length = block.bytes.len();
+                control.wait_before_storage().await;
                 let stats = match storage.write_block(index, begin, block.bytes).await {
                     Ok(stats) => stats,
                     Err(error) => {

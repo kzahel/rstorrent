@@ -455,6 +455,25 @@ impl PartFile {
             .position(|used| !used)
             .ok_or(PartFileError::OffsetOverflow)?;
         let slot = u32::try_from(slot).map_err(|_| PartFileError::OffsetOverflow)?;
+        let slot_end = self.payload_offset(slot, self.identity.piece_length, 0)?;
+        let current_length = self
+            .file
+            .metadata()
+            .await
+            .map_err(|source| PartFileError::Io {
+                operation: "inspect part-file slot allocation",
+                source,
+            })?
+            .len();
+        if current_length < slot_end {
+            self.file
+                .set_len(slot_end)
+                .await
+                .map_err(|source| PartFileError::Io {
+                    operation: "size part-file slot allocation",
+                    source,
+                })?;
+        }
         self.write_slot_entry(piece_index, Some(slot)).await?;
         self.slots[piece_index] = Some(slot);
         Ok(slot)
@@ -688,6 +707,13 @@ mod tests {
             .await
             .expect("write piece two");
         assert_eq!(part.mapped_piece_count(), 2);
+        assert_eq!(
+            tokio::fs::metadata(&path)
+                .await
+                .expect("part metadata")
+                .len(),
+            part.header_length + 2 * u64::from(part.identity.piece_length)
+        );
         part.sync_payload().await.expect("sync payload");
         drop(part);
 
@@ -921,6 +947,10 @@ mod tests {
         part.write_piece_range(0, 100, b"x")
             .await
             .expect("allocate short payload");
+        part.file
+            .set_len(part.header_length + 101)
+            .await
+            .expect("truncate allocated slot");
         assert!(matches!(
             part.read_piece_range(0, 101, &mut byte).await,
             Err(PartFileError::TruncatedPayload { piece_index: 0, .. })

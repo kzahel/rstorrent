@@ -238,6 +238,7 @@ class EngineService : Service() {
                 "max_buffered_payload_bytes",
                 32L * 1024L,
             ).toULong(),
+            intent.getLongExtra("storage_write_delay_millis", 0).toULong(),
             parseIndexes(intent.getStringExtra("skip_files")),
             parseIndexes(intent.getStringExtra("materialize_files")),
         )

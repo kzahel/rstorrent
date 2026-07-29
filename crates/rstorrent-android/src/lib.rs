@@ -17,6 +17,7 @@ const MAX_PAYLOAD_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_TIMEOUT_SECONDS: u64 = 5 * 60;
 const MAX_JOIN_MILLIS: u64 = 5 * 60 * 1_000;
 const MAX_FILE_SELECTIONS: usize = 1_024;
+const MAX_STORAGE_WRITE_DELAY_MILLIS: u64 = 5_000;
 
 uniffi::setup_scaffolding!();
 
@@ -27,6 +28,7 @@ pub struct EngineConfig {
     pub peer_port: u16,
     pub timeout_seconds: u64,
     pub max_buffered_payload_bytes: u64,
+    pub storage_write_delay_millis: u64,
     pub skip_files: Vec<u32>,
     pub materialize_files: Vec<u32>,
 }
@@ -236,7 +238,7 @@ impl EngineSession {
     }
 
     pub fn start(&self, config: EngineConfig) -> StartResult {
-        let config = match validate_config(config) {
+        let (config, storage_write_delay) = match validate_config(config) {
             Ok(config) => config,
             Err(message) => {
                 let inner = self.lock();
@@ -271,6 +273,7 @@ impl EngineSession {
         let generation = inner.generation;
         let started = Instant::now();
         let control = DownloadControl::new();
+        control.set_storage_write_delay(storage_write_delay);
         inner.state = SessionState::Running;
         inner.started = Some(started);
         inner.control = Some(control.clone());
@@ -362,7 +365,7 @@ pub fn interface_version() -> String {
     INTERFACE_VERSION.to_owned()
 }
 
-fn validate_config(config: EngineConfig) -> Result<DownloadConfig, String> {
+fn validate_config(config: EngineConfig) -> Result<(DownloadConfig, Duration), String> {
     if config.metainfo_path.is_empty() || config.output_path.is_empty() {
         return Err("metainfo and output paths must be nonempty".to_owned());
     }
@@ -387,24 +390,33 @@ fn validate_config(config: EngineConfig) -> Result<DownloadConfig, String> {
             "file selection lists may contain at most {MAX_FILE_SELECTIONS} entries"
         ));
     }
+    if config.storage_write_delay_millis > MAX_STORAGE_WRITE_DELAY_MILLIS {
+        return Err(format!(
+            "storage write delay may be at most \
+             {MAX_STORAGE_WRITE_DELAY_MILLIS} milliseconds"
+        ));
+    }
 
-    Ok(DownloadConfig {
-        metainfo_path: PathBuf::from(config.metainfo_path),
-        peer: SocketAddr::from((Ipv4Addr::LOCALHOST, config.peer_port)),
-        output_path: PathBuf::from(config.output_path),
-        timeout: Duration::from_secs(config.timeout_seconds),
-        max_buffered_payload_bytes: config.max_buffered_payload_bytes as usize,
-        skip_files: config
-            .skip_files
-            .into_iter()
-            .map(|index| index as usize)
-            .collect(),
-        materialize_files: config
-            .materialize_files
-            .into_iter()
-            .map(|index| index as usize)
-            .collect(),
-    })
+    Ok((
+        DownloadConfig {
+            metainfo_path: PathBuf::from(config.metainfo_path),
+            peer: SocketAddr::from((Ipv4Addr::LOCALHOST, config.peer_port)),
+            output_path: PathBuf::from(config.output_path),
+            timeout: Duration::from_secs(config.timeout_seconds),
+            max_buffered_payload_bytes: config.max_buffered_payload_bytes as usize,
+            skip_files: config
+                .skip_files
+                .into_iter()
+                .map(|index| index as usize)
+                .collect(),
+            materialize_files: config
+                .materialize_files
+                .into_iter()
+                .map(|index| index as usize)
+                .collect(),
+        },
+        Duration::from_millis(config.storage_write_delay_millis),
+    ))
 }
 
 fn run_worker(
@@ -572,6 +584,7 @@ mod tests {
             peer_port,
             timeout_seconds: 30,
             max_buffered_payload_bytes: 32 * 1024,
+            storage_write_delay_millis: 0,
             skip_files: Vec::new(),
             materialize_files: Vec::new(),
         }

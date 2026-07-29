@@ -22,3 +22,20 @@ remain under ignored build directories.
 Device execution is owned by `run_bootstrap.py`. Do not install or start this
 harness by selecting the first ADB device; the runner verifies an explicit
 listed target before mutation.
+
+The runner enters the pinned libtorrent environment automatically. Profiles
+are explicit and repeatable:
+
+```bash
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target avd --avd jstorrent-tablet --runs 3 --profile success
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target avd --profile slow-storage --profile cancellation \
+  --profile peer-failure --profile duplicate-start \
+  --profile activity-recreation --profile preexisting-artifacts
+```
+
+Available targets are `avd`, `motox4`, and `chromeos`. Every device command is
+addressed through the exact verified target controller. The runner owns and
+removes its reverse port, controlled seed, app-private run IDs, application,
+and fresh AVD session.

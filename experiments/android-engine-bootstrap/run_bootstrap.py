@@ -1,0 +1,1139 @@
+#!/usr/bin/env python3
+"""Run Tactical 004 profiles against an explicit Android target."""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import gc
+import hashlib
+import importlib.util
+import json
+import os
+import shutil
+import socket
+import struct
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from types import ModuleType
+from typing import Any, Sequence
+
+
+PACKAGE = "org.rstorrent.bootstrap"
+ACTIVITY = f"{PACKAGE}/.MainActivity"
+RECEIVER = f"{PACKAGE}/.CommandReceiver"
+ACTION_START = "org.rstorrent.bootstrap.START"
+ACTION_CANCEL = "org.rstorrent.bootstrap.CANCEL"
+ACTION_OBSERVE = "org.rstorrent.bootstrap.OBSERVE"
+EXPECTED_INTERFACE = "rstorrent-android/0.1.0;uniffi/0.31.0"
+PAYLOAD_LIMIT = 32 * 1024
+RESULT_TIMEOUT_SECONDS = 75
+PROFILE_CHOICES = (
+    "success",
+    "slow-storage",
+    "cancellation",
+    "peer-failure",
+    "duplicate-start",
+    "activity-recreation",
+    "preexisting-artifacts",
+)
+
+
+class BootstrapFailure(RuntimeError):
+    pass
+
+
+def repository_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def bootstrap_root() -> Path:
+    return Path(__file__).resolve().parent
+
+
+def load_module(name: str, path: Path) -> ModuleType:
+    specification = importlib.util.spec_from_file_location(name, path)
+    if specification is None or specification.loader is None:
+        raise BootstrapFailure(f"could not load module at {path}")
+    module = importlib.util.module_from_spec(specification)
+    sys.modules[name] = module
+    specification.loader.exec_module(module)
+    return module
+
+
+def ensure_interop_environment() -> None:
+    try:
+        import libtorrent  # noqa: F401
+    except ModuleNotFoundError:
+        if os.environ.get("RSTORRENT_BOOTSTRAP_UV") == "1":
+            raise BootstrapFailure(
+                "libtorrent is unavailable inside the pinned interop environment"
+            )
+        environment = os.environ.copy()
+        environment["RSTORRENT_BOOTSTRAP_UV"] = "1"
+        command = [
+            "uv",
+            "run",
+            "--project",
+            str(repository_root() / "tests" / "interop"),
+            "python",
+            str(Path(__file__).resolve()),
+            *sys.argv[1:],
+        ]
+        os.execvpe(command[0], command, environment)
+
+
+def load_support() -> tuple[ModuleType, ModuleType]:
+    probe = load_module(
+        "rstorrent_storage_probe_support",
+        repository_root() / "experiments" / "android-storage-probe" / "run_probe.py",
+    )
+    interop = load_module(
+        "rstorrent_interop_support",
+        repository_root() / "tests" / "interop" / "first_verified_piece.py",
+    )
+    return probe, interop
+
+
+def build_apk() -> Path:
+    completed = subprocess.run(
+        [str(bootstrap_root() / "build.sh")],
+        cwd=repository_root(),
+        capture_output=True,
+        text=True,
+        timeout=420,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise BootstrapFailure(
+            "Android bootstrap build failed\n"
+            f"stdout:\n{completed.stdout}\n"
+            f"stderr:\n{completed.stderr}"
+        )
+    lines = completed.stdout.strip().splitlines()
+    apk = Path(lines[-1]) if lines else Path()
+    if not apk.is_file():
+        raise BootstrapFailure("build did not report an APK")
+    return apk
+
+
+@dataclass
+class SeedFixture:
+    run_path: Path
+    torrent_path: Path
+    expected_file_hashes: dict[str, str]
+    piece_hashes: list[str]
+    info_hash: str
+    session: Any
+    handle: Any
+    host_port: int
+    alerts: list[str]
+
+    @classmethod
+    def create(cls, interop: ModuleType, label: str) -> "SeedFixture":
+        run_path = Path(tempfile.mkdtemp(prefix=f"rstorrent-android-{label}-"))
+        alerts: list[str] = []
+        (
+            torrent_path,
+            seed_directory,
+            torrent_info,
+            expected_file_hashes,
+            piece_hashes,
+        ) = interop.create_selective_fixture(run_path)
+        session = interop.create_session()
+        host_port = interop.wait_for_listener(session, alerts)
+        handle = interop.add_seed(
+            session,
+            torrent_info,
+            seed_directory,
+            alerts,
+        )
+        return cls(
+            run_path=run_path,
+            torrent_path=torrent_path,
+            expected_file_hashes=expected_file_hashes,
+            piece_hashes=piece_hashes,
+            info_hash=str(torrent_info.info_hashes().v1),
+            session=session,
+            handle=handle,
+            host_port=host_port,
+            alerts=alerts,
+        )
+
+    def close(self) -> None:
+        try:
+            self.alerts.extend(
+                alert.message() for alert in self.session.pop_alerts()
+            )
+        except Exception:
+            pass
+        try:
+            if self.handle.is_valid():
+                self.session.remove_torrent(self.handle)
+        except Exception:
+            pass
+        try:
+            self.session.pause()
+        except Exception:
+            pass
+        self.handle = None
+        self.session = None
+        gc.collect()
+        shutil.rmtree(self.run_path)
+
+
+class RequestClosingProxy:
+    def __init__(self, upstream_port: int) -> None:
+        self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.listener.bind(("127.0.0.1", 0))
+        self.listener.listen(1)
+        self.port = self.listener.getsockname()[1]
+        self.upstream_port = upstream_port
+        self.saw_request = threading.Event()
+        self.finished = threading.Event()
+        self.failure: BaseException | None = None
+        self.thread = threading.Thread(
+            target=self._run,
+            name="rstorrent-request-closing-proxy",
+            daemon=True,
+        )
+        self.thread.start()
+
+    def _run(self) -> None:
+        client: socket.socket | None = None
+        upstream: socket.socket | None = None
+        try:
+            self.listener.settimeout(30)
+            client, _ = self.listener.accept()
+            upstream = socket.create_connection(
+                ("127.0.0.1", self.upstream_port),
+                timeout=10,
+            )
+            stop = threading.Event()
+            server_thread = threading.Thread(
+                target=self._relay,
+                args=(upstream, client, stop, False),
+                daemon=True,
+            )
+            server_thread.start()
+            self._relay(client, upstream, stop, True)
+            stop.set()
+            server_thread.join(timeout=2)
+        except BaseException as error:
+            self.failure = error
+        finally:
+            for stream in (client, upstream):
+                if stream is not None:
+                    try:
+                        stream.shutdown(socket.SHUT_RDWR)
+                    except OSError:
+                        pass
+                    stream.close()
+            self.finished.set()
+
+    def _relay(
+        self,
+        source: socket.socket,
+        destination: socket.socket,
+        stop: threading.Event,
+        inspect_requests: bool,
+    ) -> None:
+        buffered = bytearray()
+        handshake_remaining = 68
+        source.settimeout(1)
+        while not stop.is_set():
+            try:
+                chunk = source.recv(64 * 1024)
+            except TimeoutError:
+                continue
+            if not chunk:
+                return
+            destination.sendall(chunk)
+            if not inspect_requests:
+                continue
+            buffered.extend(chunk)
+            if handshake_remaining:
+                consumed = min(handshake_remaining, len(buffered))
+                del buffered[:consumed]
+                handshake_remaining -= consumed
+                if handshake_remaining:
+                    continue
+            while len(buffered) >= 4:
+                frame_length = struct.unpack(">I", buffered[:4])[0]
+                if len(buffered) < 4 + frame_length:
+                    break
+                frame = bytes(buffered[4 : 4 + frame_length])
+                del buffered[: 4 + frame_length]
+                if frame and frame[0] == 6:
+                    self.saw_request.set()
+                    stop.set()
+                    return
+
+    def close(self) -> None:
+        try:
+            self.listener.close()
+        except OSError:
+            pass
+        self.thread.join(timeout=5)
+        if self.thread.is_alive():
+            raise BootstrapFailure("peer-failure proxy did not terminate")
+        if self.failure is not None and not self.saw_request.is_set():
+            raise BootstrapFailure(f"peer-failure proxy failed: {self.failure}")
+
+
+@dataclass
+class ReverseTransport:
+    target: Any
+    device_port: int
+    chrome_tunnel: subprocess.Popen[str] | None = None
+
+    @classmethod
+    def create(
+        cls,
+        target: Any,
+        target_kind: str,
+        host_port: int,
+        ordinal: int,
+    ) -> "ReverseTransport":
+        device_port = 39_000 + (ordinal % 1_000)
+        chrome_tunnel: subprocess.Popen[str] | None = None
+        if target_kind == "chromeos":
+            chrome_tunnel = subprocess.Popen(
+                [
+                    "ssh",
+                    "-N",
+                    "-o",
+                    "ExitOnForwardFailure=yes",
+                    "-R",
+                    f"127.0.0.1:{device_port}:127.0.0.1:{host_port}",
+                    "chromeroot",
+                ],
+                cwd=repository_root(),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            time.sleep(0.4)
+            if chrome_tunnel.poll() is not None:
+                detail = chrome_tunnel.stderr.read() if chrome_tunnel.stderr else ""
+                raise BootstrapFailure(
+                    f"ChromeOS reverse SSH tunnel failed: {detail}"
+                )
+            reverse_host_port = device_port
+        else:
+            reverse_host_port = host_port
+        result = target.run(
+            [
+                "reverse",
+                f"tcp:{device_port}",
+                f"tcp:{reverse_host_port}",
+            ],
+            timeout=20,
+            check=False,
+        )
+        if result.returncode != 0:
+            if chrome_tunnel is not None:
+                chrome_tunnel.terminate()
+                chrome_tunnel.wait(timeout=5)
+            raise BootstrapFailure(
+                "adb reverse failed\n"
+                f"stdout:\n{result.stdout}\n"
+                f"stderr:\n{result.stderr}"
+            )
+        return cls(target, device_port, chrome_tunnel)
+
+    def close(self) -> None:
+        self.target.run(
+            ["reverse", "--remove", f"tcp:{self.device_port}"],
+            timeout=15,
+            check=False,
+        )
+        if self.chrome_tunnel is not None:
+            self.chrome_tunnel.terminate()
+            try:
+                self.chrome_tunnel.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.chrome_tunnel.kill()
+                self.chrome_tunnel.wait(timeout=5)
+
+
+def clear_application(target: Any) -> None:
+    target.shell(["am", "force-stop", PACKAGE], check=False)
+    cleared = target.shell(["pm", "clear", PACKAGE], check=False)
+    if cleared.returncode != 0 or "Success" not in cleared.stdout:
+        raise BootstrapFailure(
+            f"could not clear bootstrap app data: {cleared.stdout}"
+        )
+    target.run(["logcat", "-c"], check=False)
+
+
+def launch(
+    target: Any,
+    action: str,
+    *,
+    run_id: str,
+    fixture: SeedFixture | None = None,
+    peer_port: int | None = None,
+    scenario: str | None = None,
+    storage_delay_millis: int = 0,
+    collision: str = "",
+    via_receiver: bool = False,
+) -> None:
+    arguments = ["am", "broadcast" if via_receiver else "start"]
+    arguments.extend(
+        [
+            "-a",
+            action,
+            "-n",
+            RECEIVER if via_receiver else ACTIVITY,
+        ]
+    )
+    if not via_receiver:
+        arguments.extend(
+            [
+                "--ez",
+                "finish_activity",
+                "true",
+            ]
+        )
+    arguments.extend(
+        [
+        "--es",
+        "run_id",
+        run_id,
+        ]
+    )
+    if action == ACTION_START:
+        if fixture is None or peer_port is None:
+            raise BootstrapFailure("start action requires fixture and peer port")
+        metainfo = base64.b64encode(fixture.torrent_path.read_bytes()).decode("ascii")
+        arguments.extend(
+            [
+                "--es",
+                "scenario",
+                scenario or "success",
+                "--es",
+                "metainfo_base64",
+                metainfo,
+                "--ei",
+                "peer_port",
+                str(peer_port),
+                "--el",
+                "timeout_seconds",
+                "45",
+                "--el",
+                "max_buffered_payload_bytes",
+                str(PAYLOAD_LIMIT),
+                "--el",
+                "storage_write_delay_millis",
+                str(storage_delay_millis),
+                "--es",
+                "skip_files",
+                "1,2",
+                "--es",
+                "materialize_files",
+                "2",
+            ]
+        )
+        if collision:
+            arguments.extend(["--es", "collision", collision])
+    completed = target.shell(arguments, timeout=30, check=False)
+    if completed.returncode != 0 or "Error:" in completed.stdout:
+        raise BootstrapFailure(
+            f"activity launch failed for {action}\n"
+            f"stdout:\n{completed.stdout}\n"
+            f"stderr:\n{completed.stderr}"
+        )
+
+
+def app_text(target: Any, relative_path: str) -> str | None:
+    result = target.shell(
+        ["run-as", PACKAGE, "cat", relative_path],
+        timeout=10,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout
+
+
+def app_bytes(target: Any, relative_path: str) -> bytes | None:
+    completed = subprocess.run(
+        [
+            *target.prefix,
+            "exec-out",
+            "run-as",
+            PACKAGE,
+            "cat",
+            relative_path,
+        ],
+        cwd=repository_root(),
+        capture_output=True,
+        timeout=20,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return None
+    return completed.stdout
+
+
+def app_exists(target: Any, relative_path: str) -> bool:
+    result = target.shell(
+        ["run-as", PACKAGE, "test", "-e", relative_path],
+        timeout=10,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def wait_result(target: Any, run_id: str) -> dict[str, Any]:
+    relative = f"files/results/{run_id}.json"
+    deadline = time.monotonic() + RESULT_TIMEOUT_SECONDS
+    last = ""
+    while time.monotonic() < deadline:
+        text = app_text(target, relative)
+        if text:
+            last = text.strip()
+            try:
+                return json.loads(last)
+            except json.JSONDecodeError:
+                pass
+        time.sleep(0.2)
+    logcat = target.run(
+        ["logcat", "-d", "-t", "400"],
+        timeout=20,
+        check=False,
+    ).stdout
+    raise BootstrapFailure(
+        f"timed out waiting for {relative}; last={last!r}\n"
+        f"logcat tail:\n{logcat}"
+    )
+
+
+def read_events(target: Any, run_id: str) -> list[dict[str, Any]]:
+    text = app_text(target, f"files/sessions/{run_id}/events.jsonl")
+    if not text:
+        return []
+    events = []
+    for line in text.splitlines():
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError as error:
+            raise BootstrapFailure(f"invalid event JSON: {line!r}") from error
+    return events
+
+
+def wait_for_event(
+    target: Any,
+    run_id: str,
+    predicate: Any,
+    description: str,
+    timeout_seconds: float = 15,
+    use_activity: bool = False,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        launch(
+            target,
+            ACTION_OBSERVE,
+            run_id=run_id,
+            via_receiver=not use_activity,
+        )
+        for event in read_events(target, run_id):
+            if predicate(event):
+                return event
+        time.sleep(0.15)
+    raise BootstrapFailure(f"timed out waiting for event: {description}")
+
+
+def validate_common(result: dict[str, Any], identity: dict[str, str]) -> None:
+    if result.get("interface_version") != EXPECTED_INTERFACE:
+        raise BootstrapFailure("result reported the wrong native interface")
+    if not result.get("joined"):
+        raise BootstrapFailure("engine task was not joined")
+    snapshot = result.get("snapshot", {})
+    if snapshot.get("task_alive"):
+        raise BootstrapFailure("terminal result still reports a live engine task")
+    if snapshot.get("buffered_payload_bytes") != 0:
+        raise BootstrapFailure("terminal payload reservation is nonzero")
+    if snapshot.get("payload_high_water", 0) > PAYLOAD_LIMIT:
+        raise BootstrapFailure("payload high water exceeded the configured limit")
+    device = result.get("device", {})
+    if str(device.get("api")) != identity["api"]:
+        raise BootstrapFailure("application and ADB API identities differ")
+    if device.get("model") != identity["model"]:
+        raise BootstrapFailure("application and ADB model identities differ")
+    if device.get("fingerprint") != identity["fingerprint"]:
+        raise BootstrapFailure("application and ADB fingerprints differ")
+
+
+def sha1_bytes(payload: bytes) -> str:
+    return hashlib.sha1(payload).hexdigest()
+
+
+def validate_success(
+    target: Any,
+    result: dict[str, Any],
+    fixture: SeedFixture,
+    run_id: str,
+    identity: dict[str, str],
+) -> None:
+    validate_common(result, identity)
+    terminal = result.get("terminal", {})
+    if terminal.get("outcome") != "SUCCEEDED":
+        raise BootstrapFailure(
+            "successful profile ended unexpectedly: "
+            f"{json.dumps(terminal, sort_keys=True)}; "
+            f"events={json.dumps(read_events(target, run_id), sort_keys=True)}"
+        )
+    report = terminal.get("report", {})
+    expected = {
+        "info_hash": fixture.info_hash,
+        "final_piece_hash": fixture.piece_hashes[-1],
+        "bytes_written": 97_232,
+        "block_count": 7,
+        "payload_limit": PAYLOAD_LIMIT,
+        "verification_buffer": 16 * 1024,
+        "piece_count": 5,
+        "verified_piece_count": 4,
+        "skipped_piece_count": 1,
+        "selected_file_bytes": 73_000,
+        "skipped_file_bytes": 57_000,
+        "padding_bytes": 3_304,
+        "selected_written_bytes": 73_000,
+        "part_written_bytes": 24_232,
+        "materialized_bytes": 7_000,
+        "part_slots_before": 2,
+        "part_slots_after": 2,
+        "part_reopened": True,
+    }
+    for key, value in expected.items():
+        if report.get(key) != value:
+            raise BootstrapFailure(
+                f"report {key}={report.get(key)!r}, expected {value!r}"
+            )
+    if not 0 < report.get("payload_high_water", 0) <= PAYLOAD_LIMIT:
+        raise BootstrapFailure("successful payload high water is invalid")
+
+    root = f"files/sessions/{run_id}"
+    for relative_path, _, padding in fixture_files():
+        output_path = f"{root}/downloaded/{relative_path}"
+        if padding or relative_path == "skip/large.bin":
+            if app_exists(target, output_path):
+                raise BootstrapFailure(
+                    f"skipped or padding path was published: {relative_path}"
+                )
+            continue
+        payload = app_bytes(target, output_path)
+        if payload is None:
+            raise BootstrapFailure(f"wanted output is absent: {relative_path}")
+        if sha1_bytes(payload) != fixture.expected_file_hashes[relative_path]:
+            raise BootstrapFailure(f"wanted output hash differs: {relative_path}")
+    if app_exists(target, f"{root}/.downloaded.rstorrent-staging"):
+        raise BootstrapFailure("published staging root survived")
+    if not app_exists(target, f"{root}/.downloaded.rstorrent-parts"):
+        raise BootstrapFailure("validated part file is absent")
+
+
+def fixture_files() -> Sequence[tuple[str, int, bool]]:
+    return (
+        ("wanted/start.bin", 20_000, False),
+        ("skip/large.bin", 50_000, False),
+        ("later.bin", 7_000, False),
+        ("wanted/end.bin", 18_000, False),
+        ("wanted/empty.bin", 0, False),
+        (".pad/3304", 3_304, True),
+        ("tail.bin", 35_000, False),
+    )
+
+
+def cleanup_run(target: Any, run_id: str) -> None:
+    if not run_id or any(
+        character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+        for character in run_id
+    ):
+        raise BootstrapFailure(f"refusing unsafe cleanup run ID {run_id!r}")
+    for path in (
+        f"files/sessions/{run_id}",
+        f"files/results/{run_id}.json",
+        f"files/results/.{run_id}.json.tmp",
+    ):
+        target.shell(
+            ["run-as", PACKAGE, "rm", "-rf", path],
+            timeout=15,
+            check=False,
+        )
+        if app_exists(target, path):
+            raise BootstrapFailure(f"app-private cleanup failed for {path}")
+
+
+def peer_count(fixture: SeedFixture) -> int:
+    try:
+        return int(fixture.handle.status().num_peers)
+    except Exception:
+        return -1
+
+
+def run_standard_profile(
+    target: Any,
+    target_kind: str,
+    identity: dict[str, str],
+    interop: ModuleType,
+    profile: str,
+    ordinal: int,
+) -> dict[str, Any]:
+    label = f"{target_kind}-{profile}-{ordinal}"
+    run_id = f"{profile.replace('-', '_')}-{ordinal}"
+    fixture = SeedFixture.create(interop, label)
+    proxy: RequestClosingProxy | None = None
+    transport: ReverseTransport | None = None
+    try:
+        clear_application(target)
+        host_port = fixture.host_port
+        if profile == "peer-failure":
+            proxy = RequestClosingProxy(host_port)
+            host_port = proxy.port
+        transport = ReverseTransport.create(
+            target,
+            target_kind,
+            host_port,
+            ordinal,
+        )
+        delay = {
+            "slow-storage": 2_000,
+            "duplicate-start": 750,
+            "activity-recreation": 750,
+        }.get(profile, 0)
+        launch(
+            target,
+            ACTION_START,
+            run_id=run_id,
+            fixture=fixture,
+            peer_port=transport.device_port,
+            scenario=profile,
+            storage_delay_millis=delay,
+        )
+
+        observed: dict[str, Any] | None = None
+        if profile == "slow-storage":
+            observed = wait_for_event(
+                target,
+                run_id,
+                lambda event: (
+                    event.get("event") == "activity_observed"
+                    and 0 < event.get("stored_bytes", 0) < 97_232
+                    and event.get("task_alive") is True
+                ),
+                "bounded slow-storage progress",
+            )
+        elif profile == "duplicate-start":
+            launch(
+                target,
+                ACTION_START,
+                run_id=run_id,
+                fixture=fixture,
+                peer_port=transport.device_port,
+                scenario=profile,
+                storage_delay_millis=delay,
+                via_receiver=True,
+            )
+        elif profile == "activity-recreation":
+            observed = wait_for_event(
+                target,
+                run_id,
+                lambda event: (
+                    event.get("event") == "activity_observed"
+                    and event.get("task_alive") is True
+                ),
+                "activity recreation while engine is active",
+                use_activity=True,
+            )
+
+        result = wait_result(target, run_id)
+        if profile == "peer-failure":
+            validate_common(result, identity)
+            terminal = result.get("terminal", {})
+            if terminal.get("outcome") != "FAILED":
+                raise BootstrapFailure("peer-failure profile did not fail")
+            if terminal.get("failure_kind") != "PEER":
+                raise BootstrapFailure(
+                    "peer-failure profile was not typed as PEER"
+                )
+            if proxy is None or not proxy.saw_request.wait(timeout=2):
+                raise BootstrapFailure("peer failed before a request was observed")
+            assert_unverified_cleanup(target, run_id)
+        else:
+            validate_success(target, result, fixture, run_id, identity)
+        events = read_events(target, run_id)
+        if profile == "duplicate-start" and not any(
+            event.get("event") == "duplicate_start"
+            and event.get("disposition") == "BUSY"
+            for event in events
+        ):
+            raise BootstrapFailure("duplicate start was not rejected as BUSY")
+        if profile == "activity-recreation" and observed is None:
+            raise BootstrapFailure("activity recreation was not observed")
+        if profile == "slow-storage":
+            if observed is None:
+                raise BootstrapFailure("slow storage was not observed in flight")
+            if result["snapshot"]["payload_high_water"] > PAYLOAD_LIMIT:
+                raise BootstrapFailure("slow storage exceeded its payload limit")
+
+        output = {
+            "target": target_kind,
+            "profile": profile,
+            "run": ordinal,
+            "result": result,
+            "events": events,
+            "host_peer_count_after": peer_count(fixture),
+        }
+        cleanup_run(target, run_id)
+        return output
+    finally:
+        if transport is not None:
+            transport.close()
+        if proxy is not None:
+            proxy.close()
+        fixture.close()
+
+
+def assert_unverified_cleanup(target: Any, run_id: str) -> None:
+    root = f"files/sessions/{run_id}"
+    for path in (
+        f"{root}/downloaded",
+        f"{root}/.downloaded.rstorrent-staging",
+        f"{root}/.downloaded.rstorrent-parts",
+    ):
+        if app_exists(target, path):
+            raise BootstrapFailure(
+                f"unverified artifact survived terminal cleanup: {path}"
+            )
+
+
+def run_cancellation_profile(
+    target: Any,
+    target_kind: str,
+    identity: dict[str, str],
+    interop: ModuleType,
+    ordinal: int,
+) -> dict[str, Any]:
+    results = []
+    for phase, after_progress in (("before", False), ("after", True)):
+        run_id = f"cancellation_{phase}-{ordinal}"
+        fixture = SeedFixture.create(
+            interop,
+            f"{target_kind}-cancellation-{phase}-{ordinal}",
+        )
+        transport: ReverseTransport | None = None
+        try:
+            clear_application(target)
+            transport = ReverseTransport.create(
+                target,
+                target_kind,
+                fixture.host_port,
+                ordinal + (100 if after_progress else 0),
+            )
+            launch(
+                target,
+                ACTION_START,
+                run_id=run_id,
+                fixture=fixture,
+                peer_port=transport.device_port,
+                scenario=f"cancellation-{phase}",
+                storage_delay_millis=1_000,
+            )
+            if after_progress:
+                wait_for_event(
+                    target,
+                    run_id,
+                    lambda event: (
+                        event.get("event") == "activity_observed"
+                        and event.get("stored_bytes", 0) >= 16_384
+                        and event.get("task_alive") is True
+                    ),
+                    "accepted block before cancellation",
+                )
+            launch(
+                target,
+                ACTION_CANCEL,
+                run_id=run_id,
+                via_receiver=True,
+            )
+            result = wait_result(target, run_id)
+            validate_common(result, identity)
+            terminal = result.get("terminal", {})
+            if terminal.get("outcome") != "CANCELLED":
+                raise BootstrapFailure(
+                    f"{phase} cancellation ended as {terminal.get('outcome')}"
+                )
+            stored = result["snapshot"]["stored_bytes"]
+            if after_progress and stored < 16_384:
+                raise BootstrapFailure(
+                    "after-progress cancellation stored no complete block"
+                )
+            if not after_progress and stored != 0:
+                raise BootstrapFailure(
+                    "before-progress cancellation accepted payload"
+                )
+            assert_unverified_cleanup(target, run_id)
+
+            original = app_bytes(
+                target,
+                f"files/results/{run_id}.json",
+            )
+            launch(
+                target,
+                ACTION_CANCEL,
+                run_id=run_id,
+                via_receiver=True,
+            )
+            time.sleep(0.5)
+            repeated = app_bytes(
+                target,
+                f"files/results/{run_id}.json",
+            )
+            if original != repeated:
+                raise BootstrapFailure(
+                    "repeated terminal cancellation changed the result"
+                )
+            results.append(
+                {
+                    "phase": phase,
+                    "result": result,
+                    "events": read_events(target, run_id),
+                }
+            )
+            cleanup_run(target, run_id)
+        finally:
+            if transport is not None:
+                transport.close()
+            fixture.close()
+    return {
+        "target": target_kind,
+        "profile": "cancellation",
+        "run": ordinal,
+        "phases": results,
+    }
+
+
+def collision_bytes(
+    target: Any,
+    run_id: str,
+    collision: str,
+) -> bytes | None:
+    root = f"files/sessions/{run_id}"
+    paths = {
+        "output": f"{root}/downloaded",
+        "staging": f"{root}/.downloaded.rstorrent-staging/sentinel",
+        "part": f"{root}/.downloaded.rstorrent-parts",
+        "result": f"files/results/{run_id}.json",
+    }
+    return app_bytes(target, paths[collision])
+
+
+def run_preexisting_profile(
+    target: Any,
+    target_kind: str,
+    identity: dict[str, str],
+    interop: ModuleType,
+    ordinal: int,
+) -> dict[str, Any]:
+    collisions = []
+    for collision_index, collision in enumerate(
+        ("output", "staging", "part", "result"),
+        start=1,
+    ):
+        run_id = f"preexisting_{collision}-{ordinal}"
+        fixture = SeedFixture.create(
+            interop,
+            f"{target_kind}-{run_id}",
+        )
+        transport: ReverseTransport | None = None
+        try:
+            clear_application(target)
+            transport = ReverseTransport.create(
+                target,
+                target_kind,
+                fixture.host_port,
+                ordinal + 200 + collision_index,
+            )
+            launch(
+                target,
+                ACTION_START,
+                run_id=run_id,
+                fixture=fixture,
+                peer_port=transport.device_port,
+                scenario="preexisting-artifacts",
+                collision=collision,
+            )
+            expected = f"RSTORRENT_SENTINEL:{collision}".encode()
+            if collision == "result":
+                deadline = time.monotonic() + 10
+                while time.monotonic() < deadline:
+                    if collision_bytes(target, run_id, collision) == expected:
+                        break
+                    time.sleep(0.2)
+                else:
+                    raise BootstrapFailure(
+                        "preexisting result sentinel was not preserved"
+                    )
+                result: dict[str, Any] | None = None
+            else:
+                result = wait_result(target, run_id)
+                validate_common(result, identity)
+                terminal = result.get("terminal", {})
+                if terminal.get("outcome") != "FAILED":
+                    raise BootstrapFailure(
+                        f"{collision} collision did not fail"
+                    )
+                if terminal.get("failure_kind") != "PREEXISTING_ARTIFACT":
+                    raise BootstrapFailure(
+                        f"{collision} collision had kind "
+                        f"{terminal.get('failure_kind')}"
+                    )
+            if collision_bytes(target, run_id, collision) != expected:
+                raise BootstrapFailure(
+                    f"{collision} sentinel changed during refusal"
+                )
+            time.sleep(0.3)
+            if peer_count(fixture) not in (0, -1):
+                raise BootstrapFailure(
+                    f"{collision} refusal connected to the peer"
+                )
+            collisions.append(
+                {
+                    "collision": collision,
+                    "result": result,
+                    "sentinel_preserved": True,
+                    "peer_connections": peer_count(fixture),
+                }
+            )
+            cleanup_run(target, run_id)
+        finally:
+            if transport is not None:
+                transport.close()
+            fixture.close()
+    return {
+        "target": target_kind,
+        "profile": "preexisting-artifacts",
+        "run": ordinal,
+        "collisions": collisions,
+    }
+
+
+def parse_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--target",
+        choices=["avd", "chromeos", "motox4"],
+        required=True,
+    )
+    parser.add_argument("--avd", default="jstorrent-tablet")
+    parser.add_argument("--runs", type=int, choices=range(1, 6), default=1)
+    parser.add_argument(
+        "--profile",
+        action="append",
+        choices=PROFILE_CHOICES,
+        dest="profiles",
+    )
+    parser.add_argument("--no-build", action="store_true")
+    return parser.parse_args()
+
+
+def main() -> int:
+    arguments = parse_arguments()
+    ensure_interop_environment()
+    probe, interop = load_support()
+    apk = (
+        bootstrap_root() / "app" / "build" / "outputs" / "apk" / "debug" /
+        "app-debug.apk"
+        if arguments.no_build
+        else build_apk()
+    )
+    if not apk.is_file():
+        print(f"bootstrap APK is unavailable at {apk}", file=sys.stderr)
+        return 1
+
+    profiles = arguments.profiles or ["success"]
+    avd_session = None
+    target = None
+    results: list[dict[str, Any]] = []
+    failure: BaseException | None = None
+    try:
+        if arguments.target == "avd":
+            avd_session = probe.start_avd(arguments.avd)
+            target = avd_session.target
+        elif arguments.target == "chromeos":
+            target = probe.prepare_chromeos()
+        else:
+            target = probe.prepare_moto()
+        identity = probe.verify_target(target, arguments.target)
+        probe.install_apk(target, arguments.target, apk)
+
+        for profile in profiles:
+            repetitions = arguments.runs if profile == "success" else 1
+            for ordinal in range(1, repetitions + 1):
+                if profile == "cancellation":
+                    result = run_cancellation_profile(
+                        target,
+                        arguments.target,
+                        identity,
+                        interop,
+                        ordinal,
+                    )
+                elif profile == "preexisting-artifacts":
+                    result = run_preexisting_profile(
+                        target,
+                        arguments.target,
+                        identity,
+                        interop,
+                        ordinal,
+                    )
+                else:
+                    result = run_standard_profile(
+                        target,
+                        arguments.target,
+                        identity,
+                        interop,
+                        profile,
+                        ordinal,
+                    )
+                results.append(result)
+                print(json.dumps(result, sort_keys=True), flush=True)
+    except BaseException as error:
+        failure = error
+    finally:
+        if target is not None:
+            target.shell(["am", "force-stop", PACKAGE], check=False)
+            target.shell(["pm", "clear", PACKAGE], check=False)
+            target.run(["reverse", "--remove-all"], timeout=15, check=False)
+            target.run(["uninstall", PACKAGE], timeout=30, check=False)
+        if avd_session is not None:
+            avd_session.close()
+
+    if failure is not None:
+        print(f"bootstrap failed: {failure}", file=sys.stderr)
+        return 1
+    print(
+        json.dumps(
+            {
+                "target": arguments.target,
+                "profiles": profiles,
+                "results": len(results),
+                "result": "pass",
+                "cleanup": "ok",
+            },
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

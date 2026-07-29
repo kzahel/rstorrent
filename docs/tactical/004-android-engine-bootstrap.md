@@ -427,3 +427,26 @@ session, notification, named command/wait executors, app-private run paths,
 structured events, result publication, and explicit terminal join. Gradle
 unit tests, debug assembly, and lint passed. Android runtime and controlled
 peer evidence remain pending.
+
+### Controlled runner checkpoint
+
+The explicit-target runner reuses the pinned libtorrent `2.0.13` environment
+and Tactical 002 fixture. It exposes named success, slow-storage,
+cancellation, peer-failure, duplicate-start, activity-recreation, and
+pre-existing-artifact profiles. Each run owns one reverse transport, fixture,
+seed, app-private run ID, and result. A small request-aware TCP proxy closes
+only after forwarding a real peer request for the peer-failure profile.
+
+A bounded Rust-only storage-acceptance delay retains the existing payload
+reservation while testing slow storage; it adds no queue and sends no payload
+through Kotlin. Initial AVD evidence observed live progress at zero and 16 KiB
+stored during a 14-second delayed run, with payload high water fixed at the
+32 KiB allowance. Cancellation passed both before storage acceptance and
+after accepted progress, with joined terminal tasks, zero current
+reservations, and no unverified output.
+
+An intermittent AVD run exposed a sparse part-file extent reported at header
+length while its first payload slot was read. Part-file allocation now extends
+the sparse logical file to the complete fixed-slot boundary before publishing
+the slot mapping. Host tests assert this ordering while retaining explicit
+truncation coverage.
