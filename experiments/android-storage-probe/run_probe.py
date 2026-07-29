@@ -465,7 +465,6 @@ def launch_phase(target: AdbTarget, phase: str) -> None:
         [
             "am",
             "start",
-            "-W",
             "--activity-clear-task",
             "-n",
             ACTIVITY,
@@ -475,7 +474,7 @@ def launch_phase(target: AdbTarget, phase: str) -> None:
         ],
         timeout=30,
     )
-    if "Status: ok" not in launched.stdout:
+    if "Starting:" not in launched.stdout or "Error:" in launched.stdout:
         raise ProbeFailure(
             f"activity launch did not report success for phase {phase}\n"
             f"stdout:\n{launched.stdout}\n"
