@@ -411,3 +411,19 @@ cleanup. Binding generation from the host library succeeded, and release
 libraries cross-compiled with NDK `27.0.12077973` for API 28 `x86_64` and
 `arm64-v8a`. These are build and host lifecycle results, not yet Android
 runtime evidence.
+
+### Android packaging checkpoint
+
+The harness locks Android Gradle Plugin `8.7.3`, Gradle `8.11.1`, Kotlin
+`2.0.21`, AndroidX annotation `1.8.0`, and the JNA `5.17.0` Android AAR.
+No coroutine library is selected because neither the generated synchronous
+control plane nor the service uses coroutines; named Java executors own the
+blocking command and join work instead.
+
+The debug APK contains `librstorrent_android.so` and `libjnidispatch.so` for
+only `x86_64` and `arm64-v8a`. A minimal activity forwards bounded commands
+and may finish immediately. A `dataSync` foreground service owns the native
+session, notification, named command/wait executors, app-private run paths,
+structured events, result publication, and explicit terminal join. Gradle
+unit tests, debug assembly, and lint passed. Android runtime and controlled
+peer evidence remain pending.
