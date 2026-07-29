@@ -1,6 +1,6 @@
 # Tactical 004: Android Engine Bootstrap
 
-Status: in progress.
+Status: complete.
 
 ## Motivation And Outcome
 
@@ -398,11 +398,11 @@ at startup.
 The engine now exposes a cloneable cancellation/control handle. Cancellation
 is a distinct terminal engine result and travels through normal staging and
 part-file cleanup. Current payload reservations, payload high water, and
-accepted storage bytes come from the engine's existing reservation accounting,
-not a foreign-side estimate. The Android-facing crate owns one named worker
-thread and one current-thread Tokio runtime per active generation. It rejects
-duplicate starts, retains terminal progress, and requires an explicit bounded
-join before reuse.
+cumulative requested, received, and accepted storage bytes come from
+engine-owned state transitions, not a foreign-side estimate. The
+Android-facing crate owns one named worker thread and one current-thread Tokio
+runtime per active generation. It rejects duplicate starts, retains terminal
+progress, and requires an explicit bounded join before reuse.
 
 Host tests passed for invalid bounded configuration, duplicate-start
 rejection, cancellation after a real engine TCP connection, repeated
@@ -425,8 +425,8 @@ only `x86_64` and `arm64-v8a`. A minimal activity forwards bounded commands
 and may finish immediately. A `dataSync` foreground service owns the native
 session, notification, named command/wait executors, app-private run paths,
 structured events, result publication, and explicit terminal join. Gradle
-unit tests, debug assembly, and lint passed. Android runtime and controlled
-peer evidence remain pending.
+unit tests, debug assembly, and lint passed. The packaged libraries then ran
+through the generated bindings on all three required Android environments.
 
 ### Controlled runner checkpoint
 
@@ -450,3 +450,122 @@ length while its first payload slot was read. Part-file allocation now extends
 the sparse logical file to the complete fixed-slot boundary before publishing
 the slot mapping. Host tests assert this ordering while retaining explicit
 truncation coverage.
+
+The first cross-version lifecycle runs also exposed two harness assumptions.
+Android 9's `run-as` shell does not provide the same `test` command used by
+newer images, so exact existence checks now use `ls -d`. A restored activity
+can receive a replacement intent before its initial command is dispatched, so
+the runner waits for a durable `engine_start` event before cancellation or
+recreation and the activity dispatches every received intent. These changes
+make the ownership assertion independent of saved activity state.
+
+### Final Android evidence
+
+The final APK reported
+`rstorrent-android/0.1.0;uniffi/0.31.0` on every run. The required successful
+matrix passed three fresh application-data cycles on each exact target:
+
+| Target | Verified identity | Total milliseconds | Success PSS KiB |
+| --- | --- | --- | --- |
+| `jstorrent-tablet` | API 34, `emu64xa`, x86_64 | 435, 515, 389 | 19,933; 19,170; 18,995 |
+| Chromebook ARCVM | API 33, `nami_cheets`, x86_64 | 359, 367, 291 | 25,933; 25,913; 25,957 |
+| Moto X4 | API 28, `payton_sprout`, arm64-v8a | 256, 245, 263 | 20,262; 20,280; 20,079 |
+
+Every success requested, received, and stored exactly 97,232 real bytes in
+seven requests, verified four of five pieces, skipped one piece and 57,000
+file bytes, synthesized 3,304 padding bytes, selected 73,000 bytes,
+materialized 7,000 bytes, retained the two required part slots, and ended with
+zero current payload bytes and no live Rust task. File hashes, final piece
+hash, info hash, reopen state, and the absence of skipped and padding outputs
+were checked independently by the host runner. The controlled seed reported
+zero peers after each terminal result.
+
+The AVD and Moto X4 each passed the complete adverse matrix:
+
+- Slow storage held 32 KiB requested and buffered while 16 KiB was received
+  and zero bytes were stored. Both runs completed in about 14.3 seconds with
+  a 32 KiB payload high-water and no additional Kotlin or Rust storage queue.
+- Cancellation before storage acceptance ended with 32 KiB requested,
+  16 KiB received, zero stored, zero current payload, and a joined task.
+  Cancellation after progress ended with 32 KiB requested and received,
+  16 KiB stored, zero current payload, and a joined task. Final join calls
+  took 17 and 35 milliseconds on the AVD and 16 and 14 milliseconds on the
+  Moto. Repeated terminal cancellation left the published result unchanged.
+- The request-aware disconnect produced a typed `PEER` failure only after an
+  actual request. No unverified output, staging tree, or part file survived.
+  Received-byte telemetry is allowed to reflect a response raced with the
+  injected close; cleanup and verification remain the integrity authority.
+- A second active start returned `BUSY`; activity recreation observed the
+  same live task and the original transfer completed successfully.
+- Existing output, staging, part, and result sentinels were preserved
+  byte-for-byte, and the controlled peer observed no connection for any
+  collision.
+
+The app's descriptor snapshots are coarse process observations: Android and
+JNA initialization changed some baselines by one or two descriptors. Engine
+socket termination was instead asserted by the joined native task and the
+controlled peer returning to zero connections. Total PSS is likewise evidence
+for this small fixture, not a product memory ceiling.
+
+### Final validation
+
+The following final commands passed:
+
+```bash
+source ~/.profile
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+experiments/android-engine-bootstrap/build.sh
+ANDROID_HOME=/home/kgraehl/Android/Sdk \
+  experiments/android-engine-bootstrap/gradlew \
+  -p experiments/android-engine-bootstrap testDebugUnitTest lintDebug
+python3 -m py_compile \
+  experiments/android-engine-bootstrap/run_bootstrap.py
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target avd --avd jstorrent-tablet --runs 3 \
+  --profile success --profile slow-storage --profile cancellation \
+  --profile peer-failure --profile duplicate-start \
+  --profile activity-recreation --profile preexisting-artifacts --no-build
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target motox4 --runs 3 \
+  --profile success --profile slow-storage --profile cancellation \
+  --profile peer-failure --profile duplicate-start \
+  --profile activity-recreation --profile preexisting-artifacts --no-build
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target chromeos --runs 3 --profile success --no-build
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target avd --avd jstorrent-tablet \
+  --profile cancellation --no-build
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target motox4 --profile cancellation --no-build
+python3 scripts/references.py status
+cargo tree --workspace --locked
+git diff --check
+```
+
+The ChromeOS testbed's `chromeos doctor` check passed all ten required checks;
+its only warning was the optional DevTools tunnel. An initial direct Gradle
+validation without `ANDROID_HOME` failed before task execution because no
+local `sdk.dir` is committed. The explicit environment shown above passed.
+
+The final ownership audit found no test package or reverse mapping on the Moto
+or Chromebook ARCVM, no running AVD, no runner, seed, or reverse-tunnel
+process, and no bootstrap temporary log. Gradle `clean` removed the generated
+Kotlin bindings, packaged native libraries, reports, and APK. The runner had
+already removed every exact app-private run root, owned fixture, and controlled
+peer. The attached Quest was only visible in the read-only device listing and
+was never addressed or mutated.
+
+The bootstrap proves that the real Rust engine can run in-process behind a
+coarse generated Kotlin control plane, remain owned by an Android foreground
+service, perform direct peer networking, preserve its 32 KiB payload bound
+under slow storage, and terminate cleanly across API 28, 33, and 34. It does
+not prove that the path-backed storage implementation works through SAF,
+removable media, or arbitrary document providers.
+
+The next bounded slice should integrate Tactical 003's duplicated-descriptor
+SAF capability with the real selective-storage path. That work should keep
+the service and UniFFI lifecycle proven here, avoid payload callbacks, and
+define provider and publication failure behavior before broadening the
+application service or building product UI.

@@ -2,10 +2,10 @@
 
 Topic: `product-direction`
 
-Status: initial direction and successor vision accepted; bounded large-piece,
-selective multi-file storage, and Android storage foundations proven on an
-AVD, Chromebook ARCVM, physical Pixel 7a, and Moto X4 internal and removable
-exFAT storage.
+Status: initial direction and successor vision accepted. Android storage
+foundations are proven on an AVD, Chromebook ARCVM, Pixel 7a, and Moto X4
+internal and removable exFAT storage; the in-process engine bootstrap is
+proven on the AVD, Chromebook, and Moto.
 
 ## Scope
 
@@ -183,6 +183,21 @@ recommended default, full allocation is optional, and allocation latency is
 isolated behind disk jobs and queued-byte backpressure. RSTorrent should follow
 that proven direction unless broader product evidence justifies divergence.
 
+Tactical `004` packaged the real engine for x86_64 and arm64-v8a Android,
+generated a locked UniFFI `0.31.0` control plane, and made a foreground service
+the explicit owner of one Rust runtime and task. Three selective-download
+cycles passed on an API 34 AVD, the Chromebook's API 33 ARCVM, and an API 28
+Moto X4. The AVD and Moto also passed slow-storage backpressure, both
+cancellation phases, peer failure, duplicate start, activity recreation, and
+pre-existing-artifact preservation.
+
+The Android bootstrap retained the 32 KiB payload high-water while separately
+reporting requested, received, and stored bytes. Kotlin carried no piece
+payload, Rust opened the peer socket directly, and every terminal result
+joined the task and returned the controlled peer to zero connections. This
+proves in-process engine packaging and lifecycle through app-private
+path-backed storage; it does not yet connect the engine to SAF destinations.
+
 This is an accepted starting shape backed by unit and libtorrent
 interoperability evidence, not a promise that two crates are the final engine
 layout. Add or split crates only when later ownership, reuse, lifecycle, or
@@ -235,14 +250,17 @@ This is recommended direction beyond the accepted first slice:
    persisted SAF access, cancellation, publication capabilities, and cleanup
    on an AVD, Chromebook ARCVM, physical Pixel 7a, and Moto X4 internal and
    removable exFAT storage.
-5. Planned:
+5. Completed:
    [`004-android-engine-bootstrap.md`](../tactical/004-android-engine-bootstrap.md)
-   will prove actual engine packaging, the UniFFI control plane,
+   proved actual engine packaging, the UniFFI control plane,
    foreground-service ownership, direct Rust networking, bounded app-private
    storage, cancellation, and failure cleanup on Android.
-6. Define the application command/snapshot/event boundary from real CLI needs.
-7. Add the first Android and desktop product clients.
-8. Evaluate product migration, extension control, and JSTorrent brand
+6. Connect the real selective-storage engine to Android SAF capabilities
+   without moving payloads through Kotlin.
+7. Define the broader application command/snapshot/event boundary from the
+   bootstrap and storage evidence.
+8. Add the first Android and desktop product clients.
+9. Evaluate product migration, extension control, and JSTorrent brand
    graduation from the proven application contracts.
 
 The platform feasibility probe remains a separate tactical so failure in it
@@ -250,11 +268,12 @@ does not distort the protocol vertical slice.
 
 ## Recommended Next Work
 
-Execute tactical `004` without expanding it into SAF storage or a product UI.
-Retain tactical `003`'s descriptor ownership direction for the later storage
-adapter, and prove the selected UniFFI control plane without moving payloads
-across it. Follow libtorrent's proven direction by keeping storage work off
-network and UI executors and applying queued-byte backpressure when disk work
-falls behind. Keep permanent resume format, alternate allocation modes, broad
-provider compatibility, general peer discovery, and UI architecture in their
-own bounded tacticals.
+Draft the next bounded tactical around a real SAF selective-storage adapter.
+Retain Tactical `003`'s duplicated-descriptor ownership and provider
+capability observations together with Tactical `004`'s service, UniFFI,
+cancellation, and byte-accounting contracts. Define partial creation,
+publication, provider failure, cancellation, and pre-existing-document
+behavior before implementation. Keep payloads in Rust and storage work off
+network and UI executors. Permanent resume format, alternate allocation
+modes, broad provider compatibility, general peer discovery, and UI
+architecture remain separate tacticals.
