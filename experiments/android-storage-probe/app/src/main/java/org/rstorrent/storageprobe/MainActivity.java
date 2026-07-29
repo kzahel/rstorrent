@@ -340,9 +340,20 @@ public final class MainActivity extends Activity {
         int borrowedFd = descriptor.getFd();
         result.put("logical_before", NativeProbe.logicalBytes(borrowedFd));
         result.put("allocated_before", NativeProbe.allocatedBytes(borrowedFd));
-        long started = SystemClock.elapsedRealtimeNanos();
-        long errorMask = NativeProbe.runSparse(borrowedFd, LOGICAL_LENGTH);
-        result.put("run_nanos", SystemClock.elapsedRealtimeNanos() - started);
+        long runStarted = SystemClock.elapsedRealtimeNanos();
+        long stageStarted = runStarted;
+        long errorMask = NativeProbe.truncateSparse(borrowedFd, LOGICAL_LENGTH);
+        result.put("truncate_nanos", SystemClock.elapsedRealtimeNanos() - stageStarted);
+        stageStarted = SystemClock.elapsedRealtimeNanos();
+        errorMask |= NativeProbe.writeSparseMarkers(borrowedFd, LOGICAL_LENGTH);
+        result.put("write_nanos", SystemClock.elapsedRealtimeNanos() - stageStarted);
+        stageStarted = SystemClock.elapsedRealtimeNanos();
+        errorMask |= NativeProbe.syncDescriptor(borrowedFd);
+        result.put("sync_nanos", SystemClock.elapsedRealtimeNanos() - stageStarted);
+        stageStarted = SystemClock.elapsedRealtimeNanos();
+        errorMask |= NativeProbe.verifySparse(borrowedFd, LOGICAL_LENGTH);
+        result.put("read_nanos", SystemClock.elapsedRealtimeNanos() - stageStarted);
+        result.put("run_nanos", SystemClock.elapsedRealtimeNanos() - runStarted);
         result.put("error_mask", errorMask);
         result.put("logical_after", NativeProbe.logicalBytes(borrowedFd));
         result.put("allocated_after", NativeProbe.allocatedBytes(borrowedFd));
@@ -411,7 +422,22 @@ public final class MainActivity extends Activity {
                 CANCELLATION_MAXIMUM
         );
         descriptor.close();
-        SystemClock.sleep(30);
+        long progressStarted = SystemClock.elapsedRealtimeNanos();
+        long progressDeadline = SystemClock.elapsedRealtime() + 2_000;
+        long observedProgress = NativeProbe.cancellableProgress();
+        while (observedProgress == 0
+                && SystemClock.elapsedRealtime() < progressDeadline) {
+            SystemClock.sleep(5);
+            observedProgress = NativeProbe.cancellableProgress();
+        }
+        result.put(
+                "progress_wait_nanos",
+                SystemClock.elapsedRealtimeNanos() - progressStarted
+        );
+        result.put("progress_before_cancel", observedProgress);
+        if (observedProgress > 0) {
+            SystemClock.sleep(30);
+        }
         long written = NativeProbe.cancelAndJoin();
         result.put("start_result", startResult);
         result.put("written_bytes", written);
@@ -420,6 +446,7 @@ public final class MainActivity extends Activity {
         result.put("terminated", true);
         result.put("success",
                 startResult == 0
+                        && observedProgress > 0
                         && written > 0
                         && written < CANCELLATION_MAXIMUM);
         return result;

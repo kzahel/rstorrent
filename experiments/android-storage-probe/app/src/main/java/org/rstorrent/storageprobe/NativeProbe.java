@@ -8,6 +8,9 @@ final class NativeProbe {
     private NativeProbe() {}
 
     static native long runSparse(int fd, long logicalLength);
+    static native long truncateSparse(int fd, long logicalLength);
+    static native long writeSparseMarkers(int fd, long logicalLength);
+    static native long syncDescriptor(int fd);
     static native long verifySparse(int fd, long logicalLength);
     static native long writeMaterialized(int fd);
     static native long verifyMaterialized(int fd);
@@ -17,5 +20,6 @@ final class NativeProbe {
     static native long logicalBytes(int fd);
     static native long allocatedBytes(int fd);
     static native int startCancellable(int fd, long maximumBytes);
+    static native long cancellableProgress();
     static native long cancelAndJoin();
 }

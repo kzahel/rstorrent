@@ -1,7 +1,7 @@
 use std::ffi::c_void;
 use std::io;
 use std::os::fd::RawFd;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -26,13 +26,14 @@ type JClass = *mut c_void;
 
 struct CancelJob {
     cancel: Arc<AtomicBool>,
+    written: Arc<AtomicU64>,
     handle: JoinHandle<Result<u64, io::Error>>,
 }
 
 static CANCEL_JOB: OnceLock<Mutex<Option<CancelJob>>> = OnceLock::new();
 
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_runSparse(
+pub extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_runSparse(
     _environment: JNIEnv,
     _class: JClass,
     borrowed_fd: i32,
@@ -53,7 +54,64 @@ pub unsafe extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_runSpa
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_verifySparse(
+pub extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_truncateSparse(
+    _environment: JNIEnv,
+    _class: JClass,
+    borrowed_fd: i32,
+    logical_length: i64,
+) -> i64 {
+    if logical_length < BLOCK_LENGTH as i64 {
+        return ERROR_LENGTH;
+    }
+    with_duplicate(borrowed_fd, |fd| {
+        if unsafe { libc::ftruncate(fd, logical_length as libc::off_t) } != 0 {
+            ERROR_TRUNCATE
+        } else {
+            0
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_writeSparseMarkers(
+    _environment: JNIEnv,
+    _class: JClass,
+    borrowed_fd: i32,
+    logical_length: i64,
+) -> i64 {
+    if logical_length < BLOCK_LENGTH as i64 {
+        return ERROR_LENGTH;
+    }
+    with_duplicate(borrowed_fd, |fd| {
+        let mut result = 0;
+        if pwrite_all(fd, &pattern(HEAD_SEED), 0).is_err() {
+            result |= ERROR_HEAD_WRITE;
+        }
+        let tail_offset = logical_length - BLOCK_LENGTH as i64;
+        if pwrite_all(fd, &pattern(TAIL_SEED), tail_offset).is_err() {
+            result |= ERROR_TAIL_WRITE;
+        }
+        result
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_syncDescriptor(
+    _environment: JNIEnv,
+    _class: JClass,
+    borrowed_fd: i32,
+) -> i64 {
+    with_duplicate(borrowed_fd, |fd| {
+        if unsafe { libc::fsync(fd) } != 0 {
+            ERROR_SYNC
+        } else {
+            0
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_verifySparse(
     _environment: JNIEnv,
     _class: JClass,
     borrowed_fd: i32,
@@ -71,7 +129,7 @@ pub unsafe extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_verify
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_writeMaterialized(
+pub extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_writeMaterialized(
     _environment: JNIEnv,
     _class: JClass,
     borrowed_fd: i32,
@@ -96,7 +154,7 @@ pub unsafe extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_writeM
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_verifyMaterialized(
+pub extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_verifyMaterialized(
     _environment: JNIEnv,
     _class: JClass,
     borrowed_fd: i32,
@@ -118,7 +176,7 @@ pub unsafe extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_verify
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_duplicate(
+pub extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_duplicate(
     _environment: JNIEnv,
     _class: JClass,
     borrowed_fd: i32,
@@ -127,7 +185,7 @@ pub unsafe extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_duplic
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_verifyOwned(
+pub extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_verifyOwned(
     _environment: JNIEnv,
     _class: JClass,
     owned_fd: i32,
@@ -137,7 +195,7 @@ pub unsafe extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_verify
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_closeOwned(
+pub extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_closeOwned(
     _environment: JNIEnv,
     _class: JClass,
     owned_fd: i32,
@@ -146,7 +204,7 @@ pub unsafe extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_closeO
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_logicalBytes(
+pub extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_logicalBytes(
     _environment: JNIEnv,
     _class: JClass,
     borrowed_fd: i32,
@@ -155,7 +213,7 @@ pub unsafe extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_logica
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_allocatedBytes(
+pub extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_allocatedBytes(
     _environment: JNIEnv,
     _class: JClass,
     borrowed_fd: i32,
@@ -164,7 +222,7 @@ pub unsafe extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_alloca
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_startCancellable(
+pub extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_startCancellable(
     _environment: JNIEnv,
     _class: JClass,
     borrowed_fd: i32,
@@ -186,21 +244,40 @@ pub unsafe extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_startC
         return libc::EBUSY;
     }
     let cancel = Arc::new(AtomicBool::new(false));
+    let written = Arc::new(AtomicU64::new(0));
     let worker_cancel = Arc::clone(&cancel);
+    let worker_written = Arc::clone(&written);
     let maximum_bytes = maximum_bytes as u64;
     let handle = thread::spawn(move || {
-        let result = cancellable_write(fd, maximum_bytes, &worker_cancel);
+        let result = cancellable_write(fd, maximum_bytes, &worker_cancel, &worker_written);
         unsafe {
             libc::close(fd);
         }
         result
     });
-    *job = Some(CancelJob { cancel, handle });
+    *job = Some(CancelJob {
+        cancel,
+        written,
+        handle,
+    });
     0
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_cancelAndJoin(
+pub extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_cancellableProgress(
+    _environment: JNIEnv,
+    _class: JClass,
+) -> i64 {
+    let jobs = CANCEL_JOB.get_or_init(|| Mutex::new(None));
+    let job = jobs.lock().expect("cancel job mutex poisoned");
+    let Some(job) = job.as_ref() else {
+        return -(libc::ENOENT as i64);
+    };
+    i64::try_from(job.written.load(Ordering::Acquire)).unwrap_or(i64::MAX)
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_rstorrent_storageprobe_NativeProbe_cancelAndJoin(
     _environment: JNIEnv,
     _class: JClass,
 ) -> i64 {
@@ -238,6 +315,18 @@ fn run_sparse(fd: RawFd, logical_length: i64) -> i64 {
     result | verify_sparse(fd, logical_length)
 }
 
+fn with_duplicate(borrowed_fd: RawFd, operation: impl FnOnce(RawFd) -> i64) -> i64 {
+    let fd = unsafe { libc::dup(borrowed_fd) };
+    if fd < 0 {
+        return ERROR_DUP;
+    }
+    let result = operation(fd);
+    unsafe {
+        libc::close(fd);
+    }
+    result
+}
+
 fn verify_sparse(fd: RawFd, logical_length: i64) -> i64 {
     let mut stat = unsafe { std::mem::zeroed::<libc::stat>() };
     let mut result = 0;
@@ -259,7 +348,12 @@ fn verify_sparse(fd: RawFd, logical_length: i64) -> i64 {
     result
 }
 
-fn cancellable_write(fd: RawFd, maximum_bytes: u64, cancel: &AtomicBool) -> Result<u64, io::Error> {
+fn cancellable_write(
+    fd: RawFd,
+    maximum_bytes: u64,
+    cancel: &AtomicBool,
+    progress: &AtomicU64,
+) -> Result<u64, io::Error> {
     let buffer = pattern(73);
     let mut written = 0_u64;
     while written < maximum_bytes && !cancel.load(Ordering::Acquire) {
@@ -267,6 +361,7 @@ fn cancellable_write(fd: RawFd, maximum_bytes: u64, cancel: &AtomicBool) -> Resu
             .map_err(|_| io::Error::from_raw_os_error(libc::EOVERFLOW))?;
         pwrite_all(fd, &buffer[..length], written as i64)?;
         written += length as u64;
+        progress.store(written, Ordering::Release);
         thread::sleep(Duration::from_millis(1));
     }
     if unsafe { libc::fsync(fd) } != 0 {
