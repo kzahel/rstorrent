@@ -73,6 +73,25 @@ foreground-service lifecycle, and Storage Access Framework document creation.
 The preferred storage seam is to give Rust usable file descriptors or another
 bulk-I/O capability rather than copying piece payloads through callbacks.
 
+### Generated Kotlin boundary
+
+Use UniFFI as the default Rust/Kotlin binding generator. Expose a narrow typed
+control plane of opaque session objects, configuration and snapshot records,
+errors, coarse events, and explicit asynchronous lifecycle operations. Peer
+payloads, storage buffers, hashing, scheduling, and ordinary socket I/O remain
+inside Rust.
+
+Kotlin may extract an integer descriptor from a caller-owned
+`ParcelFileDescriptor`; Rust must duplicate it before taking ownership.
+Document creation, rename, permission, notification, and lifecycle operations
+may cross the boundary at coarse granularity. Batch naturally repeated control
+operations and continue to enforce hostile metainfo file-count limits rather
+than designing a per-block interface around implausibly large file counts.
+
+Handwritten JNI is a narrow escape hatch for a concrete Android capability
+that UniFFI cannot express safely. It is not a parallel application API or a
+payload path.
+
 ### In-process by default
 
 Desktop and Android clients should normally load the engine into their own
@@ -189,7 +208,6 @@ testing evidence justifies it.
   graduation.
 - The public license.
 - The first desktop UI approach.
-- The Android Rust/Kotlin binding generator and ownership model.
 - The exact minimum useful BitTorrent feature set.
 - Which JSTorrent fixtures can be reused directly and which should be
   independently recreated.
@@ -230,7 +248,8 @@ does not distort the protocol vertical slice.
 
 Plan a bounded Android engine-integration tactical that retains tactical
 `003`'s descriptor ownership, fixed buffers, synchronous restart state,
-observable cancellation, explicit capabilities, and exact cleanup. Follow
+observable cancellation, explicit capabilities, and exact cleanup. Prove the
+selected UniFFI control plane without moving payloads across it. Follow
 libtorrent's proven direction by keeping storage work off network and UI
 executors and applying queued-byte backpressure when disk work falls behind.
 Keep permanent resume format, alternate allocation modes, broad provider
