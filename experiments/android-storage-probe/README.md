@@ -14,11 +14,12 @@ materialization rename, memory snapshots, and cleanup.
 ## Build
 
 The configured development machine uses Android platform 35, NDK
-`27.0.12077973`, Gradle `8.11.1`, and the x86_64 Android Rust target:
+`27.0.12077973`, Gradle `8.11.1`, and the x86_64 and aarch64 Android Rust
+targets:
 
 ```bash
 source ~/.profile
-rustup target add x86_64-linux-android
+rustup target add x86_64-linux-android aarch64-linux-android
 experiments/android-storage-probe/build_probe.sh
 ```
 
@@ -36,6 +37,9 @@ python3 experiments/android-storage-probe/run_probe.py \
 
 python3 experiments/android-storage-probe/run_probe.py \
   --target chromeos --runs 3
+
+python3 experiments/android-storage-probe/run_probe.py \
+  --target pixel7a --runs 3
 ```
 
 Each fresh run clears application data, creates an exact empty

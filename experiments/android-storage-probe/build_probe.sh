@@ -13,16 +13,19 @@ if [[ ! -d "$ndk_root" ]]; then
     echo "Android NDK 27.0.12077973 is unavailable under $android_sdk" >&2
     exit 1
 fi
-if ! rustup target list --installed | grep -qx x86_64-linux-android; then
-    echo "Install the Rust target with: rustup target add x86_64-linux-android" >&2
-    exit 1
-fi
+for rust_target in x86_64-linux-android aarch64-linux-android; do
+    if ! rustup target list --installed | grep -qx "$rust_target"; then
+        echo "Install the Rust target with: rustup target add $rust_target" >&2
+        exit 1
+    fi
+done
 
 export ANDROID_HOME="$android_sdk"
 export ANDROID_NDK_HOME="$ndk_root"
 
 cargo ndk \
     -t x86_64 \
+    -t arm64-v8a \
     -P 28 \
     -o "$probe_root/app/src/main/jniLibs" \
     --manifest-path "$probe_root/native/Cargo.toml" \

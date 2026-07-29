@@ -25,6 +25,10 @@ EXPECTED_CHROMEOS_API = "33"
 EXPECTED_CHROMEOS_MODEL = "nami"
 EXPECTED_CHROMEOS_DEVICE = "nami_cheets"
 CHROMEOS_SERIAL = "emulator-5554"
+PIXEL_SERIAL = "33031JEHN17672"
+EXPECTED_PIXEL_API = "37"
+EXPECTED_PIXEL_MODEL = "Pixel 7a"
+EXPECTED_PIXEL_DEVICE = "lynx"
 RESULT_PATH = "files/result.json"
 POLL_SECONDS = 45
 GRANT_FOLDER = "RSTorrentStorageProbeGrant"
@@ -284,24 +288,60 @@ def prepare_chromeos() -> AdbTarget:
     return target
 
 
+def prepare_pixel() -> AdbTarget:
+    adb = local_adb_path()
+    if PIXEL_SERIAL not in adb_devices(adb):
+        raise ProbeFailure(
+            f"the expected Pixel 7a is not ready as serial {PIXEL_SERIAL}"
+        )
+    target = AdbTarget(
+        [str(adb), "-s", PIXEL_SERIAL],
+        f"Pixel 7a {PIXEL_SERIAL}",
+    )
+    if target.run(["get-state"]).stdout.strip() != "device":
+        raise ProbeFailure("the expected Pixel 7a ADB target is not ready")
+    return target
+
+
 def verify_target(target: AdbTarget, kind: str) -> dict[str, str]:
     api = target.property("ro.build.version.sdk")
     model = target.property("ro.product.model")
     device = target.property("ro.product.device")
     abis = target.property("ro.product.cpu.abilist")
     fingerprint = target.property("ro.build.fingerprint")
-    expected_api = EXPECTED_AVD_API if kind == "avd" else EXPECTED_CHROMEOS_API
-    unexpected_chromeos = kind == "chromeos" and (
-        model != EXPECTED_CHROMEOS_MODEL or device != EXPECTED_CHROMEOS_DEVICE
-    )
-    if api != expected_api or unexpected_chromeos:
+    expected = {
+        "avd": (
+            EXPECTED_AVD_API,
+            "sdk_gphone64_x86_64",
+            "emu64xa",
+            "x86_64",
+        ),
+        "chromeos": (
+            EXPECTED_CHROMEOS_API,
+            EXPECTED_CHROMEOS_MODEL,
+            EXPECTED_CHROMEOS_DEVICE,
+            "x86_64",
+        ),
+        "pixel7a": (
+            EXPECTED_PIXEL_API,
+            EXPECTED_PIXEL_MODEL,
+            EXPECTED_PIXEL_DEVICE,
+            "arm64-v8a",
+        ),
+    }
+    expected_api, expected_model, expected_device, expected_abi = expected[kind]
+    if (
+        api != expected_api
+        or model != expected_model
+        or device != expected_device
+    ):
         raise ProbeFailure(
             f"refusing unexpected {kind} target: api={api}, model={model}, "
             f"device={device}; expected api={expected_api}, "
-            f"model={EXPECTED_CHROMEOS_MODEL}, device={EXPECTED_CHROMEOS_DEVICE}"
+            f"model={expected_model}, device={expected_device}"
         )
-    if "x86_64" not in abis.split(","):
-        raise ProbeFailure(f"target lacks packaged x86_64 ABI: {abis}")
+    if expected_abi not in abis.split(","):
+        raise ProbeFailure(f"target lacks packaged {expected_abi} ABI: {abis}")
     return {
         "api": api,
         "model": model,
@@ -531,7 +571,11 @@ def run_cycle(target: AdbTarget, target_name: str, ordinal: int) -> dict:
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", choices=["avd", "chromeos"], required=True)
+    parser.add_argument(
+        "--target",
+        choices=["avd", "chromeos", "pixel7a"],
+        required=True,
+    )
     parser.add_argument("--avd", default=EXPECTED_AVD)
     parser.add_argument("--runs", type=int, choices=range(1, 6), default=1)
     parser.add_argument("--no-build", action="store_true")
@@ -557,8 +601,10 @@ def main() -> int:
         if arguments.target == "avd":
             avd_session = start_avd(arguments.avd)
             target = avd_session.target
-        else:
+        elif arguments.target == "chromeos":
             target = prepare_chromeos()
+        else:
+            target = prepare_pixel()
         identity = verify_target(target, arguments.target)
         install_apk(target, arguments.target, apk)
         for ordinal in range(1, arguments.runs + 1):

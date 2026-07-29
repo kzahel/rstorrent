@@ -14,7 +14,7 @@ android {
         versionName = "0.1"
 
         ndk {
-            abiFilters += "x86_64"
+            abiFilters += listOf("x86_64", "arm64-v8a")
         }
     }
 
