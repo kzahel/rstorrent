@@ -23,8 +23,8 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 use crate::selective_storage::{
-    DescriptorStorage, SelectiveStorage, SelectiveStorageError, remove_selective_part_if_present,
-    remove_selective_staging_if_present,
+    DescriptorStorage, PreparedFileHash, SelectiveStorage, SelectiveStorageError,
+    remove_selective_part_if_present, remove_selective_staging_if_present,
 };
 use crate::storage::{
     StagingFile, StorageError, VERIFICATION_CHUNK_LENGTH, remove_staging_if_present, staging_path,
@@ -178,6 +178,7 @@ pub struct DownloadReport {
     pub part_slots_after_materialization: usize,
     pub part_reopened: bool,
     pub part_path: Option<PathBuf>,
+    pub prepared_files: Vec<PreparedFileHash>,
 }
 
 #[derive(Debug)]
@@ -466,6 +467,7 @@ async fn run_single_download(
                     part_slots_after_materialization: 0,
                     part_reopened: false,
                     part_path: None,
+                    prepared_files: Vec::new(),
                 });
             }
         }
@@ -698,6 +700,14 @@ async fn run_selective_download(
             .bytes;
     }
     let part_slots_after_materialization = storage.part_slots();
+    let prepared_files = if descriptor_backed {
+        storage
+            .finalize_descriptor_hashes()
+            .await
+            .map_err(DownloadError::SelectiveStorage)?
+    } else {
+        Vec::new()
+    };
     let last_piece = last_piece.expect("at least one wanted piece was planned");
     Ok(DownloadReport {
         info_hash: metainfo.info_hash,
@@ -720,6 +730,7 @@ async fn run_selective_download(
         part_slots_after_materialization,
         part_reopened: true,
         part_path,
+        prepared_files,
     })
 }
 

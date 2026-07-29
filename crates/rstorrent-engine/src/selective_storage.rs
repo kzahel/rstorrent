@@ -43,6 +43,36 @@ pub struct DescriptorStorage {
     pub materialization_files: Vec<DescriptorFile>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DescriptorFileRole {
+    Wanted,
+    Skipped,
+    Padding,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DescriptorStoragePlanFile {
+    pub file_index: usize,
+    pub path: Vec<String>,
+    pub length: u64,
+    pub role: DescriptorFileRole,
+    pub materialize: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DescriptorStoragePlan {
+    pub info_hash: [u8; 20],
+    pub name: String,
+    pub files: Vec<DescriptorStoragePlanFile>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PreparedFileHash {
+    pub file_index: usize,
+    pub length: u64,
+    pub sha1: [u8; 20],
+}
+
 #[derive(Debug)]
 pub enum SelectiveStorageError {
     InvalidOutputPath,
@@ -659,9 +689,11 @@ impl SelectiveStorage {
                 })?;
         }
         self.part_file_mut()?.sync_payload().await?;
-        self.files.iter_mut().for_each(|file| {
-            file.take();
-        });
+        if matches!(self.backing, StorageBacking::Paths { .. }) {
+            self.files.iter_mut().for_each(|file| {
+                file.take();
+            });
+        }
         Ok(())
     }
 
@@ -813,21 +845,27 @@ impl SelectiveStorage {
                 })
         }
         .await;
-        drop(output);
         if let Err(error) = write_result {
+            drop(output);
             if let Some((temporary, _)) = &paths {
                 let _ = remove_file_if_present(temporary).await;
             }
             return Err(error);
         }
-        if let Some((temporary, destination)) = &paths
-            && let Err(source) = tokio::fs::rename(temporary, destination).await
-        {
-            let _ = remove_file_if_present(temporary).await;
-            return Err(SelectiveStorageError::Io {
-                operation: "publish materialized file",
-                source,
-            });
+        match &paths {
+            Some((temporary, destination)) => {
+                drop(output);
+                if let Err(source) = tokio::fs::rename(temporary, destination).await {
+                    let _ = remove_file_if_present(temporary).await;
+                    return Err(SelectiveStorageError::Io {
+                        operation: "publish materialized file",
+                        source,
+                    });
+                }
+            }
+            None => {
+                self.files[file_index] = Some(output);
+            }
         }
 
         let slots_before = self.part_slots();
@@ -852,11 +890,121 @@ impl SelectiveStorage {
         })
     }
 
+    pub async fn finalize_descriptor_hashes(
+        &mut self,
+    ) -> Result<Vec<PreparedFileHash>, SelectiveStorageError> {
+        if !matches!(self.backing, StorageBacking::Descriptors { .. }) {
+            return Err(SelectiveStorageError::InvalidStorageOperation(
+                "descriptor hash finalization",
+            ));
+        }
+        if !self.published {
+            return Err(SelectiveStorageError::NotPublished);
+        }
+        let mut hashes = Vec::new();
+        let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
+        for (file_index, metainfo_file) in self.layout.files().iter().enumerate() {
+            if metainfo_file.padding || !self.selection.is_wanted(file_index) {
+                continue;
+            }
+            let file = self.files[file_index]
+                .as_mut()
+                .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?;
+            file.seek(SeekFrom::Start(0))
+                .await
+                .map_err(|source| SelectiveStorageError::Io {
+                    operation: "seek prepared descriptor for hashing",
+                    source,
+                })?;
+            let mut remaining = metainfo_file.length;
+            let mut hasher = Sha1::new();
+            while remaining != 0 {
+                let length = usize::try_from(remaining.min(buffer.len() as u64))
+                    .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
+                file.read_exact(&mut buffer[..length])
+                    .await
+                    .map_err(|source| SelectiveStorageError::Io {
+                        operation: "read prepared descriptor for hashing",
+                        source,
+                    })?;
+                hasher.update(&buffer[..length]);
+                remaining -= length as u64;
+            }
+            hashes.push(PreparedFileHash {
+                file_index,
+                length: metainfo_file.length,
+                sha1: hasher.finalize().into(),
+            });
+        }
+        self.files.iter_mut().for_each(|file| {
+            file.take();
+        });
+        Ok(hashes)
+    }
+
     fn part_file_mut(&mut self) -> Result<&mut PartFile, SelectiveStorageError> {
         self.part_file
             .as_mut()
             .ok_or(SelectiveStorageError::NotPublished)
     }
+}
+
+pub fn plan_descriptor_storage(
+    metainfo: &Metainfo,
+    skip_files: &[usize],
+    materialize_files: &[usize],
+) -> Result<DescriptorStoragePlan, SelectiveStorageError> {
+    let layout = TorrentLayout::from_metainfo(metainfo);
+    let selection = FileSelection::new(&layout, skip_files)?;
+    let mut materialize = vec![false; layout.files().len()];
+    for &file_index in materialize_files {
+        let selected = materialize.get_mut(file_index).ok_or(
+            SelectiveStorageError::InvalidDescriptorManifest {
+                role: "materialization",
+                file_index,
+                reason: "file index is out of range",
+            },
+        )?;
+        if *selected {
+            return Err(SelectiveStorageError::InvalidDescriptorManifest {
+                role: "materialization",
+                file_index,
+                reason: "file index is duplicated",
+            });
+        }
+        let file = &layout.files()[file_index];
+        if file.padding || selection.is_wanted(file_index) {
+            return Err(SelectiveStorageError::InvalidDescriptorManifest {
+                role: "materialization",
+                file_index,
+                reason: "file is padding or already wanted",
+            });
+        }
+        *selected = true;
+    }
+    let files = layout
+        .files()
+        .iter()
+        .enumerate()
+        .map(|(file_index, file)| DescriptorStoragePlanFile {
+            file_index,
+            path: file.path.clone(),
+            length: file.length,
+            role: if file.padding {
+                DescriptorFileRole::Padding
+            } else if selection.is_wanted(file_index) {
+                DescriptorFileRole::Wanted
+            } else {
+                DescriptorFileRole::Skipped
+            },
+            materialize: materialize[file_index],
+        })
+        .collect();
+    Ok(DescriptorStoragePlan {
+        info_hash: metainfo.info_hash,
+        name: metainfo.name.clone(),
+        files,
+    })
 }
 
 fn collect_descriptors(
@@ -1303,6 +1451,25 @@ mod tests {
         assert_eq!(report.bytes, 7_000);
         assert_eq!(report.slots_before, 2);
         assert_eq!(report.slots_after, 2);
+        let hashes = storage
+            .finalize_descriptor_hashes()
+            .await
+            .expect("hash prepared descriptors");
+        assert_eq!(
+            hashes
+                .iter()
+                .map(|hash| hash.file_index)
+                .collect::<Vec<_>>(),
+            vec![0, 2, 3, 4, 6]
+        );
+        for hash in hashes {
+            let file = &metainfo.files[hash.file_index];
+            let expected: [u8; 20] =
+                Sha1::digest(&bytes[file.offset as usize..(file.offset + file.length) as usize])
+                    .into();
+            assert_eq!(hash.length, file.length);
+            assert_eq!(hash.sha1, expected);
+        }
         drop(storage);
 
         for file_index in [0_usize, 3, 4, 6] {

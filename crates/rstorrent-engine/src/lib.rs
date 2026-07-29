@@ -14,7 +14,9 @@ pub use driver::{
 };
 pub use part_file::{PartFile, PartFileError, PartFileIdentity};
 pub use selective_storage::{
-    DescriptorFile, DescriptorStorage, MaterializationReport, SelectiveStorage,
-    SelectiveStorageError, SelectiveWriteStats, remove_selective_part_if_present,
-    remove_selective_staging_if_present, selective_part_path, selective_staging_path,
+    DescriptorFile, DescriptorFileRole, DescriptorStorage, DescriptorStoragePlan,
+    DescriptorStoragePlanFile, MaterializationReport, PreparedFileHash, SelectiveStorage,
+    SelectiveStorageError, SelectiveWriteStats, plan_descriptor_storage,
+    remove_selective_part_if_present, remove_selective_staging_if_present, selective_part_path,
+    selective_staging_path,
 };

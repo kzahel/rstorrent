@@ -1,23 +1,33 @@
 //! Coarse Android control plane for an in-process RSTorrent engine.
 
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 use std::net::{Ipv4Addr, SocketAddr};
+#[cfg(unix)]
+use std::os::fd::FromRawFd;
 use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use rstorrent_engine::{
-    DownloadConfig, DownloadControl, DownloadError, DownloadProgress, DownloadReport,
-    download_verified_piece_with_control,
+    DescriptorFile, DescriptorFileRole, DescriptorStorage, DownloadConfig, DownloadControl,
+    DownloadError, DownloadProgress, DownloadReport,
+    download_verified_piece_to_descriptors_with_control, download_verified_piece_with_control,
+    plan_descriptor_storage,
 };
+use rstorrent_protocol::bencode::MAX_BENCODE_INPUT_LENGTH;
+use rstorrent_protocol::metainfo::Metainfo;
+use sha1::{Digest, Sha1};
 
-const INTERFACE_VERSION: &str = "rstorrent-android/0.1.0;uniffi/0.31.0";
+const INTERFACE_VERSION: &str = "rstorrent-android/0.2.0;uniffi/0.31.0";
 const MIN_PAYLOAD_BYTES: u64 = 16 * 1024;
 const MAX_PAYLOAD_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_TIMEOUT_SECONDS: u64 = 5 * 60;
 const MAX_JOIN_MILLIS: u64 = 5 * 60 * 1_000;
 const MAX_FILE_SELECTIONS: usize = 1_024;
 const MAX_STORAGE_WRITE_DELAY_MILLIS: u64 = 5_000;
+const DESCRIPTOR_HASH_BUFFER: usize = 16 * 1024;
 
 uniffi::setup_scaffolding!();
 
@@ -31,6 +41,45 @@ pub struct EngineConfig {
     pub storage_write_delay_millis: u64,
     pub skip_files: Vec<u32>,
     pub materialize_files: Vec<u32>,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct SafDescriptor {
+    pub file_index: u32,
+    pub fd: i32,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct SafStorage {
+    pub wanted_files: Vec<SafDescriptor>,
+    pub part_fd: i32,
+    pub reopened_part_fd: i32,
+    pub materialization_files: Vec<SafDescriptor>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, uniffi::Enum)]
+pub enum SafFileRole {
+    Wanted,
+    Skipped,
+    Padding,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct SafPlanFile {
+    pub file_index: u32,
+    pub path: Vec<String>,
+    pub length: u64,
+    pub role: SafFileRole,
+    pub materialize: bool,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct SafStoragePlan {
+    pub valid: bool,
+    pub message: Option<String>,
+    pub info_hash_hex: String,
+    pub name: String,
+    pub files: Vec<SafPlanFile>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, uniffi::Enum)]
@@ -53,6 +102,7 @@ pub enum SessionState {
     Idle,
     Running,
     Cancelling,
+    Prepared,
     Succeeded,
     Failed,
     Cancelled,
@@ -60,6 +110,7 @@ pub enum SessionState {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, uniffi::Enum)]
 pub enum TerminalOutcome {
+    Prepared,
     Succeeded,
     Failed,
     Cancelled,
@@ -99,6 +150,23 @@ pub struct EngineReport {
     pub part_slots_after_materialization: u64,
     pub part_reopened: bool,
     pub part_path: Option<String>,
+    pub prepared_files: Vec<PreparedFile>,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct PreparedFile {
+    pub file_index: u32,
+    pub length: u64,
+    pub sha1_hex: String,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct DescriptorInspection {
+    pub success: bool,
+    pub message: Option<String>,
+    pub length: u64,
+    pub allocated_bytes: u64,
+    pub sha1_hex: String,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -216,6 +284,69 @@ impl EngineSession {
             }
         }
     }
+
+    fn start_owned(
+        &self,
+        config: DownloadConfig,
+        storage_write_delay: Duration,
+        descriptors: Option<DescriptorStorage>,
+    ) -> StartResult {
+        let mut inner = self.lock();
+        if matches!(
+            inner.state,
+            SessionState::Running | SessionState::Cancelling
+        ) {
+            return StartResult {
+                disposition: StartDisposition::Busy,
+                generation: inner.generation,
+                message: Some("an engine task is already active".to_owned()),
+            };
+        }
+        if inner.worker.is_some() {
+            return StartResult {
+                disposition: StartDisposition::NeedsJoin,
+                generation: inner.generation,
+                message: Some("the previous engine task must be joined".to_owned()),
+            };
+        }
+
+        inner.generation += 1;
+        let generation = inner.generation;
+        let started = Instant::now();
+        let control = DownloadControl::new();
+        control.set_storage_write_delay(storage_write_delay);
+        inner.state = SessionState::Running;
+        inner.started = Some(started);
+        inner.control = Some(control.clone());
+        inner.progress = DownloadProgress::default();
+        inner.cancellation_requested = false;
+        inner.terminal = None;
+
+        let shared = Arc::clone(&self.shared);
+        let worker = std::thread::Builder::new()
+            .name(format!("rstorrent-engine-{generation}"))
+            .spawn(move || run_worker(shared, config, descriptors, control, started));
+        match worker {
+            Ok(worker) => {
+                inner.worker = Some(worker);
+                StartResult {
+                    disposition: StartDisposition::Started,
+                    generation,
+                    message: None,
+                }
+            }
+            Err(error) => {
+                inner.state = SessionState::Idle;
+                inner.started = None;
+                inner.control = None;
+                StartResult {
+                    disposition: StartDisposition::Rejected,
+                    generation,
+                    message: Some(format!("failed to start engine worker: {error}")),
+                }
+            }
+        }
+    }
 }
 
 #[uniffi::export]
@@ -251,62 +382,33 @@ impl EngineSession {
                 };
             }
         };
+        self.start_owned(config, storage_write_delay, None)
+    }
 
-        let mut inner = self.lock();
-        if matches!(
-            inner.state,
-            SessionState::Running | SessionState::Cancelling
-        ) {
-            return StartResult {
-                disposition: StartDisposition::Busy,
-                generation: inner.generation,
-                message: Some("an engine task is already active".to_owned()),
-            };
-        }
-        if inner.worker.is_some() {
-            return StartResult {
-                disposition: StartDisposition::NeedsJoin,
-                generation: inner.generation,
-                message: Some("the previous engine task must be joined".to_owned()),
-            };
-        }
-
-        inner.generation += 1;
-        let generation = inner.generation;
-        let started = Instant::now();
-        let control = DownloadControl::new();
-        control.set_storage_write_delay(storage_write_delay);
-        inner.state = SessionState::Running;
-        inner.started = Some(started);
-        inner.control = Some(control.clone());
-        inner.progress = DownloadProgress::default();
-        inner.cancellation_requested = false;
-        inner.terminal = None;
-
-        let shared = Arc::clone(&self.shared);
-        let worker = std::thread::Builder::new()
-            .name(format!("rstorrent-engine-{generation}"))
-            .spawn(move || run_worker(shared, config, control, started));
-        match worker {
-            Ok(worker) => {
-                inner.worker = Some(worker);
-                StartResult {
-                    disposition: StartDisposition::Started,
-                    generation,
-                    message: None,
-                }
-            }
-            Err(error) => {
-                inner.state = SessionState::Idle;
-                inner.started = None;
-                inner.control = None;
-                StartResult {
+    pub fn start_saf(&self, config: EngineConfig, storage: SafStorage) -> StartResult {
+        let (config, storage_write_delay) = match validate_config(config) {
+            Ok(config) => config,
+            Err(message) => {
+                let inner = self.lock();
+                return StartResult {
                     disposition: StartDisposition::Rejected,
-                    generation,
-                    message: Some(format!("failed to start engine worker: {error}")),
-                }
+                    generation: inner.generation,
+                    message: Some(message),
+                };
             }
-        }
+        };
+        let descriptors = match duplicate_saf_storage(storage) {
+            Ok(descriptors) => descriptors,
+            Err(message) => {
+                let inner = self.lock();
+                return StartResult {
+                    disposition: StartDisposition::Rejected,
+                    generation: inner.generation,
+                    message: Some(message),
+                };
+            }
+        };
+        self.start_owned(config, storage_write_delay, Some(descriptors))
     }
 
     pub fn snapshot(&self) -> SessionSnapshot {
@@ -369,6 +471,189 @@ pub fn interface_version() -> String {
     INTERFACE_VERSION.to_owned()
 }
 
+#[uniffi::export]
+pub fn saf_storage_plan(
+    metainfo_bytes: Vec<u8>,
+    skip_files: Vec<u32>,
+    materialize_files: Vec<u32>,
+) -> SafStoragePlan {
+    let result = (|| {
+        if metainfo_bytes.len() > MAX_BENCODE_INPUT_LENGTH {
+            return Err(format!(
+                "metainfo exceeds input limit {MAX_BENCODE_INPUT_LENGTH}"
+            ));
+        }
+        if skip_files.len() > MAX_FILE_SELECTIONS || materialize_files.len() > MAX_FILE_SELECTIONS {
+            return Err(format!(
+                "file selection lists may contain at most {MAX_FILE_SELECTIONS} entries"
+            ));
+        }
+        let metainfo = Metainfo::from_bytes(&metainfo_bytes).map_err(|error| error.to_string())?;
+        let skip_files: Vec<usize> = skip_files.into_iter().map(|index| index as usize).collect();
+        let materialize_files: Vec<usize> = materialize_files
+            .into_iter()
+            .map(|index| index as usize)
+            .collect();
+        let plan = plan_descriptor_storage(&metainfo, &skip_files, &materialize_files)
+            .map_err(|error| error.to_string())?;
+        let files = plan
+            .files
+            .into_iter()
+            .map(|file| {
+                Ok(SafPlanFile {
+                    file_index: u32::try_from(file.file_index)
+                        .map_err(|_| "file index exceeds the Android interface".to_owned())?,
+                    path: file.path,
+                    length: file.length,
+                    role: match file.role {
+                        DescriptorFileRole::Wanted => SafFileRole::Wanted,
+                        DescriptorFileRole::Skipped => SafFileRole::Skipped,
+                        DescriptorFileRole::Padding => SafFileRole::Padding,
+                    },
+                    materialize: file.materialize,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(SafStoragePlan {
+            valid: true,
+            message: None,
+            info_hash_hex: hex(&plan.info_hash),
+            name: plan.name,
+            files,
+        })
+    })();
+    result.unwrap_or_else(|message| SafStoragePlan {
+        valid: false,
+        message: Some(message),
+        info_hash_hex: String::new(),
+        name: String::new(),
+        files: Vec::new(),
+    })
+}
+
+#[uniffi::export]
+pub fn inspect_borrowed_descriptor(
+    fd: i32,
+    expected_length: u64,
+    expected_sha1_hex: String,
+) -> DescriptorInspection {
+    match inspect_descriptor(fd, expected_length, &expected_sha1_hex) {
+        Ok((length, allocated_bytes, sha1_hex)) => DescriptorInspection {
+            success: true,
+            message: None,
+            length,
+            allocated_bytes,
+            sha1_hex,
+        },
+        Err(message) => DescriptorInspection {
+            success: false,
+            message: Some(message),
+            length: 0,
+            allocated_bytes: 0,
+            sha1_hex: String::new(),
+        },
+    }
+}
+
+fn duplicate_saf_storage(storage: SafStorage) -> Result<DescriptorStorage, String> {
+    fn files(descriptors: Vec<SafDescriptor>) -> Result<Vec<DescriptorFile>, String> {
+        descriptors
+            .into_iter()
+            .map(|descriptor| {
+                Ok(DescriptorFile {
+                    file_index: descriptor.file_index as usize,
+                    file: duplicate_descriptor(descriptor.fd)?,
+                })
+            })
+            .collect()
+    }
+    Ok(DescriptorStorage {
+        wanted_files: files(storage.wanted_files)?,
+        part_file: duplicate_descriptor(storage.part_fd)?,
+        reopened_part_file: duplicate_descriptor(storage.reopened_part_fd)?,
+        materialization_files: files(storage.materialization_files)?,
+    })
+}
+
+#[cfg(unix)]
+fn duplicate_descriptor(fd: i32) -> Result<File, String> {
+    if fd < 0 {
+        return Err(format!("descriptor {fd} is invalid"));
+    }
+    // SAF owns the borrowed descriptor. F_DUPFD_CLOEXEC creates an independent
+    // Rust-owned descriptor without transferring or closing the caller's one.
+    let owned_fd = unsafe { libc::fcntl(fd, libc::F_DUPFD_CLOEXEC, 0) };
+    if owned_fd < 0 {
+        return Err(format!(
+            "duplicate descriptor {fd}: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    // SAFETY: fcntl returned a new descriptor owned by this call.
+    Ok(unsafe { File::from_raw_fd(owned_fd) })
+}
+
+#[cfg(not(unix))]
+fn duplicate_descriptor(_fd: i32) -> Result<File, String> {
+    Err("descriptor storage requires a Unix platform".to_owned())
+}
+
+fn inspect_descriptor(
+    fd: i32,
+    expected_length: u64,
+    expected_sha1_hex: &str,
+) -> Result<(u64, u64, String), String> {
+    if expected_sha1_hex.len() != 40
+        || !expected_sha1_hex
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err("expected SHA-1 must contain exactly 40 hexadecimal characters".to_owned());
+    }
+    let mut file = duplicate_descriptor(fd)?;
+    let metadata = file
+        .metadata()
+        .map_err(|error| format!("inspect descriptor metadata: {error}"))?;
+    let length = metadata.len();
+    if length != expected_length {
+        return Err(format!(
+            "descriptor length {length} does not match expected {expected_length}"
+        ));
+    }
+    file.seek(SeekFrom::Start(0))
+        .map_err(|error| format!("seek descriptor for verification: {error}"))?;
+    let mut remaining = length;
+    let mut buffer = [0_u8; DESCRIPTOR_HASH_BUFFER];
+    let mut hasher = Sha1::new();
+    while remaining != 0 {
+        let read_length = usize::try_from(remaining.min(buffer.len() as u64))
+            .map_err(|_| "descriptor length exceeds address space".to_owned())?;
+        file.read_exact(&mut buffer[..read_length])
+            .map_err(|error| format!("read descriptor for verification: {error}"))?;
+        hasher.update(&buffer[..read_length]);
+        remaining -= read_length as u64;
+    }
+    let actual = hex(&hasher.finalize());
+    if !actual.eq_ignore_ascii_case(expected_sha1_hex) {
+        return Err(format!(
+            "descriptor SHA-1 {actual} does not match expected {}",
+            expected_sha1_hex.to_ascii_lowercase()
+        ));
+    }
+    Ok((length, allocated_bytes(&metadata), actual))
+}
+
+#[cfg(unix)]
+fn allocated_bytes(metadata: &std::fs::Metadata) -> u64 {
+    use std::os::unix::fs::MetadataExt;
+    metadata.blocks().saturating_mul(512)
+}
+
+#[cfg(not(unix))]
+fn allocated_bytes(_metadata: &std::fs::Metadata) -> u64 {
+    0
+}
+
 fn validate_config(config: EngineConfig) -> Result<(DownloadConfig, Duration), String> {
     if config.metainfo_path.is_empty() || config.output_path.is_empty() {
         return Err("metainfo and output paths must be nonempty".to_owned());
@@ -426,24 +711,34 @@ fn validate_config(config: EngineConfig) -> Result<(DownloadConfig, Duration), S
 fn run_worker(
     shared: Arc<Shared>,
     config: DownloadConfig,
+    descriptors: Option<DescriptorStorage>,
     control: DownloadControl,
     started: Instant,
 ) {
+    let descriptor_backed = descriptors.is_some();
     let result = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| WorkerFailure::Runtime(format!("failed to build Tokio runtime: {error}")))
         .and_then(|runtime| {
-            runtime
-                .block_on(download_verified_piece_with_control(
+            match descriptors {
+                Some(descriptors) => {
+                    runtime.block_on(download_verified_piece_to_descriptors_with_control(
+                        config,
+                        descriptors,
+                        control.clone(),
+                    ))
+                }
+                None => runtime.block_on(download_verified_piece_with_control(
                     config,
                     control.clone(),
-                ))
-                .map_err(WorkerFailure::Engine)
+                )),
+            }
+            .map_err(WorkerFailure::Engine)
         });
 
     let terminal = match result {
-        Ok(report) => success_result(report, started.elapsed()),
+        Ok(report) => success_result(report, started.elapsed(), descriptor_backed),
         Err(WorkerFailure::Engine(DownloadError::Cancelled)) => TerminalResult {
             outcome: TerminalOutcome::Cancelled,
             failure_kind: None,
@@ -471,6 +766,7 @@ fn run_worker(
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     inner.state = match terminal.outcome {
+        TerminalOutcome::Prepared => SessionState::Prepared,
         TerminalOutcome::Succeeded => SessionState::Succeeded,
         TerminalOutcome::Failed => SessionState::Failed,
         TerminalOutcome::Cancelled => SessionState::Cancelled,
@@ -512,9 +808,17 @@ fn classify_failure(error: &DownloadError) -> FailureKind {
     }
 }
 
-fn success_result(report: DownloadReport, elapsed: Duration) -> TerminalResult {
+fn success_result(
+    report: DownloadReport,
+    elapsed: Duration,
+    descriptor_backed: bool,
+) -> TerminalResult {
     TerminalResult {
-        outcome: TerminalOutcome::Succeeded,
+        outcome: if descriptor_backed {
+            TerminalOutcome::Prepared
+        } else {
+            TerminalOutcome::Succeeded
+        },
         failure_kind: None,
         failure_message: None,
         report: Some(EngineReport {
@@ -538,6 +842,15 @@ fn success_result(report: DownloadReport, elapsed: Duration) -> TerminalResult {
             part_slots_after_materialization: report.part_slots_after_materialization as u64,
             part_reopened: report.part_reopened,
             part_path: report.part_path.map(|path| path.display().to_string()),
+            prepared_files: report
+                .prepared_files
+                .into_iter()
+                .map(|file| PreparedFile {
+                    file_index: file.file_index as u32,
+                    length: file.length,
+                    sha1_hex: hex(&file.sha1),
+                })
+                .collect(),
         }),
         elapsed_millis: millis(elapsed),
     }
@@ -573,7 +886,9 @@ fn hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::io::Read;
+    use std::io::{Read, Write};
+    #[cfg(unix)]
+    use std::os::fd::AsRawFd;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::mpsc;
 
@@ -592,6 +907,91 @@ mod tests {
             skip_files: Vec::new(),
             materialize_files: Vec::new(),
         }
+    }
+
+    fn two_file_metainfo() -> Vec<u8> {
+        let mut metainfo = b"d4:infod5:filesld6:lengthi1e4:pathl1:aee\
+d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
+6:pieces40:"
+            .to_vec();
+        metainfo.extend_from_slice(&[1; 40]);
+        metainfo.extend_from_slice(b"ee");
+        metainfo
+    }
+
+    #[test]
+    fn plans_exact_saf_roles_and_materialization() {
+        let plan = saf_storage_plan(two_file_metainfo(), vec![1], vec![1]);
+        assert!(plan.valid, "{:?}", plan.message);
+        assert_eq!(plan.name, "fixture");
+        assert_eq!(plan.files.len(), 2);
+        assert_eq!(plan.files[0].role, SafFileRole::Wanted);
+        assert!(!plan.files[0].materialize);
+        assert_eq!(plan.files[1].role, SafFileRole::Skipped);
+        assert!(plan.files[1].materialize);
+
+        let duplicate = saf_storage_plan(two_file_metainfo(), vec![1], vec![1, 1]);
+        assert!(!duplicate.valid);
+        assert!(
+            duplicate
+                .message
+                .expect("invalid plan message")
+                .contains("duplicated")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn duplicates_borrowed_descriptors_and_hashes_with_a_fixed_buffer() {
+        let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "rstorrent-android-descriptor-test-{}-{sequence}",
+            std::process::id()
+        ));
+        let mut caller = fs::OpenOptions::new()
+            .create_new(true)
+            .read(true)
+            .write(true)
+            .open(&path)
+            .expect("create descriptor fixture");
+        caller
+            .write_all(b"descriptor bytes")
+            .expect("write fixture");
+        caller.sync_all().expect("sync fixture");
+        let mut owned = duplicate_descriptor(caller.as_raw_fd()).expect("duplicate descriptor");
+        drop(caller);
+        owned
+            .seek(SeekFrom::Start(0))
+            .expect("seek owned descriptor");
+        let mut bytes = Vec::new();
+        owned
+            .read_to_end(&mut bytes)
+            .expect("read owned descriptor");
+        assert_eq!(bytes, b"descriptor bytes");
+        let expected = hex(&Sha1::digest(&bytes));
+        let inspection =
+            inspect_borrowed_descriptor(owned.as_raw_fd(), bytes.len() as u64, expected.clone());
+        assert!(inspection.success, "{:?}", inspection.message);
+        assert_eq!(inspection.sha1_hex, expected);
+        drop(owned);
+        fs::remove_file(path).expect("remove descriptor fixture");
+    }
+
+    #[test]
+    fn rejects_invalid_saf_descriptors_without_starting() {
+        let session = EngineSession::new();
+        let result = session.start_saf(
+            config("/does/not/matter".to_owned(), "saf".to_owned(), 1),
+            SafStorage {
+                wanted_files: Vec::new(),
+                part_fd: -1,
+                reopened_part_fd: -1,
+                materialization_files: Vec::new(),
+            },
+        );
+        assert_eq!(result.disposition, StartDisposition::Rejected);
+        assert_eq!(session.snapshot().state, SessionState::Idle);
+        assert!(!session.snapshot().task_alive);
     }
 
     #[test]
