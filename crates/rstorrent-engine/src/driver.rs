@@ -23,7 +23,7 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 use crate::selective_storage::{
-    SelectiveStorage, SelectiveStorageError, remove_selective_part_if_present,
+    DescriptorStorage, SelectiveStorage, SelectiveStorageError, remove_selective_part_if_present,
     remove_selective_staging_if_present,
 };
 use crate::storage::{
@@ -280,12 +280,7 @@ pub async fn download_verified_piece_with_control(
     config: DownloadConfig,
     control: DownloadControl,
 ) -> Result<DownloadReport, DownloadError> {
-    if !config.peer.ip().is_loopback() {
-        return Err(DownloadError::NonLoopbackPeer(config.peer));
-    }
-    if config.timeout.is_zero() {
-        return Err(DownloadError::InvalidTimeout);
-    }
+    validate_download_config(&config)?;
 
     let configured_timeout = config.timeout;
     let staging = staging_path(&config.output_path).map_err(DownloadError::Storage)?;
@@ -295,7 +290,7 @@ pub async fn download_verified_piece_with_control(
         _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
         result = timeout(
             configured_timeout,
-            run_download(config, control.clone()),
+            run_download(config, control.clone(), None),
         ) => result
             .map_err(|_| DownloadError::TimedOut {
                 timeout: configured_timeout,
@@ -325,6 +320,39 @@ pub async fn download_verified_piece_with_control(
     }
 }
 
+pub async fn download_verified_piece_to_descriptors_with_control(
+    config: DownloadConfig,
+    descriptors: DescriptorStorage,
+    control: DownloadControl,
+) -> Result<DownloadReport, DownloadError> {
+    validate_download_config(&config)?;
+    let configured_timeout = config.timeout;
+    let result = tokio::select! {
+        biased;
+        _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
+        result = timeout(
+            configured_timeout,
+            run_download(config, control.clone(), Some(descriptors)),
+        ) => result
+            .map_err(|_| DownloadError::TimedOut {
+                timeout: configured_timeout,
+            })
+            .and_then(|result| result),
+    };
+    control.clear_buffered_payload();
+    result
+}
+
+fn validate_download_config(config: &DownloadConfig) -> Result<(), DownloadError> {
+    if !config.peer.ip().is_loopback() {
+        return Err(DownloadError::NonLoopbackPeer(config.peer));
+    }
+    if config.timeout.is_zero() {
+        return Err(DownloadError::InvalidTimeout);
+    }
+    Ok(())
+}
+
 fn preserves_existing_artifact(error: &DownloadError) -> bool {
     matches!(
         error,
@@ -342,11 +370,17 @@ fn preserves_existing_artifact(error: &DownloadError) -> bool {
 async fn run_download(
     config: DownloadConfig,
     control: DownloadControl,
+    descriptors: Option<DescriptorStorage>,
 ) -> Result<DownloadReport, DownloadError> {
     let metainfo_bytes = read_bounded_metainfo(&config.metainfo_path).await?;
     let metainfo = Metainfo::from_bytes(&metainfo_bytes).map_err(DownloadError::Metainfo)?;
     match metainfo.mode {
         rstorrent_protocol::metainfo::MetainfoMode::SingleFile => {
+            if descriptors.is_some() {
+                return Err(DownloadError::Metainfo(MetainfoError::Unsupported(
+                    "descriptor diagnostic execution requires multi-file metainfo",
+                )));
+            }
             if metainfo.piece_count() != 1
                 || !config.skip_files.is_empty()
                 || !config.materialize_files.is_empty()
@@ -358,7 +392,7 @@ async fn run_download(
             run_single_download(config, metainfo, control).await
         }
         rstorrent_protocol::metainfo::MetainfoMode::MultiFile => {
-            run_selective_download(config, metainfo, control).await
+            run_selective_download(config, metainfo, control, descriptors).await
         }
     }
 }
@@ -442,6 +476,7 @@ async fn run_selective_download(
     config: DownloadConfig,
     metainfo: Metainfo,
     control: DownloadControl,
+    descriptors: Option<DescriptorStorage>,
 ) -> Result<DownloadReport, DownloadError> {
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let selection =
@@ -480,18 +515,33 @@ async fn run_selective_download(
         )));
     }
 
-    let mut storage = SelectiveStorage::create(
-        config.output_path.clone(),
-        &metainfo,
-        layout.clone(),
-        selection,
-    )
-    .await
+    let descriptor_backed = descriptors.is_some();
+    let mut storage = match descriptors {
+        Some(descriptors) => {
+            SelectiveStorage::create_with_descriptors(
+                &metainfo,
+                layout.clone(),
+                selection,
+                &config.materialize_files,
+                descriptors,
+            )
+            .await
+        }
+        None => {
+            SelectiveStorage::create(
+                config.output_path.clone(),
+                &metainfo,
+                layout.clone(),
+                selection,
+            )
+            .await
+        }
+    }
     .map_err(DownloadError::SelectiveStorage)?;
     let selected_file_bytes = storage.selected_bytes();
     let skipped_file_bytes = storage.skipped_bytes();
     let padding_bytes = storage.padding_bytes();
-    let part_path = storage.part_path().to_path_buf();
+    let part_path = storage.part_path().map(Path::to_path_buf);
     let mut peer = connect_peer(config.peer, metainfo.info_hash).await?;
     let mut decoder = FrameDecoder::new();
     let mut network_buffer = [0_u8; NETWORK_READ_LENGTH];
@@ -623,10 +673,17 @@ async fn run_selective_download(
         }
     }
 
-    storage
-        .publish()
-        .await
-        .map_err(DownloadError::SelectiveStorage)?;
+    if descriptor_backed {
+        storage
+            .prepare_descriptors()
+            .await
+            .map_err(DownloadError::SelectiveStorage)?;
+    } else {
+        storage
+            .publish()
+            .await
+            .map_err(DownloadError::SelectiveStorage)?;
+    }
     let part_slots_before_materialization = storage.part_slots();
     storage
         .reopen_part_file()
@@ -662,7 +719,7 @@ async fn run_selective_download(
         part_slots_before_materialization,
         part_slots_after_materialization,
         part_reopened: true,
-        part_path: Some(part_path),
+        part_path,
     })
 }
 
