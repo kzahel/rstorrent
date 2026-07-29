@@ -15,7 +15,8 @@ const USAGE: &str = "\
 Usage: rstorrent-download-piece \\
   --metainfo PATH --peer 127.0.0.1:PORT --output PATH \\
   [--timeout-seconds SECONDS] \\
-  [--max-buffered-payload-bytes BYTES]";
+  [--max-buffered-payload-bytes BYTES] \\
+  [--skip-file INDEX]... [--materialize-file INDEX]...";
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
@@ -36,15 +37,33 @@ async fn main() -> ExitCode {
     match download_verified_piece(config).await {
         Ok(report) => {
             println!(
-                "verified piece=0 bytes={} sha1={} info_hash={} blocks={} \
-payload_limit={} payload_high_water={} verification_buffer={}",
+                "verified pieces={}/{} skipped_pieces={} bytes={} sha1={} info_hash={} blocks={} \
+payload_limit={} payload_high_water={} verification_buffer={} selected_file_bytes={} \
+skipped_file_bytes={} padding_bytes={} selected_written_bytes={} part_written_bytes={} \
+materialized_bytes={} part_slots_before={} part_slots_after={} part_reopened={} part_path={}",
+                report.verified_piece_count,
+                report.piece_count,
+                report.skipped_piece_count,
                 report.bytes_written,
                 hex(&report.piece_hash),
                 hex(&report.info_hash),
                 report.block_count,
                 report.payload_limit,
                 report.payload_high_water,
-                report.verification_buffer
+                report.verification_buffer,
+                report.selected_file_bytes,
+                report.skipped_file_bytes,
+                report.padding_bytes,
+                report.selected_written_bytes,
+                report.part_written_bytes,
+                report.materialized_bytes,
+                report.part_slots_before_materialization,
+                report.part_slots_after_materialization,
+                report.part_reopened,
+                report
+                    .part_path
+                    .as_ref()
+                    .map_or_else(|| "-".to_owned(), |path| path.display().to_string())
             );
             ExitCode::SUCCESS
         }
@@ -61,6 +80,8 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadConfig, String> {
     let mut output_path = None;
     let mut timeout_seconds = DEFAULT_TIMEOUT_SECONDS;
     let mut max_buffered_payload_bytes = DEFAULT_MAX_BUFFERED_PAYLOAD_BYTES;
+    let mut skip_files = Vec::new();
+    let mut materialize_files = Vec::new();
     let mut index = 0;
 
     while index < arguments.len() {
@@ -114,6 +135,14 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadConfig, String> {
                     ));
                 }
             }
+            "--skip-file" => {
+                let file_index = parse_file_index(value, flag)?;
+                push_unique(&mut skip_files, file_index, flag)?;
+            }
+            "--materialize-file" => {
+                let file_index = parse_file_index(value, flag)?;
+                push_unique(&mut materialize_files, file_index, flag)?;
+            }
             _ => return Err(format!("unknown argument {flag}")),
         }
     }
@@ -124,7 +153,25 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadConfig, String> {
         output_path: output_path.ok_or_else(|| "--output is required".to_owned())?,
         timeout: Duration::from_secs(timeout_seconds),
         max_buffered_payload_bytes,
+        skip_files,
+        materialize_files,
     })
+}
+
+fn parse_file_index(value: &OsString, flag: &str) -> Result<usize, String> {
+    value
+        .to_str()
+        .ok_or_else(|| format!("{flag} must be valid UTF-8"))?
+        .parse()
+        .map_err(|_| format!("{flag} must be a nonnegative integer"))
+}
+
+fn push_unique(values: &mut Vec<usize>, value: usize, flag: &str) -> Result<(), String> {
+    if values.contains(&value) {
+        return Err(format!("{flag} index {value} may only be provided once"));
+    }
+    values.push(value);
+    Ok(())
 }
 
 fn set_once<T>(target: &mut Option<T>, value: T, flag: &str) -> Result<(), String> {
@@ -176,6 +223,8 @@ mod tests {
             config.max_buffered_payload_bytes,
             DEFAULT_MAX_BUFFERED_PAYLOAD_BYTES
         );
+        assert!(config.skip_files.is_empty());
+        assert!(config.materialize_files.is_empty());
     }
 
     #[test]
@@ -217,6 +266,38 @@ mod tests {
                 "c",
                 "--max-buffered-payload-bytes",
                 "1",
+            ]))
+            .is_err()
+        );
+        let selected = parse_arguments(strings(&[
+            "--metainfo",
+            "a",
+            "--peer",
+            "127.0.0.1:1",
+            "--output",
+            "c",
+            "--skip-file",
+            "3",
+            "--skip-file",
+            "7",
+            "--materialize-file",
+            "7",
+        ]))
+        .expect("selected arguments");
+        assert_eq!(selected.skip_files, [3, 7]);
+        assert_eq!(selected.materialize_files, [7]);
+        assert!(
+            parse_arguments(strings(&[
+                "--metainfo",
+                "a",
+                "--peer",
+                "127.0.0.1:1",
+                "--output",
+                "c",
+                "--skip-file",
+                "3",
+                "--skip-file",
+                "3",
             ]))
             .is_err()
         );
