@@ -19,13 +19,16 @@ Read these in order:
 Before changing an established continuing concern, look for and read its topic
 under `docs/topics/`.
 
-## Tactical Status
+## Active Tactical
 
-[`000-first-verified-piece.md`](docs/tactical/000-first-verified-piece.md) is
-complete. It records the loopback download evidence, dependency audit, and
-runtime-independent protocol boundary. The recommended next work is a bounded
-multi-piece, single-file explicit-peer download tactical; tactical `001` has
-not yet been written.
+[`001-bounded-large-piece.md`](docs/tactical/001-bounded-large-piece.md) is
+ready. It replaces the first slice's piece-sized allocation with a budgeted
+16 KiB block pipeline, unverified staging storage, and streamed verification
+of a 32 MiB piece under a 256 KiB payload allowance.
+
+[`000-first-verified-piece.md`](docs/tactical/000-first-verified-piece.md)
+remains the completed execution record for the initial protocol/runtime
+vertical slice.
 
 ## Toolchain
 

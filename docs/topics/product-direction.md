@@ -2,8 +2,8 @@
 
 Topic: `product-direction`
 
-Status: initial direction and successor vision accepted; first implementation
-tactical complete.
+Status: initial direction and successor vision accepted; bounded large-piece
+tactical ready.
 
 ## Scope
 
@@ -165,8 +165,10 @@ does not distort the protocol vertical slice.
 
 ## Recommended Next Work
 
-Plan tactical `001` around a complete multi-piece, single-file download from
-an explicit peer. Reuse the proven protocol/runtime boundary while adding only
-the scheduler, verified random-access storage behavior, and diagnostics
-required to make that path usable. Keep tracker discovery and broader protocol
-surface in later bounded slices.
+Execute
+[`001-bounded-large-piece.md`](../tactical/001-bounded-large-piece.md) before
+generalizing to multiple pieces. It replaces the known piece-sized allocation
+with a budgeted 16 KiB block pipeline, unverified staging writes, streamed
+readback hashing, and explicit payload high-water evidence. Once that resource
+invariant is proven, generalize it into a complete multi-piece, single-file
+explicit-peer download.
