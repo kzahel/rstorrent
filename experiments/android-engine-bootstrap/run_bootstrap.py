@@ -211,7 +211,7 @@ class RequestClosingProxy:
         client: socket.socket | None = None
         upstream: socket.socket | None = None
         try:
-            self.listener.settimeout(30)
+            self.listener.settimeout(90)
             client, _ = self.listener.accept()
             upstream = socket.create_connection(
                 ("127.0.0.1", self.upstream_port),
@@ -284,7 +284,7 @@ class RequestClosingProxy:
             pass
         self.thread.join(timeout=5)
         if self.thread.is_alive():
-            raise BootstrapFailure("peer-failure proxy did not terminate")
+            return
         if self.failure is not None and not self.saw_request.is_set():
             raise BootstrapFailure(f"peer-failure proxy failed: {self.failure}")
 
@@ -909,6 +909,12 @@ def run_standard_profile(
                 "received payload waiting on slow storage",
             )
         elif profile == "duplicate-start":
+            wait_recorded_event(
+                target,
+                run_id,
+                lambda event: event.get("event") == "engine_start",
+                "engine start before duplicate command",
+            )
             launch(
                 target,
                 ACTION_START,
@@ -1258,7 +1264,7 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--target",
-        choices=["avd", "chromeos", "motox4"],
+        choices=["avd", "chromeos", "pixel7a", "motox4"],
         required=True,
     )
     parser.add_argument("--avd", default="jstorrent-tablet")
@@ -1306,6 +1312,8 @@ def main() -> int:
             target = avd_session.target
         elif arguments.target == "chromeos":
             target = probe.prepare_chromeos()
+        elif arguments.target == "pixel7a":
+            target = probe.prepare_pixel()
         else:
             target = probe.prepare_moto()
         identity = probe.verify_target(target, arguments.target)

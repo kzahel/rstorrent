@@ -528,11 +528,26 @@ def automate_tree_grant(target: AdbTarget, storage: str) -> None:
             for node in nodes
         ):
             return
+        if (
+            not used_folder
+            and click_from_nodes(target, nodes, [GRANT_FOLDER])
+        ):
+            entered_folder = True
+            selected_root = True
+            time.sleep(0.5)
+            continue
         root_labels = (
             ["Download", "Downloads"]
             if storage == "internal"
             else MOTO_SD_ROOT_LABELS
         )
+        if (
+            opened_roots
+            and any(node.attrib.get("text") == "Open from" for node in nodes)
+            and click_from_nodes(target, nodes, ["My files"])
+        ):
+            time.sleep(0.5)
+            continue
         if (
             not selected_root
             and opened_roots
@@ -547,14 +562,6 @@ def automate_tree_grant(target: AdbTarget, storage: str) -> None:
             and click_from_nodes(target, nodes, ["Show roots"])
         ):
             opened_roots = True
-            time.sleep(0.5)
-            continue
-        if (
-            selected_root
-            and not used_folder
-            and click_from_nodes(target, nodes, [GRANT_FOLDER])
-        ):
-            entered_folder = True
             time.sleep(0.5)
             continue
         time.sleep(0.4)
