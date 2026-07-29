@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/rstorrent-android",
     "crates/rstorrent-engine",
     "crates/rstorrent-protocol",
 ]

@@ -1,6 +1,6 @@
 # Tactical 004: Android Engine Bootstrap
 
-Status: planned.
+Status: in progress.
 
 ## Motivation And Outcome
 
@@ -383,3 +383,31 @@ This tactical is complete when:
 - the execution record states what the bootstrap proves, what remains specific
   to app-private storage, and whether the next bounded slice should integrate
   SAF storage or define a broader application service.
+
+## Execution Record
+
+### Rust control-plane checkpoint
+
+Implementation selected and exactly locked UniFFI `0.31.0`. The proc-macro
+interface exports one opaque session object; a host-only, feature-gated
+`rstorrent-uniffi-bindgen` binary generates Kotlin from the compiled native
+library. Generated bindings report
+`rstorrent-android/0.1.0;uniffi/0.31.0`, which the Android harness will verify
+at startup.
+
+The engine now exposes a cloneable cancellation/control handle. Cancellation
+is a distinct terminal engine result and travels through normal staging and
+part-file cleanup. Current payload reservations, payload high water, and
+accepted storage bytes come from the engine's existing reservation accounting,
+not a foreign-side estimate. The Android-facing crate owns one named worker
+thread and one current-thread Tokio runtime per active generation. It rejects
+duplicate starts, retains terminal progress, and requires an explicit bounded
+join before reuse.
+
+Host tests passed for invalid bounded configuration, duplicate-start
+rejection, cancellation after a real engine TCP connection, repeated
+cancellation, observable join, zero terminal reservation, and owned-artifact
+cleanup. Binding generation from the host library succeeded, and release
+libraries cross-compiled with NDK `27.0.12077973` for API 28 `x86_64` and
+`arm64-v8a`. These are build and host lifecycle results, not yet Android
+runtime evidence.

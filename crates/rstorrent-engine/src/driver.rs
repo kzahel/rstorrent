@@ -227,6 +227,12 @@ impl Error for DownloadError {
     }
 }
 
+impl DownloadError {
+    pub fn is_existing_artifact(&self) -> bool {
+        preserves_existing_artifact(self)
+    }
+}
+
 pub async fn download_verified_piece(
     config: DownloadConfig,
 ) -> Result<DownloadReport, DownloadError> {
