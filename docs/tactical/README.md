@@ -49,5 +49,10 @@ direction belongs in `../topics/`.
   publication, filesystem, and allocation evidence in three runs each on an
   AVD, Chromebook ARCVM, physical Pixel 7a, and Moto X4 internal and removable
   exFAT storage.
+- [`004-android-engine-bootstrap.md`](004-android-engine-bootstrap.md):
+  planned in-process engine packaging behind UniFFI, foreground-service
+  ownership, direct Rust networking, bounded app-private storage, cancellation,
+  peer-failure, activity-recreation, and exact cleanup evidence on an AVD,
+  Chromebook ARCVM, and Moto X4.
 
-The next tactical number is `004`.
+The next tactical number is `005`.

@@ -235,7 +235,11 @@ This is recommended direction beyond the accepted first slice:
    persisted SAF access, cancellation, publication capabilities, and cleanup
    on an AVD, Chromebook ARCVM, physical Pixel 7a, and Moto X4 internal and
    removable exFAT storage.
-5. Prove actual engine and foreground-lifetime integration on Android.
+5. Planned:
+   [`004-android-engine-bootstrap.md`](../tactical/004-android-engine-bootstrap.md)
+   will prove actual engine packaging, the UniFFI control plane,
+   foreground-service ownership, direct Rust networking, bounded app-private
+   storage, cancellation, and failure cleanup on Android.
 6. Define the application command/snapshot/event boundary from real CLI needs.
 7. Add the first Android and desktop product clients.
 8. Evaluate product migration, extension control, and JSTorrent brand
@@ -246,12 +250,11 @@ does not distort the protocol vertical slice.
 
 ## Recommended Next Work
 
-Plan a bounded Android engine-integration tactical that retains tactical
-`003`'s descriptor ownership, fixed buffers, synchronous restart state,
-observable cancellation, explicit capabilities, and exact cleanup. Prove the
-selected UniFFI control plane without moving payloads across it. Follow
-libtorrent's proven direction by keeping storage work off network and UI
-executors and applying queued-byte backpressure when disk work falls behind.
-Keep permanent resume format, alternate allocation modes, broad provider
-compatibility, general peer discovery, and UI architecture in their own
-bounded tacticals.
+Execute tactical `004` without expanding it into SAF storage or a product UI.
+Retain tactical `003`'s descriptor ownership direction for the later storage
+adapter, and prove the selected UniFFI control plane without moving payloads
+across it. Follow libtorrent's proven direction by keeping storage work off
+network and UI executors and applying queued-byte backpressure when disk work
+falls behind. Keep permanent resume format, alternate allocation modes, broad
+provider compatibility, general peer discovery, and UI architecture in their
+own bounded tacticals.

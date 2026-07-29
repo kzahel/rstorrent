@@ -43,6 +43,12 @@ descriptor ownership, cancellable termination, staging publication, and exact
 cleanup. The exFAT result also showed that sparse-mode file growth may perform
 full allocation and block on a destination that does not preserve holes.
 
+[`004-android-engine-bootstrap.md`](docs/tactical/004-android-engine-bootstrap.md)
+is planned. It will package the actual engine behind UniFFI in a foreground
+service, run the edge-rich selective fixture through direct Rust networking
+and app-private storage, and require bounded lifecycle, cancellation, failure,
+and cleanup evidence on the AVD, Chromebook ARCVM, and Moto X4.
+
 ## Toolchain
 
 On the maintainer's configured development machines, load installed Rust,
