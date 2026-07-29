@@ -1233,6 +1233,44 @@ mod tests {
             .expect("create descriptor file")
     }
 
+    fn descriptor_manifest(
+        root: &Path,
+        wanted_indices: &[usize],
+        materialization_indices: &[usize],
+    ) -> DescriptorStorage {
+        let part_path = root.join("part");
+        let part_file = new_descriptor(&part_path);
+        let reopened_part_file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&part_path)
+            .expect("open manifest part descriptor independently");
+        DescriptorStorage {
+            wanted_files: wanted_indices
+                .iter()
+                .map(|&file_index| {
+                    let path = root.join(format!("wanted-{file_index}"));
+                    DescriptorFile {
+                        file_index,
+                        file: new_descriptor(&path),
+                    }
+                })
+                .collect(),
+            part_file,
+            reopened_part_file,
+            materialization_files: materialization_indices
+                .iter()
+                .map(|&file_index| {
+                    let path = root.join(format!("materialization-{file_index}"));
+                    DescriptorFile {
+                        file_index,
+                        file: new_descriptor(&path),
+                    }
+                })
+                .collect(),
+        }
+    }
+
     #[tokio::test]
     async fn stages_hashes_publishes_reopens_and_materializes() {
         let output = test_path("fixture");
@@ -1536,6 +1574,97 @@ mod tests {
             })
         ));
         std::fs::remove_file(range_path).expect("remove range manifest file");
+    }
+
+    #[tokio::test]
+    async fn descriptor_manifest_rejects_missing_unexpected_and_nonempty_files() {
+        let metainfo = fixture();
+        let cases = [
+            ("missing-wanted", vec![3, 4, 6], vec![2], false),
+            ("unexpected-wanted", vec![0, 1, 3, 4, 6], vec![2], false),
+            ("missing-materialization", vec![0, 3, 4, 6], vec![], false),
+            (
+                "unexpected-materialization",
+                vec![0, 3, 4, 6],
+                vec![1, 2],
+                false,
+            ),
+            ("nonempty-wanted", vec![0, 3, 4, 6], vec![2], true),
+        ];
+        for (name, wanted, materializations, make_nonempty) in cases {
+            let root = test_path(name);
+            tokio::fs::create_dir(&root)
+                .await
+                .expect("create manifest case root");
+            let descriptors = descriptor_manifest(&root, &wanted, &materializations);
+            if make_nonempty {
+                std::fs::write(root.join("wanted-0"), b"preserve")
+                    .expect("make wanted descriptor nonempty");
+            }
+            let layout = TorrentLayout::from_metainfo(&metainfo);
+            let selection = FileSelection::new(&layout, &[1, 2]).expect("selection");
+            let result = SelectiveStorage::create_with_descriptors(
+                &metainfo,
+                layout,
+                selection,
+                &[2],
+                descriptors,
+            )
+            .await;
+            match name {
+                "missing-wanted" => assert!(matches!(
+                    result,
+                    Err(SelectiveStorageError::InvalidDescriptorManifest {
+                        role: "wanted",
+                        file_index: 0,
+                        reason: "required descriptor is missing",
+                    })
+                )),
+                "unexpected-wanted" => assert!(matches!(
+                    result,
+                    Err(SelectiveStorageError::InvalidDescriptorManifest {
+                        role: "wanted",
+                        file_index: 1,
+                        reason: "descriptor is not expected by the selection",
+                    })
+                )),
+                "missing-materialization" => assert!(matches!(
+                    result,
+                    Err(SelectiveStorageError::InvalidDescriptorManifest {
+                        role: "materialization",
+                        file_index: 2,
+                        reason: "required descriptor is missing",
+                    })
+                )),
+                "unexpected-materialization" => assert!(matches!(
+                    result,
+                    Err(SelectiveStorageError::InvalidDescriptorManifest {
+                        role: "materialization",
+                        file_index: 1,
+                        reason: "descriptor is not expected",
+                    })
+                )),
+                "nonempty-wanted" => {
+                    assert!(matches!(
+                        result,
+                        Err(SelectiveStorageError::NonemptyDescriptor {
+                            role: "wanted",
+                            file_index: 0,
+                            length: 8,
+                        })
+                    ));
+                    assert_eq!(
+                        std::fs::read(root.join("wanted-0"))
+                            .expect("read preserved nonempty descriptor"),
+                        b"preserve"
+                    );
+                }
+                _ => unreachable!("all manifest cases are enumerated"),
+            }
+            tokio::fs::remove_dir_all(root)
+                .await
+                .expect("remove manifest case root");
+        }
     }
 
     #[tokio::test]
