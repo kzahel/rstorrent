@@ -36,10 +36,12 @@ staging, compact skipped-file part slots, streamed mixed-source verification,
 padding omission, durable reopen, and verified materialization.
 
 [`003-android-storage-feasibility.md`](docs/tactical/003-android-storage-feasibility.md)
-is complete on `jstorrent-tablet`, Chromebook ARCVM, and a physical Pixel 7a.
-It proved fixed-buffer native file-descriptor operations, sparse 256 MiB slot
-offsets, persisted SAF reopen, descriptor ownership, cancellable termination,
-staging publication, and exact cleanup.
+is complete on `jstorrent-tablet`, Chromebook ARCVM, a physical Pixel 7a, and
+a physical Moto X4 using both internal and removable exFAT storage. It proved
+fixed-buffer native file-descriptor operations, persisted SAF reopen,
+descriptor ownership, cancellable termination, staging publication, and exact
+cleanup. The exFAT result also proved that sparse 256 MiB slot offsets require
+a non-sparse fallback.
 
 ## Toolchain
 
@@ -93,6 +95,10 @@ python3 experiments/android-storage-probe/run_probe.py \
   --target chromeos --runs 3 --no-build
 python3 experiments/android-storage-probe/run_probe.py \
   --target pixel7a --runs 3 --no-build
+python3 experiments/android-storage-probe/run_probe.py \
+  --target motox4 --storage internal --runs 3 --no-build
+python3 experiments/android-storage-probe/run_probe.py \
+  --target motox4 --storage sdcard --runs 3 --no-build
 ```
 
 Android and desktop tacticals should add the smallest meaningful build, smoke,

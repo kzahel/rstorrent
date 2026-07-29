@@ -4,7 +4,8 @@ Topic: `product-direction`
 
 Status: initial direction and successor vision accepted; bounded large-piece,
 selective multi-file storage, and Android storage foundations proven on an
-AVD, Chromebook ARCVM, and physical Pixel 7a.
+AVD, Chromebook ARCVM, physical Pixel 7a, and Moto X4 internal and removable
+exFAT storage.
 
 ## Scope
 
@@ -138,21 +139,24 @@ resume, arbitrary priority changes, or a production filesystem format.
 
 Tactical `003` exercised that provisional sparse part-file geometry through
 direct Rust file-descriptor I/O on an API 34 AVD, the physical Chromebook's
-API 33 ARCVM, and a physical API 37 Pixel 7a. Three fresh runs on each
-environment preserved a 256 MiB sparse hole with only 36--40 KiB allocated,
-verified both markers after close and process death, proved
-duplicated-descriptor ownership and observable cancellation, and supported
-directory and materialization renames through Android's external-storage
-document provider.
+API 33 ARCVM, a physical API 37 Pixel 7a, and a physical API 28 Moto X4.
+Three fresh runs on each internal destination preserved a 256 MiB sparse hole
+with only 36--40 KiB allocated. Three additional runs through the Moto's
+removable exFAT SAF descriptor allocated 268,566,528 bytes for the
+268,451,840-byte logical probe and spent 8.6--11.0 seconds in truncate, write,
+sync, and read. All profiles verified both markers after close and process
+death, proved duplicated-descriptor ownership and observable cancellation,
+and supported directory and materialization renames.
 
 The probe also established Android-specific seams worth retaining:
 restart-critical URI state must be committed before process termination,
 borrowed descriptors are duplicated before native ownership, buffer and
 cancellation bounds remain independent of logical piece size, provider
 capabilities are explicit, and grants target a user-visible child rather than
-the protected Downloads root. The Pixel is real physical-device evidence, but
-one Google device and provider do not establish OEM, cloud, or removable-media
-compatibility.
+the protected Downloads root. The Moto evidence makes sparse allocation an
+explicit destination capability rather than a portable storage assumption.
+The two physical devices still do not establish general OEM, cloud, removable
+filesystem, or Android-version compatibility.
 
 This is an accepted starting shape backed by unit and libtorrent
 interoperability evidence, not a promise that two crates are the final engine
@@ -205,11 +209,13 @@ This is recommended direction beyond the accepted first slice:
    [`003-android-storage-feasibility.md`](../tactical/003-android-storage-feasibility.md)
    established fixed-buffer Rust descriptor I/O, sparse-offset behavior,
    persisted SAF access, cancellation, publication capabilities, and cleanup
-   on an AVD, Chromebook ARCVM, and physical Pixel 7a.
-5. Prove actual engine and foreground-lifetime integration on Android.
-6. Define the application command/snapshot/event boundary from real CLI needs.
-7. Add the first Android and desktop product clients.
-8. Evaluate product migration, extension control, and JSTorrent brand
+   on an AVD, Chromebook ARCVM, physical Pixel 7a, and Moto X4 internal and
+   removable exFAT storage.
+5. Define and prove a bounded non-sparse fallback for provisional part storage.
+6. Prove actual engine and foreground-lifetime integration on Android.
+7. Define the application command/snapshot/event boundary from real CLI needs.
+8. Add the first Android and desktop product clients.
+9. Evaluate product migration, extension control, and JSTorrent brand
    graduation from the proven application contracts.
 
 The platform feasibility probe remains a separate tactical so failure in it
@@ -217,8 +223,10 @@ does not distort the protocol vertical slice.
 
 ## Recommended Next Work
 
-Plan a bounded Android engine-integration tactical that retains tactical
-`003`'s descriptor ownership, fixed-buffer, synchronous restart-state,
-observable cancellation, explicit capability, and exact cleanup boundaries.
-Keep permanent resume format, broad provider compatibility, general peer
-discovery, and UI architecture in their own bounded tacticals.
+Plan a bounded storage-layout tactical that retains sparse compact slots where
+measured support exists and provides a dense or extent-based fallback for
+destinations such as the tested removable exFAT volume. It should preserve
+tactical `003`'s descriptor ownership, fixed buffers, explicit capabilities,
+and exact cleanup without prematurely defining a permanent resume format.
+Follow it with Android engine integration; keep broad provider compatibility,
+general peer discovery, and UI architecture in their own bounded tacticals.

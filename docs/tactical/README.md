@@ -46,7 +46,8 @@ direction belongs in `../topics/`.
   libtorrent fixture.
 - [`003-android-storage-feasibility.md`](003-android-storage-feasibility.md):
   completed native descriptor, SAF, sparse-offset, reopen, cancellation,
-  publication, and allocation evidence in three runs each on an AVD,
-  Chromebook ARCVM, and physical Pixel 7a.
+  publication, filesystem, and allocation evidence in three runs each on an
+  AVD, Chromebook ARCVM, physical Pixel 7a, and Moto X4 internal and removable
+  exFAT storage.
 
 The next tactical number is `004`.
