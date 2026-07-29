@@ -471,6 +471,19 @@ def click_from_nodes(
     return False
 
 
+def click_document_entry(
+    target: AdbTarget,
+    nodes: Sequence[ET.Element],
+    labels: Sequence[str],
+) -> bool:
+    entries = [
+        node
+        for node in nodes
+        if node.attrib.get("resource-id") == "android:id/title"
+    ]
+    return click_from_nodes(target, entries, labels)
+
+
 def grant_path(storage: str) -> str:
     if storage == "sdcard":
         return f"/storage/{MOTO_SD_VOLUME}/{GRANT_FOLDER}"
@@ -503,16 +516,36 @@ def prepare_grant_folder(target: AdbTarget, storage: str) -> None:
 
 
 def automate_tree_grant(target: AdbTarget, storage: str) -> None:
+    target.shell(
+        ["input", "keyevent", "KEYCODE_WAKEUP"],
+        timeout=10,
+        check=False,
+    )
+    time.sleep(0.5)
     deadline = time.monotonic() + 60
     used_folder = False
     entered_folder = False
     opened_roots = False
-    selected_root = False
+    documents_ui_since: float | None = None
     while time.monotonic() < deadline:
         nodes = ui_nodes(target)
         if not nodes:
             time.sleep(0.4)
             continue
+        showing_documents_ui = any(
+            "documentsui" in node.attrib.get("package", "")
+            for node in nodes
+        )
+        if showing_documents_ui and documents_ui_since is None:
+            documents_ui_since = time.monotonic()
+        if any(
+            node.attrib.get("text", "").strip() == GRANT_FOLDER
+            and node.attrib.get("resource-id", "").endswith(
+                ":id/breadcrumb_text"
+            )
+            for node in nodes
+        ):
+            entered_folder = True
         if entered_folder and not used_folder and click_from_nodes(
             target,
             nodes,
@@ -530,10 +563,9 @@ def automate_tree_grant(target: AdbTarget, storage: str) -> None:
             return
         if (
             not used_folder
-            and click_from_nodes(target, nodes, [GRANT_FOLDER])
+            and click_document_entry(target, nodes, [GRANT_FOLDER])
         ):
             entered_folder = True
-            selected_root = True
             time.sleep(0.5)
             continue
         root_labels = (
@@ -541,23 +573,48 @@ def automate_tree_grant(target: AdbTarget, storage: str) -> None:
             if storage == "internal"
             else MOTO_SD_ROOT_LABELS
         )
+        drawer_start = next(
+            (
+                index
+                for index, node in enumerate(nodes)
+                if node.attrib.get("text") == "Open from"
+            ),
+            None,
+        )
+        if opened_roots and drawer_start is not None:
+            drawer_nodes = nodes[drawer_start:]
+            if click_document_entry(
+                target,
+                drawer_nodes,
+                [*root_labels, "My files"],
+            ):
+                time.sleep(0.5)
+                continue
+            if storage == "internal":
+                local_roots = [
+                    node
+                    for node in drawer_nodes
+                    if node.attrib.get("resource-id") == "android:id/title"
+                ]
+                if local_roots and click_from_nodes(
+                    target,
+                    local_roots[:1],
+                    [local_roots[0].attrib.get("text", "")],
+                ):
+                    time.sleep(0.5)
+                    continue
         if (
-            opened_roots
-            and any(node.attrib.get("text") == "Open from" for node in nodes)
-            and click_from_nodes(target, nodes, ["My files"])
+            not entered_folder
+            and drawer_start is None
+            and click_document_entry(target, nodes, root_labels)
         ):
             time.sleep(0.5)
             continue
         if (
-            not selected_root
-            and click_from_nodes(target, nodes, root_labels)
-        ):
-            selected_root = True
-            time.sleep(0.5)
-            continue
-        if (
-            not selected_root
+            not entered_folder
             and not opened_roots
+            and documents_ui_since is not None
+            and time.monotonic() - documents_ui_since >= 4
             and click_from_nodes(target, nodes, ["Show roots"])
         ):
             opened_roots = True

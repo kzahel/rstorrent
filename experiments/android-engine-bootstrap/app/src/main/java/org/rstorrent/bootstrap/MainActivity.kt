@@ -74,7 +74,7 @@ class MainActivity : Activity() {
                     addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
                     val initial =
                         command.getStringExtra("tree_initial_uri")
-                            ?: "content://com.android.providers.downloads.documents/root/downloads"
+                            ?: "content://com.android.externalstorage.documents/document/primary%3ADownload"
                     putExtra(
                         "android.provider.extra.INITIAL_URI",
                         android.net.Uri.parse(initial),

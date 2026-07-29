@@ -85,11 +85,19 @@ public final class MainActivity extends Activity {
             return;
         }
         Uri treeUri = data.getData();
-        int flags = data.getFlags()
-                & (Intent.FLAG_GRANT_READ_URI_PERMISSION
-                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        int requiredFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
         try {
-            getContentResolver().takePersistableUriPermission(treeUri, flags);
+            if ((data.getFlags() & requiredFlags) != requiredFlags) {
+                throw new IllegalStateException(
+                        "document tree grant did not include read and write access"
+                );
+            }
+            getContentResolver().takePersistableUriPermission(
+                    treeUri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            );
             requirePreferenceCommit(
                     preferences().edit().putString(TREE_URI, treeUri.toString()),
                     "persist tree URI"
@@ -110,7 +118,8 @@ public final class MainActivity extends Activity {
         String requestedInitialUri = getIntent().getStringExtra("tree_initial_uri");
         Uri initialUri = requestedInitialUri == null
                 ? Uri.parse(
-                        "content://com.android.providers.downloads.documents/root/downloads"
+                        "content://com.android.externalstorage.documents/"
+                                + "document/primary%3ADownload"
                 )
                 : Uri.parse(requestedInitialUri);
         intent.putExtra("android.provider.extra.INITIAL_URI", initialUri);
