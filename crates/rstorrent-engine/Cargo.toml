@@ -1,0 +1,10 @@
+[package]
+name = "rstorrent-engine"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+rstorrent-protocol = { path = "../rstorrent-protocol" }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "time"] }
