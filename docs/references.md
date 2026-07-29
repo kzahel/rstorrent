@@ -99,8 +99,12 @@ license and architecture decision. The similarly named
 GPL-2.0 and is not the managed Rasterbar libtorrent reference.
 
 RSTorrent itself does not yet have a public license. Select one before public
-distribution and audit the licenses of actual Rust, Python, Android, and
-desktop dependencies once their lockfiles exist.
+distribution. The initial Rust and Python lockfiles were audited during
+tactical `000`; all resolved declarations are permissive, and the exact
+package/version/license inventory is recorded in
+[`tactical/000-first-verified-piece.md`](tactical/000-first-verified-piece.md).
+Repeat the audit when dependency graphs change and add Android and desktop
+inventories when those lockfiles exist.
 
 ## JSTorrent
 

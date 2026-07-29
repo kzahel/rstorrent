@@ -1,6 +1,6 @@
 # Tactical 000: First Verified Piece
 
-Status: ready; implementation has not started.
+Status: complete; independently interoperable loopback result recorded.
 
 ## Motivation And Outcome
 
@@ -309,14 +309,150 @@ stopping condition.
 
 ## Execution Record
 
-Not started.
+Completed on 2026-07-29.
 
-When work begins, keep this section current with:
+### Implementation And Boundaries
 
-- boundary decisions and deferred extractions;
-- dependency and license findings;
-- implementation status;
-- exact validation commands and results;
-- interoperability environment and evidence;
-- known gaps; and
-- recommended tactical `001`.
+The workspace now contains:
+
+- `rstorrent-protocol`, with bounded bencode, exact-span v1 metainfo
+  parsing, peer handshakes and incremental framing, and the deterministic
+  one-piece transition model;
+- `rstorrent-engine`, with the single-owner Tokio TCP driver, whole-operation
+  timeout, verified-only output path, and `rstorrent-download-piece`
+  diagnostic; and
+- `tests/interop`, with a locked Python 3.12 environment and independently
+  authored Rasterbar libtorrent fixture, seed, subprocess, assertion,
+  diagnostics, and cleanup orchestration.
+
+Protocol code owns validation and state transitions. It receives byte slices,
+values, messages, and actions, and has no runtime or I/O contracts. The engine
+owns the socket, timeout, bounded metainfo read, peer I/O, and final file write.
+It creates no background task: the diagnostic future is the only state owner
+and its caller observes termination directly.
+
+The architecture test permits only the focused `sha1` direct dependency and
+scans protocol source for engine, runtime, network, filesystem, process,
+thread, synchronization, task, and clock imports. The engine depends inward
+on the protocol crate. No additional crate, trait layer, channel, shared
+mutable session, or storage abstraction was justified by this slice.
+
+Metainfo is capped at 1 MiB before a read can grow further. Bencode also bounds
+string length, nesting, and collection entries. Peer input is read in fixed
+16 KiB chunks; the decoder rejects input chunks over 64 KiB, frames larger
+than one 16 KiB piece response, and more than 1,024 messages per push. The
+piece model permits at most a 1 MiB piece, so its block state and request
+pipeline remain bounded.
+
+Output creation occurs only after the complete payload produces the metainfo
+piece hash. General random-access storage remains correctly deferred. The
+diagnostic also rejects non-loopback peers so this test surface cannot
+silently become a general downloader.
+
+### Dependency And License Findings
+
+The committed Rust lockfile resolves the direct dependencies to `sha1` 0.10.7
+(`MIT OR Apache-2.0`) and Tokio 1.53.1 (`MIT`). The complete target-inclusive
+transitive graph was checked from Cargo package metadata:
+
+- `bytes` 1.12.1, `generic-array` 0.14.7, `mio` 1.2.2,
+  `tokio` 1.53.1, and `tokio-macros` 2.7.1 declare `MIT`;
+- `block-buffer` 0.10.4, `cfg-if` 1.0.4, `cpufeatures` 0.2.17,
+  `crypto-common` 0.1.7, `digest` 0.10.7, `libc` 0.2.189,
+  `pin-project-lite` 0.2.17, `proc-macro2` 1.0.107, `quote` 1.0.47,
+  `sha1` 0.10.7, `socket2` 0.6.5, `syn` 2.0.119, `typenum` 1.20.1,
+  `version_check` 0.9.5, `windows-link` 0.2.1, and
+  `windows-sys` 0.61.2 declare MIT/Apache-2.0 alternatives;
+- `unicode-ident` 1.0.24 declares
+  `(MIT OR Apache-2.0) AND Unicode-3.0`; and
+- `wasi` 0.11.1+wasi-snapshot-preview1 declares
+  `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT`.
+
+The locked test-only `libtorrent` 2.0.13 Python package declares BSD in its
+wheel metadata. The pinned upstream core is BSD-3-Clause and its Python
+binding source is Boost Software License 1.0, as recorded in the upstream
+license. It runs as a separate test peer. No libtorrent source, fixture, or
+`libsimulator` component was imported or linked.
+
+All resolved third-party declarations are permissive. The two local crates
+remain unpublished and have no license field because RSTorrent still has no
+selected public license.
+
+### Validation
+
+The final validation ran from a clean worktree with the configured profile:
+
+```text
+rustc 1.97.0 (2d8144b78 2026-07-07)
+cargo 1.97.0 (c980f4866 2026-06-30)
+Python 3.12.3
+```
+
+These commands passed:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test --workspace
+uv lock --project tests/interop --check
+python3 scripts/references.py status
+git diff --check
+```
+
+`cargo test --workspace` passed 23 tests: two diagnostic argument tests,
+20 protocol/metainfo/wire/state tests, and the architecture boundary test.
+The cases include all negative and positive behaviors required by this
+tactical. Reference status matched all four managed revisions:
+
+```text
+bittorrent-beps 7b7b41f46d57ff1d1cb1e24ed6e9bacfbf958c06
+rqbit            4e5f94cbcf1d57ec500885c77cf1e24d70232d89
+libtorrent       7d7fc38fac61177fa5e02148f791b2f65250b09d
+jstorrent        main@0cad4dacf540f5be42ee53c4f1e1da27aa1b3685
+```
+
+### Interoperability Evidence
+
+The documented command ran three consecutive fixtures:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/first_verified_piece.py --runs 3
+```
+
+Environment and fixture:
+
+```text
+Python                    3.12.3
+libtorrent binding        2.0.13.0
+libtorrent native library 2.0.13.0
+payload size              40000 bytes
+piece size                65536 bytes
+request blocks            16384, 16384, and 7232 bytes
+expected payload SHA-1    576143b2992ecf25c780ff41c79552f3bb50941b
+info hash                 6096ba8e2f2855522ca32e9221c0976708e5646e
+```
+
+All three outputs were byte-identical to their freshly generated sources.
+Actual SHA-1 equaled the expected SHA-1 on every run. End-to-end elapsed
+times were 0.051, 0.053, and 0.054 seconds. The RSTorrent diagnostic exited
+successfully, each libtorrent session terminated, every temporary directory
+was removed, and the harness reported `all_runs=3 cleanup=ok result=pass`.
+
+### Capability And Known Gaps
+
+The controlled single-file v1, single-piece, explicit-peer path is
+implemented, unit tested, and independently interoperable. It is not
+real-world exercised or product supported. The diagnostic and its arguments
+remain test surfaces.
+
+The non-goals remain non-goals rather than incomplete work. In particular,
+there is no multi-piece scheduling or random-access output, peer discovery,
+tracker client, retry policy, resume, or seeding. No material boundary problem
+was found that requires a deferred extraction inside this slice.
+
+Recommended tactical `001`: generalize the proven explicit-peer path into a
+complete multi-piece, single-file download with a small deterministic piece
+picker, bounded request pipeline, verified random-access writes, progress
+diagnostics, and libtorrent interoperability. Keep trackers and other peer
+discovery out until that storage and scheduling path is itself proven.

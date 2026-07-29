@@ -3,7 +3,7 @@
 Topic: `product-direction`
 
 Status: initial direction and successor vision accepted; first implementation
-tactical ready.
+tactical complete.
 
 ## Scope
 
@@ -106,6 +106,18 @@ unrelated responsibilities. Refactor when the benefit is concrete and
 proportionate to the active tactical. Speculative abstraction is not a
 substitute for evidence.
 
+### Initial implementation boundary
+
+Tactical `000` established the first workspace boundary as two crates:
+`rstorrent-protocol` owns bounded parsing, codecs, and deterministic piece
+state, while `rstorrent-engine` owns Tokio, TCP, timeouts, and verified output.
+An automated architecture test enforces the inward dependency direction.
+
+This is an accepted starting shape backed by unit and libtorrent
+interoperability evidence, not a promise that two crates are the final engine
+layout. Add or split crates only when later ownership, reuse, lifecycle, or
+testing evidence justifies it.
+
 ## Initial Non-Goals
 
 - Chrome extension or Chrome native-messaging integration.
@@ -125,7 +137,6 @@ substitute for evidence.
 - The evidence, compatibility work, and release process required for that
   graduation.
 - The public license.
-- The initial crate and workspace layout.
 - The first desktop UI approach.
 - The Android Rust/Kotlin binding generator and ownership model.
 - The exact minimum useful BitTorrent feature set.
@@ -136,10 +147,10 @@ substitute for evidence.
 
 This is recommended direction beyond the accepted first slice:
 
-1. Execute
-   [`000-first-verified-piece.md`](../tactical/000-first-verified-piece.md) to
-   establish an independently tested bencode, metainfo, peer-wire, and
-   libtorrent-interoperable vertical thread.
+1. Completed:
+   [`000-first-verified-piece.md`](../tactical/000-first-verified-piece.md)
+   established independently tested bencode, metainfo, peer-wire, one-piece
+   state, and a libtorrent-interoperable vertical thread.
 2. Turn that vertical thread into a usable CLI before adding trackers,
    metadata exchange, DHT, multi-file storage, resume, and seeding.
 3. Prove Rust networking, Android foreground lifetime, and SAF-backed bulk I/O
@@ -154,7 +165,8 @@ does not distort the protocol vertical slice.
 
 ## Recommended Next Work
 
-Implement only the bounded loopback result in
-[`000-first-verified-piece.md`](../tactical/000-first-verified-piece.md).
-Record any material boundary decisions and the exact libtorrent
-interoperability evidence in that tactical before selecting the next slice.
+Plan tactical `001` around a complete multi-piece, single-file download from
+an explicit peer. Reuse the proven protocol/runtime boundary while adding only
+the scheduler, verified random-access storage behavior, and diagnostics
+required to make that path usable. Keep tracker discovery and broader protocol
+surface in later bounded slices.

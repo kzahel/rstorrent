@@ -1,8 +1,8 @@
 # RSTorrent Development
 
-RSTorrent is currently a documentation-only repository. The active first
-implementation tactical defines and justifies the initial Rust workspace shape
-so a scaffold does not make that decision accidentally.
+RSTorrent now has its first bounded engine slice: a pure protocol crate, a
+Tokio runtime crate, and a loopback libtorrent interoperability harness. It is
+not yet a generally useful torrent client.
 
 ## Starting A Session
 
@@ -19,12 +19,13 @@ Read these in order:
 Before changing an established continuing concern, look for and read its topic
 under `docs/topics/`.
 
-## Active Tactical
+## Tactical Status
 
 [`000-first-verified-piece.md`](docs/tactical/000-first-verified-piece.md) is
-the ready first implementation slice. It defines a loopback download of one
-multi-block, SHA-1-verified piece from a Rasterbar libtorrent peer and the
-runtime-independent protocol boundary that the initial workspace must enforce.
+complete. It records the loopback download evidence, dependency audit, and
+runtime-independent protocol boundary. The recommended next work is a bounded
+multi-piece, single-file explicit-peer download tactical; tactical `001` has
+not yet been written.
 
 ## Toolchain
 
