@@ -5,3 +5,4 @@
 pub mod bencode;
 pub mod metainfo;
 pub mod peer_wire;
+pub mod piece;
