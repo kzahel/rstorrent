@@ -341,4 +341,90 @@ This tactical is complete when:
 
 ## Execution Record
 
-Pending implementation.
+Implementation landed in incremental commits:
+
+- `459fe4a` opened compact part files from owned, preopened descriptors and
+  validated independent reopen without a path.
+- `026cb32` added exact wanted, part, reopen, and materialization descriptor
+  manifests while retaining one placement, hashing, and slot-release
+  implementation for path and descriptor storage.
+- `666da42` added bounded native storage-plan generation, synchronous
+  close-on-exec descriptor duplication, distinct `PREPARED` completion,
+  native per-file hashes, and the fixed 16 KiB restart verifier.
+- `878c845` added the persisted tree grant, planned document creation,
+  provider publication, force-stop/restart verification, exact cleanup, and
+  explicit SAF runner modes.
+- `195795c` hardened exact-target picker and failure-injection timing,
+  including the ChromeOS `My files` hierarchy.
+
+Host validation currently passes all engine and Android native tests. It
+covers duplicate and out-of-range descriptor indices, nonempty part
+descriptors, descriptor ownership after caller close, exact selected mapping,
+compact-slot reopen, materialization, per-file hashes, invalid raw
+descriptors, plan rejection, and fixed-buffer reopen verification.
+
+Recorded device evidence:
+
+- API 34 `jstorrent-tablet` AVD: three fresh normal SAF internal cycles
+  passed publication, force-stop, restart verification, and cleanup. Separate
+  runs passed slow descriptor acceptance, peer disconnect after a request,
+  duplicate start, activity recreation, and both cancellation phases. The
+  slow run observed one received 16 KiB block waiting for storage while the
+  payload high-water remained exactly 32 KiB.
+- Physical Chromebook ARCVM, API 33, `nami_cheets`: three normal SAF internal
+  cycles passed. Each final document was reopened through document IDs under
+  the persisted grant, verified in Rust, and deleted with the part document.
+- The optional Pixel 7a was visible at the expected serial but securely
+  locked, so no picker or transfer result is claimed.
+- The required Moto X4 serial `ZY224JN8D2` was not present in `adb devices`.
+  Internal and removable exFAT rows, including removable cancellation and
+  allocation observations, remain unrun.
+
+The main vertical thread is implemented, but this tactical is not complete.
+The Moto rows and remaining device-level injected manifest, corrupt-reopen,
+collision, rename, and revoked-permission cases still gate the stopping
+condition. Existing successful output is never reported as application
+success before restart verification.
+
+Validation run for this implementation:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+experiments/android-engine-bootstrap/build.sh
+ANDROID_HOME=/home/kgraehl/Android/Sdk \
+  experiments/android-engine-bootstrap/gradlew \
+  -p experiments/android-engine-bootstrap testDebugUnitTest lintDebug
+python3 -m py_compile \
+  experiments/android-engine-bootstrap/run_bootstrap.py \
+  experiments/android-storage-probe/run_probe.py
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target avd --avd jstorrent-tablet \
+  --storage saf-internal --runs 3 --profile success --no-build
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target avd --avd jstorrent-tablet \
+  --storage saf-internal --profile slow-storage --no-build
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target avd --avd jstorrent-tablet \
+  --storage saf-internal --profile peer-failure --no-build
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target avd --avd jstorrent-tablet \
+  --storage saf-internal --profile duplicate-start --no-build
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target avd --avd jstorrent-tablet \
+  --storage saf-internal --profile activity-recreation --no-build
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target avd --avd jstorrent-tablet \
+  --storage saf-internal --profile cancellation --no-build
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target chromeos --storage saf-internal \
+  --runs 3 --profile success --no-build
+scripts/references.py status
+cargo tree --workspace --locked
+git diff --check
+```
+
+The final audit found no AVD, bootstrap package on the Pixel or Chromebook,
+ChromeOS grant child, ChromeOS reverse port, or generated APK/binding tree.
+The Quest serial `2G0YC1ZF93041Z` remained explicitly excluded and untouched.

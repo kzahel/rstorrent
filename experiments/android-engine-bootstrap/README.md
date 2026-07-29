@@ -1,9 +1,10 @@
 # Android Engine Bootstrap
 
-This is the Tactical 004 integration harness. It packages the real
+This is the Tactical 004/005 integration harness. It packages the real
 `rstorrent-engine` behind generated UniFFI Kotlin bindings and gives one
 foreground service sole ownership of the native session. It is not a product
-UI and uses only app-private path-backed storage.
+UI. It supports the original app-private path-backed diagnostic and selective
+storage through an explicitly granted Android Storage Access Framework tree.
 
 Build both locked Android ABIs and the debug APK:
 
@@ -33,9 +34,20 @@ python3 experiments/android-engine-bootstrap/run_bootstrap.py \
   --target avd --profile slow-storage --profile cancellation \
   --profile peer-failure --profile duplicate-start \
   --profile activity-recreation --profile preexisting-artifacts
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target chromeos --storage saf-internal --runs 3 --profile success
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target motox4 --storage saf-sdcard --runs 3 --profile success
 ```
 
-Available targets are `avd`, `motox4`, and `chromeos`. Every device command is
-addressed through the exact verified target controller. The runner owns and
-removes its reverse port, controlled seed, app-private run IDs, application,
-and fresh AVD session.
+Available targets are `avd`, `motox4`, `chromeos`, and the optional `pixel7a`.
+Storage modes are `private`, `saf-internal`, and the Moto-only `saf-sdcard`.
+The SAF success profile obtains an exact persisted grant through the system
+picker, creates the Rust-generated document plan, waits for native
+`PREPARED`, publishes by provider rename, force-stops the process, reopens
+every final document in a fresh process, verifies exact length and SHA-1 in
+Rust, then removes the published and part documents and releases the grant.
+
+Every device command is addressed through the exact verified target
+controller. The runner owns and removes its reverse port, controlled seed,
+grant child, app-private run IDs, application, and fresh AVD session.

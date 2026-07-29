@@ -198,6 +198,24 @@ joined the task and returned the controlled peer to zero connections. This
 proves in-process engine packaging and lifecycle through app-private
 path-backed storage; it does not yet connect the engine to SAF destinations.
 
+Tactical `005` has implemented that SAF connection. Rust now derives an exact
+bounded document plan, synchronously duplicates caller-owned descriptors for
+wanted files, the compact part file, an independent reopen handle, and
+materializations, and runs the existing selective placement and verification
+logic over those owned handles. Native completion is `PREPARED`, not product
+success. Kotlin performs only coarse provider renames; after process death a
+fresh process reopens every published document and a fixed 16 KiB Rust loop
+checks exact length and a native-produced per-file SHA-1 before cleanup.
+
+Three complete publication/restart cycles passed on the API 34 AVD and the
+physical Chromebook's API 33 ARCVM. AVD evidence also covers slow storage at
+the 32 KiB payload high-water, peer failure after a real request, duplicate
+start, activity recreation, and cancellation before and after stored
+progress. The required Moto internal and removable rows remain unrun because
+the previously identified Moto X4 was no longer attached. Tactical `005`
+therefore remains in progress even though its main descriptor and publication
+thread is implemented.
+
 This is an accepted starting shape backed by unit and libtorrent
 interoperability evidence, not a promise that two crates are the final engine
 layout. Add or split crates only when later ownership, reuse, lifecycle, or
@@ -255,7 +273,7 @@ This is recommended direction beyond the accepted first slice:
    proved actual engine packaging, the UniFFI control plane,
    foreground-service ownership, direct Rust networking, bounded app-private
    storage, cancellation, and failure cleanup on Android.
-6. Connect the real selective-storage engine to Android SAF capabilities
+6. In progress: connect the real selective-storage engine to Android SAF capabilities
    without moving payloads through Kotlin:
    [`005-saf-selective-storage.md`](../tactical/005-saf-selective-storage.md)
    records the active slice.

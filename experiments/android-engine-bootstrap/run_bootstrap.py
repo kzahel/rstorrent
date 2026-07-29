@@ -1074,6 +1074,7 @@ def run_cancellation_profile(
                 run_id,
                 lambda event: event.get("event") == "engine_start",
                 f"engine start before {phase} cancellation",
+                timeout_seconds=30,
             )
             if after_progress:
                 wait_for_event(

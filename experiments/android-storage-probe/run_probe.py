@@ -503,7 +503,7 @@ def prepare_grant_folder(target: AdbTarget, storage: str) -> None:
 
 
 def automate_tree_grant(target: AdbTarget, storage: str) -> None:
-    deadline = time.monotonic() + 30
+    deadline = time.monotonic() + 60
     used_folder = False
     entered_folder = False
     opened_roots = False
@@ -550,7 +550,6 @@ def automate_tree_grant(target: AdbTarget, storage: str) -> None:
             continue
         if (
             not selected_root
-            and opened_roots
             and click_from_nodes(target, nodes, root_labels)
         ):
             selected_root = True
