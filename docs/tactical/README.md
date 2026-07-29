@@ -45,7 +45,8 @@ direction belongs in `../topics/`.
   verification, durable reopen, and materialization through an edge-rich
   libtorrent fixture.
 - [`003-android-storage-feasibility.md`](003-android-storage-feasibility.md):
-  ready plan for native descriptor, SAF, sparse-offset, reopen, cancellation,
-  publication, and allocation evidence on an AVD and Chromebook ARCVM.
+  completed native descriptor, SAF, sparse-offset, reopen, cancellation,
+  publication, and allocation evidence in three runs each on an AVD,
+  Chromebook ARCVM, and physical Pixel 7a.
 
 The next tactical number is `004`.

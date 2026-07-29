@@ -2,9 +2,9 @@
 
 Topic: `product-direction`
 
-Status: initial direction and successor vision accepted; bounded large-piece
-and selective multi-file storage foundations proven; Android storage
-feasibility tactical ready.
+Status: initial direction and successor vision accepted; bounded large-piece,
+selective multi-file storage, and Android storage foundations proven on an
+AVD, Chromebook ARCVM, and physical Pixel 7a.
 
 ## Scope
 
@@ -136,6 +136,24 @@ and remained allocated because a permanently skipped file still overlapped
 them. This proves a bounded selective-storage foundation, not unfinished-piece
 resume, arbitrary priority changes, or a production filesystem format.
 
+Tactical `003` exercised that provisional sparse part-file geometry through
+direct Rust file-descriptor I/O on an API 34 AVD, the physical Chromebook's
+API 33 ARCVM, and a physical API 37 Pixel 7a. Three fresh runs on each
+environment preserved a 256 MiB sparse hole with only 36--40 KiB allocated,
+verified both markers after close and process death, proved
+duplicated-descriptor ownership and observable cancellation, and supported
+directory and materialization renames through Android's external-storage
+document provider.
+
+The probe also established Android-specific seams worth retaining:
+restart-critical URI state must be committed before process termination,
+borrowed descriptors are duplicated before native ownership, buffer and
+cancellation bounds remain independent of logical piece size, provider
+capabilities are explicit, and grants target a user-visible child rather than
+the protected Downloads root. The Pixel is real physical-device evidence, but
+one Google device and provider do not establish OEM, cloud, or removable-media
+compatibility.
+
 This is an accepted starting shape backed by unit and libtorrent
 interoperability evidence, not a promise that two crates are the final engine
 layout. Add or split crates only when later ownership, reuse, lifecycle, or
@@ -183,11 +201,15 @@ This is recommended direction beyond the accepted first slice:
    established cross-file mapping, skipped-file part storage, verified
    publication, durable reopen, and materialization under the bounded
    block pipeline.
-4. Prove Rust networking, Android foreground lifetime, and SAF-backed bulk I/O
-   on a physical Chromebook before assuming the desktop storage seam transfers.
-5. Define the application command/snapshot/event boundary from real CLI needs.
-6. Add the first Android and desktop product clients.
-7. Evaluate product migration, extension control, and JSTorrent brand
+4. Completed:
+   [`003-android-storage-feasibility.md`](../tactical/003-android-storage-feasibility.md)
+   established fixed-buffer Rust descriptor I/O, sparse-offset behavior,
+   persisted SAF access, cancellation, publication capabilities, and cleanup
+   on an AVD, Chromebook ARCVM, and physical Pixel 7a.
+5. Prove actual engine and foreground-lifetime integration on Android.
+6. Define the application command/snapshot/event boundary from real CLI needs.
+7. Add the first Android and desktop product clients.
+8. Evaluate product migration, extension control, and JSTorrent brand
    graduation from the proven application contracts.
 
 The platform feasibility probe remains a separate tactical so failure in it
@@ -195,13 +217,8 @@ does not distort the protocol vertical slice.
 
 ## Recommended Next Work
 
-Execute
-[`003-android-storage-feasibility.md`](../tactical/003-android-storage-feasibility.md)
-before treating the desktop part-file layout as a product format. It compares
-direct Rust file-descriptor I/O through app-private and SAF storage, random
-access, truncation, reopen, large sparse logical slot offsets, provider
-allocation cost, descriptor ownership, cancellation, and publication
-operations on `jstorrent-tablet` and Chromebook ARCVM. Keep resume format,
-general peer discovery, UI architecture, and broad session scheduling outside
-that platform evidence slice. Repeat the resulting probe on an ordinary
-physical Android phone or tablet before making a general Android claim.
+Plan a bounded Android engine-integration tactical that retains tactical
+`003`'s descriptor ownership, fixed-buffer, synchronous restart-state,
+observable cancellation, explicit capability, and exact cleanup boundaries.
+Keep permanent resume format, broad provider compatibility, general peer
+discovery, and UI architecture in their own bounded tacticals.

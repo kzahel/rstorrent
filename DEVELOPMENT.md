@@ -36,9 +36,10 @@ staging, compact skipped-file part slots, streamed mixed-source verification,
 padding omission, durable reopen, and verified materialization.
 
 [`003-android-storage-feasibility.md`](docs/tactical/003-android-storage-feasibility.md)
-is ready. It will measure the native file-descriptor and SAF operations behind
-that storage model on `jstorrent-tablet` and Chromebook ARCVM without claiming
-ordinary physical Android-device support.
+is complete on `jstorrent-tablet`, Chromebook ARCVM, and a physical Pixel 7a.
+It proved fixed-buffer native file-descriptor operations, sparse 256 MiB slot
+offsets, persisted SAF reopen, descriptor ownership, cancellable termination,
+staging publication, and exact cleanup.
 
 ## Toolchain
 
@@ -79,6 +80,19 @@ zero-length, final-short, reopen, and materialization behavior:
 ```bash
 uv run --project tests/interop --locked \
   python tests/interop/first_verified_piece.py --selective-files --runs 3
+```
+
+Tactical `003`'s self-contained Android probe builds both supported native
+ABIs and targets only an explicitly verified environment:
+
+```bash
+experiments/android-storage-probe/build_probe.sh
+python3 experiments/android-storage-probe/run_probe.py \
+  --target avd --avd jstorrent-tablet --runs 3 --no-build
+python3 experiments/android-storage-probe/run_probe.py \
+  --target chromeos --runs 3 --no-build
+python3 experiments/android-storage-probe/run_probe.py \
+  --target pixel7a --runs 3 --no-build
 ```
 
 Android and desktop tacticals should add the smallest meaningful build, smoke,
