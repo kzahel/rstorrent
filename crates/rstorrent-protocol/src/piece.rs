@@ -3,6 +3,7 @@ use std::fmt;
 
 use crate::metainfo::MAX_PIECE_LENGTH;
 use crate::peer_wire::{BlockRequest, MAX_REQUEST_BLOCK_LENGTH, PeerMessage};
+use crate::storage_layout::RequestRange;
 
 pub const MIN_PAYLOAD_ALLOWANCE: usize = MAX_REQUEST_BLOCK_LENGTH as usize;
 
@@ -46,8 +47,25 @@ pub enum PieceError {
         configured: usize,
         minimum: usize,
     },
+    InvalidPieceCount {
+        count: usize,
+    },
+    PieceIndexOutOfRange {
+        index: u32,
+        piece_count: usize,
+    },
+    InvalidRequestRange {
+        begin: u32,
+        length: u32,
+    },
+    OverlappingRequestRange {
+        previous_end: u32,
+        begin: u32,
+    },
+    EmptyRequestPlan,
     InvalidBitfieldLength {
         actual: usize,
+        expected: usize,
     },
     InvalidBitfieldPadding,
     UnexpectedPieceIndex {
@@ -97,14 +115,34 @@ impl fmt::Display for PieceError {
                 formatter,
                 "payload allowance {configured} is below minimum {minimum}"
             ),
-            Self::InvalidBitfieldLength { actual } => {
+            Self::InvalidPieceCount { count } => {
+                write!(formatter, "torrent piece count {count} is invalid")
+            }
+            Self::PieceIndexOutOfRange { index, piece_count } => {
+                write!(formatter, "piece index {index} is outside 0..{piece_count}")
+            }
+            Self::InvalidRequestRange { begin, length } => {
                 write!(
                     formatter,
-                    "single-piece bitfield has invalid length {actual}"
+                    "request range at {begin} has invalid length {length}"
+                )
+            }
+            Self::OverlappingRequestRange {
+                previous_end,
+                begin,
+            } => write!(
+                formatter,
+                "request range at {begin} overlaps previous end {previous_end}"
+            ),
+            Self::EmptyRequestPlan => write!(formatter, "wanted piece has no request ranges"),
+            Self::InvalidBitfieldLength { actual, expected } => {
+                write!(
+                    formatter,
+                    "torrent bitfield has length {actual}, expected {expected}"
                 )
             }
             Self::InvalidBitfieldPadding => {
-                write!(formatter, "single-piece bitfield has nonzero padding bits")
+                write!(formatter, "torrent bitfield has nonzero padding bits")
             }
             Self::UnexpectedPieceIndex { expected, actual } => write!(
                 formatter,
@@ -190,6 +228,7 @@ struct Block {
 pub struct OnePieceDownload {
     piece_index: u32,
     piece_length: u32,
+    piece_count: usize,
     expected_hash: [u8; 20],
     blocks: Vec<Block>,
     payload_budget: PayloadBudgetSnapshot,
@@ -219,23 +258,93 @@ impl OnePieceDownload {
                 minimum: MIN_PAYLOAD_ALLOWANCE,
             });
         }
-
-        let block_count = piece_length.div_ceil(MAX_REQUEST_BLOCK_LENGTH);
-        let mut blocks = Vec::with_capacity(block_count as usize);
+        if piece_index != 0 {
+            return Err(PieceError::PieceIndexOutOfRange {
+                index: piece_index,
+                piece_count: 1,
+            });
+        }
+        let mut request_ranges = Vec::new();
         let mut begin = 0;
         while begin < piece_length {
             let length = MAX_REQUEST_BLOCK_LENGTH.min(piece_length - begin);
+            request_ranges.push(RequestRange { begin, length });
+            begin += length;
+        }
+        Self::new_for_torrent(
+            piece_index,
+            piece_length,
+            expected_hash,
+            payload_allowance,
+            1,
+            &request_ranges,
+        )
+    }
+
+    pub fn new_for_torrent(
+        piece_index: u32,
+        piece_length: u32,
+        expected_hash: [u8; 20],
+        payload_allowance: usize,
+        piece_count: usize,
+        request_ranges: &[RequestRange],
+    ) -> Result<Self, PieceError> {
+        if piece_length == 0 || piece_length > MAX_PIECE_LENGTH {
+            return Err(PieceError::InvalidPieceLength {
+                length: piece_length,
+                maximum: MAX_PIECE_LENGTH,
+            });
+        }
+        if payload_allowance < MIN_PAYLOAD_ALLOWANCE {
+            return Err(PieceError::InvalidPayloadAllowance {
+                configured: payload_allowance,
+                minimum: MIN_PAYLOAD_ALLOWANCE,
+            });
+        }
+        if piece_count == 0 {
+            return Err(PieceError::InvalidPieceCount { count: piece_count });
+        }
+        if usize::try_from(piece_index).map_or(true, |index| index >= piece_count) {
+            return Err(PieceError::PieceIndexOutOfRange {
+                index: piece_index,
+                piece_count,
+            });
+        }
+        if request_ranges.is_empty() {
+            return Err(PieceError::EmptyRequestPlan);
+        }
+
+        let mut blocks = Vec::with_capacity(request_ranges.len());
+        let mut previous_end = 0;
+        for range in request_ranges {
+            let end = range.begin.checked_add(range.length);
+            if range.length == 0
+                || range.length > MAX_REQUEST_BLOCK_LENGTH
+                || end.is_none_or(|end| end > piece_length)
+            {
+                return Err(PieceError::InvalidRequestRange {
+                    begin: range.begin,
+                    length: range.length,
+                });
+            }
+            if range.begin < previous_end {
+                return Err(PieceError::OverlappingRequestRange {
+                    previous_end,
+                    begin: range.begin,
+                });
+            }
             blocks.push(Block {
-                begin,
-                length,
+                begin: range.begin,
+                length: range.length,
                 status: BlockStatus::Missing,
             });
-            begin += length;
+            previous_end = end.expect("validated request range end");
         }
 
         Ok(Self {
             piece_index,
             piece_length,
+            piece_count,
             expected_hash,
             blocks,
             payload_budget: PayloadBudgetSnapshot {
@@ -264,20 +373,34 @@ impl OnePieceDownload {
                 Ok(self.availability_actions())
             }
             PeerMessage::Have(index) => {
-                self.validate_piece_index(index)?;
-                self.peer_has_piece = true;
+                if usize::try_from(index).map_or(true, |index| index >= self.piece_count) {
+                    return Err(PieceError::PieceIndexOutOfRange {
+                        index,
+                        piece_count: self.piece_count,
+                    });
+                }
+                if index == self.piece_index {
+                    self.peer_has_piece = true;
+                }
                 Ok(self.availability_actions())
             }
             PeerMessage::Bitfield(bitfield) => {
-                if bitfield.len() != 1 {
+                let expected_length = self.piece_count.div_ceil(8);
+                if bitfield.len() != expected_length {
                     return Err(PieceError::InvalidBitfieldLength {
                         actual: bitfield.len(),
+                        expected: expected_length,
                     });
                 }
-                if bitfield[0] & 0x7f != 0 {
+                let padding_bits = expected_length * 8 - self.piece_count;
+                if padding_bits > 0
+                    && bitfield[expected_length - 1] & ((1_u8 << padding_bits) - 1) != 0
+                {
                     return Err(PieceError::InvalidBitfieldPadding);
                 }
-                self.peer_has_piece = bitfield[0] & 0x80 != 0;
+                let byte = self.piece_index as usize / 8;
+                let bit = 7 - (self.piece_index as usize % 8);
+                self.peer_has_piece = bitfield[byte] & (1 << bit) != 0;
                 Ok(self.availability_actions())
             }
             PeerMessage::Piece {
@@ -513,6 +636,7 @@ mod tests {
     };
     use crate::metainfo::MAX_PIECE_LENGTH;
     use crate::peer_wire::{BlockRequest, MAX_REQUEST_BLOCK_LENGTH, PeerMessage};
+    use crate::storage_layout::RequestRange;
 
     const TWO_BLOCK_ALLOWANCE: usize = 2 * MAX_REQUEST_BLOCK_LENGTH as usize;
 
@@ -787,11 +911,159 @@ mod tests {
             .expect("piece state");
         assert_eq!(
             download.on_message(PeerMessage::Bitfield(vec![0x80, 0])),
-            Err(PieceError::InvalidBitfieldLength { actual: 2 })
+            Err(PieceError::InvalidBitfieldLength {
+                actual: 2,
+                expected: 1,
+            })
         );
         assert_eq!(
             download.on_message(PeerMessage::Bitfield(vec![0x81])),
             Err(PieceError::InvalidBitfieldPadding)
+        );
+    }
+
+    #[test]
+    fn handles_torrent_bitfield_unrelated_have_and_padding_gap() {
+        let ranges = [
+            RequestRange {
+                begin: 0,
+                length: MAX_REQUEST_BLOCK_LENGTH,
+            },
+            RequestRange {
+                begin: MAX_REQUEST_BLOCK_LENGTH,
+                length: 13_080,
+            },
+        ];
+        let mut download = OnePieceDownload::new_for_torrent(
+            2,
+            32_768,
+            expected_hash(),
+            TWO_BLOCK_ALLOWANCE,
+            5,
+            &ranges,
+        )
+        .expect("multi-piece state");
+
+        assert!(
+            download
+                .on_message(PeerMessage::Have(1))
+                .expect("unrelated valid have")
+                .is_empty()
+        );
+        assert_eq!(
+            download.on_message(PeerMessage::Have(5)),
+            Err(PieceError::PieceIndexOutOfRange {
+                index: 5,
+                piece_count: 5,
+            })
+        );
+        assert_eq!(
+            download
+                .on_message(PeerMessage::Bitfield(vec![0x20]))
+                .expect("target availability"),
+            [DownloadAction::SendInterested]
+        );
+        assert_eq!(
+            download.on_message(PeerMessage::Unchoke).expect("requests"),
+            [
+                DownloadAction::Request(BlockRequest {
+                    index: 2,
+                    begin: 0,
+                    length: MAX_REQUEST_BLOCK_LENGTH,
+                }),
+                DownloadAction::Request(BlockRequest {
+                    index: 2,
+                    begin: MAX_REQUEST_BLOCK_LENGTH,
+                    length: 13_080,
+                }),
+            ]
+        );
+        assert_eq!(download.block_count(), 2);
+
+        let mut bad_padding = OnePieceDownload::new_for_torrent(
+            2,
+            32_768,
+            expected_hash(),
+            TWO_BLOCK_ALLOWANCE,
+            5,
+            &ranges,
+        )
+        .expect("state");
+        assert_eq!(
+            bad_padding.on_message(PeerMessage::Bitfield(vec![0x21])),
+            Err(PieceError::InvalidBitfieldPadding)
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_piece_count_and_request_plans() {
+        let valid = [RequestRange {
+            begin: 0,
+            length: 1,
+        }];
+        assert_eq!(
+            OnePieceDownload::new_for_torrent(
+                0,
+                1,
+                expected_hash(),
+                MIN_PAYLOAD_ALLOWANCE,
+                0,
+                &valid,
+            )
+            .expect_err("zero pieces"),
+            PieceError::InvalidPieceCount { count: 0 }
+        );
+        assert_eq!(
+            OnePieceDownload::new_for_torrent(
+                1,
+                1,
+                expected_hash(),
+                MIN_PAYLOAD_ALLOWANCE,
+                1,
+                &valid,
+            )
+            .expect_err("index outside torrent"),
+            PieceError::PieceIndexOutOfRange {
+                index: 1,
+                piece_count: 1,
+            }
+        );
+        assert_eq!(
+            OnePieceDownload::new_for_torrent(
+                0,
+                1,
+                expected_hash(),
+                MIN_PAYLOAD_ALLOWANCE,
+                1,
+                &[],
+            )
+            .expect_err("empty plan"),
+            PieceError::EmptyRequestPlan
+        );
+        let overlap = [
+            RequestRange {
+                begin: 0,
+                length: 2,
+            },
+            RequestRange {
+                begin: 1,
+                length: 1,
+            },
+        ];
+        assert_eq!(
+            OnePieceDownload::new_for_torrent(
+                0,
+                3,
+                expected_hash(),
+                MIN_PAYLOAD_ALLOWANCE,
+                1,
+                &overlap,
+            )
+            .expect_err("overlap"),
+            PieceError::OverlappingRequestRange {
+                previous_end: 2,
+                begin: 1,
+            }
         );
     }
 }
