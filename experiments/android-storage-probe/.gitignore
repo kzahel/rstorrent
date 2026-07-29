@@ -1,0 +1,7 @@
+.gradle/
+__pycache__/
+app/build/
+app/src/main/jniLibs/
+build/
+local.properties
+native/target/

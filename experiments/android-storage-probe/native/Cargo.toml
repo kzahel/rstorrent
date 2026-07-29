@@ -1,0 +1,14 @@
+[package]
+name = "rstorrent-android-storage-probe"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+libc = "0.2.189"
+
+[workspace]
