@@ -16,6 +16,7 @@ local.properties
 .env
 .env.*
 !.env.example
+**/.venv/
 
 # Editors and operating systems
 .idea/

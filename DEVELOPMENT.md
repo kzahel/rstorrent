@@ -43,6 +43,14 @@ cargo clippy --workspace -- -D warnings
 cargo test --workspace
 ```
 
+The deterministic first-piece interoperability scenario uses its own locked
+Python environment and a loopback-only Rasterbar libtorrent seed:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/first_verified_piece.py --runs 3
+```
+
 Android and desktop tacticals should add the smallest meaningful build, smoke,
 interoperability, and physical-device gates for the behavior they introduce.
 Record exactly what ran in the tactical.
