@@ -55,6 +55,14 @@ uv run --project tests/interop --locked \
   python tests/interop/first_verified_piece.py --runs 3
 ```
 
+Tactical `001`'s bounded large-piece profile streams a deterministic 32 MiB
+fixture through a 256 KiB engine-owned payload allowance:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/first_verified_piece.py --large-piece --runs 3
+```
+
 Android and desktop tacticals should add the smallest meaningful build, smoke,
 interoperability, and physical-device gates for the behavior they introduce.
 Record exactly what ran in the tactical.

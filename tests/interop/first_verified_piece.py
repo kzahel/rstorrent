@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the deterministic first-piece scenario against a libtorrent seed."""
+"""Run deterministic one-piece scenarios against a libtorrent seed."""
 
 from __future__ import annotations
 
@@ -18,15 +18,33 @@ import libtorrent as lt
 
 
 PAYLOAD_NAME = "fixture.bin"
-PAYLOAD_SIZE = 40_000
-PIECE_SIZE = 65_536
+BLOCK_SIZE = 16 * 1024
+HARNESS_CHUNK_SIZE = 1024 * 1024
 STARTUP_TIMEOUT_SECONDS = 8
-PROCESS_TIMEOUT_SECONDS = 20
-DIAGNOSTIC_TIMEOUT_SECONDS = 15
+DEFAULT_PAYLOAD_SIZE = 40_000
+DEFAULT_PIECE_SIZE = 65_536
+DEFAULT_PAYLOAD_ALLOWANCE = 256 * 1024
+DEFAULT_DIAGNOSTIC_TIMEOUT_SECONDS = 15
+DEFAULT_PROCESS_TIMEOUT_SECONDS = 20
+LARGE_PAYLOAD_SIZE = 32 * 1024 * 1024
+LARGE_PIECE_SIZE = LARGE_PAYLOAD_SIZE
+LARGE_PAYLOAD_ALLOWANCE = 256 * 1024
+LARGE_DIAGNOSTIC_TIMEOUT_SECONDS = 60
+LARGE_PROCESS_TIMEOUT_SECONDS = 75
 
 
 class ScenarioFailure(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class ScenarioConfig:
+    name: str
+    payload_size: int
+    piece_size: int
+    payload_allowance: int
+    diagnostic_timeout_seconds: int
+    process_timeout_seconds: int
 
 
 @dataclass
@@ -36,15 +54,66 @@ class RunResult:
     expected_hash: str
     actual_hash: str
     info_hash: str
+    block_count: int
+    payload_limit: int
+    payload_high_water: int
+    verification_buffer: int
     command_output: str
     cleanup_succeeded: bool = False
 
 
-def deterministic_payload() -> bytes:
+def scenario_config(large_piece: bool) -> ScenarioConfig:
+    if large_piece:
+        return ScenarioConfig(
+            name="large",
+            payload_size=LARGE_PAYLOAD_SIZE,
+            piece_size=LARGE_PIECE_SIZE,
+            payload_allowance=LARGE_PAYLOAD_ALLOWANCE,
+            diagnostic_timeout_seconds=LARGE_DIAGNOSTIC_TIMEOUT_SECONDS,
+            process_timeout_seconds=LARGE_PROCESS_TIMEOUT_SECONDS,
+        )
+    return ScenarioConfig(
+        name="small",
+        payload_size=DEFAULT_PAYLOAD_SIZE,
+        piece_size=DEFAULT_PIECE_SIZE,
+        payload_allowance=DEFAULT_PAYLOAD_ALLOWANCE,
+        diagnostic_timeout_seconds=DEFAULT_DIAGNOSTIC_TIMEOUT_SECONDS,
+        process_timeout_seconds=DEFAULT_PROCESS_TIMEOUT_SECONDS,
+    )
+
+
+def deterministic_chunk(start: int, length: int) -> bytes:
     return bytes(
         ((offset * 73) ^ (offset >> 3) ^ (offset * offset >> 11) ^ 0xA5) & 0xFF
-        for offset in range(PAYLOAD_SIZE)
+        for offset in range(start, start + length)
     )
+
+
+def write_deterministic_payload(path: Path, payload_size: int) -> str:
+    digest = hashlib.sha1()
+    with path.open("wb") as output:
+        offset = 0
+        while offset < payload_size:
+            length = min(HARNESS_CHUNK_SIZE, payload_size - offset)
+            chunk = deterministic_chunk(offset, length)
+            output.write(chunk)
+            digest.update(chunk)
+            offset += length
+    return digest.hexdigest()
+
+
+def compare_payloads(source_path: Path, output_path: Path) -> str:
+    digest = hashlib.sha1()
+    with source_path.open("rb") as source, output_path.open("rb") as output:
+        while True:
+            expected = source.read(HARNESS_CHUNK_SIZE)
+            actual = output.read(HARNESS_CHUNK_SIZE)
+            if actual != expected:
+                raise ScenarioFailure("downloaded payload differs from deterministic source")
+            if not actual:
+                break
+            digest.update(actual)
+    return digest.hexdigest()
 
 
 def build_diagnostic(repository: Path) -> Path:
@@ -76,18 +145,20 @@ def build_diagnostic(repository: Path) -> Path:
     return binary
 
 
-def create_fixture(run_directory: Path) -> tuple[Path, Path, bytes, lt.torrent_info]:
+def create_fixture(
+    run_directory: Path,
+    config: ScenarioConfig,
+) -> tuple[Path, Path, Path, str, lt.torrent_info]:
     seed_directory = run_directory / "seed"
     seed_directory.mkdir()
-    payload = deterministic_payload()
     payload_path = seed_directory / PAYLOAD_NAME
-    payload_path.write_bytes(payload)
+    expected_hash = write_deterministic_payload(payload_path, config.payload_size)
 
     files = lt.file_storage()
-    files.add_file(PAYLOAD_NAME, len(payload))
+    files.add_file(PAYLOAD_NAME, config.payload_size)
     creator = lt.create_torrent(
         files,
-        piece_size=PIECE_SIZE,
+        piece_size=config.piece_size,
         flags=lt.create_torrent.v1_only,
     )
     lt.set_piece_hashes(creator, str(seed_directory))
@@ -99,13 +170,19 @@ def create_fixture(run_directory: Path) -> tuple[Path, Path, bytes, lt.torrent_i
         raise ScenarioFailure(
             f"fixture has {torrent_info.num_pieces()} pieces instead of one"
         )
-    if torrent_info.piece_length() != PIECE_SIZE:
+    if torrent_info.piece_length() != config.piece_size:
         raise ScenarioFailure(
-            f"fixture piece length is {torrent_info.piece_length()}, expected {PIECE_SIZE}"
+            f"fixture piece length is {torrent_info.piece_length()}, "
+            f"expected {config.piece_size}"
+        )
+    if torrent_info.total_size() != config.payload_size:
+        raise ScenarioFailure(
+            f"fixture payload length is {torrent_info.total_size()}, "
+            f"expected {config.payload_size}"
         )
     if any(True for _ in torrent_info.trackers()):
         raise ScenarioFailure("controlled fixture unexpectedly contains a tracker")
-    return torrent_path, seed_directory, payload, torrent_info
+    return torrent_path, seed_directory, payload_path, expected_hash, torrent_info
 
 
 def create_session() -> lt.session:
@@ -167,6 +244,7 @@ def run_diagnostic(
     torrent_path: Path,
     peer_port: int,
     output_path: Path,
+    config: ScenarioConfig,
 ) -> subprocess.CompletedProcess[str]:
     command = [
         str(binary),
@@ -177,14 +255,16 @@ def run_diagnostic(
         "--output",
         str(output_path),
         "--timeout-seconds",
-        str(DIAGNOSTIC_TIMEOUT_SECONDS),
+        str(config.diagnostic_timeout_seconds),
+        "--max-buffered-payload-bytes",
+        str(config.payload_allowance),
     ]
     try:
         return subprocess.run(
             command,
             capture_output=True,
             text=True,
-            timeout=PROCESS_TIMEOUT_SECONDS,
+            timeout=config.process_timeout_seconds,
             check=False,
         )
     except subprocess.TimeoutExpired as error:
@@ -195,7 +275,59 @@ def run_diagnostic(
         ) from error
 
 
-def run_once(binary: Path, ordinal: int) -> RunResult:
+def parse_diagnostic(output: str, config: ScenarioConfig) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for token in output.split():
+        if "=" in token:
+            key, value = token.split("=", 1)
+            values[key] = value
+
+    required = {
+        "bytes",
+        "sha1",
+        "info_hash",
+        "blocks",
+        "payload_limit",
+        "payload_high_water",
+        "verification_buffer",
+    }
+    missing = required - values.keys()
+    if missing:
+        raise ScenarioFailure(f"diagnostic output is missing fields: {sorted(missing)}")
+
+    try:
+        payload_length = int(values["bytes"])
+        payload_limit = int(values["payload_limit"])
+        payload_high_water = int(values["payload_high_water"])
+        block_count = int(values["blocks"])
+        verification_buffer = int(values["verification_buffer"])
+    except ValueError as error:
+        raise ScenarioFailure("diagnostic output contains a non-integer counter") from error
+
+    expected_blocks = (config.payload_size + BLOCK_SIZE - 1) // BLOCK_SIZE
+    if payload_length != config.payload_size:
+        raise ScenarioFailure("diagnostic reported an unexpected payload length")
+    if payload_limit != config.payload_allowance:
+        raise ScenarioFailure(
+            f"diagnostic payload limit is {payload_limit}, expected "
+            f"{config.payload_allowance}"
+        )
+    if payload_high_water > payload_limit:
+        raise ScenarioFailure(
+            f"diagnostic payload high-water {payload_high_water} exceeds limit {payload_limit}"
+        )
+    if block_count != expected_blocks:
+        raise ScenarioFailure(
+            f"diagnostic block count is {block_count}, expected {expected_blocks}"
+        )
+    if verification_buffer != BLOCK_SIZE:
+        raise ScenarioFailure(
+            f"diagnostic verification buffer is {verification_buffer}, expected {BLOCK_SIZE}"
+        )
+    return values
+
+
+def run_once(binary: Path, ordinal: int, config: ScenarioConfig) -> RunResult:
     run_path = Path(tempfile.mkdtemp(prefix=f"rstorrent-interop-{ordinal}-"))
     session: lt.session | None = None
     handle: lt.torrent_handle | None = None
@@ -206,15 +338,20 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
     started = time.monotonic()
 
     try:
-        torrent_path, seed_directory, payload, torrent_info = create_fixture(run_path)
-        expected_hash = hashlib.sha1(payload).hexdigest()
+        (
+            torrent_path,
+            seed_directory,
+            payload_path,
+            expected_hash,
+            torrent_info,
+        ) = create_fixture(run_path, config)
         info_hash = str(torrent_info.info_hashes().v1)
         session = create_session()
         peer_port = wait_for_listener(session, alerts)
         handle = add_seed(session, torrent_info, seed_directory, alerts)
 
         output_path = run_path / "downloaded.bin"
-        completed = run_diagnostic(binary, torrent_path, peer_port, output_path)
+        completed = run_diagnostic(binary, torrent_path, peer_port, output_path, config)
         alerts.extend(alert.message() for alert in session.pop_alerts())
         if completed.returncode != 0:
             raise ScenarioFailure(
@@ -225,16 +362,21 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
         if not output_path.is_file():
             raise ScenarioFailure("RSTorrent succeeded without creating output")
 
-        actual_payload = output_path.read_bytes()
-        actual_hash = hashlib.sha1(actual_payload).hexdigest()
-        if actual_payload != payload:
+        diagnostic = parse_diagnostic(completed.stdout, config)
+        actual_hash = compare_payloads(payload_path, output_path)
+        if actual_hash != expected_hash:
             raise ScenarioFailure(
-                "downloaded payload differs from deterministic source\n"
+                "downloaded payload hash differs from deterministic source\n"
                 f"expected_sha1={expected_hash}\nactual_sha1={actual_hash}"
             )
-        if expected_hash not in completed.stdout:
+        if diagnostic["sha1"] != expected_hash:
             raise ScenarioFailure(
                 "diagnostic output did not report the expected verified hash\n"
+                f"stdout:\n{completed.stdout}"
+            )
+        if diagnostic["info_hash"] != info_hash:
+            raise ScenarioFailure(
+                "diagnostic output did not report the fixture info hash\n"
                 f"stdout:\n{completed.stdout}"
             )
 
@@ -244,6 +386,10 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
             expected_hash=expected_hash,
             actual_hash=actual_hash,
             info_hash=info_hash,
+            block_count=int(diagnostic["blocks"]),
+            payload_limit=int(diagnostic["payload_limit"]),
+            payload_high_water=int(diagnostic["payload_high_water"]),
+            verification_buffer=int(diagnostic["verification_buffer"]),
             command_output=completed.stdout.strip(),
         )
     except BaseException as error:
@@ -305,20 +451,32 @@ def parse_arguments() -> argparse.Namespace:
         metavar="1..10",
         help="number of consecutive clean runs (default: 1)",
     )
+    parser.add_argument(
+        "--large-piece",
+        action="store_true",
+        help="use the 32 MiB piece and 256 KiB payload allowance profile",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     arguments = parse_arguments()
+    config = scenario_config(arguments.large_piece)
     repository = Path(__file__).resolve().parents[2]
     print(f"python_version={sys.version.split()[0]}")
     print(f"libtorrent_binding_version={lt.__version__}")
     print(f"libtorrent_native_version={lt.version}")
-    print(f"payload_size={PAYLOAD_SIZE} piece_size={PIECE_SIZE}")
+    print(
+        f"scenario={config.name} payload_size={config.payload_size} "
+        f"piece_size={config.piece_size} payload_allowance={config.payload_allowance}"
+    )
 
     try:
         binary = build_diagnostic(repository)
-        results = [run_once(binary, ordinal) for ordinal in range(1, arguments.runs + 1)]
+        results = [
+            run_once(binary, ordinal, config)
+            for ordinal in range(1, arguments.runs + 1)
+        ]
     except (ScenarioFailure, subprocess.SubprocessError) as error:
         print(str(error), file=sys.stderr)
         return 1
@@ -327,7 +485,10 @@ def main() -> int:
         print(
             f"run={result.ordinal} elapsed_seconds={result.elapsed_seconds:.3f} "
             f"expected_sha1={result.expected_hash} actual_sha1={result.actual_hash} "
-            f"info_hash={result.info_hash} cleanup=ok"
+            f"info_hash={result.info_hash} blocks={result.block_count} "
+            f"payload_limit={result.payload_limit} "
+            f"payload_high_water={result.payload_high_water} "
+            f"verification_buffer={result.verification_buffer} cleanup=ok"
         )
         print(f"run={result.ordinal} diagnostic={result.command_output}")
     print(f"all_runs={len(results)} cleanup=ok result=pass")
