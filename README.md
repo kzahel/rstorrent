@@ -6,13 +6,12 @@ from JSTorrent, but its likely long-term destination is to become the next
 generation of the JSTorrent product rather than a permanently separate brand.
 
 The project is in its engine bring-up stage. Its completed vertical thread
-parses a controlled v1 torrent and downloads a piece from a loopback
-libtorrent peer through a bounded 16 KiB block pipeline. A 32 MiB fixture has
-been staged and streamed through a 256 KiB engine-owned payload allowance,
-hashed from storage in 16 KiB chunks, and published only after SHA-1
-verification. This establishes a two-crate protocol/runtime boundary and
-reproducible interoperability evidence; it is not yet a generally useful
-torrent client.
+parses bounded v1 single- and multi-file torrents and downloads selected files
+from a loopback libtorrent peer through a bounded 16 KiB block pipeline.
+Cross-file pieces combine wanted staging files, compact skipped-file part
+slots, and synthetic padding during streamed verification. Controlled 32 MiB
+large-piece and edge-rich selective-file fixtures provide reproducible
+interoperability evidence; this is not yet a generally useful torrent client.
 
 ## Motivation
 

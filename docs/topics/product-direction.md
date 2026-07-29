@@ -3,7 +3,7 @@
 Topic: `product-direction`
 
 Status: initial direction and successor vision accepted; bounded large-piece
-pipeline proven, with the selective multi-file storage tactical ready.
+and selective multi-file storage foundations proven.
 
 ## Scope
 
@@ -120,6 +120,21 @@ interoperability fixture reached a 256 KiB engine-owned payload high-water and
 used a 16 KiB verification buffer. These are component bounds, not an exact
 process-RSS promise.
 
+Tactical `002` kept protocol layout independent from runtime storage while
+adding bounded multi-file metainfo, safe relative paths, binary file
+selection, cross-file request mapping, and torrent-wide piece state. The
+runtime now stages wanted paths, places skipped boundary ranges in a versioned
+compact-slot part file, synthesizes padding zeroes during 16 KiB streamed
+hashing, publishes the selected tree only after verification, reopens durable
+placement metadata, and materializes verified skipped files.
+
+The controlled five-piece fixture requested 97,232 real bytes in seven
+requests under a 32 KiB payload allowance. One skipped-only piece and 3,304
+padding bytes were not requested. Two boundary-piece slots survived reopen
+and remained allocated because a permanently skipped file still overlapped
+them. This proves a bounded selective-storage foundation, not unfinished-piece
+resume, arbitrary priority changes, or a production filesystem format.
+
 This is an accepted starting shape backed by unit and libtorrent
 interoperability evidence, not a promise that two crates are the final engine
 layout. Add or split crates only when later ownership, reuse, lifecycle, or
@@ -162,9 +177,11 @@ This is recommended direction beyond the accepted first slice:
    [`001-bounded-large-piece.md`](../tactical/001-bounded-large-piece.md)
    established block-granular payload accounting, staging, and streamed
    verification independently of piece length.
-3. Establish selective multi-file storage with cross-file piece mapping,
-   skipped-file part storage, verified publication, and bounded durable-state
-   handling before generalizing the explicit-peer CLI.
+3. Completed:
+   [`002-selective-multi-file-storage.md`](../tactical/002-selective-multi-file-storage.md)
+   established cross-file mapping, skipped-file part storage, verified
+   publication, durable reopen, and materialization under the bounded
+   block pipeline.
 4. Prove Rust networking, Android foreground lifetime, and SAF-backed bulk I/O
    on a physical Chromebook before assuming the desktop storage seam transfers.
 5. Define the application command/snapshot/event boundary from real CLI needs.
@@ -177,11 +194,11 @@ does not distort the protocol vertical slice.
 
 ## Recommended Next Work
 
-Execute
-[`002-selective-multi-file-storage.md`](../tactical/002-selective-multi-file-storage.md).
-Its deterministic fixture forces wanted/skipped boundary pieces, an
-all-skipped piece, a request crossing three files, zero-length and padding
-files, a final short piece, part-file reopen/corruption, verified publication,
-and materialization through tactical `001`'s bounded block pipeline. Keep
-discovery, general peer policy, and unrelated product breadth outside that
-slice.
+Draft a bounded Android/ChromeOS storage feasibility tactical before treating
+the desktop part-file layout as a product format. It should test direct Rust
+file-descriptor I/O through SAF, random access, truncation and reopen behavior,
+large sparse logical slot offsets, provider allocation cost, cancellation,
+and foreground lifetime on the physical Chromebook testbed. Keep resume
+format, general peer discovery, UI architecture, and broad session scheduling
+outside that platform evidence slice unless the observed storage seam requires
+an explicit decision.

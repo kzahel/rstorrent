@@ -31,9 +31,9 @@ remains the completed execution record for the initial protocol/runtime
 vertical slice.
 
 [`002-selective-multi-file-storage.md`](docs/tactical/002-selective-multi-file-storage.md)
-is ready. It forces cross-file pieces, skipped-file storage,
-materialization, padding, and durable part-file edge cases through the proven
-bounded pipeline before a general multi-piece CLI.
+is complete. It established bounded multi-file parsing and mapping, selected
+staging, compact skipped-file part slots, streamed mixed-source verification,
+padding omission, durable reopen, and verified materialization.
 
 ## Toolchain
 
@@ -66,6 +66,14 @@ fixture through a 256 KiB engine-owned payload allowance:
 ```bash
 uv run --project tests/interop --locked \
   python tests/interop/first_verified_piece.py --large-piece --runs 3
+```
+
+Tactical `002`'s selective profile forces boundary, skipped-only, padding,
+zero-length, final-short, reopen, and materialization behavior:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/first_verified_piece.py --selective-files --runs 3
 ```
 
 Android and desktop tacticals should add the smallest meaningful build, smoke,

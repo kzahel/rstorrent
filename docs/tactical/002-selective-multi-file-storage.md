@@ -1,6 +1,6 @@
 # Tactical 002: Selective Multi-File Storage Foundation
 
-Status: ready; implementation has not started.
+Status: completed on 2026-07-29.
 
 ## Motivation And Outcome
 
@@ -468,4 +468,197 @@ also pass and be recorded below.
 
 ## Execution Record
 
-Not started.
+Completed on 2026-07-29.
+
+### What Landed
+
+- The bounded v1 metainfo parser now represents single- and multi-file
+  torrents, exact file offsets, zero-length files, padding attributes, safe
+  UTF-8 path components, every piece hash, and exact piece geometry. It
+  rejects symlinks, unsafe or colliding paths, excessive files, paths, or
+  pieces, length overflow, and inconsistent piece hashes.
+- A runtime-independent `TorrentLayout` maps any validated piece interval to
+  ordered wanted-file, skipped-file, or padding segments. It classifies
+  pieces, omits skipped-only pieces, removes padding from request plans, and
+  handles the fixture's three-file request and final short piece.
+- `OnePieceDownload` now accepts an arbitrary torrent piece and a validated
+  sparse request plan. Full-torrent bitfields, padding bits, unrelated
+  `have` messages, choke cancellation, and the existing reservation-before-
+  request payload accounting remain explicit and bounded.
+- The engine owns a new independently versioned part-file format. Its fixed
+  fields bind it to the info hash and torrent geometry; its piece-to-slot map
+  and reserved padding form a 1 KiB-aligned header. Compact payload slots use
+  checked 64-bit offsets. Allocation and release metadata is flushed before
+  payload use or slot reuse.
+- Selected non-padding paths are sized under a hidden staging root. Blocks
+  split directly into wanted files and skipped part slots without a
+  piece-sized buffer. Padding is never written. Verification reads all three
+  sources in torrent order through one 16 KiB buffer.
+- Publication renames the selected tree only after every required piece is
+  verified. The diagnostic closes and strictly reopens the part file before
+  materializing an initially skipped file. It publishes that file through a
+  hidden sibling and releases a slot only when no remaining skipped file
+  overlaps the piece.
+- The explicit loopback diagnostic keeps one peer connection, decoder,
+  availability view, and choke state while processing one selected piece at a
+  time. Repeatable `--skip-file` and `--materialize-file` controls expose the
+  bounded scenario without claiming a general torrent CLI.
+- The locked Python oracle independently creates the exact seven-file
+  libtorrent fixture, verifies every published file incrementally, checks all
+  absent paths and counters, inspects the surviving part file, and removes the
+  fresh temporary tree after every run.
+
+The implementation was committed in bounded milestones:
+
+- `7891507` planned the selective foundation;
+- `1ea03c2` added bounded multi-file metainfo;
+- `b8175ad` added pure selective layout mapping;
+- `699838b` generalized bounded piece state;
+- `6bbc2e0` added the durable compact-slot part file;
+- `d6c926a` added selected staging and mixed-source verification;
+- `becd282` added the one-peer selective driver;
+- `fc6c01d` locked the libtorrent oracle; and
+- `af72575` hardened corruption, preservation, and cleanup boundaries.
+
+### Edge And Failure Evidence
+
+The final workspace suite contains 17 engine tests, two diagnostic argument
+tests, 31 protocol tests, and one architecture test. In addition to the
+successful fixture, these cover:
+
+- malformed multi-file modes, excessive and inconsistent piece geometry,
+  zero-length and padding entries, symlinks, unsafe components, duplicate
+  paths, and file/directory prefix collisions;
+- every fixture boundary, a request split across three real files,
+  skipped-only and padding-ending request omission, and the final 2,232-byte
+  piece;
+- full-torrent bitfield size and padding, unrelated and out-of-range `have`,
+  wrong, duplicate, overlapping, unsolicited, and short payloads, choke and
+  cancellation, slow storage, hash failure, and a 256 MiB piece without
+  resident piece payload;
+- missing slots, payload and header truncation, bad magic and version,
+  incorrect header length, nonzero reserved bytes, every mismatched identity
+  field, duplicate, invalid-negative, and out-of-range slots, durable reopen,
+  hole reuse, and offsets beyond 32 bits;
+- absent final, skipped, and padding paths, incomplete publication and
+  materialization, empty-file publication, slot retention and release,
+  pre-existing artifact preservation, and single- and multi-file timeout
+  cleanup.
+
+The architecture test continued to prove that the protocol crate has no
+runtime, socket, filesystem, path, task, or clock dependency.
+
+### Interoperability Evidence
+
+The required command passed three fresh runs:
+
+```bash
+uv run --project tests/interop --locked \
+  tests/interop/first_verified_piece.py --selective-files --runs 3
+```
+
+Environment:
+
+- Rust `1.97.0`, Cargo `1.97.0`;
+- Python `3.12.3`, uv `0.9.18`; and
+- libtorrent Python binding and native library `2.0.13.0`.
+
+Fixture identity:
+
+- info hash:
+  `f2c09c855c0749be70ae5b5caa5f79077f914932`;
+- piece hashes in order:
+  `256c168ba6e41045f5033fa95d678cfa590b374d`,
+  `19776588cc3ab2eed9bdd0d35c67f2a6af816b33`,
+  `0f6c5cf71b30a147fdc3ccb161876e3bc1b10d89`,
+  `251122fab4f7489c236113a7cccc1d48232975c2`, and
+  `0d6bd635b8e7eec1065b19e0d54de707e00f5209`;
+- total length 133,304 bytes, piece length 32,768 bytes, five pieces,
+  seven files, and a final piece of 2,232 bytes.
+
+All three runs reported:
+
+- four verified pieces and one skipped-only piece;
+- seven peer requests totaling 97,232 bytes;
+- a 32,768-byte payload limit and 32,768-byte high-water;
+- a 16,384-byte verification buffer;
+- 73,000 initially selected file bytes, 57,000 initially skipped file bytes,
+  and 3,304 synthetic padding bytes;
+- 73,000 bytes written to selected files and 24,232 boundary bytes written to
+  the part file;
+- 7,000 bytes materialized after a successful part-file reopen; and
+- two part slots before and after materialization because permanently skipped
+  file 1 still overlaps pieces 0 and 2.
+
+The three elapsed times were 0.164, 0.166, and 0.166 seconds. Every run proved
+that file 1 and the padding path were absent, files 0, 2, 3, 4, and 6 matched
+the deterministic seed, the selected staging root was absent after
+publication, the validated part file survived until inspection, and the
+entire temporary run directory was then removed.
+
+Published and materialized file SHA-1 values were:
+
+- `wanted/start.bin`:
+  `dbdc27359b5e3e4b29215c5b06fa040cfa512abf`;
+- `later.bin`: `62379fb375055577941732d7abf9401a8940eafa`;
+- `wanted/end.bin`:
+  `7190d6915399c7318f2f0955bcd757cb9a0f157f`;
+- `wanted/empty.bin`:
+  `da39a3ee5e6b4b0d3255bfef95601890afd80709`; and
+- `tail.bin`: `f7494d006948bdb20280042ea3962d990f68c75f`.
+
+Both prior profiles also passed three fresh runs:
+
+- the 40,000-byte small profile completed in 0.054, 0.057, and 0.053 seconds
+  with three blocks, a 40,000-byte high-water, and exact payload equality;
+- the 32 MiB profile completed in 8.988, 11.889, and 14.213 seconds with 2,048
+  blocks, a 256 KiB high-water under its 256 KiB allowance, a 16 KiB
+  verification buffer, and exact payload equality.
+
+### Validation And Audits
+
+These commands passed:
+
+```bash
+source ~/.profile
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+uv lock --project tests/interop --check
+uv run --project tests/interop --locked \
+  python -m py_compile tests/interop/first_verified_piece.py
+python3 scripts/references.py status
+cargo tree --workspace --locked
+git diff --check
+```
+
+The managed references were clean at:
+
+- BitTorrent BEPs `7b7b41f46d57ff1d1cb1e24ed6e9bacfbf958c06`;
+- rqbit `4e5f94cbcf1d57ec500885c77cf1e24d70232d89`;
+- libtorrent `7d7fc38fac61177fa5e02148f791b2f65250b09d`
+  (`v2.0.13`); and
+- JSTorrent `main@0cad4dacf540f5be42ee53c4f1e1da27aa1b3685`.
+
+No dependency manifest or lockfile changed. `cargo tree --workspace --locked`
+confirmed the existing Rust dependency graph, and the locked Python oracle
+continued to use libtorrent as a separate process peer. No source, fixture, or
+format was copied from a reference implementation. The final artifact audit
+found no generated torrent, payload, part-file, Python bytecode, or temporary
+test output in tracked source paths.
+
+### Deliberate Limits And Next Boundary
+
+The stopping condition is satisfied. The format records placement, not
+unfinished block completion or a persistent verified-piece bitfield. The
+diagnostic still has one peer, one active piece, no corruption retry, binary
+startup-only selection, and no tracker or general session policy. Directory
+syncing, pre-existing content reuse, per-file early publication, compaction,
+and hole punching remain outside this slice.
+
+The part file deliberately follows libtorrent's piece-sized slot geometry,
+which can create large sparse logical offsets. Desktop tests prove checked
+64-bit addressing but do not establish physical allocation behavior through
+Android SAF providers. The recommended next tactical is therefore a bounded
+physical Android/ChromeOS storage feasibility probe before accepting this
+desktop format as the product storage seam.
