@@ -31,6 +31,21 @@ LARGE_PIECE_SIZE = LARGE_PAYLOAD_SIZE
 LARGE_PAYLOAD_ALLOWANCE = 256 * 1024
 LARGE_DIAGNOSTIC_TIMEOUT_SECONDS = 60
 LARGE_PROCESS_TIMEOUT_SECONDS = 75
+SELECTIVE_ROOT_NAME = "fixture"
+SELECTIVE_PIECE_SIZE = 32_768
+SELECTIVE_PAYLOAD_ALLOWANCE = 32_768
+SELECTIVE_TOTAL_SIZE = 133_304
+SELECTIVE_REQUESTED_BYTES = 97_232
+SELECTIVE_BLOCK_COUNT = 7
+SELECTIVE_FILES = (
+    ("wanted/start.bin", 20_000, False),
+    ("skip/large.bin", 50_000, False),
+    ("later.bin", 7_000, False),
+    ("wanted/end.bin", 18_000, False),
+    ("wanted/empty.bin", 0, False),
+    (".pad/3304", 3_304, True),
+    ("tail.bin", 35_000, False),
+)
 
 
 class ScenarioFailure(RuntimeError):
@@ -58,6 +73,18 @@ class RunResult:
     payload_limit: int
     payload_high_water: int
     verification_buffer: int
+    command_output: str
+    cleanup_succeeded: bool = False
+
+
+@dataclass
+class SelectiveRunResult:
+    ordinal: int
+    elapsed_seconds: float
+    info_hash: str
+    piece_hashes: list[str]
+    file_hashes: dict[str, str]
+    payload_high_water: int
     command_output: str
     cleanup_succeeded: bool = False
 
@@ -113,6 +140,28 @@ def compare_payloads(source_path: Path, output_path: Path) -> str:
             if not actual:
                 break
             digest.update(actual)
+    return digest.hexdigest()
+
+
+def write_deterministic_range(path: Path, start: int, length: int) -> str:
+    digest = hashlib.sha1()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("wb") as output:
+        offset = 0
+        while offset < length:
+            chunk_length = min(HARNESS_CHUNK_SIZE, length - offset)
+            chunk = deterministic_chunk(start + offset, chunk_length)
+            output.write(chunk)
+            digest.update(chunk)
+            offset += chunk_length
+    return digest.hexdigest()
+
+
+def hash_file(path: Path) -> str:
+    digest = hashlib.sha1()
+    with path.open("rb") as source:
+        while chunk := source.read(HARNESS_CHUNK_SIZE):
+            digest.update(chunk)
     return digest.hexdigest()
 
 
@@ -183,6 +232,75 @@ def create_fixture(
     if any(True for _ in torrent_info.trackers()):
         raise ScenarioFailure("controlled fixture unexpectedly contains a tracker")
     return torrent_path, seed_directory, payload_path, expected_hash, torrent_info
+
+
+def create_selective_fixture(
+    run_directory: Path,
+) -> tuple[Path, Path, lt.torrent_info, dict[str, str], list[str]]:
+    seed_directory = run_directory / "seed"
+    torrent_root = seed_directory / SELECTIVE_ROOT_NAME
+    torrent_root.mkdir(parents=True)
+    files = lt.file_storage()
+    expected_file_hashes: dict[str, str] = {}
+    torrent_offset = 0
+    for relative_path, length, padding in SELECTIVE_FILES:
+        torrent_path = f"{SELECTIVE_ROOT_NAME}/{relative_path}"
+        flags = lt.file_storage.flag_pad_file if padding else 0
+        files.add_file(torrent_path, length, flags)
+        if not padding:
+            expected_file_hashes[relative_path] = write_deterministic_range(
+                torrent_root / relative_path,
+                torrent_offset,
+                length,
+            )
+        torrent_offset += length
+
+    if torrent_offset != SELECTIVE_TOTAL_SIZE:
+        raise ScenarioFailure(
+            f"selective fixture totals {torrent_offset}, expected {SELECTIVE_TOTAL_SIZE}"
+        )
+    creator = lt.create_torrent(
+        files,
+        piece_size=SELECTIVE_PIECE_SIZE,
+        flags=lt.create_torrent.v1_only,
+    )
+    lt.set_piece_hashes(creator, str(seed_directory))
+    torrent_path = run_directory / "selective.torrent"
+    torrent_path.write_bytes(bytes(lt.bencode(creator.generate())))
+    torrent_info = lt.torrent_info(str(torrent_path))
+
+    if torrent_info.num_pieces() != 5:
+        raise ScenarioFailure(
+            f"selective fixture has {torrent_info.num_pieces()} pieces instead of five"
+        )
+    if torrent_info.piece_length() != SELECTIVE_PIECE_SIZE:
+        raise ScenarioFailure(
+            f"selective piece length is {torrent_info.piece_length()}, "
+            f"expected {SELECTIVE_PIECE_SIZE}"
+        )
+    if torrent_info.total_size() != SELECTIVE_TOTAL_SIZE:
+        raise ScenarioFailure(
+            f"selective total is {torrent_info.total_size()}, "
+            f"expected {SELECTIVE_TOTAL_SIZE}"
+        )
+    if torrent_info.num_files() != len(SELECTIVE_FILES):
+        raise ScenarioFailure(
+            f"selective fixture has {torrent_info.num_files()} files, "
+            f"expected {len(SELECTIVE_FILES)}"
+        )
+    if any(True for _ in torrent_info.trackers()):
+        raise ScenarioFailure("controlled selective fixture unexpectedly contains a tracker")
+    piece_hashes = [
+        bytes(torrent_info.hash_for_piece(index)).hex()
+        for index in range(torrent_info.num_pieces())
+    ]
+    return (
+        torrent_path,
+        seed_directory,
+        torrent_info,
+        expected_file_hashes,
+        piece_hashes,
+    )
 
 
 def create_session() -> lt.session:
@@ -275,6 +393,47 @@ def run_diagnostic(
         ) from error
 
 
+def run_selective_diagnostic(
+    binary: Path,
+    torrent_path: Path,
+    peer_port: int,
+    output_path: Path,
+) -> subprocess.CompletedProcess[str]:
+    command = [
+        str(binary),
+        "--metainfo",
+        str(torrent_path),
+        "--peer",
+        f"127.0.0.1:{peer_port}",
+        "--output",
+        str(output_path),
+        "--timeout-seconds",
+        str(DEFAULT_DIAGNOSTIC_TIMEOUT_SECONDS),
+        "--max-buffered-payload-bytes",
+        str(SELECTIVE_PAYLOAD_ALLOWANCE),
+        "--skip-file",
+        "1",
+        "--skip-file",
+        "2",
+        "--materialize-file",
+        "2",
+    ]
+    try:
+        return subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=DEFAULT_PROCESS_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise ScenarioFailure(
+            "selective RSTorrent process exceeded harness timeout\n"
+            f"stdout:\n{error.stdout or ''}\n"
+            f"stderr:\n{error.stderr or ''}"
+        ) from error
+
+
 def parse_diagnostic(output: str, config: ScenarioConfig) -> dict[str, str]:
     values: dict[str, str] = {}
     for token in output.split():
@@ -323,6 +482,55 @@ def parse_diagnostic(output: str, config: ScenarioConfig) -> dict[str, str]:
     if verification_buffer != BLOCK_SIZE:
         raise ScenarioFailure(
             f"diagnostic verification buffer is {verification_buffer}, expected {BLOCK_SIZE}"
+        )
+    return values
+
+
+def parse_selective_diagnostic(output: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for token in output.split():
+        if "=" in token:
+            key, value = token.split("=", 1)
+            values[key] = value
+
+    expected_values = {
+        "pieces": "4/5",
+        "skipped_pieces": "1",
+        "bytes": str(SELECTIVE_REQUESTED_BYTES),
+        "blocks": str(SELECTIVE_BLOCK_COUNT),
+        "payload_limit": str(SELECTIVE_PAYLOAD_ALLOWANCE),
+        "verification_buffer": str(BLOCK_SIZE),
+        "selected_file_bytes": "73000",
+        "skipped_file_bytes": "57000",
+        "padding_bytes": "3304",
+        "selected_written_bytes": "73000",
+        "part_written_bytes": "24232",
+        "materialized_bytes": "7000",
+        "part_slots_before": "2",
+        "part_slots_after": "2",
+        "part_reopened": "true",
+    }
+    required = {*expected_values, "sha1", "info_hash", "payload_high_water", "part_path"}
+    missing = required - values.keys()
+    if missing:
+        raise ScenarioFailure(
+            f"selective diagnostic output is missing fields: {sorted(missing)}"
+        )
+    for key, expected in expected_values.items():
+        if values[key] != expected:
+            raise ScenarioFailure(
+                f"selective diagnostic {key}={values[key]}, expected {expected}"
+            )
+    try:
+        payload_high_water = int(values["payload_high_water"])
+    except ValueError as error:
+        raise ScenarioFailure(
+            "selective diagnostic payload high-water is not an integer"
+        ) from error
+    if not (0 < payload_high_water <= SELECTIVE_PAYLOAD_ALLOWANCE):
+        raise ScenarioFailure(
+            f"selective payload high-water {payload_high_water} is outside "
+            f"1..{SELECTIVE_PAYLOAD_ALLOWANCE}"
         )
     return values
 
@@ -441,6 +649,148 @@ def run_once(binary: Path, ordinal: int, config: ScenarioConfig) -> RunResult:
     return result
 
 
+def run_selective_once(binary: Path, ordinal: int) -> SelectiveRunResult:
+    run_path = Path(tempfile.mkdtemp(prefix=f"rstorrent-selective-{ordinal}-"))
+    session: lt.session | None = None
+    handle: lt.torrent_handle | None = None
+    alerts: list[str] = []
+    result: SelectiveRunResult | None = None
+    failure: BaseException | None = None
+    cleanup_errors: list[str] = []
+    started = time.monotonic()
+
+    try:
+        (
+            torrent_path,
+            seed_directory,
+            torrent_info,
+            expected_file_hashes,
+            piece_hashes,
+        ) = create_selective_fixture(run_path)
+        info_hash = str(torrent_info.info_hashes().v1)
+        session = create_session()
+        peer_port = wait_for_listener(session, alerts)
+        handle = add_seed(session, torrent_info, seed_directory, alerts)
+
+        output_root = run_path / "downloaded"
+        completed = run_selective_diagnostic(
+            binary,
+            torrent_path,
+            peer_port,
+            output_root,
+        )
+        alerts.extend(alert.message() for alert in session.pop_alerts())
+        if completed.returncode != 0:
+            raise ScenarioFailure(
+                f"selective RSTorrent exited with status {completed.returncode}\n"
+                f"stdout:\n{completed.stdout}\n"
+                f"stderr:\n{completed.stderr}"
+            )
+        if not output_root.is_dir():
+            raise ScenarioFailure("selective run succeeded without an output root")
+
+        diagnostic = parse_selective_diagnostic(completed.stdout)
+        if diagnostic["info_hash"] != info_hash:
+            raise ScenarioFailure(
+                "selective diagnostic reported the wrong info hash\n"
+                f"stdout:\n{completed.stdout}"
+            )
+        if diagnostic["sha1"] != piece_hashes[-1]:
+            raise ScenarioFailure(
+                "selective diagnostic reported the wrong final piece hash\n"
+                f"stdout:\n{completed.stdout}"
+            )
+
+        actual_hashes: dict[str, str] = {}
+        for relative_path, _, padding in SELECTIVE_FILES:
+            output_path = output_root / relative_path
+            if padding or relative_path == "skip/large.bin":
+                if output_path.exists():
+                    raise ScenarioFailure(
+                        f"skipped or padding path was created: {relative_path}"
+                    )
+                continue
+            if not output_path.is_file():
+                raise ScenarioFailure(f"wanted path is absent: {relative_path}")
+            actual_hashes[relative_path] = hash_file(output_path)
+            if actual_hashes[relative_path] != expected_file_hashes[relative_path]:
+                raise ScenarioFailure(
+                    f"published file differs from seed: {relative_path}\n"
+                    f"expected_sha1={expected_file_hashes[relative_path]}\n"
+                    f"actual_sha1={actual_hashes[relative_path]}"
+                )
+
+        expected_part_path = run_path / ".downloaded.rstorrent-parts"
+        if Path(diagnostic["part_path"]) != expected_part_path:
+            raise ScenarioFailure(
+                f"diagnostic part path is {diagnostic['part_path']}, "
+                f"expected {expected_part_path}"
+            )
+        if not expected_part_path.is_file():
+            raise ScenarioFailure("validated part file did not survive the successful run")
+        if (run_path / ".downloaded.rstorrent-staging").exists():
+            raise ScenarioFailure("selected staging root survived publication")
+
+        result = SelectiveRunResult(
+            ordinal=ordinal,
+            elapsed_seconds=time.monotonic() - started,
+            info_hash=info_hash,
+            piece_hashes=piece_hashes,
+            file_hashes=actual_hashes,
+            payload_high_water=int(diagnostic["payload_high_water"]),
+            command_output=completed.stdout.strip(),
+        )
+    except BaseException as error:
+        failure = error
+    finally:
+        if session is not None:
+            try:
+                alerts.extend(alert.message() for alert in session.pop_alerts())
+            except Exception as error:
+                cleanup_errors.append(f"libtorrent alert drain failed: {error}")
+            try:
+                if handle is not None and handle.is_valid():
+                    session.remove_torrent(handle)
+            except Exception as error:
+                cleanup_errors.append(f"libtorrent torrent removal failed: {error}")
+            try:
+                session.pause()
+            except Exception as error:
+                cleanup_errors.append(f"libtorrent session pause failed: {error}")
+        handle = None
+        session = None
+        gc.collect()
+        try:
+            shutil.rmtree(run_path)
+            cleanup_succeeded = not run_path.exists()
+        except OSError as error:
+            cleanup_succeeded = False
+            cleanup_errors.append(f"temporary directory cleanup failed: {error}")
+        if cleanup_errors:
+            cleanup_detail = "; ".join(cleanup_errors)
+            if failure is None:
+                failure = ScenarioFailure(cleanup_detail)
+            else:
+                failure = ScenarioFailure(f"{failure}; {cleanup_detail}")
+        if result is not None:
+            result.cleanup_succeeded = cleanup_succeeded and not cleanup_errors
+
+    if failure is not None:
+        diagnostic_text = "\n".join(alerts[-100:]) or "(no libtorrent alerts)"
+        raise ScenarioFailure(
+            f"selective run {ordinal} failed: {failure}\n"
+            f"cleanup={'ok' if not run_path.exists() else 'failed'}\n"
+            f"libtorrent alerts:\n{diagnostic_text}"
+        ) from failure
+    if result is None:
+        raise ScenarioFailure(f"selective run {ordinal} ended without a result")
+    if not result.cleanup_succeeded:
+        raise ScenarioFailure(
+            f"selective run {ordinal} did not clean its temporary directory"
+        )
+    return result
+
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -456,23 +806,58 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="use the 32 MiB piece and 256 KiB payload allowance profile",
     )
+    parser.add_argument(
+        "--selective-files",
+        action="store_true",
+        help="use the five-piece selective multi-file profile",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     arguments = parse_arguments()
+    if arguments.large_piece and arguments.selective_files:
+        print("--large-piece and --selective-files are mutually exclusive", file=sys.stderr)
+        return 2
     config = scenario_config(arguments.large_piece)
     repository = Path(__file__).resolve().parents[2]
     print(f"python_version={sys.version.split()[0]}")
     print(f"libtorrent_binding_version={lt.__version__}")
     print(f"libtorrent_native_version={lt.version}")
-    print(
-        f"scenario={config.name} payload_size={config.payload_size} "
-        f"piece_size={config.piece_size} payload_allowance={config.payload_allowance}"
-    )
+    if arguments.selective_files:
+        print(
+            f"scenario=selective total_size={SELECTIVE_TOTAL_SIZE} "
+            f"piece_size={SELECTIVE_PIECE_SIZE} pieces=5 files={len(SELECTIVE_FILES)} "
+            f"requested_bytes={SELECTIVE_REQUESTED_BYTES} blocks={SELECTIVE_BLOCK_COUNT} "
+            f"payload_allowance={SELECTIVE_PAYLOAD_ALLOWANCE}"
+        )
+    else:
+        print(
+            f"scenario={config.name} payload_size={config.payload_size} "
+            f"piece_size={config.piece_size} payload_allowance={config.payload_allowance}"
+        )
 
     try:
         binary = build_diagnostic(repository)
+        if arguments.selective_files:
+            selective_results = [
+                run_selective_once(binary, ordinal)
+                for ordinal in range(1, arguments.runs + 1)
+            ]
+            for result in selective_results:
+                print(
+                    f"run={result.ordinal} elapsed_seconds={result.elapsed_seconds:.3f} "
+                    f"info_hash={result.info_hash} "
+                    f"piece_hashes={','.join(result.piece_hashes)} "
+                    f"file_hashes={','.join(f'{path}:{digest}' for path, digest in result.file_hashes.items())} "
+                    f"payload_high_water={result.payload_high_water} cleanup=ok"
+                )
+                print(f"run={result.ordinal} diagnostic={result.command_output}")
+            print(
+                f"all_runs={len(selective_results)} cleanup=ok result=pass"
+            )
+            return 0
+
         results = [
             run_once(binary, ordinal, config)
             for ordinal in range(1, arguments.runs + 1)

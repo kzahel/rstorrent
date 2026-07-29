@@ -402,7 +402,7 @@ async fn run_selective_download(
         }
 
         loop {
-            if queued_messages.is_empty() {
+            while queued_messages.is_empty() {
                 let read =
                     peer.read(&mut network_buffer)
                         .await
@@ -423,7 +423,7 @@ async fn run_selective_download(
 
             let message = queued_messages
                 .pop_front()
-                .expect("message queue was filled before removal");
+                .expect("message queue is nonempty after receive loop");
             let availability_update = availability_update(&message);
             let actions = download.on_message(message).map_err(DownloadError::Piece)?;
             match availability_update {
