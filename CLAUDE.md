@@ -53,6 +53,13 @@ In particular:
   a cancellation and observable termination path as concurrency grows.
 - Treat all metainfo and network input as hostile. Bound peer-controlled
   allocation, queues, and work before changing state.
+- Prefer depth before breadth for every new protocol or storage capability.
+  Study specifications and mature references first, then front-load edge cases
+  that change state, ownership, persistence, integrity, resource bounds, or
+  interoperability into the initial tactical and tests. Do not let a
+  happy-path implementation establish an architecture already known to fail
+  those cases; keep unrelated breadth and policy-only cases bounded or
+  explicitly deferred.
 - Never present unverified data as verified content.
 - Make structured observability part of engine behavior while keeping logs
   separate from application commands, snapshots, and events.

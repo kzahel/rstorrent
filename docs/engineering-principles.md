@@ -192,6 +192,31 @@ implemented
 Not every feature needs every stage before a development build, but public
 support claims must state the evidence actually available.
 
+## Depth Before Breadth
+
+When adding a protocol or storage capability, investigate its complete
+behavioral shape before implementing its easiest successful exchange. Start
+with the normative specification, mature reference implementations, known
+product failures, and the boundaries created by hostile or unusual input.
+
+Front-load cases that would force a different state model, owner, persistence
+format, storage layout, integrity boundary, resource limit, or
+interoperability contract if discovered later. Examples include fragmented and
+reordered messages, duplicate or late data, cancellation and restart,
+cross-file pieces, skipped files, corrupt durable state, extreme but accepted
+sizes, and transitions between valid modes.
+
+The first tactical for a capability should normally encode those
+shape-changing cases as invariants, fixtures, and negative tests. Do not build
+a happy-path implementation when current evidence already shows that its data
+model cannot represent required edge conditions.
+
+Completeness means depth within the selected capability, not speculative
+product breadth. A tactical should still defer unrelated protocols, optional
+policy, performance refinements, and hypothetical framework needs. Record
+those deferrals explicitly when they are material, and prefer the smallest
+architecture that correctly represents the known behavioral shape.
+
 ## Feature Growth
 
 Grow through falsifiable vertical slices that produce an externally observable
@@ -228,6 +253,8 @@ because the references are checked out locally.
   sockets, storage, or wall-clock time.
 - Every background task has an owner and an observable termination path.
 - A peer-local failure cannot corrupt torrent- or session-wide state.
+- New protocol and storage capabilities account for shape-changing edge cases
+  before happy-path code fixes the wrong state or ownership model.
 - Hot-path peer and piece data does not cross a generic process or language
   proxy.
 - Product support claims are backed by recorded evidence.
@@ -244,6 +271,8 @@ checklist after every edit:
 - What bounds peer-controlled memory, queues, and work?
 - Who cancels and joins this task?
 - Can one component fail without leaving another component inconsistent?
+- Which valid, hostile, interrupted, or transition cases would change this
+  state or ownership model if added later?
 - Can diagnostics explain why this transition occurred?
 - Is a module accumulating unrelated responsibilities?
 - Does an abstraction solve a current problem or only anticipate one?

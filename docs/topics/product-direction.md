@@ -3,7 +3,8 @@
 Topic: `product-direction`
 
 Status: initial direction and successor vision accepted; bounded large-piece
-pipeline proven, with a multi-piece explicit-peer slice recommended next.
+pipeline proven, with a selective multi-file storage foundation recommended
+next.
 
 ## Scope
 
@@ -162,9 +163,9 @@ This is recommended direction beyond the accepted first slice:
    [`001-bounded-large-piece.md`](../tactical/001-bounded-large-piece.md)
    established block-granular payload accounting, staging, and streamed
    verification independently of piece length.
-3. Turn that vertical thread into a usable multi-piece, single-file
-   explicit-peer CLI before adding trackers, metadata exchange, DHT,
-   multi-file storage, resume, and seeding.
+3. Establish selective multi-file storage with cross-file piece mapping,
+   skipped-file part storage, verified publication, and bounded durable-state
+   handling before generalizing the explicit-peer CLI.
 4. Prove Rust networking, Android foreground lifetime, and SAF-backed bulk I/O
    on a physical Chromebook before assuming the desktop storage seam transfers.
 5. Define the application command/snapshot/event boundary from real CLI needs.
@@ -177,8 +178,15 @@ does not distort the protocol vertical slice.
 
 ## Recommended Next Work
 
-Draft tactical `002` around a complete multi-piece, single-file explicit-peer
-download. Reuse the proven block reservation, staging, and streamed
-verification path; add only the piece selection, per-piece verification,
-random-access publication, progress, and final short-piece behavior needed to
-finish the file. Keep trackers and broader discovery outside that slice.
+Draft tactical `002` around a selective multi-file storage foundation rather
+than a single-file happy path. Research the pinned libtorrent part-file,
+file-priority, cross-file mapping, and materialization behavior first, then
+compare the current JSTorrent implementation and Android/SAF constraints.
+
+Use an edge-rich deterministic fixture to force the initial model to represent
+wanted/skipped boundary pieces, pieces touching only skipped files, blocks
+crossing file boundaries, zero-length and pad files, a final short piece,
+part-file reopen and corruption, verified publication, and materializing a
+newly wanted file. Reuse tactical `001`'s block reservation and streamed
+verification bounds. Keep discovery, general peer policy, and unrelated
+product breadth outside the slice.

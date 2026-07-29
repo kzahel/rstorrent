@@ -467,9 +467,9 @@ exact total-process memory enforcement. A final-path replacement race and
 crash-consistent directory syncing remain deliberately outside the diagnostic
 publication contract.
 
-Recommended tactical `002`: turn the bounded vertical thread into a complete
-multi-piece, single-file explicit-peer download. Reuse the block reservation,
-staging, and streamed verification design while adding deterministic piece
-selection, per-piece verification, random-access storage, progress evidence,
-and a final short piece. Keep peer discovery and multi-file mapping out until
-that path is proven.
+The completion-time recommendation was a multi-piece, single-file
+explicit-peer download. Subsequent review replaced that happy-path slice with
+a selective multi-file storage foundation: cross-file mapping, skipped-file
+part storage, materialization, durable-state failures, and verified
+publication must shape the storage model before a general downloader grows
+around it. That foundation is the recommended tactical `002`.

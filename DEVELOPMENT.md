@@ -31,8 +31,9 @@ remains the completed execution record for the initial protocol/runtime
 vertical slice.
 
 No tactical is currently active. The living direction recommends drafting
-`002` around a complete multi-piece, single-file explicit-peer download that
-reuses the proven bounded pipeline.
+`002` around a selective multi-file storage foundation that forces
+cross-file pieces, skipped-file storage, materialization, and durable
+part-file edge cases through the proven bounded pipeline.
 
 ## Toolchain
 
