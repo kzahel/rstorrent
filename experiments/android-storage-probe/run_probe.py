@@ -23,6 +23,7 @@ EXPECTED_AVD = "jstorrent-tablet"
 EXPECTED_AVD_API = "34"
 EXPECTED_CHROMEOS_API = "33"
 EXPECTED_CHROMEOS_MODEL = "nami"
+EXPECTED_CHROMEOS_DEVICE = "nami_cheets"
 CHROMEOS_SERIAL = "emulator-5554"
 RESULT_PATH = "files/result.json"
 POLL_SECONDS = 45
@@ -290,10 +291,14 @@ def verify_target(target: AdbTarget, kind: str) -> dict[str, str]:
     abis = target.property("ro.product.cpu.abilist")
     fingerprint = target.property("ro.build.fingerprint")
     expected_api = EXPECTED_AVD_API if kind == "avd" else EXPECTED_CHROMEOS_API
-    if api != expected_api or (kind == "chromeos" and device != EXPECTED_CHROMEOS_MODEL):
+    unexpected_chromeos = kind == "chromeos" and (
+        model != EXPECTED_CHROMEOS_MODEL or device != EXPECTED_CHROMEOS_DEVICE
+    )
+    if api != expected_api or unexpected_chromeos:
         raise ProbeFailure(
             f"refusing unexpected {kind} target: api={api}, model={model}, "
-            f"device={device}; expected api={expected_api}"
+            f"device={device}; expected api={expected_api}, "
+            f"model={EXPECTED_CHROMEOS_MODEL}, device={EXPECTED_CHROMEOS_DEVICE}"
         )
     if "x86_64" not in abis.split(","):
         raise ProbeFailure(f"target lacks packaged x86_64 ABI: {abis}")
@@ -334,10 +339,6 @@ def ui_nodes(target: AdbTarget) -> list[ET.Element]:
         return []
 
 
-def click_node(target: AdbTarget, labels: Sequence[str]) -> bool:
-    return click_from_nodes(target, ui_nodes(target), labels)
-
-
 def click_from_nodes(
     target: AdbTarget,
     nodes: Sequence[ET.Element],
@@ -357,23 +358,37 @@ def click_from_nodes(
     return False
 
 
-def enter_grant_folder_name(target: AdbTarget) -> bool:
-    for node in ui_nodes(target):
-        if (
-            node.attrib.get("class") == "android.widget.EditText"
-            and node.attrib.get("enabled", "true") == "true"
-        ):
-            x, y = parse_bounds(node.attrib.get("bounds", ""))
-            target.shell(["input", "tap", str(x), str(y)])
-            target.shell(["input", "text", GRANT_FOLDER])
-            return True
-    return False
+def grant_path() -> str:
+    return f"/sdcard/Download/{GRANT_FOLDER}"
+
+
+def remove_grant_folder(target: AdbTarget) -> None:
+    path = grant_path()
+    exists = target.shell(["test", "-e", path], check=False)
+    if exists.returncode != 0:
+        return
+    directory = target.shell(["test", "-d", path], check=False)
+    if directory.returncode != 0:
+        raise ProbeFailure(f"probe grant path is not a directory: {path}")
+    removed = target.shell(["rmdir", path], check=False)
+    if removed.returncode != 0:
+        raise ProbeFailure(f"probe grant directory is not empty: {path}")
+
+
+def prepare_grant_folder(target: AdbTarget) -> None:
+    remove_grant_folder(target)
+    created = target.shell(["mkdir", grant_path()], check=False)
+    if created.returncode != 0:
+        raise ProbeFailure(
+            f"could not create probe grant directory: {grant_path()}\n"
+            f"stdout:\n{created.stdout}\n"
+            f"stderr:\n{created.stderr}"
+        )
 
 
 def automate_tree_grant(target: AdbTarget) -> None:
     deadline = time.monotonic() + 30
     used_folder = False
-    entered_name = False
     while time.monotonic() < deadline:
         nodes = ui_nodes(target)
         if not nodes:
@@ -389,18 +404,6 @@ def automate_tree_grant(target: AdbTarget) -> None:
             continue
         if used_folder and click_from_nodes(target, nodes, ["Allow", "ALLOW"]):
             return
-        has_folder_name_field = any(
-            node.attrib.get("class") == "android.widget.EditText"
-            and node.attrib.get("enabled", "true") == "true"
-            for node in nodes
-        )
-        if has_folder_name_field:
-            if not entered_name and enter_grant_folder_name(target):
-                entered_name = True
-                time.sleep(0.2)
-            if click_node(target, ["OK", "Create", "CREATE"]):
-                time.sleep(0.7)
-            continue
         in_download = any(
             node.attrib.get("text", "").strip().casefold().startswith("files in download")
             for node in nodes
@@ -408,13 +411,6 @@ def automate_tree_grant(target: AdbTarget) -> None:
         if not used_folder and in_download:
             if click_from_nodes(target, nodes, [GRANT_FOLDER]):
                 time.sleep(0.5)
-                continue
-            if click_from_nodes(
-                target,
-                nodes,
-                ["Create new folder", "CREATE NEW FOLDER", "New folder"],
-            ):
-                time.sleep(0.4)
                 continue
         elif not used_folder and click_from_nodes(
             target,
@@ -492,8 +488,12 @@ def cleanup_after_failure(target: AdbTarget) -> None:
         remove_result(target)
         launch_phase(target, "cleanup")
         read_result(target, "cleanup")
-    except Exception:
-        pass
+    except Exception as error:
+        print(f"probe application cleanup failed: {error}", file=sys.stderr)
+    try:
+        remove_grant_folder(target)
+    except Exception as error:
+        print(f"probe grant cleanup failed: {error}", file=sys.stderr)
 
 
 def run_cycle(target: AdbTarget, target_name: str, ordinal: int) -> dict:
@@ -502,6 +502,7 @@ def run_cycle(target: AdbTarget, target_name: str, ordinal: int) -> dict:
     if cleared.returncode != 0 or "Success" not in cleared.stdout:
         raise ProbeFailure(f"could not clear probe application data: {cleared.stdout}")
     target.run(["logcat", "-c"], check=False)
+    prepare_grant_folder(target)
     remove_result(target)
     launch_phase(target, "acquire")
     automate_tree_grant(target)
@@ -520,14 +521,7 @@ def run_cycle(target: AdbTarget, target_name: str, ordinal: int) -> dict:
 
     target.shell(["am", "force-stop", PACKAGE], check=False)
     target.shell(["pm", "clear", PACKAGE], check=False)
-    grant_path = f"/sdcard/Download/{GRANT_FOLDER}"
-    removed = target.shell(["rmdir", grant_path], check=False)
-    if removed.returncode != 0:
-        exists = target.shell(["test", "-e", grant_path], check=False)
-        if exists.returncode == 0:
-            raise ProbeFailure(
-                f"probe grant directory was not empty after cleanup: {grant_path}"
-            )
+    remove_grant_folder(target)
     return {
         "target": target_name,
         "run": ordinal,

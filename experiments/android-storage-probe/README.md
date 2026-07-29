@@ -38,14 +38,15 @@ python3 experiments/android-storage-probe/run_probe.py \
   --target chromeos --runs 3
 ```
 
-Each fresh run clears application data, opens the system tree picker, creates
-and grants a dedicated `RSTorrentStorageProbeGrant` directory under Downloads,
-executes the initial probe, force-stops the process, relaunches for
-persisted-URI verification, deletes the probe tree, releases the grant, removes
-the empty grant directory, and clears application data again. Android prevents
-granting the Downloads root itself. The AVD process is started and stopped by
-the runner. ChromeOS health, ARCVM authorization, and APK transport use
-`~/code/chromeos-testbed`.
+Each fresh run clears application data, creates an exact empty
+`RSTorrentStorageProbeGrant` directory under Downloads, opens the system tree
+picker to grant that directory, executes the initial probe, force-stops the
+process, relaunches for persisted-URI verification, deletes the probe tree,
+releases the grant, removes the empty grant directory, and clears application
+data again. Pre-creation avoids host keyboard-layout translation during UI
+automation. Android prevents granting the Downloads root itself. The AVD
+process is started and stopped by the runner. ChromeOS health, ARCVM
+authorization, and APK transport use `~/code/chromeos-testbed`.
 
 Results are emitted as one JSON object per run followed by a summary. A
 provider operation is reported as `supported`, `unsupported`, or `failed`;
