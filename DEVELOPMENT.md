@@ -40,8 +40,8 @@ is complete on `jstorrent-tablet`, Chromebook ARCVM, a physical Pixel 7a, and
 a physical Moto X4 using both internal and removable exFAT storage. It proved
 fixed-buffer native file-descriptor operations, persisted SAF reopen,
 descriptor ownership, cancellable termination, staging publication, and exact
-cleanup. The exFAT result also proved that sparse 256 MiB slot offsets require
-a non-sparse fallback.
+cleanup. The exFAT result also showed that sparse-mode file growth may perform
+full allocation and block on a destination that does not preserve holes.
 
 ## Toolchain
 

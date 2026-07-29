@@ -154,9 +154,15 @@ borrowed descriptors are duplicated before native ownership, buffer and
 cancellation bounds remain independent of logical piece size, provider
 capabilities are explicit, and grants target a user-visible child rather than
 the protected Downloads root. The Moto evidence makes sparse allocation an
-explicit destination capability rather than a portable storage assumption.
+explicit destination observation rather than a portable disk-space promise.
 The two physical devices still do not establish general OEM, cloud, removable
 filesystem, or Android-version compatibility.
+
+The pinned libtorrent reference uses the same compact piece-slot part-file
+shape without selecting a filesystem-specific fallback. Sparse storage is its
+recommended default, full allocation is optional, and allocation latency is
+isolated behind disk jobs and queued-byte backpressure. RSTorrent should follow
+that proven direction unless broader product evidence justifies divergence.
 
 This is an accepted starting shape backed by unit and libtorrent
 interoperability evidence, not a promise that two crates are the final engine
@@ -211,11 +217,10 @@ This is recommended direction beyond the accepted first slice:
    persisted SAF access, cancellation, publication capabilities, and cleanup
    on an AVD, Chromebook ARCVM, physical Pixel 7a, and Moto X4 internal and
    removable exFAT storage.
-5. Define and prove a bounded non-sparse fallback for provisional part storage.
-6. Prove actual engine and foreground-lifetime integration on Android.
-7. Define the application command/snapshot/event boundary from real CLI needs.
-8. Add the first Android and desktop product clients.
-9. Evaluate product migration, extension control, and JSTorrent brand
+5. Prove actual engine and foreground-lifetime integration on Android.
+6. Define the application command/snapshot/event boundary from real CLI needs.
+7. Add the first Android and desktop product clients.
+8. Evaluate product migration, extension control, and JSTorrent brand
    graduation from the proven application contracts.
 
 The platform feasibility probe remains a separate tactical so failure in it
@@ -223,10 +228,11 @@ does not distort the protocol vertical slice.
 
 ## Recommended Next Work
 
-Plan a bounded storage-layout tactical that retains sparse compact slots where
-measured support exists and provides a dense or extent-based fallback for
-destinations such as the tested removable exFAT volume. It should preserve
-tactical `003`'s descriptor ownership, fixed buffers, explicit capabilities,
-and exact cleanup without prematurely defining a permanent resume format.
-Follow it with Android engine integration; keep broad provider compatibility,
-general peer discovery, and UI architecture in their own bounded tacticals.
+Plan a bounded Android engine-integration tactical that retains tactical
+`003`'s descriptor ownership, fixed buffers, synchronous restart state,
+observable cancellation, explicit capabilities, and exact cleanup. Follow
+libtorrent's proven direction by keeping storage work off network and UI
+executors and applying queued-byte backpressure when disk work falls behind.
+Keep permanent resume format, alternate allocation modes, broad provider
+compatibility, general peer discovery, and UI architecture in their own
+bounded tacticals.

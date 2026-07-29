@@ -395,9 +395,19 @@ host-visible exFAT mount.
 The Android internal-storage providers preserved the sparse hole, but the
 Moto's removable exFAT volume eagerly materialized essentially the full
 logical range. Tactical `002`'s sparse compact-slot geometry is therefore not
-a portable storage contract. Production storage must choose a dense or
-otherwise non-sparse representation when the destination cannot preserve
-holes, and must not infer that capability merely from successful random I/O.
+a disk-space guarantee. Production must not infer sparse allocation merely
+from successful random I/O, but this one filesystem result does not require a
+different part-file representation.
+
+The pinned libtorrent reference uses the same policy boundary. Sparse storage
+is its recommended default, with full allocation as an explicit alternative.
+Its skipped-file part file maps torrent pieces to compact, reusable
+piece-sized slots and writes at the block's offset within a slot; it does not
+select another format for filesystems that materialize holes. File creation,
+allocation, and writes run as disk jobs, and a queued-byte watermark stops
+peer socket reads until disk work catches up. RSTorrent should retain that
+simple storage shape and bounded backpressure direction unless broader
+evidence justifies divergence.
 
 Final SAF stage timings in milliseconds were:
 
@@ -580,9 +590,9 @@ ADB operations used only the exact AVD, Pixel, or Moto X4 serial.
 
 The stopping condition is satisfied for the named AVD, Chromebook ARCVM,
 physical Pixel 7a, and both Moto X4 destinations. The evidence supports
-retaining tactical `002`'s sparse compact-slot direction only behind an
-observed storage capability. It must not be used unchanged on the tested
-removable exFAT destination.
+retaining tactical `002`'s sparse compact-slot direction while treating
+physical allocation as destination-dependent. The tested removable exFAT
+destination remains correct but loses sparse-mode disk-space savings.
 
 It does not establish power-loss durability, directory-entry syncing, a
 permanent resume format, other removable filesystems, cloud-provider behavior,
@@ -592,10 +602,10 @@ actual engine inside an Android application.
 
 The physical-device gate now covers one modern Google phone and one Android 9
 Motorola phone with a specific removable exFAT card, not Android devices or
-providers generally. Before Android engine integration adopts tactical
-`002`'s provisional part file, a bounded storage-layout tactical should define
-and prove a dense or extent-based fallback for destinations that do not
-preserve sparse holes. Later integration should preserve the other proven
-seams: user-granted child trees, synchronous restart metadata, duplicated
-borrowed descriptors, fixed buffers, observable cancellation and termination,
-explicit provider capabilities, and exact cleanup.
+providers generally. Android engine integration should preserve the proven
+seams: storage work outside the network and UI executors, queued-byte
+backpressure, user-granted child trees, synchronous restart metadata,
+duplicated borrowed descriptors, fixed buffers, observable cancellation and
+termination, explicit provider capabilities, and exact cleanup. A different
+part-file representation or automatic allocation policy needs broader
+evidence than this one removable destination.
