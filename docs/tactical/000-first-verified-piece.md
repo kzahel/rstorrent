@@ -23,7 +23,9 @@ hash, before a fixed timeout.
 - [Product and engine direction](../topics/product-direction.md)
 - [Engine engineering principles](../engineering-principles.md)
 - [Reference policy and license posture](../references.md)
-- [BEP 3: The BitTorrent Protocol Specification](https://www.bittorrent.org/beps/bep_0003.html)
+- [BEP 3: The BitTorrent Protocol Specification](https://www.bittorrent.org/beps/bep_0003.html);
+  offline source after reference sync:
+  `reference/bittorrent.org/beps/bep_0003.rst`
 - Rasterbar libtorrent `v2.0.13`, pinned in
   [`reference/pins.toml`](../../reference/pins.toml), as a separately running
   peer and fixture generator

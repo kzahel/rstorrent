@@ -55,6 +55,17 @@ is the normative starting point for protocol capabilities. Each implemented
 extension should identify its BEP, accepted behavior, deliberate limitations,
 and interoperability evidence.
 
+The authoritative sources are available offline after reference sync at:
+
+```text
+reference/bittorrent.org/beps/
+```
+
+This managed checkout is pinned to the exact upstream revision in
+`reference/pins.toml`. Prefer it to JSTorrent's Markdown conversion, which was
+generated from a May 2020 snapshot. The original reStructuredText retains
+document metadata, history, and each BEP's copyright section.
+
 Where deployed clients disagree with a specification, record the observed
 compatibility behavior rather than silently replacing the documented contract.
 
@@ -71,8 +82,9 @@ file before importing material.
   submodule is GPL-3.0.
 - JSTorrent is MIT.
 - The official BitTorrent BEP repository does not currently state a
-  repository-wide license. Cite and independently summarize protocol behavior
-  rather than copying BEP prose or bundled material.
+  repository-wide license, and individual document statements vary. Cite and
+  independently summarize protocol behavior rather than copying BEP prose or
+  bundled material without checking the exact document.
 
 Reading these sources and running a reference implementation as a separate
 test peer does not make it an RSTorrent product dependency. If source, fixtures,

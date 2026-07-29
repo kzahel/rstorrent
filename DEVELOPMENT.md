@@ -68,6 +68,10 @@ at `~/code/jstorrent`. See [`reference/README.md`](reference/README.md) and
 [`reference/pins.toml`](reference/pins.toml) for their roles and exact
 revisions.
 
+The original BEP sources are available offline after sync under
+`reference/bittorrent.org/beps/`. Prefer them to the older converted copies in
+JSTorrent.
+
 Do not vendor, import, or commit reference source merely for convenient
 reading. The ignored checkouts are not RSTorrent dependencies.
 

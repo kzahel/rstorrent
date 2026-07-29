@@ -1,6 +1,14 @@
 schema_version = 1
 
 [[checkout]]
+name = "bittorrent-beps"
+path = "reference/bittorrent.org"
+repository = "https://github.com/bittorrent/bittorrent.org.git"
+revision = "7b7b41f46d57ff1d1cb1e24ed6e9bacfbf958c06"
+purpose = "Authoritative offline BitTorrent Enhancement Proposal source documents"
+required = true
+
+[[checkout]]
 name = "rqbit"
 path = "reference/rqbit"
 repository = "https://github.com/ikatson/rqbit.git"
