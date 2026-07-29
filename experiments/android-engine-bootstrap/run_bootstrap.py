@@ -30,10 +30,11 @@ RECEIVER = f"{PACKAGE}/.CommandReceiver"
 ACTION_START = "org.rstorrent.bootstrap.START"
 ACTION_CANCEL = "org.rstorrent.bootstrap.CANCEL"
 ACTION_OBSERVE = "org.rstorrent.bootstrap.OBSERVE"
-EXPECTED_INTERFACE = "rstorrent-android/0.1.0;uniffi/0.31.0"
+ACTION_VERIFY = "org.rstorrent.bootstrap.VERIFY"
+EXPECTED_INTERFACE = "rstorrent-android/0.2.0;uniffi/0.31.0"
 PAYLOAD_LIMIT = 32 * 1024
 CANCELLATION_STORAGE_DELAY_MILLIS = 5_000
-RESULT_TIMEOUT_SECONDS = 75
+RESULT_TIMEOUT_SECONDS = 45
 PROFILE_CHOICES = (
     "success",
     "slow-storage",
@@ -384,6 +385,8 @@ def launch(
     scenario: str | None = None,
     storage_delay_millis: int = 0,
     collision: str = "",
+    storage: str = "private",
+    tree_initial_uri: str | None = None,
     via_receiver: bool = False,
 ) -> None:
     arguments = ["am", "broadcast" if via_receiver else "start"]
@@ -440,8 +443,13 @@ def launch(
                 "--es",
                 "materialize_files",
                 "2",
+                "--es",
+                "storage",
+                storage,
             ]
         )
+        if tree_initial_uri:
+            arguments.extend(["--es", "tree_initial_uri", tree_initial_uri])
         if collision:
             arguments.extend(["--es", "collision", collision])
     completed = target.shell(arguments, timeout=30, check=False)
@@ -493,8 +501,14 @@ def app_exists(target: Any, relative_path: str) -> bool:
     return result.returncode == 0
 
 
-def wait_result(target: Any, run_id: str) -> dict[str, Any]:
-    relative = f"files/results/{run_id}.json"
+def wait_result(
+    target: Any,
+    run_id: str,
+    *,
+    restart: bool = False,
+) -> dict[str, Any]:
+    suffix = "-restart" if restart else ""
+    relative = f"files/results/{run_id}{suffix}.json"
     deadline = time.monotonic() + RESULT_TIMEOUT_SECONDS
     last = ""
     while time.monotonic() < deadline:
@@ -507,7 +521,14 @@ def wait_result(target: Any, run_id: str) -> dict[str, Any]:
                 pass
         time.sleep(0.2)
     logcat = target.run(
-        ["logcat", "-d", "-t", "400"],
+        [
+            "logcat",
+            "-d",
+            "-s",
+            "RSTorrentBootstrap:*",
+            "AndroidRuntime:E",
+            "*:S",
+        ],
         timeout=20,
         check=False,
     ).stdout
@@ -681,6 +702,102 @@ def validate_success(
         raise BootstrapFailure("validated part file is absent")
 
 
+def validate_saf_prepared(
+    target: Any,
+    result: dict[str, Any],
+    fixture: SeedFixture,
+    run_id: str,
+    identity: dict[str, str],
+) -> None:
+    validate_common(result, identity)
+    terminal = result.get("terminal", {})
+    if terminal.get("outcome") != "PREPARED":
+        raise BootstrapFailure(
+            "SAF native execution was not prepared: "
+            f"{json.dumps(terminal, sort_keys=True)}; "
+            f"events={json.dumps(read_events(target, run_id), sort_keys=True)}"
+        )
+    if result.get("platform", {}).get("status") != "AWAITING_RESTART":
+        raise BootstrapFailure(
+            f"SAF provider publication failed: {result.get('platform')}"
+        )
+    report = terminal.get("report", {})
+    expected_scalars = {
+        "info_hash": fixture.info_hash,
+        "final_piece_hash": fixture.piece_hashes[-1],
+        "bytes_written": 97_232,
+        "block_count": 7,
+        "payload_limit": PAYLOAD_LIMIT,
+        "verification_buffer": 16 * 1024,
+        "piece_count": 5,
+        "verified_piece_count": 4,
+        "skipped_piece_count": 1,
+        "selected_file_bytes": 73_000,
+        "skipped_file_bytes": 57_000,
+        "padding_bytes": 3_304,
+        "selected_written_bytes": 73_000,
+        "part_written_bytes": 24_232,
+        "materialized_bytes": 7_000,
+        "part_slots_before": 2,
+        "part_slots_after": 2,
+        "part_reopened": True,
+        "part_path": None,
+    }
+    for key, expected in expected_scalars.items():
+        if report.get(key) != expected:
+            raise BootstrapFailure(
+                f"SAF report {key}={report.get(key)!r}, expected {expected!r}"
+            )
+    expected_hashes = {
+        index: fixture.expected_file_hashes[path]
+        for index, (path, _, padding) in enumerate(fixture_files())
+        if not padding and index != 1
+    }
+    prepared = {
+        entry["file_index"]: entry["sha1"]
+        for entry in report.get("prepared_files", [])
+    }
+    if prepared != expected_hashes:
+        raise BootstrapFailure(
+            f"prepared hash manifest differs: {prepared!r} != {expected_hashes!r}"
+        )
+
+
+def validate_saf_restart(
+    result: dict[str, Any],
+    fixture: SeedFixture,
+    identity: dict[str, str],
+) -> None:
+    if result.get("interface_version") != EXPECTED_INTERFACE:
+        raise BootstrapFailure("restart reported the wrong native interface")
+    if result.get("status") != "SUCCEEDED":
+        raise BootstrapFailure(
+            f"SAF restart verification failed: {json.dumps(result, sort_keys=True)}"
+        )
+    device = result.get("device", {})
+    if (
+        str(device.get("api")) != identity["api"]
+        or device.get("model") != identity["model"]
+        or device.get("fingerprint") != identity["fingerprint"]
+    ):
+        raise BootstrapFailure("restart identity differs from the selected target")
+    expected_hashes = {
+        index: fixture.expected_file_hashes[path]
+        for index, (path, _, padding) in enumerate(fixture_files())
+        if not padding and index != 1
+    }
+    verified = {
+        entry["file_index"]: entry["sha1"]
+        for entry in result.get("verified_files", [])
+    }
+    if verified != expected_hashes:
+        raise BootstrapFailure(
+            f"restart hash manifest differs: {verified!r} != {expected_hashes!r}"
+        )
+    if not result.get("published_deleted") or not result.get("part_deleted"):
+        raise BootstrapFailure("restart did not clean exact SAF artifacts")
+
+
 def fixture_files() -> Sequence[tuple[str, int, bool]]:
     return (
         ("wanted/start.bin", 20_000, False),
@@ -702,7 +819,9 @@ def cleanup_run(target: Any, run_id: str) -> None:
     for path in (
         f"files/sessions/{run_id}",
         f"files/results/{run_id}.json",
+        f"files/results/{run_id}-restart.json",
         f"files/results/.{run_id}.json.tmp",
+        f"files/results/.{run_id}-restart.json.tmp",
     ):
         target.shell(
             ["run-as", PACKAGE, "rm", "-rf", path],
@@ -724,17 +843,23 @@ def run_standard_profile(
     target: Any,
     target_kind: str,
     identity: dict[str, str],
+    probe: ModuleType,
     interop: ModuleType,
     profile: str,
     ordinal: int,
+    storage: str,
 ) -> dict[str, Any]:
     label = f"{target_kind}-{profile}-{ordinal}"
     run_id = f"{profile.replace('-', '_')}-{ordinal}"
     fixture = SeedFixture.create(interop, label)
     proxy: RequestClosingProxy | None = None
     transport: ReverseTransport | None = None
+    saf_storage = storage.startswith("saf-")
+    grant_storage = "sdcard" if storage == "saf-sdcard" else "internal"
     try:
         clear_application(target)
+        if saf_storage:
+            probe.prepare_grant_folder(target, grant_storage)
         host_port = fixture.host_port
         if profile == "peer-failure":
             proxy = RequestClosingProxy(host_port)
@@ -758,7 +883,15 @@ def run_standard_profile(
             peer_port=transport.device_port,
             scenario=profile,
             storage_delay_millis=delay,
+            storage=storage,
+            tree_initial_uri=(
+                probe.MOTO_SD_INITIAL_URI
+                if storage == "saf-sdcard"
+                else None
+            ),
         )
+        if saf_storage:
+            probe.automate_tree_grant(target, grant_storage)
 
         observed: dict[str, Any] | None = None
         if profile == "slow-storage":
@@ -784,6 +917,7 @@ def run_standard_profile(
                 peer_port=transport.device_port,
                 scenario=profile,
                 storage_delay_millis=delay,
+                storage=storage,
                 via_receiver=True,
             )
         elif profile == "activity-recreation":
@@ -805,6 +939,7 @@ def run_standard_profile(
             )
 
         result = wait_result(target, run_id)
+        restart_result: dict[str, Any] | None = None
         if profile == "peer-failure":
             validate_common(result, identity)
             terminal = result.get("terminal", {})
@@ -819,9 +954,20 @@ def run_standard_profile(
                 raise BootstrapFailure("peer failed before request accounting")
             if proxy is None or not proxy.saw_request.wait(timeout=2):
                 raise BootstrapFailure("peer failed before a request was observed")
-            assert_unverified_cleanup(target, run_id)
+            if saf_storage:
+                if result.get("platform", {}).get("status") != "NOT_PREPARED":
+                    raise BootstrapFailure("failed SAF transfer was publishable")
+            else:
+                assert_unverified_cleanup(target, run_id)
         else:
-            validate_success(target, result, fixture, run_id, identity)
+            if saf_storage:
+                validate_saf_prepared(target, result, fixture, run_id, identity)
+                target.shell(["am", "force-stop", PACKAGE])
+                launch(target, ACTION_VERIFY, run_id=run_id)
+                restart_result = wait_result(target, run_id, restart=True)
+                validate_saf_restart(restart_result, fixture, identity)
+            else:
+                validate_success(target, result, fixture, run_id, identity)
         events = read_events(target, run_id)
         if profile == "duplicate-start" and not any(
             event.get("event") == "duplicate_start"
@@ -842,6 +988,7 @@ def run_standard_profile(
             "profile": profile,
             "run": ordinal,
             "result": result,
+            "restart": restart_result,
             "events": events,
             "host_peer_count_after": peer_count(fixture),
         }
@@ -852,6 +999,8 @@ def run_standard_profile(
             transport.close()
         if proxy is not None:
             proxy.close()
+        if saf_storage:
+            probe.remove_grant_folder(target, grant_storage)
         fixture.close()
 
 
@@ -872,10 +1021,14 @@ def run_cancellation_profile(
     target: Any,
     target_kind: str,
     identity: dict[str, str],
+    probe: ModuleType,
     interop: ModuleType,
     ordinal: int,
+    storage: str,
 ) -> dict[str, Any]:
     results = []
+    saf_storage = storage.startswith("saf-")
+    grant_storage = "sdcard" if storage == "saf-sdcard" else "internal"
     for phase, after_progress in (("before", False), ("after", True)):
         run_id = f"cancellation_{phase}-{ordinal}"
         fixture = SeedFixture.create(
@@ -885,6 +1038,8 @@ def run_cancellation_profile(
         transport: ReverseTransport | None = None
         try:
             clear_application(target)
+            if saf_storage:
+                probe.prepare_grant_folder(target, grant_storage)
             transport = ReverseTransport.create(
                 target,
                 target_kind,
@@ -899,7 +1054,15 @@ def run_cancellation_profile(
                 peer_port=transport.device_port,
                 scenario=f"cancellation-{phase}",
                 storage_delay_millis=CANCELLATION_STORAGE_DELAY_MILLIS,
+                storage=storage,
+                tree_initial_uri=(
+                    probe.MOTO_SD_INITIAL_URI
+                    if storage == "saf-sdcard"
+                    else None
+                ),
             )
+            if saf_storage:
+                probe.automate_tree_grant(target, grant_storage)
             wait_recorded_event(
                 target,
                 run_id,
@@ -939,7 +1102,11 @@ def run_cancellation_profile(
                 raise BootstrapFailure(
                     "before-progress cancellation accepted payload"
                 )
-            assert_unverified_cleanup(target, run_id)
+            if saf_storage:
+                if result.get("platform", {}).get("status") != "NOT_PREPARED":
+                    raise BootstrapFailure("cancelled SAF transfer was publishable")
+            else:
+                assert_unverified_cleanup(target, run_id)
 
             original = app_bytes(
                 target,
@@ -971,6 +1138,8 @@ def run_cancellation_profile(
         finally:
             if transport is not None:
                 transport.close()
+            if saf_storage:
+                probe.remove_grant_folder(target, grant_storage)
             fixture.close()
     return {
         "target": target_kind,
@@ -1095,6 +1264,11 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--avd", default="jstorrent-tablet")
     parser.add_argument("--runs", type=int, choices=range(1, 6), default=1)
     parser.add_argument(
+        "--storage",
+        choices=["private", "saf-internal", "saf-sdcard"],
+        default="private",
+    )
+    parser.add_argument(
         "--profile",
         action="append",
         choices=PROFILE_CHOICES,
@@ -1106,6 +1280,9 @@ def parse_arguments() -> argparse.Namespace:
 
 def main() -> int:
     arguments = parse_arguments()
+    if arguments.storage == "saf-sdcard" and arguments.target != "motox4":
+        print("SAF removable storage is available only on motox4", file=sys.stderr)
+        return 1
     ensure_interop_environment()
     probe, interop = load_support()
     apk = (
@@ -1132,6 +1309,16 @@ def main() -> int:
         else:
             target = probe.prepare_moto()
         identity = probe.verify_target(target, arguments.target)
+        if arguments.storage != "private":
+            identity.update(
+                probe.verify_storage(
+                    target,
+                    arguments.target,
+                    "sdcard"
+                    if arguments.storage == "saf-sdcard"
+                    else "internal",
+                )
+            )
         probe.install_apk(target, arguments.target, apk)
 
         for profile in profiles:
@@ -1142,8 +1329,10 @@ def main() -> int:
                         target,
                         arguments.target,
                         identity,
+                        probe,
                         interop,
                         ordinal,
+                        arguments.storage,
                     )
                 elif profile == "preexisting-artifacts":
                     result = run_preexisting_profile(
@@ -1158,9 +1347,11 @@ def main() -> int:
                         target,
                         arguments.target,
                         identity,
+                        probe,
                         interop,
                         profile,
                         ordinal,
+                        arguments.storage,
                     )
                 results.append(result)
                 print(json.dumps(result, sort_keys=True), flush=True)
@@ -1183,6 +1374,7 @@ def main() -> int:
             {
                 "target": arguments.target,
                 "profiles": profiles,
+                "storage": arguments.storage,
                 "results": len(results),
                 "result": "pass",
                 "cleanup": "ok",

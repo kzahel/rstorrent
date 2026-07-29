@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Debug
 import android.os.IBinder
@@ -25,6 +26,7 @@ import org.rstorrent.bootstrap.uniffi.SessionSnapshot
 import org.rstorrent.bootstrap.uniffi.StartDisposition
 import org.rstorrent.bootstrap.uniffi.StartResult
 import org.rstorrent.bootstrap.uniffi.TerminalResult
+import org.rstorrent.bootstrap.uniffi.TerminalOutcome
 import org.rstorrent.bootstrap.uniffi.interfaceVersion
 
 class EngineService : Service() {
@@ -38,6 +40,7 @@ class EngineService : Service() {
         val startResult: StartResult,
         val startedElapsed: Long,
         val fdCountBefore: Int,
+        val saf: PreparedSafRun? = null,
         val completed: AtomicBoolean = AtomicBoolean(false),
     )
 
@@ -93,6 +96,8 @@ class EngineService : Service() {
                 commandExecutor.execute { cancelRun(intent) }
             BootstrapContract.ACTION_OBSERVE ->
                 commandExecutor.execute { observeRun(intent) }
+            BootstrapContract.ACTION_VERIFY ->
+                commandExecutor.execute { verifyPublishedRun(intent) }
             else ->
                 Log.w(TAG, "ignoring unknown action ${intent.action}")
         }
@@ -142,7 +147,8 @@ class EngineService : Service() {
             }
 
             val run = prepareRun(intent) ?: return
-            val startResult = session.start(run.config)
+            val startResult =
+                run.saf?.start(session, run.config) ?: session.start(run.config)
             val activeRun = run.copy(
                 startResult = startResult,
                 startedElapsed = SystemClock.elapsedRealtime(),
@@ -155,6 +161,7 @@ class EngineService : Service() {
                     .put("generation", startResult.generation.toLong()),
             )
             if (startResult.disposition != StartDisposition.STARTED) {
+                run.saf?.let { SafDocuments.cleanup(this, it) }
                 writeRejected(
                     activeRun.resultPath,
                     activeRun.runId,
@@ -216,7 +223,10 @@ class EngineService : Service() {
 
         val outputPath = File(root, "downloaded")
         val collision = intent.getStringExtra("collision") ?: ""
-        createCollision(collision, root, outputPath, resultPath)
+        val storage = intent.getStringExtra("storage") ?: "private"
+        if (!storage.startsWith("saf-")) {
+            createCollision(collision, root, outputPath, resultPath)
+        }
         if (collision == "result") {
             logEvent(
                 JSONObject()
@@ -227,6 +237,27 @@ class EngineService : Service() {
             return null
         }
 
+        val skipFiles = parseIndexes(intent.getStringExtra("skip_files"))
+        val materializeFiles =
+            parseIndexes(intent.getStringExtra("materialize_files"))
+        val saf =
+            if (storage.startsWith("saf-")) {
+                val treeUri =
+                    Uri.parse(
+                        requireNotNull(intent.getStringExtra("tree_uri")) {
+                            "tree_uri is required for SAF storage"
+                        },
+                    )
+                SafDocuments.prepare(
+                    this,
+                    treeUri,
+                    metainfo,
+                    skipFiles,
+                    materializeFiles,
+                )
+            } else {
+                null
+            }
         val peerPort = intent.getIntExtra("peer_port", 0)
         require(peerPort in 1..65_535) { "peer_port is invalid" }
         val config = EngineConfig(
@@ -239,8 +270,8 @@ class EngineService : Service() {
                 32L * 1024L,
             ).toULong(),
             intent.getLongExtra("storage_write_delay_millis", 0).toULong(),
-            parseIndexes(intent.getStringExtra("skip_files")),
-            parseIndexes(intent.getStringExtra("materialize_files")),
+            skipFiles,
+            materializeFiles,
         )
         return ActiveRun(
             runId = runId,
@@ -256,6 +287,7 @@ class EngineService : Service() {
             ),
             startedElapsed = 0,
             fdCountBefore = fdCount(),
+            saf = saf,
         )
     }
 
@@ -351,6 +383,38 @@ class EngineService : Service() {
                 .put("state", snapshot.state.name)
                 .put("task_alive", snapshot.taskAlive),
         )
+        val platform =
+            if (run.saf != null) {
+                val terminal = joined.terminal
+                val preparedReport = terminal?.report
+                if (
+                    joined.joined &&
+                    terminal?.outcome == TerminalOutcome.PREPARED &&
+                    preparedReport != null
+                ) {
+                    try {
+                        val published =
+                            SafDocuments.publishAndPersist(
+                                this,
+                                run.saf,
+                                preparedReport,
+                            )
+                        SafDocuments.bindRunId(this, run.runId)
+                        published.put("status", "AWAITING_RESTART")
+                    } catch (error: Throwable) {
+                        SafDocuments.cleanup(this, run.saf)
+                        JSONObject()
+                            .put("status", "FAILED")
+                            .put("failure_kind", "PLATFORM_STORAGE")
+                            .put("failure_message", error.toString())
+                    }
+                } else {
+                    SafDocuments.cleanup(this, run.saf)
+                    JSONObject().put("status", "NOT_PREPARED")
+                }
+            } else {
+                JSONObject().put("status", "PATH_BACKED")
+            }
         val result =
             JSONObject()
                 .put("schema", 1)
@@ -365,6 +429,7 @@ class EngineService : Service() {
                 .put("start", startJson(run.startResult))
                 .put("snapshot", snapshotJson(snapshot))
                 .put("terminal", terminalJson(joined.terminal))
+                .put("platform", platform)
                 .put("device", deviceJson())
                 .put("memory", memoryJson())
                 .put("fd_count_before", run.fdCountBefore)
@@ -376,6 +441,33 @@ class EngineService : Service() {
                 active = null
             }
         }
+        stopAfterTerminal()
+    }
+
+    private fun verifyPublishedRun(intent: Intent) {
+        val runId = BootstrapContract.requireRunId(intent.getStringExtra("run_id"))
+        val resultsRoot = File(filesDir, "results")
+        check(resultsRoot.mkdirs() || resultsRoot.isDirectory)
+        val resultPath = File(resultsRoot, "$runId-restart.json")
+        val result =
+            try {
+                SafDocuments
+                    .verifyAndCleanup(this, runId)
+                    .put("schema", 1)
+                    .put("run_id", runId)
+                    .put("interface_version", interfaceVersion())
+                    .put("device", deviceJson())
+            } catch (error: Throwable) {
+                JSONObject()
+                    .put("schema", 1)
+                    .put("run_id", runId)
+                    .put("status", "FAILED")
+                    .put("failure_kind", "PLATFORM_STORAGE")
+                    .put("failure_message", error.toString())
+                    .put("interface_version", interfaceVersion())
+                    .put("device", deviceJson())
+            }
+        writeResult(resultPath, result)
         stopAfterTerminal()
     }
 
@@ -593,6 +685,19 @@ class EngineService : Service() {
             )
             .put("part_reopened", report.partReopened)
             .put("part_path", report.partPath)
+            .put(
+                "prepared_files",
+                JSONArray().also { files ->
+                    report.preparedFiles.forEach { file ->
+                        files.put(
+                            JSONObject()
+                                .put("file_index", file.fileIndex.toLong())
+                                .put("length", file.length.toLong())
+                                .put("sha1", file.sha1Hex),
+                        )
+                    }
+                },
+            )
     }
 
     private fun deviceJson(): JSONObject =
