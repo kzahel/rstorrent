@@ -1,0 +1,23 @@
+# Rust
+/target/
+
+# JavaScript and web tooling
+/node_modules/
+**/node_modules/
+**/dist/
+
+# Android and Gradle
+.gradle/
+**/build/
+local.properties
+*.iml
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
