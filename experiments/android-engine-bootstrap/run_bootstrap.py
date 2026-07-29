@@ -32,6 +32,7 @@ ACTION_CANCEL = "org.rstorrent.bootstrap.CANCEL"
 ACTION_OBSERVE = "org.rstorrent.bootstrap.OBSERVE"
 EXPECTED_INTERFACE = "rstorrent-android/0.1.0;uniffi/0.31.0"
 PAYLOAD_LIMIT = 32 * 1024
+CANCELLATION_STORAGE_DELAY_MILLIS = 5_000
 RESULT_TIMEOUT_SECONDS = 75
 PROFILE_CHOICES = (
     "success",
@@ -485,7 +486,7 @@ def app_bytes(target: Any, relative_path: str) -> bytes | None:
 
 def app_exists(target: Any, relative_path: str) -> bool:
     result = target.shell(
-        ["run-as", PACKAGE, "test", "-e", relative_path],
+        ["run-as", PACKAGE, "ls", "-d", relative_path],
         timeout=10,
         check=False,
     )
@@ -549,7 +550,32 @@ def wait_for_event(
             if predicate(event):
                 return event
         time.sleep(0.15)
-    raise BootstrapFailure(f"timed out waiting for event: {description}")
+    logcat = target.run(
+        ["logcat", "-d", "-t", "250"],
+        timeout=20,
+        check=False,
+    ).stdout
+    raise BootstrapFailure(
+        f"timed out waiting for event: {description}; "
+        f"events={json.dumps(read_events(target, run_id), sort_keys=True)}\n"
+        f"logcat tail:\n{logcat}"
+    )
+
+
+def wait_recorded_event(
+    target: Any,
+    run_id: str,
+    predicate: Any,
+    description: str,
+    timeout_seconds: float = 10,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        for event in read_events(target, run_id):
+            if predicate(event):
+                return event
+        time.sleep(0.1)
+    raise BootstrapFailure(f"timed out waiting for recorded event: {description}")
 
 
 def validate_common(result: dict[str, Any], identity: dict[str, str]) -> None:
@@ -564,6 +590,13 @@ def validate_common(result: dict[str, Any], identity: dict[str, str]) -> None:
         raise BootstrapFailure("terminal payload reservation is nonzero")
     if snapshot.get("payload_high_water", 0) > PAYLOAD_LIMIT:
         raise BootstrapFailure("payload high water exceeded the configured limit")
+    requested = snapshot.get("requested_bytes", -1)
+    received = snapshot.get("received_bytes", -1)
+    stored = snapshot.get("stored_bytes", -1)
+    if not requested >= received >= stored >= 0:
+        raise BootstrapFailure(
+            "byte counters are not ordered as requested >= received >= stored"
+        )
     device = result.get("device", {})
     if str(device.get("api")) != identity["api"]:
         raise BootstrapFailure("application and ADB API identities differ")
@@ -620,6 +653,13 @@ def validate_success(
             )
     if not 0 < report.get("payload_high_water", 0) <= PAYLOAD_LIMIT:
         raise BootstrapFailure("successful payload high water is invalid")
+    snapshot = result["snapshot"]
+    for counter in ("requested_bytes", "received_bytes", "stored_bytes"):
+        if snapshot.get(counter) != expected["bytes_written"]:
+            raise BootstrapFailure(
+                f"successful {counter}={snapshot.get(counter)!r}, "
+                f"expected {expected['bytes_written']}"
+            )
 
     root = f"files/sessions/{run_id}"
     for relative_path, _, padding in fixture_files():
@@ -708,7 +748,7 @@ def run_standard_profile(
         delay = {
             "slow-storage": 2_000,
             "duplicate-start": 750,
-            "activity-recreation": 750,
+            "activity-recreation": 2_000,
         }.get(profile, 0)
         launch(
             target,
@@ -727,10 +767,13 @@ def run_standard_profile(
                 run_id,
                 lambda event: (
                     event.get("event") == "activity_observed"
-                    and 0 < event.get("stored_bytes", 0) < 97_232
+                    and event.get("requested_bytes", 0)
+                    >= event.get("received_bytes", 0)
+                    > event.get("stored_bytes", 0)
+                    and event.get("buffered_payload_bytes", 0) > 0
                     and event.get("task_alive") is True
                 ),
-                "bounded slow-storage progress",
+                "received payload waiting on slow storage",
             )
         elif profile == "duplicate-start":
             launch(
@@ -744,6 +787,12 @@ def run_standard_profile(
                 via_receiver=True,
             )
         elif profile == "activity-recreation":
+            wait_recorded_event(
+                target,
+                run_id,
+                lambda event: event.get("event") == "engine_start",
+                "engine start before activity recreation",
+            )
             observed = wait_for_event(
                 target,
                 run_id,
@@ -765,6 +814,9 @@ def run_standard_profile(
                 raise BootstrapFailure(
                     "peer-failure profile was not typed as PEER"
                 )
+            snapshot = result["snapshot"]
+            if snapshot["requested_bytes"] <= 0:
+                raise BootstrapFailure("peer failed before request accounting")
             if proxy is None or not proxy.saw_request.wait(timeout=2):
                 raise BootstrapFailure("peer failed before a request was observed")
             assert_unverified_cleanup(target, run_id)
@@ -846,7 +898,13 @@ def run_cancellation_profile(
                 fixture=fixture,
                 peer_port=transport.device_port,
                 scenario=f"cancellation-{phase}",
-                storage_delay_millis=1_000,
+                storage_delay_millis=CANCELLATION_STORAGE_DELAY_MILLIS,
+            )
+            wait_recorded_event(
+                target,
+                run_id,
+                lambda event: event.get("event") == "engine_start",
+                f"engine start before {phase} cancellation",
             )
             if after_progress:
                 wait_for_event(

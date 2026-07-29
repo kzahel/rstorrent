@@ -17,9 +17,7 @@ class MainActivity : Activity() {
             },
         )
 
-        if (savedInstanceState == null) {
-            dispatch(intent)
-        }
+        dispatch(intent)
         if (intent.getBooleanExtra("finish_activity", false)) {
             finish()
         }

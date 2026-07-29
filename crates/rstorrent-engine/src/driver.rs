@@ -54,6 +54,8 @@ struct DownloadControlInner {
     cancellation: CancellationToken,
     buffered_payload_bytes: AtomicUsize,
     payload_high_water: AtomicUsize,
+    requested_bytes: AtomicUsize,
+    received_bytes: AtomicUsize,
     stored_bytes: AtomicUsize,
     storage_write_delay_millis: AtomicU64,
 }
@@ -62,6 +64,8 @@ struct DownloadControlInner {
 pub struct DownloadProgress {
     pub buffered_payload_bytes: usize,
     pub payload_high_water: usize,
+    pub requested_bytes: usize,
+    pub received_bytes: usize,
     pub stored_bytes: usize,
 }
 
@@ -72,6 +76,8 @@ impl DownloadControl {
                 cancellation: CancellationToken::new(),
                 buffered_payload_bytes: AtomicUsize::new(0),
                 payload_high_water: AtomicUsize::new(0),
+                requested_bytes: AtomicUsize::new(0),
+                received_bytes: AtomicUsize::new(0),
                 stored_bytes: AtomicUsize::new(0),
                 storage_write_delay_millis: AtomicU64::new(0),
             }),
@@ -90,6 +96,8 @@ impl DownloadControl {
         DownloadProgress {
             buffered_payload_bytes: self.inner.buffered_payload_bytes.load(Ordering::Acquire),
             payload_high_water: self.inner.payload_high_water.load(Ordering::Acquire),
+            requested_bytes: self.inner.requested_bytes.load(Ordering::Acquire),
+            received_bytes: self.inner.received_bytes.load(Ordering::Acquire),
             stored_bytes: self.inner.stored_bytes.load(Ordering::Acquire),
         }
     }
@@ -113,6 +121,16 @@ impl DownloadControl {
 
     fn record_stored(&self, bytes: usize) {
         self.inner.stored_bytes.fetch_add(bytes, Ordering::AcqRel);
+    }
+
+    fn record_requested(&self, bytes: usize) {
+        self.inner
+            .requested_bytes
+            .fetch_add(bytes, Ordering::AcqRel);
+    }
+
+    fn record_received(&self, bytes: usize) {
+        self.inner.received_bytes.fetch_add(bytes, Ordering::AcqRel);
     }
 
     fn clear_buffered_payload(&self) {
@@ -755,12 +773,14 @@ async fn process_actions(
                 send_message(peer, &PeerMessage::Interested).await?;
             }
             DownloadAction::Request(request) => {
+                control.record_requested(request.length as usize);
                 send_message(peer, &PeerMessage::Request(request)).await?;
             }
             DownloadAction::StoreBlock(block) => {
                 let index = block.index;
                 let begin = block.begin;
                 let length = block.bytes.len();
+                control.record_received(length);
                 control.wait_before_storage().await;
                 if let Err(error) = storage.write_block(u64::from(begin), block.bytes).await {
                     download
@@ -810,12 +830,14 @@ async fn process_selective_actions(
                 send_message(peer, &PeerMessage::Interested).await?;
             }
             DownloadAction::Request(request) => {
+                control.record_requested(request.length as usize);
                 send_message(peer, &PeerMessage::Request(request)).await?;
             }
             DownloadAction::StoreBlock(block) => {
                 let index = block.index;
                 let begin = block.begin;
                 let length = block.bytes.len();
+                control.record_received(length);
                 control.wait_before_storage().await;
                 let stats = match storage.write_block(index, begin, block.bytes).await {
                     Ok(stats) => stats,
@@ -1035,7 +1057,11 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let result = download_task.await.expect("download task");
         assert!(matches!(result, Err(DownloadError::Cancelled)));
         assert!(control.is_cancelled());
-        assert_eq!(control.snapshot().buffered_payload_bytes, 0);
+        let progress = control.snapshot();
+        assert_eq!(progress.buffered_payload_bytes, 0);
+        assert_eq!(progress.requested_bytes, 0);
+        assert_eq!(progress.received_bytes, 0);
+        assert_eq!(progress.stored_bytes, 0);
         assert!(!tokio::fs::try_exists(&output_path).await.expect("output"));
         assert!(!tokio::fs::try_exists(&staging).await.expect("staging"));
         assert!(!tokio::fs::try_exists(&part).await.expect("part"));

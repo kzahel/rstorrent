@@ -119,6 +119,8 @@ pub struct SessionSnapshot {
     pub cancellation_requested: bool,
     pub buffered_payload_bytes: u64,
     pub payload_high_water: u64,
+    pub requested_bytes: u64,
+    pub received_bytes: u64,
     pub stored_bytes: u64,
     pub terminal: Option<TerminalResult>,
 }
@@ -325,6 +327,8 @@ impl EngineSession {
             cancellation_requested: inner.cancellation_requested,
             buffered_payload_bytes: progress.buffered_payload_bytes as u64,
             payload_high_water: progress.payload_high_water as u64,
+            requested_bytes: progress.requested_bytes as u64,
+            received_bytes: progress.received_bytes as u64,
             stored_bytes: progress.stored_bytes as u64,
             terminal: inner.terminal.clone(),
         }
@@ -656,6 +660,9 @@ mod tests {
         assert_eq!(snapshot.state, SessionState::Cancelled);
         assert!(!snapshot.task_alive);
         assert_eq!(snapshot.buffered_payload_bytes, 0);
+        assert_eq!(snapshot.requested_bytes, 0);
+        assert_eq!(snapshot.received_bytes, 0);
+        assert_eq!(snapshot.stored_bytes, 0);
 
         let repeated = session.cancel_and_join(1);
         assert!(repeated.joined);

@@ -286,6 +286,8 @@ class EngineService : Service() {
             JSONObject()
                 .put("event", "cancel_requested")
                 .put("state", before.state.name)
+                .put("requested_bytes", before.requestedBytes.toLong())
+                .put("received_bytes", before.receivedBytes.toLong())
                 .put("stored_bytes", before.storedBytes.toLong()),
         )
         val began = SystemClock.elapsedRealtime()
@@ -321,6 +323,12 @@ class EngineService : Service() {
                 .put("event", "activity_observed")
                 .put("state", snapshot.state.name)
                 .put("task_alive", snapshot.taskAlive)
+                .put(
+                    "buffered_payload_bytes",
+                    snapshot.bufferedPayloadBytes.toLong(),
+                )
+                .put("requested_bytes", snapshot.requestedBytes.toLong())
+                .put("received_bytes", snapshot.receivedBytes.toLong())
                 .put("stored_bytes", snapshot.storedBytes.toLong()),
         )
     }
@@ -511,6 +519,8 @@ class EngineService : Service() {
                 "payload_high_water",
                 snapshot.payloadHighWater.toLong(),
             )
+            .put("requested_bytes", snapshot.requestedBytes.toLong())
+            .put("received_bytes", snapshot.receivedBytes.toLong())
             .put("stored_bytes", snapshot.storedBytes.toLong())
 
     private fun terminalJson(terminal: TerminalResult?): Any {
