@@ -169,6 +169,7 @@ pub async fn download_verified_piece(
 
     match result {
         Ok(report) => Ok(report),
+        Err(error) if preserves_existing_artifact(&error) => Err(error),
         Err(error) => {
             let cleanup = async {
                 remove_staging_if_present(&staging).await?;
@@ -185,6 +186,20 @@ pub async fn download_verified_piece(
             }
         }
     }
+}
+
+fn preserves_existing_artifact(error: &DownloadError) -> bool {
+    matches!(
+        error,
+        DownloadError::Storage(StorageError::ExistingOutput(_))
+            | DownloadError::Storage(StorageError::ExistingStaging(_))
+            | DownloadError::SelectiveStorage(SelectiveStorageError::ExistingOutput(_))
+            | DownloadError::SelectiveStorage(SelectiveStorageError::ExistingStaging(_))
+            | DownloadError::SelectiveStorage(SelectiveStorageError::ExistingPartFile(_))
+            | DownloadError::SelectiveStorage(SelectiveStorageError::PartFile(
+                crate::part_file::PartFileError::Existing(_)
+            ))
+    )
 }
 
 async fn run_download(config: DownloadConfig) -> Result<DownloadReport, DownloadError> {
@@ -706,6 +721,9 @@ mod tests {
     use tokio::net::TcpListener;
 
     use super::{DownloadConfig, DownloadError, download_verified_piece};
+    use crate::selective_storage::{
+        SelectiveStorageError, selective_part_path, selective_staging_path,
+    };
     use crate::storage::staging_path;
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -716,6 +734,16 @@ mod tests {
             "rstorrent-driver-test-{}-{sequence}-{name}",
             std::process::id()
         ))
+    }
+
+    fn two_file_metainfo() -> Vec<u8> {
+        let mut metainfo = b"d4:infod5:filesld6:lengthi1e4:pathl1:aee\
+d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
+6:pieces40:"
+            .to_vec();
+        metainfo.extend_from_slice(&[1; 40]);
+        metainfo.extend_from_slice(b"ee");
+        metainfo
     }
 
     #[tokio::test]
@@ -765,6 +793,89 @@ mod tests {
 
         peer_task.abort();
         let _ = peer_task.await;
+        let _ = tokio::fs::remove_file(metainfo_path).await;
+    }
+
+    #[tokio::test]
+    async fn selective_timeout_removes_owned_staging_and_part_paths() {
+        let metainfo_path = test_path("selective-timeout.torrent");
+        let output_path = test_path("selective-timeout");
+        let staging = selective_staging_path(&output_path).expect("staging path");
+        let part = selective_part_path(&output_path).expect("part path");
+        tokio::fs::write(&metainfo_path, two_file_metainfo())
+            .await
+            .expect("write metainfo");
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind scripted peer");
+        let address = listener.local_addr().expect("listener address");
+        let peer_task = tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.expect("accept diagnostic");
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        });
+
+        let result = download_verified_piece(DownloadConfig {
+            metainfo_path: metainfo_path.clone(),
+            peer: address,
+            output_path: output_path.clone(),
+            timeout: Duration::from_millis(50),
+            max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+            skip_files: vec![1],
+            materialize_files: Vec::new(),
+        })
+        .await;
+
+        assert!(matches!(result, Err(DownloadError::TimedOut { .. })));
+        assert!(!tokio::fs::try_exists(&output_path).await.expect("output"));
+        assert!(!tokio::fs::try_exists(&staging).await.expect("staging"));
+        assert!(!tokio::fs::try_exists(&part).await.expect("part"));
+
+        peer_task.abort();
+        let _ = peer_task.await;
+        let _ = tokio::fs::remove_file(metainfo_path).await;
+    }
+
+    #[tokio::test]
+    async fn preexisting_selective_part_file_is_preserved() {
+        let metainfo_path = test_path("selective-existing.torrent");
+        let output_path = test_path("selective-existing");
+        let part = selective_part_path(&output_path).expect("part path");
+        tokio::fs::write(&metainfo_path, two_file_metainfo())
+            .await
+            .expect("write metainfo");
+        tokio::fs::write(&part, b"owned elsewhere")
+            .await
+            .expect("write existing part");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind unused peer");
+        let address = listener.local_addr().expect("listener address");
+
+        let result = download_verified_piece(DownloadConfig {
+            metainfo_path: metainfo_path.clone(),
+            peer: address,
+            output_path: output_path.clone(),
+            timeout: Duration::from_secs(1),
+            max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+            skip_files: vec![1],
+            materialize_files: Vec::new(),
+        })
+        .await;
+        assert!(matches!(
+            result,
+            Err(DownloadError::SelectiveStorage(
+                SelectiveStorageError::ExistingPartFile(_)
+            ))
+        ));
+        assert_eq!(
+            tokio::fs::read(&part).await.expect("preserved part"),
+            b"owned elsewhere"
+        );
+
+        let _ =
+            tokio::fs::remove_dir_all(selective_staging_path(&output_path).expect("staging")).await;
+        let _ = tokio::fs::remove_file(part).await;
         let _ = tokio::fs::remove_file(metainfo_path).await;
     }
 }

@@ -758,6 +758,95 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn rejects_magic_version_header_length_and_header_truncation() {
+        let path = test_path("fixed-header");
+        clean(&path).await;
+        drop(
+            PartFile::create(path.clone(), identity())
+                .await
+                .expect("create part file"),
+        );
+        assert!(matches!(
+            PartFile::create(path.clone(), identity()).await,
+            Err(PartFileError::Existing(_))
+        ));
+
+        overwrite(&path, 0, b"BADMAGIC").await;
+        assert!(matches!(
+            PartFile::open(path.clone(), identity()).await,
+            Err(PartFileError::InvalidMagic)
+        ));
+        overwrite(&path, 0, super::MAGIC).await;
+
+        overwrite(&path, 8, &2_u32.to_be_bytes()).await;
+        assert!(matches!(
+            PartFile::open(path.clone(), identity()).await,
+            Err(PartFileError::UnsupportedVersion(2))
+        ));
+        overwrite(&path, 8, &super::VERSION.to_be_bytes()).await;
+
+        overwrite(&path, 12, &2048_u32.to_be_bytes()).await;
+        assert!(matches!(
+            PartFile::open(path.clone(), identity()).await,
+            Err(PartFileError::InvalidHeaderLength { .. })
+        ));
+        clean(&path).await;
+
+        let truncated = test_path("truncated-header");
+        clean(&truncated).await;
+        drop(
+            PartFile::create(truncated.clone(), identity())
+                .await
+                .expect("create part file"),
+        );
+        tokio::fs::OpenOptions::new()
+            .write(true)
+            .open(&truncated)
+            .await
+            .expect("open for truncation")
+            .set_len(100)
+            .await
+            .expect("truncate header");
+        assert!(matches!(
+            PartFile::open(truncated.clone(), identity()).await,
+            Err(PartFileError::InvalidHeaderLength { .. })
+        ));
+        clean(&truncated).await;
+    }
+
+    #[tokio::test]
+    async fn rejects_every_mismatched_layout_identity_field() {
+        let cases = [
+            (36_u64, 4_u32.to_be_bytes().to_vec(), "piece count"),
+            (
+                40,
+                (identity().piece_length + 1).to_be_bytes().to_vec(),
+                "piece length",
+            ),
+            (
+                44,
+                (identity().total_length - 1).to_be_bytes().to_vec(),
+                "total length",
+            ),
+        ];
+        for (offset, bytes, field) in cases {
+            let path = test_path(field);
+            clean(&path).await;
+            drop(
+                PartFile::create(path.clone(), identity())
+                    .await
+                    .expect("create part file"),
+            );
+            overwrite(&path, offset, &bytes).await;
+            assert!(matches!(
+                PartFile::open(path.clone(), identity()).await,
+                Err(PartFileError::LayoutMismatch(actual)) if actual == field
+            ));
+            clean(&path).await;
+        }
+    }
+
+    #[tokio::test]
     async fn rejects_duplicate_negative_and_out_of_range_slots() {
         for (name, first, second, expected) in [
             (

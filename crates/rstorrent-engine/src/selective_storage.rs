@@ -941,4 +941,58 @@ mod tests {
         );
         clean(&output).await;
     }
+
+    #[tokio::test]
+    async fn refuses_and_preserves_every_preexisting_artifact() {
+        let output = test_path("existing");
+        clean(&output).await;
+        let metainfo = fixture();
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[1, 2]).expect("selection");
+
+        tokio::fs::create_dir(&output)
+            .await
+            .expect("create existing output");
+        assert!(matches!(
+            SelectiveStorage::create(output.clone(), &metainfo, layout.clone(), selection.clone())
+                .await,
+            Err(SelectiveStorageError::ExistingOutput(_))
+        ));
+        assert!(tokio::fs::try_exists(&output).await.expect("output state"));
+        tokio::fs::remove_dir(&output)
+            .await
+            .expect("remove existing output");
+
+        let staging = selective_staging_path(&output).expect("staging path");
+        tokio::fs::create_dir(&staging)
+            .await
+            .expect("create existing staging");
+        assert!(matches!(
+            SelectiveStorage::create(output.clone(), &metainfo, layout.clone(), selection.clone())
+                .await,
+            Err(SelectiveStorageError::ExistingStaging(_))
+        ));
+        assert!(
+            tokio::fs::try_exists(&staging)
+                .await
+                .expect("staging state")
+        );
+        tokio::fs::remove_dir(&staging)
+            .await
+            .expect("remove existing staging");
+
+        let part = selective_part_path(&output).expect("part path");
+        tokio::fs::write(&part, b"owned elsewhere")
+            .await
+            .expect("create existing part");
+        assert!(matches!(
+            SelectiveStorage::create(output.clone(), &metainfo, layout, selection).await,
+            Err(SelectiveStorageError::ExistingPartFile(_))
+        ));
+        assert_eq!(
+            tokio::fs::read(&part).await.expect("preserved part"),
+            b"owned elsewhere"
+        );
+        clean(&output).await;
+    }
 }
