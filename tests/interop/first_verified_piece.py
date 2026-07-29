@@ -103,6 +103,8 @@ def create_fixture(run_directory: Path) -> tuple[Path, Path, bytes, lt.torrent_i
         raise ScenarioFailure(
             f"fixture piece length is {torrent_info.piece_length()}, expected {PIECE_SIZE}"
         )
+    if any(True for _ in torrent_info.trackers()):
+        raise ScenarioFailure("controlled fixture unexpectedly contains a tracker")
     return torrent_path, seed_directory, payload, torrent_info
 
 
@@ -200,6 +202,7 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
     alerts: list[str] = []
     result: RunResult | None = None
     failure: BaseException | None = None
+    cleanup_errors: list[str] = []
     started = time.monotonic()
 
     try:
@@ -247,10 +250,19 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
         failure = error
     finally:
         if session is not None:
-            alerts.extend(alert.message() for alert in session.pop_alerts())
-            if handle is not None and handle.is_valid():
-                session.remove_torrent(handle)
-            session.pause()
+            try:
+                alerts.extend(alert.message() for alert in session.pop_alerts())
+            except Exception as error:
+                cleanup_errors.append(f"libtorrent alert drain failed: {error}")
+            try:
+                if handle is not None and handle.is_valid():
+                    session.remove_torrent(handle)
+            except Exception as error:
+                cleanup_errors.append(f"libtorrent torrent removal failed: {error}")
+            try:
+                session.pause()
+            except Exception as error:
+                cleanup_errors.append(f"libtorrent session pause failed: {error}")
         handle = None
         session = None
         gc.collect()
@@ -259,10 +271,15 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
             cleanup_succeeded = not run_path.exists()
         except OSError as error:
             cleanup_succeeded = False
+            cleanup_errors.append(f"temporary directory cleanup failed: {error}")
+        if cleanup_errors:
+            cleanup_detail = "; ".join(cleanup_errors)
             if failure is None:
-                failure = ScenarioFailure(f"temporary directory cleanup failed: {error}")
+                failure = ScenarioFailure(cleanup_detail)
+            else:
+                failure = ScenarioFailure(f"{failure}; {cleanup_detail}")
         if result is not None:
-            result.cleanup_succeeded = cleanup_succeeded
+            result.cleanup_succeeded = cleanup_succeeded and not cleanup_errors
 
     if failure is not None:
         diagnostic_text = "\n".join(alerts[-100:]) or "(no libtorrent alerts)"
