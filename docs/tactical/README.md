@@ -37,7 +37,7 @@ direction belongs in `../topics/`.
 - [`000-first-verified-piece.md`](000-first-verified-piece.md): completed
   download and verification of one multi-block piece from a controlled
   libtorrent peer, establishing the pure protocol/runtime boundary.
-- [`001-bounded-large-piece.md`](001-bounded-large-piece.md): ready plan for
+- [`001-bounded-large-piece.md`](001-bounded-large-piece.md): completed
   block-granular staging and streamed verification of a 32 MiB piece under a
   256 KiB engine-owned payload allowance.
 

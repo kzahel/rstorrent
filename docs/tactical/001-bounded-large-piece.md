@@ -1,6 +1,6 @@
 # Tactical 001: Bounded Large-Piece Pipeline
 
-Status: ready; implementation has not started.
+Status: complete; independently interoperable bounded-memory result recorded.
 
 ## Motivation And Outcome
 
@@ -309,4 +309,167 @@ recorded below.
 
 ## Execution Record
 
-Not started.
+Completed on 2026-07-29.
+
+### Implementation
+
+Three commits delivered the tactical:
+
+- `5b76b9d` recorded the scope, libtorrent observations, resource accounting
+  boundary, and stopping condition before implementation.
+- `036cd24` implemented the pure block lifecycle and reservation accounting,
+  ownership-moving peer decode, unverified staging storage, streamed
+  verification, cleanup, and diagnostic counters.
+- `067c37a` extended the locked libtorrent harness with streaming 32 MiB
+  fixture generation and comparison, counter assertions, and the documented
+  large-piece command.
+
+The metainfo parser now accepts a controlled piece length through 256 MiB and
+rejects larger values. Creating state for that ceiling constructs 16,384
+small block records without allocating resident piece payload. The pure piece
+state owns the transitions:
+
+```text
+missing -> requested -> writing -> stored
+```
+
+It reserves each block before emitting its request, retains that reservation
+while peer payload awaits storage, and releases it only after the storage
+acknowledgement or cancellation. Current and high-water reserved bytes are
+reported separately. Deterministic slow-storage tests demonstrate that a
+withheld acknowledgement stops window refill at the allowance.
+
+The peer decoder moves its completed piece frame into the storage action
+instead of cloning the payload into a second block buffer. One bounded decoder
+frame and the fixed network read buffer can still coexist, as can allocator,
+metadata, runtime, socket, and operating-system overhead. The diagnostic's
+payload counter therefore remains an engine-owned reservation bound, not an
+exact heap or process-RSS measurement.
+
+The runtime writes each accepted block serially to a hidden sibling staging
+file. It acknowledges the block only after the awaited write, then reads the
+complete piece back through one 16 KiB buffer and computes SHA-1
+incrementally. It flushes, closes, and renames the staging file only after a
+matching hash. Timeout, protocol, hash, and I/O errors close and remove
+staging; tests also cover an existing output, out-of-range write, short
+verification read, and absence of the final file before verification.
+
+No generic storage trait, disk worker pool, channel, shared session, or
+additional crate was introduced. The diagnostic future remains the runtime
+owner and all storage work is deliberately serial for this slice.
+
+### Dependency And License Findings
+
+The engine now declares `sha1` directly because streamed storage verification
+belongs to the runtime crate. That package was already resolved for the
+protocol crate, so the lockfile gained no third-party package. `sha1` 0.10.7
+declares `MIT OR Apache-2.0`; the remaining locked graph and test-only
+libtorrent posture are unchanged from tactical `000`'s recorded audit. No
+reference source or fixture was imported.
+
+### Validation
+
+Final validation ran from a clean worktree with:
+
+```text
+rustc 1.97.0 (2d8144b78 2026-07-07)
+cargo 1.97.0 (c980f4866 2026-06-30)
+Python 3.12.3
+```
+
+These commands passed:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+uv lock --project tests/interop --check
+uv run --project tests/interop --locked \
+  python -m py_compile tests/interop/first_verified_piece.py
+python3 scripts/references.py status
+git diff --check
+```
+
+`cargo test --workspace` passed 30 tests: four engine storage/cleanup tests,
+two diagnostic argument tests, 23 protocol/metainfo/wire/state tests, and the
+architecture boundary test. The suite covers the accepted 256 MiB
+construction, over-limit rejection, reservation-before-request, slow-storage
+backpressure, refill after acknowledgement, release on choke/cancellation/
+storage-write failure, malformed and unexpected blocks, out-of-order writes and
+acknowledgements, successful and failed streamed hashing, short reads,
+existing paths, timeout cleanup, and inward dependency direction.
+
+Reference status matched all four managed revisions:
+
+```text
+bittorrent-beps 7b7b41f46d57ff1d1cb1e24ed6e9bacfbf958c06
+rqbit            4e5f94cbcf1d57ec500885c77cf1e24d70232d89
+libtorrent       7d7fc38fac61177fa5e02148f791b2f65250b09d
+jstorrent        main@0cad4dacf540f5be42ee53c4f1e1da27aa1b3685
+```
+
+### Large-Piece Interoperability Evidence
+
+The documented acceptance command passed three fresh runs:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/first_verified_piece.py --large-piece --runs 3
+```
+
+Environment, fixture, and invariant:
+
+```text
+Python                    3.12.3
+libtorrent binding        2.0.13.0
+libtorrent native library 2.0.13.0
+payload size              33554432 bytes
+piece size                33554432 bytes
+request block size        16384 bytes
+block count               2048
+configured payload limit  262144 bytes
+observed high-water       262144 bytes
+verification buffer       16384 bytes
+expected/actual SHA-1      f276cb2a66026d1731725ac995f1da47f24abe8e
+info hash                 af87fdcb1a34f518df56f0bf58a59cae5f43fa28
+```
+
+End-to-end elapsed times were 4.664, 4.621, and 4.719 seconds. Every final
+output was byte-identical to its freshly generated source, the expected and
+actual SHA-1 and diagnostic info hash matched, all libtorrent sessions
+terminated, every temporary directory was removed, and the harness reported
+`all_runs=3 cleanup=ok result=pass`.
+
+The original small profile also passed three fresh runs:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/first_verified_piece.py --runs 3
+```
+
+It retained tactical `000`'s 40,000-byte payload SHA-1
+`576143b2992ecf25c780ff41c79552f3bb50941b` and info hash
+`6096ba8e2f2855522ca32e9221c0976708e5646e`. Each run used three blocks, a
+40,000-byte payload high-water, and a 16 KiB verification buffer; elapsed
+times were 0.056, 0.057, and 0.057 seconds, with clean teardown.
+
+### Capability, Limits, And Next Slice
+
+The controlled single-file v1, one-piece, explicit-peer path is now
+independently interoperable with resident peer payload bounded independently
+of piece length. This is component evidence, not real-world or Android
+process-memory evidence, and the diagnostic remains a test surface.
+
+All stated non-goals remain outside the capability. In particular, there is
+still no multi-piece selection or publication, more than one peer or file,
+discovery, retry, resume, seeding, mmap/cache policy, SAF integration, or
+exact total-process memory enforcement. A final-path replacement race and
+crash-consistent directory syncing remain deliberately outside the diagnostic
+publication contract.
+
+Recommended tactical `002`: turn the bounded vertical thread into a complete
+multi-piece, single-file explicit-peer download. Reuse the block reservation,
+staging, and streamed verification design while adding deterministic piece
+selection, per-piece verification, random-access storage, progress evidence,
+and a final short piece. Keep peer discovery and multi-file mapping out until
+that path is proven.

@@ -451,8 +451,8 @@ there is no multi-piece scheduling or random-access output, peer discovery,
 tracker client, retry policy, resume, or seeding. No material boundary problem
 was found that requires a deferred extraction inside this slice.
 
-Recommended tactical `001`: generalize the proven explicit-peer path into a
-complete multi-piece, single-file download with a small deterministic piece
-picker, bounded request pipeline, verified random-access writes, progress
-diagnostics, and libtorrent interoperability. Keep trackers and other peer
-discovery out until that storage and scheduling path is itself proven.
+The initial next-slice recommendation was a complete multi-piece, single-file
+download. Before tactical `001` was drafted, the maintainer selected the more
+fundamental large-piece memory invariant instead. Tactical `001` completed
+that bounded pipeline; the multi-piece explicit-peer path remains the
+recommended tactical `002`.

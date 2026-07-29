@@ -19,16 +19,20 @@ Read these in order:
 Before changing an established continuing concern, look for and read its topic
 under `docs/topics/`.
 
-## Active Tactical
+## Current Tactical State
 
 [`001-bounded-large-piece.md`](docs/tactical/001-bounded-large-piece.md) is
-ready. It replaces the first slice's piece-sized allocation with a budgeted
-16 KiB block pipeline, unverified staging storage, and streamed verification
-of a 32 MiB piece under a 256 KiB payload allowance.
+complete. It replaced the first slice's piece-sized allocation with a
+budgeted 16 KiB block pipeline, unverified staging storage, and streamed
+verification of a 32 MiB piece under a 256 KiB payload allowance.
 
 [`000-first-verified-piece.md`](docs/tactical/000-first-verified-piece.md)
 remains the completed execution record for the initial protocol/runtime
 vertical slice.
+
+No tactical is currently active. The living direction recommends drafting
+`002` around a complete multi-piece, single-file explicit-peer download that
+reuses the proven bounded pipeline.
 
 ## Toolchain
 

@@ -3,7 +3,7 @@
 Topic: `product-direction`
 
 Status: initial direction and successor vision accepted; bounded large-piece
-tactical ready.
+pipeline proven, with a multi-piece explicit-peer slice recommended next.
 
 ## Scope
 
@@ -113,6 +113,13 @@ Tactical `000` established the first workspace boundary as two crates:
 state, while `rstorrent-engine` owns Tokio, TCP, timeouts, and verified output.
 An automated architecture test enforces the inward dependency direction.
 
+Tactical `001` kept that boundary while replacing piece-sized resident payload
+with reservation-before-request accounting, block-at-a-time unverified
+staging writes, and streamed verification. Its controlled 32 MiB
+interoperability fixture reached a 256 KiB engine-owned payload high-water and
+used a 16 KiB verification buffer. These are component bounds, not an exact
+process-RSS promise.
+
 This is an accepted starting shape backed by unit and libtorrent
 interoperability evidence, not a promise that two crates are the final engine
 layout. Add or split crates only when later ownership, reuse, lifecycle, or
@@ -151,13 +158,18 @@ This is recommended direction beyond the accepted first slice:
    [`000-first-verified-piece.md`](../tactical/000-first-verified-piece.md)
    established independently tested bencode, metainfo, peer-wire, one-piece
    state, and a libtorrent-interoperable vertical thread.
-2. Turn that vertical thread into a usable CLI before adding trackers,
-   metadata exchange, DHT, multi-file storage, resume, and seeding.
-3. Prove Rust networking, Android foreground lifetime, and SAF-backed bulk I/O
+2. Completed:
+   [`001-bounded-large-piece.md`](../tactical/001-bounded-large-piece.md)
+   established block-granular payload accounting, staging, and streamed
+   verification independently of piece length.
+3. Turn that vertical thread into a usable multi-piece, single-file
+   explicit-peer CLI before adding trackers, metadata exchange, DHT,
+   multi-file storage, resume, and seeding.
+4. Prove Rust networking, Android foreground lifetime, and SAF-backed bulk I/O
    on a physical Chromebook before assuming the desktop storage seam transfers.
-4. Define the application command/snapshot/event boundary from real CLI needs.
-5. Add the first Android and desktop product clients.
-6. Evaluate product migration, extension control, and JSTorrent brand
+5. Define the application command/snapshot/event boundary from real CLI needs.
+6. Add the first Android and desktop product clients.
+7. Evaluate product migration, extension control, and JSTorrent brand
    graduation from the proven application contracts.
 
 The platform feasibility probe remains a separate tactical so failure in it
@@ -165,10 +177,8 @@ does not distort the protocol vertical slice.
 
 ## Recommended Next Work
 
-Execute
-[`001-bounded-large-piece.md`](../tactical/001-bounded-large-piece.md) before
-generalizing to multiple pieces. It replaces the known piece-sized allocation
-with a budgeted 16 KiB block pipeline, unverified staging writes, streamed
-readback hashing, and explicit payload high-water evidence. Once that resource
-invariant is proven, generalize it into a complete multi-piece, single-file
-explicit-peer download.
+Draft tactical `002` around a complete multi-piece, single-file explicit-peer
+download. Reuse the proven block reservation, staging, and streamed
+verification path; add only the piece selection, per-piece verification,
+random-access publication, progress, and final short-piece behavior needed to
+finish the file. Keep trackers and broader discovery outside that slice.

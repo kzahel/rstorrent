@@ -5,11 +5,14 @@ around a Rust engine. It is independently implemented rather than translated
 from JSTorrent, but its likely long-term destination is to become the next
 generation of the JSTorrent product rather than a permanently separate brand.
 
-The project is in its engine bring-up stage. Its first completed vertical
-slice parses a controlled v1 torrent, downloads one multi-block piece from a
-loopback libtorrent peer, verifies its SHA-1, and writes only verified bytes.
-This establishes a two-crate protocol/runtime boundary and reproducible
-interoperability evidence; it is not yet a generally useful torrent client.
+The project is in its engine bring-up stage. Its completed vertical thread
+parses a controlled v1 torrent and downloads a piece from a loopback
+libtorrent peer through a bounded 16 KiB block pipeline. A 32 MiB fixture has
+been staged and streamed through a 256 KiB engine-owned payload allowance,
+hashed from storage in 16 KiB chunks, and published only after SHA-1
+verification. This establishes a two-crate protocol/runtime boundary and
+reproducible interoperability evidence; it is not yet a generally useful
+torrent client.
 
 ## Motivation
 
