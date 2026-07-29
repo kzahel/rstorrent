@@ -27,6 +27,9 @@ pub struct PartFileIdentity {
 pub enum PartFileError {
     InvalidIdentity(&'static str),
     Existing(PathBuf),
+    NonemptyDescriptor {
+        length: u64,
+    },
     InvalidMagic,
     UnsupportedVersion(u32),
     InvalidHeaderLength {
@@ -75,6 +78,12 @@ impl fmt::Display for PartFileError {
             }
             Self::Existing(path) => {
                 write!(formatter, "part file already exists: {}", path.display())
+            }
+            Self::NonemptyDescriptor { length } => {
+                write!(
+                    formatter,
+                    "part-file descriptor is not empty: {length} bytes"
+                )
             }
             Self::InvalidMagic => write!(formatter, "part file has invalid magic"),
             Self::UnsupportedVersion(version) => {
@@ -142,7 +151,7 @@ impl Error for PartFileError {
 #[derive(Debug)]
 pub struct PartFile {
     file: File,
-    path: PathBuf,
+    path: Option<PathBuf>,
     identity: PartFileIdentity,
     header_length: u64,
     slots: Vec<Option<u32>>,
@@ -150,8 +159,7 @@ pub struct PartFile {
 
 impl PartFile {
     pub async fn create(path: PathBuf, identity: PartFileIdentity) -> Result<Self, PartFileError> {
-        let header_length = validate_identity(identity)?;
-        let mut file = match OpenOptions::new()
+        let file = match OpenOptions::new()
             .read(true)
             .write(true)
             .create_new(true)
@@ -169,7 +177,41 @@ impl PartFile {
                 });
             }
         };
+        Self::initialize(file, Some(path), identity).await
+    }
 
+    pub async fn create_preopened(
+        file: std::fs::File,
+        identity: PartFileIdentity,
+    ) -> Result<Self, PartFileError> {
+        Self::initialize(File::from_std(file), None, identity).await
+    }
+
+    async fn initialize(
+        mut file: File,
+        path: Option<PathBuf>,
+        identity: PartFileIdentity,
+    ) -> Result<Self, PartFileError> {
+        let header_length = validate_identity(identity)?;
+        let existing_length = file
+            .metadata()
+            .await
+            .map_err(|source| PartFileError::Io {
+                operation: "inspect new part-file descriptor",
+                source,
+            })?
+            .len();
+        if existing_length != 0 {
+            return Err(PartFileError::NonemptyDescriptor {
+                length: existing_length,
+            });
+        }
+        file.seek(SeekFrom::Start(0))
+            .await
+            .map_err(|source| PartFileError::Io {
+                operation: "seek new part-file descriptor",
+                source,
+            })?;
         let header_length_usize =
             usize::try_from(header_length).map_err(|_| PartFileError::OffsetOverflow)?;
         let mut header = vec![0_u8; header_length_usize];
@@ -214,8 +256,7 @@ impl PartFile {
     }
 
     pub async fn open(path: PathBuf, expected: PartFileIdentity) -> Result<Self, PartFileError> {
-        let expected_header_length = validate_identity(expected)?;
-        let mut file = OpenOptions::new()
+        let file = OpenOptions::new()
             .read(true)
             .write(true)
             .open(&path)
@@ -224,7 +265,22 @@ impl PartFile {
                 operation: "open part file",
                 source,
             })?;
+        Self::open_file(file, Some(path), expected).await
+    }
 
+    pub async fn open_preopened(
+        file: std::fs::File,
+        expected: PartFileIdentity,
+    ) -> Result<Self, PartFileError> {
+        Self::open_file(File::from_std(file), None, expected).await
+    }
+
+    async fn open_file(
+        mut file: File,
+        path: Option<PathBuf>,
+        expected: PartFileIdentity,
+    ) -> Result<Self, PartFileError> {
+        let expected_header_length = validate_identity(expected)?;
         let file_length = file
             .metadata()
             .await
@@ -251,6 +307,12 @@ impl PartFile {
         let expected_header_usize =
             usize::try_from(expected_header_length).map_err(|_| PartFileError::OffsetOverflow)?;
         let mut header = vec![0_u8; expected_header_usize];
+        file.seek(SeekFrom::Start(0))
+            .await
+            .map_err(|source| PartFileError::Io {
+                operation: "seek part-file header",
+                source,
+            })?;
         file.read_exact(&mut header)
             .await
             .map_err(|source| PartFileError::Io {
@@ -337,8 +399,8 @@ impl PartFile {
         })
     }
 
-    pub fn path(&self) -> &Path {
-        &self.path
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
     }
 
     pub fn mapped_piece_count(&self) -> usize {
@@ -747,6 +809,62 @@ mod tests {
         assert!(reopened.has_piece(2).expect("piece two mapping"));
         assert!(reopened.has_piece(4).expect("piece four mapping"));
         clean(&path).await;
+    }
+
+    #[tokio::test]
+    async fn preopened_descriptor_refuses_content_and_reopens_without_a_path() {
+        let path = test_path("preopened");
+        clean(&path).await;
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .expect("create descriptor file");
+        let mut part = PartFile::create_preopened(file, identity())
+            .await
+            .expect("initialize descriptor part file");
+        assert_eq!(part.path(), None);
+        part.write_piece_range(2, 17, b"descriptor")
+            .await
+            .expect("write descriptor slot");
+        part.sync_payload().await.expect("sync descriptor part");
+        drop(part);
+
+        let reopen = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .expect("independently reopen descriptor file");
+        let mut reopened = PartFile::open_preopened(reopen, identity())
+            .await
+            .expect("validate descriptor part file");
+        let mut bytes = [0_u8; 10];
+        reopened
+            .read_piece_range(2, 17, &mut bytes)
+            .await
+            .expect("read descriptor slot");
+        assert_eq!(&bytes, b"descriptor");
+        drop(reopened);
+        clean(&path).await;
+
+        let nonempty_path = test_path("preopened-nonempty");
+        clean(&nonempty_path).await;
+        std::fs::write(&nonempty_path, b"sentinel").expect("write sentinel");
+        let nonempty = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&nonempty_path)
+            .expect("open sentinel");
+        assert!(matches!(
+            PartFile::create_preopened(nonempty, identity()).await,
+            Err(PartFileError::NonemptyDescriptor { length: 8 })
+        ));
+        assert_eq!(
+            std::fs::read(&nonempty_path).expect("read preserved sentinel"),
+            b"sentinel"
+        );
+        clean(&nonempty_path).await;
     }
 
     #[tokio::test]
