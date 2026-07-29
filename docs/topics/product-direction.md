@@ -2,13 +2,16 @@
 
 Topic: `product-direction`
 
-Status: initial direction accepted; first implementation tactical drafted.
+Status: initial direction and successor vision accepted; first implementation
+tactical ready.
 
 ## Scope
 
-This topic owns why RSTorrent exists, what distinguishes it from JSTorrent, the
-initial product and engine constraints, the first platform posture, and the
-decisions that remain deliberately open.
+This topic owns why the RSTorrent implementation exists, what initially
+distinguishes it from the current JSTorrent implementation, the engine
+constraints, the first platform posture, and the decisions that remain
+deliberately open. The likely long-term product succession is recorded in
+[`../vision.md`](../vision.md).
 
 It does not prescribe the internal crate graph, select a UI toolkit, enumerate
 the final BitTorrent feature set, or serve as an implementation tactical.
@@ -38,11 +41,13 @@ tacticals and executable acceptance evidence.
 
 ## Accepted Initial Decisions
 
-### New product
+### Independent implementation, possible product successor
 
-RSTorrent is independent from JSTorrent. JSTorrent may remain available and
-maintained separately; RSTorrent does not begin with a migration or parity
-obligation.
+RSTorrent is implemented independently from the current JSTorrent engine and
+may coexist with it during bring-up. Its likely destination is to graduate into
+a new generation of the JSTorrent product once evidence supports replacement,
+not necessarily to remain a separate public brand. It does not begin with a
+migration or parity obligation.
 
 ### First-party engine and clients
 
@@ -50,8 +55,10 @@ The torrent engine is authored in this repository. libtorrent, librqbit, and
 other clients are references and test peers, not the runtime engine.
 
 Product clients are also first-party. A platform UI framework or operating
-system library is ordinary infrastructure; a third-party torrent engine or
-remote UI controlling another client would change the product.
+system library is ordinary infrastructure; a generic remote UI controlling a
+third-party client would change the product. A future first-party JSTorrent
+extension may control this native engine through a deliberately narrow
+application boundary.
 
 ### Rust owns the hot path
 
@@ -69,7 +76,8 @@ bulk-I/O capability rather than copying piece payloads through callbacks.
 Desktop and Android clients should normally load the engine into their own
 process and communicate through a typed application API. A test driver or later
 remote-control feature must not force the product itself into a daemon
-architecture.
+architecture. A future extension control channel carries commands, snapshots,
+and events rather than proxying peer sockets, filesystems, or piece payloads.
 
 ### Initial platforms
 
@@ -112,8 +120,10 @@ substitute for evidence.
 
 ## Open Decisions
 
-- Whether `RSTorrent` remains the public product name; it is close to the
-  existing rTorrent name.
+- Whether `RSTorrent` remains only an incubation name or is used for public
+  previews before the implementation graduates into JSTorrent.
+- The evidence, compatibility work, and release process required for that
+  graduation.
 - The public license.
 - The initial crate and workspace layout.
 - The first desktop UI approach.
@@ -136,14 +146,15 @@ This is recommended direction beyond the accepted first slice:
    on a physical Chromebook before assuming the desktop storage seam transfers.
 4. Define the application command/snapshot/event boundary from real CLI needs.
 5. Add the first Android and desktop product clients.
+6. Evaluate product migration, extension control, and JSTorrent brand
+   graduation from the proven application contracts.
 
 The platform feasibility probe remains a separate tactical so failure in it
 does not distort the protocol vertical slice.
 
 ## Recommended Next Work
 
-Review and activate
-[`000-first-verified-piece.md`](../tactical/000-first-verified-piece.md), then
-implement only its bounded loopback result. Record any boundary changes and the
-exact libtorrent interoperability evidence in that tactical before selecting
-the next slice.
+Implement only the bounded loopback result in
+[`000-first-verified-piece.md`](../tactical/000-first-verified-piece.md).
+Record any material boundary decisions and the exact libtorrent
+interoperability evidence in that tactical before selecting the next slice.

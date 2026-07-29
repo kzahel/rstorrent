@@ -34,7 +34,7 @@ direction belongs in `../topics/`.
 
 ## Current Tacticals
 
-- [`000-first-verified-piece.md`](000-first-verified-piece.md): draft plan for
+- [`000-first-verified-piece.md`](000-first-verified-piece.md): ready plan for
   downloading and verifying one multi-block piece from a controlled libtorrent
   peer while establishing the pure protocol/runtime boundary.
 

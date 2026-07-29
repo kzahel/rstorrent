@@ -1,17 +1,19 @@
 # RSTorrent Development
 
-RSTorrent is currently a documentation-only repository. The first
-implementation tactical should choose and justify the initial Rust workspace
-shape rather than allowing a scaffold to make that decision accidentally.
+RSTorrent is currently a documentation-only repository. The active first
+implementation tactical defines and justifies the initial Rust workspace shape
+so a scaffold does not make that decision accidentally.
 
 ## Starting A Session
 
 Read these in order:
 
 1. [`README.md`](README.md)
-2. [`docs/topics/product-direction.md`](docs/topics/product-direction.md)
-3. [`docs/references.md`](docs/references.md)
-4. The active document under [`docs/tactical/`](docs/tactical/README.md), once
+2. [`docs/vision.md`](docs/vision.md)
+3. [`docs/engineering-principles.md`](docs/engineering-principles.md)
+4. [`docs/topics/product-direction.md`](docs/topics/product-direction.md)
+5. [`docs/references.md`](docs/references.md)
+6. The active document under [`docs/tactical/`](docs/tactical/README.md), once
    one exists
 
 Before changing an established continuing concern, look for and read its topic
@@ -20,11 +22,9 @@ under `docs/topics/`.
 ## Active Tactical
 
 [`000-first-verified-piece.md`](docs/tactical/000-first-verified-piece.md) is
-the draft first implementation slice. It defines a loopback download of one
+the ready first implementation slice. It defines a loopback download of one
 multi-block, SHA-1-verified piece from a Rasterbar libtorrent peer and the
 runtime-independent protocol boundary that the initial workspace must enforce.
-Do not begin implementation until its draft decisions and prerequisites have
-been reviewed.
 
 ## Toolchain
 

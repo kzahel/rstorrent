@@ -1,6 +1,6 @@
 # Tactical 000: First Verified Piece
 
-Status: draft; implementation has not started.
+Status: ready; implementation has not started.
 
 ## Motivation And Outcome
 
@@ -21,6 +21,7 @@ hash, before a fixed timeout.
 ## Dependencies And References
 
 - [Product and engine direction](../topics/product-direction.md)
+- [Engine engineering principles](../engineering-principles.md)
 - [Reference policy and license posture](../references.md)
 - [BEP 3: The BitTorrent Protocol Specification](https://www.bittorrent.org/beps/bep_0003.html)
 - Rasterbar libtorrent `v2.0.13`, pinned in

@@ -4,8 +4,9 @@
 
 ## Project Entry Points
 
-Start with [`README.md`](README.md), then read
-[`docs/topics/product-direction.md`](docs/topics/product-direction.md) and
+Start with [`README.md`](README.md), then read [`docs/vision.md`](docs/vision.md),
+[`docs/engineering-principles.md`](docs/engineering-principles.md),
+[`docs/topics/product-direction.md`](docs/topics/product-direction.md), and
 [`docs/references.md`](docs/references.md). Once an implementation tactical
 exists, read it before changing code in its scope.
 
@@ -14,9 +15,10 @@ For maintainer-specific cross-project context, see
 
 ## Current Product Direction
 
-RSTorrent is a new product with a first-party Rust BitTorrent engine. It is not
-a line-by-line JSTorrent port and does not inherit JSTorrent feature parity as
-an initial requirement.
+RSTorrent is a new implementation with a first-party Rust BitTorrent engine
+and is the likely incubation path for a future generation of the JSTorrent
+product. It is not a line-by-line port and does not inherit JSTorrent feature
+parity as an initial requirement.
 
 Preserve these starting constraints unless the user explicitly changes them or
 a living topic records an accepted replacement:
@@ -32,9 +34,33 @@ a living topic records an accepted replacement:
   proxy, or separate IO daemon without an explicit architectural decision.
 - Android/ChromeOS and desktop are the initial product surfaces. An extension,
   iOS client, remote daemon, and additional platforms are not implied work.
+- A future JSTorrent extension is expected to control and integrate with the
+  native engine rather than carry peer or file hot paths. This vision does not
+  authorize extension or IPC work in an unrelated tactical.
 
 These are direction guardrails, not permission to invent a complete
 architecture before the relevant tactical.
+
+## Engineering Character
+
+Follow [`docs/engineering-principles.md`](docs/engineering-principles.md).
+In particular:
+
+- Prefer plain structs, enums, functions, and explicit state transitions.
+  Introduce traits, generics, or framework layers when they solve a concrete
+  ownership, dependency, testing, reuse, or measured performance problem.
+- Give mutable state and background tasks identifiable owners. Every task needs
+  a cancellation and observable termination path as concurrency grows.
+- Treat all metainfo and network input as hostile. Bound peer-controlled
+  allocation, queues, and work before changing state.
+- Never present unverified data as verified content.
+- Make structured observability part of engine behavior while keeping logs
+  separate from application commands, snapshots, and events.
+- Claim protocol support from recorded test and interoperability evidence, not
+  from the existence of code paths.
+
+These defaults favor local reasoning and debuggability. They do not prohibit an
+abstraction or optimization supported by current evidence.
 
 ## Architecture And Module Boundaries
 

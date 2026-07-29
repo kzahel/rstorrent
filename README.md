@@ -1,8 +1,9 @@
 # RSTorrent
 
-RSTorrent is a new, first-party BitTorrent client built around a Rust engine.
-It is an independent product rather than a source translation or compatibility
-layer for JSTorrent.
+RSTorrent is the working name for a new, first-party BitTorrent client built
+around a Rust engine. It is independently implemented rather than translated
+from JSTorrent, but its likely long-term destination is to become the next
+generation of the JSTorrent product rather than a permanently separate brand.
 
 The project is currently in its planning and bring-up stage. There is no
 committed crate layout, UI toolkit, or release target yet.
@@ -56,12 +57,25 @@ Candidate desktop and Android UI technologies remain decisions for later
 tacticals. Tauri and Jetpack Compose are useful starting references, but they
 are not yet selected contracts.
 
+## Engineering Character
+
+The engine should remain understandable as it becomes capable: explicit state
+ownership, deterministic protocol and scheduling logic, bounded handling of
+untrusted input, supervised task lifecycles, structured diagnostics, and
+support claims backed by executable evidence.
+
+Prefer plain structs, enums, functions, and coherent modules until a trait,
+generic abstraction, or additional layer solves a concrete ownership,
+dependency, testing, or performance problem. See
+[Engine engineering principles](docs/engineering-principles.md) for the
+accepted defaults and north-star invariants.
+
 ## Initial Non-Goals
 
 - Reproduce JSTorrent feature or UI parity before establishing a small,
   reliable product.
 - Build a Chrome extension, native-messaging host, Android companion server, or
-  browser-to-daemon socket proxy.
+  browser-to-daemon socket proxy during initial bring-up.
 - Adopt an existing torrent engine as the runtime implementation.
 - Support every platform in the first bring-up.
 - Preserve JSTorrent's internal APIs, persistence format, or process topology.
@@ -90,6 +104,11 @@ provenance policy.
 
 ## Documentation
 
+- [Long-term product vision](docs/vision.md) describes how the native engine may
+  graduate into a new generation of JSTorrent.
+- [Engine engineering principles](docs/engineering-principles.md) records the
+  simplicity, ownership, integrity, observability, and evidence standards that
+  guide implementation.
 - [Product and engine direction](docs/topics/product-direction.md) records the
   current decisions, open questions, and next direction.
 - [Topics](docs/topics/README.md) hold living truth for continuing concerns.
