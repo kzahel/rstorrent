@@ -196,10 +196,11 @@ impl FrameDecoder {
 
             if required == 4 {
                 messages.push(PeerMessage::KeepAlive);
+                self.buffer.clear();
             } else {
-                messages.push(decode_payload(&self.buffer[4..])?);
+                let frame = std::mem::take(&mut self.buffer);
+                messages.push(decode_frame(frame)?);
             }
-            self.buffer.clear();
         }
         Ok(messages)
     }
@@ -274,9 +275,9 @@ pub fn encode_message(message: &PeerMessage) -> Result<Vec<u8>, FrameError> {
     Ok(frame)
 }
 
-fn decode_payload(payload: &[u8]) -> Result<PeerMessage, FrameError> {
-    let id = payload[0];
-    let length = payload.len();
+fn decode_frame(mut frame: Vec<u8>) -> Result<PeerMessage, FrameError> {
+    let id = frame[4];
+    let length = frame.len() - 4;
     match id {
         0 => exact_length(id, length, 1).map(|()| PeerMessage::Choke),
         1 => exact_length(id, length, 1).map(|()| PeerMessage::Unchoke),
@@ -285,21 +286,22 @@ fn decode_payload(payload: &[u8]) -> Result<PeerMessage, FrameError> {
         4 => {
             exact_length(id, length, 5)?;
             Ok(PeerMessage::Have(u32::from_be_bytes(
-                payload[1..5].try_into().expect("validated have payload"),
+                frame[5..9].try_into().expect("validated have payload"),
             )))
         }
         5 => {
             if length < 2 {
                 return Err(FrameError::InvalidMessageLength { id, length });
             }
-            Ok(PeerMessage::Bitfield(payload[1..].to_vec()))
+            frame.drain(..5);
+            Ok(PeerMessage::Bitfield(frame))
         }
         6 => {
             exact_length(id, length, 13)?;
             let request = BlockRequest {
-                index: read_u32(payload, 1),
-                begin: read_u32(payload, 5),
-                length: read_u32(payload, 9),
+                index: read_u32(&frame, 5),
+                begin: read_u32(&frame, 9),
+                length: read_u32(&frame, 13),
             };
             validate_request_length(request.length)?;
             Ok(PeerMessage::Request(request))
@@ -308,10 +310,13 @@ fn decode_payload(payload: &[u8]) -> Result<PeerMessage, FrameError> {
             if !(10..=MAX_FRAME_LENGTH).contains(&length) {
                 return Err(FrameError::InvalidMessageLength { id, length });
             }
+            let index = read_u32(&frame, 5);
+            let begin = read_u32(&frame, 9);
+            frame.drain(..13);
             Ok(PeerMessage::Piece {
-                index: read_u32(payload, 1),
-                begin: read_u32(payload, 5),
-                block: payload[9..].to_vec(),
+                index,
+                begin,
+                block: frame,
             })
         }
         _ => Err(FrameError::UnsupportedMessage { id }),

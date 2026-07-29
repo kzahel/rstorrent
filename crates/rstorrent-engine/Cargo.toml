@@ -11,4 +11,5 @@ path = "src/main.rs"
 
 [dependencies]
 rstorrent-protocol = { path = "../rstorrent-protocol" }
+sha1 = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "time"] }

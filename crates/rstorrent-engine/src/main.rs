@@ -5,13 +5,17 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use rstorrent_engine::{DownloadConfig, download_verified_piece};
+use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 15;
 const MAX_TIMEOUT_SECONDS: u64 = 300;
+const DEFAULT_MAX_BUFFERED_PAYLOAD_BYTES: usize = 256 * 1024;
+const MAX_BUFFERED_PAYLOAD_BYTES: usize = 64 * 1024 * 1024;
 const USAGE: &str = "\
 Usage: rstorrent-download-piece \\
   --metainfo PATH --peer 127.0.0.1:PORT --output PATH \\
-  [--timeout-seconds SECONDS]";
+  [--timeout-seconds SECONDS] \\
+  [--max-buffered-payload-bytes BYTES]";
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
@@ -32,10 +36,15 @@ async fn main() -> ExitCode {
     match download_verified_piece(config).await {
         Ok(report) => {
             println!(
-                "verified piece=0 bytes={} sha1={} info_hash={}",
+                "verified piece=0 bytes={} sha1={} info_hash={} blocks={} \
+payload_limit={} payload_high_water={} verification_buffer={}",
                 report.bytes_written,
                 hex(&report.piece_hash),
-                hex(&report.info_hash)
+                hex(&report.info_hash),
+                report.block_count,
+                report.payload_limit,
+                report.payload_high_water,
+                report.verification_buffer
             );
             ExitCode::SUCCESS
         }
@@ -51,6 +60,7 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadConfig, String> {
     let mut peer = None;
     let mut output_path = None;
     let mut timeout_seconds = DEFAULT_TIMEOUT_SECONDS;
+    let mut max_buffered_payload_bytes = DEFAULT_MAX_BUFFERED_PAYLOAD_BYTES;
     let mut index = 0;
 
     while index < arguments.len() {
@@ -88,6 +98,22 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadConfig, String> {
                     ));
                 }
             }
+            "--max-buffered-payload-bytes" => {
+                let value = value
+                    .to_str()
+                    .ok_or_else(|| "--max-buffered-payload-bytes must be valid UTF-8".to_owned())?;
+                max_buffered_payload_bytes = value
+                    .parse()
+                    .map_err(|_| "--max-buffered-payload-bytes must be an integer".to_owned())?;
+                if !(MIN_PAYLOAD_ALLOWANCE..=MAX_BUFFERED_PAYLOAD_BYTES)
+                    .contains(&max_buffered_payload_bytes)
+                {
+                    return Err(format!(
+                        "--max-buffered-payload-bytes must be between \
+{MIN_PAYLOAD_ALLOWANCE} and {MAX_BUFFERED_PAYLOAD_BYTES}"
+                    ));
+                }
+            }
             _ => return Err(format!("unknown argument {flag}")),
         }
     }
@@ -97,6 +123,7 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadConfig, String> {
         peer: peer.ok_or_else(|| "--peer is required".to_owned())?,
         output_path: output_path.ok_or_else(|| "--output is required".to_owned())?,
         timeout: Duration::from_secs(timeout_seconds),
+        max_buffered_payload_bytes,
     })
 }
 
@@ -122,7 +149,7 @@ mod tests {
     use std::ffi::OsString;
     use std::time::Duration;
 
-    use super::{DEFAULT_TIMEOUT_SECONDS, parse_arguments};
+    use super::{DEFAULT_MAX_BUFFERED_PAYLOAD_BYTES, DEFAULT_TIMEOUT_SECONDS, parse_arguments};
 
     fn strings(arguments: &[&str]) -> Vec<OsString> {
         arguments.iter().map(OsString::from).collect()
@@ -145,6 +172,10 @@ mod tests {
         assert_eq!(config.peer.port(), 6881);
         assert_eq!(config.output_path.to_string_lossy(), "payload.bin");
         assert_eq!(config.timeout, Duration::from_secs(DEFAULT_TIMEOUT_SECONDS));
+        assert_eq!(
+            config.max_buffered_payload_bytes,
+            DEFAULT_MAX_BUFFERED_PAYLOAD_BYTES
+        );
     }
 
     #[test]
@@ -173,6 +204,19 @@ mod tests {
                 "c",
                 "--timeout-seconds",
                 "301",
+            ]))
+            .is_err()
+        );
+        assert!(
+            parse_arguments(strings(&[
+                "--metainfo",
+                "a",
+                "--peer",
+                "127.0.0.1:1",
+                "--output",
+                "c",
+                "--max-buffered-payload-bytes",
+                "1",
             ]))
             .is_err()
         );

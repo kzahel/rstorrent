@@ -5,7 +5,7 @@ use sha1::{Digest, Sha1};
 
 use crate::bencode::{DictionaryEntry, Node, ParseError, Value, parse};
 
-pub const MAX_PIECE_LENGTH: u32 = 1024 * 1024;
+pub const MAX_PIECE_LENGTH: u32 = 256 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Metainfo {
@@ -153,12 +153,22 @@ fn bytes_field<'input>(
 mod tests {
     use sha1::{Digest, Sha1};
 
-    use super::{Metainfo, MetainfoError};
+    use super::{MAX_PIECE_LENGTH, Metainfo, MetainfoError};
 
     fn metainfo_bytes(piece_hash: [u8; 20]) -> Vec<u8> {
         let mut bytes =
             b"d7:comment7:ignored4:infod6:lengthi3e4:name1:x12:piece lengthi4e6:pieces20:".to_vec();
         bytes.extend_from_slice(&piece_hash);
+        bytes.extend_from_slice(b"ee");
+        bytes
+    }
+
+    fn metainfo_with_lengths(file_length: u32, piece_length: u32) -> Vec<u8> {
+        let mut bytes = format!(
+            "d4:infod6:lengthi{file_length}e4:name1:x12:piece lengthi{piece_length}e6:pieces20:"
+        )
+        .into_bytes();
+        bytes.extend_from_slice(&[3; 20]);
         bytes.extend_from_slice(b"ee");
         bytes
     }
@@ -239,6 +249,20 @@ mod tests {
         assert_eq!(
             Metainfo::from_bytes(bad_piece_hash),
             Err(MetainfoError::InvalidField("single info.pieces hash"))
+        );
+    }
+
+    #[test]
+    fn accepts_256_mib_piece_bound_and_rejects_larger_value() {
+        let accepted =
+            Metainfo::from_bytes(&metainfo_with_lengths(MAX_PIECE_LENGTH, MAX_PIECE_LENGTH))
+                .expect("accepted maximum piece");
+        assert_eq!(accepted.file_length, u64::from(MAX_PIECE_LENGTH));
+        assert_eq!(accepted.piece_length, MAX_PIECE_LENGTH);
+
+        assert_eq!(
+            Metainfo::from_bytes(&metainfo_with_lengths(1, MAX_PIECE_LENGTH + 1)),
+            Err(MetainfoError::InvalidField("info.piece length"))
         );
     }
 }

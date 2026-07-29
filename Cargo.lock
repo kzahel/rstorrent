@@ -108,6 +108,7 @@ name = "rstorrent-engine"
 version = "0.1.0"
 dependencies = [
  "rstorrent-protocol",
+ "sha1",
  "tokio",
 ]
 
