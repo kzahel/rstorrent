@@ -30,10 +30,10 @@ verification of a 32 MiB piece under a 256 KiB payload allowance.
 remains the completed execution record for the initial protocol/runtime
 vertical slice.
 
-No tactical is currently active. The living direction recommends drafting
-`002` around a selective multi-file storage foundation that forces
-cross-file pieces, skipped-file storage, materialization, and durable
-part-file edge cases through the proven bounded pipeline.
+[`002-selective-multi-file-storage.md`](docs/tactical/002-selective-multi-file-storage.md)
+is ready. It forces cross-file pieces, skipped-file storage,
+materialization, padding, and durable part-file edge cases through the proven
+bounded pipeline before a general multi-piece CLI.
 
 ## Toolchain
 

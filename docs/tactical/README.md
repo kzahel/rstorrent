@@ -40,5 +40,8 @@ direction belongs in `../topics/`.
 - [`001-bounded-large-piece.md`](001-bounded-large-piece.md): completed
   block-granular staging and streamed verification of a 32 MiB piece under a
   256 KiB engine-owned payload allowance.
+- [`002-selective-multi-file-storage.md`](002-selective-multi-file-storage.md):
+  ready plan for cross-file mapping, skipped-file part storage, mixed-source
+  verification, and materialization through an edge-rich libtorrent fixture.
 
-The next tactical number is `002`.
+The next tactical number is `003`.

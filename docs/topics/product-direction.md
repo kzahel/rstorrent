@@ -3,8 +3,7 @@
 Topic: `product-direction`
 
 Status: initial direction and successor vision accepted; bounded large-piece
-pipeline proven, with a selective multi-file storage foundation recommended
-next.
+pipeline proven, with the selective multi-file storage tactical ready.
 
 ## Scope
 
@@ -178,15 +177,11 @@ does not distort the protocol vertical slice.
 
 ## Recommended Next Work
 
-Draft tactical `002` around a selective multi-file storage foundation rather
-than a single-file happy path. Research the pinned libtorrent part-file,
-file-priority, cross-file mapping, and materialization behavior first, then
-compare the current JSTorrent implementation and Android/SAF constraints.
-
-Use an edge-rich deterministic fixture to force the initial model to represent
-wanted/skipped boundary pieces, pieces touching only skipped files, blocks
-crossing file boundaries, zero-length and pad files, a final short piece,
-part-file reopen and corruption, verified publication, and materializing a
-newly wanted file. Reuse tactical `001`'s block reservation and streamed
-verification bounds. Keep discovery, general peer policy, and unrelated
-product breadth outside the slice.
+Execute
+[`002-selective-multi-file-storage.md`](../tactical/002-selective-multi-file-storage.md).
+Its deterministic fixture forces wanted/skipped boundary pieces, an
+all-skipped piece, a request crossing three files, zero-length and padding
+files, a final short piece, part-file reopen/corruption, verified publication,
+and materialization through tactical `001`'s bounded block pipeline. Keep
+discovery, general peer policy, and unrelated product breadth outside that
+slice.
