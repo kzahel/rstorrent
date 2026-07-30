@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repository_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repository_root"
+
+tauri_cli="clients/web/node_modules/.bin/tauri"
+if [[ ! -x "$tauri_cli" ]]; then
+    echo "Installing locked desktop web dependencies..." >&2
+    npm ci --prefix clients/web
+fi
+
+"$tauri_cli" build \
+    --config clients/desktop/src-tauri/tauri.conf.json \
+    --debug \
+    --no-bundle
+
+target_root="${CARGO_TARGET_DIR:-$repository_root/target}"
+if [[ "$target_root" != /* ]]; then
+    target_root="$repository_root/$target_root"
+fi
+
+exec "$target_root/debug/rstorrent-desktop"
