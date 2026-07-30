@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use rstorrent_engine::{
-    DownloadConfig, MagnetDownloadConfig, download_magnet_with_peer_hint, download_verified_piece,
+    DownloadConfig, MagnetDownloadConfig, download_magnet, download_verified_piece,
 };
 use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
 
@@ -18,7 +18,7 @@ Usage: rstorrent-download-piece \\
   --metainfo PATH --peer 127.0.0.1:PORT --output PATH \\
   [options]\n\
    or: rstorrent-download-piece \\
-  --magnet 'magnet:?xt=urn:btih:...&x.pe=127.0.0.1:PORT' --output PATH \\
+  --magnet 'magnet:?xt=urn:btih:...&tr=udp://127.0.0.1:PORT' --output PATH \\
   [options]\n\
 \n\
 Options:\n\
@@ -50,7 +50,7 @@ async fn main() -> ExitCode {
 
     let result = match config {
         DownloadCommand::Metainfo(config) => download_verified_piece(config).await,
-        DownloadCommand::Magnet(config) => download_magnet_with_peer_hint(config).await,
+        DownloadCommand::Magnet(config) => download_magnet(config).await,
     };
     match result {
         Ok(report) => {
@@ -195,9 +195,9 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
         (Some(_), Some(_), _) => Err("--metainfo and --magnet are mutually exclusive".to_owned()),
         (None, None, _) => Err("exactly one of --metainfo or --magnet is required".to_owned()),
         (Some(_), None, None) => Err("--peer is required with --metainfo".to_owned()),
-        (None, Some(_), Some(_)) => {
-            Err("--peer must come from x.pe when --magnet is used".to_owned())
-        }
+        (None, Some(_), Some(_)) => Err(
+            "--peer cannot be supplied with --magnet; use magnet discovery parameters".to_owned(),
+        ),
     }
 }
 
@@ -280,7 +280,7 @@ mod tests {
     fn parses_magnet_without_an_out_of_band_peer() {
         let command = parse_arguments(strings(&[
             "--magnet",
-            "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&x.pe=127.0.0.1:1",
+            "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&tr=udp://127.0.0.1:1",
             "--output",
             "payload",
         ]))

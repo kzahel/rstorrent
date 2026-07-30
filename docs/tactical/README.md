@@ -78,5 +78,9 @@ direction belongs in `../topics/`.
   completed bounded peer observations, records, deterministic selection,
   guarded dial lifecycle, connection and protocol failover, and
   same-connection magnet handoff.
+- [`011-one-shot-udp-tracker.md`](011-one-shot-udp-tracker.md): completed
+  bounded BEP 15 connect/announce exchange, tracker observations, session
+  source retention, and tracker-only magnet metadata/content transfer from a
+  controlled libtorrent seed.
 
-The next tactical number is `011`.
+The next tactical number is `012`.

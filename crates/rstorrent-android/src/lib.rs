@@ -1077,9 +1077,18 @@ fn classify_failure(error: &DownloadError) -> FailureKind {
         | DownloadError::Handshake(_)
         | DownloadError::Frame(_)
         | DownloadError::PeerRegistry(_)
-        | DownloadError::NoUsablePeerHint => FailureKind::Peer,
-        DownloadError::Io { operation, .. } if operation.contains("peer") => FailureKind::Peer,
-        DownloadError::TimedOut { .. } => FailureKind::Timeout,
+        | DownloadError::UdpTracker(_)
+        | DownloadError::NoUsablePeer
+        | DownloadError::NoUsableTrackerAddress
+        | DownloadError::UdpTrackerResponseTooLarge { .. } => FailureKind::Peer,
+        DownloadError::Io { operation, .. }
+            if operation.contains("peer") || operation.contains("UDP tracker") =>
+        {
+            FailureKind::Peer
+        }
+        DownloadError::TimedOut { .. } | DownloadError::UdpTrackerTimedOut { .. } => {
+            FailureKind::Timeout
+        }
         DownloadError::NonLoopbackPeer(_)
         | DownloadError::InvalidTimeout
         | DownloadError::MetainfoTooLarge { .. }
@@ -1095,7 +1104,9 @@ fn classify_failure(error: &DownloadError) -> FailureKind {
         | DownloadError::SelectiveStorage(_)
         | DownloadError::Io { .. } => FailureKind::Storage,
         DownloadError::CleanupAfterFailure { .. } => FailureKind::Cleanup,
-        DownloadError::Checkpoint(_) | DownloadError::Cancelled => FailureKind::Runtime,
+        DownloadError::Entropy(_) | DownloadError::Checkpoint(_) | DownloadError::Cancelled => {
+            FailureKind::Runtime
+        }
     }
 }
 

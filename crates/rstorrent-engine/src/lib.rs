@@ -12,11 +12,10 @@ mod storage;
 pub use driver::{
     DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink, DownloadConfig,
     DownloadControl, DownloadError, DownloadProgress, DownloadReport, MagnetDownloadConfig,
-    ResumableMagnetDownloadConfig, download_magnet_metadata_with_peer_hint_with_control,
-    download_magnet_with_peer_hint, download_magnet_with_peer_hint_with_control,
-    download_verified_piece, download_verified_piece_to_descriptors_with_control,
-    download_verified_piece_with_control, resume_magnet_to_descriptors_with_peer_hint_with_control,
-    resume_magnet_with_peer_hint, resume_magnet_with_peer_hint_with_control,
+    ResumableMagnetDownloadConfig, download_magnet, download_magnet_metadata_with_control,
+    download_magnet_with_control, download_verified_piece,
+    download_verified_piece_to_descriptors_with_control, download_verified_piece_with_control,
+    resume_magnet, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
 };
 pub use metadata_seed::{
     MetadataSeedConfig, MetadataSeedError, MetadataSeedReport, MetadataSeedServer,

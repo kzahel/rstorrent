@@ -3,8 +3,8 @@
 Topic: `peer-lifecycle`
 
 Status: Tactical `010` completed the first bounded peer registry, selection,
-dial, failure, and live-connection lifecycle through explicit magnet peer
-hints. General tracker discovery and multiple simultaneous peers remain
+dial, failure, and live-connection lifecycle. Tactical `011` now feeds it
+bounded one-shot UDP tracker observations. Multiple simultaneous peers remain
 unimplemented.
 
 ## Scope
@@ -119,13 +119,20 @@ both an unreachable endpoint and an extension-incapable connected endpoint
 before the next peer completes verified metadata and content. The controlled
 libtorrent `2.0.13.0` metadata/content exchange remains green.
 
+Tactical `011` proved the intended discovery boundary: compact results from a
+bounded one-shot UDP tracker announce enter as tracker observations, merge and
+deduplicate in the registry, and follow the existing dial and failure
+lifecycle. A tracker rejection advances to another tracker; an unreachable
+tracker peer advances to the next record; and a successful explicit hint
+avoids tracker traffic.
+
 The current runtime is still loopback-only and deliberately permits only one
 live connection. It does not fail over during content transfer, persist peer
 records, resolve duplicate peer IDs, perform simultaneous dialing, or own
 multi-peer request selection.
 
-The next recommended slice is a bounded one-shot UDP tracker announce that
-emits tracker observations into the same registry. Reannounce scheduling,
-simultaneous connections, incoming advertised-port updates, peer-ID duplicate
-resolution, integrity reputation, PEX, DHT, and persisted peer caches remain
-later work.
+The next recommended peer slice is a small bounded live-peer set with explicit
+request ownership and content-transfer failover. Reannounce scheduling,
+incoming advertised-port updates, mature performance selection, peer-ID
+duplicate resolution, integrity reputation, PEX, DHT, and persisted peer
+caches remain later work.

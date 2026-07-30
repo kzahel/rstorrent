@@ -249,6 +249,12 @@ magnet hints now share that path; controlled tests prove connect and metadata
 capability failover while preserving same-connection metadata/content
 handoff.
 
+Tactical `011` added bounded UDP tracker values and BEP 15 codecs, preserved
+tracker-only magnets through session persistence, and lazily feeds compact
+tracker results into that peer registry. Controlled protocol tests and three
+libtorrent runs prove tracker and peer failover through verified metadata and
+content while keeping the runtime loopback-only and one-shot.
+
 This is an accepted starting shape backed by unit and libtorrent
 interoperability evidence, not a promise that two crates are the final engine
 layout. Add or split crates only when later ownership, reuse, lifecycle, or
@@ -335,21 +341,27 @@ This is recommended direction beyond the accepted first slice:
     [`010-peer-registry-magnet-failover.md`](../tactical/010-peer-registry-magnet-failover.md)
     established bounded peer records, deterministic selection, guarded dial
     transitions, failure history, and same-connection magnet failover.
-12. Grow the resulting thin surfaces only through capabilities the engine and
+12. Completed:
+    [`011-one-shot-udp-tracker.md`](../tactical/011-one-shot-udp-tracker.md)
+    established bounded UDP tracker connect/announce, tracker observations,
+    durable tracker-only magnet retention, and controlled libtorrent
+    metadata/content transfer.
+13. Grow the resulting thin surfaces only through capabilities the engine and
     application service actually own. Desktop content UI remains web-based;
     native desktop code owns the shell, tray, and operating-system integration.
-13. Evaluate product migration, extension control, and JSTorrent brand
-   graduation from the proven application contracts.
+14. Evaluate product migration, extension control, and JSTorrent brand
+    graduation from the proven application contracts.
 
 The platform feasibility probe remains a separate tactical so failure in it
 does not distort the protocol vertical slice.
 
 ## Recommended Next Work
 
-The next protocol slice should be a bounded one-shot UDP tracker announce that
-turns compact tracker results into observations for the peer registry.
-Reannounce scheduling and multi-peer transfer can remain deferred while one
-tracker-discovered peer exercises a public-style magnet. Product growth should
-continue through the established application service, generated contracts,
-and platform capability seams rather than creating another orchestration
-surface.
+The next protocol slice should establish a small bounded set of live peer
+connections with explicit content-request ownership and failover. That gives
+the peer registry and tracker results practical effect without prematurely
+choosing mature performance, endgame, or choking policy. Scheduled tracker
+records and reannounce behavior can follow when multiple announce cycles
+become material. Product growth should continue through the established
+application service, generated contracts, and platform capability seams
+rather than creating another orchestration surface.

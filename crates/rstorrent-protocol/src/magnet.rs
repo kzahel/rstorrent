@@ -4,16 +4,25 @@ use std::fmt;
 pub const MAX_MAGNET_LENGTH: usize = 16 * 1024;
 pub const MAX_MAGNET_PARAMETERS: usize = 128;
 pub const MAX_PEER_HINTS: usize = 32;
+pub const MAX_UDP_TRACKERS: usize = 32;
 pub const MAX_HOST_LENGTH: usize = 253;
+pub const MAX_TRACKER_URL_LENGTH: usize = 2 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Magnet {
     pub info_hash: [u8; 20],
     pub peer_hints: Vec<PeerHint>,
+    pub udp_trackers: Vec<UdpTrackerUrl>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PeerHint {
+    pub host: String,
+    pub port: u16,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct UdpTrackerUrl {
     pub host: String,
     pub port: u16,
 }
@@ -30,6 +39,7 @@ pub enum MagnetError {
     ConflictingInfoHashes,
     UnsupportedV2,
     TooManyPeerHints { maximum: usize },
+    TooManyUdpTrackers { maximum: usize },
 }
 
 impl fmt::Display for MagnetError {
@@ -54,6 +64,12 @@ impl fmt::Display for MagnetError {
             }
             Self::TooManyPeerHints { maximum } => {
                 write!(formatter, "magnet has more than {maximum} valid peer hints")
+            }
+            Self::TooManyUdpTrackers { maximum } => {
+                write!(
+                    formatter,
+                    "magnet has more than {maximum} valid UDP trackers"
+                )
             }
         }
     }
@@ -88,6 +104,7 @@ impl Magnet {
         let mut info_hash = None;
         let mut has_v2_identity = false;
         let mut peer_hints = Vec::new();
+        let mut udp_trackers = Vec::new();
         for parameter in parameters {
             let (encoded_name, encoded_value) =
                 parameter.split_once('=').unwrap_or((parameter, ""));
@@ -115,6 +132,16 @@ impl Magnet {
                     });
                 }
                 peer_hints.push(hint);
+            } else if name.eq_ignore_ascii_case("tr")
+                && let Some(tracker) = parse_udp_tracker_url(&value)
+                && !udp_trackers.contains(&tracker)
+            {
+                if udp_trackers.len() == MAX_UDP_TRACKERS {
+                    return Err(MagnetError::TooManyUdpTrackers {
+                        maximum: MAX_UDP_TRACKERS,
+                    });
+                }
+                udp_trackers.push(tracker);
             }
         }
 
@@ -124,6 +151,7 @@ impl Magnet {
         Ok(Self {
             info_hash: info_hash.ok_or(MagnetError::MissingInfoHash)?,
             peer_hints,
+            udp_trackers,
         })
     }
 }
@@ -221,6 +249,30 @@ fn parse_peer_hint(value: &str) -> Option<PeerHint> {
         (normalize_host(host)?, parse_port(port)?)
     };
     Some(PeerHint { host, port })
+}
+
+fn parse_udp_tracker_url(value: &str) -> Option<UdpTrackerUrl> {
+    if value.len() > MAX_TRACKER_URL_LENGTH || !value.is_ascii() {
+        return None;
+    }
+    let (scheme, remainder) = value.split_once("://")?;
+    if !scheme.eq_ignore_ascii_case("udp")
+        || remainder.is_empty()
+        || remainder.contains(['?', '#', '@'])
+    {
+        return None;
+    }
+    let (authority, path) = remainder
+        .split_once('/')
+        .map_or((remainder, ""), |(authority, path)| (authority, path));
+    if !matches!(path, "" | "announce") {
+        return None;
+    }
+    let endpoint = parse_peer_hint(authority)?;
+    Some(UdpTrackerUrl {
+        host: endpoint.host,
+        port: endpoint.port,
+    })
 }
 
 fn normalize_host(host: &str) -> Option<String> {
@@ -351,8 +403,8 @@ fn hex_value(byte: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_HOST_LENGTH, MAX_MAGNET_LENGTH, MAX_MAGNET_PARAMETERS, MAX_PEER_HINTS, Magnet,
-        MagnetError, PeerHint,
+        MAX_HOST_LENGTH, MAX_MAGNET_LENGTH, MAX_MAGNET_PARAMETERS, MAX_PEER_HINTS,
+        MAX_TRACKER_URL_LENGTH, MAX_UDP_TRACKERS, Magnet, MagnetError, PeerHint, UdpTrackerUrl,
     };
 
     const HEX_HASH: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -387,6 +439,7 @@ mod tests {
                 }
             ]
         );
+        assert!(hex.udp_trackers.is_empty());
     }
 
     #[test]
@@ -473,6 +526,7 @@ mod tests {
         ))
         .expect("bad hint is ignored");
         assert!(magnet.peer_hints.is_empty());
+        assert!(magnet.udp_trackers.is_empty());
 
         let hints = (0..=MAX_PEER_HINTS)
             .map(|index| format!("x.pe=host-{index}:1"))
@@ -483,6 +537,78 @@ mod tests {
             Err(MagnetError::TooManyPeerHints {
                 maximum: MAX_PEER_HINTS
             })
+        );
+    }
+
+    #[test]
+    fn accepts_normalizes_and_bounds_supported_udp_trackers() {
+        let magnet = Magnet::parse(&format!(
+            "magnet:?xt=urn:btih:{HEX_HASH}&\
+             tr=udp%3A%2F%2FTracker.Example%3A6969&\
+             tr=UDP%3A%2F%2Ftracker.example%3A6969%2Fannounce&\
+             tr=udp%3A%2F%2F%5B%3A%3A1%5D%3A80%2F&\
+             tr=https%3A%2F%2Ftracker.example%2Fannounce"
+        ))
+        .expect("tracker magnet");
+        assert_eq!(
+            magnet.udp_trackers,
+            [
+                UdpTrackerUrl {
+                    host: "tracker.example".to_owned(),
+                    port: 6969,
+                },
+                UdpTrackerUrl {
+                    host: "::1".to_owned(),
+                    port: 80,
+                }
+            ]
+        );
+
+        let invalid = [
+            "udp://tracker.example",
+            "udp://tracker.example:0",
+            "udp://user@tracker.example:80",
+            "udp://tracker.example:80/path",
+            "udp://tracker.example:80?query",
+            "udp://2001:db8::1:80",
+            "udp://999.1.1.1:80",
+            "wss://tracker.example",
+        ]
+        .into_iter()
+        .map(|tracker| format!("tr={tracker}"))
+        .collect::<Vec<_>>()
+        .join("&");
+        let magnet = Magnet::parse(&format!("magnet:?xt=urn:btih:{HEX_HASH}&{invalid}"))
+            .expect("invalid trackers are ignored");
+        assert!(magnet.udp_trackers.is_empty());
+
+        let oversized = "a".repeat(MAX_TRACKER_URL_LENGTH + 1);
+        let magnet = Magnet::parse(&format!("magnet:?xt=urn:btih:{HEX_HASH}&tr={oversized}"))
+            .expect("oversized tracker is ignored");
+        assert!(magnet.udp_trackers.is_empty());
+
+        let trackers = (0..=MAX_UDP_TRACKERS)
+            .map(|index| format!("tr=udp://tracker-{index}.example:80"))
+            .collect::<Vec<_>>()
+            .join("&");
+        assert_eq!(
+            Magnet::parse(&format!("magnet:?xt=urn:btih:{HEX_HASH}&{trackers}")),
+            Err(MagnetError::TooManyUdpTrackers {
+                maximum: MAX_UDP_TRACKERS
+            })
+        );
+
+        let trackers = (0..MAX_UDP_TRACKERS)
+            .map(|index| format!("tr=udp://tracker-{index}.example:80"))
+            .chain(std::iter::once("tr=udp://invalid".to_owned()))
+            .collect::<Vec<_>>()
+            .join("&");
+        assert_eq!(
+            Magnet::parse(&format!("magnet:?xt=urn:btih:{HEX_HASH}&{trackers}"))
+                .expect("invalid tracker does not consume capacity")
+                .udp_trackers
+                .len(),
+            MAX_UDP_TRACKERS
         );
     }
 }

@@ -8,10 +8,9 @@ use std::time::Duration;
 use rstorrent_engine::{
     DescriptorFile, DescriptorStorage, DescriptorStoragePlan, DownloadActivityEvent,
     DownloadActivitySink, DownloadCheckpointSink, DownloadControl, DownloadError, PreparedFileHash,
-    ResumableMagnetDownloadConfig, ResumedStorage,
-    download_magnet_metadata_with_peer_hint_with_control, plan_descriptor_storage,
-    resume_magnet_to_descriptors_with_peer_hint_with_control,
-    resume_magnet_with_peer_hint_with_control, verify_prepared_descriptors,
+    ResumableMagnetDownloadConfig, ResumedStorage, download_magnet_metadata_with_control,
+    plan_descriptor_storage, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
+    verify_prepared_descriptors,
 };
 use rstorrent_protocol::metainfo::Metainfo;
 use tokio::task::JoinHandle;
@@ -282,7 +281,7 @@ impl ApplicationService {
         let control = self.download_control(&torrent_id);
         let task_control = control.clone();
         let task = tokio::spawn(async move {
-            resume_magnet_to_descriptors_with_peer_hint_with_control(
+            resume_magnet_to_descriptors_with_control(
                 config,
                 descriptors,
                 initialize_storage,
@@ -480,12 +479,8 @@ impl ApplicationService {
             let magnet = resume.magnet;
             let timeout = self.download_timeout;
             let task = tokio::spawn(async move {
-                let raw_info = download_magnet_metadata_with_peer_hint_with_control(
-                    magnet,
-                    timeout,
-                    task_control,
-                )
-                .await?;
+                let raw_info =
+                    download_magnet_metadata_with_control(magnet, timeout, task_control).await?;
                 checkpoints
                     .metadata_verified(&raw_info)
                     .map_err(DownloadError::Checkpoint)?;
@@ -534,7 +529,7 @@ impl ApplicationService {
         let control = self.download_control(torrent_id);
         let task_control = control.clone();
         let task = tokio::spawn(async move {
-            resume_magnet_with_peer_hint_with_control(config, checkpoints, task_control)
+            resume_magnet_with_control(config, checkpoints, task_control)
                 .await
                 .map(|_| ApplicationTaskReport::Download)
         });

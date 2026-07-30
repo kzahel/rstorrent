@@ -10,6 +10,7 @@ name = "rstorrent-download-piece"
 path = "src/main.rs"
 
 [dependencies]
+getrandom = { workspace = true }
 rstorrent-protocol = { path = "../rstorrent-protocol" }
 sha1 = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "time"] }

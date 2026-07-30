@@ -1443,6 +1443,18 @@ fn canonical_magnet(magnet: &Magnet) -> String {
         output.push(':');
         output.push_str(&hint.port.to_string());
     }
+    for tracker in &magnet.udp_trackers {
+        output.push_str("&tr=udp://");
+        if tracker.host.contains(':') {
+            output.push('[');
+            output.push_str(&tracker.host);
+            output.push(']');
+        } else {
+            output.push_str(&tracker.host);
+        }
+        output.push(':');
+        output.push_str(&tracker.port.to_string());
+    }
     output
 }
 
@@ -1484,6 +1496,60 @@ mod tests {
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn canonical_magnet_preserves_supported_discovery_sources() {
+        let parsed = rstorrent_protocol::magnet::Magnet::parse(
+            "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213\
+             &x.pe=[::1]:6881\
+             &tr=UDP%3A%2F%2FTRACKER.EXAMPLE%3A6969%2Fannounce\
+             &tr=udp%3A%2F%2F%5B2001%3Adb8%3A%3A1%5D%3A80",
+        )
+        .expect("parse magnet");
+
+        assert_eq!(
+            super::canonical_magnet(&parsed),
+            "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213\
+             &x.pe=[::1]:6881\
+             &tr=udp://tracker.example:6969\
+             &tr=udp://[2001:db8::1]:80"
+        );
+    }
+
+    #[test]
+    fn tracker_only_magnet_survives_catalog_reopen() {
+        let root = test_root("tracker-magnet");
+        let configured = configured_root(&root);
+        let source = "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213\
+             &tr=UDP%3A%2F%2FTRACKER.EXAMPLE%3A6969%2Fannounce";
+        let mut store =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-tracker-only".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: source.to_owned(),
+                    storage_root: "downloads".to_owned(),
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("persist tracker-only source");
+        drop(store);
+
+        let reopened = SessionStore::open(&root, "default", &[configured]).expect("reopen");
+        assert_eq!(
+            reopened
+                .load_resume("000102030405060708090a0b0c0d0e0f10111213")
+                .expect("load resumed source")
+                .magnet,
+            "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213\
+             &tr=udp://tracker.example:6969"
+        );
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
 
     fn test_root(label: &str) -> PathBuf {
         let sequence = NEXT_TEST.fetch_add(1, Ordering::Relaxed);

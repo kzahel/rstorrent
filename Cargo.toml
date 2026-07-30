@@ -17,6 +17,7 @@ rust-version = "1.97"
 rusqlite = { version = "0.40.1", default-features = false, features = ["bundled"] }
 axum = "0.8.4"
 futures-util = "0.3.31"
+getrandom = "0.3.4"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha1 = "0.10.6"
