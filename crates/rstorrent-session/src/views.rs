@@ -205,6 +205,7 @@ struct QueueState {
     queue_high_water: usize,
     reset_count: u64,
     next_sequence: u64,
+    tail_revision: u64,
     next_delivery: Instant,
     needs_resync: bool,
     closed: bool,
@@ -302,6 +303,7 @@ impl ViewHub {
                 queue_high_water: 0,
                 reset_count: 0,
                 next_sequence: 1,
+                tail_revision: hub.revision,
                 next_delivery: Instant::now(),
                 needs_resync: false,
                 closed: false,
@@ -677,6 +679,7 @@ impl SubscriberInner {
                 back.encoded_bytes = encoded_len(&back.update)?;
                 (previous_bytes, back.encoded_bytes)
             };
+            queue.tail_revision = revision;
             queue.queued_bytes = queue.queued_bytes - previous_bytes + next_bytes;
             if queue.queued_bytes <= self.spec.delivery.max_queue_bytes as usize {
                 queue.queue_high_water = queue.queue_high_water.max(queue.queued_bytes);
@@ -753,12 +756,14 @@ fn make_update(
 ) -> ViewUpdate {
     let sequence = queue.next_sequence;
     queue.next_sequence = queue.next_sequence.saturating_add(1);
+    let base_revision = queue.tail_revision;
+    queue.tail_revision = revision;
     ViewUpdate {
         contract_version: VIEW_CONTRACT_VERSION,
         stream_id: subscriber.stream_id.to_string(),
         epoch: subscriber.epoch.to_string(),
         sequence: sequence.to_string(),
-        base_revision: revision.to_string(),
+        base_revision: base_revision.to_string(),
         revision: revision.to_string(),
         payload,
     }

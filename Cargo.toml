@@ -2,6 +2,7 @@
 members = [
     "crates/rstorrent-android",
     "crates/rstorrent-engine",
+    "crates/rstorrent-gateway",
     "crates/rstorrent-protocol",
     "crates/rstorrent-session",
 ]
@@ -13,6 +14,8 @@ rust-version = "1.97"
 
 [workspace.dependencies]
 rusqlite = { version = "0.40.1", default-features = false, features = ["bundled"] }
+axum = "0.8.4"
+futures-util = "0.3.31"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha1 = "0.10.6"

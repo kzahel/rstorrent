@@ -1,0 +1,61 @@
+[
+  {
+    "contract_version": 1,
+    "stream_id": "41",
+    "epoch": "9",
+    "sequence": "1",
+    "base_revision": "7",
+    "revision": "7",
+    "type": "snapshot",
+    "snapshot": {
+      "type": "piece_activity",
+      "torrent_id": "000102030405060708090a0b0c0d0e0f10111213",
+      "piece_count": 1000000,
+      "verified": [
+        {
+          "start": 65536,
+          "end_exclusive": 70000
+        }
+      ],
+      "active": null
+    }
+  },
+  {
+    "contract_version": 1,
+    "stream_id": "41",
+    "epoch": "9",
+    "sequence": "2",
+    "base_revision": "7",
+    "revision": "7",
+    "type": "patch",
+    "patch": {
+      "type": "piece_activity",
+      "torrent_id": "000102030405060708090a0b0c0d0e0f10111213",
+      "piece_count": 1000000,
+      "verified": [
+        {
+          "start": 900000,
+          "end_exclusive": 900001
+        }
+      ],
+      "cleared": [
+        {
+          "start": 65536,
+          "end_exclusive": 65537
+        }
+      ],
+      "active": {
+        "piece_index": 900001,
+        "piece_length": 33554432,
+        "requested": [
+          {
+            "start": 0,
+            "end_exclusive": 16384
+          }
+        ],
+        "received": [],
+        "stored": []
+      }
+    }
+  }
+]

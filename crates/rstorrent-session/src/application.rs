@@ -732,6 +732,8 @@ mod tests {
         .await
         .expect("view update timed out")
         .expect("view update");
+        assert_eq!(update.base_revision, "0");
+        assert_eq!(update.revision, "1");
         let ViewUpdatePayload::Patch { patch } = update.payload else {
             panic!("mutation must publish a patch");
         };

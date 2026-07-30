@@ -1,0 +1,18 @@
+{
+  "name": "rstorrent-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "generate": "cargo run -p rstorrent-gateway --bin export_types -- src/generated/contract.ts src/fixtures/reactive-trace.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "vite": "8.1.5",
+    "vitest": "4.1.10"
+  }
+}
