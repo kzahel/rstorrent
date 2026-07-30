@@ -284,7 +284,9 @@ This is recommended direction beyond the accepted first slice:
    then handed verified metadata and bounded premetadata peer state to the
    existing content path over the same connection.
 8. Next, define Tactical `007` for durable resume and recheck, including
-   persistence of verified magnet metadata and source intent.
+   persistence of verified magnet metadata and source intent. The continuing
+   persistence and application-service direction lives in
+   [`client-persistence.md`](client-persistence.md).
 9. Define the broader application command/snapshot/event boundary from the
    proven lifecycle and persistence evidence.
 10. Add the first Android and desktop product clients.
@@ -302,4 +304,6 @@ Front-load atomic replacement, truncation, corruption, version mismatch,
 stale intent, restart cleanup, and fixed-buffer payload recheck so persistence
 cannot establish untrusted metadata or unbounded startup work. Keep tracker
 and DHT discovery, v2 metadata, payload upload, the broader application API,
-and UI architecture outside that slice.
+and UI architecture outside that slice. Use
+[`client-persistence.md`](client-persistence.md) as the living owner for the
+SQLite, restart, storage-root, and application/engine boundary decisions.

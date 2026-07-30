@@ -36,3 +36,6 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`product-direction.md`](product-direction.md): initial product motivation,
   first-party Rust engine decision, platform posture, non-goals, open choices,
   and recommended bring-up sequence.
+- [`client-persistence.md`](client-persistence.md): SQLite-backed client state,
+  verified metadata and resume invariants, cross-platform storage-root
+  identity, and the application-service boundary above the torrent engine.
