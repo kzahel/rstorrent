@@ -181,8 +181,6 @@ future server.
   and storage-root flow.
 - The current UI proves one controlled torrent. General multi-torrent
   scheduling and complete product presentation remain absent.
-- Tactical `008` completed its AVD gate, but no Pixel was present for its
-  conditional final physical-device cycle.
 - No HTTP playback server exists.
 
 Tactical `008` records the implemented contract, exact controlled evidence,

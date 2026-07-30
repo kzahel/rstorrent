@@ -540,10 +540,13 @@ The final controlled surface results were:
 | Headless Chrome + WebSocket | 3 pieces, pause/resume, rendered live activity, exact SHA-1, joined gateway shutdown |
 | Tauri WebKitGTK + Channels | 3 pieces, pause/resume, exact SHA-1, joined application shutdown |
 | API 34 `jstorrent-tablet` AVD | 8 pieces, 60 view updates, pause/resume, Activity recreation/background, exact SHA-1, notification Stop and joined shutdown |
+| Physical Pixel 7a, API 37, `lynx` | 8 pieces, 57 view updates, pause/resume, Activity recreation/background, exact SHA-1, notification Stop and joined shutdown |
 
 The Android harness refuses a locked target and never sends a power or lock
-key event. No Pixel was present in the final ADB inventory, so the conditional
-physical Pixel cycle was not run and is not claimed.
+key event. The physical Pixel was unlocked before the run. The harness
+targeted its resolved serial, did not touch the other attached Android-class
+device, removed its ADB reverse mapping and UI hierarchy, and cleared the
+controlled application profile after verification.
 
 The browser, Tauri, and Android runs used loopback libtorrent seeds with
 per-handle upload throttling so pause acted during an active transfer. All
