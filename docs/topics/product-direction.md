@@ -231,6 +231,24 @@ establish the first durable application thread. SQLite `3.53.2` cross-compiled
 for both established Android Rust targets, but actual Android database and SAF
 resume execution remain deferred.
 
+Tactical `008` added bounded recoverable view streams above that application
+service, generated matching TypeScript and Kotlin contracts, and exercised the
+same semantic command and view model through a remote browser/WebSocket proof,
+a Tauri channel, and Android UniFFI/Compose.
+
+Tactical `009` connected the Android product thread to durable SAF session
+storage. Stable root identity remains portable, provider capabilities remain
+in Kotlin, descriptors cross into Rust at coarse lifecycle boundaries, and
+prepared publication is verified before durable completion. Controlled
+forced-death recovery completed on the API 34 AVD and physical Pixel 7a.
+
+Tactical `010` replaced diagnostic peer address loops with a
+runtime-independent bounded peer registry and explicit observation,
+selection, attempt, failure, and connection lifecycles. Manual peers and
+magnet hints now share that path; controlled tests prove connect and metadata
+capability failover while preserving same-connection metadata/content
+handoff.
+
 This is an accepted starting shape backed by unit and libtorrent
 interoperability evidence, not a promise that two crates are the final engine
 layout. Add or split crates only when later ownership, reuse, lifecycle, or
@@ -304,15 +322,23 @@ This is recommended direction beyond the accepted first slice:
    commands, exact magnet metadata and have persistence,
    sync-before-checkpoint ordering, forced-death resume, and conservative
    fixed-buffer recheck.
-9. In progress:
+9. Completed:
    [`008-reactive-multi-surface-control.md`](../tactical/008-reactive-multi-surface-control.md)
-   applies the first real client pressure through recoverable reactive views,
+   applied the first real client pressure through recoverable reactive views,
    generated TypeScript and Kotlin values, a shared browser/Tauri web UI, and
    an Android Compose adapter.
-10. Grow the resulting thin surfaces only through capabilities the engine and
+10. Completed:
+    [`009-android-saf-session-storage.md`](../tactical/009-android-saf-session-storage.md)
+    connected the durable application service and Android foreground product
+    thread to restartable SAF storage and provider publication.
+11. Completed:
+    [`010-peer-registry-magnet-failover.md`](../tactical/010-peer-registry-magnet-failover.md)
+    established bounded peer records, deterministic selection, guarded dial
+    transitions, failure history, and same-connection magnet failover.
+12. Grow the resulting thin surfaces only through capabilities the engine and
     application service actually own. Desktop content UI remains web-based;
     native desktop code owns the shell, tray, and operating-system integration.
-11. Evaluate product migration, extension control, and JSTorrent brand
+13. Evaluate product migration, extension control, and JSTorrent brand
    graduation from the proven application contracts.
 
 The platform feasibility probe remains a separate tactical so failure in it
@@ -320,11 +346,10 @@ does not distort the protocol vertical slice.
 
 ## Recommended Next Work
 
-Choose the next bounded pressure rather than expanding the service
-speculatively. A first Android or desktop product shell would validate that
-the semantic dispatcher, snapshot shape, profile/database placement, storage
-root capabilities, and lifecycle ownership are usable outside the diagnostic.
-If protocol usefulness takes priority, explicit-peer-only magnets now make
-tracker discovery the likely smallest path to ordinary magnets. Either slice
-should retain the existing resource bounds and use the application service
-rather than creating another orchestration surface.
+The next protocol slice should be a bounded one-shot UDP tracker announce that
+turns compact tracker results into observations for the peer registry.
+Reannounce scheduling and multi-peer transfer can remain deferred while one
+tracker-discovered peer exercises a public-style magnet. Product growth should
+continue through the established application service, generated contracts,
+and platform capability seams rather than creating another orchestration
+surface.

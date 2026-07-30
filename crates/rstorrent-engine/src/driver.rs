@@ -6,7 +6,7 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rstorrent_protocol::bencode::MAX_BENCODE_INPUT_LENGTH;
 use rstorrent_protocol::magnet::{Magnet, MagnetError, PeerHint};
@@ -29,6 +29,10 @@ use tokio::net::{TcpStream, lookup_host};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
+use crate::peer::{
+    DialAttempt, PeerEndpoint, PeerFailure, PeerObservation, PeerRegistry, PeerRegistryConfig,
+    PeerRegistryError, PeerSelectionContext, PeerSelector, PeerSource,
+};
 use crate::selective_storage::{
     DescriptorStorage, PreparedFileHash, ResumedStorage, SelectiveStorage, SelectiveStorageError,
     remove_selective_part_if_present, remove_selective_staging_if_present,
@@ -43,7 +47,8 @@ const SAFE_CANCEL_REQUESTED: usize = 1 << (usize::BITS - 1);
 const SAFE_CANCEL_CRITICAL_MASK: usize = SAFE_CANCEL_REQUESTED - 1;
 
 #[derive(Debug)]
-struct ConnectedPeer {
+struct PeerConnection {
+    attempt: DialAttempt,
     stream: TcpStream,
     decoder: FrameDecoder,
     queued_messages: VecDeque<PeerMessage>,
@@ -122,8 +127,6 @@ pub enum DownloadActivityEvent {
 
 #[derive(Clone, Debug)]
 struct ContentDownloadConfig {
-    peer: Option<SocketAddr>,
-    peer_hints: Vec<PeerHint>,
     output_path: PathBuf,
     max_buffered_payload_bytes: usize,
     skip_files: Vec<usize>,
@@ -364,6 +367,7 @@ pub enum DownloadError {
     },
     Metainfo(MetainfoError),
     Magnet(MagnetError),
+    PeerRegistry(PeerRegistryError),
     Metadata(MetadataError),
     Handshake(HandshakeError),
     Frame(FrameError),
@@ -403,6 +407,7 @@ impl fmt::Display for DownloadError {
             Self::Io { operation, source } => write!(formatter, "{operation}: {source}"),
             Self::Metainfo(error) => write!(formatter, "metainfo: {error}"),
             Self::Magnet(error) => write!(formatter, "magnet: {error}"),
+            Self::PeerRegistry(error) => write!(formatter, "peer registry: {error}"),
             Self::Metadata(error) => write!(formatter, "metadata: {error}"),
             Self::Handshake(error) => write!(formatter, "peer handshake: {error}"),
             Self::Frame(error) => write!(formatter, "peer frame: {error}"),
@@ -449,6 +454,7 @@ impl Error for DownloadError {
             Self::Io { source, .. } => Some(source),
             Self::Metainfo(error) => Some(error),
             Self::Magnet(error) => Some(error),
+            Self::PeerRegistry(error) => Some(error),
             Self::Metadata(error) => Some(error),
             Self::Handshake(error) => Some(error),
             Self::Frame(error) => Some(error),
@@ -806,6 +812,202 @@ impl PremetadataPeerState {
     }
 }
 
+#[derive(Debug)]
+struct DiagnosticPeerSession {
+    registry: PeerRegistry,
+    selector: PeerSelector,
+    started_at: Instant,
+    connection: Option<PeerConnection>,
+    last_error: Option<DownloadError>,
+}
+
+impl DiagnosticPeerSession {
+    fn new() -> Result<Self, DownloadError> {
+        Ok(Self {
+            registry: PeerRegistry::new(PeerRegistryConfig::default())
+                .map_err(DownloadError::PeerRegistry)?,
+            selector: PeerSelector,
+            started_at: Instant::now(),
+            connection: None,
+            last_error: None,
+        })
+    }
+
+    fn from_endpoint(address: SocketAddr, source: PeerSource) -> Result<Self, DownloadError> {
+        let mut peers = Self::new()?;
+        peers.observe_address(address, source)?;
+        Ok(peers)
+    }
+
+    async fn from_peer_hints(hints: &[PeerHint]) -> Result<Self, DownloadError> {
+        let mut peers = Self::new()?;
+        for hint in hints {
+            let addresses = match lookup_host((hint.host.as_str(), hint.port)).await {
+                Ok(addresses) => addresses,
+                Err(source) => {
+                    peers.last_error = Some(DownloadError::Io {
+                        operation: "resolve magnet peer hint",
+                        source,
+                    });
+                    continue;
+                }
+            };
+            for address in addresses {
+                if !address.ip().is_loopback() {
+                    continue;
+                }
+                if let Err(error) = peers.observe_address(address, PeerSource::MagnetHint) {
+                    peers.last_error = Some(error);
+                }
+            }
+        }
+        if peers.registry.is_empty() {
+            return Err(peers
+                .last_error
+                .take()
+                .unwrap_or(DownloadError::NoUsablePeerHint));
+        }
+        Ok(peers)
+    }
+
+    fn observe_address(
+        &mut self,
+        address: SocketAddr,
+        source: PeerSource,
+    ) -> Result<(), DownloadError> {
+        let endpoint = PeerEndpoint::new(address).map_err(DownloadError::PeerRegistry)?;
+        self.registry
+            .observe(PeerObservation::dialable(endpoint, source), self.elapsed())
+            .map_err(DownloadError::PeerRegistry)?;
+        Ok(())
+    }
+
+    fn elapsed(&self) -> Duration {
+        self.started_at.elapsed()
+    }
+
+    async fn connect_next(
+        &mut self,
+        info_hash: [u8; 20],
+        advertise_extensions: bool,
+    ) -> Result<Handshake, DownloadError> {
+        debug_assert!(self.connection.is_none());
+        loop {
+            let context = PeerSelectionContext {
+                now: self.elapsed(),
+            };
+            let candidate = match self.selector.select(&self.registry, context) {
+                Some(candidate) => candidate,
+                None => {
+                    return Err(self
+                        .last_error
+                        .take()
+                        .unwrap_or(DownloadError::NoUsablePeerHint));
+                }
+            };
+            let attempt = self
+                .registry
+                .begin_dial(candidate, context)
+                .map_err(DownloadError::PeerRegistry)?;
+            match connect_peer(attempt, info_hash, advertise_extensions).await {
+                Ok((connection, handshake)) => {
+                    self.registry
+                        .dial_succeeded(attempt, self.elapsed())
+                        .map_err(DownloadError::PeerRegistry)?;
+                    self.connection = Some(connection);
+                    return Ok(handshake);
+                }
+                Err(error) => {
+                    self.registry
+                        .dial_failed(attempt, self.elapsed(), peer_failure(&error))
+                        .map_err(DownloadError::PeerRegistry)?;
+                    self.last_error = Some(error);
+                }
+            }
+        }
+    }
+
+    async fn ensure_content_connection(
+        &mut self,
+        info_hash: [u8; 20],
+    ) -> Result<(), DownloadError> {
+        if self.connection.is_none() {
+            self.connect_next(info_hash, false).await?;
+        }
+        Ok(())
+    }
+
+    async fn acquire_metadata(
+        &mut self,
+        info_hash: [u8; 20],
+    ) -> Result<(Vec<u8>, Metainfo), DownloadError> {
+        loop {
+            let handshake = self.connect_next(info_hash, true).await?;
+            let result = acquire_metadata_from_connection(
+                self.connection
+                    .as_mut()
+                    .expect("successful dial installs peer connection"),
+                handshake,
+                info_hash,
+            )
+            .await;
+            match result {
+                Ok(metadata) => return Ok(metadata),
+                Err(error) => {
+                    let failure = peer_failure(&error);
+                    self.close_current(Some(failure))?;
+                    self.last_error = Some(error);
+                }
+            }
+        }
+    }
+
+    fn connection_mut(&mut self) -> Result<&mut PeerConnection, DownloadError> {
+        self.connection
+            .as_mut()
+            .ok_or(DownloadError::NoUsablePeerHint)
+    }
+
+    fn close_current(&mut self, failure: Option<PeerFailure>) -> Result<(), DownloadError> {
+        let Some(connection) = self.connection.take() else {
+            return Ok(());
+        };
+        self.registry
+            .connection_closed(connection.attempt, self.elapsed(), failure)
+            .map_err(DownloadError::PeerRegistry)
+    }
+}
+
+fn peer_failure(error: &DownloadError) -> PeerFailure {
+    match error {
+        DownloadError::Io {
+            operation: "connect to peer",
+            ..
+        } => PeerFailure::Connect,
+        DownloadError::Handshake(_) => PeerFailure::Handshake,
+        DownloadError::PeerClosed => PeerFailure::RemoteClosed,
+        _ => PeerFailure::Protocol,
+    }
+}
+
+fn content_peer_failure(error: &DownloadError) -> Option<PeerFailure> {
+    match error {
+        DownloadError::PeerClosed => Some(PeerFailure::RemoteClosed),
+        DownloadError::Frame(_)
+        | DownloadError::Piece(_)
+        | DownloadError::Handshake(_)
+        | DownloadError::InvalidPremetadataState(_)
+        | DownloadError::Metadata(_)
+        | DownloadError::MetadataExtensionDisabled
+        | DownloadError::ExtensionProtocolUnsupported => Some(peer_failure(error)),
+        DownloadError::Io {
+            operation: "read peer message" | "send peer message",
+            ..
+        } => Some(PeerFailure::RemoteClosed),
+        _ => None,
+    }
+}
+
 async fn run_magnet_download(
     config: MagnetDownloadConfig,
     control: DownloadControl,
@@ -814,48 +1016,24 @@ async fn run_magnet_download(
     if magnet.peer_hints.is_empty() {
         return Err(DownloadError::NoUsablePeerHint);
     }
+    let mut peers = DiagnosticPeerSession::from_peer_hints(&magnet.peer_hints).await?;
+    run_magnet_download_with_peers(config, control, magnet, &mut peers).await
+}
 
-    let mut last_error = None;
-    for hint in &magnet.peer_hints {
-        let addresses = match lookup_host((hint.host.as_str(), hint.port)).await {
-            Ok(addresses) => addresses,
-            Err(source) => {
-                last_error = Some(DownloadError::Io {
-                    operation: "resolve magnet peer hint",
-                    source,
-                });
-                continue;
-            }
-        };
-        for address in addresses {
-            if !address.ip().is_loopback() {
-                continue;
-            }
-            match acquire_metadata(address, magnet.info_hash).await {
-                Ok((_raw_info, metainfo, connection)) => {
-                    let content_config = ContentDownloadConfig {
-                        peer: Some(address),
-                        peer_hints: Vec::new(),
-                        output_path: config.output_path,
-                        max_buffered_payload_bytes: config.max_buffered_payload_bytes,
-                        skip_files: config.skip_files,
-                        materialize_files: config.materialize_files,
-                    };
-                    return run_content_download(
-                        content_config,
-                        metainfo,
-                        control,
-                        None,
-                        Some(connection),
-                        None,
-                    )
-                    .await;
-                }
-                Err(error) => last_error = Some(error),
-            }
-        }
-    }
-    Err(last_error.unwrap_or(DownloadError::NoUsablePeerHint))
+async fn run_magnet_download_with_peers(
+    config: MagnetDownloadConfig,
+    control: DownloadControl,
+    magnet: Magnet,
+    peers: &mut DiagnosticPeerSession,
+) -> Result<DownloadReport, DownloadError> {
+    let (_raw_info, metainfo) = peers.acquire_metadata(magnet.info_hash).await?;
+    let content_config = ContentDownloadConfig {
+        output_path: config.output_path,
+        max_buffered_payload_bytes: config.max_buffered_payload_bytes,
+        skip_files: config.skip_files,
+        materialize_files: config.materialize_files,
+    };
+    run_content_download(content_config, metainfo, control, None, peers, None).await
 }
 
 async fn run_magnet_metadata(magnet: String) -> Result<Vec<u8>, DownloadError> {
@@ -863,30 +1041,10 @@ async fn run_magnet_metadata(magnet: String) -> Result<Vec<u8>, DownloadError> {
     if magnet.peer_hints.is_empty() {
         return Err(DownloadError::NoUsablePeerHint);
     }
-
-    let mut last_error = None;
-    for hint in &magnet.peer_hints {
-        let addresses = match lookup_host((hint.host.as_str(), hint.port)).await {
-            Ok(addresses) => addresses,
-            Err(source) => {
-                last_error = Some(DownloadError::Io {
-                    operation: "resolve magnet peer hint",
-                    source,
-                });
-                continue;
-            }
-        };
-        for address in addresses {
-            if !address.ip().is_loopback() {
-                continue;
-            }
-            match acquire_metadata(address, magnet.info_hash).await {
-                Ok((raw_info, _, _)) => return Ok(raw_info),
-                Err(error) => last_error = Some(error),
-            }
-        }
-    }
-    Err(last_error.unwrap_or(DownloadError::NoUsablePeerHint))
+    let mut peers = DiagnosticPeerSession::from_peer_hints(&magnet.peer_hints).await?;
+    let (raw_info, _) = peers.acquire_metadata(magnet.info_hash).await?;
+    peers.close_current(None)?;
+    Ok(raw_info)
 }
 
 #[derive(Clone)]
@@ -922,9 +1080,8 @@ async fn run_resumable_magnet_download(
                 "stored metadata does not match the magnet identity".to_owned(),
             ));
         }
+        let mut peers = DiagnosticPeerSession::from_peer_hints(&magnet.peer_hints).await?;
         let content_config = ContentDownloadConfig {
-            peer: None,
-            peer_hints: magnet.peer_hints,
             output_path: config.output_path,
             max_buffered_payload_bytes: config.max_buffered_payload_bytes,
             skip_files: config.skip_files,
@@ -935,7 +1092,7 @@ async fn run_resumable_magnet_download(
             metainfo,
             control,
             descriptors,
-            None,
+            &mut peers,
             Some(resume),
         )
         .await;
@@ -946,57 +1103,34 @@ async fn run_resumable_magnet_download(
             "descriptor storage requires verified metadata".to_owned(),
         ));
     }
-    let mut last_error = None;
-    for hint in &magnet.peer_hints {
-        let addresses = match lookup_host((hint.host.as_str(), hint.port)).await {
-            Ok(addresses) => addresses,
-            Err(source) => {
-                last_error = Some(DownloadError::Io {
-                    operation: "resolve magnet peer hint",
-                    source,
-                });
-                continue;
-            }
-        };
-        for address in addresses {
-            if !address.ip().is_loopback() {
-                continue;
-            }
-            match acquire_metadata(address, magnet.info_hash).await {
-                Ok((raw_info, metainfo, connection)) => {
-                    checkpoints
-                        .metadata_verified(&raw_info)
-                        .map_err(DownloadError::Checkpoint)?;
-                    let content_config = ContentDownloadConfig {
-                        peer: Some(address),
-                        peer_hints: Vec::new(),
-                        output_path: config.output_path,
-                        max_buffered_payload_bytes: config.max_buffered_payload_bytes,
-                        skip_files: config.skip_files,
-                        materialize_files: Vec::new(),
-                    };
-                    return run_content_download(
-                        content_config,
-                        metainfo,
-                        control,
-                        None,
-                        Some(connection),
-                        Some(resume),
-                    )
-                    .await;
-                }
-                Err(error) => last_error = Some(error),
-            }
-        }
+    let mut peers = DiagnosticPeerSession::from_peer_hints(&magnet.peer_hints).await?;
+    let (raw_info, metainfo) = peers.acquire_metadata(magnet.info_hash).await?;
+    if let Err(message) = checkpoints.metadata_verified(&raw_info) {
+        peers.close_current(None)?;
+        return Err(DownloadError::Checkpoint(message));
     }
-    Err(last_error.unwrap_or(DownloadError::NoUsablePeerHint))
+    let content_config = ContentDownloadConfig {
+        output_path: config.output_path,
+        max_buffered_payload_bytes: config.max_buffered_payload_bytes,
+        skip_files: config.skip_files,
+        materialize_files: Vec::new(),
+    };
+    run_content_download(
+        content_config,
+        metainfo,
+        control,
+        None,
+        &mut peers,
+        Some(resume),
+    )
+    .await
 }
 
-async fn acquire_metadata(
-    address: SocketAddr,
+async fn acquire_metadata_from_connection(
+    peer: &mut PeerConnection,
+    handshake: Handshake,
     info_hash: [u8; 20],
-) -> Result<(Vec<u8>, Metainfo, ConnectedPeer), DownloadError> {
-    let (mut peer, handshake) = connect_peer(address, info_hash, true).await?;
+) -> Result<(Vec<u8>, Metainfo), DownloadError> {
     if !handshake.supports_extensions() {
         return Err(DownloadError::ExtensionProtocolUnsupported);
     }
@@ -1015,7 +1149,7 @@ async fn acquire_metadata(
     let mut advertised_size = None;
     let mut started = false;
     loop {
-        match next_peer_message(&mut peer).await? {
+        match next_peer_message(peer).await? {
             PeerMessage::Extended { id: 0, payload } => {
                 let handshake =
                     parse_extension_handshake(&payload).map_err(DownloadError::Metadata)?;
@@ -1064,8 +1198,7 @@ async fn acquire_metadata(
                     }
                 };
                 if let Some(bytes) =
-                    process_metadata_download_actions(&mut peer, remote_metadata_id, actions)
-                        .await?
+                    process_metadata_download_actions(peer, remote_metadata_id, actions).await?
                 {
                     return finish_metadata_acquisition(bytes, peer_state, peer);
                 }
@@ -1092,8 +1225,7 @@ async fn acquire_metadata(
                     .on_message(message)
                     .map_err(DownloadError::Metadata)?;
                 if let Some(bytes) =
-                    process_metadata_download_actions(&mut peer, remote_metadata_id, actions)
-                        .await?
+                    process_metadata_download_actions(peer, remote_metadata_id, actions).await?
                 {
                     return finish_metadata_acquisition(bytes, peer_state, peer);
                 }
@@ -1105,7 +1237,7 @@ async fn acquire_metadata(
 }
 
 async fn process_metadata_download_actions(
-    peer: &mut ConnectedPeer,
+    peer: &mut PeerConnection,
     remote_metadata_id: Option<u8>,
     actions: Vec<MetadataDownloadAction>,
 ) -> Result<Option<Vec<u8>>, DownloadError> {
@@ -1132,13 +1264,13 @@ async fn process_metadata_download_actions(
 fn finish_metadata_acquisition(
     bytes: Vec<u8>,
     peer_state: PremetadataPeerState,
-    mut peer: ConnectedPeer,
-) -> Result<(Vec<u8>, Metainfo, ConnectedPeer), DownloadError> {
+    peer: &mut PeerConnection,
+) -> Result<(Vec<u8>, Metainfo), DownloadError> {
     let metainfo = Metainfo::from_info_bytes(&bytes).map_err(DownloadError::Metainfo)?;
     let mut queued_messages = peer_state.validated_messages(&metainfo)?;
     queued_messages.append(&mut peer.queued_messages);
     peer.queued_messages = queued_messages;
-    Ok((bytes, metainfo, peer))
+    Ok((bytes, metainfo))
 }
 
 async fn run_download(
@@ -1148,15 +1280,22 @@ async fn run_download(
 ) -> Result<DownloadReport, DownloadError> {
     let metainfo_bytes = read_bounded_metainfo(&config.metainfo_path).await?;
     let metainfo = Metainfo::from_bytes(&metainfo_bytes).map_err(DownloadError::Metainfo)?;
+    let mut peers = DiagnosticPeerSession::from_endpoint(config.peer, PeerSource::Manual)?;
     let content_config = ContentDownloadConfig {
-        peer: Some(config.peer),
-        peer_hints: Vec::new(),
         output_path: config.output_path,
         max_buffered_payload_bytes: config.max_buffered_payload_bytes,
         skip_files: config.skip_files,
         materialize_files: config.materialize_files,
     };
-    run_content_download(content_config, metainfo, control, descriptors, None, None).await
+    run_content_download(
+        content_config,
+        metainfo,
+        control,
+        descriptors,
+        &mut peers,
+        None,
+    )
+    .await
 }
 
 async fn run_content_download(
@@ -1164,42 +1303,43 @@ async fn run_content_download(
     metainfo: Metainfo,
     control: DownloadControl,
     descriptors: Option<DescriptorStorage>,
-    connection: Option<ConnectedPeer>,
+    peers: &mut DiagnosticPeerSession,
     resume: Option<ResumeContext>,
 ) -> Result<DownloadReport, DownloadError> {
-    match metainfo.mode {
+    let result = match metainfo.mode {
         rstorrent_protocol::metainfo::MetainfoMode::SingleFile => {
             if resume.is_some() {
-                return Err(DownloadError::Metainfo(MetainfoError::Unsupported(
+                Err(DownloadError::Metainfo(MetainfoError::Unsupported(
                     "resumable execution currently requires multi-file metainfo",
-                )));
-            }
-            if descriptors.is_some() {
-                return Err(DownloadError::Metainfo(MetainfoError::Unsupported(
+                )))
+            } else if descriptors.is_some() {
+                Err(DownloadError::Metainfo(MetainfoError::Unsupported(
                     "descriptor diagnostic execution requires multi-file metainfo",
-                )));
-            }
-            if metainfo.piece_count() != 1
+                )))
+            } else if metainfo.piece_count() != 1
                 || !config.skip_files.is_empty()
                 || !config.materialize_files.is_empty()
             {
-                return Err(DownloadError::Metainfo(MetainfoError::Unsupported(
+                Err(DownloadError::Metainfo(MetainfoError::Unsupported(
                     "multi-piece single-file or selected single-file diagnostic execution",
-                )));
+                )))
+            } else {
+                run_single_download(config, metainfo, control, peers).await
             }
-            run_single_download(config, metainfo, control, connection).await
         }
         rstorrent_protocol::metainfo::MetainfoMode::MultiFile => {
-            run_selective_download(config, metainfo, control, descriptors, connection, resume).await
+            run_selective_download(config, metainfo, control, descriptors, peers, resume).await
         }
-    }
+    };
+    peers.close_current(result.as_ref().err().and_then(content_peer_failure))?;
+    result
 }
 
 async fn run_single_download(
     config: ContentDownloadConfig,
     metainfo: Metainfo,
     control: DownloadControl,
-    connection: Option<ConnectedPeer>,
+    peers: &mut DiagnosticPeerSession,
 ) -> Result<DownloadReport, DownloadError> {
     let piece_length = u32::try_from(metainfo.total_length)
         .map_err(|_| DownloadError::Metainfo(MetainfoError::InvalidField("info.length")))?;
@@ -1218,20 +1358,10 @@ async fn run_single_download(
         .await
         .map_err(DownloadError::Storage)?;
 
-    let mut peer = match connection {
-        Some(connection) => connection,
-        None => {
-            connect_peer(
-                config.peer.ok_or(DownloadError::NoUsablePeerHint)?,
-                metainfo.info_hash,
-                false,
-            )
-            .await?
-            .0
-        }
-    };
+    peers.ensure_content_connection(metainfo.info_hash).await?;
+    let peer = peers.connection_mut()?;
     loop {
-        let message = match next_peer_message(&mut peer).await {
+        let message = match next_peer_message(peer).await {
             Ok(message) => message,
             Err(error) => {
                 download.cancel_pending();
@@ -1288,7 +1418,7 @@ async fn run_selective_download(
     metainfo: Metainfo,
     control: DownloadControl,
     descriptors: Option<DescriptorStorage>,
-    connection: Option<ConnectedPeer>,
+    peers: &mut DiagnosticPeerSession,
     resume: Option<ResumeContext>,
 ) -> Result<DownloadReport, DownloadError> {
     let layout = TorrentLayout::from_metainfo(&metainfo);
@@ -1486,16 +1616,9 @@ async fn run_selective_download(
     let skipped_file_bytes = storage.skipped_bytes();
     let padding_bytes = storage.padding_bytes();
     let part_path = storage.part_path().map(Path::to_path_buf);
-    let mut peer = if plans.is_empty() {
-        None
-    } else {
-        Some(match connection {
-            Some(connection) => connection,
-            None => {
-                connect_content_peer(config.peer, &config.peer_hints, metainfo.info_hash).await?
-            }
-        })
-    };
+    if !plans.is_empty() {
+        peers.ensure_content_connection(metainfo.info_hash).await?;
+    }
     let mut availability = vec![false; layout.piece_count()];
     let mut availability_known = false;
     let mut peer_choking = true;
@@ -1507,9 +1630,7 @@ async fn run_selective_download(
     let mut last_piece = None;
 
     for (piece_index, ranges) in plans {
-        let peer = peer
-            .as_mut()
-            .expect("missing pieces require a connected peer");
+        let peer = peers.connection_mut()?;
         let piece_index_usize = usize::try_from(piece_index)
             .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
         let piece_length = layout
@@ -1721,45 +1842,12 @@ async fn run_selective_download(
     })
 }
 
-async fn connect_content_peer(
-    address: Option<SocketAddr>,
-    peer_hints: &[PeerHint],
-    info_hash: [u8; 20],
-) -> Result<ConnectedPeer, DownloadError> {
-    if let Some(address) = address {
-        return Ok(connect_peer(address, info_hash, false).await?.0);
-    }
-    let mut last_error = None;
-    for hint in peer_hints {
-        let addresses = match lookup_host((hint.host.as_str(), hint.port)).await {
-            Ok(addresses) => addresses,
-            Err(source) => {
-                last_error = Some(DownloadError::Io {
-                    operation: "resolve magnet peer hint",
-                    source,
-                });
-                continue;
-            }
-        };
-        for address in addresses {
-            if !address.ip().is_loopback() {
-                continue;
-            }
-            match connect_peer(address, info_hash, false).await {
-                Ok((peer, _)) => return Ok(peer),
-                Err(error) => last_error = Some(error),
-            }
-        }
-    }
-    Err(last_error.unwrap_or(DownloadError::NoUsablePeerHint))
-}
-
 async fn connect_peer(
-    address: SocketAddr,
+    attempt: DialAttempt,
     info_hash: [u8; 20],
     advertise_extensions: bool,
-) -> Result<(ConnectedPeer, Handshake), DownloadError> {
-    let mut peer = TcpStream::connect(address)
+) -> Result<(PeerConnection, Handshake), DownloadError> {
+    let mut peer = TcpStream::connect(attempt.endpoint().address())
         .await
         .map_err(|source| DownloadError::Io {
             operation: "connect to peer",
@@ -1788,7 +1876,8 @@ async fn connect_peer(
         })?;
     let handshake = decode_handshake(&handshake, info_hash).map_err(DownloadError::Handshake)?;
     Ok((
-        ConnectedPeer {
+        PeerConnection {
+            attempt,
             stream: peer,
             decoder: FrameDecoder::new(),
             queued_messages: VecDeque::new(),
@@ -1797,7 +1886,7 @@ async fn connect_peer(
     ))
 }
 
-async fn next_peer_message(peer: &mut ConnectedPeer) -> Result<PeerMessage, DownloadError> {
+async fn next_peer_message(peer: &mut PeerConnection) -> Result<PeerMessage, DownloadError> {
     while peer.queued_messages.is_empty() {
         let mut network_buffer = [0_u8; NETWORK_READ_LENGTH];
         let read = peer
@@ -2052,6 +2141,7 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
 
+    use rstorrent_protocol::magnet::Magnet;
     use rstorrent_protocol::metadata::{
         MetadataMessage, encode_extension_handshake, encode_metadata_data, parse_metadata_message,
     };
@@ -2066,9 +2156,14 @@ mod tests {
     use tokio::time::timeout;
 
     use super::{
-        ConnectedPeer, DIAGNOSTIC_PEER_ID, DownloadConfig, DownloadControl, DownloadError,
-        MagnetDownloadConfig, download_magnet_with_peer_hint, download_verified_piece,
-        download_verified_piece_with_control, next_peer_message, send_message,
+        DIAGNOSTIC_PEER_ID, DiagnosticPeerSession, DownloadConfig, DownloadControl, DownloadError,
+        MagnetDownloadConfig, PeerConnection, download_magnet_with_peer_hint,
+        download_verified_piece, download_verified_piece_with_control, next_peer_message,
+        run_magnet_download_with_peers, send_message,
+    };
+    use crate::peer::{
+        DialAttempt, PeerEndpoint, PeerFailure, PeerObservation, PeerPhase, PeerRegistry,
+        PeerRegistryConfig, PeerSelectionContext, PeerSelector, PeerSource,
     };
     use crate::selective_storage::{
         SelectiveStorageError, selective_part_path, selective_staging_path,
@@ -2083,6 +2178,28 @@ mod tests {
             "rstorrent-driver-test-{}-{sequence}-{name}",
             std::process::id()
         ))
+    }
+
+    fn test_dial_attempt() -> DialAttempt {
+        let endpoint = PeerEndpoint::new("127.0.0.1:6881".parse().expect("test endpoint"))
+            .expect("valid test endpoint");
+        let mut registry =
+            PeerRegistry::new(PeerRegistryConfig::default()).expect("test peer registry");
+        registry
+            .observe(
+                PeerObservation::dialable(endpoint, PeerSource::Manual),
+                Duration::ZERO,
+            )
+            .expect("test observation");
+        let context = PeerSelectionContext {
+            now: Duration::ZERO,
+        };
+        let candidate = PeerSelector
+            .select(&registry, context)
+            .expect("test candidate");
+        registry
+            .begin_dial(candidate, context)
+            .expect("test dial attempt")
     }
 
     #[test]
@@ -2166,7 +2283,8 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             ))
             .await
             .expect("send server handshake");
-        let mut peer = ConnectedPeer {
+        let mut peer = PeerConnection {
+            attempt: test_dial_attempt(),
             stream,
             decoder: FrameDecoder::new(),
             queued_messages: VecDeque::new(),
@@ -2244,11 +2362,124 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
     }
 
     #[tokio::test]
-    async fn magnet_metadata_hands_the_same_peer_to_content_download() {
+    async fn magnet_registry_fails_over_and_hands_same_peer_to_content_download() {
         let payload = b"verified magnet payload".to_vec();
         let info = single_file_info(&payload);
         let info_hash: [u8; 20] = Sha1::digest(&info).into();
         let output_path = test_path("magnet-output.bin");
+        let unreachable_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind unreachable peer placeholder");
+        let unreachable = unreachable_listener
+            .local_addr()
+            .expect("unreachable peer address");
+        drop(unreachable_listener);
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind scripted metadata peer");
+        let address = listener.local_addr().expect("listener address");
+        let peer_task = tokio::spawn(serve_metadata_then_piece(
+            listener,
+            info,
+            payload.clone(),
+            vec![0x80],
+        ));
+
+        let magnet = format!(
+            "magnet:?xt=urn:btih:{}&x.pe={unreachable}&x.pe={address}",
+            hex(&info_hash)
+        );
+        let parsed = Magnet::parse(&magnet).expect("parse failover magnet");
+        let mut peers = DiagnosticPeerSession::from_peer_hints(&parsed.peer_hints)
+            .await
+            .expect("resolve failover peers");
+        assert_eq!(peers.registry.len(), 2);
+
+        let report = run_magnet_download_with_peers(
+            MagnetDownloadConfig {
+                magnet,
+                output_path: output_path.clone(),
+                timeout: Duration::from_secs(2),
+                max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+                skip_files: Vec::new(),
+                materialize_files: Vec::new(),
+            },
+            DownloadControl::new(),
+            parsed,
+            &mut peers,
+        )
+        .await
+        .expect("magnet metadata and content after failover");
+
+        let failed = peers
+            .registry
+            .find_endpoint(PeerEndpoint::new(unreachable).expect("failed endpoint"))
+            .expect("failed peer record retained");
+        assert_eq!(failed.phase(), PeerPhase::Idle);
+        assert_eq!(failed.history().dial_attempts, 1);
+        assert_eq!(failed.history().total_failures, 1);
+        assert_eq!(failed.history().last_failure, Some(PeerFailure::Connect));
+        assert!(failed.history().retry_at.is_some());
+        assert!(failed.sources().contains(PeerSource::MagnetHint));
+
+        let connected = peers
+            .registry
+            .find_endpoint(PeerEndpoint::new(address).expect("connected endpoint"))
+            .expect("connected peer record retained");
+        assert_eq!(connected.phase(), PeerPhase::Idle);
+        assert_eq!(connected.history().dial_attempts, 1);
+        assert_eq!(connected.history().total_failures, 0);
+        assert!(connected.history().last_connected_at.is_some());
+        assert!(connected.history().last_disconnected_at.is_some());
+        assert!(connected.sources().contains(PeerSource::MagnetHint));
+
+        assert_eq!(report.info_hash, info_hash);
+        assert_eq!(
+            tokio::fs::read(&output_path)
+                .await
+                .expect("published output"),
+            payload
+        );
+        peer_task.await.expect("scripted peer task");
+        let _ = tokio::fs::remove_file(output_path).await;
+    }
+
+    #[tokio::test]
+    async fn public_magnet_entry_uses_peer_registry_path() {
+        let payload = b"public entry payload".to_vec();
+        let info = single_file_info(&payload);
+        let info_hash: [u8; 20] = Sha1::digest(&info).into();
+        let output_path = test_path("public-magnet-output.bin");
+        let unsupported_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind non-extension peer");
+        let unsupported_address = unsupported_listener
+            .local_addr()
+            .expect("non-extension peer address");
+        let unsupported_task = tokio::spawn(async move {
+            let (mut stream, _) = unsupported_listener
+                .accept()
+                .await
+                .expect("accept magnet client");
+            let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
+            stream
+                .read_exact(&mut handshake_bytes)
+                .await
+                .expect("read magnet handshake");
+            assert!(
+                decode_handshake(&handshake_bytes, info_hash)
+                    .expect("valid client handshake")
+                    .supports_extensions()
+            );
+            stream
+                .write_all(&encode_handshake_with_reserved(
+                    info_hash,
+                    *b"-RS-NOEXT-0000000000",
+                    [0; 8],
+                ))
+                .await
+                .expect("send non-extension handshake");
+        });
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind scripted metadata peer");
@@ -2261,7 +2492,10 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         ));
 
         let report = download_magnet_with_peer_hint(MagnetDownloadConfig {
-            magnet: format!("magnet:?xt=urn:btih:{}&x.pe={address}", hex(&info_hash)),
+            magnet: format!(
+                "magnet:?xt=urn:btih:{}&x.pe={unsupported_address}&x.pe={address}",
+                hex(&info_hash)
+            ),
             output_path: output_path.clone(),
             timeout: Duration::from_secs(2),
             max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
@@ -2269,7 +2503,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             materialize_files: Vec::new(),
         })
         .await
-        .expect("magnet metadata and content");
+        .expect("public magnet entry");
 
         assert_eq!(report.info_hash, info_hash);
         assert_eq!(
@@ -2278,6 +2512,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 .expect("published output"),
             payload
         );
+        unsupported_task.await.expect("non-extension peer task");
         peer_task.await.expect("scripted peer task");
         let _ = tokio::fs::remove_file(output_path).await;
     }

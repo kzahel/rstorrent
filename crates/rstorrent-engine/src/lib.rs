@@ -5,6 +5,7 @@
 mod driver;
 mod metadata_seed;
 mod part_file;
+pub mod peer;
 mod selective_storage;
 mod storage;
 

@@ -71,5 +71,12 @@ direction belongs in `../topics/`.
   completed recoverable bounded reactive views, generated TypeScript and
   Kotlin contracts, and controlled browser/WebSocket, Tauri/channel, and
   Android/UniFFI product threads.
+- [`009-android-saf-session-storage.md`](009-android-saf-session-storage.md):
+  completed durable Android SAF root identity, descriptor-backed restart,
+  provider publication recovery, and controlled AVD and Pixel evidence.
+- [`010-peer-registry-magnet-failover.md`](010-peer-registry-magnet-failover.md):
+  completed bounded peer observations, records, deterministic selection,
+  guarded dial lifecycle, connection and protocol failover, and
+  same-connection magnet handoff.
 
-The next tactical number is `009`.
+The next tactical number is `011`.

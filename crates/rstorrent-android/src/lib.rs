@@ -1076,6 +1076,7 @@ fn classify_failure(error: &DownloadError) -> FailureKind {
         DownloadError::PeerClosed
         | DownloadError::Handshake(_)
         | DownloadError::Frame(_)
+        | DownloadError::PeerRegistry(_)
         | DownloadError::NoUsablePeerHint => FailureKind::Peer,
         DownloadError::Io { operation, .. } if operation.contains("peer") => FailureKind::Peer,
         DownloadError::TimedOut { .. } => FailureKind::Timeout,
