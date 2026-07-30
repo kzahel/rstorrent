@@ -789,17 +789,23 @@ fn classify_failure(error: &DownloadError) -> FailureKind {
         return FailureKind::PreexistingArtifact;
     }
     match error {
-        DownloadError::PeerClosed | DownloadError::Handshake(_) | DownloadError::Frame(_) => {
-            FailureKind::Peer
-        }
+        DownloadError::PeerClosed
+        | DownloadError::Handshake(_)
+        | DownloadError::Frame(_)
+        | DownloadError::NoUsablePeerHint => FailureKind::Peer,
         DownloadError::Io { operation, .. } if operation.contains("peer") => FailureKind::Peer,
         DownloadError::TimedOut { .. } => FailureKind::Timeout,
         DownloadError::NonLoopbackPeer(_)
         | DownloadError::InvalidTimeout
         | DownloadError::MetainfoTooLarge { .. }
+        | DownloadError::Magnet(_)
         | DownloadError::Metainfo(_)
         | DownloadError::Layout(_) => FailureKind::Configuration,
-        DownloadError::Piece(_) => FailureKind::Protocol,
+        DownloadError::Metadata(_)
+        | DownloadError::ExtensionProtocolUnsupported
+        | DownloadError::MetadataExtensionDisabled
+        | DownloadError::InvalidPremetadataState(_)
+        | DownloadError::Piece(_) => FailureKind::Protocol,
         DownloadError::Storage(_)
         | DownloadError::SelectiveStorage(_)
         | DownloadError::Io { .. } => FailureKind::Storage,
