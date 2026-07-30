@@ -13,3 +13,4 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha1 = { workspace = true }
 tokio = { workspace = true, features = ["io-std", "io-util", "macros", "rt", "sync"] }
+ts-rs = { workspace = true }

@@ -1,6 +1,7 @@
 use rstorrent_protocol::magnet::{MAX_MAGNET_LENGTH, Magnet};
 use rstorrent_protocol::metainfo::MAX_FILES;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 pub const CONTROL_VERSION: u16 = 1;
 pub const MAX_REQUEST_ID_LENGTH: usize = 128;
@@ -8,16 +9,16 @@ pub const MAX_PROFILE_ID_LENGTH: usize = 128;
 pub const MAX_ROOT_ID_LENGTH: usize = 128;
 pub const MAX_ERROR_MESSAGE_LENGTH: usize = 1024;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
 pub struct RequestEnvelope {
     pub version: u16,
     pub request_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub expected_revision: Option<u64>,
+    pub expected_revision: Option<String>,
     pub command: Command,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Command {
     AddMagnet {
@@ -45,11 +46,11 @@ impl Command {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
 pub struct ResponseEnvelope {
     pub version: u16,
     pub request_id: String,
-    pub revision: u64,
+    pub revision: String,
     #[serde(flatten)]
     pub outcome: ResponseOutcome,
 }
@@ -59,7 +60,7 @@ impl ResponseEnvelope {
         Self {
             version: CONTROL_VERSION,
             request_id,
-            revision,
+            revision: revision.to_string(),
             outcome: ResponseOutcome::Success { snapshot },
         }
     }
@@ -81,7 +82,7 @@ impl ResponseEnvelope {
         Self {
             version: CONTROL_VERSION,
             request_id,
-            revision,
+            revision: revision.to_string(),
             outcome: ResponseOutcome::Error {
                 error: ErrorResponse { code, message },
             },
@@ -89,20 +90,20 @@ impl ResponseEnvelope {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum ResponseOutcome {
     Success { snapshot: ServiceSnapshot },
     Error { error: ErrorResponse },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
 pub struct ErrorResponse {
     pub code: ErrorCode,
     pub message: String,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
     InvalidVersion,
@@ -118,14 +119,14 @@ pub enum ErrorCode {
     Internal,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
 pub struct ServiceSnapshot {
     pub profile_id: String,
-    pub revision: u64,
+    pub revision: String,
     pub torrents: Vec<TorrentSnapshot>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
 pub struct TorrentSnapshot {
     pub torrent_id: String,
     pub storage_root: String,
@@ -139,7 +140,7 @@ pub struct TorrentSnapshot {
     pub error: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum TorrentState {
     AwaitingMetadata,
@@ -178,7 +179,7 @@ impl TorrentState {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum StorageState {
     None,
@@ -219,6 +220,9 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
         ));
     }
     validate_identifier(&request.request_id, "request ID", MAX_REQUEST_ID_LENGTH)?;
+    if let Some(revision) = &request.expected_revision {
+        parse_revision(revision)?;
+    }
     match &request.command {
         Command::AddMagnet {
             magnet,
@@ -263,6 +267,24 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
         Command::Snapshot | Command::Shutdown => {}
     }
     Ok(())
+}
+
+pub(crate) fn parse_revision(value: &str) -> Result<u64, (ErrorCode, String)> {
+    if value.is_empty()
+        || (value.len() > 1 && value.starts_with('0'))
+        || !value.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err((
+            ErrorCode::InvalidRequest,
+            "revision must be a canonical unsigned decimal string".to_owned(),
+        ));
+    }
+    value.parse().map_err(|_| {
+        (
+            ErrorCode::InvalidRequest,
+            "revision exceeds the supported unsigned 64-bit range".to_owned(),
+        )
+    })
 }
 
 pub(crate) fn validate_identifier(
@@ -365,5 +387,23 @@ mod tests {
             ]),
             "00010203040506070809aabbccddeeff10111213"
         );
+    }
+
+    #[test]
+    fn revisions_are_canonical_decimal_strings() {
+        let mut request = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "request-1".to_owned(),
+            expected_revision: Some("18446744073709551615".to_owned()),
+            command: Command::Snapshot,
+        };
+        assert_eq!(validate_request(&request), Ok(()));
+        for invalid in ["", "01", "-1", "18446744073709551616"] {
+            request.expected_revision = Some(invalid.to_owned());
+            assert_eq!(
+                validate_request(&request).map_err(|error| error.0),
+                Err(ErrorCode::InvalidRequest)
+            );
+        }
     }
 }

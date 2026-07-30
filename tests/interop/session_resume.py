@@ -245,7 +245,7 @@ def wait_for_complete(
             raise ScenarioFailure("session snapshot has the wrong torrent identity")
         if (
             torrent["state"] == "complete"
-            and response["revision"] >= minimum_revision
+            and int(response["revision"]) >= minimum_revision
         ):
             if torrent["verified_piece_count"] != torrent["piece_count"]:
                 raise ScenarioFailure("complete snapshot has incomplete have state")
@@ -369,7 +369,7 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
 
         stop_process(process, graceful=True)
         process = None
-        completed_revision = completion["revision"]
+        completed_revision = int(completion["revision"])
         if handle.is_valid():
             session.remove_torrent(handle)
         session.pause()

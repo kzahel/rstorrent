@@ -6,8 +6,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use rstorrent_engine::{
-    DownloadCheckpointSink, DownloadControl, DownloadError, DownloadReport,
-    ResumableMagnetDownloadConfig, ResumedStorage, resume_magnet_with_peer_hint_with_control,
+    DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink, DownloadControl,
+    DownloadError, DownloadReport, ResumableMagnetDownloadConfig, ResumedStorage,
+    resume_magnet_with_peer_hint_with_control,
 };
 use rstorrent_protocol::metainfo::Metainfo;
 use tokio::task::JoinHandle;
@@ -18,6 +19,10 @@ use crate::control::{
 };
 use crate::have::HaveState;
 use crate::store::{ConfiguredStorageRoot, ResumeRecord, SessionStore, StoreError};
+use crate::views::{
+    IndexRange, SubscriptionError, SubscriptionSpec, TorrentActivity, ViewHub, ViewSubscription,
+    ranges_from_pieces,
+};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 const DEFAULT_PAYLOAD_ALLOWANCE: usize = 32 * 1024;
@@ -61,6 +66,7 @@ pub struct ApplicationService {
     download_timeout: Duration,
     max_buffered_payload_bytes: usize,
     active: Option<ActiveDownload>,
+    views: ViewHub,
 }
 
 impl ApplicationService {
@@ -91,14 +97,19 @@ impl ApplicationService {
             &config.profile_id,
             &config.storage_roots,
         )?;
+        let snapshot = store.snapshot()?;
+        let views = ViewHub::new(&snapshot)?;
         let mut service = Self {
             store: Arc::new(Mutex::new(store)),
             storage_roots,
             download_timeout: config.download_timeout,
             max_buffered_payload_bytes: config.max_buffered_payload_bytes,
             active: None,
+            views,
         };
+        service.refresh_views()?;
         service.restore_running().await?;
+        service.refresh_views()?;
         Ok(service)
     }
 
@@ -134,6 +145,7 @@ impl ApplicationService {
         if !matches!(response.outcome, ResponseOutcome::Success { .. }) {
             return Ok(response);
         }
+        self.refresh_views()?;
 
         match command {
             Command::AddMagnet { magnet, .. } => {
@@ -159,6 +171,10 @@ impl ApplicationService {
 
     pub fn revision(&self) -> Result<u64, ApplicationError> {
         Ok(self.store_mut()?.revision()?)
+    }
+
+    pub fn subscribe(&self, spec: SubscriptionSpec) -> Result<ViewSubscription, ApplicationError> {
+        Ok(self.views.subscribe(spec)?)
     }
 
     pub async fn shutdown(&mut self) -> Result<(), ApplicationError> {
@@ -280,8 +296,13 @@ impl ApplicationService {
         let checkpoints: Arc<dyn DownloadCheckpointSink> = Arc::new(StoreCheckpointSink {
             store: self.store.clone(),
             torrent_id: torrent_id.to_owned(),
+            views: self.views.clone(),
         });
         let control = DownloadControl::new();
+        control.set_activity_sink(Arc::new(ViewActivitySink {
+            torrent_id: torrent_id.to_owned(),
+            views: self.views.clone(),
+        }));
         let task_control = control.clone();
         let task = tokio::spawn(async move {
             resume_magnet_with_peer_hint_with_control(config, checkpoints, task_control).await
@@ -358,6 +379,17 @@ impl ApplicationService {
         } else {
             store.mark_error(torrent_id, &error.to_string())?;
         }
+        drop(store);
+        self.refresh_views()?;
+        Ok(())
+    }
+
+    fn refresh_views(&self) -> Result<(), ApplicationError> {
+        let (snapshot, verified) = {
+            let store = self.store_mut()?;
+            durable_view_state(&store)?
+        };
+        self.views.replace_durable(&snapshot, &verified)?;
         Ok(())
     }
 }
@@ -374,6 +406,7 @@ impl Drop for ApplicationService {
 struct StoreCheckpointSink {
     store: Arc<Mutex<SessionStore>>,
     torrent_id: String,
+    views: ViewHub,
 }
 
 impl StoreCheckpointSink {
@@ -381,6 +414,16 @@ impl StoreCheckpointSink {
         self.store
             .lock()
             .map_err(|_| "session store lock is poisoned".to_owned())
+    }
+
+    fn refresh(&self) -> Result<(), String> {
+        let (snapshot, verified) = {
+            let store = self.store()?;
+            durable_view_state(&store).map_err(|error| error.to_string())?
+        };
+        self.views
+            .replace_durable(&snapshot, &verified)
+            .map_err(|error| error.to_string())
     }
 }
 
@@ -391,7 +434,8 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
                 .record_metadata(&self.torrent_id, raw_info)
                 .map(|_| ())
                 .map_err(|error| error.to_string())
-        })
+        })?;
+        self.refresh()
     }
 
     fn storage_prepared(&self, storage: ResumedStorage) -> Result<(), String> {
@@ -404,7 +448,8 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
                 .mark_storage_prepared(&self.torrent_id, storage_state)
                 .map(|_| ())
                 .map_err(|error| error.to_string())
-        })
+        })?;
+        self.refresh()
     }
 
     fn have_rechecked(&self, verified_pieces: &[bool]) -> Result<(), String> {
@@ -423,7 +468,8 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
                 .replace_have(&self.torrent_id, &replacement)
                 .map(|_| ())
                 .map_err(|error| error.to_string())
-        })
+        })?;
+        self.refresh()
     }
 
     fn piece_durable(&self, piece_index: usize) -> Result<(), String> {
@@ -432,7 +478,8 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
                 .record_piece(&self.torrent_id, piece_index)
                 .map(|_| ())
                 .map_err(|error| error.to_string())
-        })
+        })?;
+        self.refresh()
     }
 
     fn published(&self) -> Result<(), String> {
@@ -441,8 +488,78 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
                 .mark_complete(&self.torrent_id)
                 .map(|_| ())
                 .map_err(|error| error.to_string())
-        })
+        })?;
+        self.refresh()
     }
+}
+
+#[derive(Debug)]
+struct ViewActivitySink {
+    torrent_id: String,
+    views: ViewHub,
+}
+
+impl DownloadActivitySink for ViewActivitySink {
+    fn record(&self, event: DownloadActivityEvent) {
+        let activity = match event {
+            DownloadActivityEvent::PieceStarted {
+                piece_index,
+                piece_length,
+            } => TorrentActivity::PieceStarted {
+                piece_index,
+                piece_length,
+            },
+            DownloadActivityEvent::BlockRequested {
+                piece_index,
+                begin,
+                length,
+            } => TorrentActivity::BlockRequested {
+                piece_index,
+                begin,
+                length,
+            },
+            DownloadActivityEvent::BlockReceived {
+                piece_index,
+                begin,
+                length,
+            } => TorrentActivity::BlockReceived {
+                piece_index,
+                begin,
+                length,
+            },
+            DownloadActivityEvent::BlockStored {
+                piece_index,
+                begin,
+                length,
+            } => TorrentActivity::BlockStored {
+                piece_index,
+                begin,
+                length,
+            },
+            DownloadActivityEvent::PieceVerified { piece_index } => {
+                TorrentActivity::PieceVerified { piece_index }
+            }
+        };
+        let _ = self.views.record_activity(&self.torrent_id, activity);
+    }
+}
+
+fn durable_view_state(
+    store: &SessionStore,
+) -> Result<(crate::ServiceSnapshot, BTreeMap<String, Vec<IndexRange>>), StoreError> {
+    let snapshot = store.snapshot()?;
+    let mut verified = BTreeMap::new();
+    for torrent in &snapshot.torrents {
+        if let Ok(resume) = store.load_resume(&torrent.torrent_id)
+            && let Some(have) = resume.have
+        {
+            verified.insert(
+                torrent.torrent_id.clone(),
+                ranges_from_pieces(have.pieces()),
+            );
+        }
+    }
+    Ok((snapshot, verified))
 }
 
 #[derive(Debug)]
@@ -456,6 +573,7 @@ pub enum ApplicationError {
     Busy(String),
     Join(String),
     StorePoisoned,
+    Subscription(SubscriptionError),
 }
 
 impl fmt::Display for ApplicationError {
@@ -474,6 +592,7 @@ impl fmt::Display for ApplicationError {
             }
             Self::Join(message) => write!(formatter, "engine task join: {message}"),
             Self::StorePoisoned => write!(formatter, "session store lock is poisoned"),
+            Self::Subscription(error) => write!(formatter, "{error}"),
         }
     }
 }
@@ -483,6 +602,7 @@ impl Error for ApplicationError {
         match self {
             Self::Store(error) => Some(error),
             Self::Io { source, .. } => Some(source),
+            Self::Subscription(error) => Some(error),
             _ => None,
         }
     }
@@ -491,6 +611,12 @@ impl Error for ApplicationError {
 impl From<StoreError> for ApplicationError {
     fn from(error: StoreError) -> Self {
         Self::Store(error)
+    }
+}
+
+impl From<SubscriptionError> for ApplicationError {
+    fn from(error: SubscriptionError) -> Self {
+        Self::Subscription(error)
     }
 }
 
@@ -532,8 +658,9 @@ mod tests {
 
     use super::{ApplicationConfig, ApplicationService};
     use crate::{
-        CONTROL_VERSION, Command, ConfiguredStorageRoot, RequestEnvelope, ResponseOutcome,
-        SessionStore, TorrentState,
+        CONTROL_VERSION, Command, ConfiguredStorageRoot, DeliveryPolicy, RequestEnvelope,
+        ResponseOutcome, SessionStore, SubscriptionSpec, TorrentState, ViewProjection,
+        ViewSelector, ViewUpdatePayload,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -570,6 +697,53 @@ mod tests {
                 skip_files: Vec::new(),
             },
         }
+    }
+
+    #[tokio::test]
+    async fn command_mutation_publishes_a_typed_view_patch() {
+        let root = test_root("view-patch");
+        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let mut service = ApplicationService::open(config(&root))
+            .await
+            .expect("open service");
+        let subscription = service
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::TorrentList,
+                projection: ViewProjection::Summary,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 4096,
+                },
+            })
+            .expect("subscribe");
+        assert!(matches!(
+            subscription.next_update().await.expect("initial").payload,
+            ViewUpdatePayload::Snapshot { .. }
+        ));
+
+        service
+            .dispatch(add_request("add", torrent_id))
+            .await
+            .expect("add");
+        let update = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            subscription.next_update(),
+        )
+        .await
+        .expect("view update timed out")
+        .expect("view update");
+        let ViewUpdatePayload::Patch { patch } = update.payload else {
+            panic!("mutation must publish a patch");
+        };
+        assert!(
+            serde_json::to_string(&patch)
+                .expect("serialize patch")
+                .contains(torrent_id)
+        );
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
     }
 
     #[tokio::test]

@@ -10,8 +10,8 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use crate::control::{
     Command, ErrorCode, RequestEnvelope, ResponseEnvelope, ServiceSnapshot, StorageState,
-    TorrentSnapshot, TorrentState, decode_info_hash, encode_info_hash, validate_identifier,
-    validate_request,
+    TorrentSnapshot, TorrentState, decode_info_hash, encode_info_hash, parse_revision,
+    validate_identifier, validate_request,
 };
 use crate::have::{HaveError, HaveState};
 
@@ -166,10 +166,13 @@ impl SessionStore {
         }
 
         let current_revision = read_revision(&transaction)?;
-        let response = if request
+        let expected_revision = request
             .expected_revision
-            .is_some_and(|expected| expected != current_revision)
-        {
+            .as_deref()
+            .map(parse_revision)
+            .transpose()
+            .map_err(|(_, message)| StoreError::DurableState(message))?;
+        let response = if expected_revision.is_some_and(|expected| expected != current_revision) {
             ResponseEnvelope::error(
                 request.request_id.clone(),
                 current_revision,
@@ -178,6 +181,7 @@ impl SessionStore {
                     "expected revision {}, current revision is {current_revision}",
                     request
                         .expected_revision
+                        .as_deref()
                         .expect("checked expected revision is present")
                 ),
             )
@@ -186,7 +190,12 @@ impl SessionStore {
         };
 
         let response_json = serde_json::to_string(&response)?;
-        let response_revision = sql_revision(response.revision)?;
+        let response_revision = sql_revision(
+            response
+                .revision
+                .parse()
+                .map_err(|_| StoreError::DurableState("invalid response revision".to_owned()))?,
+        )?;
         transaction.execute(
             "INSERT INTO request_receipts(
                 request_id, request_json, response_json, revision
@@ -992,7 +1001,7 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
     }
     Ok(ServiceSnapshot {
         profile_id: profile_id.to_owned(),
-        revision,
+        revision: revision.to_string(),
         torrents,
     })
 }
@@ -1219,7 +1228,7 @@ mod tests {
             SessionStore::open(&root, "default", &[configured]).expect("open session store");
         let request = add_request("add-1");
         let first = store.handle_durable(&request).expect("add");
-        assert_eq!(first.revision, 1);
+        assert_eq!(first.revision, "1");
         assert_eq!(store.handle_durable(&request).expect("retry"), first);
 
         let mut conflict = request.clone();
@@ -1239,7 +1248,7 @@ mod tests {
         let stale = RequestEnvelope {
             version: CONTROL_VERSION,
             request_id: "pause-stale".to_owned(),
-            expected_revision: Some(0),
+            expected_revision: Some("0".to_owned()),
             command: conflict.command,
         };
         assert!(matches!(

@@ -4,8 +4,8 @@ use std::fmt;
 use std::io;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rstorrent_protocol::bencode::MAX_BENCODE_INPUT_LENGTH;
@@ -87,6 +87,36 @@ pub trait DownloadCheckpointSink: Send + Sync {
     fn published(&self) -> Result<(), String>;
 }
 
+pub trait DownloadActivitySink: Send + Sync + fmt::Debug {
+    fn record(&self, event: DownloadActivityEvent);
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DownloadActivityEvent {
+    PieceStarted {
+        piece_index: u32,
+        piece_length: u32,
+    },
+    BlockRequested {
+        piece_index: u32,
+        begin: u32,
+        length: u32,
+    },
+    BlockReceived {
+        piece_index: u32,
+        begin: u32,
+        length: u32,
+    },
+    BlockStored {
+        piece_index: u32,
+        begin: u32,
+        length: u32,
+    },
+    PieceVerified {
+        piece_index: u32,
+    },
+}
+
 #[derive(Clone, Debug)]
 struct ContentDownloadConfig {
     peer: Option<SocketAddr>,
@@ -111,6 +141,7 @@ struct DownloadControlInner {
     received_bytes: AtomicUsize,
     stored_bytes: AtomicUsize,
     storage_write_delay_millis: AtomicU64,
+    activity_sink: Mutex<Option<Arc<dyn DownloadActivitySink>>>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -133,6 +164,7 @@ impl DownloadControl {
                 received_bytes: AtomicUsize::new(0),
                 stored_bytes: AtomicUsize::new(0),
                 storage_write_delay_millis: AtomicU64::new(0),
+                activity_sink: Mutex::new(None),
             }),
         }
     }
@@ -160,6 +192,26 @@ impl DownloadControl {
         self.inner
             .storage_write_delay_millis
             .store(millis, Ordering::Release);
+    }
+
+    pub fn set_activity_sink(&self, sink: Arc<dyn DownloadActivitySink>) {
+        *self
+            .inner
+            .activity_sink
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(sink);
+    }
+
+    fn emit(&self, event: DownloadActivityEvent) {
+        let sink = self
+            .inner
+            .activity_sink
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        if let Some(sink) = sink {
+            sink.record(event);
+        }
     }
 
     fn observe(&self, download: &OnePieceDownload) {
@@ -988,6 +1040,10 @@ async fn run_single_download(
         config.max_buffered_payload_bytes,
     )
     .map_err(DownloadError::Piece)?;
+    control.emit(DownloadActivityEvent::PieceStarted {
+        piece_index: 0,
+        piece_length,
+    });
     let mut storage = StagingFile::create(config.output_path.clone(), metainfo.total_length)
         .await
         .map_err(DownloadError::Storage)?;
@@ -1259,6 +1315,10 @@ async fn run_selective_download(
             &ranges,
         )
         .map_err(DownloadError::Piece)?;
+        control.emit(DownloadActivityEvent::PieceStarted {
+            piece_index,
+            piece_length,
+        });
         total_blocks += download.block_count();
         total_bytes += ranges
             .iter()
@@ -1627,14 +1687,24 @@ async fn process_actions(
                 send_message(peer, &PeerMessage::Interested).await?;
             }
             DownloadAction::Request(request) => {
-                control.record_requested(request.length as usize);
                 send_message(peer, &PeerMessage::Request(request)).await?;
+                control.record_requested(request.length as usize);
+                control.emit(DownloadActivityEvent::BlockRequested {
+                    piece_index: request.index,
+                    begin: request.begin,
+                    length: request.length,
+                });
             }
             DownloadAction::StoreBlock(block) => {
                 let index = block.index;
                 let begin = block.begin;
                 let length = block.bytes.len();
                 control.record_received(length);
+                control.emit(DownloadActivityEvent::BlockReceived {
+                    piece_index: index,
+                    begin,
+                    length: u32::try_from(length).expect("peer block length is bounded by u32"),
+                });
                 control.wait_before_storage().await;
                 if let Err(error) = storage.write_block(u64::from(begin), block.bytes).await {
                     download
@@ -1644,6 +1714,11 @@ async fn process_actions(
                     return Err(DownloadError::Storage(error));
                 }
                 control.record_stored(length);
+                control.emit(DownloadActivityEvent::BlockStored {
+                    piece_index: index,
+                    begin,
+                    length: u32::try_from(length).expect("peer block length is bounded by u32"),
+                });
                 pending.extend(
                     download
                         .on_block_stored(index, begin)
@@ -1662,7 +1737,12 @@ async fn process_actions(
                         .map_err(DownloadError::Piece)?,
                 );
             }
-            DownloadAction::Verified(piece) => return Ok(Some(piece)),
+            DownloadAction::Verified(piece) => {
+                control.emit(DownloadActivityEvent::PieceVerified {
+                    piece_index: piece.index,
+                });
+                return Ok(Some(piece));
+            }
         }
     }
     Ok(None)
@@ -1684,14 +1764,24 @@ async fn process_selective_actions(
                 send_message(peer, &PeerMessage::Interested).await?;
             }
             DownloadAction::Request(request) => {
-                control.record_requested(request.length as usize);
                 send_message(peer, &PeerMessage::Request(request)).await?;
+                control.record_requested(request.length as usize);
+                control.emit(DownloadActivityEvent::BlockRequested {
+                    piece_index: request.index,
+                    begin: request.begin,
+                    length: request.length,
+                });
             }
             DownloadAction::StoreBlock(block) => {
                 let index = block.index;
                 let begin = block.begin;
                 let length = block.bytes.len();
                 control.record_received(length);
+                control.emit(DownloadActivityEvent::BlockReceived {
+                    piece_index: index,
+                    begin,
+                    length: u32::try_from(length).expect("peer block length is bounded by u32"),
+                });
                 control.wait_before_storage().await;
                 let stats = match storage.write_block(index, begin, block.bytes).await {
                     Ok(stats) => stats,
@@ -1704,6 +1794,11 @@ async fn process_selective_actions(
                     }
                 };
                 control.record_stored(length);
+                control.emit(DownloadActivityEvent::BlockStored {
+                    piece_index: index,
+                    begin,
+                    length: u32::try_from(length).expect("peer block length is bounded by u32"),
+                });
                 *selected_written_bytes += stats.wanted_bytes;
                 *part_written_bytes += stats.skipped_bytes;
                 pending.extend(
@@ -1724,7 +1819,12 @@ async fn process_selective_actions(
                         .map_err(DownloadError::Piece)?,
                 );
             }
-            DownloadAction::Verified(piece) => return Ok(Some(piece)),
+            DownloadAction::Verified(piece) => {
+                control.emit(DownloadActivityEvent::PieceVerified {
+                    piece_index: piece.index,
+                });
+                return Ok(Some(piece));
+            }
         }
     }
     Ok(None)

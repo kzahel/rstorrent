@@ -6,6 +6,7 @@ mod application;
 mod control;
 mod have;
 mod store;
+mod views;
 
 pub use application::{
     ApplicationConfig, ApplicationError, ApplicationService, application_error_response,
@@ -16,3 +17,8 @@ pub use control::{
 };
 pub use have::{HaveError, HaveState};
 pub use store::{ConfiguredStorageRoot, ResumeRecord, SessionStore, StoreError};
+pub use views::{
+    ActivePiece, DeliveryPolicy, IndexRange, ResetReason, SubscriptionError, SubscriptionSpec,
+    SubscriptionStats, TorrentView, VIEW_CONTRACT_VERSION, ViewHub, ViewPatch, ViewProjection,
+    ViewSelector, ViewSnapshot, ViewSubscription, ViewUpdate, ViewUpdatePayload,
+};

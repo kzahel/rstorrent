@@ -18,3 +18,4 @@ serde_json = "1.0.151"
 sha1 = "0.10.6"
 tokio = "1.47.1"
 tokio-util = "0.7.16"
+ts-rs = { version = "12.0.1", features = ["serde-compat"] }
