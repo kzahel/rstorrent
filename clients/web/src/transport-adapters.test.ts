@@ -96,6 +96,7 @@ function update(sequence: number): ViewUpdate {
         {
           torrent_id: "0123456789abcdef0123456789abcdef01234567",
           state: "downloading",
+          storage_state: "staging",
           metadata_available: true,
           piece_count: 100_000,
           verified_piece_count: sequence,
