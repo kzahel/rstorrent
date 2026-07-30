@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use rstorrent_protocol::bencode::MAX_BENCODE_INPUT_LENGTH;
-use rstorrent_protocol::magnet::{Magnet, MagnetError};
+use rstorrent_protocol::magnet::{Magnet, MagnetError, PeerHint};
 use rstorrent_protocol::metadata::{
     MetadataDownload, MetadataDownloadAction, MetadataError, MetadataExtensionUpdate,
     MetadataMessage, UT_METADATA_LOCAL_ID, encode_extension_handshake, encode_metadata_reject,
@@ -30,7 +30,7 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 use crate::selective_storage::{
-    DescriptorStorage, PreparedFileHash, SelectiveStorage, SelectiveStorageError,
+    DescriptorStorage, PreparedFileHash, ResumedStorage, SelectiveStorage, SelectiveStorageError,
     remove_selective_part_if_present, remove_selective_staging_if_present,
 };
 use crate::storage::{
@@ -69,8 +69,28 @@ pub struct MagnetDownloadConfig {
 }
 
 #[derive(Clone, Debug)]
+pub struct ResumableMagnetDownloadConfig {
+    pub magnet: String,
+    pub output_path: PathBuf,
+    pub timeout: Duration,
+    pub max_buffered_payload_bytes: usize,
+    pub skip_files: Vec<usize>,
+    pub verified_info: Option<Vec<u8>>,
+    pub verified_pieces: Vec<bool>,
+}
+
+pub trait DownloadCheckpointSink: Send + Sync {
+    fn metadata_verified(&self, raw_info: &[u8]) -> Result<(), String>;
+    fn storage_prepared(&self, storage: ResumedStorage) -> Result<(), String>;
+    fn have_rechecked(&self, verified_pieces: &[bool]) -> Result<(), String>;
+    fn piece_durable(&self, piece_index: usize) -> Result<(), String>;
+    fn published(&self) -> Result<(), String>;
+}
+
+#[derive(Clone, Debug)]
 struct ContentDownloadConfig {
-    peer: SocketAddr,
+    peer: Option<SocketAddr>,
+    peer_hints: Vec<PeerHint>,
     output_path: PathBuf,
     max_buffered_payload_bytes: usize,
     skip_files: Vec<usize>,
@@ -239,6 +259,7 @@ pub enum DownloadError {
     ExtensionProtocolUnsupported,
     MetadataExtensionDisabled,
     InvalidPremetadataState(&'static str),
+    Checkpoint(String),
     Cancelled,
     TimedOut {
         timeout: Duration,
@@ -288,6 +309,7 @@ impl fmt::Display for DownloadError {
                     "peer sent invalid state before metadata: {reason}"
                 )
             }
+            Self::Checkpoint(message) => write!(formatter, "durable checkpoint: {message}"),
             Self::Cancelled => write!(formatter, "download cancelled"),
             Self::TimedOut { timeout } => {
                 write!(
@@ -339,6 +361,36 @@ pub async fn download_magnet_with_peer_hint(
     config: MagnetDownloadConfig,
 ) -> Result<DownloadReport, DownloadError> {
     download_magnet_with_peer_hint_with_control(config, DownloadControl::new()).await
+}
+
+pub async fn resume_magnet_with_peer_hint(
+    config: ResumableMagnetDownloadConfig,
+    checkpoints: Arc<dyn DownloadCheckpointSink>,
+) -> Result<DownloadReport, DownloadError> {
+    resume_magnet_with_peer_hint_with_control(config, checkpoints, DownloadControl::new()).await
+}
+
+pub async fn resume_magnet_with_peer_hint_with_control(
+    config: ResumableMagnetDownloadConfig,
+    checkpoints: Arc<dyn DownloadCheckpointSink>,
+    control: DownloadControl,
+) -> Result<DownloadReport, DownloadError> {
+    validate_resumable_magnet_download_config(&config)?;
+    let configured_timeout = config.timeout;
+    let result = tokio::select! {
+        biased;
+        _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
+        result = timeout(
+            configured_timeout,
+            run_resumable_magnet_download(config, checkpoints, control.clone()),
+        ) => result
+            .map_err(|_| DownloadError::TimedOut {
+                timeout: configured_timeout,
+            })
+            .and_then(|result| result),
+    };
+    control.clear_buffered_payload();
+    result
 }
 
 pub async fn download_magnet_with_peer_hint_with_control(
@@ -462,6 +514,15 @@ fn validate_download_config(config: &DownloadConfig) -> Result<(), DownloadError
 }
 
 fn validate_magnet_download_config(config: &MagnetDownloadConfig) -> Result<(), DownloadError> {
+    if config.timeout.is_zero() {
+        return Err(DownloadError::InvalidTimeout);
+    }
+    Ok(())
+}
+
+fn validate_resumable_magnet_download_config(
+    config: &ResumableMagnetDownloadConfig,
+) -> Result<(), DownloadError> {
     if config.timeout.is_zero() {
         return Err(DownloadError::InvalidTimeout);
     }
@@ -598,9 +659,10 @@ async fn run_magnet_download(
                 continue;
             }
             match acquire_metadata(address, magnet.info_hash).await {
-                Ok((metainfo, connection)) => {
+                Ok((_raw_info, metainfo, connection)) => {
                     let content_config = ContentDownloadConfig {
-                        peer: address,
+                        peer: Some(address),
+                        peer_hints: Vec::new(),
                         output_path: config.output_path,
                         max_buffered_payload_bytes: config.max_buffered_payload_bytes,
                         skip_files: config.skip_files,
@@ -612,6 +674,92 @@ async fn run_magnet_download(
                         control,
                         None,
                         Some(connection),
+                        None,
+                    )
+                    .await;
+                }
+                Err(error) => last_error = Some(error),
+            }
+        }
+    }
+    Err(last_error.unwrap_or(DownloadError::NoUsablePeerHint))
+}
+
+#[derive(Clone)]
+struct ResumeContext {
+    verified_pieces: Vec<bool>,
+    checkpoints: Arc<dyn DownloadCheckpointSink>,
+}
+
+async fn run_resumable_magnet_download(
+    config: ResumableMagnetDownloadConfig,
+    checkpoints: Arc<dyn DownloadCheckpointSink>,
+    control: DownloadControl,
+) -> Result<DownloadReport, DownloadError> {
+    let magnet = Magnet::parse(&config.magnet).map_err(DownloadError::Magnet)?;
+    if magnet.peer_hints.is_empty() {
+        return Err(DownloadError::NoUsablePeerHint);
+    }
+    let resume = ResumeContext {
+        verified_pieces: config.verified_pieces,
+        checkpoints: checkpoints.clone(),
+    };
+
+    if let Some(raw_info) = config.verified_info {
+        let metainfo = Metainfo::from_info_bytes(&raw_info).map_err(DownloadError::Metainfo)?;
+        if metainfo.info_hash != magnet.info_hash {
+            return Err(DownloadError::Checkpoint(
+                "stored metadata does not match the magnet identity".to_owned(),
+            ));
+        }
+        let content_config = ContentDownloadConfig {
+            peer: None,
+            peer_hints: magnet.peer_hints,
+            output_path: config.output_path,
+            max_buffered_payload_bytes: config.max_buffered_payload_bytes,
+            skip_files: config.skip_files,
+            materialize_files: Vec::new(),
+        };
+        return run_content_download(content_config, metainfo, control, None, None, Some(resume))
+            .await;
+    }
+
+    let mut last_error = None;
+    for hint in &magnet.peer_hints {
+        let addresses = match lookup_host((hint.host.as_str(), hint.port)).await {
+            Ok(addresses) => addresses,
+            Err(source) => {
+                last_error = Some(DownloadError::Io {
+                    operation: "resolve magnet peer hint",
+                    source,
+                });
+                continue;
+            }
+        };
+        for address in addresses {
+            if !address.ip().is_loopback() {
+                continue;
+            }
+            match acquire_metadata(address, magnet.info_hash).await {
+                Ok((raw_info, metainfo, connection)) => {
+                    checkpoints
+                        .metadata_verified(&raw_info)
+                        .map_err(DownloadError::Checkpoint)?;
+                    let content_config = ContentDownloadConfig {
+                        peer: Some(address),
+                        peer_hints: Vec::new(),
+                        output_path: config.output_path,
+                        max_buffered_payload_bytes: config.max_buffered_payload_bytes,
+                        skip_files: config.skip_files,
+                        materialize_files: Vec::new(),
+                    };
+                    return run_content_download(
+                        content_config,
+                        metainfo,
+                        control,
+                        None,
+                        Some(connection),
+                        Some(resume),
                     )
                     .await;
                 }
@@ -625,7 +773,7 @@ async fn run_magnet_download(
 async fn acquire_metadata(
     address: SocketAddr,
     info_hash: [u8; 20],
-) -> Result<(Metainfo, ConnectedPeer), DownloadError> {
+) -> Result<(Vec<u8>, Metainfo, ConnectedPeer), DownloadError> {
     let (mut peer, handshake) = connect_peer(address, info_hash, true).await?;
     if !handshake.supports_extensions() {
         return Err(DownloadError::ExtensionProtocolUnsupported);
@@ -763,12 +911,12 @@ fn finish_metadata_acquisition(
     bytes: Vec<u8>,
     peer_state: PremetadataPeerState,
     mut peer: ConnectedPeer,
-) -> Result<(Metainfo, ConnectedPeer), DownloadError> {
+) -> Result<(Vec<u8>, Metainfo, ConnectedPeer), DownloadError> {
     let metainfo = Metainfo::from_info_bytes(&bytes).map_err(DownloadError::Metainfo)?;
     let mut queued_messages = peer_state.validated_messages(&metainfo)?;
     queued_messages.append(&mut peer.queued_messages);
     peer.queued_messages = queued_messages;
-    Ok((metainfo, peer))
+    Ok((bytes, metainfo, peer))
 }
 
 async fn run_download(
@@ -779,13 +927,14 @@ async fn run_download(
     let metainfo_bytes = read_bounded_metainfo(&config.metainfo_path).await?;
     let metainfo = Metainfo::from_bytes(&metainfo_bytes).map_err(DownloadError::Metainfo)?;
     let content_config = ContentDownloadConfig {
-        peer: config.peer,
+        peer: Some(config.peer),
+        peer_hints: Vec::new(),
         output_path: config.output_path,
         max_buffered_payload_bytes: config.max_buffered_payload_bytes,
         skip_files: config.skip_files,
         materialize_files: config.materialize_files,
     };
-    run_content_download(content_config, metainfo, control, descriptors, None).await
+    run_content_download(content_config, metainfo, control, descriptors, None, None).await
 }
 
 async fn run_content_download(
@@ -794,9 +943,15 @@ async fn run_content_download(
     control: DownloadControl,
     descriptors: Option<DescriptorStorage>,
     connection: Option<ConnectedPeer>,
+    resume: Option<ResumeContext>,
 ) -> Result<DownloadReport, DownloadError> {
     match metainfo.mode {
         rstorrent_protocol::metainfo::MetainfoMode::SingleFile => {
+            if resume.is_some() {
+                return Err(DownloadError::Metainfo(MetainfoError::Unsupported(
+                    "resumable execution currently requires multi-file metainfo",
+                )));
+            }
             if descriptors.is_some() {
                 return Err(DownloadError::Metainfo(MetainfoError::Unsupported(
                     "descriptor diagnostic execution requires multi-file metainfo",
@@ -813,7 +968,7 @@ async fn run_content_download(
             run_single_download(config, metainfo, control, connection).await
         }
         rstorrent_protocol::metainfo::MetainfoMode::MultiFile => {
-            run_selective_download(config, metainfo, control, descriptors, connection).await
+            run_selective_download(config, metainfo, control, descriptors, connection, resume).await
         }
     }
 }
@@ -840,9 +995,13 @@ async fn run_single_download(
     let mut peer = match connection {
         Some(connection) => connection,
         None => {
-            connect_peer(config.peer, metainfo.info_hash, false)
-                .await?
-                .0
+            connect_peer(
+                config.peer.ok_or(DownloadError::NoUsablePeerHint)?,
+                metainfo.info_hash,
+                false,
+            )
+            .await?
+            .0
         }
     };
     loop {
@@ -904,7 +1063,13 @@ async fn run_selective_download(
     control: DownloadControl,
     descriptors: Option<DescriptorStorage>,
     connection: Option<ConnectedPeer>,
+    resume: Option<ResumeContext>,
 ) -> Result<DownloadReport, DownloadError> {
+    if resume.is_some() && descriptors.is_some() {
+        return Err(DownloadError::Metainfo(MetainfoError::Unsupported(
+            "resumable descriptor storage is not implemented",
+        )));
+    }
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let selection =
         FileSelection::new(&layout, &config.skip_files).map_err(DownloadError::Layout)?;
@@ -941,10 +1106,31 @@ async fn run_selective_download(
             "selection with no wanted pieces",
         )));
     }
+    let last_wanted_piece = usize::try_from(
+        plans
+            .last()
+            .expect("at least one wanted piece was planned")
+            .0,
+    )
+    .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
 
     let descriptor_backed = descriptors.is_some();
-    let mut storage = match descriptors {
-        Some(descriptors) => {
+    let mut verified_pieces = match &resume {
+        Some(resume) if resume.verified_pieces.is_empty() => vec![false; layout.piece_count()],
+        Some(resume) if resume.verified_pieces.len() == layout.piece_count() => {
+            resume.verified_pieces.clone()
+        }
+        Some(resume) => {
+            return Err(DownloadError::Checkpoint(format!(
+                "have state has {} pieces, expected {}",
+                resume.verified_pieces.len(),
+                layout.piece_count()
+            )));
+        }
+        None => vec![false; layout.piece_count()],
+    };
+    let (mut storage, resumed_storage) = match (descriptors, &resume) {
+        (Some(descriptors), None) => (
             SelectiveStorage::create_with_descriptors(
                 &metainfo,
                 layout.clone(),
@@ -953,8 +1139,26 @@ async fn run_selective_download(
                 descriptors,
             )
             .await
+            .map_err(DownloadError::SelectiveStorage)?,
+            None,
+        ),
+        (None, Some(resume)) => {
+            let (storage, resumed) = SelectiveStorage::resume(
+                config.output_path.clone(),
+                &metainfo,
+                layout.clone(),
+                selection,
+                verified_pieces.clone(),
+            )
+            .await
+            .map_err(DownloadError::SelectiveStorage)?;
+            resume
+                .checkpoints
+                .storage_prepared(resumed)
+                .map_err(DownloadError::Checkpoint)?;
+            (storage, Some(resumed))
         }
-        None => {
+        (None, None) => (
             SelectiveStorage::create(
                 config.output_path.clone(),
                 &metainfo,
@@ -962,20 +1166,70 @@ async fn run_selective_download(
                 selection,
             )
             .await
+            .map_err(DownloadError::SelectiveStorage)?,
+            None,
+        ),
+        (Some(_), Some(_)) => unreachable!("descriptor resume was rejected"),
+    };
+
+    if let (Some(resume), Some(resumed)) = (&resume, resumed_storage) {
+        let previous = verified_pieces.clone();
+        match resumed {
+            ResumedStorage::Created => {
+                verified_pieces.fill(false);
+                for piece_index in 0..layout.piece_count() {
+                    storage
+                        .set_verified(piece_index, false)
+                        .map_err(DownloadError::SelectiveStorage)?;
+                }
+            }
+            ResumedStorage::Staging | ResumedStorage::Published => {
+                for (piece_index, verified) in verified_pieces.iter_mut().enumerate() {
+                    if !*verified {
+                        continue;
+                    }
+                    let piece_index_u32 = u32::try_from(piece_index)
+                        .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+                    let actual = storage
+                        .hash_piece(piece_index_u32)
+                        .await
+                        .map_err(DownloadError::SelectiveStorage)?;
+                    if actual != metainfo.piece_hashes[piece_index] {
+                        *verified = false;
+                        storage
+                            .set_verified(piece_index, false)
+                            .map_err(DownloadError::SelectiveStorage)?;
+                    }
+                }
+            }
+        }
+        if verified_pieces != previous {
+            resume
+                .checkpoints
+                .have_rechecked(&verified_pieces)
+                .map_err(DownloadError::Checkpoint)?;
         }
     }
-    .map_err(DownloadError::SelectiveStorage)?;
+
+    plans.retain(|(piece_index, _)| {
+        usize::try_from(*piece_index)
+            .ok()
+            .and_then(|piece_index| verified_pieces.get(piece_index))
+            .is_none_or(|verified| !*verified)
+    });
     let selected_file_bytes = storage.selected_bytes();
     let skipped_file_bytes = storage.skipped_bytes();
     let padding_bytes = storage.padding_bytes();
     let part_path = storage.part_path().map(Path::to_path_buf);
-    let mut peer = match connection {
-        Some(connection) => connection,
-        None => {
-            connect_peer(config.peer, metainfo.info_hash, false)
-                .await?
-                .0
-        }
+    let mut peer = if plans.is_empty() {
+        None
+    } else {
+        Some(match connection {
+            Some(connection) => connection,
+            None => {
+                connect_content_peer(config.peer, &config.peer_hints, metainfo.info_hash).await?
+            }
+        })
     };
     let mut availability = vec![false; layout.piece_count()];
     let mut availability_known = false;
@@ -988,6 +1242,9 @@ async fn run_selective_download(
     let mut last_piece = None;
 
     for (piece_index, ranges) in plans {
+        let peer = peer
+            .as_mut()
+            .expect("missing pieces require a connected peer");
         let piece_index_usize = usize::try_from(piece_index)
             .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
         let piece_length = layout
@@ -1035,16 +1292,30 @@ async fn run_selective_download(
         )
         .await?
         {
-            storage
-                .record_verified(piece.index as usize)
-                .map_err(DownloadError::SelectiveStorage)?;
+            if let Some(resume) = &resume {
+                storage
+                    .sync_piece(piece.index)
+                    .await
+                    .map_err(DownloadError::SelectiveStorage)?;
+                storage
+                    .record_verified(piece.index as usize)
+                    .map_err(DownloadError::SelectiveStorage)?;
+                resume
+                    .checkpoints
+                    .piece_durable(piece.index as usize)
+                    .map_err(DownloadError::Checkpoint)?;
+            } else {
+                storage
+                    .record_verified(piece.index as usize)
+                    .map_err(DownloadError::SelectiveStorage)?;
+            }
             payload_high_water = payload_high_water.max(download.payload_budget().high_water);
             last_piece = Some(piece);
             continue;
         }
 
         loop {
-            let message = match next_peer_message(&mut peer).await {
+            let message = match next_peer_message(peer).await {
                 Ok(message) => message,
                 Err(error) => {
                     download.cancel_pending();
@@ -1082,9 +1353,23 @@ async fn run_selective_download(
             )
             .await?
             {
-                storage
-                    .record_verified(piece.index as usize)
-                    .map_err(DownloadError::SelectiveStorage)?;
+                if let Some(resume) = &resume {
+                    storage
+                        .sync_piece(piece.index)
+                        .await
+                        .map_err(DownloadError::SelectiveStorage)?;
+                    storage
+                        .record_verified(piece.index as usize)
+                        .map_err(DownloadError::SelectiveStorage)?;
+                    resume
+                        .checkpoints
+                        .piece_durable(piece.index as usize)
+                        .map_err(DownloadError::Checkpoint)?;
+                } else {
+                    storage
+                        .record_verified(piece.index as usize)
+                        .map_err(DownloadError::SelectiveStorage)?;
+                }
                 payload_high_water = payload_high_water.max(download.payload_budget().high_water);
                 last_piece = Some(piece);
                 break;
@@ -1097,11 +1382,22 @@ async fn run_selective_download(
             .prepare_descriptors()
             .await
             .map_err(DownloadError::SelectiveStorage)?;
+    } else if storage.is_published() {
+        storage
+            .finish_published()
+            .await
+            .map_err(DownloadError::SelectiveStorage)?;
     } else {
         storage
             .publish()
             .await
             .map_err(DownloadError::SelectiveStorage)?;
+    }
+    if let Some(resume) = &resume {
+        resume
+            .checkpoints
+            .published()
+            .map_err(DownloadError::Checkpoint)?;
     }
     let part_slots_before_materialization = storage.part_slots();
     storage
@@ -1125,10 +1421,9 @@ async fn run_selective_download(
     } else {
         Vec::new()
     };
-    let last_piece = last_piece.expect("at least one wanted piece was planned");
     Ok(DownloadReport {
         info_hash: metainfo.info_hash,
-        piece_hash: last_piece.hash,
+        piece_hash: last_piece.map_or(metainfo.piece_hashes[last_wanted_piece], |piece| piece.hash),
         bytes_written: total_bytes,
         block_count: total_blocks,
         payload_limit: config.max_buffered_payload_bytes,
@@ -1149,6 +1444,39 @@ async fn run_selective_download(
         part_path,
         prepared_files,
     })
+}
+
+async fn connect_content_peer(
+    address: Option<SocketAddr>,
+    peer_hints: &[PeerHint],
+    info_hash: [u8; 20],
+) -> Result<ConnectedPeer, DownloadError> {
+    if let Some(address) = address {
+        return Ok(connect_peer(address, info_hash, false).await?.0);
+    }
+    let mut last_error = None;
+    for hint in peer_hints {
+        let addresses = match lookup_host((hint.host.as_str(), hint.port)).await {
+            Ok(addresses) => addresses,
+            Err(source) => {
+                last_error = Some(DownloadError::Io {
+                    operation: "resolve magnet peer hint",
+                    source,
+                });
+                continue;
+            }
+        };
+        for address in addresses {
+            if !address.ip().is_loopback() {
+                continue;
+            }
+            match connect_peer(address, info_hash, false).await {
+                Ok((peer, _)) => return Ok(peer),
+                Err(error) => last_error = Some(error),
+            }
+        }
+    }
+    Err(last_error.unwrap_or(DownloadError::NoUsablePeerHint))
 }
 
 async fn connect_peer(

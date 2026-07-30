@@ -73,6 +73,13 @@ pub struct PreparedFileHash {
     pub sha1: [u8; 20],
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ResumedStorage {
+    Created,
+    Staging,
+    Published,
+}
+
 #[derive(Debug)]
 pub enum SelectiveStorageError {
     InvalidOutputPath,
@@ -80,6 +87,15 @@ pub enum SelectiveStorageError {
     ExistingStaging(PathBuf),
     ExistingPartFile(PathBuf),
     ExistingMaterialization(PathBuf),
+    IncompleteResumeArtifacts,
+    UnexpectedFileType {
+        path: PathBuf,
+    },
+    UnexpectedFileLength {
+        file_index: usize,
+        expected: u64,
+        actual: u64,
+    },
     Layout(LayoutError),
     PartFile(PartFileError),
     MissingWantedFile {
@@ -138,6 +154,25 @@ impl fmt::Display for SelectiveStorageError {
                 formatter,
                 "materialization path already exists: {}",
                 path.display()
+            ),
+            Self::IncompleteResumeArtifacts => write!(
+                formatter,
+                "resumable storage must contain one selected tree and its part file"
+            ),
+            Self::UnexpectedFileType { path } => {
+                write!(
+                    formatter,
+                    "resumable storage is not a regular file: {}",
+                    path.display()
+                )
+            }
+            Self::UnexpectedFileLength {
+                file_index,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "resumable file {file_index} has length {actual}, expected {expected}"
             ),
             Self::Layout(error) => write!(formatter, "storage layout: {error}"),
             Self::PartFile(error) => write!(formatter, "part file: {error}"),
@@ -457,6 +492,112 @@ impl SelectiveStorage {
         })
     }
 
+    pub async fn resume(
+        output_root: PathBuf,
+        metainfo: &Metainfo,
+        layout: TorrentLayout,
+        selection: FileSelection,
+        verified: Vec<bool>,
+    ) -> Result<(Self, ResumedStorage), SelectiveStorageError> {
+        if verified.len() != layout.piece_count() {
+            return Err(SelectiveStorageError::InvalidVerifiedPiece {
+                piece_index: verified.len(),
+            });
+        }
+        let staging_root = selective_staging_path(&output_root)?;
+        let part_path = selective_part_path(&output_root)?;
+        let output_exists = path_exists(&output_root, "inspect resumable selected output").await?;
+        let staging_exists =
+            path_exists(&staging_root, "inspect resumable selected staging").await?;
+        let part_exists = path_exists(&part_path, "inspect resumable part file").await?;
+
+        if !output_exists && !staging_exists && !part_exists {
+            let storage = Self::create(output_root, metainfo, layout, selection).await?;
+            return Ok((storage, ResumedStorage::Created));
+        }
+        if output_exists == staging_exists || !part_exists {
+            return Err(SelectiveStorageError::IncompleteResumeArtifacts);
+        }
+
+        let (tree_root, resumed, published) = if output_exists {
+            (&output_root, ResumedStorage::Published, true)
+        } else {
+            (&staging_root, ResumedStorage::Staging, false)
+        };
+        let tree_metadata = tokio::fs::symlink_metadata(tree_root)
+            .await
+            .map_err(|source| SelectiveStorageError::Io {
+                operation: "inspect resumable selected tree",
+                source,
+            })?;
+        if !tree_metadata.is_dir() || tree_metadata.file_type().is_symlink() {
+            return Err(SelectiveStorageError::UnexpectedFileType {
+                path: tree_root.clone(),
+            });
+        }
+
+        let mut files = Vec::with_capacity(layout.files().len());
+        for (file_index, metainfo_file) in layout.files().iter().enumerate() {
+            if metainfo_file.padding || !selection.is_wanted(file_index) {
+                files.push(None);
+                continue;
+            }
+            let path = joined_path(tree_root, &metainfo_file.path);
+            let metadata = tokio::fs::symlink_metadata(&path).await.map_err(|source| {
+                SelectiveStorageError::Io {
+                    operation: "inspect resumable selected file",
+                    source,
+                }
+            })?;
+            if !metadata.is_file() || metadata.file_type().is_symlink() {
+                return Err(SelectiveStorageError::UnexpectedFileType { path });
+            }
+            if metadata.len() != metainfo_file.length {
+                return Err(SelectiveStorageError::UnexpectedFileLength {
+                    file_index,
+                    expected: metainfo_file.length,
+                    actual: metadata.len(),
+                });
+            }
+            files.push(Some(
+                OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(&path)
+                    .await
+                    .map_err(|source| SelectiveStorageError::Io {
+                        operation: "open resumable selected file",
+                        source,
+                    })?,
+            ));
+        }
+
+        let identity = PartFileIdentity {
+            info_hash: metainfo.info_hash,
+            piece_count: layout.piece_count(),
+            piece_length: layout.piece_length(),
+            total_length: layout.total_length(),
+        };
+        let part_file = PartFile::open(part_path.clone(), identity).await?;
+        Ok((
+            Self {
+                backing: StorageBacking::Paths {
+                    output_root,
+                    staging_root,
+                    part_path,
+                },
+                identity,
+                layout,
+                selection,
+                files,
+                part_file: Some(part_file),
+                verified,
+                published,
+            },
+            resumed,
+        ))
+    }
+
     pub fn selected_bytes(&self) -> u64 {
         self.layout
             .files()
@@ -497,6 +638,10 @@ impl SelectiveStorage {
         self.part_file
             .as_ref()
             .map_or(0, PartFile::mapped_piece_count)
+    }
+
+    pub fn is_published(&self) -> bool {
+        self.published
     }
 
     pub async fn write_block(
@@ -619,11 +764,54 @@ impl SelectiveStorage {
     }
 
     pub fn record_verified(&mut self, piece_index: usize) -> Result<(), SelectiveStorageError> {
+        self.set_verified(piece_index, true)
+    }
+
+    pub fn set_verified(
+        &mut self,
+        piece_index: usize,
+        verified: bool,
+    ) -> Result<(), SelectiveStorageError> {
         let piece = self
             .verified
             .get_mut(piece_index)
             .ok_or(SelectiveStorageError::InvalidVerifiedPiece { piece_index })?;
-        *piece = true;
+        *piece = verified;
+        Ok(())
+    }
+
+    pub async fn sync_piece(&mut self, piece_index: u32) -> Result<(), SelectiveStorageError> {
+        let piece_length = self.layout.piece_length_at(piece_index)?;
+        let segments = self
+            .layout
+            .segments(piece_index, 0, piece_length, &self.selection)?;
+        let mut wanted_files = Vec::new();
+        let mut sync_part = false;
+        for segment in segments {
+            match segment.target {
+                SegmentTarget::WantedFile { file_index, .. } => {
+                    if !wanted_files.contains(&file_index) {
+                        wanted_files.push(file_index);
+                    }
+                }
+                SegmentTarget::SkippedFile { .. } => sync_part = true,
+                SegmentTarget::Padding => {}
+            }
+        }
+        for file_index in wanted_files {
+            self.files[file_index]
+                .as_ref()
+                .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?
+                .sync_data()
+                .await
+                .map_err(|source| SelectiveStorageError::Io {
+                    operation: "flush verified selected piece",
+                    source,
+                })?;
+        }
+        if sync_part {
+            self.part_file_mut()?.sync_payload().await?;
+        }
         Ok(())
     }
 
@@ -664,6 +852,13 @@ impl SelectiveStorage {
         self.sync_verified().await?;
         self.published = true;
         Ok(())
+    }
+
+    pub async fn finish_published(&mut self) -> Result<(), SelectiveStorageError> {
+        if !self.published {
+            return Err(SelectiveStorageError::NotPublished);
+        }
+        self.sync_verified().await
     }
 
     async fn sync_verified(&mut self) -> Result<(), SelectiveStorageError> {
@@ -1156,7 +1351,7 @@ mod tests {
     use sha1::{Digest, Sha1};
 
     use super::{
-        DescriptorFile, DescriptorStorage, SelectiveStorage, SelectiveStorageError,
+        DescriptorFile, DescriptorStorage, ResumedStorage, SelectiveStorage, SelectiveStorageError,
         collect_descriptors, materialization_path, remove_selective_part_if_present,
         remove_selective_staging_if_present, selective_part_path, selective_staging_path,
     };
@@ -1391,6 +1586,96 @@ mod tests {
                 .await
                 .expect("part exists")
         );
+        clean(&output).await;
+    }
+
+    #[tokio::test]
+    async fn resumes_staging_and_published_trees_with_exact_geometry() {
+        let output = test_path("resume");
+        clean(&output).await;
+        let metainfo = fixture();
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[1, 2]).expect("selection");
+        let bytes = torrent_bytes(&metainfo);
+        let mut storage =
+            SelectiveStorage::create(output.clone(), &metainfo, layout.clone(), selection.clone())
+                .await
+                .expect("create resumable storage");
+        for request in layout
+            .request_ranges(0, &selection)
+            .expect("first-piece requests")
+        {
+            let begin = request.begin as usize;
+            storage
+                .write_block(
+                    0,
+                    request.begin,
+                    bytes[begin..begin + request.length as usize].to_vec(),
+                )
+                .await
+                .expect("write first piece");
+        }
+        let expected_hash = storage.hash_piece(0).await.expect("hash first piece");
+        storage.sync_piece(0).await.expect("sync first piece");
+        storage.record_verified(0).expect("record first piece");
+        drop(storage);
+
+        let mut verified = vec![false; layout.piece_count()];
+        verified[0] = true;
+        let (mut storage, resumed) = SelectiveStorage::resume(
+            output.clone(),
+            &metainfo,
+            layout.clone(),
+            selection.clone(),
+            verified.clone(),
+        )
+        .await
+        .expect("resume staging");
+        assert_eq!(resumed, ResumedStorage::Staging);
+        assert_eq!(
+            storage.hash_piece(0).await.expect("recheck first piece"),
+            expected_hash
+        );
+        for piece_index in [2_usize, 3, 4] {
+            storage
+                .record_verified(piece_index)
+                .expect("complete selection for publication");
+        }
+        storage.publish().await.expect("publish resumed tree");
+        drop(storage);
+
+        let (storage, resumed) = SelectiveStorage::resume(
+            output.clone(),
+            &metainfo,
+            layout.clone(),
+            selection,
+            verified,
+        )
+        .await
+        .expect("resume published");
+        assert_eq!(resumed, ResumedStorage::Published);
+        assert!(storage.is_published());
+        drop(storage);
+
+        let wanted = output.join("wanted/start.bin");
+        let file = tokio::fs::OpenOptions::new()
+            .write(true)
+            .open(&wanted)
+            .await
+            .expect("open wanted file");
+        file.set_len(1).await.expect("truncate wanted file");
+        drop(file);
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[1, 2]).expect("selection");
+        assert!(matches!(
+            SelectiveStorage::resume(output.clone(), &metainfo, layout, selection, vec![false; 5])
+                .await,
+            Err(SelectiveStorageError::UnexpectedFileLength {
+                file_index: 0,
+                expected: 20_000,
+                actual: 1
+            })
+        ));
         clean(&output).await;
     }
 

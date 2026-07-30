@@ -9,10 +9,12 @@ mod selective_storage;
 mod storage;
 
 pub use driver::{
-    DownloadConfig, DownloadControl, DownloadError, DownloadProgress, DownloadReport,
-    MagnetDownloadConfig, download_magnet_with_peer_hint,
-    download_magnet_with_peer_hint_with_control, download_verified_piece,
-    download_verified_piece_to_descriptors_with_control, download_verified_piece_with_control,
+    DownloadCheckpointSink, DownloadConfig, DownloadControl, DownloadError, DownloadProgress,
+    DownloadReport, MagnetDownloadConfig, ResumableMagnetDownloadConfig,
+    download_magnet_with_peer_hint, download_magnet_with_peer_hint_with_control,
+    download_verified_piece, download_verified_piece_to_descriptors_with_control,
+    download_verified_piece_with_control, resume_magnet_with_peer_hint,
+    resume_magnet_with_peer_hint_with_control,
 };
 pub use metadata_seed::{
     MetadataSeedConfig, MetadataSeedError, MetadataSeedReport, MetadataSeedServer,
@@ -21,8 +23,8 @@ pub use metadata_seed::{
 pub use part_file::{PartFile, PartFileError, PartFileIdentity};
 pub use selective_storage::{
     DescriptorFile, DescriptorFileRole, DescriptorStorage, DescriptorStoragePlan,
-    DescriptorStoragePlanFile, MaterializationReport, PreparedFileHash, SelectiveStorage,
-    SelectiveStorageError, SelectiveWriteStats, plan_descriptor_storage,
+    DescriptorStoragePlanFile, MaterializationReport, PreparedFileHash, ResumedStorage,
+    SelectiveStorage, SelectiveStorageError, SelectiveWriteStats, plan_descriptor_storage,
     remove_selective_part_if_present, remove_selective_staging_if_present, selective_part_path,
     selective_staging_path,
 };
