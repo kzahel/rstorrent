@@ -224,6 +224,7 @@ def wait_for_recheck_clear(
 def wait_for_complete(
     process: subprocess.Popen[str],
     fixture: Fixture,
+    minimum_revision: int = 0,
 ) -> dict[str, Any]:
     deadline = time.monotonic() + PROCESS_TIMEOUT_SECONDS
     request_number = 0
@@ -242,7 +243,10 @@ def wait_for_complete(
         torrent = torrents[0]
         if torrent["torrent_id"] != fixture.info_hash:
             raise ScenarioFailure("session snapshot has the wrong torrent identity")
-        if torrent["state"] == "complete":
+        if (
+            torrent["state"] == "complete"
+            and response["revision"] >= minimum_revision
+        ):
             if torrent["verified_piece_count"] != torrent["piece_count"]:
                 raise ScenarioFailure("complete snapshot has incomplete have state")
             return response
@@ -342,7 +346,7 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
             fixture,
             pieces_after_recheck,
         )
-        wait_for_complete(process, fixture)
+        completion = wait_for_complete(process, fixture)
         upload_after_restart = handle.status().total_payload_upload
         restart_payload_upload = upload_after_restart - upload_before_restart
         if restart_payload_upload >= fixture.torrent_info.total_size():
@@ -363,6 +367,20 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
         if state != "complete" or completed_pieces != completed_piece_count:
             raise ScenarioFailure("completion was not durably checkpointed")
 
+        stop_process(process, graceful=True)
+        process = None
+        completed_revision = completion["revision"]
+        if handle.is_valid():
+            session.remove_torrent(handle)
+        session.pause()
+        handle = None
+
+        process = start_process(binary, profile_root, payload_root)
+        wait_for_complete(
+            process,
+            fixture,
+            minimum_revision=completed_revision + 2,
+        )
         stop_process(process, graceful=True)
         process = None
         result = RunResult(

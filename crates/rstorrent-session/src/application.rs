@@ -108,6 +108,28 @@ impl ApplicationService {
     ) -> Result<ResponseEnvelope, ApplicationError> {
         self.reap_finished().await?;
         let command = request.command.clone();
+        if let Some(active) = &self.active {
+            let target = match &command {
+                Command::AddMagnet { magnet, .. } => {
+                    rstorrent_protocol::magnet::Magnet::parse(magnet)
+                        .ok()
+                        .map(|magnet| encode_info_hash(magnet.info_hash))
+                }
+                Command::Resume { torrent_id } => Some(torrent_id.to_ascii_lowercase()),
+                _ => None,
+            };
+            if target.is_some_and(|target| target != active.torrent_id) {
+                return Ok(ResponseEnvelope::error(
+                    request.request_id,
+                    self.store_mut()?.revision()?,
+                    ErrorCode::Busy,
+                    format!(
+                        "torrent {} already owns the download slot",
+                        active.torrent_id
+                    ),
+                ));
+            }
+        }
         let response = self.store_mut()?.handle_durable(&request)?;
         if !matches!(response.outcome, ResponseOutcome::Success { .. }) {
             return Ok(response);
@@ -164,12 +186,7 @@ impl ApplicationService {
             .snapshot()?
             .torrents
             .into_iter()
-            .filter(|torrent| {
-                !matches!(
-                    torrent.state,
-                    TorrentState::Paused | TorrentState::Complete | TorrentState::NeedsRepair
-                )
-            })
+            .filter(|torrent| !matches!(torrent.state, TorrentState::Paused))
             .map(|torrent| torrent.torrent_id)
             .collect::<Vec<_>>();
         for torrent_id in torrent_ids {
@@ -208,7 +225,7 @@ impl ApplicationService {
         if !resume.desired_running
             || matches!(
                 resume.state,
-                TorrentState::Paused | TorrentState::Complete | TorrentState::NeedsRepair
+                TorrentState::Paused | TorrentState::NeedsRepair
             )
         {
             return Ok(());
@@ -660,6 +677,69 @@ mod tests {
                 .count(),
             0
         );
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn malformed_have_state_is_cleared_conservatively() {
+        let root = test_root("have-corruption");
+        let configuration = config(&root);
+        let raw_info =
+            b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
+        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let configured_root = configuration.storage_roots[0].clone();
+        let mut store = SessionStore::open(
+            &configuration.profile_root,
+            &configuration.profile_id,
+            &[configured_root],
+        )
+        .expect("open store");
+        store
+            .handle_durable(&add_request("add", &torrent_id))
+            .expect("add");
+        store
+            .record_metadata(&torrent_id, raw_info)
+            .expect("record metadata");
+        let database = store.database_path().to_owned();
+        drop(store);
+
+        let connection = Connection::open(database).expect("open raw database");
+        let mut have: Vec<u8> = connection
+            .query_row(
+                "SELECT have_state FROM torrents WHERE info_hash = ?1",
+                [info_hash.as_slice()],
+                |row| row.get(0),
+            )
+            .expect("read have state");
+        *have.last_mut().expect("bitfield byte") = 1;
+        connection
+            .execute(
+                "UPDATE torrents SET have_state = ?2 WHERE info_hash = ?1",
+                rusqlite::params![info_hash.as_slice(), have],
+            )
+            .expect("corrupt have padding");
+        drop(connection);
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open service with malformed have state");
+        let response = service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "snapshot".to_owned(),
+                expected_revision: None,
+                command: Command::Snapshot,
+            })
+            .await
+            .expect("snapshot");
+        let ResponseOutcome::Success { snapshot } = response.outcome else {
+            panic!("snapshot should succeed");
+        };
+        assert_eq!(snapshot.torrents[0].verified_piece_count, 0);
+        assert_ne!(snapshot.torrents[0].state, TorrentState::NeedsRepair);
         service.shutdown().await.expect("shutdown");
         drop(service);
         fs::remove_dir_all(root).expect("remove test root");
