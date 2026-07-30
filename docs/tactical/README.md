@@ -63,8 +63,8 @@ direction belongs in `../topics/`.
   completed bounded v1 magnet parsing, direct `x.pe` bootstrap, bidirectional
   BEP 9 metadata exchange, same-connection content download, and independent
   libtorrent evidence in both directions.
-- [`007-durable-session-control.md`](007-durable-session-control.md): in
-  progress, establishing one transport-neutral application contract,
+- [`007-durable-session-control.md`](007-durable-session-control.md):
+  completed one transport-neutral application contract,
   profile-local SQLite authority, exact magnet metadata retention, durable
   verified-piece checkpoints, and conservative process-death resume.
 

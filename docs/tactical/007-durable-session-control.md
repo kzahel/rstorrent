@@ -1,6 +1,6 @@
 # Tactical 007: Durable Session Control And Resume
 
-Status: accepted for implementation on 2026-07-30.
+Status: completed on 2026-07-30.
 
 ## Motivation And Outcome
 
@@ -306,3 +306,150 @@ fallback, structural-storage repair state, request deduplication and stale
 revision rejection, graceful pause/join, and unchanged cleanup for the older
 diagnostic APIs. Any unavailable platform row or deliberately deferred nasty
 case is recorded rather than implied.
+
+## Implementation Outcome
+
+The tactical landed in six implementation checkpoints after the topic and
+tactical commit:
+
+- `rstorrent-session` now depends inward on the engine and protocol crates. It
+  owns one `session.db`, configured storage roots, the semantic dispatcher,
+  one supervised task, and pause/shutdown joins without a process-global
+  singleton or persistence-backend trait.
+- Control version `1` has typed add-magnet, snapshot, pause, resume, and
+  shutdown commands; caller request IDs; optional expected revisions; typed
+  snapshots and errors; and bounded persistent mutation receipts. A request-ID
+  replay returns the original response after restart, reuse with different
+  content conflicts, and a stale expected revision changes nothing.
+- Schema version `1` uses typed profile, root, torrent, sparse selection, and
+  receipt tables. Exact verified info bytes and a self-identifying,
+  versioned, MSB-first have encoding are BLOBs. Database open verifies WAL,
+  foreign keys, `synchronous=FULL`, and a two-second busy timeout; a newer
+  schema and corrupt database are refused without recreation.
+- The bundled dependency is `rusqlite 0.40.1` with
+  `libsqlite3-sys 0.38.1`, whose bundled source reports SQLite `3.53.2`.
+- The engine's new resumable entry point retains raw BEP 9 bytes, opens new,
+  staged, or already-published path storage, validates exact regular-file
+  geometry and part identity, rechecks claimed pieces through a 16 KiB
+  buffer, skips valid pieces, and defers peer resolution until missing work is
+  known.
+- Each newly verified piece synchronizes every touched wanted file and the
+  part payload when applicable before its checkpoint callback can commit a
+  have bit. Publication is a separate idempotent checkpoint. The older
+  one-shot APIs still remove their owned artifacts after failure or
+  cancellation.
+- The application service translates coarse metadata, storage, recheck,
+  piece, and publication callbacks into SQLite transitions. Malformed have
+  state clears to an empty encoding after raw metadata revalidation. Corrupt
+  metadata or structurally inconsistent storage enters `needs_repair` without
+  storage access, overwrite, or deletion.
+- The JSON-lines process diagnostic is only a serializer around the same Rust
+  dispatcher. It supplied the external process boundary needed for real
+  `SIGKILL` evidence without adding a product listener or daemon.
+
+## Execution Evidence
+
+The final repository baseline passed:
+
+```bash
+source ~/.profile
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+git diff --check
+```
+
+The workspace run covered 100 unit, binary, architecture, and integration
+tests plus all doc-test targets. New evidence includes schema creation/reopen
+and newer-version refusal, corrupt-database preservation, have encoding
+boundaries and padding, durable request replay/conflict/stale revision,
+metadata corruption before storage, malformed-have conservative clearing,
+pause/join across restart, path-storage staged/published reopen and exact
+length checks, and application-level incomplete-artifact repair without
+overwrite.
+
+Three fresh forced-death runs passed:
+
+```bash
+uv run --project tests/interop \
+  python tests/interop/session_resume.py --runs 3
+```
+
+Each run used libtorrent `2.0.13`, exact 26,686-byte two-block metadata, and a
+three-piece 40,000-byte payload. The diagnostic was killed after two durable
+piece bits. One same-length staged piece was then corrupted. Restart retained
+the exact metadata, recheck changed two claimed pieces to one, and libtorrent
+uploaded 23,616 payload bytes rather than the complete 40,000 bytes. The
+published payload SHA-1 was
+`576143b2992ecf25c780ff41c79552f3bb50941b`. A further profile restart with
+the libtorrent seed removed advanced through the published-storage and
+complete checkpoints, proving the fully complete path did not resolve or
+connect to the peer hint. All three run directories were removed.
+
+The existing magnet and storage baselines also passed:
+
+```bash
+uv run --project tests/interop \
+  python tests/interop/magnet_metadata.py --runs 3
+uv run --project tests/interop \
+  python tests/interop/first_verified_piece.py --runs 1
+uv run --project tests/interop \
+  python tests/interop/first_verified_piece.py --large-piece --runs 1
+uv run --project tests/interop \
+  python tests/interop/first_verified_piece.py --selective-files --runs 1
+```
+
+The magnet baseline retained its 26,686-byte, two-block, bidirectional BEP 9
+evidence in all three runs. The small 40,000-byte download, 32 MiB one-piece
+download at a 256 KiB payload high-water, and five-piece selective fixture at
+a 32 KiB high-water all passed with exact output and cleanup.
+
+Bundled SQLite cross-compiled for both established Android Rust targets at the
+existing API 28 floor:
+
+```bash
+export ANDROID_HOME="$HOME/Android/Sdk"
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.0.12077973"
+cargo ndk -t x86_64 -t arm64-v8a -P 28 \
+  build --release -p rstorrent-session --lib
+```
+
+Reference and dependency checks passed:
+
+```bash
+python3 scripts/references.py status
+cargo tree --workspace --locked
+rg -n '^#define SQLITE_VERSION ' \
+  "$HOME/.cargo/registry/src"/*/libsqlite3-sys-0.38.1/sqlite3/sqlite3.c
+```
+
+The BEP, rqbit, libtorrent, and JSTorrent pins were present, the dependency
+tree showed the intended session-to-engine/protocol direction, and the
+bundled source reported SQLite `3.53.2`.
+
+## Recorded Limits And Deferrals
+
+- This is path-backed multi-file v1 resume with explicit `x.pe`. SAF
+  capability restoration, descriptor resume, physical Android database
+  execution, removable storage, single-file multi-piece torrents, trackers,
+  DHT, and peer replacement remain unclaimed.
+- SQLite calls are serialized through the one service-owned connection and
+  coarse checkpoint seam. Per-piece `synchronous=FULL` transactions favor
+  evidence over throughput; batching remains a measured later decision.
+- The service supports one active task. It has no general queue, event
+  subscription, removal, settings catalog, backup/export, profile registry,
+  or simultaneous-profile policy.
+- The tests cover transaction migration from version `0` to `1`, a newer
+  version, and corrupt-database preservation. They do not inject an operating
+  system failure at every SQL statement, time lock contention, or prove power
+  loss and parent-directory fsync behavior.
+- Actual `SIGKILL` covers process death after committed piece progress.
+  Deterministic ordering and unit tests cover the storage-sync-before-have
+  seam, but crashes immediately before and after every individual filesystem
+  and SQLite barrier were not separately injected.
+- The JSON-lines encoding is repository diagnostic infrastructure, not a
+  stable public or authenticated remote protocol.
+
+These limits preserve the tactical's stopping boundary. The implemented
+evidence satisfies the stopping condition without claiming optimistic fast
+resume or platform persistence that was not run.

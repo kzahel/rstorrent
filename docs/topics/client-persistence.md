@@ -2,9 +2,10 @@
 
 Topic: `client-persistence`
 
-Status: the SQLite persistence direction is accepted. Tactical `007` is
-implementing the first `rstorrent-session` application/engine boundary,
-instance-scoped profile store, and conservative restart path.
+Status: Tactical `007` implemented the first `rstorrent-session`
+application/engine boundary, instance-scoped SQLite profile store, exact
+magnet metadata retention, per-piece checkpoints, and conservative restart
+path.
 
 ## Scope
 
@@ -320,13 +321,14 @@ their intermediate state explicitly and make restart cleanup idempotent.
 
 ## Known Gaps And Open Decisions
 
-- The exact application-service crate name and first public Rust types.
-- The first schema, migration mechanism, database filename, and backup policy.
+- Backup, export, restore, and later schema-migration policy beyond the
+  implemented transactional version `0` to `1` creation.
 - The installation-level profile registry format and whether the first product
   exposes more than its automatically created profile.
 - Whether Android places the database in backed-up or explicitly no-backup
   app-private storage.
-- The batching interval and checkpoint policy for verified-piece updates.
+- Whether later scheduling evidence justifies batching the implemented
+  per-piece durability transactions.
 - The exact clean-shutdown, storage-generation, and file-observation evidence
   required before a later fast-resume path may skip hashing.
 - How completed payload moved outside the application is deliberately
@@ -334,14 +336,31 @@ their intermediate state explicitly and make restart cleanup idempotent.
 - How a future JSTorrent migration imports existing settings, metadata, and
   progress without treating unverified legacy state as verified content.
 
-## Current Work
+## Implemented Evidence
 
 [`../tactical/007-durable-session-control.md`](../tactical/007-durable-session-control.md)
-owns the smallest complete persistence and restart slice: one concrete SQLite
-store, semantic application control, durable verified magnet metadata and
-source intent, storage-root and selection persistence, per-piece checkpoints,
-forced-process-death recovery, and fixed-buffer recheck.
+completed the smallest persistence and restart slice:
 
-It does not broaden into a general multi-torrent scheduler, stable public
-wire protocol, UI settings catalog, remote listener, profile-management UI,
-simultaneous profiles, unfinished-block resume, or hash-skipping fast resume.
+- `rstorrent-session` owns `session.db`, schema versioning, configured
+  path-root identities, the torrent catalog, sparse selection rows, raw info
+  BLOBs, versioned have BLOBs, and bounded request receipts.
+- Bundled `rusqlite 0.40.1` uses `libsqlite3-sys 0.38.1` and SQLite `3.53.2`.
+  WAL, foreign keys, `synchronous=FULL`, and the busy timeout are set and
+  checked at open. Both initial Android Rust targets cross-compiled this
+  bundled implementation.
+- The engine synchronizes each verified piece before the service commits its
+  have bit. Restart rehashes claimed pieces through the existing 16 KiB
+  buffer, clears same-length corruption, skips a remaining valid claim, and
+  reopens either staging or published path storage.
+- Three libtorrent runs killed the process after two of three pieces, retained
+  the exact 26,686-byte BEP 9 info dictionary, deliberately corrupted one
+  staged claim, observed recheck reduce `2` claims to `1`, uploaded only the
+  remaining 23,616 payload bytes, and published the expected SHA-1. A second
+  restart rechecked the completed tree with the seed removed.
+- Corrupt metadata, malformed have padding, incomplete storage artifacts, and
+  a corrupt SQLite file have explicit fail-closed and preservation tests.
+
+This evidence does not broaden into a general multi-torrent scheduler, stable
+public wire protocol, UI settings catalog, remote listener, SAF resume,
+profile-management UI, simultaneous profiles, unfinished-block resume, or
+hash-skipping fast resume.

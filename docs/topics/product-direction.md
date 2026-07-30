@@ -198,7 +198,7 @@ joined the task and returned the controlled peer to zero connections. This
 proves in-process engine packaging and lifecycle through app-private
 path-backed storage; it does not yet connect the engine to SAF destinations.
 
-Tactical `005` has implemented that SAF connection. Rust now derives an exact
+Tactical `005` implemented that SAF connection. Rust now derives an exact
 bounded document plan, synchronously duplicates caller-owned descriptors for
 wanted files, the compact part file, an independent reopen handle, and
 materializations, and runs the existing selective placement and verification
@@ -212,9 +212,24 @@ physical Chromebook's API 33 ARCVM, and the physical API 37 Pixel 7a. AVD
 evidence also covers slow storage at the 32 KiB payload high-water, peer
 failure after a real request, duplicate start, activity recreation, and
 cancellation before and after stored progress. The required Moto internal and
-removable rows remain unrun because the previously identified Moto X4 was no
-longer attached. Tactical `005` therefore remains in progress even though its
-main descriptor and publication thread is implemented.
+removable rows remained unrun because the previously identified Moto X4 was no
+longer attached. Tactical `005` was closed with those rows and remaining
+provider-failure profiles explicitly deferred rather than claimed.
+
+Tactical `006` added bounded v1 magnet parsing, direct `x.pe` peer bootstrap,
+bidirectional BEP 9 metadata exchange, and same-connection handoff into the
+existing bounded content path. Independent libtorrent evidence covers exact
+multi-block info dictionaries in both directions.
+
+Tactical `007` introduced `rstorrent-session` above the engine. One
+profile-local bundled SQLite authority now stores exact hash-authorized magnet
+metadata, source and selection intent, versioned have state, lifecycle, roots,
+and bounded command receipts. A transport-neutral command dispatcher,
+path-storage reopen, per-piece sync-before-checkpoint ordering, fixed-buffer
+restart recheck, pause/shutdown joins, and three forced-death libtorrent runs
+establish the first durable application thread. SQLite `3.53.2` cross-compiled
+for both established Android Rust targets, but actual Android database and SAF
+resume execution remain deferred.
 
 This is an accepted starting shape backed by unit and libtorrent
 interoperability evidence, not a promise that two crates are the final engine
@@ -283,13 +298,17 @@ This is recommended direction beyond the accepted first slice:
    added bounded v1 magnet parsing and bidirectional BEP 9 metadata exchange,
    then handed verified metadata and bounded premetadata peer state to the
    existing content path over the same connection.
-8. Next, define Tactical `007` for durable resume and recheck, including
-   persistence of verified magnet metadata and source intent. The continuing
-   persistence and application-service direction lives in
-   [`client-persistence.md`](client-persistence.md).
-9. Define the broader application command/snapshot/event boundary from the
-   proven lifecycle and persistence evidence.
-10. Add the first Android and desktop product clients.
+8. Completed:
+   [`007-durable-session-control.md`](../tactical/007-durable-session-control.md)
+   established the profile-local SQLite authority, semantic application
+   commands, exact magnet metadata and have persistence,
+   sync-before-checkpoint ordering, forced-death resume, and conservative
+   fixed-buffer recheck.
+9. Extend the proven application service only as required by the first real
+   Android or desktop product flow: capability installation, UI snapshots or
+   events, and bounded multi-torrent lifecycle are likely next pressures.
+10. Add the first Android and desktop product clients through the shared
+    semantic contract.
 11. Evaluate product migration, extension control, and JSTorrent brand
    graduation from the proven application contracts.
 
@@ -298,12 +317,11 @@ does not distort the protocol vertical slice.
 
 ## Recommended Next Work
 
-Draft Tactical `007` around durable resume and bounded recheck. Persist only
-hash-authorized raw info bytes plus explicit source and selection intent.
-Front-load atomic replacement, truncation, corruption, version mismatch,
-stale intent, restart cleanup, and fixed-buffer payload recheck so persistence
-cannot establish untrusted metadata or unbounded startup work. Keep tracker
-and DHT discovery, v2 metadata, payload upload, the broader application API,
-and UI architecture outside that slice. Use
-[`client-persistence.md`](client-persistence.md) as the living owner for the
-SQLite, restart, storage-root, and application/engine boundary decisions.
+Choose the next bounded pressure rather than expanding the service
+speculatively. A first Android or desktop product shell would validate that
+the semantic dispatcher, snapshot shape, profile/database placement, storage
+root capabilities, and lifecycle ownership are usable outside the diagnostic.
+If protocol usefulness takes priority, explicit-peer-only magnets now make
+tracker discovery the likely smallest path to ordinary magnets. Either slice
+should retain the existing resource bounds and use the application service
+rather than creating another orchestration surface.

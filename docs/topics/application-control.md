@@ -2,10 +2,9 @@
 
 Topic: `application-control`
 
-Status: the application service uses one transport-neutral semantic control
-contract for local callers and future remote callers. Tactical `007` owns the
-first implementation; no network transport or stable public wire format is
-accepted yet.
+Status: Tactical `007` implemented the first transport-neutral semantic
+control contract and in-process application service. No network transport or
+stable public wire format is accepted yet.
 
 ## Scope
 
@@ -78,12 +77,21 @@ separate tactical and threat model.
 - User-controlled magnets, paths, peer hints, and errors are bounded and are
   not emitted unredacted as routine logs.
 
-## Current Work And Gaps
+## Implemented Thread And Gaps
 
 [`../tactical/007-durable-session-control.md`](../tactical/007-durable-session-control.md)
-implements the first envelope and in-process dispatcher alongside durable
-magnet resume. It deliberately proves only the commands needed for that
-vertical slice.
+implemented the first envelope and in-process dispatcher alongside durable
+magnet resume. The Rust dispatcher and newline-delimited JSON diagnostic use
+the same request and response types. Unit and forced-process-death evidence
+cover request correlation, persistent duplicate replay, request-ID conflict,
+stale revision rejection, coherent snapshots, pause/join, shutdown/join, and
+restart through the same commands.
+
+The diagnostic encoding remains repository test infrastructure. Android and a
+desktop product have not yet been moved from their narrower diagnostic entry
+points to the application service, so cross-client semantic reuse is an
+implemented boundary with one real caller rather than claimed product
+integration.
 
 Later work must define subscriptions or snapshot polling for real UIs,
 multi-torrent scheduling, stable product error taxonomy, capability
