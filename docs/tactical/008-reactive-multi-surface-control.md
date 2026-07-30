@@ -1,6 +1,6 @@
 # Tactical 008: Reactive Multi-Surface Control
 
-Status: planned.
+Status: completed on 2026-07-30.
 
 ## Motivation And Outcome
 
@@ -193,8 +193,15 @@ stream epoch
 sequence
 base view revision
 resulting view revision
-snapshot | patch | reset-required | closed
+snapshot | patch | reset-required
 ```
+
+Closure is observable outside the update payload: an in-process iterator
+terminates, WebSocket emits its correlated `unsubscribed` response or closes,
+and Tauri and Android close their platform subscription handles. A terminal
+payload was removed from the planned shape because closing a bounded local
+queue cannot reliably enqueue into itself and transport loss is already a
+terminal condition. No state depends on receiving a final update.
 
 Piece activity contains:
 
@@ -381,3 +388,172 @@ Independent fast and slow subscribers, overflow/resnapshot, large piece
 indices, disconnect, and task termination must have recorded executable
 evidence. Exact UI polish, public remote deployment, SAF session recovery, and
 HTTP playback remain explicitly bounded later work.
+
+## Implementation Record
+
+### Shared contract and reactive ownership
+
+`rstorrent-session::views` now owns the portable selectors, projections,
+delivery policy, snapshots, patches, activity values, reset condition, and
+stream envelope. Native `u64` revisions, epochs, sequences, and byte counters
+cross JSON as canonical decimal strings. Piece and block indices are `u32`,
+and the reducer fixtures cross 65,535.
+
+Each `ApplicationService` owns one `ViewHub`. Every subscriber has an
+independent 4 KiB to 4 MiB bounded queue, sequence, delivery clock, coalesced
+tail, reset state, and wakeup. Durable transactions refresh views only after
+commit. Engine activity enters through `DownloadActivitySink`; it never writes
+SQLite or carries payload bytes.
+
+The stricter pause/resume surface cycle found that immediate cancellation
+could interrupt selective storage while it was creating the staging-tree and
+part-file pair. `DownloadControl::cancel_when_safe` now defers a pause only
+across that creation/checkpoint critical section. It remains immediately
+cancellable during metadata exchange, transfer, verification, and ordinary
+storage work. Shutdown retains its explicit immediate cancellation path.
+
+### Browser and generated TypeScript
+
+`rstorrent-gateway` is a loopback-only Axum WebSocket proof. It requires an
+explicit nonempty token and exact allowed origin before dispatch, then bounds
+connections, subscriptions, input frames, output messages, and the write
+queue. It exposes typed dispatch, subscribe, resync, and unsubscribe
+operations rather than generic RPC or filesystem access.
+
+`clients/web` contains the transport-neutral `ApplicationClient`, generated
+`ts-rs` declarations, hostile-input validation, continuity reducer,
+WebSocket/Tauri adapters, and a basic transfer and piece-activity UI. The
+controlled composition path exists only in Vite development builds; the
+production bundle was checked for its marker and credentials.
+
+### Desktop
+
+`clients/desktop/src-tauri` owns one in-process `ApplicationService`. Tauri
+commands carry correlated dispatch and subscription operations; ordered
+Channels carry updates. Subscriptions are keyed by window, cancelled and
+joined on window destruction, and do not own the application service.
+Explicit application shutdown closes all subscriptions, joins the engine, and
+then exits. The desktop contains no native product-content UI or local
+WebSocket proxy.
+
+### Android
+
+The existing bootstrap application now has a normal product path in which
+`ProductEngineService` owns an `AndroidApplicationClient` independently of
+the Activity. UniFFI generates the Kotlin application and session contract
+values from the Rust types. The Kotlin adapter atomically reduces independent
+summary and zero-delay piece streams into one `StateFlow`; this atomic update
+was required to prevent concurrent collectors from overwriting each other's
+continuity cursor.
+
+The foreground notification exposes explicit Stop, and the service holds
+partial CPU and high-performance Wi-Fi locks only while a download state is
+active. Activity recreation and backgrounding detach collection without
+stopping the service. This proof uses app-private path storage and does not
+enable Android seeding.
+
+`experiments/android-engine-bootstrap/app/src/main/java/org/rstorrent/bootstrap/ui/PieceMap.kt`
+adapts the grid sizing, state layering, and color semantics from
+JSTorrent's
+`android/app/src/main/java/com/jstorrent/app/ui/components/PieceMap.kt` at
+commit `0cad4dacf540f5be42ee53c4f1e1da27aa1b3685`. The retained MIT text and
+origin are in `experiments/android-engine-bootstrap/THIRD_PARTY_NOTICES.md`.
+No other JSTorrent source was imported.
+
+## Execution Evidence
+
+The implementation landed in these commits:
+
+- `2f63ec5` — bounded reactive application views and engine activity edges;
+- `6a46512` — authenticated browser gateway and shared web client;
+- `280cbee` — Tauri command/channel shell;
+- `0be44ec` — Android foreground client, generated Kotlin, and Compose UI;
+- `78b031e` — controlled Android lifecycle cycle;
+- `38795ba` — real TypeScript/WebSocket/gateway cycle;
+- `3b9b47a` — rendered Chrome and WebKitGTK cycles plus adapter stress;
+- `3811fde` — pause/resume proof, safe storage cancellation, and atomic
+  Android stream reduction; and
+- `ee75bb2` — deterministic cleanup of the controlled Android profile and UI
+  hierarchy artifact.
+
+Validation completed on 2026-07-30:
+
+- workspace formatting, Clippy with warnings denied, unit, architecture, and
+  documentation tests;
+- deterministic TypeScript regeneration with no diff, type checking, five
+  normal Vitest cases, and a production Vite build; the opt-in live Vitest
+  case was run separately through the real gateway harness;
+- a 1,000-update ordered trace and equivalent explicit overflow reset through
+  both frontend transport queues;
+- release Tauri build without bundling and a real WebKitGTK development
+  webview under Xvfb;
+- `rstorrent-android` Clippy/tests with all features, API 28 release builds for
+  `x86_64` and `arm64-v8a`, exact UniFFI regeneration, APK assembly, and four
+  Kotlin JVM tests; and
+- fresh libtorrent `2.0.13.0` magnet-metadata and forced-process-death session
+  regressions.
+
+The final host commands were:
+
+```bash
+source ~/.profile
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test --workspace
+
+npm ci --prefix clients/web
+npm run generate --prefix clients/web
+git diff --exit-code -- \
+  clients/web/src/generated/contract.ts \
+  clients/web/src/fixtures/reactive-trace.json
+npm run typecheck --prefix clients/web
+npm test --prefix clients/web
+npm run build --prefix clients/web
+clients/web/node_modules/.bin/tauri build \
+  --config clients/desktop/src-tauri/tauri.conf.json --no-bundle
+
+cargo clippy -p rstorrent-android --all-features -- -D warnings
+cargo test -p rstorrent-android --all-features
+experiments/android-engine-bootstrap/build.sh
+
+uv run --project tests/interop --locked \
+  python tests/interop/gateway_reactive_surface.py
+uv run --project tests/interop --locked \
+  python tests/interop/browser_reactive_surface.py \
+  --chrome /usr/bin/google-chrome
+uv run --project tests/interop --locked \
+  python tests/interop/tauri_reactive_surface.py
+uv run --project tests/interop --locked \
+  python tests/interop/android_reactive_surface.py \
+  --serial emulator-5554 --adb "$HOME/Android/Sdk/platform-tools/adb"
+uv run --project tests/interop --locked \
+  python tests/interop/session_resume.py --runs 1
+uv run --project tests/interop --locked \
+  python tests/interop/magnet_metadata.py --runs 1
+```
+
+The final controlled surface results were:
+
+| Surface | Result |
+| --- | --- |
+| TypeScript adapter + real gateway | 3 pieces, positive requested/received/stored activity, exact SHA-1, joined gateway shutdown |
+| Headless Chrome + WebSocket | 3 pieces, pause/resume, rendered live activity, exact SHA-1, joined gateway shutdown |
+| Tauri WebKitGTK + Channels | 3 pieces, pause/resume, exact SHA-1, joined application shutdown |
+| API 34 `jstorrent-tablet` AVD | 8 pieces, 60 view updates, pause/resume, Activity recreation/background, exact SHA-1, notification Stop and joined shutdown |
+
+The Android harness refuses a locked target and never sends a power or lock
+key event. No Pixel was present in the final ADB inventory, so the conditional
+physical Pixel cycle was not run and is not claimed.
+
+The browser, Tauri, and Android runs used loopback libtorrent seeds with
+per-handle upload throttling so pause acted during an active transfer. All
+published payloads matched their fixture SHA-1. Temporary profiles, payloads,
+ADB reverse mappings, and seed sessions were removed.
+
+## Remaining Boundary
+
+This is a product-thread proof, not a production remote-control release. The
+next client work should choose one bounded concern: production pairing and
+authorization, desktop tray/window policy, or Android SAF-backed durable
+session storage. The separate HTTP playback data plane, relay/push wake-up,
+multi-torrent scheduling, and stable public compatibility remain later work.

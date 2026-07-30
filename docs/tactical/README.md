@@ -68,8 +68,8 @@ direction belongs in `../topics/`.
   profile-local SQLite authority, exact magnet metadata retention, durable
   verified-piece checkpoints, and conservative process-death resume.
 - [`008-reactive-multi-surface-control.md`](008-reactive-multi-surface-control.md):
-  planned recoverable reactive views, generated TypeScript and Kotlin
-  contracts, and one thin browser/WebSocket, Tauri/channel, and
-  Android/UniFFI product thread.
+  completed recoverable bounded reactive views, generated TypeScript and
+  Kotlin contracts, and controlled browser/WebSocket, Tauri/channel, and
+  Android/UniFFI product threads.
 
-The next tactical number is `008`.
+The next tactical number is `009`.

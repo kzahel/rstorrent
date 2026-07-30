@@ -179,10 +179,12 @@ Android UI / desktop UI / CLI
      protocol and domain
 ```
 
-The current crates do not yet express every box. `rstorrent-protocol` owns pure
-protocol and deterministic state, `rstorrent-engine` owns Tokio networking and
-storage execution, and `rstorrent-android` currently adapts the diagnostic
-engine directly.
+The current crates now express the initial boundary. `rstorrent-protocol` owns
+pure protocol and deterministic state, `rstorrent-engine` owns Tokio
+networking and storage execution, `rstorrent-session` owns SQLite and
+application lifecycle, and the Android and Tauri adapters consume that
+application service in-process. The older Android diagnostic path remains only
+as bounded platform/storage test infrastructure.
 
 Persistence supplies a concrete reason to introduce the application-service
 boundary:

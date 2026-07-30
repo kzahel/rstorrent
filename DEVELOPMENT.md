@@ -50,10 +50,24 @@ cancellation, failure, and cleanup matrix on the AVD, Chromebook ARCVM, and
 Moto X4.
 
 [`005-saf-selective-storage.md`](docs/tactical/005-saf-selective-storage.md)
-is active. It connects the same real selective engine to user-granted SAF
-documents through synchronously duplicated descriptors, explicit native
-preparation and provider publication phases, restart verification, and
-edge-first provider failure cleanup.
+is complete. It connected the selective engine to user-granted SAF documents
+through synchronously duplicated descriptors, explicit native preparation and
+provider publication phases, restart verification, and bounded cleanup.
+
+[`006-magnet-metadata-peer-hint.md`](docs/tactical/006-magnet-metadata-peer-hint.md)
+is complete. It added bounded v1 magnet parsing, direct peer-hint bootstrap,
+and bidirectional BEP 9 metadata exchange.
+
+[`007-durable-session-control.md`](docs/tactical/007-durable-session-control.md)
+is complete. It established the SQLite-backed application service, semantic
+commands, verified metadata retention, piece checkpoints, and conservative
+restart.
+
+[`008-reactive-multi-surface-control.md`](docs/tactical/008-reactive-multi-surface-control.md)
+is complete. It added bounded recoverable reactive views and generated client
+types, then proved the same controlled pause/resume download through Chrome
+over authenticated WebSocket, Tauri over commands and Channels, and Android
+Compose/UniFFI under foreground-service ownership.
 
 ## Toolchain
 

@@ -3,9 +3,9 @@
 Topic: `application-control`
 
 Status: Tactical `007` implemented the first transport-neutral semantic
-control contract and in-process application service. Tactical `008` is
-implementing recoverable reactive views and three thin platform adapters. No
-stable public wire format is accepted yet.
+control contract and in-process application service. Tactical `008` added
+recoverable reactive views and browser, Tauri, and Android adapters. No stable
+public wire format is accepted yet.
 
 ## Scope
 
@@ -88,21 +88,21 @@ cover request correlation, persistent duplicate replay, request-ID conflict,
 stale revision rejection, coherent snapshots, pause/join, shutdown/join, and
 restart through the same commands.
 
-The diagnostic encoding remains repository test infrastructure. Android and a
-desktop product have not yet been moved from their narrower diagnostic entry
-points to the application service, so cross-client semantic reuse is an
-implemented boundary with one real caller rather than claimed product
-integration.
+The diagnostic encoding remains repository test infrastructure. Tactical
+`008` moved the new Android product path and Tauri shell onto the application
+service and adapted the same semantic contract to a bounded loopback WebSocket
+gateway. Generated TypeScript and Kotlin values, independent reactive
+subscriptions, explicit resynchronization, and controlled real downloads now
+provide cross-client executable evidence.
 
-Later work must define subscriptions or snapshot polling for real UIs,
-multi-torrent scheduling, stable product error taxonomy, capability
-installation, removals and deletion, remote authentication and relay
-semantics, and compatibility rules for any published wire protocol.
+Later work must define multi-torrent scheduling, stable product error
+taxonomy, capability installation, removals and deletion, production remote
+authentication and relay semantics, and compatibility rules for any
+published wire protocol.
 
-The accepted subscription and initial client direction is now recorded in
-[`client-surfaces.md`](client-surfaces.md). Tactical `008` must retain coherent
-snapshots as recovery authority while adding typed patches, independent
-bounded subscriber state, explicit continuity, generated TypeScript and
-Kotlin representations, Tauri channels, and an authenticated experimental
-WebSocket adapter. The WebSocket adapter is not the application authority and
-does not require local Tauri control to use networking.
+The implemented subscription and client direction is recorded in
+[`client-surfaces.md`](client-surfaces.md) and
+[`../tactical/008-reactive-multi-surface-control.md`](../tactical/008-reactive-multi-surface-control.md).
+Coherent snapshots remain recovery authority above typed patches and
+independent bounded subscriber state. The WebSocket adapter is not the
+application authority, and local Tauri control does not use networking.

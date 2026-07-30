@@ -2,7 +2,7 @@
 
 Topic: `client-surfaces`
 
-Status: Accepted direction. Tactical `008` is the first bounded proof across a
+Status: Accepted and implemented through Tactical `008` across a
 browser-hosted web view, a Tauri desktop webview, and Android Compose.
 
 ## Scope
@@ -171,13 +171,21 @@ future server.
 
 ## Current Gaps
 
-- No shared web client exists in RSTorrent yet.
-- No Tauri product shell owns `ApplicationService`.
-- Android still exercises the narrower diagnostic engine session.
-- The application service has coherent snapshots but no reactive views.
-- No network transport, authentication design, or public wire compatibility
-  promise exists.
+- The loopback WebSocket gateway is an authenticated proof, not a production
+  remote-access design. It has no pairing, principal/capability model, TLS,
+  relay, wake-up path, or public wire compatibility promise.
+- The Tauri shell has no production tray/window policy, installers, updates,
+  file associations, or platform-capability adapter.
+- Android uses app-private path storage for the product proof. Its durable
+  application service is not yet connected to the established SAF descriptor
+  and storage-root flow.
+- The current UI proves one controlled torrent. General multi-torrent
+  scheduling and complete product presentation remain absent.
+- Tactical `008` completed its AVD gate, but no Pixel was present for its
+  conditional final physical-device cycle.
 - No HTTP playback server exists.
 
-Tactical `008` addresses the first four gaps with a narrow real download
-surface. It does not claim production remote access or a complete client.
+Tactical `008` records the implemented contract, exact controlled evidence,
+and bounded deferrals. The most useful next client slice is one of production
+remote authorization, desktop lifecycle/tray integration, or SAF-backed
+Android session storage rather than unrelated UI breadth.

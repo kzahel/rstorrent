@@ -133,6 +133,25 @@ JSTorrent is a behavior and evidence source. Its QuickJS embeddings,
 native-host protocol, IO daemon, extension companion topology, TypeScript APIs,
 and persistence formats are not migration requirements.
 
+Tactical `008` adapted the grid sizing, state layering, and color semantics
+from JSTorrent's
+`android/app/src/main/java/com/jstorrent/app/ui/components/PieceMap.kt` at
+commit `0cad4dacf540f5be42ee53c4f1e1da27aa1b3685`. The RSTorrent file and
+retained MIT permission text are identified in
+`experiments/android-engine-bootstrap/THIRD_PARTY_NOTICES.md`. No other
+JSTorrent source was imported by that tactical.
+
+## Client Binding References
+
+The initial desktop adapter follows Tauri v2's official
+[Rust command](https://v2.tauri.app/develop/calling-rust/) and
+[Channel](https://v2.tauri.app/develop/calling-frontend/) APIs. The Android
+adapter follows UniFFI's documented
+[external and remote type](https://mozilla.github.io/uniffi-rs/latest/types/remote_ext_types.html)
+model so application-contract types originate in `rstorrent-session` while
+the exported client object remains in `rstorrent-android`. These are SDK/API
+references; no documentation sample source was imported.
+
 ## libtorrent
 
 Project: [libtorrent](https://libtorrent.org/)
