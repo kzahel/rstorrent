@@ -20,6 +20,7 @@ required-features = ["bindgen"]
 libc = "=0.2.189"
 rstorrent-engine = { path = "../rstorrent-engine" }
 rstorrent-protocol = { path = "../rstorrent-protocol" }
+rstorrent-session = { path = "../rstorrent-session", features = ["uniffi"] }
 sha1.workspace = true
-tokio = { workspace = true, features = ["rt", "time"] }
-uniffi = { version = "=0.31.0", default-features = false }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "sync", "time"] }
+uniffi = { version = "=0.31.0", default-features = false, features = ["tokio"] }

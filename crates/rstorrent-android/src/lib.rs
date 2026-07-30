@@ -18,9 +18,14 @@ use rstorrent_engine::{
 };
 use rstorrent_protocol::bencode::MAX_BENCODE_INPUT_LENGTH;
 use rstorrent_protocol::metainfo::Metainfo;
+use rstorrent_session::{
+    ApplicationConfig, ApplicationService, ConfiguredStorageRoot, RequestEnvelope,
+    ResponseEnvelope, SubscriptionSpec, ViewSubscription, ViewUpdate,
+};
 use sha1::{Digest, Sha1};
+use tokio::sync::Mutex as AsyncMutex;
 
-const INTERFACE_VERSION: &str = "rstorrent-android/0.2.0;uniffi/0.31.0";
+const INTERFACE_VERSION: &str = "rstorrent-android/0.3.0;uniffi/0.31.0";
 const MIN_PAYLOAD_BYTES: u64 = 16 * 1024;
 const MAX_PAYLOAD_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_TIMEOUT_SECONDS: u64 = 5 * 60;
@@ -28,8 +33,170 @@ const MAX_JOIN_MILLIS: u64 = 5 * 60 * 1_000;
 const MAX_FILE_SELECTIONS: usize = 1_024;
 const MAX_STORAGE_WRITE_DELAY_MILLIS: u64 = 5_000;
 const DESCRIPTOR_HASH_BUFFER: usize = 16 * 1024;
+const MAX_ANDROID_PATH_BYTES: usize = 4 * 1024;
 
 uniffi::setup_scaffolding!();
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct AndroidApplicationConfig {
+    pub profile_root: String,
+    pub profile_id: String,
+    pub storage_root: String,
+    pub timeout_seconds: u64,
+    pub max_buffered_payload_bytes: u64,
+}
+
+#[derive(Debug, uniffi::Error)]
+pub enum AndroidClientError {
+    Failure { detail: String },
+}
+
+impl std::fmt::Display for AndroidClientError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Failure { detail } => formatter.write_str(detail),
+        }
+    }
+}
+
+impl std::error::Error for AndroidClientError {}
+
+impl AndroidClientError {
+    fn message(message: impl Into<String>) -> Self {
+        Self::Failure {
+            detail: message.into(),
+        }
+    }
+}
+
+#[derive(Debug, uniffi::Object)]
+pub struct AndroidApplicationClient {
+    service: AsyncMutex<Option<ApplicationService>>,
+}
+
+#[derive(Debug, uniffi::Object)]
+pub struct AndroidViewSubscription {
+    subscription: ViewSubscription,
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl AndroidApplicationClient {
+    #[uniffi::constructor]
+    pub async fn open(config: AndroidApplicationConfig) -> Result<Arc<Self>, AndroidClientError> {
+        let application_config = validate_application_config(config)?;
+        let service = ApplicationService::open(application_config)
+            .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))?;
+        Ok(Arc::new(Self {
+            service: AsyncMutex::new(Some(service)),
+        }))
+    }
+
+    pub async fn dispatch(
+        &self,
+        request: RequestEnvelope,
+    ) -> Result<ResponseEnvelope, AndroidClientError> {
+        self.service
+            .lock()
+            .await
+            .as_mut()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .dispatch(request)
+            .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
+    pub async fn subscribe(
+        &self,
+        spec: SubscriptionSpec,
+    ) -> Result<Arc<AndroidViewSubscription>, AndroidClientError> {
+        let subscription = self
+            .service
+            .lock()
+            .await
+            .as_ref()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .subscribe(spec)
+            .map_err(|error| AndroidClientError::message(error.to_string()))?;
+        Ok(Arc::new(AndroidViewSubscription { subscription }))
+    }
+
+    pub async fn shutdown(&self) -> Result<(), AndroidClientError> {
+        let service = self.service.lock().await.take();
+        if let Some(mut service) = service {
+            service
+                .shutdown()
+                .await
+                .map_err(|error| AndroidClientError::message(error.to_string()))?;
+        }
+        Ok(())
+    }
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl AndroidViewSubscription {
+    pub fn stream_id(&self) -> String {
+        self.subscription.stream_id()
+    }
+
+    pub async fn next_update(&self) -> Option<ViewUpdate> {
+        self.subscription.next_update().await
+    }
+
+    pub fn resync(&self) -> Result<(), AndroidClientError> {
+        self.subscription
+            .resync()
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+}
+
+impl Drop for AndroidViewSubscription {
+    fn drop(&mut self) {
+        self.subscription.close();
+    }
+}
+
+fn validate_application_config(
+    config: AndroidApplicationConfig,
+) -> Result<ApplicationConfig, AndroidClientError> {
+    fn path(value: String, label: &str) -> Result<PathBuf, AndroidClientError> {
+        if value.is_empty() || value.len() > MAX_ANDROID_PATH_BYTES || value.as_bytes().contains(&0)
+        {
+            return Err(AndroidClientError::message(format!(
+                "{label} must be 1..={MAX_ANDROID_PATH_BYTES} bytes without NUL"
+            )));
+        }
+        let path = PathBuf::from(value);
+        if !path.is_absolute() {
+            return Err(AndroidClientError::message(format!(
+                "{label} must be absolute"
+            )));
+        }
+        Ok(path)
+    }
+    if config.timeout_seconds == 0 || config.timeout_seconds > MAX_TIMEOUT_SECONDS {
+        return Err(AndroidClientError::message(format!(
+            "timeout must be 1..={MAX_TIMEOUT_SECONDS} seconds"
+        )));
+    }
+    if !(MIN_PAYLOAD_BYTES..=MAX_PAYLOAD_BYTES).contains(&config.max_buffered_payload_bytes) {
+        return Err(AndroidClientError::message(format!(
+            "payload allowance must be {MIN_PAYLOAD_BYTES}..={MAX_PAYLOAD_BYTES} bytes"
+        )));
+    }
+    let mut application = ApplicationConfig::new(
+        path(config.profile_root, "profile root")?,
+        config.profile_id,
+        vec![ConfiguredStorageRoot {
+            id: "downloads".to_owned(),
+            path: path(config.storage_root, "storage root")?,
+        }],
+    );
+    application.download_timeout = Duration::from_secs(config.timeout_seconds);
+    application.max_buffered_payload_bytes = usize::try_from(config.max_buffered_payload_bytes)
+        .map_err(|_| AndroidClientError::message("payload allowance exceeds usize"))?;
+    Ok(application)
+}
 
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct EngineConfig {

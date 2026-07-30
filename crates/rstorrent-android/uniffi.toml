@@ -1,3 +1,6 @@
 [bindings.kotlin]
 package_name = "org.rstorrent.bootstrap.uniffi"
 android = true
+
+[bindings.kotlin.external_packages]
+rstorrent_session = "org.rstorrent.session.uniffi"

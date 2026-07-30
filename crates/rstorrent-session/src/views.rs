@@ -20,6 +20,7 @@ pub const MAX_SUBSCRIPTION_INTERVAL_MILLIS: u32 = 60_000;
 static NEXT_EPOCH: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ViewSelector {
     TorrentList,
@@ -27,6 +28,7 @@ pub enum ViewSelector {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum ViewProjection {
     Summary,
@@ -34,6 +36,7 @@ pub enum ViewProjection {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct DeliveryPolicy {
     pub min_interval_millis: u32,
     pub max_queue_bytes: u32,
@@ -49,6 +52,7 @@ impl Default for DeliveryPolicy {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct SubscriptionSpec {
     pub selector: ViewSelector,
     pub projection: ViewProjection,
@@ -56,6 +60,7 @@ pub struct SubscriptionSpec {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct IndexRange {
     pub start: u32,
     pub end_exclusive: u32,
@@ -71,6 +76,7 @@ impl IndexRange {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ActivePiece {
     pub piece_index: u32,
     pub piece_length: u32,
@@ -80,6 +86,7 @@ pub struct ActivePiece {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct TorrentView {
     pub torrent_id: String,
     pub state: TorrentState,
@@ -94,6 +101,7 @@ pub struct TorrentView {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ViewSnapshot {
     TorrentList {
@@ -111,6 +119,7 @@ pub enum ViewSnapshot {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ViewPatch {
     TorrentList {
@@ -130,6 +139,7 @@ pub enum ViewPatch {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ViewUpdatePayload {
     Snapshot { snapshot: ViewSnapshot },
@@ -138,12 +148,14 @@ pub enum ViewUpdatePayload {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum ResetReason {
     QueueOverflow,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ViewUpdate {
     pub contract_version: u16,
     pub stream_id: String,

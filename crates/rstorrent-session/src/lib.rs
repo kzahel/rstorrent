@@ -2,6 +2,9 @@
 
 //! Durable application control and torrent-session ownership.
 
+#[cfg(feature = "uniffi")]
+uniffi::setup_scaffolding!();
+
 mod application;
 mod control;
 mod have;

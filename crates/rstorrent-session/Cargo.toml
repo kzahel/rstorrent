@@ -5,6 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 publish = false
 
+[features]
+uniffi = ["dep:uniffi"]
+
 [dependencies]
 rstorrent-engine = { path = "../rstorrent-engine" }
 rstorrent-protocol = { path = "../rstorrent-protocol" }
@@ -14,3 +17,4 @@ serde_json = { workspace = true }
 sha1 = { workspace = true }
 tokio = { workspace = true, features = ["io-std", "io-util", "macros", "rt", "sync"] }
 ts-rs = { workspace = true }
+uniffi = { version = "=0.31.0", default-features = false, optional = true }

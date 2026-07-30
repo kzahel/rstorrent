@@ -41,12 +41,24 @@ cargo run \
     --bin rstorrent-uniffi-bindgen \
     -- generate \
     --library "$repository_root/target/debug/librstorrent_android.so" \
+    --crate rstorrent_android \
     --config "$repository_root/crates/rstorrent-android/uniffi.toml" \
     --language kotlin \
     --out-dir "$generated_root/source/uniffi" \
     --no-format
+cargo run \
+    -p rstorrent-android \
+    --features bindgen \
+    --bin rstorrent-uniffi-bindgen \
+    -- generate \
+    --library "$repository_root/target/debug/librstorrent_android.so" \
+    --crate rstorrent_session \
+    --config "$repository_root/crates/rstorrent-session/uniffi.toml" \
+    --language kotlin \
+    --out-dir "$generated_root/source/uniffi" \
+    --no-format
 
-"$bootstrap_root/gradlew" -p "$bootstrap_root" assembleDebug
+"$bootstrap_root/gradlew" -p "$bootstrap_root" assembleDebug testDebugUnitTest
 
 apk="$bootstrap_root/app/build/outputs/apk/debug/app-debug.apk"
 if [[ ! -f "$apk" ]]; then
