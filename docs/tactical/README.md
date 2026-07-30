@@ -50,9 +50,18 @@ direction belongs in `../topics/`.
   AVD, Chromebook ARCVM, physical Pixel 7a, and Moto X4 internal and removable
   exFAT storage.
 - [`004-android-engine-bootstrap.md`](004-android-engine-bootstrap.md):
-  planned in-process engine packaging behind UniFFI, foreground-service
+  completed in-process engine packaging behind UniFFI, foreground-service
   ownership, direct Rust networking, bounded app-private storage, cancellation,
   peer-failure, activity-recreation, and exact cleanup evidence on an AVD,
   Chromebook ARCVM, and Moto X4.
+- [`005-saf-selective-storage.md`](005-saf-selective-storage.md): closed after
+  proving descriptor-backed selective download, provider publication, forced
+  restart verification, and exact cleanup on an AVD, Chromebook ARCVM, and
+  Pixel 7a. Unavailable Moto rows and remaining provider-failure profiles are
+  recorded as deferred rather than claimed.
+- [`006-magnet-metadata-peer-hint.md`](006-magnet-metadata-peer-hint.md):
+  active bounded slice for v1 magnet parsing, direct `x.pe` bootstrap,
+  bidirectional BEP 9 metadata exchange, and content download from verified
+  fetched metadata.
 
-The next tactical number is `005`.
+The next tactical number is `007`.

@@ -273,14 +273,21 @@ This is recommended direction beyond the accepted first slice:
    proved actual engine packaging, the UniFFI control plane,
    foreground-service ownership, direct Rust networking, bounded app-private
    storage, cancellation, and failure cleanup on Android.
-6. In progress: connect the real selective-storage engine to Android SAF capabilities
-   without moving payloads through Kotlin:
+6. Closed with explicit deferred validation:
    [`005-saf-selective-storage.md`](../tactical/005-saf-selective-storage.md)
-   records the active slice.
-7. Define the broader application command/snapshot/event boundary from the
-   bootstrap and storage evidence.
-8. Add the first Android and desktop product clients.
-9. Evaluate product migration, extension control, and JSTorrent brand
+   connected the real selective-storage engine to Android SAF capabilities
+   without moving payloads through Kotlin. Moto and remaining provider-fault
+   evidence is not claimed.
+7. In progress:
+   [`006-magnet-metadata-peer-hint.md`](../tactical/006-magnet-metadata-peer-hint.md)
+   adds bounded v1 magnet parsing and bidirectional BEP 9 metadata exchange,
+   then hands verified metadata to the existing content path.
+8. Add durable resume and recheck, including persistence of verified magnet
+   metadata and source intent.
+9. Define the broader application command/snapshot/event boundary from the
+   proven lifecycle and persistence evidence.
+10. Add the first Android and desktop product clients.
+11. Evaluate product migration, extension control, and JSTorrent brand
    graduation from the proven application contracts.
 
 The platform feasibility probe remains a separate tactical so failure in it
@@ -288,11 +295,13 @@ does not distort the protocol vertical slice.
 
 ## Recommended Next Work
 
-Execute Tactical `005` around a real SAF selective-storage adapter. Retain
-Tactical `003`'s duplicated-descriptor ownership and provider capability
-observations together with Tactical `004`'s service, UniFFI, cancellation, and
-byte-accounting contracts. Keep native preparation distinct from provider
-publication and application success, and preserve exact cleanup across
-descriptor, provider, and restart failures. Permanent resume format, alternate
-allocation modes, broad provider compatibility, general peer discovery, and
-UI architecture remain separate tacticals.
+Execute Tactical `006` as a trackerless magnet vertical slice. Given only a
+bounded v1 `btih` magnet and loopback `x.pe` hint, negotiate BEP 10, fetch and
+verify BEP 9 metadata, parse the raw info dictionary, and continue over the
+same peer into the existing bounded selective download path. Also serve
+verified metadata to an independent libtorrent magnet client. Keep metadata
+allocation under the existing bencode ceiling, retain bounded pre-metadata
+peer state, and cover malformed extension handshakes, inconsistent sizes,
+invalid pieces, rejects, disconnects, and hash mismatch before adding tracker
+or DHT breadth. Durable resume, general peer discovery, v2 metadata, payload
+upload, and UI architecture remain separate tacticals.

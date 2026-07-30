@@ -1,6 +1,7 @@
 # Tactical 005: SAF Selective Storage
 
-Status: in progress.
+Status: closed on 2026-07-30 with unavailable Moto and provider-failure
+validation explicitly deferred.
 
 ## Motivation And Outcome
 
@@ -385,11 +386,13 @@ Recorded device evidence:
   Internal and removable exFAT rows, including removable cancellation and
   allocation observations, remain unrun.
 
-The main vertical thread is implemented, but this tactical is not complete.
-The Moto rows and remaining device-level injected manifest, corrupt-reopen,
-collision, rename, and revoked-permission cases still gate the stopping
-condition. Existing successful output is never reported as application
-success before restart verification.
+The main vertical thread is implemented. The maintainer closed this tactical
+without access to the Moto X4. The original stopping condition was not fully
+satisfied: the Moto rows and device-level injected manifest, corrupt-reopen,
+collision, rename, and revoked-permission cases remain unrun. They are
+explicitly deferred evidence, not claimed provider compatibility. Existing
+successful output is never reported as application success before restart
+verification.
 
 Validation run for this implementation:
 
