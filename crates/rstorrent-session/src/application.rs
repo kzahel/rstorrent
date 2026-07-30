@@ -744,4 +744,65 @@ mod tests {
         drop(service);
         fs::remove_dir_all(root).expect("remove test root");
     }
+
+    #[tokio::test]
+    async fn incomplete_storage_artifacts_enter_repair_without_overwrite() {
+        let root = test_root("storage-repair");
+        let configuration = config(&root);
+        let raw_info = b"d5:filesld6:lengthi4e4:pathl4:testeee4:name4:root12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
+        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let configured_root = configuration.storage_roots[0].clone();
+        let mut store = SessionStore::open(
+            &configuration.profile_root,
+            &configuration.profile_id,
+            std::slice::from_ref(&configured_root),
+        )
+        .expect("open store");
+        store
+            .handle_durable(&add_request("add", &torrent_id))
+            .expect("add");
+        store
+            .record_metadata(&torrent_id, raw_info)
+            .expect("record metadata");
+        drop(store);
+
+        let incomplete_output = configured_root.path.join(&torrent_id);
+        fs::create_dir_all(&incomplete_output).expect("create incomplete output");
+        fs::write(incomplete_output.join("preserve"), b"user artifact")
+            .expect("write preserved artifact");
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open service with incomplete storage");
+        let mut state = None;
+        for sequence in 0..100 {
+            tokio::task::yield_now().await;
+            let response = service
+                .dispatch(RequestEnvelope {
+                    version: CONTROL_VERSION,
+                    request_id: format!("snapshot-{sequence}"),
+                    expected_revision: None,
+                    command: Command::Snapshot,
+                })
+                .await
+                .expect("snapshot");
+            let ResponseOutcome::Success { snapshot } = response.outcome else {
+                panic!("snapshot should succeed");
+            };
+            state = Some(snapshot.torrents[0].state);
+            if state == Some(TorrentState::NeedsRepair) {
+                break;
+            }
+        }
+        assert_eq!(state, Some(TorrentState::NeedsRepair));
+        assert_eq!(
+            fs::read(incomplete_output.join("preserve"))
+                .expect("read preserved incomplete artifact"),
+            b"user artifact"
+        );
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
 }

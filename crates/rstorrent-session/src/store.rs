@@ -1193,6 +1193,25 @@ mod tests {
     }
 
     #[test]
+    fn corrupt_database_is_reported_without_recreation() {
+        let root = test_root("corrupt-database");
+        fs::create_dir_all(&root).expect("create profile root");
+        let database = root.join("session.db");
+        let corrupt = b"not a SQLite database";
+        fs::write(&database, corrupt).expect("write corrupt database");
+        let configured = configured_root(&root);
+        assert!(matches!(
+            SessionStore::open(&root, "default", &[configured]),
+            Err(StoreError::Sqlite(_))
+        ));
+        assert_eq!(
+            fs::read(database).expect("read preserved corrupt database"),
+            corrupt
+        );
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
     fn deduplicates_mutations_and_rejects_conflicts_and_stale_revisions() {
         let root = test_root("receipts");
         let configured = configured_root(&root);
