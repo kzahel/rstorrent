@@ -682,4 +682,51 @@ mod tests {
         ));
         let _ = tokio::fs::remove_file(metainfo_path).await;
     }
+
+    #[tokio::test]
+    async fn peer_disconnect_is_terminal() {
+        let (metainfo, info) = multi_block_metainfo();
+        let info_hash: [u8; 20] = Sha1::digest(&info).into();
+        let metainfo_path = test_path();
+        tokio::fs::write(&metainfo_path, metainfo)
+            .await
+            .expect("write metainfo");
+        let server = bind_metadata_seed(MetadataSeedConfig {
+            metainfo_path: metainfo_path.clone(),
+            listen: "127.0.0.1:0".parse().expect("loopback address"),
+            timeout: Duration::from_secs(2),
+        })
+        .await
+        .expect("bind validated seed");
+        let address = server.listen_address();
+        let server_task = tokio::spawn(server.serve());
+
+        let mut stream = TcpStream::connect(address).await.expect("connect seed");
+        let mut reserved = [0; 8];
+        reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+        stream
+            .write_all(&encode_handshake_with_reserved(
+                info_hash,
+                *b"-RS-DROP--0000000000",
+                reserved,
+            ))
+            .await
+            .expect("send client handshake");
+        let mut server_handshake = [0; HANDSHAKE_LENGTH];
+        stream
+            .read_exact(&mut server_handshake)
+            .await
+            .expect("read server handshake");
+        drop(stream);
+
+        let result = server_task.await.expect("seed task");
+        assert!(
+            matches!(
+                result,
+                Err(MetadataSeedError::PeerClosed | MetadataSeedError::Io { .. })
+            ),
+            "{result:?}"
+        );
+        let _ = tokio::fs::remove_file(metainfo_path).await;
+    }
 }
