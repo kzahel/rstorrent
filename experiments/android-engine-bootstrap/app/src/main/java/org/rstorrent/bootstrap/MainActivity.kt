@@ -29,6 +29,7 @@ class MainActivity : ComponentActivity() {
                 binder: IBinder,
             ) {
                 val service = (binder as ProductEngineService.LocalBinder).service
+                ProductSafDocuments.selectedTree(this@MainActivity)?.let(service::setSafTree)
                 productService.value = service
                 pendingProductMagnet?.let {
                     pendingProductMagnet = null
@@ -74,6 +75,14 @@ class MainActivity : ComponentActivity() {
     ) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != TREE_REQUEST) {
+            if (requestCode == PRODUCT_TREE_REQUEST) {
+                val treeUri = data?.data
+                if (resultCode != RESULT_OK || treeUri == null) return
+                val flags = data.flags and ProductSafDocuments.GRANT_FLAGS
+                contentResolver.takePersistableUriPermission(treeUri, flags)
+                ProductSafDocuments.persistTree(this, treeUri)
+                productService.value?.setSafTree(treeUri)
+            }
             return
         }
         val command = pendingCommand ?: error("SAF command was not retained")
@@ -107,7 +116,7 @@ class MainActivity : ComponentActivity() {
         if (!productMode) {
             productMode = true
             setContent {
-                ProductApp(productService.value)
+                ProductApp(productService.value, ::launchProductTreePicker)
             }
         }
         command.getStringExtra(EXTRA_PRODUCT_MAGNET)?.takeIf(String::isNotBlank)?.let {
@@ -183,6 +192,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun launchProductTreePicker() {
+        startActivityForResult(
+            Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+                putExtra(
+                    "android.provider.extra.INITIAL_URI",
+                    android.net.Uri.parse(
+                        "content://com.android.externalstorage.documents/document/" +
+                            "primary%3ADownload",
+                    ),
+                )
+            },
+            PRODUCT_TREE_REQUEST,
+        )
+    }
+
     private fun bindProductService() {
         if (productBound) return
         productBound =
@@ -233,6 +261,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val TREE_REQUEST = 51
+        private const val PRODUCT_TREE_REQUEST = 53
         const val EXTRA_PRODUCT_MAGNET = "product_magnet"
     }
 }

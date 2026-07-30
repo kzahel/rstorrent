@@ -18,6 +18,8 @@ data class PieceActivityState(
 data class ProductState(
     val ready: Boolean = false,
     val error: String? = null,
+    val storageRootReady: Boolean = false,
+    val storageRootLabel: String? = null,
     val selectedTorrent: String? = null,
     val torrents: Map<String, TorrentView> = emptyMap(),
     val pieces: Map<String, PieceActivityState> = emptyMap(),

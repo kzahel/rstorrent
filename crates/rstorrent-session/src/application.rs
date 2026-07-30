@@ -233,12 +233,12 @@ impl ApplicationService {
         if !resume.desired_running
             || matches!(
                 resume.state,
-                TorrentState::Paused
-                    | TorrentState::Complete
-                    | TorrentState::NeedsRepair
-                    | TorrentState::AwaitingPublication
+                TorrentState::Paused | TorrentState::Complete | TorrentState::AwaitingPublication
             )
         {
+            return Ok(());
+        }
+        if resume.state == TorrentState::NeedsRepair {
             return Err(ApplicationError::Configuration(format!(
                 "torrent cannot accept storage in state {}",
                 resume.state.as_str()
@@ -255,6 +255,7 @@ impl ApplicationService {
         let raw_info = resume.raw_info.ok_or_else(|| {
             ApplicationError::Configuration("torrent metadata is not available".to_owned())
         })?;
+        let initialize_storage = resume.storage_state == StorageState::None;
         let skip_files = resume
             .skip_files
             .into_iter()
@@ -284,6 +285,7 @@ impl ApplicationService {
             resume_magnet_to_descriptors_with_peer_hint_with_control(
                 config,
                 descriptors,
+                initialize_storage,
                 checkpoints,
                 task_control,
             )

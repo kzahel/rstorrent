@@ -498,6 +498,7 @@ pub async fn resume_magnet_with_peer_hint_with_control(
 pub async fn resume_magnet_to_descriptors_with_peer_hint_with_control(
     config: ResumableMagnetDownloadConfig,
     descriptors: DescriptorStorage,
+    initialize_storage: bool,
     checkpoints: Arc<dyn DownloadCheckpointSink>,
     control: DownloadControl,
 ) -> Result<DownloadReport, DownloadError> {
@@ -506,14 +507,20 @@ pub async fn resume_magnet_to_descriptors_with_peer_hint_with_control(
             "descriptor storage requires verified metadata".to_owned(),
         ));
     }
-    resume_magnet_with_peer_hint_owned(config, checkpoints, control, Some(descriptors)).await
+    resume_magnet_with_peer_hint_owned(
+        config,
+        checkpoints,
+        control,
+        Some((descriptors, initialize_storage)),
+    )
+    .await
 }
 
 async fn resume_magnet_with_peer_hint_owned(
     config: ResumableMagnetDownloadConfig,
     checkpoints: Arc<dyn DownloadCheckpointSink>,
     control: DownloadControl,
-    descriptors: Option<DescriptorStorage>,
+    descriptors: Option<(DescriptorStorage, bool)>,
 ) -> Result<DownloadReport, DownloadError> {
     validate_resumable_magnet_download_config(&config)?;
     let configured_timeout = config.timeout;
@@ -886,13 +893,14 @@ async fn run_magnet_metadata(magnet: String) -> Result<Vec<u8>, DownloadError> {
 struct ResumeContext {
     verified_pieces: Vec<bool>,
     checkpoints: Arc<dyn DownloadCheckpointSink>,
+    initialize_descriptors: bool,
 }
 
 async fn run_resumable_magnet_download(
     config: ResumableMagnetDownloadConfig,
     checkpoints: Arc<dyn DownloadCheckpointSink>,
     control: DownloadControl,
-    descriptors: Option<DescriptorStorage>,
+    descriptors: Option<(DescriptorStorage, bool)>,
 ) -> Result<DownloadReport, DownloadError> {
     let magnet = Magnet::parse(&config.magnet).map_err(DownloadError::Magnet)?;
     if magnet.peer_hints.is_empty() {
@@ -901,7 +909,11 @@ async fn run_resumable_magnet_download(
     let resume = ResumeContext {
         verified_pieces: config.verified_pieces,
         checkpoints: checkpoints.clone(),
+        initialize_descriptors: descriptors
+            .as_ref()
+            .is_some_and(|(_, initialize)| *initialize),
     };
+    let descriptors = descriptors.map(|(descriptors, _)| descriptors);
 
     if let Some(raw_info) = config.verified_info {
         let metainfo = Metainfo::from_info_bytes(&raw_info).map_err(DownloadError::Metainfo)?;
@@ -1380,20 +1392,47 @@ async fn run_selective_download(
             None,
         ),
         (Some(descriptors), Some(resume)) => {
-            let storage = SelectiveStorage::resume_with_descriptors(
-                &metainfo,
-                layout.clone(),
-                selection,
-                descriptors,
-                verified_pieces.clone(),
-            )
-            .await
-            .map_err(DownloadError::SelectiveStorage)?;
+            let descriptor_is_empty = descriptors
+                .part_file
+                .metadata()
+                .map_err(|source| DownloadError::Io {
+                    operation: "inspect resumable descriptor part file",
+                    source,
+                })?
+                .len()
+                == 0;
+            let initialize = resume.initialize_descriptors && descriptor_is_empty;
+            let storage = if initialize {
+                SelectiveStorage::create_with_descriptors(
+                    &metainfo,
+                    layout.clone(),
+                    selection,
+                    &[],
+                    descriptors,
+                )
+                .await
+                .map_err(DownloadError::SelectiveStorage)?
+            } else {
+                SelectiveStorage::resume_with_descriptors(
+                    &metainfo,
+                    layout.clone(),
+                    selection,
+                    descriptors,
+                    verified_pieces.clone(),
+                )
+                .await
+                .map_err(DownloadError::SelectiveStorage)?
+            };
+            let resumed = if initialize {
+                ResumedStorage::Created
+            } else {
+                ResumedStorage::Staging
+            };
             resume
                 .checkpoints
-                .storage_prepared(ResumedStorage::Staging)
+                .storage_prepared(resumed)
                 .map_err(DownloadError::Checkpoint)?;
-            (storage, Some(ResumedStorage::Staging))
+            (storage, Some(resumed))
         }
     };
     drop(storage_creation);

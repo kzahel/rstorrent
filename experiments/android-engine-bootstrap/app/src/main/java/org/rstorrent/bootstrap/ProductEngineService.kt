@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Binder
 import android.os.Build
@@ -14,6 +15,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
@@ -62,6 +64,8 @@ class ProductEngineService : Service() {
     private var pieceSubscription: AndroidViewSubscription? = null
     private var pieceJob: Job? = null
     private var selectedTorrent: String? = null
+    private var safTreeUri: Uri? = null
+    private val safWork = ConcurrentHashMap.newKeySet<String>()
     private var powerLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
@@ -69,18 +73,24 @@ class ProductEngineService : Service() {
         super.onCreate()
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, notification("Opening profile"))
+        safTreeUri = ProductSafDocuments.selectedTree(this)
+        mutableState.update {
+            it.copy(
+                storageRootReady = safTreeUri != null,
+                storageRootLabel = safTreeUri?.lastPathSegment,
+            )
+        }
         scope.launch {
             try {
                 val profile = File(filesDir, "product-profile")
-                val downloads = File(filesDir, "product-downloads")
                 check(profile.mkdirs() || profile.isDirectory)
-                check(downloads.mkdirs() || downloads.isDirectory)
                 client =
                     AndroidApplicationClient.open(
                         AndroidApplicationConfig(
                             profile.absolutePath,
                             "default",
-                            downloads.absolutePath,
+                            "",
+                            true,
                             120UL,
                             (32 * 1024).toULong(),
                         ),
@@ -93,7 +103,7 @@ class ProductEngineService : Service() {
                             DeliveryPolicy(250U, 256U * 1024U),
                         ),
                     )
-                listJob = consume(requireNotNull(listSubscription))
+                listJob = consume(requireNotNull(listSubscription), driveSaf = true)
                 mutableState.update { it.copy(ready = true, error = null) }
                 clientReady.complete(Unit)
                 observePowerAndNotification()
@@ -136,7 +146,23 @@ class ProductEngineService : Service() {
     }
 
     fun addMagnet(magnet: String) {
+        if (safTreeUri == null) {
+            mutableState.update { it.copy(error = "Select a download folder first") }
+            return
+        }
         dispatch(Command.AddMagnet(magnet.trim(), "downloads", emptyList()))
+    }
+
+    fun setSafTree(treeUri: Uri) {
+        safTreeUri = treeUri
+        mutableState.update {
+            it.copy(
+                storageRootReady = true,
+                storageRootLabel = treeUri.lastPathSegment,
+                error = null,
+            )
+        }
+        advanceSaf(mutableState.value)
     }
 
     fun pause(torrentId: String) {
@@ -171,7 +197,7 @@ class ProductEngineService : Service() {
                     return@launch
                 }
                 pieceSubscription = subscription
-                pieceJob = consume(subscription)
+                pieceJob = consume(subscription, driveSaf = false)
             } catch (error: Throwable) {
                 reportError(error)
             }
@@ -201,7 +227,10 @@ class ProductEngineService : Service() {
         }
     }
 
-    private fun consume(subscription: AndroidViewSubscription): Job =
+    private fun consume(
+        subscription: AndroidViewSubscription,
+        driveSaf: Boolean,
+    ): Job =
         scope.launch {
             try {
                 while (true) {
@@ -215,6 +244,7 @@ class ProductEngineService : Service() {
                         }
                         val product = requireNotNull(reduced)
                         traceUpdate(update, product)
+                        if (driveSaf) advanceSaf(product)
                         if (selectedTorrent == null) {
                             product.torrents.keys.firstOrNull()?.let(::selectTorrent)
                         }
@@ -228,6 +258,71 @@ class ProductEngineService : Service() {
                 subscription.close()
             }
         }
+
+    private fun advanceSaf(product: ProductState) {
+        val treeUri = safTreeUri ?: return
+        for (torrent in product.torrents.values) {
+            val action =
+                when (torrent.state) {
+                    TorrentState.AWAITING_STORAGE -> "storage"
+                    TorrentState.AWAITING_PUBLICATION -> "publication"
+                    else -> continue
+                }
+            val key = "${torrent.torrentId}:$action"
+            if (!safWork.add(key)) continue
+            scope.launch {
+                try {
+                    when (action) {
+                        "storage" -> {
+                            Log.i(TAG, "saf_storage_open torrent=${torrent.torrentId}")
+                            val plan = client.safStoragePlan(torrent.torrentId)
+                            Log.i(TAG, "saf_storage_planned torrent=${torrent.torrentId}")
+                            ProductSafDocuments.openStaging(this@ProductEngineService, treeUri, plan)
+                                .use { handles ->
+                                    Log.i(
+                                        TAG,
+                                        "saf_storage_descriptors_open torrent=${torrent.torrentId}",
+                                    )
+                                    client.startSaf(torrent.torrentId, handles.storage())
+                                }
+                            Log.i(TAG, "saf_storage_started torrent=${torrent.torrentId}")
+                        }
+                        "publication" -> {
+                            Log.i(TAG, "saf_publication_begin torrent=${torrent.torrentId}")
+                            check(client.preparedSafFiles(torrent.torrentId).isNotEmpty()) {
+                                "native prepared publication manifest is empty"
+                            }
+                            val plan = client.safStoragePlan(torrent.torrentId)
+                            ProductSafDocuments
+                                .publishAndOpen(this@ProductEngineService, treeUri, plan)
+                                .use { handles ->
+                                    client.confirmSafPublication(
+                                        torrent.torrentId,
+                                        handles.descriptors(),
+                                    )
+                                }
+                            Log.i(TAG, "saf_publication_confirmed torrent=${torrent.torrentId}")
+                        }
+                        else -> error("unknown SAF action $action")
+                    }
+                } catch (error: Throwable) {
+                    if (action == "storage") {
+                        try {
+                            client.markSafUnavailable(
+                                torrent.torrentId,
+                                error.message ?: error.toString(),
+                            )
+                        } catch (markError: Throwable) {
+                            error.addSuppressed(markError)
+                        }
+                    }
+                    reportError(error)
+                } finally {
+                    safWork.remove(key)
+                }
+            }
+        }
+    }
 
     private fun traceUpdate(
         update: ViewUpdate,
@@ -247,6 +342,9 @@ class ProductEngineService : Service() {
             TAG,
             "view_update stream=${update.streamId} sequence=${update.sequence} " +
                 "kind=$kind state=${torrent?.state?.name ?: "none"} " +
+                "storage=${torrent?.storageState?.name ?: "none"} " +
+                "metadata=${torrent?.metadataAvailable ?: false} " +
+                "verified=${torrent?.verifiedPieceCount ?: 0U} " +
                 "piece=${active?.pieceIndex?.toString() ?: "none"} " +
                 "requested=${active?.requested?.sumOf(::rangeBytes) ?: 0UL} " +
                 "received=${active?.received?.sumOf(::rangeBytes) ?: 0UL} " +

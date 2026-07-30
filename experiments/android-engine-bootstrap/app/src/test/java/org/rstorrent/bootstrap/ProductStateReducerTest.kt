@@ -5,6 +5,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.rstorrent.session.uniffi.ActivePiece
 import org.rstorrent.session.uniffi.IndexRange
+import org.rstorrent.session.uniffi.StorageState
 import org.rstorrent.session.uniffi.TorrentState
 import org.rstorrent.session.uniffi.TorrentView
 import org.rstorrent.session.uniffi.ViewPatch
@@ -144,6 +145,7 @@ class ProductStateReducerTest {
         TorrentView(
             id,
             state,
+            StorageState.STAGING,
             true,
             100_000U,
             65_536U,

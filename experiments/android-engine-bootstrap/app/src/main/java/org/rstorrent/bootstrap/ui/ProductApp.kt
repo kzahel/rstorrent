@@ -46,7 +46,10 @@ private val RSTorrentColors =
     )
 
 @Composable
-fun ProductApp(service: ProductEngineService?) {
+fun ProductApp(
+    service: ProductEngineService?,
+    onSelectStorage: () -> Unit,
+) {
     MaterialTheme(colorScheme = RSTorrentColors) {
         Surface(modifier = Modifier.fillMaxSize()) {
             if (service == null) {
@@ -57,7 +60,7 @@ fun ProductApp(service: ProductEngineService?) {
                 }
             } else {
                 val state by service.state.collectAsState()
-                ProductContent(service, state)
+                ProductContent(service, state, onSelectStorage)
             }
         }
     }
@@ -67,6 +70,7 @@ fun ProductApp(service: ProductEngineService?) {
 private fun ProductContent(
     service: ProductEngineService,
     state: ProductState,
+    onSelectStorage: () -> Unit,
 ) {
     var magnet by remember { mutableStateOf("") }
     val torrents = state.torrents.values.sortedBy { it.torrentId }
@@ -90,6 +94,23 @@ private fun ProductContent(
                 Spacer(Modifier.height(8.dp))
                 Text(it, color = MaterialTheme.colorScheme.error)
             }
+            Spacer(Modifier.height(12.dp))
+            Button(onClick = onSelectStorage) {
+                Text(
+                    if (state.storageRootReady) {
+                        "Change download folder"
+                    } else {
+                        "Select download folder"
+                    },
+                )
+            }
+            state.storageRootLabel?.let {
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             Spacer(Modifier.height(20.dp))
             OutlinedTextField(
                 value = magnet,
@@ -104,7 +125,7 @@ private fun ProductContent(
                     service.addMagnet(magnet)
                     magnet = ""
                 },
-                enabled = state.ready && magnet.isNotBlank(),
+                enabled = state.ready && state.storageRootReady && magnet.isNotBlank(),
             ) {
                 Text("Add magnet")
             }

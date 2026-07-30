@@ -10,7 +10,7 @@ use tokio::sync::Notify;
 use tokio::time::Instant;
 use ts_rs::TS;
 
-use crate::control::{ServiceSnapshot, TorrentSnapshot, TorrentState};
+use crate::control::{ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState};
 
 pub const VIEW_CONTRACT_VERSION: u16 = 1;
 pub const MIN_SUBSCRIPTION_QUEUE_BYTES: u32 = 4 * 1024;
@@ -90,6 +90,7 @@ pub struct ActivePiece {
 pub struct TorrentView {
     pub torrent_id: String,
     pub state: TorrentState,
+    pub storage_state: StorageState,
     pub metadata_available: bool,
     pub piece_count: u32,
     pub verified_piece_count: u32,
@@ -441,6 +442,7 @@ impl TorrentModel {
             view: TorrentView {
                 torrent_id: snapshot.torrent_id.clone(),
                 state: snapshot.state,
+                storage_state: snapshot.storage_state,
                 metadata_available: snapshot.metadata_available,
                 piece_count: snapshot.piece_count,
                 verified_piece_count: snapshot.verified_piece_count,

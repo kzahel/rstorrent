@@ -13,9 +13,9 @@ export type ResponseOutcome = { "status": "success", snapshot: ServiceSnapshot, 
 
 export type ResponseEnvelope = { version: number, request_id: string, revision: string, } & ({ "status": "success", snapshot: ServiceSnapshot, } | { "status": "error", error: ErrorResponse, });
 
-export type TorrentState = "awaiting_metadata" | "checking" | "downloading" | "paused" | "complete" | "needs_repair" | "error";
+export type TorrentState = "awaiting_metadata" | "awaiting_storage" | "checking" | "downloading" | "awaiting_publication" | "paused" | "complete" | "needs_repair" | "error";
 
-export type StorageState = "none" | "staging" | "published" | "needs_repair";
+export type StorageState = "none" | "staging" | "prepared" | "published" | "needs_repair";
 
 export type TorrentSnapshot = { torrent_id: string, storage_root: string, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, skip_files: Array<number>, error?: string | null, };
 
@@ -33,7 +33,7 @@ export type IndexRange = { start: number, end_exclusive: number, };
 
 export type ActivePiece = { piece_index: number, piece_length: number, requested: Array<IndexRange>, received: Array<IndexRange>, stored: Array<IndexRange>, };
 
-export type TorrentView = { torrent_id: string, state: TorrentState, metadata_available: boolean, piece_count: number, verified_piece_count: number, requested_bytes: string, received_bytes: string, stored_bytes: string, error?: string | null, };
+export type TorrentView = { torrent_id: string, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, requested_bytes: string, received_bytes: string, stored_bytes: string, error?: string | null, };
 
 export type ViewSnapshot = { "type": "torrent_list", torrents: Array<TorrentView>, } | { "type": "torrent", torrent: TorrentView | null, } | { "type": "piece_activity", torrent_id: string, piece_count: number, verified: Array<IndexRange>, active: ActivePiece | null, };
 
