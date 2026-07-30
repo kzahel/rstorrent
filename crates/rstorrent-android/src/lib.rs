@@ -810,7 +810,7 @@ fn classify_failure(error: &DownloadError) -> FailureKind {
         | DownloadError::SelectiveStorage(_)
         | DownloadError::Io { .. } => FailureKind::Storage,
         DownloadError::CleanupAfterFailure { .. } => FailureKind::Cleanup,
-        DownloadError::Cancelled => FailureKind::Runtime,
+        DownloadError::Checkpoint(_) | DownloadError::Cancelled => FailureKind::Runtime,
     }
 }
 
