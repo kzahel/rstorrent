@@ -42,3 +42,6 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`application-control.md`](application-control.md): shared semantic commands,
   responses, snapshots, revisions, and the boundary between in-process
   application control and future transports.
+- [`client-surfaces.md`](client-surfaces.md): shared browser/Tauri web
+  presentation, Android Compose adaptation, generated client types, reactive
+  view delivery, and platform lifecycle boundaries.

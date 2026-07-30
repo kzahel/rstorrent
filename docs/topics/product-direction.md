@@ -304,11 +304,14 @@ This is recommended direction beyond the accepted first slice:
    commands, exact magnet metadata and have persistence,
    sync-before-checkpoint ordering, forced-death resume, and conservative
    fixed-buffer recheck.
-9. Extend the proven application service only as required by the first real
-   Android or desktop product flow: capability installation, UI snapshots or
-   events, and bounded multi-torrent lifecycle are likely next pressures.
-10. Add the first Android and desktop product clients through the shared
-    semantic contract.
+9. In progress:
+   [`008-reactive-multi-surface-control.md`](../tactical/008-reactive-multi-surface-control.md)
+   applies the first real client pressure through recoverable reactive views,
+   generated TypeScript and Kotlin values, a shared browser/Tauri web UI, and
+   an Android Compose adapter.
+10. Grow the resulting thin surfaces only through capabilities the engine and
+    application service actually own. Desktop content UI remains web-based;
+    native desktop code owns the shell, tray, and operating-system integration.
 11. Evaluate product migration, extension control, and JSTorrent brand
    graduation from the proven application contracts.
 

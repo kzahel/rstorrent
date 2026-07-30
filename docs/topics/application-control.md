@@ -3,7 +3,8 @@
 Topic: `application-control`
 
 Status: Tactical `007` implemented the first transport-neutral semantic
-control contract and in-process application service. No network transport or
+control contract and in-process application service. Tactical `008` is
+implementing recoverable reactive views and three thin platform adapters. No
 stable public wire format is accepted yet.
 
 ## Scope
@@ -97,3 +98,11 @@ Later work must define subscriptions or snapshot polling for real UIs,
 multi-torrent scheduling, stable product error taxonomy, capability
 installation, removals and deletion, remote authentication and relay
 semantics, and compatibility rules for any published wire protocol.
+
+The accepted subscription and initial client direction is now recorded in
+[`client-surfaces.md`](client-surfaces.md). Tactical `008` must retain coherent
+snapshots as recovery authority while adding typed patches, independent
+bounded subscriber state, explicit continuity, generated TypeScript and
+Kotlin representations, Tauri channels, and an authenticated experimental
+WebSocket adapter. The WebSocket adapter is not the application authority and
+does not require local Tauri control to use networking.
