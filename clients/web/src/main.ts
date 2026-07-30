@@ -39,6 +39,11 @@ const interop =
         requested: 0,
         received: 0,
         stored: 0,
+        control: "waiting" as
+          | "waiting"
+          | "pause_requested"
+          | "resume_requested"
+          | "resumed",
       }
     : undefined;
 
@@ -137,6 +142,7 @@ async function consume(subscription: ApplicationSubscription): Promise<void> {
         const first = Object.keys(state.torrents)[0];
         if (first !== undefined) await selectTorrent(first);
       }
+      void exerciseInteropControl();
       void finishInteropIfReady();
       renderApplication();
     }
@@ -159,7 +165,8 @@ function renderApplication(): void {
         ? `<output id="interop-result" data-complete="true" ` +
           `data-requested="${interop.requested}" ` +
           `data-received="${interop.received}" ` +
-          `data-stored="${interop.stored}">controlled download complete</output>`
+          `data-stored="${interop.stored}" ` +
+          `data-control="${interop.control}">controlled download complete</output>`
         : ""
     }
     <section class="workspace">
@@ -230,10 +237,32 @@ function observeInterop(): void {
   }
 }
 
+async function exerciseInteropControl(): Promise<void> {
+  if (interop === undefined) return;
+  const torrent = Object.values(state.torrents)[0];
+  if (torrent === undefined) return;
+  if (interop.control === "waiting" && torrent.state === "downloading") {
+    interop.control = "pause_requested";
+    await dispatch({ type: "pause", torrent_id: torrent.torrent_id });
+  } else if (
+    interop.control === "pause_requested" &&
+    torrent.state === "paused"
+  ) {
+    interop.control = "resume_requested";
+    await dispatch({ type: "resume", torrent_id: torrent.torrent_id });
+  } else if (
+    interop.control === "resume_requested" &&
+    torrent.state === "downloading"
+  ) {
+    interop.control = "resumed";
+  }
+}
+
 async function finishInteropIfReady(): Promise<void> {
   if (
     interop === undefined ||
     interopShutdownRequested ||
+    interop.control !== "resumed" ||
     !Object.values(state.torrents).some((torrent) => torrent.state === "complete") ||
     interop.requested === 0 ||
     interop.received === 0 ||

@@ -210,6 +210,8 @@ def run_chrome(
     for field in ("requested", "received", "stored"):
         if int(result[field]) <= 0:
             raise ScenarioFailure(f"browser did not render positive {field} bytes")
+    if result["control"] != "resumed":
+        raise ScenarioFailure("browser did not render pause/resume completion")
     return result["html"]
 
 
@@ -233,6 +235,7 @@ def run(chrome: Path) -> None:
             fixture.seed_directory,
             diagnostics,
         )
+        handle.set_upload_limit(UPLOAD_RATE_LIMIT)
         storage = run_path / "downloads"
         gateway, address = start_gateway(
             build_gateway(repository),
@@ -267,7 +270,7 @@ def run(chrome: Path) -> None:
             f"requested={requested} received={received} stored={stored} "
             f"metadata_size={len(fixture.info_bytes)} pieces=3 "
             f"payload_sha1={fixture.payload_hash} gateway_shutdown=joined "
-            "cleanup=ok"
+            "pause_resume=ok cleanup=ok"
         )
     except BaseException as error:
         failure = error

@@ -31,6 +31,7 @@ ACTIVITY = f"{PACKAGE}/.MainActivity"
 TRACE_TAG = "RSTorrentProduct"
 DOWNLOAD_TIMEOUT_SECONDS = 45
 UPLOAD_RATE_LIMIT = 8 * 1024
+ANDROID_PAYLOAD_SIZE = 128 * 1024
 BOUNDS_PATTERN = re.compile(r"\[(\d+),(\d+)]\[(\d+),(\d+)]")
 
 
@@ -148,23 +149,28 @@ def product_logs(adb: Adb) -> str:
     ).stdout
 
 
-def wait_for_download(adb: Adb) -> tuple[str, bool]:
+def wait_for_download(adb: Adb) -> tuple[str, bool, bool]:
     deadline = time.monotonic() + DOWNLOAD_TIMEOUT_SECONDS
     trace = ""
     lifecycle_checked = False
+    control_checked = False
     while time.monotonic() < deadline:
         trace = product_logs(adb)
         if "FATAL EXCEPTION" in trace or f"E/{TRACE_TAG}" in trace:
             raise ScenarioFailure(f"Android product client failed:\n{trace}")
-        if not lifecycle_checked and positive_counter(trace, "requested"):
+        if not control_checked and positive_counter(trace, "requested"):
+            verify_pause_resume(adb)
+            control_checked = True
+            trace = product_logs(adb)
+        if control_checked and not lifecycle_checked:
             verify_activity_independence(adb)
             lifecycle_checked = True
         if "state=COMPLETE" in trace:
-            if not lifecycle_checked:
+            if not lifecycle_checked or not control_checked:
                 raise ScenarioFailure(
-                    "controlled download completed before lifecycle validation"
+                    "controlled download completed before control/lifecycle validation"
                 )
-            return trace, lifecycle_checked
+            return trace, lifecycle_checked, control_checked
         time.sleep(0.1)
     raise ScenarioFailure(f"Android download did not complete:\n{trace}")
 
@@ -174,6 +180,50 @@ def positive_counter(trace: str, field: str) -> bool:
         int(value) > 0
         for value in re.findall(rf"(?:^| ){re.escape(field)}=(\d+)", trace)
     )
+
+
+def find_control(adb: Adb, label: str) -> ET.Element:
+    root = dump_ui(adb)
+    controls = [
+        node
+        for node in root.iter()
+        if node.attrib.get("clickable") == "true"
+        and any(descendant.attrib.get("text") == label for descendant in node.iter())
+    ]
+    control = min(controls, key=lambda node: bounds_area(node.attrib["bounds"]), default=None)
+    if control is None:
+        raise ScenarioFailure(f"Android product UI has no clickable {label} control")
+    return control
+
+
+def bounds_area(bounds: str) -> int:
+    match = BOUNDS_PATTERN.fullmatch(bounds)
+    if match is None:
+        raise ScenarioFailure(f"invalid UI bounds: {bounds}")
+    left, top, right, bottom = (int(value) for value in match.groups())
+    return (right - left) * (bottom - top)
+
+
+def wait_for_new_state(adb: Adb, state: str, previous_count: int) -> str:
+    deadline = time.monotonic() + 10
+    trace = ""
+    marker = f"state={state}"
+    while time.monotonic() < deadline:
+        trace = product_logs(adb)
+        if trace.count(marker) > previous_count:
+            return trace
+        time.sleep(0.1)
+    raise ScenarioFailure(f"Android UI did not reach {state}:\n{trace}")
+
+
+def verify_pause_resume(adb: Adb) -> None:
+    trace = product_logs(adb)
+    paused_before = trace.count("state=PAUSED")
+    tap_bounds(adb, find_control(adb, "Pause").attrib["bounds"])
+    trace = wait_for_new_state(adb, "PAUSED", paused_before)
+    downloading_before = trace.count("state=DOWNLOADING")
+    tap_bounds(adb, find_control(adb, "Resume").attrib["bounds"])
+    wait_for_new_state(adb, "DOWNLOADING", downloading_before)
 
 
 def verify_activity_independence(adb: Adb) -> None:
@@ -301,7 +351,7 @@ def run(arguments: argparse.Namespace) -> None:
     port: int | None = None
     diagnostics: list[str] = []
     try:
-        fixture = create_fixture(run_path)
+        fixture = create_fixture(run_path, payload_size=ANDROID_PAYLOAD_SIZE)
         session = create_session()
         session.apply_settings({"upload_rate_limit": UPLOAD_RATE_LIMIT})
         port = wait_for_listener(session, diagnostics)
@@ -311,13 +361,14 @@ def run(arguments: argparse.Namespace) -> None:
             fixture.seed_directory,
             diagnostics,
         )
+        handle.set_upload_limit(UPLOAD_RATE_LIMIT)
         adb.run("reverse", f"tcp:{port}", f"tcp:{port}")
         install_and_start(
             adb,
             arguments.apk.resolve(),
             magnet_uri(fixture.info_hash, f"127.0.0.1:{port}"),
         )
-        trace, _ = wait_for_download(adb)
+        trace, _, _ = wait_for_download(adb)
         for counter in ("requested", "received", "stored"):
             if not positive_counter(trace, counter):
                 raise ScenarioFailure(
@@ -330,10 +381,11 @@ def run(arguments: argparse.Namespace) -> None:
         updates = trace.count("view_update")
         print(
             f"android_serial={arguments.serial} info_hash={fixture.info_hash} "
-            f"metadata_size={len(fixture.info_bytes)} pieces=3 "
+            f"metadata_size={len(fixture.info_bytes)} "
+            f"pieces={fixture.torrent_info.num_pieces()} "
             f"view_updates={updates} activity_recreation=ok "
             f"activity_background=ok payload_sha1={fixture.payload_hash} "
-            "foreground_stop=joined cleanup=ok"
+            "pause_resume=ok foreground_stop=joined cleanup=ok"
         )
     finally:
         if port is not None:

@@ -336,7 +336,7 @@ impl ApplicationService {
             return Ok(());
         }
         let active = self.active.take().expect("matching active task exists");
-        active.control.cancel();
+        active.control.cancel_when_safe();
         match active.task.await {
             Ok(Ok(_)) | Ok(Err(DownloadError::Cancelled)) => Ok(()),
             Ok(Err(error)) => {

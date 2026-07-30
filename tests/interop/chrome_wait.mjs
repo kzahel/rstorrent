@@ -53,12 +53,16 @@ while (Date.now() < deadline) {
         requested: element.dataset.requested,
         received: element.dataset.received,
         stored: element.dataset.stored,
+        control: element.dataset.control,
         html: document.documentElement.outerHTML,
       };
     })()`,
     returnByValue: true,
   });
-  if (result.result?.value?.complete === "true") {
+  if (
+    result.result?.value?.complete === "true" &&
+    result.result?.value?.control === "resumed"
+  ) {
     process.stdout.write(JSON.stringify(result.result.value));
     socket.close();
     process.exit(0);

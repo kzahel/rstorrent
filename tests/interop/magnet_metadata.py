@@ -95,7 +95,12 @@ def build_binaries(repository: Path) -> tuple[Path, Path]:
     return download, seed
 
 
-def create_fixture(run_path: Path) -> Fixture:
+def create_fixture(
+    run_path: Path,
+    *,
+    payload_size: int = PAYLOAD_SIZE,
+    piece_size: int = PIECE_SIZE,
+) -> Fixture:
     seed_directory = run_path / "seed"
     torrent_root = seed_directory / ROOT_NAME
     torrent_root.mkdir(parents=True)
@@ -110,11 +115,11 @@ def create_fixture(run_path: Path) -> Fixture:
         empty_path.touch()
 
     payload_path = torrent_root / "payload.bin"
-    payload_hash = write_deterministic_payload(payload_path, PAYLOAD_SIZE)
-    files.add_file(f"{ROOT_NAME}/payload.bin", PAYLOAD_SIZE)
+    payload_hash = write_deterministic_payload(payload_path, payload_size)
+    files.add_file(f"{ROOT_NAME}/payload.bin", payload_size)
     creator = lt.create_torrent(
         files,
-        piece_size=PIECE_SIZE,
+        piece_size=piece_size,
         flags=lt.create_torrent.v1_only,
     )
     lt.set_piece_hashes(creator, str(seed_directory))

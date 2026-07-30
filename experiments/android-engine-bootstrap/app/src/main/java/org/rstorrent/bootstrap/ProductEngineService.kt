@@ -207,11 +207,16 @@ class ProductEngineService : Service() {
                 while (true) {
                     val update = subscription.nextUpdate() ?: break
                     try {
-                        val reduced = ProductStateReducer.reduce(mutableState.value, update)
-                        mutableState.value = reduced
-                        traceUpdate(update, reduced)
+                        var reduced: ProductState? = null
+                        mutableState.update { current ->
+                            ProductStateReducer.reduce(current, update).also {
+                                reduced = it
+                            }
+                        }
+                        val product = requireNotNull(reduced)
+                        traceUpdate(update, product)
                         if (selectedTorrent == null) {
-                            reduced.torrents.keys.firstOrNull()?.let(::selectTorrent)
+                            product.torrents.keys.firstOrNull()?.let(::selectTorrent)
                         }
                     } catch (_: ViewResetRequiredException) {
                         subscription.resync()

@@ -39,6 +39,8 @@ use crate::storage::{
 
 const DIAGNOSTIC_PEER_ID: [u8; 20] = *b"-RS0001-000000000000";
 const NETWORK_READ_LENGTH: usize = 16 * 1024;
+const SAFE_CANCEL_REQUESTED: usize = 1 << (usize::BITS - 1);
+const SAFE_CANCEL_CRITICAL_MASK: usize = SAFE_CANCEL_REQUESTED - 1;
 
 #[derive(Debug)]
 struct ConnectedPeer {
@@ -142,6 +144,12 @@ struct DownloadControlInner {
     stored_bytes: AtomicUsize,
     storage_write_delay_millis: AtomicU64,
     activity_sink: Mutex<Option<Arc<dyn DownloadActivitySink>>>,
+    safe_cancel_state: AtomicUsize,
+}
+
+#[derive(Debug)]
+struct SafeCancelGuard {
+    control: DownloadControl,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -165,12 +173,23 @@ impl DownloadControl {
                 stored_bytes: AtomicUsize::new(0),
                 storage_write_delay_millis: AtomicU64::new(0),
                 activity_sink: Mutex::new(None),
+                safe_cancel_state: AtomicUsize::new(0),
             }),
         }
     }
 
     pub fn cancel(&self) {
         self.inner.cancellation.cancel();
+    }
+
+    pub fn cancel_when_safe(&self) {
+        let previous = self
+            .inner
+            .safe_cancel_state
+            .fetch_or(SAFE_CANCEL_REQUESTED, Ordering::AcqRel);
+        if previous & SAFE_CANCEL_CRITICAL_MASK == 0 {
+            self.cancel();
+        }
     }
 
     pub fn is_cancelled(&self) -> bool {
@@ -192,6 +211,37 @@ impl DownloadControl {
         self.inner
             .storage_write_delay_millis
             .store(millis, Ordering::Release);
+    }
+
+    fn enter_safe_cancel_critical(&self) -> Result<SafeCancelGuard, DownloadError> {
+        let mut state = self.inner.safe_cancel_state.load(Ordering::Acquire);
+        loop {
+            if state & SAFE_CANCEL_REQUESTED != 0 {
+                return Err(DownloadError::Cancelled);
+            }
+            let critical_count = state & SAFE_CANCEL_CRITICAL_MASK;
+            let next = critical_count
+                .checked_add(1)
+                .filter(|count| *count <= SAFE_CANCEL_CRITICAL_MASK)
+                .ok_or_else(|| {
+                    DownloadError::Checkpoint(
+                        "safe-cancellation critical-section overflow".to_owned(),
+                    )
+                })?;
+            match self.inner.safe_cancel_state.compare_exchange_weak(
+                state,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => {
+                    return Ok(SafeCancelGuard {
+                        control: self.clone(),
+                    });
+                }
+                Err(actual) => state = actual,
+            }
+        }
     }
 
     pub fn set_activity_sink(&self, sink: Arc<dyn DownloadActivitySink>) {
@@ -251,6 +301,20 @@ impl DownloadControl {
             .load(Ordering::Acquire);
         if millis != 0 {
             tokio::time::sleep(Duration::from_millis(millis)).await;
+        }
+    }
+}
+
+impl Drop for SafeCancelGuard {
+    fn drop(&mut self) {
+        let previous = self
+            .control
+            .inner
+            .safe_cancel_state
+            .fetch_sub(1, Ordering::AcqRel);
+        debug_assert_ne!(previous & SAFE_CANCEL_CRITICAL_MASK, 0);
+        if previous == SAFE_CANCEL_REQUESTED | 1 {
+            self.control.cancel();
         }
     }
 }
@@ -1185,6 +1249,7 @@ async fn run_selective_download(
         }
         None => vec![false; layout.piece_count()],
     };
+    let storage_creation = control.enter_safe_cancel_critical()?;
     let (mut storage, resumed_storage) = match (descriptors, &resume) {
         (Some(descriptors), None) => (
             SelectiveStorage::create_with_descriptors(
@@ -1227,6 +1292,7 @@ async fn run_selective_download(
         ),
         (Some(_), Some(_)) => unreachable!("descriptor resume was rejected"),
     };
+    drop(storage_creation);
 
     if let (Some(resume), Some(resumed)) = (&resume, resumed_storage) {
         let previous = verified_pieces.clone();
@@ -1868,6 +1934,28 @@ mod tests {
             "rstorrent-driver-test-{}-{sequence}-{name}",
             std::process::id()
         ))
+    }
+
+    #[test]
+    fn safe_cancel_waits_for_storage_creation_boundary() {
+        let control = DownloadControl::new();
+        let storage_creation = control
+            .enter_safe_cancel_critical()
+            .expect("enter storage creation");
+
+        control.cancel_when_safe();
+        assert!(!control.is_cancelled());
+        assert!(matches!(
+            control.enter_safe_cancel_critical(),
+            Err(DownloadError::Cancelled)
+        ));
+
+        drop(storage_creation);
+        assert!(control.is_cancelled());
+
+        let immediate = DownloadControl::new();
+        immediate.cancel_when_safe();
+        assert!(immediate.is_cancelled());
     }
 
     fn two_file_metainfo() -> Vec<u8> {

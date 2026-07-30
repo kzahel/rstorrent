@@ -55,6 +55,7 @@ def run() -> None:
             fixture.seed_directory,
             diagnostics,
         )
+        handle.set_upload_limit(UPLOAD_RATE_LIMIT)
         data_root = run_path / "xdg-data"
         config_root = run_path / "xdg-config"
         cache_root = run_path / "xdg-cache"
@@ -107,7 +108,8 @@ def run() -> None:
             f"metadata_size={len(fixture.info_bytes)} pieces=3 "
             f"payload_sha1={fixture.payload_hash} "
             f"profile_payload={payload.relative_to(data_root)} "
-            "command_channel_completion=ok shutdown=joined cleanup=ok"
+            "pause_resume=ok command_channel_completion=ok "
+            "shutdown=joined cleanup=ok"
         )
     finally:
         if session is not None:
