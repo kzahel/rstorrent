@@ -12,6 +12,8 @@ Documentation is organized by role:
   plans and their execution records.
 - [`references.md`](references.md) records how specifications and external
   implementations may be used.
+- [`test-torrents.md`](test-torrents.md) catalogs public magnets suitable for
+  manual and interoperability testing.
 
 Durable architecture documents can be added directly under `docs/` once their
 shape has been accepted. Historical plans or investigations should eventually
