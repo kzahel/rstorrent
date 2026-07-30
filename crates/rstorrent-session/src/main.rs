@@ -135,10 +135,10 @@ fn parse_arguments(
                         "storage root ID and path must be nonempty".to_owned(),
                     ));
                 }
-                storage_roots.push(ConfiguredStorageRoot {
-                    id: id.to_owned(),
-                    path: PathBuf::from(path),
-                });
+                storage_roots.push(ConfiguredStorageRoot::path(
+                    id.to_owned(),
+                    PathBuf::from(path),
+                ));
             }
             "--timeout-seconds" => {
                 timeout = Duration::from_secs(parse_positive_u64(value, name)?);

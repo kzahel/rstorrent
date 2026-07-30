@@ -6,9 +6,12 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use rstorrent_engine::{
-    DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink, DownloadControl,
-    DownloadError, DownloadReport, ResumableMagnetDownloadConfig, ResumedStorage,
-    resume_magnet_with_peer_hint_with_control,
+    DescriptorFile, DescriptorStorage, DescriptorStoragePlan, DownloadActivityEvent,
+    DownloadActivitySink, DownloadCheckpointSink, DownloadControl, DownloadError, PreparedFileHash,
+    ResumableMagnetDownloadConfig, ResumedStorage,
+    download_magnet_metadata_with_peer_hint_with_control, plan_descriptor_storage,
+    resume_magnet_to_descriptors_with_peer_hint_with_control,
+    resume_magnet_with_peer_hint_with_control, verify_prepared_descriptors,
 };
 use rstorrent_protocol::metainfo::Metainfo;
 use tokio::task::JoinHandle;
@@ -18,7 +21,10 @@ use crate::control::{
     TorrentState,
 };
 use crate::have::HaveState;
-use crate::store::{ConfiguredStorageRoot, ResumeRecord, SessionStore, StoreError};
+use crate::store::{
+    ConfiguredStorageRoot, PreparedFileRecord, ResumeRecord, SessionStore, StorageRootLocation,
+    StoreError,
+};
 use crate::views::{
     IndexRange, SubscriptionError, SubscriptionSpec, TorrentActivity, ViewHub, ViewSubscription,
     ranges_from_pieces,
@@ -56,13 +62,19 @@ impl ApplicationConfig {
 struct ActiveDownload {
     torrent_id: String,
     control: DownloadControl,
-    task: JoinHandle<Result<DownloadReport, DownloadError>>,
+    task: JoinHandle<Result<ApplicationTaskReport, DownloadError>>,
+}
+
+#[derive(Debug)]
+enum ApplicationTaskReport {
+    Metadata,
+    Download,
 }
 
 #[derive(Debug)]
 pub struct ApplicationService {
     store: Arc<Mutex<SessionStore>>,
-    storage_roots: BTreeMap<String, PathBuf>,
+    storage_roots: BTreeMap<String, StorageRootLocation>,
     download_timeout: Duration,
     max_buffered_payload_bytes: usize,
     active: Option<ActiveDownload>,
@@ -79,7 +91,7 @@ impl ApplicationService {
         let mut storage_roots = BTreeMap::new();
         for root in &config.storage_roots {
             if storage_roots
-                .insert(root.id.clone(), root.path.clone())
+                .insert(root.id.clone(), root.location.clone())
                 .is_some()
             {
                 return Err(ApplicationError::Configuration(format!(
@@ -87,10 +99,12 @@ impl ApplicationService {
                     root.id
                 )));
             }
-            std::fs::create_dir_all(&root.path).map_err(|source| ApplicationError::Io {
-                operation: "create configured storage root",
-                source,
-            })?;
+            if let StorageRootLocation::Path(path) = &root.location {
+                std::fs::create_dir_all(path).map_err(|source| ApplicationError::Io {
+                    operation: "create configured storage root",
+                    source,
+                })?;
+            }
         }
         let store = SessionStore::open(
             &config.profile_root,
@@ -175,6 +189,173 @@ impl ApplicationService {
 
     pub fn subscribe(&self, spec: SubscriptionSpec) -> Result<ViewSubscription, ApplicationError> {
         Ok(self.views.subscribe(spec)?)
+    }
+
+    pub async fn descriptor_storage_plan(
+        &mut self,
+        torrent_id: &str,
+    ) -> Result<DescriptorStoragePlan, ApplicationError> {
+        self.reap_finished().await?;
+        let resume = self.load_resume_conservative(&torrent_id.to_ascii_lowercase())?;
+        if !matches!(
+            self.storage_roots.get(&resume.storage_root),
+            Some(StorageRootLocation::PlatformCapability)
+        ) {
+            return Err(ApplicationError::Configuration(
+                "torrent does not use a platform storage root".to_owned(),
+            ));
+        }
+        let raw_info = resume.raw_info.ok_or_else(|| {
+            ApplicationError::Configuration("torrent metadata is not available".to_owned())
+        })?;
+        let metainfo = Metainfo::from_info_bytes(&raw_info)
+            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+        let skip_files = resume
+            .skip_files
+            .into_iter()
+            .map(|index| index as usize)
+            .collect::<Vec<_>>();
+        plan_descriptor_storage(&metainfo, &skip_files, &[])
+            .map_err(|error| ApplicationError::Configuration(error.to_string()))
+    }
+
+    pub async fn start_with_descriptors(
+        &mut self,
+        torrent_id: &str,
+        descriptors: DescriptorStorage,
+    ) -> Result<(), ApplicationError> {
+        self.reap_finished().await?;
+        let torrent_id = torrent_id.to_ascii_lowercase();
+        if let Some(active) = &self.active {
+            return Err(ApplicationError::Busy(active.torrent_id.clone()));
+        }
+        let resume = self.load_resume_conservative(&torrent_id)?;
+        if !resume.desired_running
+            || matches!(
+                resume.state,
+                TorrentState::Paused
+                    | TorrentState::Complete
+                    | TorrentState::NeedsRepair
+                    | TorrentState::AwaitingPublication
+            )
+        {
+            return Err(ApplicationError::Configuration(format!(
+                "torrent cannot accept storage in state {}",
+                resume.state.as_str()
+            )));
+        }
+        if !matches!(
+            self.storage_roots.get(&resume.storage_root),
+            Some(StorageRootLocation::PlatformCapability)
+        ) {
+            return Err(ApplicationError::Configuration(
+                "torrent does not use a platform storage root".to_owned(),
+            ));
+        }
+        let raw_info = resume.raw_info.ok_or_else(|| {
+            ApplicationError::Configuration("torrent metadata is not available".to_owned())
+        })?;
+        let skip_files = resume
+            .skip_files
+            .into_iter()
+            .map(|index| index as usize)
+            .collect::<Vec<_>>();
+        let verified_pieces = resume
+            .have
+            .as_ref()
+            .map_or_else(Vec::new, |have| have.pieces().to_vec());
+        let config = ResumableMagnetDownloadConfig {
+            magnet: resume.magnet,
+            output_path: PathBuf::new(),
+            timeout: self.download_timeout,
+            max_buffered_payload_bytes: self.max_buffered_payload_bytes,
+            skip_files,
+            verified_info: Some(raw_info),
+            verified_pieces,
+        };
+        let checkpoints: Arc<dyn DownloadCheckpointSink> = Arc::new(StoreCheckpointSink {
+            store: self.store.clone(),
+            torrent_id: torrent_id.clone(),
+            views: self.views.clone(),
+        });
+        let control = self.download_control(&torrent_id);
+        let task_control = control.clone();
+        let task = tokio::spawn(async move {
+            resume_magnet_to_descriptors_with_peer_hint_with_control(
+                config,
+                descriptors,
+                checkpoints,
+                task_control,
+            )
+            .await
+            .map(|_| ApplicationTaskReport::Download)
+        });
+        self.active = Some(ActiveDownload {
+            torrent_id,
+            control,
+            task,
+        });
+        Ok(())
+    }
+
+    pub async fn prepared_files(
+        &mut self,
+        torrent_id: &str,
+    ) -> Result<Vec<PreparedFileRecord>, ApplicationError> {
+        self.reap_finished().await?;
+        Ok(self
+            .store_mut()?
+            .load_prepared_files(&torrent_id.to_ascii_lowercase())?)
+    }
+
+    pub async fn confirm_descriptor_publication(
+        &mut self,
+        torrent_id: &str,
+        descriptors: Vec<DescriptorFile>,
+    ) -> Result<(), ApplicationError> {
+        self.reap_finished().await?;
+        let torrent_id = torrent_id.to_ascii_lowercase();
+        let prepared = self.store_mut()?.load_prepared_files(&torrent_id)?;
+        let expected = prepared
+            .into_iter()
+            .map(|file| PreparedFileHash {
+                file_index: file.file_index,
+                length: file.length,
+                sha1: file.sha1,
+            })
+            .collect::<Vec<_>>();
+        if expected.is_empty() {
+            return Err(ApplicationError::Configuration(
+                "torrent has no prepared publication manifest".to_owned(),
+            ));
+        }
+        verify_prepared_descriptors(descriptors, &expected)
+            .await
+            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+        self.store_mut()?
+            .confirm_prepared_publication(&torrent_id)?;
+        self.refresh_views()?;
+        Ok(())
+    }
+
+    pub async fn mark_storage_unavailable(
+        &mut self,
+        torrent_id: &str,
+        message: &str,
+    ) -> Result<(), ApplicationError> {
+        self.reap_finished().await?;
+        let torrent_id = torrent_id.to_ascii_lowercase();
+        if self
+            .active
+            .as_ref()
+            .is_some_and(|active| active.torrent_id == torrent_id)
+        {
+            return Err(ApplicationError::Busy(torrent_id));
+        }
+        self.store_mut()?
+            .mark_awaiting_storage(&torrent_id, Some(message))?;
+        self.refresh_views()?;
+        Ok(())
     }
 
     pub async fn shutdown(&mut self) -> Result<(), ApplicationError> {
@@ -263,13 +444,58 @@ impl ApplicationService {
                 return Ok(());
             }
         }
-        let root = match self.storage_roots.get(&resume.storage_root) {
+        let root = match self.storage_roots.get(&resume.storage_root).cloned() {
             Some(root) => root,
             None => {
                 self.store_mut()?
                     .mark_needs_repair(torrent_id, "configured storage root is unavailable")?;
                 return Ok(());
             }
+        };
+        if matches!(root, StorageRootLocation::PlatformCapability) {
+            if resume.state == TorrentState::AwaitingPublication {
+                return Ok(());
+            }
+            if resume.raw_info.is_some() {
+                if resume.state != TorrentState::AwaitingStorage {
+                    self.store_mut()?.mark_awaiting_storage(torrent_id, None)?;
+                    self.refresh_views()?;
+                }
+                return Ok(());
+            }
+            let checkpoints = Arc::new(StoreCheckpointSink {
+                store: self.store.clone(),
+                torrent_id: torrent_id.to_owned(),
+                views: self.views.clone(),
+            });
+            let control = self.download_control(torrent_id);
+            let task_control = control.clone();
+            let magnet = resume.magnet;
+            let timeout = self.download_timeout;
+            let task = tokio::spawn(async move {
+                let raw_info = download_magnet_metadata_with_peer_hint_with_control(
+                    magnet,
+                    timeout,
+                    task_control,
+                )
+                .await?;
+                checkpoints
+                    .metadata_verified(&raw_info)
+                    .map_err(DownloadError::Checkpoint)?;
+                checkpoints
+                    .waiting_for_storage()
+                    .map_err(DownloadError::Checkpoint)?;
+                Ok(ApplicationTaskReport::Metadata)
+            });
+            self.active = Some(ActiveDownload {
+                torrent_id: torrent_id.to_owned(),
+                control,
+                task,
+            });
+            return Ok(());
+        }
+        let StorageRootLocation::Path(root) = root else {
+            unreachable!("platform root returned above")
         };
         let skip_files = resume
             .skip_files
@@ -298,14 +524,12 @@ impl ApplicationService {
             torrent_id: torrent_id.to_owned(),
             views: self.views.clone(),
         });
-        let control = DownloadControl::new();
-        control.set_activity_sink(Arc::new(ViewActivitySink {
-            torrent_id: torrent_id.to_owned(),
-            views: self.views.clone(),
-        }));
+        let control = self.download_control(torrent_id);
         let task_control = control.clone();
         let task = tokio::spawn(async move {
-            resume_magnet_with_peer_hint_with_control(config, checkpoints, task_control).await
+            resume_magnet_with_peer_hint_with_control(config, checkpoints, task_control)
+                .await
+                .map(|_| ApplicationTaskReport::Download)
         });
         self.active = Some(ActiveDownload {
             torrent_id: torrent_id.to_owned(),
@@ -313,6 +537,15 @@ impl ApplicationService {
             task,
         });
         Ok(())
+    }
+
+    fn download_control(&self, torrent_id: &str) -> DownloadControl {
+        let control = DownloadControl::new();
+        control.set_activity_sink(Arc::new(ViewActivitySink {
+            torrent_id: torrent_id.to_owned(),
+            views: self.views.clone(),
+        }));
+        control
     }
 
     fn load_resume_conservative(&self, torrent_id: &str) -> Result<ResumeRecord, ApplicationError> {
@@ -425,6 +658,16 @@ impl StoreCheckpointSink {
             .replace_durable(&snapshot, &verified)
             .map_err(|error| error.to_string())
     }
+
+    fn waiting_for_storage(&self) -> Result<(), String> {
+        self.store().and_then(|mut store| {
+            store
+                .mark_awaiting_storage(&self.torrent_id, None)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        })?;
+        self.refresh()
+    }
 }
 
 impl DownloadCheckpointSink for StoreCheckpointSink {
@@ -476,6 +719,16 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
         self.store().and_then(|mut store| {
             store
                 .record_piece(&self.torrent_id, piece_index)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        })?;
+        self.refresh()
+    }
+
+    fn descriptor_prepared(&self, files: &[PreparedFileHash]) -> Result<(), String> {
+        self.store().and_then(|mut store| {
+            store
+                .record_prepared_files(&self.torrent_id, files)
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         })?;
@@ -677,10 +930,10 @@ mod tests {
         let mut config = ApplicationConfig::new(
             root.join("profile"),
             "test".to_owned(),
-            vec![ConfiguredStorageRoot {
-                id: "downloads".to_owned(),
-                path: root.join("payload"),
-            }],
+            vec![ConfiguredStorageRoot::path(
+                "downloads",
+                root.join("payload"),
+            )],
         );
         config.download_timeout = std::time::Duration::from_secs(5);
         config
@@ -943,7 +1196,10 @@ mod tests {
             .expect("record metadata");
         drop(store);
 
-        let incomplete_output = configured_root.path.join(&torrent_id);
+        let crate::StorageRootLocation::Path(payload_root) = &configured_root.location else {
+            unreachable!("test root is path-backed")
+        };
+        let incomplete_output = payload_root.join(&torrent_id);
         fs::create_dir_all(&incomplete_output).expect("create incomplete output");
         fs::write(incomplete_output.join("preserve"), b"user artifact")
             .expect("write preserved artifact");

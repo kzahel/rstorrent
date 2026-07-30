@@ -86,6 +86,7 @@ pub trait DownloadCheckpointSink: Send + Sync {
     fn storage_prepared(&self, storage: ResumedStorage) -> Result<(), String>;
     fn have_rechecked(&self, verified_pieces: &[bool]) -> Result<(), String>;
     fn piece_durable(&self, piece_index: usize) -> Result<(), String>;
+    fn descriptor_prepared(&self, files: &[PreparedFileHash]) -> Result<(), String>;
     fn published(&self) -> Result<(), String>;
 }
 
@@ -491,6 +492,29 @@ pub async fn resume_magnet_with_peer_hint_with_control(
     checkpoints: Arc<dyn DownloadCheckpointSink>,
     control: DownloadControl,
 ) -> Result<DownloadReport, DownloadError> {
+    resume_magnet_with_peer_hint_owned(config, checkpoints, control, None).await
+}
+
+pub async fn resume_magnet_to_descriptors_with_peer_hint_with_control(
+    config: ResumableMagnetDownloadConfig,
+    descriptors: DescriptorStorage,
+    checkpoints: Arc<dyn DownloadCheckpointSink>,
+    control: DownloadControl,
+) -> Result<DownloadReport, DownloadError> {
+    if config.verified_info.is_none() {
+        return Err(DownloadError::Checkpoint(
+            "descriptor storage requires verified metadata".to_owned(),
+        ));
+    }
+    resume_magnet_with_peer_hint_owned(config, checkpoints, control, Some(descriptors)).await
+}
+
+async fn resume_magnet_with_peer_hint_owned(
+    config: ResumableMagnetDownloadConfig,
+    checkpoints: Arc<dyn DownloadCheckpointSink>,
+    control: DownloadControl,
+    descriptors: Option<DescriptorStorage>,
+) -> Result<DownloadReport, DownloadError> {
     validate_resumable_magnet_download_config(&config)?;
     let configured_timeout = config.timeout;
     let result = tokio::select! {
@@ -498,8 +522,34 @@ pub async fn resume_magnet_with_peer_hint_with_control(
         _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
         result = timeout(
             configured_timeout,
-            run_resumable_magnet_download(config, checkpoints, control.clone()),
+            run_resumable_magnet_download(
+                config,
+                checkpoints,
+                control.clone(),
+                descriptors,
+            ),
         ) => result
+            .map_err(|_| DownloadError::TimedOut {
+                timeout: configured_timeout,
+            })
+            .and_then(|result| result),
+    };
+    control.clear_buffered_payload();
+    result
+}
+
+pub async fn download_magnet_metadata_with_peer_hint_with_control(
+    magnet: String,
+    configured_timeout: Duration,
+    control: DownloadControl,
+) -> Result<Vec<u8>, DownloadError> {
+    if configured_timeout.is_zero() {
+        return Err(DownloadError::InvalidTimeout);
+    }
+    let result = tokio::select! {
+        biased;
+        _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
+        result = timeout(configured_timeout, run_magnet_metadata(magnet)) => result
             .map_err(|_| DownloadError::TimedOut {
                 timeout: configured_timeout,
             })
@@ -801,6 +851,37 @@ async fn run_magnet_download(
     Err(last_error.unwrap_or(DownloadError::NoUsablePeerHint))
 }
 
+async fn run_magnet_metadata(magnet: String) -> Result<Vec<u8>, DownloadError> {
+    let magnet = Magnet::parse(&magnet).map_err(DownloadError::Magnet)?;
+    if magnet.peer_hints.is_empty() {
+        return Err(DownloadError::NoUsablePeerHint);
+    }
+
+    let mut last_error = None;
+    for hint in &magnet.peer_hints {
+        let addresses = match lookup_host((hint.host.as_str(), hint.port)).await {
+            Ok(addresses) => addresses,
+            Err(source) => {
+                last_error = Some(DownloadError::Io {
+                    operation: "resolve magnet peer hint",
+                    source,
+                });
+                continue;
+            }
+        };
+        for address in addresses {
+            if !address.ip().is_loopback() {
+                continue;
+            }
+            match acquire_metadata(address, magnet.info_hash).await {
+                Ok((raw_info, _, _)) => return Ok(raw_info),
+                Err(error) => last_error = Some(error),
+            }
+        }
+    }
+    Err(last_error.unwrap_or(DownloadError::NoUsablePeerHint))
+}
+
 #[derive(Clone)]
 struct ResumeContext {
     verified_pieces: Vec<bool>,
@@ -811,6 +892,7 @@ async fn run_resumable_magnet_download(
     config: ResumableMagnetDownloadConfig,
     checkpoints: Arc<dyn DownloadCheckpointSink>,
     control: DownloadControl,
+    descriptors: Option<DescriptorStorage>,
 ) -> Result<DownloadReport, DownloadError> {
     let magnet = Magnet::parse(&config.magnet).map_err(DownloadError::Magnet)?;
     if magnet.peer_hints.is_empty() {
@@ -836,10 +918,22 @@ async fn run_resumable_magnet_download(
             skip_files: config.skip_files,
             materialize_files: Vec::new(),
         };
-        return run_content_download(content_config, metainfo, control, None, None, Some(resume))
-            .await;
+        return run_content_download(
+            content_config,
+            metainfo,
+            control,
+            descriptors,
+            None,
+            Some(resume),
+        )
+        .await;
     }
 
+    if descriptors.is_some() {
+        return Err(DownloadError::Checkpoint(
+            "descriptor storage requires verified metadata".to_owned(),
+        ));
+    }
     let mut last_error = None;
     for hint in &magnet.peer_hints {
         let addresses = match lookup_host((hint.host.as_str(), hint.port)).await {
@@ -1185,11 +1279,6 @@ async fn run_selective_download(
     connection: Option<ConnectedPeer>,
     resume: Option<ResumeContext>,
 ) -> Result<DownloadReport, DownloadError> {
-    if resume.is_some() && descriptors.is_some() {
-        return Err(DownloadError::Metainfo(MetainfoError::Unsupported(
-            "resumable descriptor storage is not implemented",
-        )));
-    }
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let selection =
         FileSelection::new(&layout, &config.skip_files).map_err(DownloadError::Layout)?;
@@ -1290,7 +1379,22 @@ async fn run_selective_download(
             .map_err(DownloadError::SelectiveStorage)?,
             None,
         ),
-        (Some(_), Some(_)) => unreachable!("descriptor resume was rejected"),
+        (Some(descriptors), Some(resume)) => {
+            let storage = SelectiveStorage::resume_with_descriptors(
+                &metainfo,
+                layout.clone(),
+                selection,
+                descriptors,
+                verified_pieces.clone(),
+            )
+            .await
+            .map_err(DownloadError::SelectiveStorage)?;
+            resume
+                .checkpoints
+                .storage_prepared(ResumedStorage::Staging)
+                .map_err(DownloadError::Checkpoint)?;
+            (storage, Some(ResumedStorage::Staging))
+        }
     };
     drop(storage_creation);
 
@@ -1519,7 +1623,7 @@ async fn run_selective_download(
             .await
             .map_err(DownloadError::SelectiveStorage)?;
     }
-    if let Some(resume) = &resume {
+    if !descriptor_backed && let Some(resume) = &resume {
         resume
             .checkpoints
             .published()
@@ -1547,6 +1651,12 @@ async fn run_selective_download(
     } else {
         Vec::new()
     };
+    if descriptor_backed && let Some(resume) = &resume {
+        resume
+            .checkpoints
+            .descriptor_prepared(&prepared_files)
+            .map_err(DownloadError::Checkpoint)?;
+    }
     Ok(DownloadReport {
         info_hash: metainfo.info_hash,
         piece_hash: last_piece.map_or(metainfo.piece_hashes[last_wanted_piece], |piece| piece.hash),

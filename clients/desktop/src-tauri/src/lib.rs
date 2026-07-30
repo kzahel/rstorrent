@@ -179,10 +179,10 @@ pub fn run() {
                 tauri::async_runtime::block_on(ApplicationService::open(ApplicationConfig::new(
                     app_data.join("profile"),
                     "default".to_owned(),
-                    vec![ConfiguredStorageRoot {
-                        id: "downloads".to_owned(),
-                        path: app_data.join("downloads"),
-                    }],
+                    vec![ConfiguredStorageRoot::path(
+                        "downloads",
+                        app_data.join("downloads"),
+                    )],
                 )))
                 .map_err(|error| error.to_string())?;
             let state = DesktopState {

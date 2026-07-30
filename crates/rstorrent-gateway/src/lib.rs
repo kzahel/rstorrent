@@ -651,10 +651,10 @@ mod tests {
             ApplicationService::open(ApplicationConfig::new(
                 root.join("profile"),
                 "test".to_owned(),
-                vec![ConfiguredStorageRoot {
-                    id: "downloads".to_owned(),
-                    path: root.join("payload"),
-                }],
+                vec![ConfiguredStorageRoot::path(
+                    "downloads",
+                    root.join("payload"),
+                )],
             ))
             .await
             .expect("open service"),

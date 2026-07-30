@@ -3,6 +3,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use rstorrent_engine::{PreparedFileHash, plan_descriptor_storage};
 use rstorrent_protocol::bencode::MAX_BENCODE_INPUT_LENGTH;
 use rstorrent_protocol::magnet::Magnet;
 use rstorrent_protocol::metainfo::{MAX_FILES, MAX_PIECES, Metainfo};
@@ -15,7 +16,7 @@ use crate::control::{
 };
 use crate::have::{HaveError, HaveState};
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 const DATABASE_FILENAME: &str = "session.db";
 const MAX_RECEIPTS: i64 = 1024;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(2);
@@ -23,7 +24,36 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(2);
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfiguredStorageRoot {
     pub id: String,
-    pub path: PathBuf,
+    pub location: StorageRootLocation,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StorageRootLocation {
+    Path(PathBuf),
+    PlatformCapability,
+}
+
+impl ConfiguredStorageRoot {
+    pub fn path(id: impl Into<String>, path: PathBuf) -> Self {
+        Self {
+            id: id.into(),
+            location: StorageRootLocation::Path(path),
+        }
+    }
+
+    pub fn platform(id: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            location: StorageRootLocation::PlatformCapability,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PreparedFileRecord {
+    pub file_index: usize,
+    pub length: u64,
+    pub sha1: [u8; 20],
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -432,6 +462,211 @@ impl SessionStore {
         Ok(revision)
     }
 
+    pub fn mark_awaiting_storage(
+        &mut self,
+        torrent_id: &str,
+        message: Option<&str>,
+    ) -> Result<u64, StoreError> {
+        let info_hash = decode_info_hash(torrent_id)
+            .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
+        let error = message.map(bounded_error);
+        let transaction = self.connection.transaction()?;
+        let revision = increment_revision(&transaction)?;
+        let revision_sql = sql_revision(revision)?;
+        let updated = transaction.execute(
+            "UPDATE torrents
+             SET state = CASE
+                    WHEN desired_state = 'paused' THEN 'paused'
+                    ELSE ?2
+                 END,
+                 error = ?3,
+                 updated_revision = ?4
+             WHERE info_hash = ?1",
+            params![
+                info_hash.as_slice(),
+                TorrentState::AwaitingStorage.as_str(),
+                error,
+                revision_sql,
+            ],
+        )?;
+        if updated != 1 {
+            return Err(StoreError::UnknownTorrent(torrent_id.to_owned()));
+        }
+        transaction.commit()?;
+        Ok(revision)
+    }
+
+    pub fn record_prepared_files(
+        &mut self,
+        torrent_id: &str,
+        files: &[PreparedFileHash],
+    ) -> Result<u64, StoreError> {
+        let info_hash = decode_info_hash(torrent_id)
+            .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
+        let raw_info = self
+            .connection
+            .query_row(
+                "SELECT raw_info FROM torrents WHERE info_hash = ?1",
+                [info_hash.as_slice()],
+                |row| row.get::<_, Option<Vec<u8>>>(0),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_owned()))?
+            .ok_or_else(|| {
+                StoreError::DurableState("torrent has no verified metadata".to_owned())
+            })?;
+        let metainfo = Metainfo::from_info_bytes(&raw_info)
+            .map_err(|error| StoreError::DurableState(error.to_string()))?;
+        let skip_files = read_selection(&self.connection, &info_hash)?
+            .into_iter()
+            .map(|index| index as usize)
+            .collect::<Vec<_>>();
+        let plan = plan_descriptor_storage(&metainfo, &skip_files, &[])
+            .map_err(|error| StoreError::DurableState(error.to_string()))?;
+        let wanted = plan
+            .files
+            .iter()
+            .filter(|file| matches!(file.role, rstorrent_engine::DescriptorFileRole::Wanted))
+            .map(|file| (file.file_index, file.length))
+            .collect::<Vec<_>>();
+        if files.len() != wanted.len() {
+            return Err(StoreError::DurableState(
+                "prepared file manifest does not cover the selected files".to_owned(),
+            ));
+        }
+        let mut ordered = files.to_vec();
+        ordered.sort_by_key(|file| file.file_index);
+        for (prepared, (expected_index, expected_length)) in ordered.iter().zip(wanted) {
+            if prepared.file_index != expected_index || prepared.length != expected_length {
+                return Err(StoreError::DurableState(
+                    "prepared file manifest does not match the selected layout".to_owned(),
+                ));
+            }
+        }
+
+        let transaction = self.connection.transaction()?;
+        transaction.execute(
+            "DELETE FROM prepared_files WHERE info_hash = ?1",
+            [info_hash.as_slice()],
+        )?;
+        for file in &ordered {
+            transaction.execute(
+                "INSERT INTO prepared_files(info_hash, file_index, length, sha1)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    info_hash.as_slice(),
+                    i64::try_from(file.file_index).map_err(|_| {
+                        StoreError::DurableState("prepared file index overflow".to_owned())
+                    })?,
+                    i64::try_from(file.length).map_err(|_| {
+                        StoreError::DurableState("prepared file length overflow".to_owned())
+                    })?,
+                    file.sha1.as_slice(),
+                ],
+            )?;
+        }
+        let revision = increment_revision(&transaction)?;
+        let revision_sql = sql_revision(revision)?;
+        transaction.execute(
+            "UPDATE torrents
+             SET state = ?2, storage_state = ?3, error = NULL,
+                 updated_revision = ?4
+             WHERE info_hash = ?1",
+            params![
+                info_hash.as_slice(),
+                TorrentState::AwaitingPublication.as_str(),
+                StorageState::Prepared.as_str(),
+                revision_sql,
+            ],
+        )?;
+        transaction.commit()?;
+        Ok(revision)
+    }
+
+    pub fn load_prepared_files(
+        &self,
+        torrent_id: &str,
+    ) -> Result<Vec<PreparedFileRecord>, StoreError> {
+        let info_hash = decode_info_hash(torrent_id)
+            .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
+        let mut statement = self.connection.prepare(
+            "SELECT file_index, length, sha1
+             FROM prepared_files WHERE info_hash = ?1 ORDER BY file_index",
+        )?;
+        let rows = statement.query_map([info_hash.as_slice()], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, Vec<u8>>(2)?,
+            ))
+        })?;
+        let mut files = Vec::new();
+        for row in rows {
+            let (file_index, length, sha1) = row?;
+            files.push(PreparedFileRecord {
+                file_index: usize::try_from(file_index).map_err(|_| {
+                    StoreError::DurableState("prepared file index is invalid".to_owned())
+                })?,
+                length: u64::try_from(length).map_err(|_| {
+                    StoreError::DurableState("prepared file length is invalid".to_owned())
+                })?,
+                sha1: sha1.try_into().map_err(|_| {
+                    StoreError::DurableState("prepared file hash is invalid".to_owned())
+                })?,
+            });
+        }
+        Ok(files)
+    }
+
+    pub fn confirm_prepared_publication(&mut self, torrent_id: &str) -> Result<u64, StoreError> {
+        let info_hash = decode_info_hash(torrent_id)
+            .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
+        let transaction = self.connection.transaction()?;
+        let state = transaction
+            .query_row(
+                "SELECT state FROM torrents WHERE info_hash = ?1",
+                [info_hash.as_slice()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_owned()))?;
+        if TorrentState::parse(&state) != Some(TorrentState::AwaitingPublication) {
+            return Err(StoreError::DurableState(
+                "torrent is not awaiting publication".to_owned(),
+            ));
+        }
+        let manifest_count: i64 = transaction.query_row(
+            "SELECT count(*) FROM prepared_files WHERE info_hash = ?1",
+            [info_hash.as_slice()],
+            |row| row.get(0),
+        )?;
+        if manifest_count == 0 {
+            return Err(StoreError::DurableState(
+                "prepared publication manifest is empty".to_owned(),
+            ));
+        }
+        let revision = increment_revision(&transaction)?;
+        let revision_sql = sql_revision(revision)?;
+        transaction.execute(
+            "UPDATE torrents
+             SET state = ?2, storage_state = ?3, error = NULL,
+                 updated_revision = ?4
+             WHERE info_hash = ?1",
+            params![
+                info_hash.as_slice(),
+                TorrentState::Complete.as_str(),
+                StorageState::Published.as_str(),
+                revision_sql,
+            ],
+        )?;
+        transaction.execute(
+            "DELETE FROM prepared_files WHERE info_hash = ?1",
+            [info_hash.as_slice()],
+        )?;
+        transaction.commit()?;
+        Ok(revision)
+    }
+
     pub fn reset_have_from_metadata(&mut self, torrent_id: &str) -> Result<HaveState, StoreError> {
         let info_hash = decode_info_hash(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
@@ -632,12 +867,16 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
                     CHECK (desired_state IN ('running', 'paused')),
                 state TEXT NOT NULL CHECK (
                     state IN (
-                        'awaiting_metadata', 'checking', 'downloading',
-                        'paused', 'complete', 'needs_repair', 'error'
+                        'awaiting_metadata', 'awaiting_storage', 'checking',
+                        'downloading', 'awaiting_publication', 'paused',
+                        'complete', 'needs_repair', 'error'
                     )
                 ),
                 storage_state TEXT NOT NULL CHECK (
-                    storage_state IN ('none', 'staging', 'published', 'needs_repair')
+                    storage_state IN (
+                        'none', 'staging', 'prepared', 'published',
+                        'needs_repair'
+                    )
                 ),
                 raw_info BLOB CHECK (
                     raw_info IS NULL OR length(raw_info) <= 1048576
@@ -663,6 +902,15 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
                 file_index INTEGER NOT NULL
                     CHECK (file_index >= 0 AND file_index < 4096),
                 wanted INTEGER NOT NULL CHECK (wanted = 0),
+                 PRIMARY KEY (info_hash, file_index)
+             ) WITHOUT ROWID;
+             CREATE TABLE prepared_files (
+                info_hash BLOB NOT NULL
+                    REFERENCES torrents(info_hash) ON DELETE CASCADE,
+                file_index INTEGER NOT NULL
+                    CHECK (file_index >= 0 AND file_index < 4096),
+                length INTEGER NOT NULL CHECK (length >= 0),
+                sha1 BLOB NOT NULL CHECK (length(sha1) = 20),
                 PRIMARY KEY (info_hash, file_index)
              ) WITHOUT ROWID;
              CREATE TABLE request_receipts (
@@ -677,6 +925,77 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
             "INSERT INTO profile_state(singleton, profile_id, revision)
              VALUES (1, ?1, 0)",
             [profile_id],
+        )?;
+        transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        transaction.commit()?;
+    }
+    if version == 1 {
+        let transaction = connection.transaction()?;
+        transaction.pragma_update(None, "defer_foreign_keys", true)?;
+        transaction.execute_batch(
+            "ALTER TABLE file_selection RENAME TO file_selection_v1;
+             ALTER TABLE torrents RENAME TO torrents_v1;
+             CREATE TABLE torrents (
+                info_hash BLOB PRIMARY KEY CHECK (length(info_hash) = 20),
+                magnet TEXT NOT NULL CHECK (length(magnet) <= 16384),
+                storage_root TEXT NOT NULL
+                    REFERENCES storage_roots(root_id) ON UPDATE CASCADE,
+                desired_state TEXT NOT NULL
+                    CHECK (desired_state IN ('running', 'paused')),
+                state TEXT NOT NULL CHECK (
+                    state IN (
+                        'awaiting_metadata', 'awaiting_storage', 'checking',
+                        'downloading', 'awaiting_publication', 'paused',
+                        'complete', 'needs_repair', 'error'
+                    )
+                ),
+                storage_state TEXT NOT NULL CHECK (
+                    storage_state IN (
+                        'none', 'staging', 'prepared', 'published',
+                        'needs_repair'
+                    )
+                ),
+                raw_info BLOB CHECK (
+                    raw_info IS NULL OR length(raw_info) <= 1048576
+                ),
+                piece_count INTEGER CHECK (
+                    piece_count IS NULL OR
+                    (piece_count > 0 AND piece_count <= 26214)
+                ),
+                have_state BLOB CHECK (
+                    have_state IS NULL OR length(have_state) <= 3311
+                ),
+                error TEXT CHECK (error IS NULL OR length(error) <= 1024),
+                created_revision INTEGER NOT NULL,
+                updated_revision INTEGER NOT NULL,
+                CHECK (
+                    (piece_count IS NULL AND have_state IS NULL) OR
+                    (piece_count IS NOT NULL AND have_state IS NOT NULL)
+                )
+             );
+             INSERT INTO torrents
+                SELECT * FROM torrents_v1;
+             CREATE TABLE file_selection (
+                info_hash BLOB NOT NULL
+                    REFERENCES torrents(info_hash) ON DELETE CASCADE,
+                file_index INTEGER NOT NULL
+                    CHECK (file_index >= 0 AND file_index < 4096),
+                wanted INTEGER NOT NULL CHECK (wanted = 0),
+                PRIMARY KEY (info_hash, file_index)
+             ) WITHOUT ROWID;
+             INSERT INTO file_selection
+                SELECT * FROM file_selection_v1;
+             CREATE TABLE prepared_files (
+                info_hash BLOB NOT NULL
+                    REFERENCES torrents(info_hash) ON DELETE CASCADE,
+                file_index INTEGER NOT NULL
+                    CHECK (file_index >= 0 AND file_index < 4096),
+                length INTEGER NOT NULL CHECK (length >= 0),
+                sha1 BLOB NOT NULL CHECK (length(sha1) = 20),
+                PRIMARY KEY (info_hash, file_index)
+             ) WITHOUT ROWID;
+             DROP TABLE file_selection_v1;
+             DROP TABLE torrents_v1;",
         )?;
         transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         transaction.commit()?;
@@ -702,12 +1021,15 @@ fn register_storage_roots(
     for root in storage_roots {
         validate_identifier(&root.id, "storage root", crate::control::MAX_ROOT_ID_LENGTH)
             .map_err(|(_, message)| StoreError::Configuration(message))?;
-        let locator = root.path.to_str().ok_or_else(|| {
-            StoreError::Configuration(format!(
-                "storage root {} is not representable as UTF-8",
-                root.id
-            ))
-        })?;
+        let locator = match &root.location {
+            StorageRootLocation::Path(path) => path.to_str().ok_or_else(|| {
+                StoreError::Configuration(format!(
+                    "storage root {} is not representable as UTF-8",
+                    root.id
+                ))
+            })?,
+            StorageRootLocation::PlatformCapability => "platform-capability:",
+        };
         transaction.execute(
             "INSERT INTO storage_roots(root_id, locator)
              VALUES (?1, ?2)
@@ -894,7 +1216,9 @@ fn set_desired_state(
             format!("torrent cannot resume from {}", current_state.as_str()),
         ));
     }
-    let next_state = if running {
+    let next_state = if current_state == TorrentState::AwaitingPublication {
+        TorrentState::AwaitingPublication
+    } else if running {
         if row.1 {
             TorrentState::Checking
         } else {
@@ -1134,12 +1458,16 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
 
+    use rstorrent_engine::PreparedFileHash;
     use rusqlite::Connection;
     use sha1::{Digest, Sha1};
 
-    use super::{ConfiguredStorageRoot, SCHEMA_VERSION, SessionStore, StoreError};
+    use super::{
+        ConfiguredStorageRoot, PreparedFileRecord, SCHEMA_VERSION, SessionStore, StoreError,
+    };
     use crate::{
-        CONTROL_VERSION, Command, ErrorCode, RequestEnvelope, ResponseOutcome, TorrentState,
+        CONTROL_VERSION, Command, ErrorCode, RequestEnvelope, ResponseOutcome, StorageState,
+        TorrentState,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -1153,10 +1481,7 @@ mod tests {
     }
 
     fn configured_root(root: &std::path::Path) -> ConfiguredStorageRoot {
-        ConfiguredStorageRoot {
-            id: "downloads".to_owned(),
-            path: root.join("payload"),
-        }
+        ConfiguredStorageRoot::path("downloads", root.join("payload"))
     }
 
     fn add_request(request_id: &str) -> RequestEnvelope {
@@ -1198,6 +1523,51 @@ mod tests {
             SessionStore::open(&root, "default", &[configured]),
             Err(StoreError::UnsupportedSchema { .. })
         ));
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn migrates_version_one_catalog_transactionally() {
+        let root = test_root("schema-v1");
+        let configured = configured_root(&root);
+        let mut store =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
+        let request = add_request("add-before-migration");
+        let expected = store.handle_durable(&request).expect("add durable torrent");
+        let database_path = store.database_path().to_owned();
+        drop(store);
+
+        let connection = Connection::open(&database_path).expect("open raw database");
+        connection
+            .execute_batch("DROP TABLE prepared_files; PRAGMA user_version = 1;")
+            .expect("downgrade fixture to the version-one shape");
+        drop(connection);
+
+        let mut migrated =
+            SessionStore::open(&root, "default", &[configured]).expect("migrate version one");
+        assert_eq!(migrated.snapshot().expect("snapshot").torrents.len(), 1);
+        assert_eq!(
+            migrated
+                .handle_durable(&request)
+                .expect("receipt survived migration"),
+            expected
+        );
+        let connection = Connection::open(database_path).expect("inspect migrated database");
+        let version: i64 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .expect("read schema version");
+        assert_eq!(version, SCHEMA_VERSION);
+        let prepared_table: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM sqlite_master
+                 WHERE type = 'table' AND name = 'prepared_files'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("inspect prepared table");
+        assert_eq!(prepared_table, 1);
+        drop(connection);
+        drop(migrated);
         fs::remove_dir_all(root).expect("remove test profile");
     }
 
@@ -1312,6 +1682,93 @@ mod tests {
             Err(StoreError::DurableState(_))
         ));
         drop(store);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn prepared_publication_is_durable_and_explicitly_confirmed() {
+        let root = test_root("prepared-publication");
+        let configured = ConfiguredStorageRoot::platform("downloads");
+        let mut store =
+            SessionStore::open(&root, "default", &[configured]).expect("open session store");
+        let raw_info =
+            b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
+        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
+        let torrent_id = crate::control::encode_info_hash(info_hash);
+        let request = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "add".to_owned(),
+            expected_revision: None,
+            command: Command::AddMagnet {
+                magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe=127.0.0.1:1"),
+                storage_root: "downloads".to_owned(),
+                skip_files: Vec::new(),
+            },
+        };
+        store.handle_durable(&request).expect("add source");
+        store
+            .record_metadata(&torrent_id, raw_info)
+            .expect("record metadata");
+        assert!(matches!(
+            store.record_prepared_files(
+                &torrent_id,
+                &[PreparedFileHash {
+                    file_index: 0,
+                    length: 3,
+                    sha1: [7; 20],
+                }],
+            ),
+            Err(StoreError::DurableState(_))
+        ));
+
+        let expected = PreparedFileHash {
+            file_index: 0,
+            length: 4,
+            sha1: [9; 20],
+        };
+        store
+            .record_prepared_files(&torrent_id, std::slice::from_ref(&expected))
+            .expect("record prepared manifest");
+        let snapshot = store.snapshot().expect("prepared snapshot");
+        assert_eq!(
+            snapshot.torrents[0].state,
+            TorrentState::AwaitingPublication
+        );
+        assert_eq!(snapshot.torrents[0].storage_state, StorageState::Prepared);
+        assert_eq!(
+            store
+                .load_prepared_files(&torrent_id)
+                .expect("load manifest"),
+            vec![PreparedFileRecord {
+                file_index: 0,
+                length: 4,
+                sha1: [9; 20],
+            }]
+        );
+        drop(store);
+
+        let mut reopened =
+            SessionStore::open(&root, "default", &[]).expect("reopen prepared store");
+        assert_eq!(
+            reopened
+                .load_prepared_files(&torrent_id)
+                .expect("load durable manifest")
+                .len(),
+            1
+        );
+        reopened
+            .confirm_prepared_publication(&torrent_id)
+            .expect("confirm publication");
+        let snapshot = reopened.snapshot().expect("complete snapshot");
+        assert_eq!(snapshot.torrents[0].state, TorrentState::Complete);
+        assert_eq!(snapshot.torrents[0].storage_state, StorageState::Published);
+        assert!(
+            reopened
+                .load_prepared_files(&torrent_id)
+                .expect("manifest cleared")
+                .is_empty()
+        );
+        drop(reopened);
         fs::remove_dir_all(root).expect("remove test profile");
     }
 }

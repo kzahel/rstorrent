@@ -19,7 +19,10 @@ pub use control::{
     ResponseOutcome, ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState,
 };
 pub use have::{HaveError, HaveState};
-pub use store::{ConfiguredStorageRoot, ResumeRecord, SessionStore, StoreError};
+pub use store::{
+    ConfiguredStorageRoot, PreparedFileRecord, ResumeRecord, SessionStore, StorageRootLocation,
+    StoreError,
+};
 pub use views::{
     ActivePiece, DeliveryPolicy, IndexRange, ResetReason, SubscriptionError, SubscriptionSpec,
     SubscriptionStats, TorrentView, VIEW_CONTRACT_VERSION, ViewHub, ViewPatch, ViewProjection,

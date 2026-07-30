@@ -153,8 +153,10 @@ pub struct TorrentSnapshot {
 #[serde(rename_all = "snake_case")]
 pub enum TorrentState {
     AwaitingMetadata,
+    AwaitingStorage,
     Checking,
     Downloading,
+    AwaitingPublication,
     Paused,
     Complete,
     NeedsRepair,
@@ -165,8 +167,10 @@ impl TorrentState {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::AwaitingMetadata => "awaiting_metadata",
+            Self::AwaitingStorage => "awaiting_storage",
             Self::Checking => "checking",
             Self::Downloading => "downloading",
+            Self::AwaitingPublication => "awaiting_publication",
             Self::Paused => "paused",
             Self::Complete => "complete",
             Self::NeedsRepair => "needs_repair",
@@ -177,8 +181,10 @@ impl TorrentState {
     pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
             "awaiting_metadata" => Some(Self::AwaitingMetadata),
+            "awaiting_storage" => Some(Self::AwaitingStorage),
             "checking" => Some(Self::Checking),
             "downloading" => Some(Self::Downloading),
+            "awaiting_publication" => Some(Self::AwaitingPublication),
             "paused" => Some(Self::Paused),
             "complete" => Some(Self::Complete),
             "needs_repair" => Some(Self::NeedsRepair),
@@ -194,6 +200,7 @@ impl TorrentState {
 pub enum StorageState {
     None,
     Staging,
+    Prepared,
     Published,
     NeedsRepair,
 }
@@ -203,6 +210,7 @@ impl StorageState {
         match self {
             Self::None => "none",
             Self::Staging => "staging",
+            Self::Prepared => "prepared",
             Self::Published => "published",
             Self::NeedsRepair => "needs_repair",
         }
@@ -212,6 +220,7 @@ impl StorageState {
         match value {
             "none" => Some(Self::None),
             "staging" => Some(Self::Staging),
+            "prepared" => Some(Self::Prepared),
             "published" => Some(Self::Published),
             "needs_repair" => Some(Self::NeedsRepair),
             _ => None,

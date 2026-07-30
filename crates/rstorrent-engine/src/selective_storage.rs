@@ -118,6 +118,9 @@ pub enum SelectiveStorageError {
     IncompleteSelection {
         piece_index: usize,
     },
+    PreparedHashMismatch {
+        file_index: usize,
+    },
     NotPublished,
     InvalidStorageOperation(&'static str),
     AlreadyWanted {
@@ -203,6 +206,12 @@ impl fmt::Display for SelectiveStorageError {
             }
             Self::IncompleteSelection { piece_index } => {
                 write!(formatter, "required piece {piece_index} is not verified")
+            }
+            Self::PreparedHashMismatch { file_index } => {
+                write!(
+                    formatter,
+                    "published file {file_index} hash differs from preparation"
+                )
             }
             Self::NotPublished => {
                 write!(formatter, "selected tree is not published")
@@ -488,6 +497,87 @@ impl SelectiveStorage {
             files,
             part_file: Some(part_file),
             verified: vec![false; piece_count],
+            published: false,
+        })
+    }
+
+    pub async fn resume_with_descriptors(
+        metainfo: &Metainfo,
+        layout: TorrentLayout,
+        selection: FileSelection,
+        descriptors: DescriptorStorage,
+        verified: Vec<bool>,
+    ) -> Result<Self, SelectiveStorageError> {
+        if verified.len() != layout.piece_count() {
+            return Err(SelectiveStorageError::InvalidVerifiedPiece {
+                piece_index: verified.len(),
+            });
+        }
+        let mut wanted_files =
+            collect_descriptors(layout.files().len(), "wanted", descriptors.wanted_files)?;
+        if !descriptors.materialization_files.is_empty() {
+            return Err(SelectiveStorageError::InvalidDescriptorManifest {
+                role: "materialization",
+                file_index: descriptors.materialization_files[0].file_index,
+                reason: "materialization is not supported while resuming",
+            });
+        }
+
+        let mut files = Vec::with_capacity(layout.files().len());
+        for (file_index, metainfo_file) in layout.files().iter().enumerate() {
+            let expected = !metainfo_file.padding && selection.is_wanted(file_index);
+            let provided = wanted_files[file_index].take();
+            match (expected, provided) {
+                (true, Some(file)) => {
+                    files.push(Some(
+                        validate_descriptor_length(file, file_index, metainfo_file.length).await?,
+                    ));
+                }
+                (true, None) => {
+                    return Err(SelectiveStorageError::InvalidDescriptorManifest {
+                        role: "wanted",
+                        file_index,
+                        reason: "required descriptor is missing",
+                    });
+                }
+                (false, Some(_)) => {
+                    return Err(SelectiveStorageError::InvalidDescriptorManifest {
+                        role: "wanted",
+                        file_index,
+                        reason: "descriptor is not expected by the selection",
+                    });
+                }
+                (false, None) => files.push(None),
+            }
+        }
+
+        let identity = PartFileIdentity {
+            info_hash: metainfo.info_hash,
+            piece_count: layout.piece_count(),
+            piece_length: layout.piece_length(),
+            total_length: layout.total_length(),
+        };
+        let part_file = PartFile::open_preopened(descriptors.part_file, identity).await?;
+        let validation_reopen = descriptors
+            .reopened_part_file
+            .try_clone()
+            .map_err(|source| SelectiveStorageError::Io {
+                operation: "duplicate descriptor for resumed part-file identity validation",
+                source,
+            })?;
+        drop(PartFile::open_preopened(validation_reopen, identity).await?);
+
+        Ok(Self {
+            backing: StorageBacking::Descriptors {
+                reopened_part_file: Some(descriptors.reopened_part_file),
+                materialization_files: (0..layout.files().len()).map(|_| None).collect(),
+            },
+            identity,
+            layout,
+            selection,
+            files,
+            part_file: Some(part_file),
+            verified,
             published: false,
         })
     }
@@ -1202,6 +1292,91 @@ pub fn plan_descriptor_storage(
     })
 }
 
+pub async fn verify_prepared_descriptors(
+    mut descriptors: Vec<DescriptorFile>,
+    expected: &[PreparedFileHash],
+) -> Result<(), SelectiveStorageError> {
+    descriptors.sort_by_key(|file| file.file_index);
+    if descriptors
+        .windows(2)
+        .any(|pair| pair[0].file_index == pair[1].file_index)
+    {
+        let duplicate = descriptors
+            .windows(2)
+            .find(|pair| pair[0].file_index == pair[1].file_index)
+            .expect("duplicate descriptor pair exists")[0]
+            .file_index;
+        return Err(SelectiveStorageError::InvalidDescriptorManifest {
+            role: "published",
+            file_index: duplicate,
+            reason: "file index is duplicated",
+        });
+    }
+    let mut expected = expected.to_vec();
+    expected.sort_by_key(|file| file.file_index);
+    if descriptors.len() != expected.len() {
+        return Err(SelectiveStorageError::InvalidDescriptorManifest {
+            role: "published",
+            file_index: 0,
+            reason: "descriptor count does not match the prepared manifest",
+        });
+    }
+
+    let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
+    for (descriptor, prepared) in descriptors.into_iter().zip(expected) {
+        if descriptor.file_index != prepared.file_index {
+            return Err(SelectiveStorageError::InvalidDescriptorManifest {
+                role: "published",
+                file_index: descriptor.file_index,
+                reason: "file index does not match the prepared manifest",
+            });
+        }
+        let mut file = File::from_std(descriptor.file);
+        let actual = file
+            .metadata()
+            .await
+            .map_err(|source| SelectiveStorageError::Io {
+                operation: "inspect published descriptor",
+                source,
+            })?
+            .len();
+        if actual != prepared.length {
+            return Err(SelectiveStorageError::UnexpectedFileLength {
+                file_index: prepared.file_index,
+                expected: prepared.length,
+                actual,
+            });
+        }
+        file.seek(SeekFrom::Start(0))
+            .await
+            .map_err(|source| SelectiveStorageError::Io {
+                operation: "seek published descriptor",
+                source,
+            })?;
+        let mut remaining = prepared.length;
+        let mut hasher = Sha1::new();
+        while remaining != 0 {
+            let length = usize::try_from(remaining.min(buffer.len() as u64))
+                .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
+            file.read_exact(&mut buffer[..length])
+                .await
+                .map_err(|source| SelectiveStorageError::Io {
+                    operation: "read published descriptor",
+                    source,
+                })?;
+            hasher.update(&buffer[..length]);
+            remaining -= length as u64;
+        }
+        let actual_hash: [u8; 20] = hasher.finalize().into();
+        if actual_hash != prepared.sha1 {
+            return Err(SelectiveStorageError::PreparedHashMismatch {
+                file_index: prepared.file_index,
+            });
+        }
+    }
+    Ok(())
+}
+
 fn collect_descriptors(
     file_count: usize,
     role: &'static str,
@@ -1256,6 +1431,30 @@ async fn initialize_descriptor_file(
             operation: "size descriptor staging file",
             source,
         })?;
+    Ok(file)
+}
+
+async fn validate_descriptor_length(
+    file: std::fs::File,
+    file_index: usize,
+    expected: u64,
+) -> Result<File, SelectiveStorageError> {
+    let file = File::from_std(file);
+    let actual = file
+        .metadata()
+        .await
+        .map_err(|source| SelectiveStorageError::Io {
+            operation: "inspect resumable descriptor file",
+            source,
+        })?
+        .len();
+    if actual != expected {
+        return Err(SelectiveStorageError::UnexpectedFileLength {
+            file_index,
+            expected,
+            actual,
+        });
+    }
     Ok(file)
 }
 
@@ -1351,9 +1550,10 @@ mod tests {
     use sha1::{Digest, Sha1};
 
     use super::{
-        DescriptorFile, DescriptorStorage, ResumedStorage, SelectiveStorage, SelectiveStorageError,
-        collect_descriptors, materialization_path, remove_selective_part_if_present,
-        remove_selective_staging_if_present, selective_part_path, selective_staging_path,
+        DescriptorFile, DescriptorStorage, PreparedFileHash, ResumedStorage, SelectiveStorage,
+        SelectiveStorageError, collect_descriptors, materialization_path,
+        remove_selective_part_if_present, remove_selective_staging_if_present, selective_part_path,
+        selective_staging_path, verify_prepared_descriptors,
     };
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -1807,6 +2007,115 @@ mod tests {
             std::fs::read(&materialized_path).expect("read materialized descriptor"),
             bytes[70_000..77_000]
         );
+        tokio::fs::remove_dir_all(root)
+            .await
+            .expect("remove descriptor root");
+    }
+
+    #[tokio::test]
+    async fn resumes_descriptors_and_verifies_fresh_publication_handles() {
+        let root = test_path("descriptor-resume");
+        tokio::fs::create_dir(&root)
+            .await
+            .expect("create descriptor root");
+        let metainfo = fixture();
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[1, 2]).expect("selection");
+        let bytes = torrent_bytes(&metainfo);
+        let descriptors = descriptor_manifest(&root, &[0, 3, 4, 6], &[]);
+        let mut storage = SelectiveStorage::create_with_descriptors(
+            &metainfo,
+            layout.clone(),
+            selection.clone(),
+            &[],
+            descriptors,
+        )
+        .await
+        .expect("create descriptor storage");
+        for request in layout
+            .request_ranges(0, &selection)
+            .expect("piece requests")
+        {
+            let offset = request.begin as usize;
+            storage
+                .write_block(
+                    0,
+                    request.begin,
+                    bytes[offset..offset + request.length as usize].to_vec(),
+                )
+                .await
+                .expect("write descriptor block");
+        }
+        storage.record_verified(0).expect("record first piece");
+        storage.sync_piece(0).await.expect("sync first piece");
+        drop(storage);
+
+        let reopen = |path: &Path| {
+            std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(path)
+                .expect("reopen descriptor")
+        };
+        let part_path = root.join("part");
+        let descriptors = DescriptorStorage {
+            wanted_files: [0_usize, 3, 4, 6]
+                .into_iter()
+                .map(|file_index| DescriptorFile {
+                    file_index,
+                    file: reopen(&root.join(format!("wanted-{file_index}"))),
+                })
+                .collect(),
+            part_file: reopen(&part_path),
+            reopened_part_file: reopen(&part_path),
+            materialization_files: Vec::new(),
+        };
+        let mut verified = vec![false; layout.piece_count()];
+        verified[0] = true;
+        let mut resumed = SelectiveStorage::resume_with_descriptors(
+            &metainfo,
+            layout,
+            selection,
+            descriptors,
+            verified,
+        )
+        .await
+        .expect("resume descriptor storage");
+        let expected_piece: [u8; 20] = Sha1::digest(&bytes[..32_768]).into();
+        assert_eq!(
+            resumed.hash_piece(0).await.expect("hash resumed piece"),
+            expected_piece
+        );
+        drop(resumed);
+
+        let file = &metainfo.files[0];
+        let prepared = PreparedFileHash {
+            file_index: 0,
+            length: file.length,
+            sha1: Sha1::digest(&bytes[..file.length as usize]).into(),
+        };
+        verify_prepared_descriptors(
+            vec![DescriptorFile {
+                file_index: 0,
+                file: reopen(&root.join("wanted-0")),
+            }],
+            std::slice::from_ref(&prepared),
+        )
+        .await
+        .expect("verify fresh published descriptor");
+        std::fs::write(root.join("wanted-0"), vec![0_u8; file.length as usize])
+            .expect("corrupt published descriptor");
+        assert!(matches!(
+            verify_prepared_descriptors(
+                vec![DescriptorFile {
+                    file_index: 0,
+                    file: reopen(&root.join("wanted-0")),
+                }],
+                &[prepared],
+            )
+            .await,
+            Err(SelectiveStorageError::PreparedHashMismatch { file_index: 0 })
+        ));
         tokio::fs::remove_dir_all(root)
             .await
             .expect("remove descriptor root");

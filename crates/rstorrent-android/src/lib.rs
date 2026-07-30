@@ -11,8 +11,8 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use rstorrent_engine::{
-    DescriptorFile, DescriptorFileRole, DescriptorStorage, DownloadConfig, DownloadControl,
-    DownloadError, DownloadProgress, DownloadReport,
+    DescriptorFile, DescriptorFileRole, DescriptorStorage, DescriptorStoragePlan, DownloadConfig,
+    DownloadControl, DownloadError, DownloadProgress, DownloadReport,
     download_verified_piece_to_descriptors_with_control, download_verified_piece_with_control,
     plan_descriptor_storage,
 };
@@ -42,6 +42,7 @@ pub struct AndroidApplicationConfig {
     pub profile_root: String,
     pub profile_id: String,
     pub storage_root: String,
+    pub platform_storage: bool,
     pub timeout_seconds: u64,
     pub max_buffered_payload_bytes: u64,
 }
@@ -121,6 +122,109 @@ impl AndroidApplicationClient {
         Ok(Arc::new(AndroidViewSubscription { subscription }))
     }
 
+    pub async fn saf_storage_plan(
+        &self,
+        torrent_id: String,
+    ) -> Result<SafStoragePlan, AndroidClientError> {
+        let plan = self
+            .service
+            .lock()
+            .await
+            .as_mut()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .descriptor_storage_plan(&torrent_id)
+            .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))?;
+        map_saf_storage_plan(plan)
+    }
+
+    pub async fn start_saf(
+        &self,
+        torrent_id: String,
+        storage: SafStorage,
+    ) -> Result<(), AndroidClientError> {
+        let descriptors = duplicate_saf_storage(storage).map_err(AndroidClientError::message)?;
+        self.service
+            .lock()
+            .await
+            .as_mut()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .start_with_descriptors(&torrent_id, descriptors)
+            .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
+    pub async fn prepared_saf_files(
+        &self,
+        torrent_id: String,
+    ) -> Result<Vec<PreparedFile>, AndroidClientError> {
+        let files = self
+            .service
+            .lock()
+            .await
+            .as_mut()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .prepared_files(&torrent_id)
+            .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))?;
+        files
+            .into_iter()
+            .map(|file| {
+                Ok(PreparedFile {
+                    file_index: u32::try_from(file.file_index)
+                        .map_err(|_| AndroidClientError::message("file index exceeds u32"))?,
+                    length: file.length,
+                    sha1_hex: hex(&file.sha1),
+                })
+            })
+            .collect()
+    }
+
+    pub async fn confirm_saf_publication(
+        &self,
+        torrent_id: String,
+        files: Vec<SafDescriptor>,
+    ) -> Result<(), AndroidClientError> {
+        if files.len() > MAX_FILE_SELECTIONS {
+            return Err(AndroidClientError::message(format!(
+                "published descriptor list exceeds {MAX_FILE_SELECTIONS} entries"
+            )));
+        }
+        let files = files
+            .into_iter()
+            .map(|descriptor| {
+                Ok(DescriptorFile {
+                    file_index: descriptor.file_index as usize,
+                    file: duplicate_descriptor(descriptor.fd)
+                        .map_err(AndroidClientError::message)?,
+                })
+            })
+            .collect::<Result<Vec<_>, AndroidClientError>>()?;
+        self.service
+            .lock()
+            .await
+            .as_mut()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .confirm_descriptor_publication(&torrent_id, files)
+            .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
+    pub async fn mark_saf_unavailable(
+        &self,
+        torrent_id: String,
+        message: String,
+    ) -> Result<(), AndroidClientError> {
+        self.service
+            .lock()
+            .await
+            .as_mut()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .mark_storage_unavailable(&torrent_id, &message)
+            .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
     pub async fn shutdown(&self) -> Result<(), AndroidClientError> {
         let service = self.service.lock().await.take();
         if let Some(mut service) = service {
@@ -184,13 +288,15 @@ fn validate_application_config(
             "payload allowance must be {MIN_PAYLOAD_BYTES}..={MAX_PAYLOAD_BYTES} bytes"
         )));
     }
+    let storage_root = if config.platform_storage {
+        ConfiguredStorageRoot::platform("downloads")
+    } else {
+        ConfiguredStorageRoot::path("downloads", path(config.storage_root, "storage root")?)
+    };
     let mut application = ApplicationConfig::new(
         path(config.profile_root, "profile root")?,
         config.profile_id,
-        vec![ConfiguredStorageRoot {
-            id: "downloads".to_owned(),
-            path: path(config.storage_root, "storage root")?,
-        }],
+        vec![storage_root],
     );
     application.download_timeout = Duration::from_secs(config.timeout_seconds);
     application.max_buffered_payload_bytes = usize::try_from(config.max_buffered_payload_bytes)
@@ -663,31 +769,7 @@ pub fn saf_storage_plan(
             .collect();
         let plan = plan_descriptor_storage(&metainfo, &skip_files, &materialize_files)
             .map_err(|error| error.to_string())?;
-        let files = plan
-            .files
-            .into_iter()
-            .map(|file| {
-                Ok(SafPlanFile {
-                    file_index: u32::try_from(file.file_index)
-                        .map_err(|_| "file index exceeds the Android interface".to_owned())?,
-                    path: file.path,
-                    length: file.length,
-                    role: match file.role {
-                        DescriptorFileRole::Wanted => SafFileRole::Wanted,
-                        DescriptorFileRole::Skipped => SafFileRole::Skipped,
-                        DescriptorFileRole::Padding => SafFileRole::Padding,
-                    },
-                    materialize: file.materialize,
-                })
-            })
-            .collect::<Result<Vec<_>, String>>()?;
-        Ok(SafStoragePlan {
-            valid: true,
-            message: None,
-            info_hash_hex: hex(&plan.info_hash),
-            name: plan.name,
-            files,
-        })
+        map_saf_storage_plan(plan).map_err(|error| error.to_string())
     })();
     result.unwrap_or_else(|message| SafStoragePlan {
         valid: false,
@@ -695,6 +777,34 @@ pub fn saf_storage_plan(
         info_hash_hex: String::new(),
         name: String::new(),
         files: Vec::new(),
+    })
+}
+
+fn map_saf_storage_plan(plan: DescriptorStoragePlan) -> Result<SafStoragePlan, AndroidClientError> {
+    let files = plan
+        .files
+        .into_iter()
+        .map(|file| {
+            Ok(SafPlanFile {
+                file_index: u32::try_from(file.file_index)
+                    .map_err(|_| AndroidClientError::message("file index exceeds u32"))?,
+                path: file.path,
+                length: file.length,
+                role: match file.role {
+                    DescriptorFileRole::Wanted => SafFileRole::Wanted,
+                    DescriptorFileRole::Skipped => SafFileRole::Skipped,
+                    DescriptorFileRole::Padding => SafFileRole::Padding,
+                },
+                materialize: file.materialize,
+            })
+        })
+        .collect::<Result<Vec<_>, AndroidClientError>>()?;
+    Ok(SafStoragePlan {
+        valid: true,
+        message: None,
+        info_hash_hex: hex(&plan.info_hash),
+        name: plan.name,
+        files,
     })
 }
 
@@ -723,6 +833,13 @@ pub fn inspect_borrowed_descriptor(
 }
 
 fn duplicate_saf_storage(storage: SafStorage) -> Result<DescriptorStorage, String> {
+    if storage.wanted_files.len() > MAX_FILE_SELECTIONS
+        || storage.materialization_files.len() > MAX_FILE_SELECTIONS
+    {
+        return Err(format!(
+            "SAF descriptor lists may contain at most {MAX_FILE_SELECTIONS} entries"
+        ));
+    }
     fn files(descriptors: Vec<SafDescriptor>) -> Result<Vec<DescriptorFile>, String> {
         descriptors
             .into_iter()

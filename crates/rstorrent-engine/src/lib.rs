@@ -11,9 +11,10 @@ mod storage;
 pub use driver::{
     DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink, DownloadConfig,
     DownloadControl, DownloadError, DownloadProgress, DownloadReport, MagnetDownloadConfig,
-    ResumableMagnetDownloadConfig, download_magnet_with_peer_hint,
-    download_magnet_with_peer_hint_with_control, download_verified_piece,
-    download_verified_piece_to_descriptors_with_control, download_verified_piece_with_control,
+    ResumableMagnetDownloadConfig, download_magnet_metadata_with_peer_hint_with_control,
+    download_magnet_with_peer_hint, download_magnet_with_peer_hint_with_control,
+    download_verified_piece, download_verified_piece_to_descriptors_with_control,
+    download_verified_piece_with_control, resume_magnet_to_descriptors_with_peer_hint_with_control,
     resume_magnet_with_peer_hint, resume_magnet_with_peer_hint_with_control,
 };
 pub use metadata_seed::{
@@ -26,5 +27,5 @@ pub use selective_storage::{
     DescriptorStoragePlanFile, MaterializationReport, PreparedFileHash, ResumedStorage,
     SelectiveStorage, SelectiveStorageError, SelectiveWriteStats, plan_descriptor_storage,
     remove_selective_part_if_present, remove_selective_staging_if_present, selective_part_path,
-    selective_staging_path,
+    selective_staging_path, verify_prepared_descriptors,
 };

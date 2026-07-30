@@ -23,10 +23,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let application = ApplicationService::open(ApplicationConfig::new(
         profile_root,
         "default".to_owned(),
-        vec![ConfiguredStorageRoot {
-            id: "downloads".to_owned(),
-            path: storage_root,
-        }],
+        vec![ConfiguredStorageRoot::path("downloads", storage_root)],
     ))
     .await?;
     let application = Arc::new(Mutex::new(application));
