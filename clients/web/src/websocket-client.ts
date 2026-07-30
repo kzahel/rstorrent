@@ -18,6 +18,8 @@ import {
 const MAX_BUFFERED_SOCKET_BYTES = 4 * 1024 * 1024;
 const CONNECT_TIMEOUT_MILLIS = 5_000;
 
+export type WebSocketFactory = (url: string) => WebSocket;
+
 interface Pending<T> {
   resolve(value: T): void;
   reject(error: Error): void;
@@ -52,11 +54,12 @@ export class WebSocketApplicationClient implements ApplicationClient {
   public static async connect(
     url: string,
     token: string,
+    socketFactory: WebSocketFactory = (socketUrl) => new WebSocket(socketUrl),
   ): Promise<WebSocketApplicationClient> {
     if (token.length === 0 || token.length > 128) {
       throw new Error("gateway token must be 1..=128 characters");
     }
-    const socket = new WebSocket(url);
+    const socket = socketFactory(url);
     const client = new WebSocketApplicationClient(socket, token);
     await client.authenticate();
     return client;
@@ -107,18 +110,18 @@ export class WebSocketApplicationClient implements ApplicationClient {
 
   private async authenticate(): Promise<void> {
     await new Promise<void>((resolve, reject) => {
-      const timer = window.setTimeout(() => {
+      const timer = globalThis.setTimeout(() => {
         this.authentication = undefined;
         reject(new Error("gateway authentication timed out"));
         this.socket.close();
       }, CONNECT_TIMEOUT_MILLIS);
       this.authentication = {
         resolve: () => {
-          window.clearTimeout(timer);
+          globalThis.clearTimeout(timer);
           resolve();
         },
         reject: (error) => {
-          window.clearTimeout(timer);
+          globalThis.clearTimeout(timer);
           reject(error);
         },
       };
@@ -131,7 +134,7 @@ export class WebSocketApplicationClient implements ApplicationClient {
           });
         } catch (error) {
           this.authentication = undefined;
-          window.clearTimeout(timer);
+          globalThis.clearTimeout(timer);
           reject(asError(error));
         }
       };
