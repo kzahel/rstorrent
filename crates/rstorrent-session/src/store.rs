@@ -34,6 +34,7 @@ pub struct ResumeRecord {
     pub skip_files: Vec<u32>,
     pub state: TorrentState,
     pub storage_state: StorageState,
+    pub desired_running: bool,
     pub raw_info: Option<Vec<u8>>,
     pub have: Option<HaveState>,
 }
@@ -216,7 +217,7 @@ impl SessionStore {
             .connection
             .query_row(
                 "SELECT magnet, storage_root, state, storage_state, raw_info,
-                        piece_count, have_state
+                        piece_count, have_state, desired_state
                  FROM torrents
                  WHERE info_hash = ?1",
                 [info_hash.as_slice()],
@@ -229,6 +230,7 @@ impl SessionStore {
                         row.get::<_, Option<Vec<u8>>>(4)?,
                         row.get::<_, Option<i64>>(5)?,
                         row.get::<_, Option<Vec<u8>>>(6)?,
+                        row.get::<_, String>(7)?,
                     ))
                 },
             )
@@ -258,6 +260,15 @@ impl SessionStore {
             skip_files,
             state,
             storage_state,
+            desired_running: match row.7.as_str() {
+                "running" => true,
+                "paused" => false,
+                _ => {
+                    return Err(StoreError::DurableState(
+                        "invalid desired torrent state".to_owned(),
+                    ));
+                }
+            },
             raw_info: row.4,
             have,
         })
@@ -291,7 +302,10 @@ impl SessionStore {
              SET raw_info = ?2,
                  piece_count = ?3,
                  have_state = ?4,
-                 state = ?5,
+                 state = CASE
+                    WHEN desired_state = 'paused' THEN 'paused'
+                    ELSE ?5
+                 END,
                  storage_state = ?6,
                  error = NULL,
                  updated_revision = ?7
@@ -380,6 +394,62 @@ impl SessionStore {
         )
     }
 
+    pub fn mark_storage_prepared(
+        &mut self,
+        torrent_id: &str,
+        storage_state: StorageState,
+    ) -> Result<u64, StoreError> {
+        let info_hash = decode_info_hash(torrent_id)
+            .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
+        let transaction = self.connection.transaction()?;
+        let revision = increment_revision(&transaction)?;
+        let revision_sql = sql_revision(revision)?;
+        let updated = transaction.execute(
+            "UPDATE torrents
+             SET storage_state = ?2,
+                 state = CASE
+                    WHEN desired_state = 'paused' THEN 'paused'
+                    WHEN ?2 = 'published' THEN 'checking'
+                    ELSE 'downloading'
+                 END,
+                 updated_revision = ?3
+             WHERE info_hash = ?1",
+            params![info_hash.as_slice(), storage_state.as_str(), revision_sql],
+        )?;
+        if updated != 1 {
+            return Err(StoreError::UnknownTorrent(torrent_id.to_owned()));
+        }
+        transaction.commit()?;
+        Ok(revision)
+    }
+
+    pub fn reset_have_from_metadata(&mut self, torrent_id: &str) -> Result<HaveState, StoreError> {
+        let info_hash = decode_info_hash(torrent_id)
+            .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
+        let raw_info = self
+            .connection
+            .query_row(
+                "SELECT raw_info FROM torrents WHERE info_hash = ?1",
+                [info_hash.as_slice()],
+                |row| row.get::<_, Option<Vec<u8>>>(0),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_owned()))?
+            .ok_or_else(|| {
+                StoreError::DurableState("torrent has no verified metadata".to_owned())
+            })?;
+        let metainfo = Metainfo::from_info_bytes(&raw_info)
+            .map_err(|error| StoreError::DurableState(error.to_string()))?;
+        if metainfo.info_hash != info_hash {
+            return Err(StoreError::DurableState(
+                "stored metadata does not match torrent identity".to_owned(),
+            ));
+        }
+        let have = HaveState::empty(info_hash, metainfo.piece_count())?;
+        self.replace_have(torrent_id, &have)?;
+        Ok(have)
+    }
+
     pub fn mark_needs_repair(
         &mut self,
         torrent_id: &str,
@@ -394,12 +464,28 @@ impl SessionStore {
     }
 
     pub fn mark_error(&mut self, torrent_id: &str, message: &str) -> Result<u64, StoreError> {
-        self.update_status(
-            torrent_id,
-            TorrentState::Error,
-            StorageState::None,
-            Some(message),
-        )
+        let info_hash = decode_info_hash(torrent_id)
+            .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
+        let error = bounded_error(message);
+        let transaction = self.connection.transaction()?;
+        let revision = increment_revision(&transaction)?;
+        let revision_sql = sql_revision(revision)?;
+        let updated = transaction.execute(
+            "UPDATE torrents
+             SET state = CASE
+                    WHEN desired_state = 'paused' THEN 'paused'
+                    ELSE 'error'
+                 END,
+                 error = ?2,
+                 updated_revision = ?3
+             WHERE info_hash = ?1",
+            params![info_hash.as_slice(), error, revision_sql],
+        )?;
+        if updated != 1 {
+            return Err(StoreError::UnknownTorrent(torrent_id.to_owned()));
+        }
+        transaction.commit()?;
+        Ok(revision)
     }
 
     fn update_status(

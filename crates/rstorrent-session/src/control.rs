@@ -55,7 +55,7 @@ pub struct ResponseEnvelope {
 }
 
 impl ResponseEnvelope {
-    pub(crate) fn success(request_id: String, revision: u64, snapshot: ServiceSnapshot) -> Self {
+    pub fn success(request_id: String, revision: u64, snapshot: ServiceSnapshot) -> Self {
         Self {
             version: CONTROL_VERSION,
             request_id,
@@ -64,7 +64,7 @@ impl ResponseEnvelope {
         }
     }
 
-    pub(crate) fn error(
+    pub fn error(
         request_id: String,
         revision: u64,
         code: ErrorCode,
