@@ -550,6 +550,24 @@ mod tests {
             },
         )
         .await;
+        for (payload, expected_piece) in [
+            (b"d8:msg_typei0e5:piecei-1ee".to_vec(), -1),
+            (encode_metadata_request(99), 99),
+        ] {
+            send(&mut stream, &PeerMessage::Extended { id: 1, payload }).await;
+            let PeerMessage::Extended { id, payload } =
+                next_message(&mut stream, &mut decoder, &mut queued).await
+            else {
+                panic!("expected metadata reject");
+            };
+            assert_eq!(id, 7);
+            assert_eq!(
+                parse_metadata_message(&payload).expect("parse metadata reject"),
+                MetadataMessage::Reject {
+                    piece: expected_piece
+                }
+            );
+        }
         let mut blocks = BTreeMap::new();
         for piece in 0..metadata_block_count(info.len()) {
             send(
@@ -583,7 +601,7 @@ mod tests {
 
         let report = server_task.await.expect("seed task").expect("seed report");
         assert_eq!(report.block_count, metadata_block_count(info.len()));
-        assert_eq!(report.request_count, report.block_count);
+        assert_eq!(report.request_count, report.block_count + 2);
         let _ = tokio::fs::remove_file(metainfo_path).await;
     }
 }
