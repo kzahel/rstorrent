@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use rstorrent_engine::{DownloadConfig, download_verified_piece};
+use rstorrent_engine::{
+    DownloadConfig, MagnetDownloadConfig, download_magnet_with_peer_hint, download_verified_piece,
+};
 use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 15;
@@ -14,9 +16,21 @@ const MAX_BUFFERED_PAYLOAD_BYTES: usize = 64 * 1024 * 1024;
 const USAGE: &str = "\
 Usage: rstorrent-download-piece \\
   --metainfo PATH --peer 127.0.0.1:PORT --output PATH \\
+  [options]\n\
+   or: rstorrent-download-piece \\
+  --magnet 'magnet:?xt=urn:btih:...&x.pe=127.0.0.1:PORT' --output PATH \\
+  [options]\n\
+\n\
+Options:\n\
   [--timeout-seconds SECONDS] \\
   [--max-buffered-payload-bytes BYTES] \\
   [--skip-file INDEX]... [--materialize-file INDEX]...";
+
+#[derive(Debug)]
+enum DownloadCommand {
+    Metainfo(DownloadConfig),
+    Magnet(MagnetDownloadConfig),
+}
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
@@ -34,7 +48,11 @@ async fn main() -> ExitCode {
         }
     };
 
-    match download_verified_piece(config).await {
+    let result = match config {
+        DownloadCommand::Metainfo(config) => download_verified_piece(config).await,
+        DownloadCommand::Magnet(config) => download_magnet_with_peer_hint(config).await,
+    };
+    match result {
         Ok(report) => {
             println!(
                 "verified pieces={}/{} skipped_pieces={} bytes={} sha1={} info_hash={} blocks={} \
@@ -74,8 +92,9 @@ materialized_bytes={} part_slots_before={} part_slots_after={} part_reopened={} 
     }
 }
 
-fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadConfig, String> {
+fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> {
     let mut metainfo_path = None;
+    let mut magnet = None;
     let mut peer = None;
     let mut output_path = None;
     let mut timeout_seconds = DEFAULT_TIMEOUT_SECONDS;
@@ -96,6 +115,12 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadConfig, String> {
 
         match flag {
             "--metainfo" => set_once(&mut metainfo_path, PathBuf::from(value), flag)?,
+            "--magnet" => {
+                let value = value
+                    .to_str()
+                    .ok_or_else(|| "--magnet must be valid UTF-8".to_owned())?;
+                set_once(&mut magnet, value.to_owned(), flag)?;
+            }
             "--peer" => {
                 let value = value
                     .to_str()
@@ -147,15 +172,33 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadConfig, String> {
         }
     }
 
-    Ok(DownloadConfig {
-        metainfo_path: metainfo_path.ok_or_else(|| "--metainfo is required".to_owned())?,
-        peer: peer.ok_or_else(|| "--peer is required".to_owned())?,
-        output_path: output_path.ok_or_else(|| "--output is required".to_owned())?,
-        timeout: Duration::from_secs(timeout_seconds),
-        max_buffered_payload_bytes,
-        skip_files,
-        materialize_files,
-    })
+    let output_path = output_path.ok_or_else(|| "--output is required".to_owned())?;
+    let timeout = Duration::from_secs(timeout_seconds);
+    match (metainfo_path, magnet, peer) {
+        (Some(metainfo_path), None, Some(peer)) => Ok(DownloadCommand::Metainfo(DownloadConfig {
+            metainfo_path,
+            peer,
+            output_path,
+            timeout,
+            max_buffered_payload_bytes,
+            skip_files,
+            materialize_files,
+        })),
+        (None, Some(magnet), None) => Ok(DownloadCommand::Magnet(MagnetDownloadConfig {
+            magnet,
+            output_path,
+            timeout,
+            max_buffered_payload_bytes,
+            skip_files,
+            materialize_files,
+        })),
+        (Some(_), Some(_), _) => Err("--metainfo and --magnet are mutually exclusive".to_owned()),
+        (None, None, _) => Err("exactly one of --metainfo or --magnet is required".to_owned()),
+        (Some(_), None, None) => Err("--peer is required with --metainfo".to_owned()),
+        (None, Some(_), Some(_)) => {
+            Err("--peer must come from x.pe when --magnet is used".to_owned())
+        }
+    }
 }
 
 fn parse_file_index(value: &OsString, flag: &str) -> Result<usize, String> {
@@ -196,7 +239,10 @@ mod tests {
     use std::ffi::OsString;
     use std::time::Duration;
 
-    use super::{DEFAULT_MAX_BUFFERED_PAYLOAD_BYTES, DEFAULT_TIMEOUT_SECONDS, parse_arguments};
+    use super::{
+        DEFAULT_MAX_BUFFERED_PAYLOAD_BYTES, DEFAULT_TIMEOUT_SECONDS, DownloadCommand,
+        parse_arguments,
+    };
 
     fn strings(arguments: &[&str]) -> Vec<OsString> {
         arguments.iter().map(OsString::from).collect()
@@ -204,7 +250,7 @@ mod tests {
 
     #[test]
     fn parses_required_diagnostic_arguments() {
-        let config = parse_arguments(strings(&[
+        let command = parse_arguments(strings(&[
             "--metainfo",
             "fixture.torrent",
             "--peer",
@@ -213,6 +259,9 @@ mod tests {
             "payload.bin",
         ]))
         .expect("valid arguments");
+        let DownloadCommand::Metainfo(config) = command else {
+            panic!("expected metainfo command");
+        };
 
         assert_eq!(config.metainfo_path.to_string_lossy(), "fixture.torrent");
         assert!(config.peer.ip().is_loopback());
@@ -225,6 +274,24 @@ mod tests {
         );
         assert!(config.skip_files.is_empty());
         assert!(config.materialize_files.is_empty());
+    }
+
+    #[test]
+    fn parses_magnet_without_an_out_of_band_peer() {
+        let command = parse_arguments(strings(&[
+            "--magnet",
+            "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&x.pe=127.0.0.1:1",
+            "--output",
+            "payload",
+        ]))
+        .expect("valid magnet arguments");
+        let DownloadCommand::Magnet(config) = command else {
+            panic!("expected magnet command");
+        };
+
+        assert!(config.magnet.starts_with("magnet:?"));
+        assert_eq!(config.output_path.to_string_lossy(), "payload");
+        assert_eq!(config.timeout, Duration::from_secs(DEFAULT_TIMEOUT_SECONDS));
     }
 
     #[test]
@@ -284,6 +351,9 @@ mod tests {
             "7",
         ]))
         .expect("selected arguments");
+        let DownloadCommand::Metainfo(selected) = selected else {
+            panic!("expected metainfo command");
+        };
         assert_eq!(selected.skip_files, [3, 7]);
         assert_eq!(selected.materialize_files, [7]);
         assert!(

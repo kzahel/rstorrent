@@ -9,8 +9,9 @@ mod storage;
 
 pub use driver::{
     DownloadConfig, DownloadControl, DownloadError, DownloadProgress, DownloadReport,
-    download_verified_piece, download_verified_piece_to_descriptors_with_control,
-    download_verified_piece_with_control,
+    MagnetDownloadConfig, download_magnet_with_peer_hint,
+    download_magnet_with_peer_hint_with_control, download_verified_piece,
+    download_verified_piece_to_descriptors_with_control, download_verified_piece_with_control,
 };
 pub use part_file::{PartFile, PartFileError, PartFileIdentity};
 pub use selective_storage::{
