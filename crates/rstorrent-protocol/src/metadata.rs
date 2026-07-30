@@ -176,13 +176,34 @@ pub fn parse_extension_handshake(payload: &[u8]) -> Result<ExtensionHandshake, M
 }
 
 pub fn encode_extension_handshake(metadata_size: Option<usize>) -> Vec<u8> {
-    let mut encoded = b"d1:md11:ut_metadatai1ee".to_vec();
+    encode_extension_handshake_with_id(UT_METADATA_LOCAL_ID, metadata_size)
+        .expect("the stable local metadata extension ID is nonzero")
+}
+
+pub fn encode_extension_handshake_with_id(
+    local_metadata_id: u8,
+    metadata_size: Option<usize>,
+) -> Result<Vec<u8>, MetadataError> {
+    if local_metadata_id == 0 {
+        return Err(MetadataError::InvalidField(
+            "local ut_metadata extension ID",
+        ));
+    }
+    if let Some(size) = metadata_size {
+        validate_size(i64::try_from(size).map_err(|_| MetadataError::InvalidSize {
+            size: i64::MAX,
+            maximum: MAX_METADATA_LENGTH,
+        })?)?;
+    }
+    let mut encoded = b"d1:md11:ut_metadatai".to_vec();
+    push_integer(&mut encoded, i64::from(local_metadata_id));
+    encoded.push(b'e');
     if let Some(size) = metadata_size {
         encoded.extend_from_slice(b"13:metadata_sizei");
         push_integer(&mut encoded, size as i64);
     }
     encoded.push(b'e');
-    encoded
+    Ok(encoded)
 }
 
 pub fn parse_metadata_message(payload: &[u8]) -> Result<MetadataMessage<'_>, MetadataError> {
@@ -624,9 +645,9 @@ mod tests {
         ExtensionHandshake, MAX_METADATA_LENGTH, MAX_METADATA_REQUESTS_IN_FLIGHT,
         MAX_METADATA_UPLOAD_REQUESTS, METADATA_BLOCK_LENGTH, MetadataDownload,
         MetadataDownloadAction, MetadataError, MetadataExtensionUpdate, MetadataMessage,
-        MetadataUpload, MetadataUploadAction, encode_extension_handshake, encode_metadata_data,
-        encode_metadata_reject, encode_metadata_request, parse_extension_handshake,
-        parse_metadata_message,
+        MetadataUpload, MetadataUploadAction, encode_extension_handshake,
+        encode_extension_handshake_with_id, encode_metadata_data, encode_metadata_reject,
+        encode_metadata_request, parse_extension_handshake, parse_metadata_message,
     };
 
     #[test]
@@ -638,6 +659,16 @@ mod tests {
                 metadata_size: Some(32_000)
             })
         );
+        assert_eq!(
+            parse_extension_handshake(
+                &encode_extension_handshake_with_id(19, None).expect("nonzero local ID")
+            ),
+            Ok(ExtensionHandshake {
+                metadata_extension: MetadataExtensionUpdate::Enabled(19),
+                metadata_size: None
+            })
+        );
+        assert!(encode_extension_handshake_with_id(0, None).is_err());
         assert_eq!(
             parse_extension_handshake(b"d1:md11:ut_metadatai0eee"),
             Ok(ExtensionHandshake {

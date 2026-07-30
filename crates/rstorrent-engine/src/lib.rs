@@ -3,6 +3,7 @@
 //! Runtime ownership for the first verified-piece diagnostic.
 
 mod driver;
+mod metadata_seed;
 mod part_file;
 mod selective_storage;
 mod storage;
@@ -12,6 +13,10 @@ pub use driver::{
     MagnetDownloadConfig, download_magnet_with_peer_hint,
     download_magnet_with_peer_hint_with_control, download_verified_piece,
     download_verified_piece_to_descriptors_with_control, download_verified_piece_with_control,
+};
+pub use metadata_seed::{
+    MetadataSeedConfig, MetadataSeedError, MetadataSeedReport, MetadataSeedServer,
+    bind_metadata_seed,
 };
 pub use part_file::{PartFile, PartFileError, PartFileIdentity};
 pub use selective_storage::{
