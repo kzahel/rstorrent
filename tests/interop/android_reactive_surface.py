@@ -379,6 +379,7 @@ def run(arguments: argparse.Namespace) -> None:
         if "FATAL EXCEPTION" in product_logs(adb):
             raise ScenarioFailure("Android runtime failed during joined shutdown")
         updates = trace.count("view_update")
+        adb.shell("pm", "clear", PACKAGE)
         print(
             f"android_serial={arguments.serial} info_hash={fixture.info_hash} "
             f"metadata_size={len(fixture.info_bytes)} "
@@ -390,6 +391,7 @@ def run(arguments: argparse.Namespace) -> None:
     finally:
         if port is not None:
             adb.run("reverse", "--remove", f"tcp:{port}", check=False)
+        adb.shell("rm", "-f", "/sdcard/rstorrent-window.xml", check=False)
         if session is not None:
             if handle is not None:
                 try:
