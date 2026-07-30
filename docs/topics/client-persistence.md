@@ -2,11 +2,9 @@
 
 Topic: `client-persistence`
 
-Status: the SQLite persistence direction is accepted. A logical
-application/engine boundary and instance-scoped profile isolation are the
-current recommendations; the exact crate name and first physical extraction
-remain decisions for Tactical `007`, where persistence provides the first
-concrete caller.
+Status: the SQLite persistence direction is accepted. Tactical `007` is
+implementing the first `rstorrent-session` application/engine boundary,
+instance-scoped profile store, and conservative restart path.
 
 ## Scope
 
@@ -196,10 +194,11 @@ boundary:
 - The engine does not acquire platform paths, SAF URIs, SQL rows, or UI
   lifecycle types.
 
-The likely physical shape is a new crate with a working role such as
-`rstorrent-session` or `rstorrent-application`, depending inward on
-`rstorrent-engine`. It owns the concrete SQLite implementation and supervises
-engine work. Platform adapters depend on it.
+The accepted first physical shape is `rstorrent-session`, depending inward on
+`rstorrent-engine`. It owns the concrete SQLite implementation, semantic
+application control, and engine supervision. Platform adapters depend on it.
+The continuing control contract is recorded in
+[`application-control.md`](application-control.md).
 
 The name is less important than the direction. Do not create a generic
 `Client` facade, persistence-backend trait hierarchy, plugin system, remote
@@ -335,16 +334,14 @@ their intermediate state explicitly and make restart cleanup idempotent.
 - How a future JSTorrent migration imports existing settings, metadata, and
   progress without treating unverified legacy state as verified content.
 
-## Recommended Next Work
+## Current Work
 
-Draft Tactical `007` for the smallest complete persistence and restart slice:
-one concrete SQLite implementation, an explicit application/engine seam,
-versioned schema migration, durable verified magnet metadata and source
-intent, storage-root and selection persistence, verified-piece batching,
+[`../tactical/007-durable-session-control.md`](../tactical/007-durable-session-control.md)
+owns the smallest complete persistence and restart slice: one concrete SQLite
+store, semantic application control, durable verified magnet metadata and
+source intent, storage-root and selection persistence, per-piece checkpoints,
 forced-process-death recovery, and fixed-buffer recheck.
 
-The tactical should decide the physical crate boundary from those real
-dependencies before implementation. It should not broaden into a general
-multi-torrent scheduler, stable product API, UI settings catalog, remote
-control surface, profile-management UI, simultaneous profiles,
-unfinished-block resume, or hash-skipping fast-resume policy.
+It does not broaden into a general multi-torrent scheduler, stable public
+wire protocol, UI settings catalog, remote listener, profile-management UI,
+simultaneous profiles, unfinished-block resume, or hash-skipping fast resume.

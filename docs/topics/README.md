@@ -39,3 +39,6 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`client-persistence.md`](client-persistence.md): SQLite-backed client state,
   verified metadata and resume invariants, cross-platform storage-root
   identity, and the application-service boundary above the torrent engine.
+- [`application-control.md`](application-control.md): shared semantic commands,
+  responses, snapshots, revisions, and the boundary between in-process
+  application control and future transports.
