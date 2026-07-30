@@ -28,11 +28,29 @@ let pieceSubscription: ApplicationSubscription | undefined;
 let state = emptyApplicationViewState();
 let selectedTorrent: string | undefined;
 let nextRequest = 1;
+let interopComplete = false;
+let interopShutdownRequested = false;
+const interop =
+  import.meta.env.DEV && import.meta.env.VITE_RSTORRENT_INTEROP_MAGNET
+    ? {
+        magnet: import.meta.env.VITE_RSTORRENT_INTEROP_MAGNET,
+        gatewayUrl: import.meta.env.VITE_RSTORRENT_INTEROP_GATEWAY_URL,
+        gatewayToken: import.meta.env.VITE_RSTORRENT_INTEROP_GATEWAY_TOKEN,
+        requested: 0,
+        received: 0,
+        stored: 0,
+      }
+    : undefined;
 
 if ("__TAURI_INTERNALS__" in window) {
   void import("./tauri-client").then(({ TauriApplicationClient }) => {
     void startClient(new TauriApplicationClient());
   });
+} else if (
+  interop?.gatewayUrl !== undefined &&
+  interop.gatewayToken !== undefined
+) {
+  void connect(interop.gatewayUrl, interop.gatewayToken);
 } else {
   renderConnect();
 }
@@ -82,12 +100,20 @@ async function startClient(applicationClient: ApplicationClient): Promise<void> 
       selector: { type: "torrent_list" },
       projection: "summary",
       delivery: {
-        min_interval_millis: 250,
+        min_interval_millis: interop === undefined ? 250 : 0,
         max_queue_bytes: 256 * 1024,
       },
     });
     renderApplication();
     void consume(listSubscription);
+    if (interop !== undefined) {
+      void dispatch({
+        type: "add_magnet",
+        magnet: interop.magnet,
+        storage_root: "downloads",
+        skip_files: [],
+      });
+    }
   } catch (error) {
     await applicationClient.close();
     throw error;
@@ -106,6 +132,12 @@ async function consume(subscription: ApplicationSubscription): Promise<void> {
         }
         throw error;
       }
+      observeInterop();
+      if (interop !== undefined && selectedTorrent === undefined) {
+        const first = Object.keys(state.torrents)[0];
+        if (first !== undefined) await selectTorrent(first);
+      }
+      void finishInteropIfReady();
       renderApplication();
     }
   } catch (error) {
@@ -122,6 +154,14 @@ function renderApplication(): void {
       <div><span class="brand-dot"></span><strong>RSTorrent</strong></div>
       <span class="connection-state">Connected</span>
     </header>
+    ${
+      interopComplete && interop !== undefined
+        ? `<output id="interop-result" data-complete="true" ` +
+          `data-requested="${interop.requested}" ` +
+          `data-received="${interop.received}" ` +
+          `data-stored="${interop.stored}">controlled download complete</output>`
+        : ""
+    }
     <section class="workspace">
       <aside>
         <form id="magnet-form" class="panel magnet-form">
@@ -176,6 +216,37 @@ function renderApplication(): void {
   }
   if (selected !== undefined) {
     drawPieceMap(selected);
+  }
+}
+
+function observeInterop(): void {
+  if (interop === undefined) return;
+  for (const activity of Object.values(state.pieces)) {
+    const active = activity.active;
+    if (active === null) continue;
+    interop.requested = Math.max(interop.requested, rangeBytes(active.requested));
+    interop.received = Math.max(interop.received, rangeBytes(active.received));
+    interop.stored = Math.max(interop.stored, rangeBytes(active.stored));
+  }
+}
+
+async function finishInteropIfReady(): Promise<void> {
+  if (
+    interop === undefined ||
+    interopShutdownRequested ||
+    !Object.values(state.torrents).some((torrent) => torrent.state === "complete") ||
+    interop.requested === 0 ||
+    interop.received === 0 ||
+    interop.stored === 0
+  ) {
+    return;
+  }
+  interopComplete = true;
+  renderApplication();
+  if ("__TAURI_INTERNALS__" in window) {
+    interopShutdownRequested = true;
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("application_shutdown");
   }
 }
 

@@ -49,7 +49,7 @@ export class TauriApplicationClient implements ApplicationClient {
   }
 }
 
-class TauriSubscription implements ApplicationSubscription {
+export class TauriSubscription implements ApplicationSubscription {
   private readonly queue: Array<{ update: ViewUpdate; bytes: number }> = [];
   private readonly waiters: Array<
     (result: IteratorResult<ViewUpdate>) => void

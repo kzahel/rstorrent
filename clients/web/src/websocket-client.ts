@@ -253,7 +253,7 @@ export class WebSocketApplicationClient implements ApplicationClient {
   }
 }
 
-class WebSocketSubscription implements ApplicationSubscription {
+export class WebSocketSubscription implements ApplicationSubscription {
   private readonly queue: QueuedUpdates;
   private closed = false;
 
