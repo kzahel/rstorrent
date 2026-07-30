@@ -60,8 +60,8 @@ direction belongs in `../topics/`.
   Pixel 7a. Unavailable Moto rows and remaining provider-failure profiles are
   recorded as deferred rather than claimed.
 - [`006-magnet-metadata-peer-hint.md`](006-magnet-metadata-peer-hint.md):
-  active bounded slice for v1 magnet parsing, direct `x.pe` bootstrap,
-  bidirectional BEP 9 metadata exchange, and content download from verified
-  fetched metadata.
+  completed bounded v1 magnet parsing, direct `x.pe` bootstrap, bidirectional
+  BEP 9 metadata exchange, same-connection content download, and independent
+  libtorrent evidence in both directions.
 
 The next tactical number is `007`.

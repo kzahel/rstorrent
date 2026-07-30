@@ -278,12 +278,13 @@ This is recommended direction beyond the accepted first slice:
    connected the real selective-storage engine to Android SAF capabilities
    without moving payloads through Kotlin. Moto and remaining provider-fault
    evidence is not claimed.
-7. In progress:
+7. Completed:
    [`006-magnet-metadata-peer-hint.md`](../tactical/006-magnet-metadata-peer-hint.md)
-   adds bounded v1 magnet parsing and bidirectional BEP 9 metadata exchange,
-   then hands verified metadata to the existing content path.
-8. Add durable resume and recheck, including persistence of verified magnet
-   metadata and source intent.
+   added bounded v1 magnet parsing and bidirectional BEP 9 metadata exchange,
+   then handed verified metadata and bounded premetadata peer state to the
+   existing content path over the same connection.
+8. Next, define Tactical `007` for durable resume and recheck, including
+   persistence of verified magnet metadata and source intent.
 9. Define the broader application command/snapshot/event boundary from the
    proven lifecycle and persistence evidence.
 10. Add the first Android and desktop product clients.
@@ -295,13 +296,10 @@ does not distort the protocol vertical slice.
 
 ## Recommended Next Work
 
-Execute Tactical `006` as a trackerless magnet vertical slice. Given only a
-bounded v1 `btih` magnet and loopback `x.pe` hint, negotiate BEP 10, fetch and
-verify BEP 9 metadata, parse the raw info dictionary, and continue over the
-same peer into the existing bounded selective download path. Also serve
-verified metadata to an independent libtorrent magnet client. Keep metadata
-allocation under the existing bencode ceiling, retain bounded pre-metadata
-peer state, and cover malformed extension handshakes, inconsistent sizes,
-invalid pieces, rejects, disconnects, and hash mismatch before adding tracker
-or DHT breadth. Durable resume, general peer discovery, v2 metadata, payload
-upload, and UI architecture remain separate tacticals.
+Draft Tactical `007` around durable resume and bounded recheck. Persist only
+hash-authorized raw info bytes plus explicit source and selection intent.
+Front-load atomic replacement, truncation, corruption, version mismatch,
+stale intent, restart cleanup, and fixed-buffer payload recheck so persistence
+cannot establish untrusted metadata or unbounded startup work. Keep tracker
+and DHT discovery, v2 metadata, payload upload, the broader application API,
+and UI architecture outside that slice.

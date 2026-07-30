@@ -1,6 +1,6 @@
 # Tactical 006: Magnet Metadata Through A Peer Hint
 
-Status: in progress.
+Status: completed on 2026-07-30.
 
 ## Motivation And Outcome
 
@@ -307,8 +307,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 uv run --project tests/interop \
-  python tests/interop/first_verified_piece.py \
-  --magnet-metadata --runs 3
+  python tests/interop/magnet_metadata.py --runs 3
 python3 scripts/references.py status
 cargo tree --workspace --locked
 git diff --check
@@ -338,3 +337,134 @@ This tactical is complete when:
   terminate and clean up on every tested path; and
 - the execution record states what landed, exact interoperability evidence,
   unsupported magnet/protocol surface, and the next persistence boundary.
+
+## Execution Record
+
+### Landed implementation
+
+- `e4bec0e` closed Tactical `005` without claiming its unavailable evidence
+  and recorded this bounded slice.
+- `fdca634` added bounded v1 magnet parsing, exact bencode-prefix parsing,
+  shared raw-info validation, BEP 10 reserved bits and message-20 framing,
+  deterministic extension and metadata codecs, two-request metadata download
+  state, and bounded metadata upload state.
+- `76f619f` added loopback `x.pe` resolution, extension negotiation, metadata
+  acquisition, bounded premetadata choke/bitfield/HAVE state, and same-socket
+  handoff into the existing content pipeline.
+- `4cb0f81` added the validated one-peer metadata server and
+  `rstorrent-metadata-seed` diagnostic.
+- `ce24cc8` added independent bidirectional libtorrent interoperability with
+  multi-block metadata.
+- `d5306a9` and `1f66856` covered extension refusal, invalid upload ordering,
+  timeout, and disconnect cleanup at the socket boundary.
+- `7cae526` kept Android's existing engine-failure classifier exhaustive
+  without adding Android magnet routing to this tactical.
+
+No runtime dependency was added. Protocol code remains independent from
+Tokio, sockets, filesystems, task handles, and platform adapters.
+
+### Bounds and failure evidence
+
+The implementation enforces the declared 16 KiB metadata block, 1 MiB
+metadata, 64-block, two-download-request, 17 KiB extension-payload, 32-peer
+hint, 128-query-parameter, and 256-upload-request limits.
+
+Runtime-independent tests cover hex and base32 identities, conflicting and v2
+topics, percent escapes, hostname/IP/port forms, query and peer bounds,
+extension mapping disable/remap/absence, missing and changing sizes, fallback
+piece-zero discovery, invalid dictionaries and indices, data suffix framing,
+wrong lengths, unsolicited and duplicate data, rejects, hash mismatch, and
+upload floods. Existing metainfo tests remain the authority for path safety,
+file and piece counts, geometry, padding, collision, and v2 rejection.
+
+Scripted socket tests additionally prove:
+
+- bitfield and unchoke state sent before metadata survive the same connection
+  and drive content requests after verification;
+- an invalid deferred bitfield, absent BEP 10 support, and a metadata-phase
+  disconnect fail before storage exists;
+- upload requests before directional-ID negotiation fail terminally;
+- negative and out-of-range requests receive rejects before valid blocks;
+- an idle listener and disconnected upload peer terminate within their owned
+  lifecycle; and
+- successful upload exits only after every distinct metadata block was
+  served.
+
+### Independent interoperability evidence
+
+The locked Python binding and native library both reported libtorrent
+`2.0.13.0`. The fixture's exact raw info dictionary was 26,686 bytes, spanning
+two metadata blocks. It described 121 files and a 40,000-byte payload in three
+content pieces. Its v1 info hash was
+`a962f460b83861cfb5faa1d7ad7da9c3f3cc2fc4`.
+
+Three consecutive clean runs each proved both directions:
+
+1. RSTorrent received only a magnet with loopback `x.pe`, fetched and hashed
+   both metadata blocks from libtorrent, parsed 121 files, continued into all
+   three content pieces, and published the byte-identical payload. The
+   scripted engine test separately proves this handoff retains the same
+   socket and decoder.
+2. Libtorrent received only the magnet with the RSTorrent listener as `x.pe`,
+   accepted both exact metadata blocks, exposed the expected info hash and
+   complete file geometry, and caused the one-peer server to exit with
+   `blocks=2 requests=2`.
+
+Every run reported cleanup success. DHT, LSD, UPnP, NAT-PMP, incoming and
+outgoing uTP, trackers, and public addresses were disabled; the controlled
+transport was loopback TCP.
+
+The existing interoperability profiles also remained green:
+
+- 40,000-byte single-piece baseline: three blocks, exact payload and hash;
+- 32 MiB single-piece profile: 2,048 blocks with a 256 KiB payload
+  high-water ceiling; and
+- five-piece selective profile: four verified pieces, one skipped piece,
+  exact selected/part byte accounting, reopen, materialization, and cleanup.
+
+### Validation run
+
+The final implementation was validated with:
+
+```bash
+source ~/.profile
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+uv run --project tests/interop \
+  python tests/interop/first_verified_piece.py --runs 1
+uv run --project tests/interop \
+  python tests/interop/first_verified_piece.py --large-piece --runs 1
+uv run --project tests/interop \
+  python tests/interop/first_verified_piece.py --selective-files --runs 1
+uv run --project tests/interop \
+  python tests/interop/magnet_metadata.py --runs 3
+python3 scripts/references.py status
+cargo tree --workspace --locked
+git diff --check
+```
+
+Focused development validation also ran protocol and engine clippy/tests plus
+the named metadata acquisition, upload, timeout, negotiation, and disconnect
+tests. An initial full-workspace clippy run found Android's exhaustive
+`DownloadError` classifier missing the new variants; `7cae526` corrected it,
+and the complete workspace baseline then passed.
+
+Reference integrity reported the managed libtorrent checkout at
+`7d7fc38fac61177fa5e02148f791b2f65250b09d`, the BEP checkout at
+`7b7b41f46d57ff1d1cb1e24ed6e9bacfbf958c06`, and all other managed
+references healthy.
+
+### Deliberate limits and next boundary
+
+This is verified v1 metadata exchange through explicit peer hints, not general
+magnet support. Tracker announces, DHT, PEX, LSD, v2/hybrid torrents, public
+peers, simultaneous metadata peers, metadata persistence, payload upload,
+incoming swarm service, Android link routing, and a stable product API remain
+unsupported.
+
+Tactical `007` should define durable resume and recheck. Its first persistence
+boundary should retain only hash-authorized raw info bytes and explicit source
+and selection intent, then front-load atomic replacement, truncation,
+corruption, version mismatch, stale intent, bounded startup validation, and
+fixed-buffer payload recheck before application API or discovery breadth.
