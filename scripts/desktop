@@ -2,22 +2,25 @@
 set -euo pipefail
 
 repository_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repository_root"
+web_root="$repository_root/clients/web"
+installed_lock="$web_root/node_modules/.package-lock.json"
 
-tauri_cli="clients/web/node_modules/.bin/tauri"
-if [[ ! -x "$tauri_cli" ]]; then
+unset npm_config_recursive NPM_CONFIG_RECURSIVE
+
+if [[ ! -x "$web_root/node_modules/.bin/vite" ||
+    ! -f "$installed_lock" ||
+    "$web_root/package-lock.json" -nt "$installed_lock" ]]; then
     echo "Installing locked desktop web dependencies..." >&2
-    npm ci --prefix clients/web
+    (
+        cd "$web_root"
+        npm ci --no-audit --no-fund
+    )
 fi
 
-"$tauri_cli" build \
-    --config clients/desktop/src-tauri/tauri.conf.json \
-    --debug \
-    --no-bundle
+(
+    cd "$web_root"
+    npm run build
+)
 
-target_root="${CARGO_TARGET_DIR:-$repository_root/target}"
-if [[ "$target_root" != /* ]]; then
-    target_root="$repository_root/$target_root"
-fi
-
-exec "$target_root/debug/rstorrent-desktop"
+cd "$repository_root"
+exec cargo run -p rstorrent-desktop

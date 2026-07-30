@@ -4,7 +4,9 @@
   "version": "0.1.0",
   "identifier": "org.jstorrent.rstorrent",
   "build": {
+    "beforeDevCommand": "npm --prefix ../web run dev -- --host 127.0.0.1",
     "beforeBuildCommand": "npm --prefix ../web run build",
+    "devUrl": "http://127.0.0.1:5173",
     "frontendDist": "../../web/dist"
   },
   "app": {

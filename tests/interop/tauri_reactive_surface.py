@@ -86,7 +86,7 @@ def run() -> None:
                 str(repository / "clients/web/node_modules/.bin/tauri"),
                 "dev",
                 "--config",
-                str(repository / "clients/desktop/src-tauri/tauri.conf.json"),
+                str(repository / "clients/desktop/src-tauri/tauri.dev.conf.json"),
                 "--no-watch",
             ],
             cwd=repository,

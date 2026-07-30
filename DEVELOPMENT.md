@@ -88,16 +88,18 @@ cargo test --workspace
 
 ## Launching The Desktop App
 
-Build the static web application and the optimized debug Tauri binary, then
-launch it without a Vite server or installer bundle:
+Install the locked web dependencies when necessary, build the static web
+application and optimized debug Tauri binary, then launch without a Vite
+server, listening port, or installer bundle:
 
 ```bash
 ./scripts/desktop
 ```
 
-The first run installs the locked web dependencies when necessary. Later runs
-reuse both npm and Cargo build output. The process remains attached to the
-terminal so `Ctrl+C` stops it.
+The wrapper runs npm from `clients/web`; no separate npm command is required.
+Later runs reuse installed dependencies and Cargo build output while still
+refreshing the static web assets. The process remains attached to the terminal
+so `Ctrl+C` stops it.
 
 The deterministic first-piece interoperability scenario uses its own locked
 Python environment and a loopback-only Rasterbar libtorrent seed:
