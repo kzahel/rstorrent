@@ -2,11 +2,11 @@
 
 Topic: `client-persistence`
 
-Status: Tactical `007` implemented the first `rstorrent-session`
-application/engine boundary, instance-scoped SQLite profile store, exact
-magnet metadata retention, per-piece checkpoints, and conservative
-path-backed restart. Tactical `009` is implementing the corresponding
-platform-capability and SAF descriptor restart path.
+Status: Tacticals `007` and `009` implemented the first
+`rstorrent-session` application/engine boundary, instance-scoped SQLite
+profile store, exact magnet metadata retention, per-piece checkpoints, and
+conservative restart through both path and Android SAF platform-capability
+storage.
 
 ## Scope
 
@@ -341,7 +341,7 @@ their intermediate state explicitly and make restart cleanup idempotent.
 ## Known Gaps And Open Decisions
 
 - Backup, export, restore, and later schema-migration policy beyond the
-  implemented transactional version `0` to `1` creation.
+  implemented transactional versions `0` through `2`.
 - The installation-level profile registry format and whether the first product
   exposes more than its automatically created profile.
 - Whether Android places the database in backed-up or explicitly no-backup
@@ -381,8 +381,23 @@ completed the smallest persistence and restart slice:
 - Corrupt metadata, malformed have padding, incomplete storage artifacts, and
   a corrupt SQLite file have explicit fail-closed and preservation tests.
 
+[`../tactical/009-android-saf-session-storage.md`](../tactical/009-android-saf-session-storage.md)
+extends that evidence to Android platform-capability storage:
+
+- stable root IDs remain in SQLite while persisted tree URIs stay in
+  app-private Android state and descriptor numbers remain ephemeral;
+- descriptor-backed resume validates exact manifests and part identity,
+  rehashes claimed pieces with a fixed 16 KiB buffer, and commits only synced
+  verified content;
+- durable prepared-file hashes and explicit `prepared` /
+  `awaiting_publication` phases separate native completion from provider
+  rename and fresh-descriptor confirmation;
+- AVD and Pixel runs recovered from process death during download and again
+  after provider rename but before SQLite completion; and
+- a deliberately revoked persisted grant restarted fail-closed without
+  discarding the stable platform identity.
+
 This evidence does not broaden into a general multi-torrent scheduler, stable
 public wire protocol, UI settings catalog, remote listener,
 profile-management UI, simultaneous profiles, unfinished-block resume, or
-hash-skipping fast resume. Tactical `009` owns the first SAF resume and
-provider-publication evidence.
+hash-skipping fast resume.

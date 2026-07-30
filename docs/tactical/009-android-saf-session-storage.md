@@ -1,6 +1,6 @@
 # Tactical 009: Durable Android SAF Session Storage
 
-Status: planned on 2026-07-30; implementation in progress.
+Status: completed on 2026-07-30.
 
 ## Motivation And Outcome
 
@@ -293,4 +293,88 @@ marking the tactical complete.
 
 ## Execution Record
 
-Implementation and validation are in progress.
+Completed in these commits:
+
+- `fce5346` planned the bounded platform-capability slice.
+- `b45104b` added schema version `2`, platform root states, durable prepared
+  manifests, descriptor-backed resume and publication verification, and the
+  coarse Android UniFFI boundary.
+- `aaee7ca` connected the foreground product service and Compose root picker
+  to deterministic SAF staging, part storage, restart, provider publication,
+  and typed storage-phase views.
+- `1ddd582` separated physical-provider descriptor reacquisition from the
+  faster app-private UI-control deadline.
+- `5275a76` made repeated completion confirmation idempotent and added
+  debug-only, bounded evidence profiles for revoked grants and process death
+  after provider rename.
+- `eac4435` kept the generated TypeScript storage-phase contract fixture
+  aligned.
+
+The platform boundary uses the stable root ID `downloads`. SQLite and the
+portable command/view contract contain that ID and the explicit storage
+phase, but no SAF URI or descriptor number. Android app-private preferences
+retain the tree identity. Every borrowed `ParcelFileDescriptor` is duplicated
+into Rust synchronously; the Kotlin owner then closes its handles.
+
+The strengthened `tests/interop/android_saf_session.py` run produced this
+controlled evidence against libtorrent `2.0.13.0`:
+
+| Target | Metadata | Pieces | Claims at first kill | Upload after restart | View updates |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `jstorrent-tablet` API 34 AVD | 26,948 bytes | 16 | 3 | 213,306 bytes | 117 |
+| Pixel 7a API 37, serial `33031JEHN17672` | 26,948 bytes | 16 | 3 | 213,306 bytes | 113 |
+
+Both runs used info hash
+`5049ce660b5b3018fa8bb51195719ccf14c4bc15` and published payload SHA-1
+`363a09c4940de553b7f1f874bdb948aedd69f0f9`. Each run proved:
+
+- a persisted tree grant and deterministic staging/part discovery;
+- explicit grant release retained stale platform identity but restarted
+  fail-closed with root selection required;
+- pause/resume, Activity recreation, Activity collection, and foreground
+  service survival;
+- forced process death after three durable piece claims followed by resumed
+  peer upload and conservative descriptor recheck;
+- a second process death immediately after provider rename and before SQLite
+  completion;
+- restart discovery of the already-final provider tree, a second publication
+  attempt, and fresh-descriptor length and SHA-1 verification;
+- no `complete` state before that confirmation;
+- foreground notification presence, joined Stop handling, and exact cleanup
+  of the app profile and only `/sdcard/Download/RSTorrentSafSessionGrant`.
+
+The Pixel external-storage provider sometimes took longer than the generic
+10-second app-private control deadline to reopen staging descriptors after
+Resume. The harness therefore uses a separate bounded 45-second SAF
+reacquisition deadline. This is a provider-latency observation, not a sparse
+allocation or filesystem compatibility claim.
+
+The physical harness inspected the lock state first and ran only because the
+Pixel was unlocked. It contains no power, sleep, wake, keyguard, or lock
+operation and addressed the Pixel by explicit serial; the unrelated attached
+Quest was not mutated.
+
+Final validation:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test --workspace
+npm run generate
+npm test
+npm run typecheck
+npm run build
+Android app:testDebugUnitTest app:assembleDebug
+```
+
+The workspace test run passed 113 unit/integration tests plus all doctests.
+The web run passed 5 tests with 1 explicitly skipped gateway test and built
+the production bundle. Android JVM tests and both ABI builds passed; Android
+reported only existing deprecation warnings for the legacy Activity-result,
+Wi-Fi lock, and notification-action APIs.
+
+Known bounded deferrals remain the tactical's non-goals: general concurrent
+torrent scheduling, Android seeding, multiple roots and root migration,
+file-selection UI, removable-media compatibility claims, unfinished-block or
+optimistic fast resume, provider-specific allocation policy, desktop storage,
+and remote or playback data planes.

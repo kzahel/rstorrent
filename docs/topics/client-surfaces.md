@@ -2,10 +2,10 @@
 
 Topic: `client-surfaces`
 
-Status: Accepted and implemented through Tactical `008` across a
-browser-hosted web view, a Tauri desktop webview, and Android Compose.
-Tactical `009` is connecting the Android foreground product client to durable
-SAF storage without changing the portable UI command contract.
+Status: Accepted and implemented through Tacticals `008` and `009` across a
+browser-hosted web view, a Tauri desktop webview, and Android Compose. The
+Android foreground product client now uses durable SAF storage without
+placing platform capabilities in the portable UI command contract.
 
 ## Scope
 
@@ -178,14 +178,15 @@ future server.
   relay, wake-up path, or public wire compatibility promise.
 - The Tauri shell has no production tray/window policy, installers, updates,
   file associations, or platform-capability adapter.
-- Android durable SAF session storage and provider publication are owned by
-  Tactical `009`; root-management and file-selection presentation beyond its
-  one-root controlled proof remain product gaps.
+- Android durable SAF session storage and provider publication are proven for
+  one persisted root. General root management, root migration, removable
+  media policy, and file-selection presentation remain product gaps.
 - The current UI proves one controlled torrent. General multi-torrent
   scheduling and complete product presentation remain absent.
 - No HTTP playback server exists.
 
-Tactical `008` records the implemented contract, exact controlled evidence,
-and bounded deferrals. The most useful next client slice is one of production
-remote authorization, desktop lifecycle/tray integration, or SAF-backed
-Android session storage rather than unrelated UI breadth.
+Tacticals `008` and `009` record the implemented contract, exact controlled
+evidence, and bounded deferrals. The most useful next client slice is one of
+production remote authorization, desktop lifecycle/tray integration, or
+general multi-torrent application scheduling rather than unrelated UI
+breadth.
