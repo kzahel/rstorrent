@@ -42,6 +42,8 @@ PAYLOAD_SIZE = 256 * 1024
 UPLOAD_RATE_LIMIT = 12 * 1024
 DOWNLOAD_TIMEOUT_SECONDS = 90
 SAF_RESUME_TIMEOUT_SECONDS = 45
+CRASH_AFTER_RENAME_EXTRA = "product_crash_after_saf_rename"
+RELEASE_GRANT_EXTRA = "product_release_saf_grant"
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -187,6 +189,44 @@ def select_controlled_tree(adb: Adb) -> None:
         raise ScenarioFailure("product did not persist the controlled SAF tree URI")
 
 
+def verify_revoked_grant_fails_closed(adb: Adb) -> None:
+    released = adb.shell(
+        "am",
+        "start",
+        "-W",
+        "--activity-single-top",
+        "-n",
+        ACTIVITY,
+        "--ez",
+        RELEASE_GRANT_EXTRA,
+        "true",
+        timeout=30,
+    )
+    if "Status: ok" not in released.stdout:
+        raise ScenarioFailure(f"could not inject controlled SAF grant loss:\n{released.stdout}")
+    adb.shell("am", "force-stop", PACKAGE)
+    started = adb.shell("am", "start", "-W", "-n", ACTIVITY, timeout=30)
+    if "Status: ok" not in started.stdout:
+        raise ScenarioFailure(f"product did not restart after SAF grant loss:\n{started.stdout}")
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        try:
+            find_control(adb, "Select download folder")
+            break
+        except ScenarioFailure:
+            time.sleep(0.2)
+    else:
+        raise ScenarioFailure("revoked SAF grant was still presented as usable")
+    preferences = adb.shell(
+        "run-as",
+        PACKAGE,
+        "cat",
+        "shared_prefs/product-saf.xml",
+    ).stdout
+    if GRANT_FOLDER not in preferences:
+        raise ScenarioFailure("grant-loss check removed stable SAF identity")
+
+
 def add_magnet(adb: Adb, magnet: str) -> None:
     started = adb.shell(
         "am",
@@ -264,19 +304,48 @@ def force_stop_and_resume(adb: Adb) -> tuple[int, str]:
     if adb.shell("pidof", PACKAGE, check=False).stdout.strip():
         raise ScenarioFailure("forced Android process remained alive")
     adb.run("logcat", "-c")
-    started = adb.shell("am", "start", "-W", "-n", ACTIVITY, timeout=30)
+    started = adb.shell(
+        "am",
+        "start",
+        "-W",
+        "-n",
+        ACTIVITY,
+        "--ez",
+        CRASH_AFTER_RENAME_EXTRA,
+        "true",
+        timeout=30,
+    )
     if "Status: ok" not in started.stdout:
         raise ScenarioFailure(f"product did not restart:\n{started.stdout}")
+    restarted_pid = adb.shell("pidof", PACKAGE).stdout.strip()
+    if not restarted_pid:
+        raise ScenarioFailure("product restart has no process")
     deadline = time.monotonic() + DOWNLOAD_TIMEOUT_SECONDS
     restart_trace = ""
+    rename_crashed = False
+    crash_restarted = False
     while time.monotonic() < deadline:
         restart_trace = product_logs(adb)
         if "FATAL EXCEPTION" in restart_trace or f"E/{TRACE_TAG}" in restart_trace:
             raise ScenarioFailure(f"Android SAF restart failed:\n{restart_trace}")
+        if "saf_test_crash_after_rename" in restart_trace:
+            rename_crashed = True
+        if rename_crashed and not crash_restarted:
+            current_pid = adb.shell("pidof", PACKAGE, check=False).stdout.strip()
+            if current_pid != restarted_pid:
+                crash_restarted = True
+                if not current_pid:
+                    resumed = adb.shell("am", "start", "-W", "-n", ACTIVITY, timeout=30)
+                    if "Status: ok" not in resumed.stdout:
+                        raise ScenarioFailure(
+                            f"product did not restart after provider rename:\n{resumed.stdout}"
+                        )
         if (
-            "saf_storage_open" in restart_trace
+            crash_restarted
+            and "saf_storage_open" in restart_trace
             and "saf_publication_confirmed" in restart_trace
             and "state=COMPLETE" in restart_trace
+            and restart_trace.count("saf_publication_begin") >= 2
         ):
             return claims, restart_trace
         time.sleep(0.1)
@@ -368,6 +437,8 @@ def run(arguments: argparse.Namespace) -> None:
         install_clean_app(adb, arguments.apk.resolve())
         app_installed = True
         select_controlled_tree(adb)
+        verify_revoked_grant_fails_closed(adb)
+        select_controlled_tree(adb)
         add_magnet(adb, magnet_uri(fixture.info_hash, f"127.0.0.1:{port}"))
         before = wait_for_checkpoint(adb)
         uploaded_before_restart = int(handle.status().total_upload)
@@ -389,6 +460,7 @@ def run(arguments: argparse.Namespace) -> None:
             f"checkpoint_claims={claims} restart_upload_bytes={uploaded_after_restart} "
             f"view_updates={before.count('view_update') + after.count('view_update')} "
             f"activity_recreation=ok activity_background=ok pause_resume=ok "
+            f"grant_loss=fail_closed rename_crash=recovered "
             f"publication=fresh_descriptor_verified payload_sha1={fixture.payload_hash} "
             "foreground_stop=joined cleanup=ok"
         )

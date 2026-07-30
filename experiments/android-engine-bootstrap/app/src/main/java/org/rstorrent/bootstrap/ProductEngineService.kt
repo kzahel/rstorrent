@@ -66,6 +66,7 @@ class ProductEngineService : Service() {
     private var selectedTorrent: String? = null
     private var safTreeUri: Uri? = null
     private val safWork = ConcurrentHashMap.newKeySet<String>()
+    private val crashAfterSafRename = AtomicBoolean(false)
     private var powerLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
@@ -163,6 +164,13 @@ class ProductEngineService : Service() {
             )
         }
         advanceSaf(mutableState.value)
+    }
+
+    fun enableCrashAfterSafRenameForTest() {
+        check(ProductSafDocuments.isDebuggable(this)) {
+            "SAF publication crash injection is debug-only"
+        }
+        crashAfterSafRename.set(true)
     }
 
     fun pause(torrentId: String) {
@@ -296,6 +304,15 @@ class ProductEngineService : Service() {
                             ProductSafDocuments
                                 .publishAndOpen(this@ProductEngineService, treeUri, plan)
                                 .use { handles ->
+                                    if (crashAfterSafRename.compareAndSet(true, false)) {
+                                        Log.i(
+                                            TAG,
+                                            "saf_test_crash_after_rename " +
+                                                "torrent=${torrent.torrentId}",
+                                        )
+                                        android.os.Process.killProcess(android.os.Process.myPid())
+                                        error("process survived SAF publication crash injection")
+                                    }
                                     client.confirmSafPublication(
                                         torrent.torrentId,
                                         handles.descriptors(),

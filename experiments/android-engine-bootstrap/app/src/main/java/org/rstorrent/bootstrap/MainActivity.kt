@@ -22,6 +22,7 @@ class MainActivity : ComponentActivity() {
     private var productBound = false
     private var productMode = false
     private var pendingProductMagnet: String? = null
+    private var pendingCrashAfterSafRename = false
     private val productConnection =
         object : ServiceConnection {
             override fun onServiceConnected(
@@ -31,6 +32,10 @@ class MainActivity : ComponentActivity() {
                 val service = (binder as ProductEngineService.LocalBinder).service
                 ProductSafDocuments.selectedTree(this@MainActivity)?.let(service::setSafTree)
                 productService.value = service
+                if (pendingCrashAfterSafRename) {
+                    pendingCrashAfterSafRename = false
+                    service.enableCrashAfterSafRenameForTest()
+                }
                 pendingProductMagnet?.let {
                     pendingProductMagnet = null
                     service.addMagnet(it)
@@ -113,6 +118,25 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showProductSurface(command: Intent) {
+        if (
+            ProductSafDocuments.isDebuggable(this) &&
+            command.getBooleanExtra(EXTRA_PRODUCT_RELEASE_SAF_GRANT, false)
+        ) {
+            command.removeExtra(EXTRA_PRODUCT_RELEASE_SAF_GRANT)
+            ProductSafDocuments.releaseSelectedTreeForTest(this)
+        }
+        if (
+            ProductSafDocuments.isDebuggable(this) &&
+            command.getBooleanExtra(EXTRA_PRODUCT_CRASH_AFTER_SAF_RENAME, false)
+        ) {
+            command.removeExtra(EXTRA_PRODUCT_CRASH_AFTER_SAF_RENAME)
+            val service = productService.value
+            if (service == null) {
+                pendingCrashAfterSafRename = true
+            } else {
+                service.enableCrashAfterSafRenameForTest()
+            }
+        }
         if (!productMode) {
             productMode = true
             setContent {
@@ -263,5 +287,8 @@ class MainActivity : ComponentActivity() {
         private const val TREE_REQUEST = 51
         private const val PRODUCT_TREE_REQUEST = 53
         const val EXTRA_PRODUCT_MAGNET = "product_magnet"
+        const val EXTRA_PRODUCT_RELEASE_SAF_GRANT = "product_release_saf_grant"
+        const val EXTRA_PRODUCT_CRASH_AFTER_SAF_RENAME =
+            "product_crash_after_saf_rename"
     }
 }

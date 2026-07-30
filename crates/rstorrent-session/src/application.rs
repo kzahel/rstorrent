@@ -317,6 +317,11 @@ impl ApplicationService {
     ) -> Result<(), ApplicationError> {
         self.reap_finished().await?;
         let torrent_id = torrent_id.to_ascii_lowercase();
+        let resume = self.load_resume_conservative(&torrent_id)?;
+        if resume.state == TorrentState::Complete && resume.storage_state == StorageState::Published
+        {
+            return Ok(());
+        }
         let prepared = self.store_mut()?.load_prepared_files(&torrent_id)?;
         let expected = prepared
             .into_iter()

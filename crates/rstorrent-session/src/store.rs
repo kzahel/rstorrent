@@ -622,14 +622,27 @@ impl SessionStore {
         let info_hash = decode_info_hash(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let transaction = self.connection.transaction()?;
-        let state = transaction
+        let (state, storage_state, updated_revision) = transaction
             .query_row(
-                "SELECT state FROM torrents WHERE info_hash = ?1",
+                "SELECT state, storage_state, updated_revision
+                 FROM torrents WHERE info_hash = ?1",
                 [info_hash.as_slice()],
-                |row| row.get::<_, String>(0),
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                },
             )
             .optional()?
             .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_owned()))?;
+        if TorrentState::parse(&state) == Some(TorrentState::Complete)
+            && StorageState::parse(&storage_state) == Some(StorageState::Published)
+        {
+            return u64::try_from(updated_revision)
+                .map_err(|_| StoreError::DurableState("torrent revision is invalid".to_owned()));
+        }
         if TorrentState::parse(&state) != Some(TorrentState::AwaitingPublication) {
             return Err(StoreError::DurableState(
                 "torrent is not awaiting publication".to_owned(),
@@ -1756,7 +1769,7 @@ mod tests {
                 .len(),
             1
         );
-        reopened
+        let confirmed_revision = reopened
             .confirm_prepared_publication(&torrent_id)
             .expect("confirm publication");
         let snapshot = reopened.snapshot().expect("complete snapshot");
@@ -1767,6 +1780,16 @@ mod tests {
                 .load_prepared_files(&torrent_id)
                 .expect("manifest cleared")
                 .is_empty()
+        );
+        assert_eq!(
+            reopened
+                .confirm_prepared_publication(&torrent_id)
+                .expect("repeat publication confirmation"),
+            confirmed_revision
+        );
+        assert_eq!(
+            reopened.revision().expect("revision after repeat"),
+            confirmed_revision
         );
         drop(reopened);
         fs::remove_dir_all(root).expect("remove test profile");

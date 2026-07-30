@@ -2,6 +2,7 @@ package org.rstorrent.bootstrap
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
@@ -64,13 +65,19 @@ object ProductSafDocuments {
     }
 
     fun selectedTree(context: Context): Uri? {
-        val encoded =
-            context
-                .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-                .getString(TREE_URI, null)
-                ?: return null
+        val encoded = selectedTreeText(context) ?: return null
         val uri = Uri.parse(encoded)
         return uri.takeIf { hasGrant(context, it) }
+    }
+
+    fun releaseSelectedTreeForTest(context: Context) {
+        check(isDebuggable(context)) { "SAF grant release is debug-only" }
+        val uri = Uri.parse(requireNotNull(selectedTreeText(context)) { "no SAF tree is stored" })
+        context.contentResolver.releasePersistableUriPermission(uri, GRANT_FLAGS)
+        check(selectedTreeText(context) == uri.toString()) {
+            "debug grant release must retain stale platform identity"
+        }
+        check(!hasGrant(context, uri)) { "SAF tree grant survived debug release" }
     }
 
     fun openStaging(
@@ -272,4 +279,12 @@ object ProductSafDocuments {
     val GRANT_FLAGS: Int =
         Intent.FLAG_GRANT_READ_URI_PERMISSION or
             Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+
+    fun isDebuggable(context: Context): Boolean =
+        context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+
+    private fun selectedTreeText(context: Context): String? =
+        context
+            .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getString(TREE_URI, null)
 }
