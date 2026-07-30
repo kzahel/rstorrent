@@ -29,7 +29,13 @@ let state = emptyApplicationViewState();
 let selectedTorrent: string | undefined;
 let nextRequest = 1;
 
-renderConnect();
+if ("__TAURI_INTERNALS__" in window) {
+  void import("./tauri-client").then(({ TauriApplicationClient }) => {
+    void startClient(new TauriApplicationClient());
+  });
+} else {
+  renderConnect();
+}
 
 function renderConnect(message = ""): void {
   const defaultUrl = `ws://${window.location.hostname || "127.0.0.1"}:3030/control`;
@@ -63,8 +69,16 @@ function renderConnect(message = ""): void {
 async function connect(url: string, token: string): Promise<void> {
   renderConnect("Connecting…");
   try {
-    client = await WebSocketApplicationClient.connect(url, token);
-    listSubscription = await client.subscribe({
+    await startClient(await WebSocketApplicationClient.connect(url, token));
+  } catch (error) {
+    renderConnect(errorMessage(error));
+  }
+}
+
+async function startClient(applicationClient: ApplicationClient): Promise<void> {
+  try {
+    client = applicationClient;
+    listSubscription = await applicationClient.subscribe({
       selector: { type: "torrent_list" },
       projection: "summary",
       delivery: {
@@ -75,7 +89,8 @@ async function connect(url: string, token: string): Promise<void> {
     renderApplication();
     void consume(listSubscription);
   } catch (error) {
-    renderConnect(errorMessage(error));
+    await applicationClient.close();
+    throw error;
   }
 }
 

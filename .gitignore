@@ -9,6 +9,7 @@
 # Android and Gradle
 .gradle/
 **/build/
+/clients/desktop/src-tauri/gen/
 local.properties
 *.iml
 

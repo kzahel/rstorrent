@@ -10,7 +10,11 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@tauri-apps/api": "2.11.1"
+  },
   "devDependencies": {
+    "@tauri-apps/cli": "2.11.4",
     "typescript": "7.0.2",
     "vite": "8.1.5",
     "vitest": "4.1.10"

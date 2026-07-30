@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "clients/desktop/src-tauri",
     "crates/rstorrent-android",
     "crates/rstorrent-engine",
     "crates/rstorrent-gateway",
