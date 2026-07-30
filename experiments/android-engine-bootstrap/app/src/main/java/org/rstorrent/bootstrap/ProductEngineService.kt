@@ -39,6 +39,8 @@ import org.rstorrent.session.uniffi.SubscriptionSpec
 import org.rstorrent.session.uniffi.TorrentState
 import org.rstorrent.session.uniffi.ViewProjection
 import org.rstorrent.session.uniffi.ViewSelector
+import org.rstorrent.session.uniffi.ViewUpdate
+import org.rstorrent.session.uniffi.ViewUpdatePayload
 
 class ProductEngineService : Service() {
     inner class LocalBinder : Binder() {
@@ -161,7 +163,7 @@ class ProductEngineService : Service() {
                         SubscriptionSpec(
                             ViewSelector.Torrent(torrentId),
                             ViewProjection.PIECE_ACTIVITY,
-                            DeliveryPolicy(50U, 256U * 1024U),
+                            DeliveryPolicy(0U, 256U * 1024U),
                         ),
                     )
                 if (selectedTorrent != torrentId) {
@@ -205,7 +207,12 @@ class ProductEngineService : Service() {
                 while (true) {
                     val update = subscription.nextUpdate() ?: break
                     try {
-                        mutableState.update { ProductStateReducer.reduce(it, update) }
+                        val reduced = ProductStateReducer.reduce(mutableState.value, update)
+                        mutableState.value = reduced
+                        traceUpdate(update, reduced)
+                        if (selectedTorrent == null) {
+                            reduced.torrents.keys.firstOrNull()?.let(::selectTorrent)
+                        }
                     } catch (_: ViewResetRequiredException) {
                         subscription.resync()
                     }
@@ -216,6 +223,34 @@ class ProductEngineService : Service() {
                 subscription.close()
             }
         }
+
+    private fun traceUpdate(
+        update: ViewUpdate,
+        product: ProductState,
+    ) {
+        val kind =
+            when (update.payload) {
+                is ViewUpdatePayload.Snapshot -> "snapshot"
+                is ViewUpdatePayload.Patch -> "patch"
+                is ViewUpdatePayload.ResetRequired -> "reset"
+            }
+        val torrent =
+            selectedTorrent?.let(product.torrents::get)
+                ?: product.torrents.values.firstOrNull()
+        val active = selectedTorrent?.let(product.pieces::get)?.active
+        Log.i(
+            TAG,
+            "view_update stream=${update.streamId} sequence=${update.sequence} " +
+                "kind=$kind state=${torrent?.state?.name ?: "none"} " +
+                "piece=${active?.pieceIndex?.toString() ?: "none"} " +
+                "requested=${active?.requested?.sumOf(::rangeBytes) ?: 0UL} " +
+                "received=${active?.received?.sumOf(::rangeBytes) ?: 0UL} " +
+                "stored=${active?.stored?.sumOf(::rangeBytes) ?: 0UL}",
+        )
+    }
+
+    private fun rangeBytes(range: org.rstorrent.session.uniffi.IndexRange): ULong =
+        (range.endExclusive - range.start).toULong()
 
     private fun observePowerAndNotification() {
         scope.launch {

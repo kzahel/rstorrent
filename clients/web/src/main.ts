@@ -241,7 +241,7 @@ async function selectTorrent(torrentId: string): Promise<void> {
     selector: { type: "torrent", torrent_id: torrentId },
     projection: "piece_activity",
     delivery: {
-      min_interval_millis: 50,
+      min_interval_millis: 0,
       max_queue_bytes: 256 * 1024,
     },
   });
