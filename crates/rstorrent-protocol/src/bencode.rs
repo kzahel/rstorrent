@@ -152,6 +152,21 @@ pub fn parse(input: &[u8]) -> Result<Node<'_>, ParseError> {
 }
 
 pub fn parse_with_limits(input: &[u8], limits: Limits) -> Result<Node<'_>, ParseError> {
+    let (node, consumed) = parse_prefix_with_limits(input, limits)?;
+    if consumed != input.len() {
+        return Err(ParseError::TrailingData { position: consumed });
+    }
+    Ok(node)
+}
+
+pub fn parse_prefix(input: &[u8]) -> Result<(Node<'_>, usize), ParseError> {
+    parse_prefix_with_limits(input, Limits::default())
+}
+
+pub fn parse_prefix_with_limits(
+    input: &[u8],
+    limits: Limits,
+) -> Result<(Node<'_>, usize), ParseError> {
     if input.len() > limits.max_input_length {
         return Err(ParseError::InputTooLarge {
             length: input.len(),
@@ -165,12 +180,7 @@ pub fn parse_with_limits(input: &[u8], limits: Limits) -> Result<Node<'_>, Parse
         limits,
     };
     let node = parser.parse_value(0)?;
-    if parser.position != input.len() {
-        return Err(ParseError::TrailingData {
-            position: parser.position,
-        });
-    }
-    Ok(node)
+    Ok((node, parser.position))
 }
 
 struct Parser<'a> {
@@ -333,7 +343,7 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Limits, ParseError, Value, parse, parse_with_limits};
+    use super::{Limits, ParseError, Value, parse, parse_prefix, parse_with_limits};
 
     #[test]
     fn parses_nested_canonical_value_with_spans() {
@@ -410,5 +420,17 @@ mod tests {
             parse(b"999999999999999999999999:"),
             Err(ParseError::InvalidStringLength { .. })
         ));
+    }
+
+    #[test]
+    fn prefix_parse_returns_the_exact_consumed_length() {
+        let (node, consumed) = parse_prefix(b"d1:ai1eeDATA").expect("dictionary prefix");
+
+        assert_eq!(node.span, 0..8);
+        assert_eq!(consumed, 8);
+        assert_eq!(
+            parse(b"d1:ai1eeDATA"),
+            Err(ParseError::TrailingData { position: 8 })
+        );
     }
 }

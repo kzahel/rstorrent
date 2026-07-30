@@ -411,6 +411,7 @@ impl OnePieceDownload {
             // Remote interest affects uploads only. This diagnostic never seeds.
             PeerMessage::Interested | PeerMessage::NotInterested => Ok(Vec::new()),
             PeerMessage::Request(_) => Err(PieceError::UnexpectedMessage("request")),
+            PeerMessage::Extended { .. } => Err(PieceError::UnexpectedMessage("extended")),
         }
     }
 

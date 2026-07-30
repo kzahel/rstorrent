@@ -3,14 +3,25 @@ use std::fmt;
 
 pub const HANDSHAKE_LENGTH: usize = 68;
 pub const MAX_REQUEST_BLOCK_LENGTH: u32 = 16 * 1024;
-pub const MAX_FRAME_LENGTH: usize = 9 + MAX_REQUEST_BLOCK_LENGTH as usize;
+pub const MAX_CORE_FRAME_LENGTH: usize = 9 + MAX_REQUEST_BLOCK_LENGTH as usize;
+pub const MAX_EXTENSION_PAYLOAD_LENGTH: usize = 17 * 1024;
+pub const MAX_FRAME_LENGTH: usize = 2 + MAX_EXTENSION_PAYLOAD_LENGTH;
 pub const MAX_DECODER_INPUT_LENGTH: usize = 64 * 1024;
+pub const EXTENSION_PROTOCOL_RESERVED_INDEX: usize = 5;
+pub const EXTENSION_PROTOCOL_RESERVED_BIT: u8 = 0x10;
 const MAX_MESSAGES_PER_PUSH: usize = 1024;
 const PROTOCOL_NAME: &[u8; 19] = b"BitTorrent protocol";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Handshake {
     pub peer_id: [u8; 20],
+    pub reserved: [u8; 8],
+}
+
+impl Handshake {
+    pub fn supports_extensions(&self) -> bool {
+        self.reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] & EXTENSION_PROTOCOL_RESERVED_BIT != 0
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -43,9 +54,18 @@ impl fmt::Display for HandshakeError {
 impl Error for HandshakeError {}
 
 pub fn encode_handshake(info_hash: [u8; 20], peer_id: [u8; 20]) -> [u8; HANDSHAKE_LENGTH] {
+    encode_handshake_with_reserved(info_hash, peer_id, [0; 8])
+}
+
+pub fn encode_handshake_with_reserved(
+    info_hash: [u8; 20],
+    peer_id: [u8; 20],
+    reserved: [u8; 8],
+) -> [u8; HANDSHAKE_LENGTH] {
     let mut bytes = [0_u8; HANDSHAKE_LENGTH];
     bytes[0] = PROTOCOL_NAME.len() as u8;
     bytes[1..20].copy_from_slice(PROTOCOL_NAME);
+    bytes[20..28].copy_from_slice(&reserved);
     bytes[28..48].copy_from_slice(&info_hash);
     bytes[48..68].copy_from_slice(&peer_id);
     bytes
@@ -69,7 +89,10 @@ pub fn decode_handshake(
     let peer_id = bytes[48..68]
         .try_into()
         .expect("handshake peer ID has a statically checked length");
-    Ok(Handshake { peer_id })
+    let reserved = bytes[20..28]
+        .try_into()
+        .expect("handshake reserved bytes have a statically checked length");
+    Ok(Handshake { peer_id, reserved })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -93,6 +116,10 @@ pub enum PeerMessage {
         index: u32,
         begin: u32,
         block: Vec<u8>,
+    },
+    Extended {
+        id: u8,
+        payload: Vec<u8>,
     },
 }
 
@@ -261,11 +288,30 @@ pub fn encode_message(message: &PeerMessage) -> Result<Vec<u8>, FrameError> {
             payload.extend_from_slice(&begin.to_be_bytes());
             payload.extend_from_slice(block);
         }
+        PeerMessage::Extended {
+            id,
+            payload: extension_payload,
+        } => {
+            if extension_payload.len() > MAX_EXTENSION_PAYLOAD_LENGTH {
+                return Err(FrameError::FrameLengthTooLarge {
+                    length: extension_payload.len(),
+                    maximum: MAX_EXTENSION_PAYLOAD_LENGTH,
+                });
+            }
+            payload.push(20);
+            payload.push(*id);
+            payload.extend_from_slice(extension_payload);
+        }
     }
-    if payload.len() > MAX_FRAME_LENGTH {
+    let maximum = if matches!(message, PeerMessage::Extended { .. }) {
+        MAX_FRAME_LENGTH
+    } else {
+        MAX_CORE_FRAME_LENGTH
+    };
+    if payload.len() > maximum {
         return Err(FrameError::FrameLengthTooLarge {
             length: payload.len(),
-            maximum: MAX_FRAME_LENGTH,
+            maximum,
         });
     }
 
@@ -278,6 +324,12 @@ pub fn encode_message(message: &PeerMessage) -> Result<Vec<u8>, FrameError> {
 fn decode_frame(mut frame: Vec<u8>) -> Result<PeerMessage, FrameError> {
     let id = frame[4];
     let length = frame.len() - 4;
+    if id != 20 && length > MAX_CORE_FRAME_LENGTH {
+        return Err(FrameError::FrameLengthTooLarge {
+            length,
+            maximum: MAX_CORE_FRAME_LENGTH,
+        });
+    }
     match id {
         0 => exact_length(id, length, 1).map(|()| PeerMessage::Choke),
         1 => exact_length(id, length, 1).map(|()| PeerMessage::Unchoke),
@@ -307,7 +359,7 @@ fn decode_frame(mut frame: Vec<u8>) -> Result<PeerMessage, FrameError> {
             Ok(PeerMessage::Request(request))
         }
         7 => {
-            if !(10..=MAX_FRAME_LENGTH).contains(&length) {
+            if !(10..=MAX_CORE_FRAME_LENGTH).contains(&length) {
                 return Err(FrameError::InvalidMessageLength { id, length });
             }
             let index = read_u32(&frame, 5);
@@ -317,6 +369,17 @@ fn decode_frame(mut frame: Vec<u8>) -> Result<PeerMessage, FrameError> {
                 index,
                 begin,
                 block: frame,
+            })
+        }
+        20 => {
+            if length < 2 {
+                return Err(FrameError::InvalidMessageLength { id, length });
+            }
+            let extension_id = frame[5];
+            frame.drain(..6);
+            Ok(PeerMessage::Extended {
+                id: extension_id,
+                payload: frame,
             })
         }
         _ => Err(FrameError::UnsupportedMessage { id }),
@@ -351,8 +414,10 @@ fn validate_request_length(length: u32) -> Result<(), FrameError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        BlockRequest, FrameDecoder, FrameError, HandshakeError, MAX_FRAME_LENGTH, PeerMessage,
-        decode_handshake, encode_handshake, encode_message,
+        BlockRequest, EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX,
+        FrameDecoder, FrameError, HandshakeError, MAX_EXTENSION_PAYLOAD_LENGTH, MAX_FRAME_LENGTH,
+        PeerMessage, decode_handshake, encode_handshake, encode_handshake_with_reserved,
+        encode_message,
     };
 
     #[test]
@@ -363,7 +428,10 @@ mod tests {
 
         assert_eq!(
             decode_handshake(&bytes, info_hash),
-            Ok(super::Handshake { peer_id })
+            Ok(super::Handshake {
+                peer_id,
+                reserved: [0; 8]
+            })
         );
 
         let mut invalid_protocol = bytes;
@@ -376,6 +444,18 @@ mod tests {
             decode_handshake(&bytes, [5; 20]),
             Err(HandshakeError::InfoHashMismatch)
         );
+    }
+
+    #[test]
+    fn handshake_round_trip_exposes_extension_support() {
+        let mut reserved = [0; 8];
+        reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+        let bytes = encode_handshake_with_reserved([3; 20], [4; 20], reserved);
+
+        let handshake = decode_handshake(&bytes, [3; 20]).expect("extension handshake");
+
+        assert_eq!(handshake.reserved, reserved);
+        assert!(handshake.supports_extensions());
     }
 
     #[test]
@@ -464,6 +544,40 @@ mod tests {
         assert_eq!(
             decoder.push(&frame).expect("decode keepalive"),
             [PeerMessage::KeepAlive]
+        );
+    }
+
+    #[test]
+    fn extended_message_round_trip_handles_fragments_and_enforces_its_ceiling() {
+        let message = PeerMessage::Extended {
+            id: 7,
+            payload: vec![9; MAX_EXTENSION_PAYLOAD_LENGTH],
+        };
+        let frame = encode_message(&message).expect("maximum extension message");
+        let mut decoder = FrameDecoder::new();
+        assert!(
+            decoder
+                .push(&frame[..5])
+                .expect("first fragment")
+                .is_empty()
+        );
+        assert_eq!(
+            decoder.push(&frame[5..]).expect("remaining extension"),
+            [message]
+        );
+
+        assert!(matches!(
+            encode_message(&PeerMessage::Extended {
+                id: 1,
+                payload: vec![0; MAX_EXTENSION_PAYLOAD_LENGTH + 1],
+            }),
+            Err(FrameError::FrameLengthTooLarge { .. })
+        ));
+
+        let mut decoder = FrameDecoder::new();
+        assert_eq!(
+            decoder.push(&[0, 0, 0, 1, 20]),
+            Err(FrameError::InvalidMessageLength { id: 20, length: 1 })
         );
     }
 }

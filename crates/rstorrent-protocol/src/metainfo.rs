@@ -122,6 +122,22 @@ impl Metainfo {
         let root = parse(bytes)?;
         let root_entries = dictionary(&root).ok_or(MetainfoError::RootIsNotDictionary)?;
         let info_node = field(root_entries, b"info").ok_or(MetainfoError::MissingField("info"))?;
+        Self::from_info_node(bytes, info_node)
+    }
+
+    pub fn from_info_bytes(bytes: &[u8]) -> Result<Self, MetainfoError> {
+        let info_node = parse(bytes)?;
+        Self::from_info_node(bytes, &info_node)
+    }
+
+    pub fn info_bytes(bytes: &[u8]) -> Result<&[u8], MetainfoError> {
+        let root = parse(bytes)?;
+        let root_entries = dictionary(&root).ok_or(MetainfoError::RootIsNotDictionary)?;
+        let info_node = field(root_entries, b"info").ok_or(MetainfoError::MissingField("info"))?;
+        Ok(&bytes[info_node.span.clone()])
+    }
+
+    fn from_info_node(bytes: &[u8], info_node: &Node<'_>) -> Result<Self, MetainfoError> {
         let info_entries =
             dictionary(info_node).ok_or(MetainfoError::InvalidField("info dictionary"))?;
 
@@ -496,6 +512,13 @@ mod tests {
         assert_eq!(metainfo.files[0].path, ["x"]);
         assert_eq!(metainfo.piece_length_at(0), Some(3));
         assert_eq!(metainfo.piece_length_at(1), None);
+
+        let raw_info = Metainfo::info_bytes(&bytes).expect("extract info dictionary");
+        assert_eq!(raw_info, &bytes[info_start..info_end]);
+        assert_eq!(
+            Metainfo::from_info_bytes(raw_info).expect("parse raw info dictionary"),
+            metainfo
+        );
     }
 
     #[test]
