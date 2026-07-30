@@ -1656,6 +1656,57 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
     }
 
     #[tokio::test]
+    async fn magnet_peer_without_extension_support_fails_before_storage() {
+        let info = single_file_info(b"not written");
+        let info_hash: [u8; 20] = Sha1::digest(&info).into();
+        let output_path = test_path("no-extension-output.bin");
+        let staging = staging_path(&output_path).expect("staging path");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind non-extension peer");
+        let address = listener.local_addr().expect("listener address");
+        let peer_task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept magnet client");
+            let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
+            stream
+                .read_exact(&mut handshake_bytes)
+                .await
+                .expect("read magnet handshake");
+            assert!(
+                decode_handshake(&handshake_bytes, info_hash)
+                    .expect("valid client handshake")
+                    .supports_extensions()
+            );
+            stream
+                .write_all(&encode_handshake_with_reserved(
+                    info_hash,
+                    *b"-RS-NOEXT-0000000000",
+                    [0; 8],
+                ))
+                .await
+                .expect("send non-extension handshake");
+        });
+
+        let result = download_magnet_with_peer_hint(MagnetDownloadConfig {
+            magnet: format!("magnet:?xt=urn:btih:{}&x.pe={address}", hex(&info_hash)),
+            output_path: output_path.clone(),
+            timeout: Duration::from_secs(2),
+            max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+            skip_files: Vec::new(),
+            materialize_files: Vec::new(),
+        })
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(DownloadError::ExtensionProtocolUnsupported)
+        ));
+        assert!(!tokio::fs::try_exists(&output_path).await.expect("output"));
+        assert!(!tokio::fs::try_exists(&staging).await.expect("staging"));
+        peer_task.await.expect("non-extension peer task");
+    }
+
+    #[tokio::test]
     async fn timeout_removes_unverified_staging_output() {
         let metainfo_path = test_path("fixture.torrent");
         let output_path = test_path("output.bin");
