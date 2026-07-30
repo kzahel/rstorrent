@@ -3,9 +3,10 @@
 Topic: `client-persistence`
 
 Status: the SQLite persistence direction is accepted. A logical
-application/engine boundary is the current recommendation; its exact crate
-name and first physical extraction remain decisions for Tactical `007`, where
-persistence provides the first concrete caller.
+application/engine boundary and instance-scoped profile isolation are the
+current recommendations; the exact crate name and first physical extraction
+remain decisions for Tactical `007`, where persistence provides the first
+concrete caller.
 
 ## Scope
 
@@ -54,7 +55,11 @@ public C++ library surface or place orchestration in Python.
 JSTorrent uses SQLite as a cross-platform key/value store containing JSON and
 encoded binary state. That proves the practical desktop and Android direction,
 but RSTorrent should use typed tables, transactions, constraints, and native
-BLOBs rather than retain a JavaScript-shaped persistence format.
+BLOBs rather than retain a JavaScript-shaped persistence format. JSTorrent
+Desktop also isolates stable profile identities into separate directories and
+databases; its additional discovery, liveness, takeover, daemon, and port
+coordination shows that storage isolation is much cheaper than simultaneous
+profile execution.
 
 Current qBittorrent source provides the closest database precedent: typed
 client columns coexist with opaque libtorrent metadata and resume BLOBs.
@@ -68,13 +73,14 @@ reference-use policy.
 
 ## Accepted Persistence Direction
 
-### One local SQLite authority
+### One local SQLite authority per profile
 
-Use one versioned SQLite database as the authoritative client and session store
-on desktop and Android. The database lives in application-private local
-storage. SAF locations, removable filesystems, network shares, and
-cloud-synchronized payload roots are represented by records in the database;
-they do not contain the live database.
+Use one versioned SQLite database per application-service instance as the
+authoritative client and session store on desktop and Android. A normal
+single-profile product opens one instance and one database. The database lives
+in application-private local storage. SAF locations, removable filesystems,
+network shares, and cloud-synchronized payload roots are represented by
+records in the database; they do not contain the live database.
 
 Bundle one sufficiently current SQLite version with the Rust application
 service so supported platforms share behavior and fixes. At the time this
@@ -207,6 +213,66 @@ transitions without depending on SQL. The application service may batch those
 transitions into database transactions. Piece blocks and payload buffers do
 not cross the application or platform boundary.
 
+## Profile-Ready Isolation
+
+Multiple profiles are a potentially useful application feature, but they
+should not make every torrent query and invariant multi-tenant from the start.
+Preserve the option through instance and directory isolation:
+
+```text
+application data/
+  profiles/
+    <stable-profile-id>/
+      session.db
+```
+
+Each application-service instance receives an explicit stable profile identity
+and profile root at construction, owns exactly one database beneath that root,
+and owns all engine tasks restored from it. Profile display names are mutable
+metadata and never directory identities. Torrent identifiers need only be
+unique inside a profile; a future cross-profile surface identifies a torrent
+with both profile and torrent identity.
+
+Do not add `profile_id` to every session table. A database is already the
+isolation boundary, which makes backup, deletion, migration, corruption
+recovery, and tests independently scoped. It also prevents one missing SQL
+predicate from exposing or mutating another profile.
+
+The first product may expose only one automatically created profile. Preserve
+future switching with these low-cost constraints:
+
+- no process-global application service, database connection, torrent
+  registry, or mutable settings singleton; a runtime may be shared only
+  through an explicit higher-level owner rather than a hidden global;
+- all background tasks, events, caches, and temporary state have an
+  application-service instance owner;
+- profile-relative state remains beneath the profile root, while payload roots
+  remain explicit external capabilities;
+- truly installation-wide bootstrap state, such as the profile registry and
+  last-selected profile, is kept outside any one profile database; and
+- switching an exclusive active profile quiesces and joins its engine work,
+  commits or conservatively abandons pending checkpoints, closes its database
+  and platform capabilities, and only then opens the next instance.
+
+Changing which profile the UI displays while previous profiles continue
+downloading is simultaneous multi-profile operation, not merely quick
+switching. It can use multiple application-service instances without changing
+the database schema, but it creates real additional policy:
+
+- one process-wide resource budget must bound the sum of profile activity;
+- incoming listen ports, DHT identity, NAT mappings, bandwidth policy, and
+  other process or network resources need explicit sharing or isolation;
+- overlapping payload roots and the same torrent in multiple profiles can
+  create cross-profile storage races;
+- Android foreground-service, notification, and background-lifecycle
+  ownership must represent every active instance; and
+- deletion, takeover, and crash recovery need an authority above the
+  individual profile.
+
+Do not claim or implement simultaneous profiles in Tactical `007`. Designing
+the service as an instance rather than a singleton keeps that later choice
+open without paying these policy costs now.
+
 ## Schema Direction
 
 Tactical `007` should define the first exact schema and migrations. The
@@ -257,6 +323,8 @@ their intermediate state explicitly and make restart cleanup idempotent.
 
 - The exact application-service crate name and first public Rust types.
 - The first schema, migration mechanism, database filename, and backup policy.
+- The installation-level profile registry format and whether the first product
+  exposes more than its automatically created profile.
 - Whether Android places the database in backed-up or explicitly no-backup
   app-private storage.
 - The batching interval and checkpoint policy for verified-piece updates.
@@ -278,4 +346,5 @@ forced-process-death recovery, and fixed-buffer recheck.
 The tactical should decide the physical crate boundary from those real
 dependencies before implementation. It should not broaden into a general
 multi-torrent scheduler, stable product API, UI settings catalog, remote
-control surface, unfinished-block resume, or hash-skipping fast-resume policy.
+control surface, profile-management UI, simultaneous profiles,
+unfinished-block resume, or hash-skipping fast-resume policy.
