@@ -4,8 +4,9 @@ Topic: `client-persistence`
 
 Status: Tactical `007` implemented the first `rstorrent-session`
 application/engine boundary, instance-scoped SQLite profile store, exact
-magnet metadata retention, per-piece checkpoints, and conservative restart
-path.
+magnet metadata retention, per-piece checkpoints, and conservative
+path-backed restart. Tactical `009` is implementing the corresponding
+platform-capability and SAF descriptor restart path.
 
 ## Scope
 
@@ -215,6 +216,22 @@ transitions without depending on SQL. The application service may batch those
 transitions into database transactions. Piece blocks and payload buffers do
 not cross the application or platform boundary.
 
+Platform-capability storage uses a coarse two-phase handoff. When a magnet's
+verified metadata first establishes its layout, the application service may
+wait for its platform adapter to supply a bounded descriptor manifest for the
+selected root. The adapter owns capability acquisition and reopening; the
+service and engine own torrent-coordinate validation, descriptor duplication,
+recheck, and verified progress. This handoff is not a portable application
+command and must not expose URI or descriptor values to browser or remote
+clients.
+
+Publication through a platform provider is also explicit and two-phase.
+Engine preparation and per-file hashes become durable before the adapter
+renames provider documents. The service marks a torrent complete only after
+freshly reopened published descriptors match that durable manifest. This is
+the platform equivalent of the path backend's atomic publication boundary and
+provides a conservative restart point on either side of a provider rename.
+
 ## Profile-Ready Isolation
 
 Multiple profiles are a potentially useful application feature, but they
@@ -337,6 +354,8 @@ their intermediate state explicitly and make restart cleanup idempotent.
   relocated or rediscovered.
 - How a future JSTorrent migration imports existing settings, metadata, and
   progress without treating unverified legacy state as verified content.
+- How storage roots are remapped or replaced across platform backup/restore
+  when an opaque locator or grant is not transferable.
 
 ## Implemented Evidence
 
@@ -363,6 +382,7 @@ completed the smallest persistence and restart slice:
   a corrupt SQLite file have explicit fail-closed and preservation tests.
 
 This evidence does not broaden into a general multi-torrent scheduler, stable
-public wire protocol, UI settings catalog, remote listener, SAF resume,
+public wire protocol, UI settings catalog, remote listener,
 profile-management UI, simultaneous profiles, unfinished-block resume, or
-hash-skipping fast resume.
+hash-skipping fast resume. Tactical `009` owns the first SAF resume and
+provider-publication evidence.
