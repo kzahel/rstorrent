@@ -31,7 +31,6 @@ from android_reactive_surface import (
     require_unlocked,
     tap_bounds,
     verify_activity_independence,
-    verify_pause_resume,
 )
 from first_verified_piece import ScenarioFailure, add_seed, create_session, wait_for_listener
 from magnet_metadata import create_fixture, magnet_uri
@@ -42,6 +41,7 @@ GRANT_PATH = f"/sdcard/Download/{GRANT_FOLDER}"
 PAYLOAD_SIZE = 256 * 1024
 UPLOAD_RATE_LIMIT = 12 * 1024
 DOWNLOAD_TIMEOUT_SECONDS = 90
+SAF_RESUME_TIMEOUT_SECONDS = 45
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -209,6 +209,30 @@ def verified_count(trace: str) -> int:
     return max(values, default=0)
 
 
+def verify_saf_pause_resume(adb: Adb) -> None:
+    trace = product_logs(adb)
+    paused_before = trace.count("state=PAUSED")
+    tap_bounds(adb, find_control(adb, "Pause").attrib["bounds"])
+    deadline = time.monotonic() + SAF_RESUME_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        trace = product_logs(adb)
+        if trace.count("state=PAUSED") > paused_before:
+            break
+        time.sleep(0.1)
+    else:
+        raise ScenarioFailure(f"Android SAF UI did not reach PAUSED:\n{trace}")
+
+    downloading_before = trace.count("state=DOWNLOADING")
+    tap_bounds(adb, find_control(adb, "Resume").attrib["bounds"])
+    deadline = time.monotonic() + SAF_RESUME_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        trace = product_logs(adb)
+        if trace.count("state=DOWNLOADING") > downloading_before:
+            return
+        time.sleep(0.1)
+    raise ScenarioFailure(f"Android SAF UI did not reacquire storage after Resume:\n{trace}")
+
+
 def wait_for_checkpoint(adb: Adb) -> str:
     deadline = time.monotonic() + DOWNLOAD_TIMEOUT_SECONDS
     control_checked = False
@@ -219,7 +243,7 @@ def wait_for_checkpoint(adb: Adb) -> str:
         if "FATAL EXCEPTION" in trace or f"E/{TRACE_TAG}" in trace:
             raise ScenarioFailure(f"Android SAF client failed:\n{trace}")
         if not control_checked and positive_counter(trace, "requested"):
-            verify_pause_resume(adb)
+            verify_saf_pause_resume(adb)
             control_checked = True
         if control_checked and not lifecycle_checked:
             verify_activity_independence(adb)
