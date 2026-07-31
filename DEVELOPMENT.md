@@ -91,9 +91,9 @@ per-torrent UDP scheduling, multi-tracker fallback and promotion, bounded
 retransmission and connection-token reuse, automatic reannounce, and
 equivalent waiting/retry diagnostics in the web and Android clients.
 
-The next tactical is a bounded headless RSTorrent/libtorrent live-comparison
-harness. It enables the first major feature campaign: session-owned DHT with
-private-torrent gating and useful warm restart. See
+Tactical `016` completed the bounded session-owned IPv4 DHT foundation with
+private-torrent gating and useful warm restart. The active tactical is the
+paired headless RSTorrent/libtorrent live-comparison harness. See
 [`docs/topics/performance-and-live-evidence.md`](docs/topics/performance-and-live-evidence.md)
 and [`docs/topics/dht-discovery.md`](docs/topics/dht-discovery.md).
 
@@ -151,6 +151,15 @@ zero-length, final-short, reopen, and materialization behavior:
 ```bash
 uv run --project tests/interop --locked \
   python tests/interop/first_verified_piece.py --selective-files --runs 3
+```
+
+The controlled DHT profile obtains peers from an independent KRPC router,
+downloads metadata and content from libtorrent, and then probes RSTorrent's
+incoming query and token-authenticated announcement behavior:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/dht_magnet.py
 ```
 
 Tactical `003`'s self-contained Android probe builds both supported native

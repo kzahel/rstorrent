@@ -3,11 +3,10 @@
 Topic: `protocol-support`
 
 Status: RSTorrent implements a bounded subset of the v1 protocol sufficient
-for controlled verified downloads, BEP 9 metadata exchange, and scheduled
-BEP 15 UDP tracker announces. It does not claim complete BEP 3 support, general
-swarm reliability, seeding, decentralized discovery, HTTP trackers, uTP, or v2
-support. DHT is the next major protocol campaign after its headless comparison
-and evidence harness.
+for controlled verified downloads, BEP 9 metadata exchange, scheduled BEP 15
+UDP tracker announces, and an IPv4 Mainline DHT foundation. It does not claim
+complete BEP 3 or BEP 5 support, general swarm reliability, seeding, HTTP
+trackers, uTP, or v2 support.
 
 ## Purpose And Claim Policy
 
@@ -43,7 +42,7 @@ BEP is external protocol metadata, not RSTorrent readiness.
 | Specification | Claim | Implemented subset and evidence | Deliberate limits and dependencies |
 | --- | --- | --- | --- |
 | [BEP 3: The BitTorrent Protocol Specification](https://www.bittorrent.org/beps/bep_0003.html) | Partial | Strict bounded bencoding; v1 single- and multi-file info dictionaries; raw-info SHA-1 identity; TCP handshake; keepalive, choke, unchoke, interested, not-interested, have, bitfield, request, and piece messages; bounded block pipelining; full-piece SHA-1 verification. Deterministic tests and controlled libtorrent downloads cover the implemented subset. | No cancel message, general payload upload, incoming peer service, multi-peer content scheduling, endgame, choking algorithm, HTTP tracker, or reliable ordinary-swarm completion. Multi-piece single-file execution is rejected. |
-| [BEP 5: DHT Protocol](https://www.bittorrent.org/beps/bep_0005.html) | Unsupported | None. | The planned campaign in [`dht-discovery.md`](dht-discovery.md) requires bounded routing, transactions, iterative lookup, incoming queries, bootstrap and warm persistence, network-policy integration, and BEP 27 private-torrent gating. Self-announcement remains absent until a real incoming peer port exists. |
+| [BEP 5: DHT Protocol](https://www.bittorrent.org/beps/bep_0005.html) | Partial | Bounded KRPC, fixed-distance K=8 routing and replacements, alpha-3 iterative lookup, exact transaction/source correlation, incoming query handling, token-authenticated peer announcements, bootstrap/refresh, warm persistence, network-policy integration, and ordinary peer-registry delivery. Deterministic, scripted runtime, controlled libtorrent, and public-bootstrap evidence passes. | The runtime operates one IPv4 UDP socket. Self-announcement remains absent until a real incoming peer port exists, and the first bounded public metadata smoke found peers but did not complete. |
 | [BEP 6: Fast Extension](https://www.bittorrent.org/beps/bep_0006.html) | Unsupported | None. | Have-all, have-none, suggest, reject-request, and allowed-fast negotiation and state are absent. |
 | [BEP 7: IPv6 Tracker Extension](https://www.bittorrent.org/beps/bep_0007.html) | Unsupported | None. | HTTP trackers are absent. BEP 15 UDP response parsing can represent bounded IPv6 compact peers, which is not a BEP 7 support claim. |
 | [BEP 9: Extension for Peers to Send Metadata Files](https://www.bittorrent.org/beps/bep_0009.html) | Supported | Bounded v1 `btih` magnets, extension negotiation, metadata size and block bounds, at most two acquisition requests in flight, request/data/reject messages, duplicate and ordering validation, assembled info-hash verification, and a bounded diagnostic metadata uploader. Controlled libtorrent runs pass in both directions. | The claim is v1 metadata exchange only. Simultaneous metadata peers, v2 identities, BEP 53 selection, and general seeding are outside it. |
@@ -55,13 +54,13 @@ BEP is external protocol metadata, not RSTorrent readiness.
 | [BEP 17: HTTP Seeding (Hoffman-style)](https://www.bittorrent.org/beps/bep_0017.html) | Unsupported | None. | Web seeds need their own hostile-response, range, retry, integrity, and resource policy. |
 | [BEP 19: HTTP/FTP Seeding (GetRight-style)](https://www.bittorrent.org/beps/bep_0019.html) | Unsupported | None. | Web seeds are outside the current peer-transfer owner. |
 | [BEP 23: Tracker Returns Compact Peer Lists](https://www.bittorrent.org/beps/bep_0023.html) | Unsupported | None for HTTP tracker responses. | BEP 15 has its own compact UDP response shapes. HTTP tracker request and bencoded response handling are absent. |
-| [BEP 27: Private Torrents](https://www.bittorrent.org/beps/bep_0027.html) | Unsupported | Current lack of DHT, PEX, and LSD prevents those sources from leaking peers, but the private flag is not retained as product policy. | Must be implemented before any decentralized or local discovery source can be enabled. Tracker-tier interaction and persisted intent require tests. |
+| [BEP 27: Private Torrents](https://www.bittorrent.org/beps/bep_0027.html) | Partial | Verified v1 metadata retains the private flag. Verified private resume suppresses DHT before lookup; private metadata learned after premetadata discovery cancels DHT and purges DHT-only peers before content scheduling. Deterministic and application runtime tests cover both transitions. | PEX and LSD remain absent rather than gated implementations. Full outer `.torrent` ingestion and announce-tier retention are absent, so the claim is limited to the current magnet/verified-metadata path. |
 | [BEP 29: uTorrent Transport Protocol](https://www.bittorrent.org/beps/bep_0029.html) | Unsupported | None. | Peer transport is TCP only. Congestion control, socket ownership, MTU, timers, and network binding require a dedicated tactical. |
-| [BEP 32: IPv6 extension for DHT](https://www.bittorrent.org/beps/bep_0032.html) | Unsupported | None. | The DHT state model must support separate IPv4 and IPv6 routing tables even if IPv4 interop lands first. IPv6 bootstrap, traversal, compact values, policy, and evidence must be named before promotion. |
+| [BEP 32: IPv6 extension for DHT](https://www.bittorrent.org/beps/bep_0032.html) | Partial | KRPC codecs support `want`, `nodes6`, and compact IPv6 peer values; DHT state and persisted samples are address-family separated. Deterministic wire and state tests pass. | No IPv6 UDP socket, bootstrap, traversal, or public interoperability evidence exists. |
 | [BEP 40: Canonical Peer Priority](https://www.bittorrent.org/beps/bep_0040.html) | Unsupported | None. | Current deterministic selection is local policy, not canonical peer priority. Revisit with a bounded live-peer set and incoming connections. |
 | [BEP 41: UDP Tracker Protocol Extensions](https://www.bittorrent.org/beps/bep_0041.html) | Unsupported | The BEP 15 parser tolerates datagram length according to its own bounds, but emits no extension fields. | URL data, authentication, and future extension negotiation are absent. |
-| [BEP 42: DHT Security Extension](https://www.bittorrent.org/beps/bep_0042.html) | Unsupported | None. | The initial DHT identity and routing policy must validate address-bound node IDs and define behavior across external-address changes and warm restart. |
-| [BEP 43: Read-only DHT Nodes](https://www.bittorrent.org/beps/bep_0043.html) | Unsupported | None. | Relevant to future uncontactable or metered Android policy; ordinary unrestricted clients should participate normally, and no read-only runtime behavior exists yet. |
+| [BEP 42: DHT Security Extension](https://www.bittorrent.org/beps/bep_0042.html) | Partial | Address-bound IPv4 node-ID generation/validation follows published vectors. External-address votes can replace an invalid local identity, invalid remote IDs are excluded from routing, and warm state retains the selected identity. | IPv6 runtime behavior and broader public-network identity-change evidence are absent. The BEP's local/private-address exemption is retained. |
+| [BEP 43: Read-only DHT Nodes](https://www.bittorrent.org/beps/bep_0043.html) | Partial | KRPC parses and emits `ro`; nodes declaring read-only are not admitted from incoming queries. Deterministic codec and admission tests pass. | Product policy does not yet select read-only mode for uncontactable, metered, VPN, or Android lifecycle states. |
 | [BEP 47: Padding files and extended file attributes](https://www.bittorrent.org/beps/bep_0047.html) | Partial | Multi-file `p` attributes produce synthetic zero ranges for verification without writing padding files. Deterministic storage-layout and controlled selective-file evidence passes. | Symlinks are explicitly rejected. Executable, hidden, and per-file SHA-1 attributes are not product behavior. |
 | [BEP 48: Tracker Protocol Extension: Scrape](https://www.bittorrent.org/beps/bep_0048.html) | Unsupported | None. | Tracker scrape values and application presentation are absent. |
 | [BEP 52: The BitTorrent Protocol Specification v2](https://www.bittorrent.org/beps/bep_0052.html) | Unsupported | Metainfo and magnet parsers explicitly reject v2 and hybrid identities. | SHA-256 identities, file trees, piece layers, aligned storage, hybrid validation, and v2 peer behavior require a separate correctness design. |
@@ -108,14 +107,14 @@ without becoming RSTorrent's architecture or runtime dependency.
 
 Protocol breadth follows the current ownership campaign:
 
-1. install the headless comparative smoke needed to measure trackerless
-   discovery without adding a product UI;
-2. retain and enforce BEP 27 private intent, then implement bounded BEP 5 DHT
-   with BEP 42 identity policy and a state shape compatible with BEP 32;
-3. prove the session UDP lifecycle, controlled interoperability, bounded warm
-   restart, peer-observation integration, and trackerless live discovery;
-4. finish bounded multi-peer request ownership, core cancel/endgame behavior,
-   and hash-failure recovery under the existing BEP 3 subset;
+1. finish the paired headless comparative smoke needed to measure live
+   completion without adding a product UI;
+2. finish bounded multi-peer request ownership so discovered peers can remain
+   useful through metadata and content transfer failures;
+3. add core cancel/endgame behavior, per-request expiry, and hash-failure
+   recovery under the existing BEP 3 subset;
+4. close measured DHT gaps, beginning with IPv6 runtime participation and
+   incoming listen-port/self-announcement only when their owners exist;
 5. add measured picker and connection-set behavior, then evaluate BEP 6
    reject semantics and BEP 11 PEX against the established peer owner;
 6. retain outer `.torrent` announce data and implement BEP 12 tiers plus HTTP

@@ -96,12 +96,15 @@ direction belongs in `../topics/`.
   completed supervised UDP tracker records, multi-tracker fallback, bounded
   retry and reannounce scheduling, loss recovery, token reuse, and equivalent
   waiting diagnostics on the web and Android surfaces.
+- [`015-headless-live-comparison.md`](015-headless-live-comparison.md): in
+  progress; its selective pinned-reference tooling and single-sided DHT smoke
+  have landed, while the paired RSTorrent/libtorrent comparator remains.
+- [`016-dht-discovery-foundation.md`](016-dht-discovery-foundation.md):
+  complete; added the session-owned bounded IPv4 DHT participant, private
+  gating, warm restart, peer integration, controlled libtorrent completion,
+  and an honest public trackerless attempt.
 
-The next tactical number is `015`. Current prioritization lives in
-[`../topics/capability-readiness.md`](../topics/capability-readiness.md); the
-next candidate is the bounded headless RSTorrent/libtorrent live-comparison
-harness described in
-[`../topics/performance-and-live-evidence.md`](../topics/performance-and-live-evidence.md).
-It is the enabling proof layer for the DHT campaign in
-[`../topics/dht-discovery.md`](../topics/dht-discovery.md), not a product UI
-slice.
+The active tactical is `015`; its selective reference prerequisite and DHT
+single-sided smoke exist, while its paired public comparator remains. Current
+prioritization lives in
+[`../topics/capability-readiness.md`](../topics/capability-readiness.md).

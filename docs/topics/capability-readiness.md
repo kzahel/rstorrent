@@ -6,8 +6,9 @@ Status: This is the master roll-up for current product and engine readiness.
 It records implemented scope separately from evidence, keeps one explicit next
 slice, and links to the topics and tacticals that own detail. RSTorrent can
 complete controlled v1 downloads but is not yet a generally reliable torrent
-client. DHT discovery with useful warm restart is the current feature campaign;
-a headless libtorrent comparison harness is its first enabling slice.
+client. A bounded IPv4 DHT foundation with useful warm restart is integrated;
+the paired live comparator and multi-peer ownership are the next evidence and
+reliability work.
 
 ## Purpose And Ownership
 
@@ -70,11 +71,11 @@ falsifiable end-to-end stopping condition. Keep exactly one item in **Now**
 and no more than three in **Next**. A long inventory is useful; competing
 current priorities are not.
 
-The current deliberate ordering front-loads DHT ahead of multi-peer completion
-work. It addresses a common discovery dependency, enables trackerless public
-evidence, and establishes session-owned UDP and warm-restart state needed by
-later product policy. Multi-peer request ownership remains immediately adjacent
-so the transfer engine can exploit the broader peer set.
+The completed DHT foundation addressed a common discovery dependency and
+established session-owned UDP and warm-restart state needed by later product
+policy. Multi-peer request ownership remains immediately adjacent so the
+transfer engine can exploit the broader peer set instead of depending on one
+peer through metadata and content completion.
 
 ## Current Queue
 
@@ -86,36 +87,32 @@ reference against one cataloged public torrent in isolated temporary profiles,
 verifies completion, and emits a paired JSON result with timing and resource
 metadata. It must not launch a visible desktop or mobile client.
 
-The first mode uses only shared tracker and TCP capabilities. The harness then
-becomes the public-smoke evidence layer for trackerless cold/warm DHT runs.
-Public speed ratios are recorded baselines, not flaky CI gates. Detailed rules
-live in
+The first mode uses only shared tracker and TCP capabilities. Tactical 016's
+single-sided DHT smoke is useful evidence but does not replace this paired
+result schema. Public speed ratios are recorded baselines, not flaky CI gates.
+Detailed rules live in
 [`performance-and-live-evidence.md`](performance-and-live-evidence.md).
 
 ### Next
 
-1. **DHT core state.** Implement bounded BEP 5 KRPC, routing, transaction,
-   token, and iterative lookup state with hostile-input tests and an internal
-   shape that supports separate IPv4 and IPv6 tables.
-2. **DHT session runtime.** Add the owned UDP lifecycle, bootstrap,
-   maintenance, incoming query responses, network-policy integration,
-   cancellation, and controlled libtorrent interoperability.
-3. **DHT warm restart and torrent integration.** Persist a versioned bounded
-   sample of revalidated bootstrap hints, enforce private intent, feed peers
-   through `PeerObservation`, and compare cold/warm trackerless live smokes.
-
-[`dht-discovery.md`](dht-discovery.md) owns the campaign boundary, invariants,
-resource policy, and deliberate deferrals.
+1. **Bounded multi-peer request ownership.** Give blocks a torrent-level peer,
+   generation, expiry, and reassignment owner; retain useful alternate peers
+   across metadata and content failures.
+2. **Endgame and integrity recovery.** Add bounded duplicate requests and
+   cancel semantics, slow-request expiry, hash-failure reset, and contributor
+   attribution sufficient to complete ordinary adverse swarms safely.
+3. **Measured connection/picker policy.** Use paired public evidence to tune
+   live-peer budgets, availability-aware selection, and resource high-water
+   marks before broadening discovery again.
 
 ### Later
 
-Bounded multi-peer request ownership follows the DHT campaign, then endgame,
-hash-failure recovery, and measured picker/throughput work. Incoming peer
-listening, payload upload and seeding, PEX, local service discovery, uTP, NAT
-traversal, v2 and hybrid torrents, playback-oriented file priorities, dynamic
-VPN and metered-network controls, and production remote access remain
-important. They do not displace the explicit current campaign merely because
-they are individually visible features.
+IPv6 DHT operation, incoming peer listening, payload upload and seeding, PEX,
+local service discovery, uTP, NAT traversal, v2 and hybrid torrents,
+playback-oriented file priorities, dynamic VPN and metered-network controls,
+and production remote access remain important. They do not displace the
+explicit current campaign merely because they are individually visible
+features.
 
 ## Capability Scoreboard
 
@@ -139,7 +136,7 @@ they are individually visible features.
 | Multiple magnet trackers | Partial | deterministic, runtime, interop | Magnet trackers form one synthetic tier because magnets contain no BEP 12 tier structure. | [`tracker-discovery`](tracker-discovery.md) |
 | Metainfo tracker tiers | Absent | none | Outer `announce` and `announce-list` are not retained by the product path. | [`tracker-discovery`](tracker-discovery.md) |
 | HTTP and HTTPS trackers | Absent | none | No URL, transport, response, authentication, or redirect owner exists. | [`tracker-discovery`](tracker-discovery.md) |
-| DHT | Absent | none | BEP 5 state, routing, persistence, and private-torrent gating are unimplemented. | [`dht-discovery`](dht-discovery.md) |
+| DHT | Partial | deterministic, runtime, interop, live | A bounded IPv4 participant supports lookup, incoming queries, private gating, and revalidated warm restart. IPv6 UDP operation and self-announcement are absent; the first public metadata smoke discovered peers but did not complete. | [`dht-discovery`](dht-discovery.md) |
 | Peer exchange | Absent | none | BEP 11 depends on a larger live-peer set, extension dispatch, and hostile-source bounds. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Local service discovery | Absent | none | Interface, multicast, and local-network policy are unimplemented. | [`protocol-support`](protocol-support.md) |
 

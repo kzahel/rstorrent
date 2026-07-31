@@ -2,12 +2,12 @@
 
 Topic: `dht-discovery`
 
-Status: Planned as the first major engine feature campaign after a bounded
-headless live-comparison harness. RSTorrent currently has no DHT
-implementation. The campaign must deliver useful warm-restart peer discovery,
-not only KRPC codecs or a disposable query client.
+Status: Partial and product-integrated. Tactical 016 delivered the bounded
+session-owned IPv4 Mainline DHT participant, controlled libtorrent completion,
+incoming-query participation, private-torrent gating, and revalidated warm
+restart. IPv6 socket operation and self-announcement remain absent.
 
-## Why DHT Is First
+## Why DHT Was Front-Loaded
 
 Tracker discovery is useful but cannot be the only ordinary peer source.
 Public trackers are independently operated, can time out, and may not know all
@@ -22,10 +22,38 @@ DHT and multi-peer transfer remain adjacent priorities:
 - Endgame and piece-picker work then make that peer set useful near completion
   and at realistic throughput.
 
-The only work ahead of DHT should be enabling evidence infrastructure: a
-headless RSTorrent/libtorrent live-smoke comparator and any bounded reference
-checkout tooling it requires. That is proof infrastructure, not a competing
-product feature.
+Selective reference tooling and the controlled headless DHT harness landed
+with this foundation. The broader paired RSTorrent/libtorrent live comparator
+remains active proof infrastructure rather than a competing product feature.
+
+## Landed Foundation
+
+The application service now owns one DHT actor for desktop and Android. It
+starts with the product network policy, races scheduled trackers where present,
+feeds results into `PeerSource::Dht`, retries transient empty traversals, and
+persists only the node identity plus a bounded responsive sample on shutdown.
+Loopback and offline policies use the same owner and every datagram mutation
+and send is policy checked.
+
+Protocol state includes bounded KRPC for `ping`, `find_node`, `get_peers`, and
+`announce_peer`; compact IPv4/IPv6 values and separate routing tables; alpha-3
+lookup; K=8 fixed-distance buckets and replacement caches; BEP 42 validation;
+and BEP 43 read-only parsing/admission behavior. The initial runtime binds one
+IPv4 UDP socket. It stages restored contacts before public routers, periodically
+rebootstraps or refreshes, rotates current/previous token secrets, bounds its
+peer store and source-rate state, and reclaims dropped lookup waiters.
+
+Verified private metadata disables DHT and purges DHT-only peers before content
+scheduling. Verified private metadata restored from durable state prevents DHT
+from starting for that torrent at all. This deliberately permits premetadata
+discovery when private intent is unknowable.
+
+Controlled libtorrent 2.0.13 evidence completes metadata and payload download
+from an info-hash-only magnet and independently verifies RSTorrent's incoming
+`ping`, `get_peers`, token, and `announce_peer` behavior. A public bootstrap
+smoke reaches the deployed DHT. A public Big Buck Bunny lookup found many peer
+values but did not acquire metadata in 120 seconds, reinforcing that multi-peer
+connection/transfer ownership is the next reliability campaign.
 
 ## Scope And Protocol Baseline
 
@@ -160,11 +188,11 @@ routing state.
 
 ## Campaign And Evidence
 
-The expected staged campaign is:
+The completed foundation followed these stages:
 
-1. **Evidence baseline.** Add the headless live comparator, capture a
-   trackerless libtorrent baseline, and record the exact pinned libtorrent DHT
-   source and tests studied.
+1. **Evidence baseline.** Add selective reference tooling and a controlled
+   headless DHT harness, and record the exact pinned libtorrent DHT source and
+   tests studied. The broader paired public comparator remains Tactical 015.
 2. **Core state.** Land bounded codecs, routing state, transaction ownership,
    traversal behavior, tokens, and deterministic hostile-input tests without a
    product socket runtime.
@@ -174,9 +202,9 @@ The expected staged campaign is:
 4. **Warm restart and torrent integration.** Persist bounded bootstrap hints,
    prove cold/warm recovery, enforce private intent, and feed peers into the
    ordinary registry.
-5. **Live proof.** Run trackerless public-smoke comparisons and record discovery
-   timing, completion outcome, resource high-water marks, and unexplained
-   stalls.
+5. **Live proof.** Public bootstrap succeeded. The bounded public trackerless
+   metadata attempt discovered peers but timed out; Tactical 015 still owns the
+   paired libtorrent comparator and richer resource/timing report.
 
 Each slice follows the feature-work contract in the repository instructions:
 normative specifications and exact pinned libtorrent source/tests are studied
@@ -185,7 +213,7 @@ path; and support claims follow evidence rather than code existence.
 
 ## Deliberate Deferrals
 
-The first DHT campaign does not imply:
+The completed DHT foundation does not imply:
 
 - `announce_peer` before incoming peer reachability exists;
 - BEP 11 PEX, BEP 14 LSD, uTP, NAT traversal, or hole punching;
@@ -199,7 +227,7 @@ table, or a runtime that cannot be stopped and resumed cleanly.
 
 ## Maintenance Contract
 
-Every DHT tactical updates this topic, the BEP rows in
+Every later DHT tactical updates this topic, the BEP rows in
 [`protocol-support.md`](protocol-support.md), the discovery scoreboard in
 [`capability-readiness.md`](capability-readiness.md), and the live evidence in
 [`performance-and-live-evidence.md`](performance-and-live-evidence.md).

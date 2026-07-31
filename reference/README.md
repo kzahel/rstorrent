@@ -10,12 +10,17 @@ Run:
 ```bash
 python3 scripts/references.py sync
 python3 scripts/references.py status
+python3 scripts/references.py sync --only bittorrent-beps --only libtorrent
 ```
 
 The script uses Python 3.11 or newer and only the standard library.
 
+`--only NAME` limits either command to one named manifest record and may be
+repeated. This permits a DHT reference survey without inspecting or updating an
+independently dirty sibling checkout.
+
 `sync` clones missing external checkouts, checks them out at exact detached
-revisions, initializes declared submodules, and fast-forwards a clean
+revisions, initializes explicitly declared submodules, and fast-forwards a clean
 first-party JSTorrent `main` branch. It refuses to replace local changes,
 unexpected origins, divergent branches, or repositories at the wrong path.
 
@@ -53,7 +58,9 @@ that moving branch reproducible.
 The libtorrent pin matches the 2.0.13 Python binding used by JSTorrent's
 integration environment. The source checkout and Python package have different
 roles: the checkout supports reading and provenance; the binding runs black-box
-peers and fixture creation.
+peers and fixture creation. Its submodules are deliberately not initialized;
+in particular, the GPL `simulation/libsimulator` checkout is outside this
+project's reference and product dependency set.
 
 JSTorrent remains a sibling because it is a first-party product repository that
 may be maintained independently. Do not create a second copy under

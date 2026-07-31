@@ -396,18 +396,18 @@ does not distort the protocol vertical slice.
 ## Recommended Next Work
 
 [`capability-readiness.md`](capability-readiness.md) owns the current prioritized
-queue so this durable direction does not become a competing backlog. The next
-major engine feature is session-owned DHT discovery with bounded routing and
-traversal state, private-torrent policy, controlled interoperability, and
-useful warm restart. A headless RSTorrent/libtorrent public-smoke comparator is
-the enabling tactical immediately ahead of it, not a separate product surface.
+queue so this durable direction does not become a competing backlog. The
+session-owned IPv4 DHT foundation now supplies bounded routing and traversal,
+private-torrent policy, controlled interoperability, and useful warm restart.
+The paired headless RSTorrent/libtorrent public-smoke comparator remains the
+next evidence tactical, not a separate product surface.
 
-Bounded multi-peer request ownership follows closely so newly discovered and
-late-arriving peers can improve an active transfer. Endgame, integrity
-recovery, and measured picker/throughput work build on that combined discovery
-and ownership foundation. No new product UI is planned during this engine
-campaign; typed headless diagnostics grow only with the engine owners that can
-report them accurately.
+Bounded multi-peer request ownership is the next major engine feature so newly
+discovered and late-arriving peers can improve an active transfer. Endgame,
+integrity recovery, and measured picker/throughput work build on that combined
+discovery and ownership foundation. No new product UI is planned during this
+engine campaign; typed headless diagnostics grow only with the engine owners
+that can report them accurately.
 
 Product growth should continue through the established application service,
 generated contracts, and platform capability seams rather than creating

@@ -65,6 +65,10 @@ impl PeerSources {
         self.0 |= source.mask();
     }
 
+    pub fn remove(&mut self, source: PeerSource) {
+        self.0 &= !source.mask();
+    }
+
     pub fn contains(self, source: PeerSource) -> bool {
         self.0 & source.mask() != 0
     }
@@ -435,6 +439,17 @@ impl PeerRegistry {
         self.records
             .iter()
             .find(|record| record.endpoint == endpoint)
+    }
+
+    /// Remove one discovery source and discard now-source-less idle records.
+    pub fn remove_source(&mut self, source: PeerSource) -> usize {
+        let before = self.records.len();
+        for record in &mut self.records {
+            record.sources.remove(source);
+        }
+        self.records
+            .retain(|record| !record.sources.is_empty() || record.phase != PeerPhase::Idle);
+        before - self.records.len()
     }
 
     pub fn observe(

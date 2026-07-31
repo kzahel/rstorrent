@@ -73,6 +73,8 @@ def build_binaries(repository: Path) -> tuple[Path, Path]:
         "rstorrent-download-piece",
         "--bin",
         "rstorrent-metadata-seed",
+        "--bin",
+        "rstorrent-dht-node",
     ]
     completed = subprocess.run(
         command,

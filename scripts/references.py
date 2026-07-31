@@ -416,6 +416,24 @@ def sync(records: list[Reference]) -> None:
     status(records)
 
 
+def select_records(records: list[Reference], names: list[str]) -> list[Reference]:
+    """Return manifest-ordered records selected by unique command-line names."""
+    if not names:
+        return records
+
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        fail("duplicate --only reference name(s): " + ", ".join(duplicates))
+
+    requested = set(names)
+    known = {record.name for record in records}
+    unknown = sorted(requested - known)
+    if unknown:
+        fail("unknown --only reference name(s): " + ", ".join(unknown))
+
+    return [record for record in records if record.name in requested]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Synchronize or validate local reference repositories.",
@@ -425,13 +443,22 @@ def parse_args() -> argparse.Namespace:
         choices=("sync", "status"),
         help="clone/update references or validate them without changing state",
     )
+    parser.add_argument(
+        "--only",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="operate on one named manifest record; may be repeated",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     try:
         records = read_manifest()
-        command = parse_args().command
+        arguments = parse_args()
+        records = select_records(records, arguments.only)
+        command = arguments.command
         if command == "sync":
             sync(records)
         else:

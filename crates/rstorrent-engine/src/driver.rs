@@ -37,6 +37,7 @@ use tokio::task::JoinHandle;
 use tokio::time::{Instant as TokioInstant, timeout, timeout_at};
 use tokio_util::sync::CancellationToken;
 
+use crate::dht::{DhtError, DhtHandle};
 use crate::network::{NetworkConfig, NetworkPolicy};
 use crate::peer::{
     DialAttempt, PeerEndpoint, PeerFailure, PeerObservation, PeerRegistry, PeerRegistryConfig,
@@ -64,6 +65,9 @@ const UNKNOWN_MAGNET_LEFT: u64 = 16 * 1024;
 const UDP_TRACKER_RECEIVE_LENGTH: usize = MAX_ANNOUNCE_RESPONSE_LENGTH + 1;
 const SAFE_CANCEL_REQUESTED: usize = 1 << (usize::BITS - 1);
 const SAFE_CANCEL_CRITICAL_MASK: usize = SAFE_CANCEL_REQUESTED - 1;
+const DHT_RETRY_INITIAL_DELAY: Duration = Duration::from_secs(15);
+const DHT_RETRY_MAX_DELAY: Duration = Duration::from_secs(5 * 60);
+const DHT_SUCCESS_REQUERY_DELAY: Duration = Duration::from_secs(60);
 
 #[derive(Debug)]
 struct PeerConnection {
@@ -93,6 +97,7 @@ pub struct MagnetDownloadConfig {
     pub max_buffered_payload_bytes: usize,
     pub skip_files: Vec<usize>,
     pub materialize_files: Vec<usize>,
+    pub dht: Option<DhtHandle>,
 }
 
 #[derive(Clone, Debug)]
@@ -104,6 +109,7 @@ pub struct ResumableMagnetDownloadConfig {
     pub skip_files: Vec<usize>,
     pub verified_info: Option<Vec<u8>>,
     pub verified_pieces: Vec<bool>,
+    pub dht: Option<DhtHandle>,
 }
 
 pub trait DownloadCheckpointSink: Send + Sync {
@@ -180,6 +186,17 @@ pub enum DownloadActivityEvent {
         tracker: String,
         peer_count: u32,
     },
+    DhtLookupStarted,
+    DhtLookupSucceeded {
+        peer_count: u32,
+    },
+    DhtLookupFailed {
+        detail: String,
+    },
+    DhtRetryScheduled {
+        retry_in_seconds: u64,
+    },
+    DhtDisabledForPrivateTorrent,
     PeerDialStarted {
         peer: String,
     },
@@ -434,6 +451,7 @@ pub enum DownloadError {
     Metainfo(MetainfoError),
     Magnet(MagnetError),
     Entropy(getrandom::Error),
+    Dht(DhtError),
     UdpTracker(UdpTrackerError),
     PeerRegistry(PeerRegistryError),
     Metadata(MetadataError),
@@ -493,6 +511,7 @@ impl fmt::Display for DownloadError {
             Self::Metainfo(error) => write!(formatter, "metainfo: {error}"),
             Self::Magnet(error) => write!(formatter, "magnet: {error}"),
             Self::Entropy(error) => write!(formatter, "operating-system randomness: {error}"),
+            Self::Dht(error) => write!(formatter, "DHT: {error}"),
             Self::UdpTracker(error) => write!(formatter, "UDP tracker: {error}"),
             Self::PeerRegistry(error) => write!(formatter, "peer registry: {error}"),
             Self::Metadata(error) => write!(formatter, "metadata: {error}"),
@@ -568,6 +587,7 @@ impl Error for DownloadError {
             Self::Io { source, .. } => Some(source),
             Self::Metainfo(error) => Some(error),
             Self::Magnet(error) => Some(error),
+            Self::Dht(error) => Some(error),
             Self::UdpTracker(error) => Some(error),
             Self::PeerRegistry(error) => Some(error),
             Self::Metadata(error) => Some(error),
@@ -655,8 +675,17 @@ pub async fn download_magnet_metadata_with_control(
     network: NetworkConfig,
     control: DownloadControl,
 ) -> Result<Vec<u8>, DownloadError> {
+    download_magnet_metadata_with_dht(magnet, network, control, None).await
+}
+
+pub async fn download_magnet_metadata_with_dht(
+    magnet: String,
+    network: NetworkConfig,
+    control: DownloadControl,
+    dht: Option<DhtHandle>,
+) -> Result<Vec<u8>, DownloadError> {
     validate_network_config(network)?;
-    let result = run_magnet_metadata(magnet, network, control.clone()).await;
+    let result = run_magnet_metadata(magnet, network, control.clone(), dht).await;
     control.clear_buffered_payload();
     result
 }
@@ -1192,9 +1221,85 @@ struct PeerSession {
     started_at: Instant,
     network: NetworkConfig,
     tracker: Option<TrackerManager>,
+    dht: Option<DhtHandle>,
     control: DownloadControl,
     connection: Option<PeerConnection>,
     last_error: Option<DownloadError>,
+    next_dht_lookup: Instant,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct DhtRetryTiming {
+    initial_delay: Duration,
+    maximum_delay: Duration,
+}
+
+impl DhtRetryTiming {
+    const PRODUCTION: Self = Self {
+        initial_delay: DHT_RETRY_INITIAL_DELAY,
+        maximum_delay: DHT_RETRY_MAX_DELAY,
+    };
+}
+
+async fn retrying_dht_lookup(
+    dht: DhtHandle,
+    info_hash: [u8; 20],
+    control: DownloadControl,
+    timing: DhtRetryTiming,
+    initial_wait: Duration,
+) -> Result<Vec<SocketAddr>, DownloadError> {
+    if !initial_wait.is_zero() {
+        tokio::select! {
+            _ = control.inner.cancellation.cancelled() => {
+                return Err(DownloadError::Cancelled);
+            }
+            _ = tokio::time::sleep(initial_wait) => {}
+        }
+    }
+    let mut retry_delay = timing.initial_delay;
+    loop {
+        control.emit(DownloadActivityEvent::DhtLookupStarted);
+        let result = tokio::select! {
+            _ = control.inner.cancellation.cancelled() => {
+                let _ = dht.cancel_lookup(info_hash).await;
+                return Err(DownloadError::Cancelled);
+            }
+            result = dht.lookup(info_hash) => result,
+        };
+        match result {
+            Ok(peers) => {
+                control.emit(DownloadActivityEvent::DhtLookupSucceeded {
+                    peer_count: peers.len().try_into().unwrap_or(u32::MAX),
+                });
+                return Ok(peers);
+            }
+            Err(
+                error @ (DhtError::LookupTimedOut
+                | DhtError::NoReachableNodes
+                | DhtError::LookupCapacity),
+            ) => {
+                control.emit(DownloadActivityEvent::DhtLookupFailed {
+                    detail: error.to_string(),
+                });
+                control.emit(DownloadActivityEvent::DhtRetryScheduled {
+                    retry_in_seconds: retry_delay.as_secs(),
+                });
+                tokio::select! {
+                    _ = control.inner.cancellation.cancelled() => {
+                        return Err(DownloadError::Cancelled);
+                    }
+                    _ = tokio::time::sleep(retry_delay) => {}
+                }
+                retry_delay = retry_delay.saturating_mul(2).min(timing.maximum_delay);
+            }
+            Err(error) => {
+                control.emit(DownloadActivityEvent::DhtLookupFailed {
+                    detail: error.to_string(),
+                });
+                return Err(DownloadError::Dht(error));
+            }
+        }
+    }
 }
 
 impl PeerSession {
@@ -1207,9 +1312,11 @@ impl PeerSession {
             started_at: Instant::now(),
             network,
             tracker: None,
+            dht: None,
             control,
             connection: None,
             last_error: None,
+            next_dht_lookup: Instant::now(),
         })
     }
 
@@ -1230,8 +1337,10 @@ impl PeerSession {
         magnet: &Magnet,
         network: NetworkConfig,
         control: DownloadControl,
+        dht: Option<DhtHandle>,
     ) -> Result<Self, DownloadError> {
         let mut peers = Self::new(network, control)?;
+        peers.dht = dht;
         if !network.policy.permits_dns() {
             return Err(DownloadError::NetworkDisabled);
         }
@@ -1244,7 +1353,7 @@ impl PeerSession {
                 peers.control.clone(),
             )?);
         }
-        if peers.registry.is_empty() && peers.tracker.is_none() {
+        if peers.registry.is_empty() && peers.tracker.is_none() && peers.dht.is_none() {
             return Err(peers
                 .last_error
                 .take()
@@ -1327,6 +1436,96 @@ impl PeerSession {
         Ok(())
     }
 
+    async fn receive_dht_peers(&mut self, info_hash: [u8; 20]) -> Result<(), DownloadError> {
+        let dht = self.dht.clone().ok_or(DownloadError::NoUsablePeer)?;
+        let peers = retrying_dht_lookup(
+            dht,
+            info_hash,
+            self.control.clone(),
+            DhtRetryTiming::PRODUCTION,
+            self.dht_requery_wait(),
+        )
+        .await?;
+        self.next_dht_lookup = Instant::now() + DHT_SUCCESS_REQUERY_DELAY;
+        for address in peers {
+            if let Err(error) = self.observe_address(address, PeerSource::Dht) {
+                self.last_error = Some(error);
+            }
+        }
+        Ok(())
+    }
+
+    async fn receive_discovery_peers(&mut self, info_hash: [u8; 20]) -> Result<(), DownloadError> {
+        match (self.tracker.is_some(), self.dht.is_some()) {
+            (true, true) => {
+                let dht = self.dht.clone().expect("DHT presence checked");
+                let dht_wait = self.dht_requery_wait();
+                let dht_control = self.control.clone();
+                let tracker = self.tracker.as_mut().expect("tracker presence checked");
+                enum Discovery {
+                    Tracker(Result<(String, Vec<CompactPeer>), DownloadError>),
+                    Dht(Result<Vec<SocketAddr>, DownloadError>),
+                }
+                let dht_lookup = retrying_dht_lookup(
+                    dht,
+                    info_hash,
+                    dht_control,
+                    DhtRetryTiming::PRODUCTION,
+                    dht_wait,
+                );
+                let discovered = tokio::select! {
+                    tracker = tracker.next_peers() => Discovery::Tracker(tracker),
+                    dht = dht_lookup => Discovery::Dht(dht),
+                };
+                match discovered {
+                    Discovery::Tracker(result) => {
+                        let (tracker, compact_peers) = result?;
+                        let peer_count = compact_peers.len().try_into().unwrap_or(u32::MAX);
+                        for peer in compact_peers {
+                            if let Err(error) = self
+                                .observe_address(compact_peer_address(peer), PeerSource::Tracker)
+                            {
+                                self.last_error = Some(error);
+                            }
+                        }
+                        if self.registry.is_empty() {
+                            self.control
+                                .emit(DownloadActivityEvent::TrackerPeersUnavailable {
+                                    tracker,
+                                    peer_count,
+                                });
+                        }
+                        Ok(())
+                    }
+                    Discovery::Dht(Ok(peers)) => {
+                        self.next_dht_lookup = Instant::now() + DHT_SUCCESS_REQUERY_DELAY;
+                        for address in peers {
+                            if let Err(error) = self.observe_address(address, PeerSource::Dht) {
+                                self.last_error = Some(error);
+                            }
+                        }
+                        Ok(())
+                    }
+                    Discovery::Dht(Err(error)) => {
+                        self.last_error = Some(error);
+                        self.receive_tracker_peers().await
+                    }
+                }
+            }
+            (true, false) => self.receive_tracker_peers().await,
+            (false, true) => self.receive_dht_peers(info_hash).await,
+            (false, false) => Err(self
+                .last_error
+                .take()
+                .unwrap_or(DownloadError::NoUsablePeer)),
+        }
+    }
+
+    fn dht_requery_wait(&self) -> Duration {
+        self.next_dht_lookup
+            .saturating_duration_since(Instant::now())
+    }
+
     async fn connect_next(
         &mut self,
         info_hash: [u8; 20],
@@ -1340,7 +1539,7 @@ impl PeerSession {
             let candidate = match self.selector.select(&self.registry, context) {
                 Some(candidate) => candidate,
                 None => {
-                    self.receive_tracker_peers().await?;
+                    self.receive_discovery_peers(info_hash).await?;
                     continue;
                 }
             };
@@ -1394,7 +1593,12 @@ impl PeerSession {
             )
             .await;
             match result {
-                Ok(metadata) => return Ok(metadata),
+                Ok(metadata) => {
+                    if metadata.1.private {
+                        self.disable_dht_for_private(info_hash).await?;
+                    }
+                    return Ok(metadata);
+                }
                 Err(error) => {
                     let failure = peer_failure(&error);
                     self.close_current(Some(failure))?;
@@ -1422,6 +1626,28 @@ impl PeerSession {
             return Ok(());
         };
         tracker.shutdown().await
+    }
+
+    async fn disable_dht_for_private(&mut self, info_hash: [u8; 20]) -> Result<(), DownloadError> {
+        let current_is_dht_only = self.connection.as_ref().is_some_and(|connection| {
+            self.registry
+                .get(connection.attempt.record_id())
+                .is_some_and(|record| {
+                    record.sources().contains(PeerSource::Dht) && record.sources().len() == 1
+                })
+        });
+        if current_is_dht_only {
+            self.close_current(None)?;
+        }
+        if let Some(dht) = self.dht.take() {
+            dht.cancel_lookup(info_hash)
+                .await
+                .map_err(DownloadError::Dht)?;
+        }
+        self.registry.remove_source(PeerSource::Dht);
+        self.control
+            .emit(DownloadActivityEvent::DhtDisabledForPrivateTorrent);
+        Ok(())
     }
 }
 
@@ -1706,7 +1932,7 @@ async fn run_magnet_download(
     let mut peers = tokio::select! {
         biased;
         _ = control.inner.cancellation.cancelled() => return Err(DownloadError::Cancelled),
-        peers = PeerSession::from_magnet(&magnet, config.network, control.clone()) => peers?,
+        peers = PeerSession::from_magnet(&magnet, config.network, control.clone(), config.dht.clone()) => peers?,
     };
     let operation_control = control.clone();
     let result = tokio::select! {
@@ -1742,12 +1968,13 @@ async fn run_magnet_metadata(
     magnet: String,
     network: NetworkConfig,
     control: DownloadControl,
+    dht: Option<DhtHandle>,
 ) -> Result<Vec<u8>, DownloadError> {
     let magnet = Magnet::parse(&magnet).map_err(DownloadError::Magnet)?;
     let mut peers = tokio::select! {
         biased;
         _ = control.inner.cancellation.cancelled() => return Err(DownloadError::Cancelled),
-        peers = PeerSession::from_magnet(&magnet, network, control.clone()) => peers?,
+        peers = PeerSession::from_magnet(&magnet, network, control.clone(), dht) => peers?,
     };
     let result = tokio::select! {
         biased;
@@ -1785,6 +2012,7 @@ async fn run_resumable_magnet_download(
     descriptors: Option<(DescriptorStorage, bool)>,
 ) -> Result<DownloadReport, DownloadError> {
     let magnet = Magnet::parse(&config.magnet).map_err(DownloadError::Magnet)?;
+    let dht = config.dht.clone();
     let resume = ResumeContext {
         verified_pieces: config.verified_pieces,
         checkpoints: checkpoints.clone(),
@@ -1801,10 +2029,16 @@ async fn run_resumable_magnet_download(
                 "stored metadata does not match the magnet identity".to_owned(),
             ));
         }
+        let content_dht = if metainfo.private {
+            control.emit(DownloadActivityEvent::DhtDisabledForPrivateTorrent);
+            None
+        } else {
+            dht.clone()
+        };
         let mut peers = tokio::select! {
             biased;
             _ = control.inner.cancellation.cancelled() => return Err(DownloadError::Cancelled),
-            peers = PeerSession::from_magnet(&magnet, config.network, control.clone()) => peers?,
+            peers = PeerSession::from_magnet(&magnet, config.network, control.clone(), content_dht) => peers?,
         };
         let content_config = ContentDownloadConfig {
             output_path: config.output_path,
@@ -1836,7 +2070,7 @@ async fn run_resumable_magnet_download(
     let mut peers = tokio::select! {
         biased;
         _ = control.inner.cancellation.cancelled() => return Err(DownloadError::Cancelled),
-        peers = PeerSession::from_magnet(&magnet, config.network, control.clone()) => peers?,
+        peers = PeerSession::from_magnet(&magnet, config.network, control.clone(), dht) => peers?,
     };
     let operation_control = control.clone();
     let result = tokio::select! {
@@ -2904,12 +3138,16 @@ async fn process_selective_actions(
 #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
-    use std::net::SocketAddr;
+    use std::net::{IpAddr, SocketAddr};
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
 
+    use rstorrent_protocol::dht::{
+        DhtEndpoint, DhtIp, Message as DhtMessage, NodeId, Query as DhtQuery, Want,
+        decode_message as decode_dht, encode_response as encode_dht_response,
+    };
     use rstorrent_protocol::magnet::Magnet;
     use rstorrent_protocol::metadata::{
         MetadataMessage, encode_extension_handshake, encode_metadata_data, parse_metadata_message,
@@ -2928,14 +3166,16 @@ mod tests {
     use tokio::time::timeout;
 
     use super::{
-        CLIENT_PEER_ID, DownloadActivityEvent, DownloadActivitySink, DownloadConfig,
-        DownloadControl, DownloadError, MagnetDownloadConfig, PeerConnection, PeerSession,
-        UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache,
-        announce_udp_tracker_address, download_magnet, download_magnet_metadata_with_control,
+        CLIENT_PEER_ID, DhtRetryTiming, DownloadActivityEvent, DownloadActivitySink,
+        DownloadConfig, DownloadControl, DownloadError, MagnetDownloadConfig, PeerConnection,
+        PeerSession, UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming,
+        UdpTrackerTokenCache, announce_udp_tracker_address, download_magnet,
+        download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
         download_magnet_with_control, download_verified_piece,
-        download_verified_piece_with_control, next_peer_message, run_magnet_download_with_peers,
-        send_message,
+        download_verified_piece_with_control, next_peer_message, retrying_dht_lookup,
+        run_magnet_download_with_peers, send_message,
     };
+    use crate::dht::{BootstrapNode, DhtConfig, DhtService};
     use crate::network::{NetworkConfig, NetworkPolicy};
     use crate::peer::{
         DialAttempt, PeerEndpoint, PeerFailure, PeerObservation, PeerPhase, PeerRegistry,
@@ -3163,6 +3403,52 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    #[ignore = "uses changing public Mainline DHT and swarm state"]
+    async fn live_big_buck_bunny_trackerless_dht_metadata_probe() {
+        let expected_info_hash = "dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c";
+        let dht = DhtService::start(DhtConfig::for_network(NetworkPolicy::Online))
+            .await
+            .expect("start public DHT");
+        let control = DownloadControl::new();
+        let task_control = control.clone();
+        let dht_handle = dht.handle();
+        let mut task = tokio::spawn(async move {
+            download_magnet_metadata_with_dht(
+                format!("magnet:?xt=urn:btih:{expected_info_hash}"),
+                NetworkConfig::new(
+                    NetworkPolicy::Online,
+                    Duration::from_secs(15),
+                    Duration::from_secs(30),
+                ),
+                task_control,
+                Some(dht_handle),
+            )
+            .await
+        });
+
+        let raw_info = match timeout(Duration::from_secs(120), &mut task).await {
+            Ok(result) => result
+                .expect("join public DHT metadata probe")
+                .expect("acquire public DHT metadata"),
+            Err(_) => {
+                let stats = dht.handle().stats().await.ok();
+                control.cancel();
+                if timeout(Duration::from_secs(5), &mut task).await.is_err() {
+                    task.abort();
+                    let _ = task.await;
+                }
+                dht.shutdown().await.expect("DHT shutdown after timeout");
+                panic!(
+                    "public trackerless DHT metadata probe exceeded 120 seconds; stats={stats:?}"
+                );
+            }
+        };
+        dht.shutdown().await.expect("public DHT shutdown");
+        let metainfo = Metainfo::from_info_bytes(&raw_info).expect("verified public metadata");
+        assert_eq!(hex(&metainfo.info_hash), expected_info_hash);
+    }
+
     #[test]
     fn safe_cancel_waits_for_storage_creation_boundary() {
         let control = DownloadControl::new();
@@ -3205,6 +3491,120 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         info.extend_from_slice(&piece_hash);
         info.push(b'e');
         info
+    }
+
+    fn private_single_file_info(payload: &[u8]) -> Vec<u8> {
+        let mut info = single_file_info(payload);
+        info.splice(
+            info.len() - 1..info.len() - 1,
+            b"7:privatei1e".iter().copied(),
+        );
+        info
+    }
+
+    fn dht_config(bootstrap: SocketAddr) -> DhtConfig {
+        DhtConfig {
+            network_policy: NetworkPolicy::LoopbackOnly,
+            bind_address: "127.0.0.1:0".parse().expect("DHT bind"),
+            bootstrap_nodes: vec![BootstrapNode::Address(bootstrap)],
+            initial_snapshot: None,
+            query_timeout: Duration::from_millis(500),
+            lookup_timeout: Duration::from_secs(3),
+            bootstrap_retry_interval: Duration::from_secs(1),
+            routing_refresh_interval: Duration::from_secs(60),
+            read_only: false,
+        }
+    }
+
+    fn test_dht_endpoint(address: SocketAddr) -> DhtEndpoint {
+        let port = address.port();
+        match address.ip() {
+            IpAddr::V4(address) => DhtEndpoint::new(DhtIp::V4(address.octets()), port),
+            IpAddr::V6(address) => DhtEndpoint::new(DhtIp::V6(address.octets()), port),
+        }
+    }
+
+    async fn serve_dht_peer(socket: UdpSocket, info_hash: [u8; 20], peer: SocketAddr) {
+        let mut packet = [0_u8; 1024];
+        loop {
+            let (length, client) = socket.recv_from(&mut packet).await.expect("DHT query");
+            let DhtMessage::Query(query) = decode_dht(&packet[..length]).expect("decode DHT query")
+            else {
+                continue;
+            };
+            let peers = match query.query {
+                DhtQuery::FindNode { .. } => Vec::new(),
+                DhtQuery::GetPeers {
+                    info_hash: target,
+                    want,
+                } => {
+                    assert_eq!(target, NodeId(info_hash));
+                    assert!(want.is_empty() || want.contains(&Want::Ipv4));
+                    vec![test_dht_endpoint(peer)]
+                }
+                _ => Vec::new(),
+            };
+            let done = !peers.is_empty();
+            let response = encode_dht_response(
+                &query.transaction,
+                NodeId([6; 20]),
+                &[],
+                &peers,
+                Some(b"fixture"),
+                test_dht_endpoint(client),
+            )
+            .expect("encode DHT response");
+            socket
+                .send_to(&response, client)
+                .await
+                .expect("send DHT response");
+            if done {
+                break;
+            }
+        }
+    }
+
+    async fn serve_dht_peer_after_retry(socket: UdpSocket, info_hash: [u8; 20], peer: SocketAddr) {
+        let mut packet = [0_u8; 1024];
+        let mut peer_queries = 0_u8;
+        loop {
+            let (length, client) = socket.recv_from(&mut packet).await.expect("DHT query");
+            let DhtMessage::Query(query) = decode_dht(&packet[..length]).expect("decode DHT query")
+            else {
+                continue;
+            };
+            let peers = match query.query {
+                DhtQuery::GetPeers {
+                    info_hash: target, ..
+                } => {
+                    assert_eq!(target, NodeId(info_hash));
+                    peer_queries = peer_queries.saturating_add(1);
+                    if peer_queries >= 2 {
+                        vec![test_dht_endpoint(peer)]
+                    } else {
+                        Vec::new()
+                    }
+                }
+                _ => Vec::new(),
+            };
+            let done = !peers.is_empty();
+            let response = encode_dht_response(
+                &query.transaction,
+                NodeId([6; 20]),
+                &[],
+                &peers,
+                Some(b"fixture"),
+                test_dht_endpoint(client),
+            )
+            .expect("encode DHT response");
+            socket
+                .send_to(&response, client)
+                .await
+                .expect("send DHT response");
+            if done {
+                break;
+            }
+        }
     }
 
     fn hex(bytes: &[u8]) -> String {
@@ -3520,7 +3920,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         assert_eq!(parsed.udp_trackers.len(), 2);
         let network = loopback_network(Duration::from_secs(2));
         let control = DownloadControl::new();
-        let mut peers = PeerSession::from_magnet(&parsed, network, control.clone())
+        let mut peers = PeerSession::from_magnet(&parsed, network, control.clone(), None)
             .await
             .expect("prepare tracker discovery");
         assert!(peers.registry.is_empty());
@@ -3533,6 +3933,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
+                dht: None,
             },
             control,
             parsed,
@@ -3601,6 +4002,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
+                dht: None,
             },
             task_control,
         ));
@@ -3692,10 +4094,14 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let control = DownloadControl::new();
         let activity = Arc::new(RecordingActivitySink::default());
         control.set_activity_sink(activity.clone());
-        let mut peers =
-            PeerSession::from_magnet(&magnet, loopback_network(Duration::from_secs(1)), control)
-                .await
-                .expect("start empty tracker");
+        let mut peers = PeerSession::from_magnet(
+            &magnet,
+            loopback_network(Duration::from_secs(1)),
+            control,
+            None,
+        )
+        .await
+        .expect("start empty tracker");
 
         timeout(Duration::from_secs(1), peers.receive_tracker_peers())
             .await
@@ -3950,7 +4356,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         );
         let parsed = Magnet::parse(&magnet).expect("parse failover magnet");
         let network = loopback_network(Duration::from_secs(2));
-        let mut peers = PeerSession::from_magnet(&parsed, network, DownloadControl::new())
+        let mut peers = PeerSession::from_magnet(&parsed, network, DownloadControl::new(), None)
             .await
             .expect("resolve failover peers");
         assert_eq!(peers.registry.len(), 2);
@@ -3963,6 +4369,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
+                dht: None,
             },
             DownloadControl::new(),
             parsed,
@@ -4066,6 +4473,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
             skip_files: Vec::new(),
             materialize_files: Vec::new(),
+            dht: None,
         })
         .await
         .expect("public magnet entry");
@@ -4089,6 +4497,150 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         .expect("receive initial tracker connect");
         assert_eq!(tracker_length, 16);
         let _ = tokio::fs::remove_file(output_path).await;
+    }
+
+    #[tokio::test]
+    async fn transient_dht_miss_retries_without_becoming_terminal() {
+        let info_hash = [8; 20];
+        let peer = SocketAddr::from(([127, 0, 0, 1], 49_999));
+        let dht_socket = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind scripted DHT");
+        let dht_address = dht_socket.local_addr().expect("DHT address");
+        let dht_task = tokio::spawn(serve_dht_peer_after_retry(dht_socket, info_hash, peer));
+        let dht = DhtService::start(dht_config(dht_address))
+            .await
+            .expect("start DHT client");
+        let control = DownloadControl::new();
+        let activity = Arc::new(RecordingActivitySink::default());
+        control.set_activity_sink(activity.clone());
+
+        let peers = retrying_dht_lookup(
+            dht.handle(),
+            info_hash,
+            control,
+            DhtRetryTiming {
+                initial_delay: Duration::from_millis(10),
+                maximum_delay: Duration::from_millis(20),
+            },
+            Duration::ZERO,
+        )
+        .await
+        .expect("retry DHT lookup");
+
+        assert_eq!(peers, vec![peer]);
+        {
+            let events = activity
+                .events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            assert!(
+                events
+                    .iter()
+                    .any(|event| matches!(event, DownloadActivityEvent::DhtRetryScheduled { .. }))
+            );
+            assert!(events.iter().any(|event| matches!(
+                event,
+                DownloadActivityEvent::DhtLookupSucceeded { peer_count: 1 }
+            )));
+        }
+        dht_task.await.expect("scripted DHT task");
+        dht.shutdown().await.expect("DHT shutdown");
+    }
+
+    #[tokio::test]
+    async fn trackerless_dht_peer_completes_metadata_and_content_path() {
+        let payload = b"peer discovered through DHT".to_vec();
+        let info = single_file_info(&payload);
+        let info_hash: [u8; 20] = Sha1::digest(&info).into();
+        let output_path = test_path("dht-magnet-output.bin");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind DHT-discovered peer");
+        let peer_address = listener.local_addr().expect("peer address");
+        let peer_task = tokio::spawn(serve_metadata_then_piece(
+            listener,
+            info,
+            payload.clone(),
+            vec![0x80],
+        ));
+        let dht_socket = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind scripted DHT");
+        let dht_address = dht_socket.local_addr().expect("DHT address");
+        let dht_task = tokio::spawn(serve_dht_peer(dht_socket, info_hash, peer_address));
+        let dht = DhtService::start(dht_config(dht_address))
+            .await
+            .expect("start DHT client");
+
+        let report = download_magnet(MagnetDownloadConfig {
+            magnet: format!("magnet:?xt=urn:btih:{}", hex(&info_hash)),
+            output_path: output_path.clone(),
+            network: loopback_network(Duration::from_secs(2)),
+            max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+            skip_files: Vec::new(),
+            materialize_files: Vec::new(),
+            dht: Some(dht.handle()),
+        })
+        .await
+        .expect("DHT-discovered download");
+
+        assert_eq!(report.info_hash, info_hash);
+        assert_eq!(
+            tokio::fs::read(&output_path)
+                .await
+                .expect("published output"),
+            payload
+        );
+        dht_task.await.expect("scripted DHT task");
+        peer_task.await.expect("scripted peer task");
+        dht.shutdown().await.expect("DHT shutdown");
+        let _ = tokio::fs::remove_file(output_path).await;
+    }
+
+    #[tokio::test]
+    async fn verified_private_metadata_purges_dht_only_peer_before_content() {
+        let payload = b"must not be fetched from decentralized peer".to_vec();
+        let info = private_single_file_info(&payload);
+        let metainfo = Metainfo::from_info_bytes(&info).expect("private metadata");
+        assert!(metainfo.private);
+        let info_hash = metainfo.info_hash;
+        let output_path = test_path("private-dht-output.bin");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind DHT-only peer");
+        let peer_address = listener.local_addr().expect("peer address");
+        let peer_task = tokio::spawn(serve_metadata_then_piece(
+            listener,
+            info,
+            payload,
+            vec![0x80],
+        ));
+        let dht_socket = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind scripted DHT");
+        let dht_address = dht_socket.local_addr().expect("DHT address");
+        let dht_task = tokio::spawn(serve_dht_peer(dht_socket, info_hash, peer_address));
+        let dht = DhtService::start(dht_config(dht_address))
+            .await
+            .expect("start DHT client");
+
+        let result = download_magnet(MagnetDownloadConfig {
+            magnet: format!("magnet:?xt=urn:btih:{}", hex(&info_hash)),
+            output_path: output_path.clone(),
+            network: loopback_network(Duration::from_secs(2)),
+            max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+            skip_files: Vec::new(),
+            materialize_files: Vec::new(),
+            dht: Some(dht.handle()),
+        })
+        .await;
+
+        assert!(matches!(result, Err(DownloadError::NoUsablePeer)));
+        assert!(!tokio::fs::try_exists(&output_path).await.expect("output"));
+        dht_task.await.expect("scripted DHT task");
+        peer_task.await.expect("scripted peer task");
+        dht.shutdown().await.expect("DHT shutdown");
     }
 
     #[tokio::test]
@@ -4116,6 +4668,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
             skip_files: Vec::new(),
             materialize_files: Vec::new(),
+            dht: None,
         })
         .await;
 
@@ -4168,6 +4721,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
             skip_files: Vec::new(),
             materialize_files: Vec::new(),
+            dht: None,
         })
         .await;
 
@@ -4217,6 +4771,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
             skip_files: Vec::new(),
             materialize_files: Vec::new(),
+            dht: None,
         })
         .await;
 

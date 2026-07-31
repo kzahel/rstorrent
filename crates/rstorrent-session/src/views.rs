@@ -1699,6 +1699,8 @@ mod tests {
                 .len(),
         )
         .expect("snapshot length fits u32")
+        .checked_add(1)
+        .expect("small snapshot headroom fits u32")
         .max(4096);
 
         let hub = ViewHub::new(&snapshot(0, 2_000)).expect("hub");

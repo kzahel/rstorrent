@@ -1117,10 +1117,14 @@ fn classify_failure(error: &DownloadError) -> FailureKind {
         }
         DownloadError::PeerTimedOut { .. }
         | DownloadError::NetworkTimedOut { .. }
-        | DownloadError::UdpTrackerTimedOut { .. } => FailureKind::Timeout,
+        | DownloadError::UdpTrackerTimedOut { .. }
+        | DownloadError::Dht(rstorrent_engine::dht::DhtError::LookupTimedOut) => {
+            FailureKind::Timeout
+        }
         DownloadError::NetworkDisabled
         | DownloadError::NetworkPolicyDenied { .. }
         | DownloadError::InvalidNetworkTimeout { .. }
+        | DownloadError::Dht(rstorrent_engine::dht::DhtError::NetworkDisabled)
         | DownloadError::MetainfoTooLarge { .. }
         | DownloadError::Magnet(_)
         | DownloadError::Metainfo(_)
@@ -1135,6 +1139,7 @@ fn classify_failure(error: &DownloadError) -> FailureKind {
         | DownloadError::Io { .. } => FailureKind::Storage,
         DownloadError::CleanupAfterFailure { .. } => FailureKind::Cleanup,
         DownloadError::Entropy(_)
+        | DownloadError::Dht(_)
         | DownloadError::Checkpoint(_)
         | DownloadError::TrackerTask(_)
         | DownloadError::Cancelled => FailureKind::Runtime,

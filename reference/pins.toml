@@ -23,7 +23,6 @@ repository = "https://github.com/arvidn/libtorrent.git"
 revision = "7d7fc38fac61177fa5e02148f791b2f65250b09d"
 purpose = "Primary external interoperability oracle and broad protocol reference"
 required = true
-submodules = true
 
 [[sibling]]
 name = "jstorrent"

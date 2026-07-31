@@ -13,5 +13,5 @@ path = "src/main.rs"
 getrandom = { workspace = true }
 rstorrent-protocol = { path = "../rstorrent-protocol" }
 sha1 = { workspace = true }
-tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "time"] }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "sync", "time"] }
 tokio-util = { workspace = true, features = ["rt"] }

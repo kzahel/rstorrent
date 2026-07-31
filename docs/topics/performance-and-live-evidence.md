@@ -2,11 +2,11 @@
 
 Topic: `performance-and-live-evidence`
 
-Status: Planned. Controlled protocol tests remain the correctness authority,
-but the next enabling tactical will add a repeatable headless comparison of
-RSTorrent and the pinned libtorrent reference on representative public test
-torrents. Public-swarm speed is initially a measured baseline, not a CI pass
-threshold.
+Status: In progress. A controlled headless DHT/libtorrent completion harness
+and one bounded single-sided public DHT probe now exist. Tactical 015 still
+owns the paired RSTorrent/libtorrent public comparator, result schema, and
+resource/timing report. Public-swarm speed remains a measured baseline, not a
+CI pass threshold.
 
 ## Purpose
 
@@ -89,6 +89,29 @@ peer, metadata availability, first verified piece, and completion.
 The exact reference configuration and command line are part of every result.
 Reference defaults must not change silently when the pinned libtorrent version
 changes.
+
+## DHT Foundation Evidence: 2026-07-31
+
+The controlled `tests/interop/dht_magnet.py` scenario uses an independent
+Python KRPC router and libtorrent 2.0.13 peer. An info-hash-only magnet issued
+one `find_node` and one `get_peers`, acquired 26,686 bytes of metadata in two
+blocks, verified and published three pieces and 40,000 payload bytes, and then
+answered independent `ping`, `get_peers`, token, and `announce_peer` probes.
+The process-cleanup assertion passed; the recorded run took 0.815 seconds.
+
+The opt-in public bootstrap test first exposed a deployed compatibility issue:
+a libtorrent router returned a valid DHT dictionary in noncanonical key order.
+RSTorrent's DHT-only bounded parser now tolerates ordering while rejecting
+duplicate keys; strict canonical metainfo parsing is unchanged. The corrected
+bootstrap reached a BEP 42-valid public node in 0.12 seconds.
+
+A subsequent 120-second trackerless Big Buck Bunny RSTorrent probe built a
+16-node routing table, received 830 valid DHT responses, and observed 1,563
+peer values, but no contacted peer completed metadata. It was single-sided and
+therefore has no paired classification under the table below. It is retained
+as evidence that discovery is operating and that peer connection/transfer
+ownership remains an ordinary-swarm reliability gap; it is not a public
+completion or speed claim.
 
 ## Result Classification
 
@@ -181,11 +204,11 @@ The next tactical should add the smallest harness that can:
 3. validate identity, verified completion, and output size;
 4. emit the paired classification and core timing/resource metadata as JSON;
 5. retain bounded diagnostic evidence on an actionable mismatch; and
-6. exercise one available tracker-based catalog entry before DHT work begins.
+6. exercise one available tracker-based catalog entry.
 
-It may add selective pinned-reference checkout tooling if the existing
-all-reference sync is not safe for a dirty neighboring checkout. It does not
-add product UI, establish speed gates, or implement DHT itself.
+Selective pinned-reference checkout tooling and the single-sided DHT harness
+have landed as prerequisites. The remaining tactical does not add product UI,
+establish speed gates, or change the DHT implementation itself.
 
 ## Maintenance Contract
 

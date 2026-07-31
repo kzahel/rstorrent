@@ -33,6 +33,7 @@ pub struct Metainfo {
     pub piece_length: u32,
     pub total_length: u64,
     pub name: String,
+    pub private: bool,
     pub mode: MetainfoMode,
     pub files: Vec<MetainfoFile>,
 }
@@ -145,6 +146,12 @@ impl Metainfo {
             return Err(MetainfoError::Unsupported("v2 or hybrid info dictionary"));
         }
 
+        let private = match field(info_entries, b"private").map(|node| &node.value) {
+            None | Some(Value::Integer(0)) => false,
+            Some(Value::Integer(1)) => true,
+            Some(_) => return Err(MetainfoError::InvalidField("info.private")),
+        };
+
         let piece_length = positive_integer(info_entries, b"piece length", "info.piece length")?;
         let piece_length = u32::try_from(piece_length)
             .map_err(|_| MetainfoError::InvalidField("info.piece length"))?;
@@ -229,6 +236,7 @@ impl Metainfo {
             piece_length,
             total_length,
             name,
+            private,
             mode,
             files,
         })
@@ -519,6 +527,38 @@ mod tests {
             Metainfo::from_info_bytes(raw_info).expect("parse raw info dictionary"),
             metainfo
         );
+    }
+
+    #[test]
+    fn retains_only_the_normative_private_flag_values() {
+        let mut private = single_metainfo(1, 4, &[[1; 20]]);
+        private.splice(
+            private.len() - 2..private.len() - 2,
+            b"7:privatei1e".iter().copied(),
+        );
+        assert!(
+            Metainfo::from_bytes(&private)
+                .expect("private torrent")
+                .private
+        );
+
+        let public = single_metainfo(1, 4, &[[1; 20]]);
+        assert!(
+            !Metainfo::from_bytes(&public)
+                .expect("public torrent")
+                .private
+        );
+
+        for value in [b"i2e".as_slice(), b"1:x".as_slice()] {
+            let mut invalid = single_metainfo(1, 4, &[[1; 20]]);
+            let mut field = b"7:private".to_vec();
+            field.extend_from_slice(value);
+            invalid.splice(invalid.len() - 2..invalid.len() - 2, field);
+            assert_eq!(
+                Metainfo::from_bytes(&invalid),
+                Err(MetainfoError::InvalidField("info.private"))
+            );
+        }
     }
 
     #[test]

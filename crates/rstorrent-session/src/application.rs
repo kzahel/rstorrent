@@ -5,11 +5,12 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use rstorrent_engine::dht::{DhtConfig, DhtError, DhtService};
 use rstorrent_engine::{
     DescriptorFile, DescriptorStorage, DescriptorStoragePlan, DownloadActivityEvent,
     DownloadActivitySink, DownloadCheckpointSink, DownloadControl, DownloadError, NetworkConfig,
     PreparedFileHash, ResumableMagnetDownloadConfig, ResumedStorage,
-    download_magnet_metadata_with_control, plan_descriptor_storage,
+    download_magnet_metadata_with_dht, plan_descriptor_storage,
     resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
     verify_prepared_descriptors,
 };
@@ -39,6 +40,7 @@ pub struct ApplicationConfig {
     pub storage_roots: Vec<ConfiguredStorageRoot>,
     pub network: NetworkConfig,
     pub max_buffered_payload_bytes: usize,
+    pub dht: DhtConfig,
 }
 
 impl ApplicationConfig {
@@ -48,12 +50,14 @@ impl ApplicationConfig {
         storage_roots: Vec<ConfiguredStorageRoot>,
         network: NetworkConfig,
     ) -> Self {
+        let dht = DhtConfig::for_network(network.policy);
         Self {
             profile_root,
             profile_id,
             storage_roots,
             network,
             max_buffered_payload_bytes: DEFAULT_PAYLOAD_ALLOWANCE,
+            dht,
         }
     }
 }
@@ -78,6 +82,7 @@ pub struct ApplicationService {
     network: NetworkConfig,
     max_buffered_payload_bytes: usize,
     active: Option<ActiveDownload>,
+    dht: Option<DhtService>,
     views: ViewHub,
 }
 
@@ -116,6 +121,14 @@ impl ApplicationService {
             &config.profile_id,
             &config.storage_roots,
         )?;
+        let (initial_dht_snapshot, dht_state_warning) = match store.load_dht_snapshot() {
+            Ok(snapshot) => (snapshot, None),
+            Err(error) => (None, Some(error.to_string())),
+        };
+        let mut dht_config = config.dht;
+        dht_config.network_policy = config.network.policy;
+        dht_config.initial_snapshot = initial_dht_snapshot;
+        let dht = DhtService::start(dht_config).await?;
         let snapshot = store.snapshot()?;
         let views = ViewHub::new(&snapshot)?;
         let mut service = Self {
@@ -124,6 +137,7 @@ impl ApplicationService {
             network: config.network,
             max_buffered_payload_bytes: config.max_buffered_payload_bytes,
             active: None,
+            dht: Some(dht),
             views,
         };
         service.views.record_diagnostic(
@@ -137,6 +151,16 @@ impl ApplicationService {
                 ("network_policy", config.network.policy.as_str()),
             ],
         )?;
+        if let Some(detail) = dht_state_warning {
+            service.views.record_diagnostic(
+                DiagnosticSeverity::Warning,
+                DiagnosticCategory::Discovery,
+                "dht_state_rejected",
+                None,
+                "Saved DHT state was rejected; using cold bootstrap",
+                &[("detail", &detail)],
+            )?;
+        }
         service.refresh_views()?;
         service.restore_running().await?;
         service.refresh_views()?;
@@ -314,6 +338,7 @@ impl ApplicationService {
             skip_files,
             verified_info: Some(raw_info),
             verified_pieces,
+            dht: self.dht.as_ref().map(DhtService::handle),
         };
         let checkpoints: Arc<dyn DownloadCheckpointSink> = Arc::new(StoreCheckpointSink {
             store: self.store.clone(),
@@ -408,14 +433,22 @@ impl ApplicationService {
     }
 
     pub async fn shutdown(&mut self) -> Result<(), ApplicationError> {
+        let mut active_join_error = None;
         if let Some(active) = self.active.take() {
             active.control.cancel();
             match active.task.await {
                 Ok(Ok(())) => {}
-                Ok(Err(error)) => return Err(ApplicationError::Join(error)),
+                Ok(Err(error)) => active_join_error = Some(error),
                 Err(error) if error.is_cancelled() => {}
-                Err(error) => return Err(ApplicationError::Join(error.to_string())),
+                Err(error) => active_join_error = Some(error.to_string()),
             }
+        }
+        if let Some(dht) = self.dht.take() {
+            let snapshot = dht.shutdown().await?;
+            self.store_mut()?.save_dht_snapshot(snapshot)?;
+        }
+        if let Some(error) = active_join_error {
+            return Err(ApplicationError::Join(error));
         }
         self.views.record_diagnostic(
             DiagnosticSeverity::Info,
@@ -529,9 +562,10 @@ impl ApplicationService {
             let task_control = control.clone();
             let magnet = resume.magnet;
             let network = self.network;
+            let dht = self.dht.as_ref().map(DhtService::handle);
             let operation = async move {
                 let raw_info =
-                    download_magnet_metadata_with_control(magnet, network, task_control).await?;
+                    download_magnet_metadata_with_dht(magnet, network, task_control, dht).await?;
                 checkpoints
                     .metadata_verified(&raw_info)
                     .map_err(DownloadError::Checkpoint)?;
@@ -572,6 +606,7 @@ impl ApplicationService {
             skip_files,
             verified_info: resume.raw_info,
             verified_pieces,
+            dht: self.dht.as_ref().map(DhtService::handle),
         };
         let checkpoints: Arc<dyn DownloadCheckpointSink> = Arc::new(StoreCheckpointSink {
             store: self.store.clone(),
@@ -1267,6 +1302,64 @@ impl ViewActivitySink {
                     &[("tracker", &tracker), ("peers", &peers)],
                 );
             }
+            DownloadActivityEvent::DhtLookupStarted => {
+                let _ = self
+                    .views
+                    .set_discovery_activity(&self.torrent_id, true, false);
+                let _ = self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    DiagnosticCategory::Discovery,
+                    "dht_lookup_started",
+                    Some(&self.torrent_id),
+                    "Searching the distributed hash table for peers",
+                    &[],
+                );
+            }
+            DownloadActivityEvent::DhtLookupSucceeded { peer_count } => {
+                let peers = peer_count.to_string();
+                let _ = self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    DiagnosticCategory::Discovery,
+                    "dht_lookup_succeeded",
+                    Some(&self.torrent_id),
+                    "DHT lookup returned peers",
+                    &[("peers", &peers)],
+                );
+            }
+            DownloadActivityEvent::DhtLookupFailed { detail } => {
+                let _ = self
+                    .views
+                    .set_discovery_activity(&self.torrent_id, false, true);
+                let _ = self.views.record_diagnostic(
+                    DiagnosticSeverity::Warning,
+                    DiagnosticCategory::Discovery,
+                    "dht_lookup_failed",
+                    Some(&self.torrent_id),
+                    "DHT lookup ended without a peer and may be retried",
+                    &[("detail", &detail)],
+                );
+            }
+            DownloadActivityEvent::DhtRetryScheduled { retry_in_seconds } => {
+                let retry = retry_in_seconds.to_string();
+                let _ = self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    DiagnosticCategory::Discovery,
+                    "dht_retry_scheduled",
+                    Some(&self.torrent_id),
+                    "DHT lookup will retry after bounded backoff",
+                    &[("retry_in_seconds", &retry)],
+                );
+            }
+            DownloadActivityEvent::DhtDisabledForPrivateTorrent => {
+                let _ = self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    DiagnosticCategory::Discovery,
+                    "dht_disabled_private_torrent",
+                    Some(&self.torrent_id),
+                    "Verified private metadata disabled decentralized discovery",
+                    &[],
+                );
+            }
             DownloadActivityEvent::PeerDialStarted { peer } => {
                 let _ = self
                     .views
@@ -1321,6 +1414,7 @@ pub enum ApplicationError {
     Join(String),
     StorePoisoned,
     Subscription(SubscriptionError),
+    Dht(DhtError),
 }
 
 impl fmt::Display for ApplicationError {
@@ -1340,6 +1434,7 @@ impl fmt::Display for ApplicationError {
             Self::Join(message) => write!(formatter, "engine task join: {message}"),
             Self::StorePoisoned => write!(formatter, "session store lock is poisoned"),
             Self::Subscription(error) => write!(formatter, "{error}"),
+            Self::Dht(error) => write!(formatter, "{error}"),
         }
     }
 }
@@ -1350,6 +1445,7 @@ impl Error for ApplicationError {
             Self::Store(error) => Some(error),
             Self::Io { source, .. } => Some(source),
             Self::Subscription(error) => Some(error),
+            Self::Dht(error) => Some(error),
             _ => None,
         }
     }
@@ -1358,6 +1454,12 @@ impl Error for ApplicationError {
 impl From<StoreError> for ApplicationError {
     fn from(error: StoreError) -> Self {
         Self::Store(error)
+    }
+}
+
+impl From<DhtError> for ApplicationError {
+    fn from(error: DhtError) -> Self {
+        Self::Dht(error)
     }
 }
 
@@ -1397,12 +1499,19 @@ pub fn application_error_response(
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::net::{IpAddr, SocketAddr};
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
 
+    use rstorrent_engine::dht::BootstrapNode;
     use rstorrent_engine::{NetworkConfig, NetworkPolicy};
+    use rstorrent_protocol::dht::{
+        DhtEndpoint, DhtIp, Message as DhtMessage, NodeId, decode_message as decode_dht,
+        encode_response as encode_dht_response,
+    };
     use rusqlite::Connection;
     use sha1::{Digest, Sha1};
+    use tokio::net::UdpSocket;
 
     use super::{ApplicationConfig, ApplicationService};
     use crate::{
@@ -1449,6 +1558,84 @@ mod tests {
                 skip_files: Vec::new(),
             },
         }
+    }
+
+    fn dht_endpoint(address: SocketAddr) -> DhtEndpoint {
+        let port = address.port();
+        match address.ip() {
+            IpAddr::V4(address) => DhtEndpoint::new(DhtIp::V4(address.octets()), port),
+            IpAddr::V6(address) => DhtEndpoint::new(DhtIp::V6(address.octets()), port),
+        }
+    }
+
+    async fn answer_dht_query(router: &UdpSocket) {
+        let mut packet = [0_u8; 1024];
+        let (length, client) = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            router.recv_from(&mut packet),
+        )
+        .await
+        .expect("DHT query timed out")
+        .expect("receive DHT query");
+        let DhtMessage::Query(query) = decode_dht(&packet[..length]).expect("decode DHT query")
+        else {
+            panic!("DHT query expected");
+        };
+        let response = encode_dht_response(
+            &query.transaction,
+            NodeId([9; 20]),
+            &[],
+            &[],
+            None,
+            dht_endpoint(client),
+        )
+        .expect("encode DHT response");
+        router
+            .send_to(&response, client)
+            .await
+            .expect("send DHT response");
+    }
+
+    #[tokio::test]
+    async fn application_shutdown_persists_and_revalidates_warm_dht_node() {
+        let root = test_root("dht-warm-restart");
+        let router = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind DHT router");
+        let router_address = router.local_addr().expect("DHT router address");
+        let mut first_config = config(&root);
+        first_config.dht.bootstrap_nodes = vec![BootstrapNode::Address(router_address)];
+        let mut first = ApplicationService::open(first_config)
+            .await
+            .expect("open first application");
+        answer_dht_query(&router).await;
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        first.shutdown().await.expect("first shutdown");
+        drop(first);
+
+        let mut persisted = config(&root);
+        persisted.dht.bootstrap_nodes.clear();
+        let store = SessionStore::open(
+            &persisted.profile_root,
+            &persisted.profile_id,
+            &persisted.storage_roots,
+        )
+        .expect("open persisted store");
+        let snapshot = store
+            .load_dht_snapshot()
+            .expect("load DHT snapshot")
+            .expect("saved DHT snapshot");
+        assert_eq!(snapshot.nodes_v4[0].address, dht_endpoint(router_address));
+        drop(store);
+
+        let mut second = ApplicationService::open(persisted)
+            .await
+            .expect("open second application");
+        answer_dht_query(&router).await;
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        second.shutdown().await.expect("second shutdown");
+        drop(second);
+        fs::remove_dir_all(root).expect("remove test root");
     }
 
     #[tokio::test]

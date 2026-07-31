@@ -4,9 +4,10 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
+use rstorrent_engine::dht::{BootstrapNode, DhtConfig, DhtService};
 use rstorrent_engine::{
-    DownloadConfig, MagnetDownloadConfig, NetworkConfig, NetworkPolicy, download_magnet,
-    download_verified_piece,
+    DownloadConfig, DownloadError, MagnetDownloadConfig, NetworkConfig, NetworkPolicy,
+    download_magnet, download_verified_piece,
 };
 use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
 
@@ -25,12 +26,16 @@ Usage: rstorrent-download-piece \\
 Options:\n\
   [--timeout-seconds SECONDS] \\
   [--max-buffered-payload-bytes BYTES] \\
+  [--dht-bootstrap IP:PORT] \\
   [--skip-file INDEX]... [--materialize-file INDEX]...";
 
 #[derive(Debug)]
 enum DownloadCommand {
     Metainfo(DownloadConfig),
-    Magnet(MagnetDownloadConfig),
+    Magnet {
+        config: MagnetDownloadConfig,
+        dht_bootstrap: Option<SocketAddr>,
+    },
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -51,8 +56,37 @@ async fn main() -> ExitCode {
 
     let result = match config {
         DownloadCommand::Metainfo(config) => download_verified_piece(config).await,
-        DownloadCommand::Magnet(config) => download_magnet(config).await,
+        DownloadCommand::Magnet {
+            mut config,
+            dht_bootstrap,
+        } => {
+            let dht = if let Some(bootstrap) = dht_bootstrap {
+                let mut dht_config = DhtConfig::for_network(NetworkPolicy::LoopbackOnly);
+                dht_config.bootstrap_nodes = vec![BootstrapNode::Address(bootstrap)];
+                match DhtService::start(dht_config).await {
+                    Ok(service) => Some(service),
+                    Err(error) => return report_result(Err(DownloadError::Dht(error))),
+                }
+            } else {
+                None
+            };
+            config.dht = dht.as_ref().map(DhtService::handle);
+            let result = download_magnet(config).await;
+            if let Some(dht) = dht {
+                let shutdown = dht.shutdown().await.map_err(DownloadError::Dht);
+                if result.is_ok()
+                    && let Err(error) = shutdown
+                {
+                    return report_result(Err(error));
+                }
+            }
+            result
+        }
     };
+    report_result(result)
+}
+
+fn report_result(result: Result<rstorrent_engine::DownloadReport, DownloadError>) -> ExitCode {
     match result {
         Ok(report) => {
             println!(
@@ -98,6 +132,7 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
     let mut magnet = None;
     let mut peer = None;
     let mut output_path = None;
+    let mut dht_bootstrap = None;
     let mut timeout_seconds = DEFAULT_TIMEOUT_SECONDS;
     let mut max_buffered_payload_bytes = DEFAULT_MAX_BUFFERED_PAYLOAD_BYTES;
     let mut skip_files = Vec::new();
@@ -132,6 +167,15 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
                 set_once(&mut peer, address, flag)?;
             }
             "--output" => set_once(&mut output_path, PathBuf::from(value), flag)?,
+            "--dht-bootstrap" => {
+                let value = value
+                    .to_str()
+                    .ok_or_else(|| "--dht-bootstrap must be valid UTF-8".to_owned())?;
+                let address = value
+                    .parse::<SocketAddr>()
+                    .map_err(|_| "--dht-bootstrap must be an IP address and port".to_owned())?;
+                set_once(&mut dht_bootstrap, address, flag)?;
+            }
             "--timeout-seconds" => {
                 let value = value
                     .to_str()
@@ -174,6 +218,9 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
     }
 
     let output_path = output_path.ok_or_else(|| "--output is required".to_owned())?;
+    if metainfo_path.is_some() && dht_bootstrap.is_some() {
+        return Err("--dht-bootstrap is only valid with --magnet".to_owned());
+    }
     let peer_timeout = Duration::from_secs(timeout_seconds);
     let network = NetworkConfig::new(NetworkPolicy::LoopbackOnly, peer_timeout, peer_timeout);
     match (metainfo_path, magnet, peer) {
@@ -186,14 +233,18 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
             skip_files,
             materialize_files,
         })),
-        (None, Some(magnet), None) => Ok(DownloadCommand::Magnet(MagnetDownloadConfig {
-            magnet,
-            output_path,
-            network,
-            max_buffered_payload_bytes,
-            skip_files,
-            materialize_files,
-        })),
+        (None, Some(magnet), None) => Ok(DownloadCommand::Magnet {
+            config: MagnetDownloadConfig {
+                magnet,
+                output_path,
+                network,
+                max_buffered_payload_bytes,
+                skip_files,
+                materialize_files,
+                dht: None,
+            },
+            dht_bootstrap,
+        }),
         (Some(_), Some(_), _) => Err("--metainfo and --magnet are mutually exclusive".to_owned()),
         (None, None, _) => Err("exactly one of --metainfo or --magnet is required".to_owned()),
         (Some(_), None, None) => Err("--peer is required with --metainfo".to_owned()),
@@ -294,12 +345,17 @@ mod tests {
             "payload",
         ]))
         .expect("valid magnet arguments");
-        let DownloadCommand::Magnet(config) = command else {
+        let DownloadCommand::Magnet {
+            config,
+            dht_bootstrap,
+        } = command
+        else {
             panic!("expected magnet command");
         };
 
         assert!(config.magnet.starts_with("magnet:?"));
         assert_eq!(config.output_path.to_string_lossy(), "payload");
+        assert_eq!(dht_bootstrap, None);
         assert_eq!(
             config.network,
             NetworkConfig::new(

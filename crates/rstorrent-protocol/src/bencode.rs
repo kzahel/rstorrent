@@ -159,6 +159,23 @@ pub fn parse_with_limits(input: &[u8], limits: Limits) -> Result<Node<'_>, Parse
     Ok(node)
 }
 
+/// Parse bounded bencode while accepting out-of-order dictionary keys.
+///
+/// Some wire protocols have widely deployed implementations that emit
+/// dictionaries out of canonical order. Duplicate keys remain rejected and
+/// the returned entries are sorted so field lookup is deterministic. Metainfo
+/// callers should continue using [`parse_with_limits`].
+pub fn parse_with_limits_permissive_dictionaries(
+    input: &[u8],
+    limits: Limits,
+) -> Result<Node<'_>, ParseError> {
+    let (node, consumed) = parse_prefix_with_dictionary_order(input, limits, true)?;
+    if consumed != input.len() {
+        return Err(ParseError::TrailingData { position: consumed });
+    }
+    Ok(node)
+}
+
 pub fn parse_prefix(input: &[u8]) -> Result<(Node<'_>, usize), ParseError> {
     parse_prefix_with_limits(input, Limits::default())
 }
@@ -166,6 +183,14 @@ pub fn parse_prefix(input: &[u8]) -> Result<(Node<'_>, usize), ParseError> {
 pub fn parse_prefix_with_limits(
     input: &[u8],
     limits: Limits,
+) -> Result<(Node<'_>, usize), ParseError> {
+    parse_prefix_with_dictionary_order(input, limits, false)
+}
+
+fn parse_prefix_with_dictionary_order(
+    input: &[u8],
+    limits: Limits,
+    allow_unsorted_dictionaries: bool,
 ) -> Result<(Node<'_>, usize), ParseError> {
     if input.len() > limits.max_input_length {
         return Err(ParseError::InputTooLarge {
@@ -178,6 +203,7 @@ pub fn parse_prefix_with_limits(
         input,
         position: 0,
         limits,
+        allow_unsorted_dictionaries,
     };
     let node = parser.parse_value(0)?;
     Ok((node, parser.position))
@@ -187,6 +213,7 @@ struct Parser<'a> {
     input: &'a [u8],
     position: usize,
     limits: Limits,
+    allow_unsorted_dictionaries: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -319,7 +346,13 @@ impl<'a> Parser<'a> {
                 });
             }
             let key = self.parse_bytes()?;
-            if entries.last().is_some_and(|previous| previous.key >= key) {
+            if self.allow_unsorted_dictionaries {
+                if entries.iter().any(|previous| previous.key == key) {
+                    return Err(ParseError::DictionaryKeysNotStrictlySorted {
+                        position: key_position,
+                    });
+                }
+            } else if entries.last().is_some_and(|previous| previous.key >= key) {
                 return Err(ParseError::DictionaryKeysNotStrictlySorted {
                     position: key_position,
                 });
@@ -328,6 +361,9 @@ impl<'a> Parser<'a> {
             entries.push(DictionaryEntry { key, value });
         }
         self.position += 1;
+        if self.allow_unsorted_dictionaries {
+            entries.sort_unstable_by(|left, right| left.key.cmp(right.key));
+        }
         Ok(Value::Dictionary(entries))
     }
 
@@ -343,7 +379,10 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Limits, ParseError, Value, parse, parse_prefix, parse_with_limits};
+    use super::{
+        Limits, ParseError, Value, parse, parse_prefix, parse_with_limits,
+        parse_with_limits_permissive_dictionaries,
+    };
 
     #[test]
     fn parses_nested_canonical_value_with_spans() {
@@ -378,6 +417,22 @@ mod tests {
             parse(b"1:a1:b"),
             Err(ParseError::TrailingData { position: 3 })
         );
+    }
+
+    #[test]
+    fn permissive_wire_mode_sorts_keys_but_rejects_duplicates() {
+        let limits = Limits::default();
+        let parsed = parse_with_limits_permissive_dictionaries(b"d1:bi1e1:ai2ee", limits)
+            .expect("permissive dictionary order");
+        let Value::Dictionary(entries) = parsed.value else {
+            panic!("dictionary expected");
+        };
+        assert_eq!(entries[0].key, b"a");
+        assert_eq!(entries[1].key, b"b");
+        assert!(matches!(
+            parse_with_limits_permissive_dictionaries(b"d1:ai1e1:ai2ee", limits),
+            Err(ParseError::DictionaryKeysNotStrictlySorted { .. })
+        ));
     }
 
     #[test]

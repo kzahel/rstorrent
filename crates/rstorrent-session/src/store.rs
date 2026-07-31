@@ -3,8 +3,10 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use rstorrent_engine::dht::DhtSnapshot;
 use rstorrent_engine::{PreparedFileHash, plan_descriptor_storage};
 use rstorrent_protocol::bencode::MAX_BENCODE_INPUT_LENGTH;
+use rstorrent_protocol::dht::{DhtEndpoint, DhtIp, NodeContact, NodeId};
 use rstorrent_protocol::magnet::Magnet;
 use rstorrent_protocol::metainfo::{MAX_FILES, MAX_PIECES, Metainfo};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
@@ -16,10 +18,30 @@ use crate::control::{
 };
 use crate::have::{HaveError, HaveState};
 
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 const DATABASE_FILENAME: &str = "session.db";
 const MAX_RECEIPTS: i64 = 1024;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(2);
+const DHT_TABLES_SQL: &str = "CREATE TABLE dht_state (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        format_version INTEGER NOT NULL CHECK (format_version > 0),
+        node_id BLOB NOT NULL CHECK (length(node_id) = 20)
+     );
+     CREATE TABLE dht_nodes (
+        family INTEGER NOT NULL CHECK (family IN (4, 6)),
+        sample_order INTEGER NOT NULL CHECK (
+            sample_order >= 0 AND sample_order < 64
+        ),
+        node_id BLOB NOT NULL CHECK (length(node_id) = 20),
+        address BLOB NOT NULL CHECK (
+            (family = 4 AND length(address) = 4) OR
+            (family = 6 AND length(address) = 16)
+        ),
+        port INTEGER NOT NULL CHECK (port > 0 AND port <= 65535),
+        PRIMARY KEY (family, sample_order),
+        UNIQUE (family, node_id),
+        UNIQUE (family, address, port)
+     ) WITHOUT ROWID;";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfiguredStorageRoot {
@@ -146,6 +168,117 @@ impl SessionStore {
 
     pub fn snapshot(&self) -> Result<ServiceSnapshot, StoreError> {
         read_snapshot(&self.connection, &self.profile_id)
+    }
+
+    pub fn load_dht_snapshot(&self) -> Result<Option<DhtSnapshot>, StoreError> {
+        let state = self
+            .connection
+            .query_row(
+                "SELECT format_version, node_id FROM dht_state WHERE singleton = 1",
+                [],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
+            )
+            .optional()?;
+        let Some((version, node_id)) = state else {
+            return Ok(None);
+        };
+        let version = u32::try_from(version)
+            .map_err(|_| StoreError::DurableState("invalid DHT format version".to_owned()))?;
+        let node_id =
+            NodeId(node_id.try_into().map_err(|_| {
+                StoreError::DurableState("invalid persisted DHT node ID".to_owned())
+            })?);
+        let mut statement = self.connection.prepare(
+            "SELECT family, node_id, address, port
+             FROM dht_nodes ORDER BY family, sample_order",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Vec<u8>>(1)?,
+                row.get::<_, Vec<u8>>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        })?;
+        let mut nodes_v4 = Vec::new();
+        let mut nodes_v6 = Vec::new();
+        for row in rows {
+            let (family, remote_id, address, port) = row?;
+            let id = NodeId(remote_id.try_into().map_err(|_| {
+                StoreError::DurableState("invalid saved DHT contact ID".to_owned())
+            })?);
+            let port = u16::try_from(port)
+                .ok()
+                .filter(|port| *port != 0)
+                .ok_or_else(|| StoreError::DurableState("invalid saved DHT port".to_owned()))?;
+            let ip = match family {
+                4 => DhtIp::V4(<[u8; 4]>::try_from(address).map_err(|_| {
+                    StoreError::DurableState("invalid saved DHT IPv4 address".to_owned())
+                })?),
+                6 => DhtIp::V6(<[u8; 16]>::try_from(address).map_err(|_| {
+                    StoreError::DurableState("invalid saved DHT IPv6 address".to_owned())
+                })?),
+                _ => {
+                    return Err(StoreError::DurableState(
+                        "invalid saved DHT address family".to_owned(),
+                    ));
+                }
+            };
+            let contact = NodeContact {
+                id,
+                address: DhtEndpoint::new(ip, port),
+            };
+            if family == 4 {
+                nodes_v4.push(contact);
+            } else {
+                nodes_v6.push(contact);
+            }
+        }
+        DhtSnapshot {
+            version,
+            node_id,
+            nodes_v4,
+            nodes_v6,
+        }
+        .validate()
+        .map(Some)
+        .map_err(|error| StoreError::DurableState(error.to_string()))
+    }
+
+    pub fn save_dht_snapshot(&mut self, snapshot: DhtSnapshot) -> Result<(), StoreError> {
+        let snapshot = snapshot
+            .validate()
+            .map_err(|error| StoreError::DurableState(error.to_string()))?;
+        let transaction = self.connection.transaction()?;
+        transaction.execute("DELETE FROM dht_nodes", [])?;
+        transaction.execute("DELETE FROM dht_state", [])?;
+        transaction.execute(
+            "INSERT INTO dht_state(singleton, format_version, node_id)
+             VALUES (1, ?1, ?2)",
+            params![i64::from(snapshot.version), snapshot.node_id.0.as_slice()],
+        )?;
+        for (family, nodes) in [(4_i64, snapshot.nodes_v4), (6_i64, snapshot.nodes_v6)] {
+            for (order, node) in nodes.into_iter().enumerate() {
+                let address = match node.address.ip {
+                    DhtIp::V4(address) => address.to_vec(),
+                    DhtIp::V6(address) => address.to_vec(),
+                };
+                transaction.execute(
+                    "INSERT INTO dht_nodes(
+                        family, sample_order, node_id, address, port
+                     ) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        family,
+                        i64::try_from(order).expect("DHT sample order is bounded"),
+                        node.id.0.as_slice(),
+                        address,
+                        i64::from(node.address.port),
+                    ],
+                )?;
+            }
+        }
+        transaction.commit()?;
+        Ok(())
     }
 
     pub fn handle_durable(
@@ -939,6 +1072,7 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
              VALUES (1, ?1, 0)",
             [profile_id],
         )?;
+        transaction.execute_batch(DHT_TABLES_SQL)?;
         transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         transaction.commit()?;
     }
@@ -1010,6 +1144,13 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
              DROP TABLE file_selection_v1;
              DROP TABLE torrents_v1;",
         )?;
+        transaction.execute_batch(DHT_TABLES_SQL)?;
+        transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        transaction.commit()?;
+    }
+    if version == 2 {
+        let transaction = connection.transaction()?;
+        transaction.execute_batch(DHT_TABLES_SQL)?;
         transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         transaction.commit()?;
     }
@@ -1484,6 +1625,8 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use rstorrent_engine::PreparedFileHash;
+    use rstorrent_engine::dht::{DHT_SNAPSHOT_VERSION, DhtSnapshot};
+    use rstorrent_protocol::dht::{DhtEndpoint, DhtIp, NodeContact, NodeId};
     use rusqlite::Connection;
     use sha1::{Digest, Sha1};
 
@@ -1606,6 +1749,48 @@ mod tests {
     }
 
     #[test]
+    fn dht_snapshot_round_trips_and_rejects_corrupt_rows() {
+        let root = test_root("dht-state");
+        let configured = configured_root(&root);
+        let mut store =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
+        assert_eq!(store.load_dht_snapshot().expect("empty state"), None);
+        let snapshot = DhtSnapshot {
+            version: DHT_SNAPSHOT_VERSION,
+            node_id: NodeId([1; 20]),
+            nodes_v4: vec![NodeContact {
+                id: NodeId([2; 20]),
+                address: DhtEndpoint::new(DhtIp::V4([127, 0, 0, 1]), 6881),
+            }],
+            nodes_v6: Vec::new(),
+        };
+        store
+            .save_dht_snapshot(snapshot.clone())
+            .expect("save DHT state");
+        assert_eq!(
+            store.load_dht_snapshot().expect("load DHT state"),
+            Some(snapshot)
+        );
+        let database = store.database_path().to_owned();
+        drop(store);
+        let connection = Connection::open(&database).expect("inspect database");
+        connection
+            .execute(
+                "UPDATE dht_state SET format_version = 99 WHERE singleton = 1",
+                [],
+            )
+            .expect("corrupt version");
+        drop(connection);
+        let store = SessionStore::open(&root, "default", &[configured]).expect("reopen");
+        assert!(matches!(
+            store.load_dht_snapshot(),
+            Err(StoreError::DurableState(_))
+        ));
+        drop(store);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
     fn migrates_version_one_catalog_transactionally() {
         let root = test_root("schema-v1");
         let configured = configured_root(&root);
@@ -1618,7 +1803,12 @@ mod tests {
 
         let connection = Connection::open(&database_path).expect("open raw database");
         connection
-            .execute_batch("DROP TABLE prepared_files; PRAGMA user_version = 1;")
+            .execute_batch(
+                "DROP TABLE prepared_files;
+                 DROP TABLE dht_nodes;
+                 DROP TABLE dht_state;
+                 PRAGMA user_version = 1;",
+            )
             .expect("downgrade fixture to the version-one shape");
         drop(connection);
 

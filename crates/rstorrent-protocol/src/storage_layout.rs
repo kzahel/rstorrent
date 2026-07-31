@@ -448,6 +448,7 @@ mod tests {
             piece_length: 32_768,
             total_length: 133_304,
             name: "fixture".to_owned(),
+            private: false,
             mode: MetainfoMode::MultiFile,
             files,
         };
