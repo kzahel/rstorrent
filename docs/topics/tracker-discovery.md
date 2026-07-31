@@ -2,11 +2,11 @@
 
 Topic: `tracker-discovery`
 
-Status: Tactical `011` completed the first bounded tracker operation: one
-BEP 15 UDP connect and started announce whose compact peers enter the existing
-peer registry. Tactical `013` permits routed UDP trackers in desktop and
-Android product configurations while controlled tools remain loopback-only.
-Scheduling, tiers, and other tracker transports remain unimplemented.
+Status: Tactical `014` replaced the first one-shot operation with a supervised
+scheduled UDP tracker lifecycle. Magnet trackers form one shuffled synthetic
+tier, fall through on failure, remain eligible under bounded backoff, promote
+on success, and reannounce on a bounded response interval. Other transports
+and metainfo tracker tiers remain unimplemented.
 
 ## Scope
 
@@ -28,16 +28,12 @@ the peer registry remains the only owner of accumulated peer records.
   and requested peer count.
 - A **tracker response** is untrusted interval, swarm-count, and compact-peer
   data correlated to one announce transaction.
-- A future **tracker record** will retain URL, tier, failure history,
-  connection-token cache, and next eligible announce time independently from
-  any one in-flight operation.
-- A future **tracker manager** will own tracker records, tier selection,
-  scheduling, concurrency, cancellation, and stopped/completed events for one
-  torrent.
-
-Tactical `011` deliberately needs only an ordered bounded list of UDP tracker
-URLs and one runtime operation at a time. It must not introduce a permanent
-manager with guessed scheduling policy before a second announce exists.
+- A **tracker record** retains URL, synthetic tier, source, failure history,
+  announce state, interval, and next eligible monotonic time independently
+  from any one in-flight operation.
+- A **tracker manager** owns tracker records, selection, one in-flight UDP
+  operation, connection-token caching, retry timers, cancellation, and a
+  bounded result channel for one active torrent.
 
 ## Accepted Direction
 
@@ -66,13 +62,29 @@ a malformed packet correlated to the active transaction fails that tracker
 operation. Bounded tracker error text may be diagnostic context but never
 application state or an allocation authority.
 
-The magnet path lazily tries retained tracker URLs when the selector has no
-eligible peer, so explicit hints can work without tracker traffic while a
-failed hint can still fall through to tracker discovery. Runtime policy is
-checked before DNS when offline, after tracker resolution, on every compact
-peer observation, and again before peer dialing. One successful response may
-add several observations, but the runtime still connects to only one peer at
-a time.
+The magnet path starts its tracker manager after bounded peer-hint resolution
+and before peer selection or dialing, then keeps it alive while metadata or
+content work is active. Runtime policy is checked before DNS when offline,
+after tracker resolution, on every compact peer observation, and again before
+peer dialing. One successful response may add several observations, but the
+runtime still connects to only one peer at a time. The parent explicitly
+cancels and joins the manager on completion, failure, pause, or shutdown.
+
+Magnet `tr` parameters do not encode BEP 12 tier structure, so retained UDP
+trackers form one initially shuffled synthetic tier. Failure falls through to
+another eligible record in the same round. After all records fail, the
+manager waits for the earliest retry; each record remains eligible
+indefinitely under the libtorrent-style quadratic delay
+`5 + 12.5 * failures²` seconds, capped at 60 minutes. A valid response,
+including a zero-peer response, ends the round, resets that record's failure
+count, promotes it, and schedules an ordinary announce from its interval
+clamped to five minutes through 24 hours.
+
+Each UDP connect or announce exchange sends immediately, retransmits once
+after 15 seconds of silence, and completes after an aggregate 30-second
+deadline. Valid connection IDs are cached per remote endpoint for 60 seconds
+in a bounded cache. A started event is repeated until acknowledged; later
+successful announces use the ordinary event.
 
 ## Reference Direction
 
@@ -121,24 +133,36 @@ tracker operation under online policy, then timed out waiting for that
 tracker's connect response. This is evidence that policy no longer rejects
 the public route, not evidence of a reachable public swarm.
 
-## First-Slice Limits And Next Work
+Tactical `014` adds deterministic schedule tests for fallback, promotion,
+quadratic and saturated retry delays, bounded success intervals, and correct
+earliest-retry selection. Scripted UDP tests cover dropped connect and
+announce requests, retransmission, token reuse and expiry, started-to-ordinary
+events, zero-peer success, and cancellation with socket release. Three
+controlled libtorrent `2.0.13.0` runs still acquired verified metadata and all
+content from a tracker-only magnet with exactly one connect and one announce
+per run.
 
-Tactical `011` does not cache the connection ID, retransmit UDP requests,
-schedule reannounces, emit stopped or completed events, announce a real
-listening port, honor tiers, or support HTTP, HTTPS, WebSocket, authentication,
-proxying, or BEP 41 URL-data extensions. It asks for a bounded peer set,
-reports 16 KiB left when magnet metadata is unknown as libtorrent does, and
-owns no incoming peer listener.
+The application now emits typed tracker attempt, retransmit, failure,
+fallback, retry, reannounce, success, unusable-response, and peer-dial
+diagnostics. Failure retry and successful reannounce are distinct facts. A
+retained automatic action with no eligible peer projects as
+`waiting/discovery/waiting_for_discovery`, not blocked. Headless Chrome over
+the loopback gateway and an owned API 34 arm64 no-window AVD rendered the same
+assessment and tracker-filtered timeline. The Android run also passed Activity
+recreation/backgrounding and joined foreground shutdown.
 
-The next peer-focused work should first add bounded multi-peer transfer so the
-additional observations already returned by a tracker can improve reliability
-and eventually throughput. The next tracker-focused tactical should introduce
-the real per-torrent tracker record and scheduled lifecycle when reannounce
-behavior becomes material. A live public test-torrent run remains useful
-manual evidence but must not replace controlled protocol and libtorrent tests.
+## Current Limits And Next Work
 
-Completed Tactical `012` made policy rejection and source exhaustion
-observable, keeps the torrent in its awaiting-metadata phase, and reports
-blocked progress only because the current runtime has no other enabled or
-scheduled discovery mechanism. Tactical `013` broadens product egress but does
-not add retransmission, tracker scheduling, DHT, or another discovery source.
+The manager still has one UDP operation at a time and volatile state. It does
+not parse `.torrent` `announce-list` tiers, support HTTP, HTTPS, WebSocket,
+authentication, proxying, or BEP 41 URL-data, emit completed/stopped events,
+announce real transfer counters or a nonzero listening port, scrape, or share
+a session-wide tracker-operation budget. It reports 16 KiB left while magnet
+metadata is unknown and owns no incoming peer listener.
+
+The next peer-focused work should add bounded multi-peer transfer so tracker
+observations can improve reliability and throughput. Later tracker work
+should follow ownership established by incoming listening, transfer
+accounting, metainfo tiers, persistence, and session-wide resource policy. A
+live public test-torrent run remains useful manual evidence but cannot replace
+controlled protocol and libtorrent tests.

@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::error::Error;
 use std::fmt;
 use std::io;
@@ -32,6 +32,8 @@ use rstorrent_protocol::udp_tracker::{
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket, lookup_host};
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use tokio::time::{Instant as TokioInstant, timeout, timeout_at};
 use tokio_util::sync::CancellationToken;
 
@@ -47,11 +49,16 @@ use crate::selective_storage::{
 use crate::storage::{
     StagingFile, StorageError, VERIFICATION_CHUNK_LENGTH, remove_staging_if_present, staging_path,
 };
+use crate::tracker::{TrackerAction, TrackerSchedule, TrackerWaitKind};
 
 const CLIENT_PEER_ID: [u8; 20] = *b"-RS0001-000000000000";
 const NETWORK_READ_LENGTH: usize = 16 * 1024;
 const NETWORK_RESOLUTION_TIMEOUT: Duration = Duration::from_secs(10);
-const UDP_TRACKER_RESPONSE_TIMEOUT: Duration = Duration::from_secs(5);
+const UDP_TRACKER_RETRANSMIT_AFTER: Duration = Duration::from_secs(15);
+const UDP_TRACKER_COMPLETION_TIMEOUT: Duration = Duration::from_secs(30);
+const UDP_TRACKER_TOKEN_LIFETIME: Duration = Duration::from_secs(60);
+const MAX_UDP_TRACKER_TOKENS: usize = 64;
+const TRACKER_RESULT_QUEUE: usize = 4;
 const MAX_RESOLVED_ADDRESSES: usize = 32;
 const UNKNOWN_MAGNET_LEFT: u64 = 16 * 1024;
 const UDP_TRACKER_RECEIVE_LENGTH: usize = MAX_ANNOUNCE_RESPONSE_LENGTH + 1;
@@ -112,7 +119,7 @@ pub trait DownloadActivitySink: Send + Sync + fmt::Debug {
     fn record(&self, event: DownloadActivityEvent);
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DownloadActivityEvent {
     PieceStarted {
         piece_index: u32,
@@ -135,6 +142,46 @@ pub enum DownloadActivityEvent {
     },
     PieceVerified {
         piece_index: u32,
+    },
+    TrackerAnnounceStarted {
+        tracker: String,
+        tier: u8,
+        attempt: u32,
+        event: AnnounceEvent,
+    },
+    TrackerUdpRetransmitted {
+        tracker: String,
+        operation: &'static str,
+    },
+    TrackerAnnounceFailed {
+        tracker: String,
+        failures: u8,
+        retry_in_seconds: u64,
+        detail: String,
+    },
+    TrackerFallbackSelected {
+        tracker: String,
+        tier: u8,
+    },
+    TrackerRetryScheduled {
+        tracker: String,
+        retry_in_seconds: u64,
+    },
+    TrackerReannounceScheduled {
+        tracker: String,
+        announce_in_seconds: u64,
+    },
+    TrackerAnnounceSucceeded {
+        tracker: String,
+        peer_count: u32,
+        interval_seconds: u64,
+    },
+    TrackerPeersUnavailable {
+        tracker: String,
+        peer_count: u32,
+    },
+    PeerDialStarted {
+        peer: String,
     },
 }
 
@@ -419,6 +466,7 @@ pub enum DownloadError {
         operation: &'static str,
         timeout: Duration,
     },
+    TrackerTask(String),
     CleanupAfterFailure {
         failure: String,
         source: io::Error,
@@ -505,6 +553,7 @@ impl fmt::Display for DownloadError {
                     timeout.as_secs()
                 )
             }
+            Self::TrackerTask(message) => write!(formatter, "tracker task: {message}"),
             Self::CleanupAfterFailure { failure, source } => write!(
                 formatter,
                 "{failure}; additionally failed to remove staging output: {source}"
@@ -595,16 +644,8 @@ async fn resume_magnet_owned(
     descriptors: Option<(DescriptorStorage, bool)>,
 ) -> Result<DownloadReport, DownloadError> {
     validate_resumable_magnet_download_config(&config)?;
-    let result = tokio::select! {
-        biased;
-        _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
-        result = run_resumable_magnet_download(
-            config,
-            checkpoints,
-            control.clone(),
-            descriptors,
-        ) => result,
-    };
+    let result =
+        run_resumable_magnet_download(config, checkpoints, control.clone(), descriptors).await;
     control.clear_buffered_payload();
     result
 }
@@ -615,11 +656,7 @@ pub async fn download_magnet_metadata_with_control(
     control: DownloadControl,
 ) -> Result<Vec<u8>, DownloadError> {
     validate_network_config(network)?;
-    let result = tokio::select! {
-        biased;
-        _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
-        result = run_magnet_metadata(magnet, network) => result,
-    };
+    let result = run_magnet_metadata(magnet, network, control.clone()).await;
     control.clear_buffered_payload();
     result
 }
@@ -631,11 +668,7 @@ pub async fn download_magnet_with_control(
     validate_magnet_download_config(&config)?;
     let output_path = config.output_path.clone();
     let staging = staging_path(&output_path).map_err(DownloadError::Storage)?;
-    let result = tokio::select! {
-        biased;
-        _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
-        result = run_magnet_download(config, control.clone()) => result,
-    };
+    let result = run_magnet_download(config, control.clone()).await;
     control.clear_buffered_payload();
 
     match result {
@@ -852,21 +885,320 @@ impl PremetadataPeerState {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+struct UdpTrackerTiming {
+    retransmit_after: Duration,
+    completion_timeout: Duration,
+}
+
+impl UdpTrackerTiming {
+    const PRODUCTION: Self = Self {
+        retransmit_after: UDP_TRACKER_RETRANSMIT_AFTER,
+        completion_timeout: UDP_TRACKER_COMPLETION_TIMEOUT,
+    };
+}
+
+#[derive(Clone, Copy, Debug)]
+struct UdpTrackerAnnounce {
+    info_hash: [u8; 20],
+    key: u32,
+    event: AnnounceEvent,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct UdpTrackerExchange<'a> {
+    timing: UdpTrackerTiming,
+    control: &'a DownloadControl,
+    tracker_label: &'a str,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct UdpTrackerToken {
+    connection_id: u64,
+    expires_at: Instant,
+}
+
+#[derive(Debug, Default)]
+struct UdpTrackerTokenCache {
+    tokens: BTreeMap<SocketAddr, UdpTrackerToken>,
+}
+
+impl UdpTrackerTokenCache {
+    fn get(&mut self, address: SocketAddr, now: Instant) -> Option<u64> {
+        self.prune(now);
+        self.tokens
+            .get(&address)
+            .filter(|token| token.expires_at > now)
+            .map(|token| token.connection_id)
+    }
+
+    fn insert(&mut self, address: SocketAddr, connection_id: u64, now: Instant) {
+        self.prune(now);
+        if self.tokens.len() == MAX_UDP_TRACKER_TOKENS && !self.tokens.contains_key(&address) {
+            let first = self.tokens.keys().next().copied();
+            if let Some(first) = first {
+                self.tokens.remove(&first);
+            }
+        }
+        self.tokens.insert(
+            address,
+            UdpTrackerToken {
+                connection_id,
+                expires_at: now + UDP_TRACKER_TOKEN_LIFETIME,
+            },
+        );
+    }
+
+    fn remove(&mut self, address: SocketAddr) {
+        self.tokens.remove(&address);
+    }
+
+    fn prune(&mut self, now: Instant) {
+        self.tokens.retain(|_, token| token.expires_at > now);
+    }
+}
+
+#[derive(Debug)]
+enum TrackerUpdate {
+    Peers {
+        tracker: String,
+        peers: Vec<CompactPeer>,
+    },
+}
+
+#[derive(Debug)]
+struct TrackerManager {
+    receiver: mpsc::Receiver<TrackerUpdate>,
+    cancellation: CancellationToken,
+    task: Option<JoinHandle<()>>,
+}
+
+impl TrackerManager {
+    fn start(
+        mut trackers: Vec<UdpTrackerUrl>,
+        info_hash: [u8; 20],
+        network_policy: NetworkPolicy,
+        control: DownloadControl,
+    ) -> Result<Self, DownloadError> {
+        shuffle_tracker_urls(&mut trackers)?;
+        let tracker_key = random_nonzero_u32()?;
+        let cancellation = CancellationToken::new();
+        let task_cancellation = cancellation.clone();
+        let (sender, receiver) = mpsc::channel(TRACKER_RESULT_QUEUE);
+        let task = tokio::spawn(run_tracker_manager(
+            TrackerSchedule::new(trackers),
+            info_hash,
+            tracker_key,
+            network_policy,
+            control,
+            task_cancellation,
+            sender,
+        ));
+        Ok(Self {
+            receiver,
+            cancellation,
+            task: Some(task),
+        })
+    }
+
+    async fn next_peers(&mut self) -> Result<(String, Vec<CompactPeer>), DownloadError> {
+        enum Outcome {
+            Update(Option<TrackerUpdate>),
+            Task(Result<(), tokio::task::JoinError>),
+        }
+        let outcome = {
+            let Some(task) = self.task.as_mut() else {
+                return Err(DownloadError::TrackerTask(
+                    "tracker owner terminated unexpectedly".to_owned(),
+                ));
+            };
+            tokio::select! {
+                update = self.receiver.recv() => Outcome::Update(update),
+                result = task => Outcome::Task(result),
+            }
+        };
+        match outcome {
+            Outcome::Update(Some(TrackerUpdate::Peers { tracker, peers })) => Ok((tracker, peers)),
+            Outcome::Update(None) => Err(DownloadError::TrackerTask(
+                "tracker result channel closed unexpectedly".to_owned(),
+            )),
+            Outcome::Task(result) => {
+                self.task.take();
+                match result {
+                    Ok(()) => Err(DownloadError::TrackerTask(
+                        "tracker owner terminated unexpectedly".to_owned(),
+                    )),
+                    Err(error) => Err(DownloadError::TrackerTask(error.to_string())),
+                }
+            }
+        }
+    }
+
+    async fn shutdown(mut self) -> Result<(), DownloadError> {
+        self.cancellation.cancel();
+        self.receiver.close();
+        let Some(task) = self.task.take() else {
+            return Ok(());
+        };
+        task.await
+            .map_err(|error| DownloadError::TrackerTask(error.to_string()))
+    }
+}
+
+impl Drop for TrackerManager {
+    fn drop(&mut self) {
+        self.cancellation.cancel();
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
+    }
+}
+
+async fn run_tracker_manager(
+    mut schedule: TrackerSchedule,
+    info_hash: [u8; 20],
+    tracker_key: u32,
+    network_policy: NetworkPolicy,
+    control: DownloadControl,
+    cancellation: CancellationToken,
+    sender: mpsc::Sender<TrackerUpdate>,
+) {
+    let started_at = Instant::now();
+    let mut token_cache = UdpTrackerTokenCache::default();
+    loop {
+        match schedule.next_action(started_at.elapsed()) {
+            TrackerAction::Announce {
+                id,
+                url,
+                tier,
+                source: _,
+                event,
+                attempt,
+                fallback,
+            } => {
+                let tracker = udp_tracker_label(&url);
+                if fallback {
+                    control.emit(DownloadActivityEvent::TrackerFallbackSelected {
+                        tracker: tracker.clone(),
+                        tier,
+                    });
+                }
+                control.emit(DownloadActivityEvent::TrackerAnnounceStarted {
+                    tracker: tracker.clone(),
+                    tier,
+                    attempt,
+                    event,
+                });
+                let result = tokio::select! {
+                    biased;
+                    _ = cancellation.cancelled() => return,
+                    result = announce_udp_tracker(
+                        &url,
+                        network_policy,
+                        &mut token_cache,
+                        UdpTrackerAnnounce {
+                            info_hash,
+                            key: tracker_key,
+                            event,
+                        },
+                        UdpTrackerExchange {
+                            timing: UdpTrackerTiming::PRODUCTION,
+                            control: &control,
+                            tracker_label: &tracker,
+                        },
+                    ) => result,
+                };
+                let now = started_at.elapsed();
+                match result {
+                    Ok(response) => {
+                        let success = schedule.succeeded(id, now, response.interval);
+                        control.emit(DownloadActivityEvent::TrackerAnnounceSucceeded {
+                            tracker: tracker.clone(),
+                            peer_count: response.peers.len().try_into().unwrap_or(u32::MAX),
+                            interval_seconds: success.interval.as_secs(),
+                        });
+                        let send = sender.send(TrackerUpdate::Peers {
+                            tracker,
+                            peers: response.peers,
+                        });
+                        tokio::select! {
+                            biased;
+                            _ = cancellation.cancelled() => return,
+                            result = send => {
+                                if result.is_err() {
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        let failure = schedule.failed(id, now);
+                        control.emit(DownloadActivityEvent::TrackerAnnounceFailed {
+                            tracker,
+                            failures: failure.failures,
+                            retry_in_seconds: failure.retry_in.as_secs(),
+                            detail: error.to_string(),
+                        });
+                    }
+                }
+            }
+            TrackerAction::Wait { delay, url, kind } => {
+                let tracker = udp_tracker_label(&url);
+                match kind {
+                    TrackerWaitKind::FailureRetry => {
+                        control.emit(DownloadActivityEvent::TrackerRetryScheduled {
+                            tracker,
+                            retry_in_seconds: delay.as_secs(),
+                        });
+                    }
+                    TrackerWaitKind::Reannounce => {
+                        control.emit(DownloadActivityEvent::TrackerReannounceScheduled {
+                            tracker,
+                            announce_in_seconds: delay.as_secs(),
+                        });
+                    }
+                }
+                tokio::select! {
+                    biased;
+                    _ = cancellation.cancelled() => return,
+                    _ = tokio::time::sleep(delay) => {}
+                }
+            }
+            TrackerAction::Exhausted => return,
+        }
+    }
+}
+
+fn shuffle_tracker_urls(trackers: &mut [UdpTrackerUrl]) -> Result<(), DownloadError> {
+    for last in (1..trackers.len()).rev() {
+        let selected = usize::try_from(random_nonzero_u32()?).unwrap_or(usize::MAX) % (last + 1);
+        trackers.swap(last, selected);
+    }
+    Ok(())
+}
+
+fn udp_tracker_label(tracker: &UdpTrackerUrl) -> String {
+    if tracker.host.contains(':') {
+        format!("udp://[{}]:{}", tracker.host, tracker.port)
+    } else {
+        format!("udp://{}:{}", tracker.host, tracker.port)
+    }
+}
+
 #[derive(Debug)]
 struct PeerSession {
     registry: PeerRegistry,
     selector: PeerSelector,
     started_at: Instant,
     network: NetworkConfig,
-    udp_trackers: Vec<UdpTrackerUrl>,
-    next_udp_tracker: usize,
-    tracker_key: Option<u32>,
+    tracker: Option<TrackerManager>,
+    control: DownloadControl,
     connection: Option<PeerConnection>,
     last_error: Option<DownloadError>,
 }
 
 impl PeerSession {
-    fn new(network: NetworkConfig) -> Result<Self, DownloadError> {
+    fn new(network: NetworkConfig, control: DownloadControl) -> Result<Self, DownloadError> {
         validate_network_config(network)?;
         Ok(Self {
             registry: PeerRegistry::new(PeerRegistryConfig::default())
@@ -874,9 +1206,8 @@ impl PeerSession {
             selector: PeerSelector,
             started_at: Instant::now(),
             network,
-            udp_trackers: Vec::new(),
-            next_udp_tracker: 0,
-            tracker_key: None,
+            tracker: None,
+            control,
             connection: None,
             last_error: None,
         })
@@ -887,7 +1218,7 @@ impl PeerSession {
         source: PeerSource,
         network: NetworkConfig,
     ) -> Result<Self, DownloadError> {
-        let mut peers = Self::new(network)?;
+        let mut peers = Self::new(network, DownloadControl::new())?;
         if matches!(network.policy, NetworkPolicy::Offline) {
             return Err(DownloadError::NetworkDisabled);
         }
@@ -895,14 +1226,25 @@ impl PeerSession {
         Ok(peers)
     }
 
-    async fn from_magnet(magnet: &Magnet, network: NetworkConfig) -> Result<Self, DownloadError> {
-        let mut peers = Self::new(network)?;
+    async fn from_magnet(
+        magnet: &Magnet,
+        network: NetworkConfig,
+        control: DownloadControl,
+    ) -> Result<Self, DownloadError> {
+        let mut peers = Self::new(network, control)?;
         if !network.policy.permits_dns() {
             return Err(DownloadError::NetworkDisabled);
         }
-        peers.udp_trackers.clone_from(&magnet.udp_trackers);
         peers.resolve_peer_hints(&magnet.peer_hints).await;
-        if peers.registry.is_empty() && peers.udp_trackers.is_empty() {
+        if !magnet.udp_trackers.is_empty() {
+            peers.tracker = Some(TrackerManager::start(
+                magnet.udp_trackers.clone(),
+                magnet.info_hash,
+                network.policy,
+                peers.control.clone(),
+            )?);
+        }
+        if peers.registry.is_empty() && peers.tracker.is_none() {
             return Err(peers
                 .last_error
                 .take()
@@ -951,43 +1293,38 @@ impl PeerSession {
         self.started_at.elapsed()
     }
 
-    async fn discover_next_tracker(&mut self, info_hash: [u8; 20]) -> bool {
-        let tracker_key = match self.tracker_key {
-            Some(tracker_key) => tracker_key,
-            None => match random_nonzero_u32() {
-                Ok(tracker_key) => {
-                    self.tracker_key = Some(tracker_key);
-                    tracker_key
-                }
-                Err(error) => {
-                    self.last_error = Some(error);
-                    return false;
-                }
-            },
+    async fn receive_tracker_peers(&mut self) -> Result<(), DownloadError> {
+        let Some(tracker) = self.tracker.as_mut() else {
+            return Err(self
+                .last_error
+                .take()
+                .unwrap_or(DownloadError::NoUsablePeer));
         };
-        while let Some(tracker) = self.udp_trackers.get(self.next_udp_tracker).cloned() {
-            self.next_udp_tracker += 1;
-            match announce_udp_tracker(&tracker, info_hash, tracker_key, self.network.policy).await
-            {
-                Ok(response) => {
-                    for compact_peer in response.peers {
-                        let address = compact_peer_address(compact_peer);
-                        if let Err(error) = self.observe_address(address, PeerSource::Tracker) {
-                            self.last_error = Some(error);
-                        }
-                    }
-                    let context = PeerSelectionContext {
-                        now: self.elapsed(),
-                    };
-                    if self.selector.select(&self.registry, context).is_some() {
-                        return true;
-                    }
-                    self.last_error = Some(DownloadError::NoUsablePeer);
-                }
-                Err(error) => self.last_error = Some(error),
+        let (tracker, compact_peers) = tracker.next_peers().await?;
+        let peer_count = compact_peers.len().try_into().unwrap_or(u32::MAX);
+        for compact_peer in compact_peers {
+            let address = compact_peer_address(compact_peer);
+            if let Err(error) = self.observe_address(address, PeerSource::Tracker) {
+                self.last_error = Some(error);
             }
         }
-        false
+        if self
+            .selector
+            .select(
+                &self.registry,
+                PeerSelectionContext {
+                    now: self.elapsed(),
+                },
+            )
+            .is_none()
+        {
+            self.control
+                .emit(DownloadActivityEvent::TrackerPeersUnavailable {
+                    tracker,
+                    peer_count,
+                });
+        }
+        Ok(())
     }
 
     async fn connect_next(
@@ -1003,15 +1340,13 @@ impl PeerSession {
             let candidate = match self.selector.select(&self.registry, context) {
                 Some(candidate) => candidate,
                 None => {
-                    if self.discover_next_tracker(info_hash).await {
-                        continue;
-                    }
-                    return Err(self
-                        .last_error
-                        .take()
-                        .unwrap_or(DownloadError::NoUsablePeer));
+                    self.receive_tracker_peers().await?;
+                    continue;
                 }
             };
+            self.control.emit(DownloadActivityEvent::PeerDialStarted {
+                peer: candidate.endpoint().to_string(),
+            });
             let attempt = self
                 .registry
                 .begin_dial(candidate, context)
@@ -1081,6 +1416,13 @@ impl PeerSession {
             .connection_closed(connection.attempt, self.elapsed(), failure)
             .map_err(DownloadError::PeerRegistry)
     }
+
+    async fn shutdown_tracker(&mut self) -> Result<(), DownloadError> {
+        let Some(tracker) = self.tracker.take() else {
+            return Ok(());
+        };
+        tracker.shutdown().await
+    }
 }
 
 fn random_nonzero_u32() -> Result<u32, DownloadError> {
@@ -1113,9 +1455,10 @@ async fn resolve_host(
 
 async fn announce_udp_tracker(
     tracker: &UdpTrackerUrl,
-    info_hash: [u8; 20],
-    key: u32,
     network_policy: NetworkPolicy,
+    token_cache: &mut UdpTrackerTokenCache,
+    announce: UdpTrackerAnnounce,
+    exchange: UdpTrackerExchange<'_>,
 ) -> Result<AnnounceResponse, DownloadError> {
     if !network_policy.permits_dns() {
         return Err(DownloadError::NetworkDisabled);
@@ -1128,7 +1471,7 @@ async fn announce_udp_tracker(
             continue;
         }
         found_allowed = true;
-        match announce_udp_tracker_address(address, info_hash, key).await {
+        match announce_udp_tracker_address(address, token_cache, announce, exchange).await {
             Ok(response) => return Ok(response),
             Err(error) => last_error = Some(error),
         }
@@ -1144,8 +1487,9 @@ async fn announce_udp_tracker(
 
 async fn announce_udp_tracker_address(
     address: SocketAddr,
-    info_hash: [u8; 20],
-    key: u32,
+    token_cache: &mut UdpTrackerTokenCache,
+    announce: UdpTrackerAnnounce,
+    exchange: UdpTrackerExchange<'_>,
 ) -> Result<AnnounceResponse, DownloadError> {
     let bind_address = match address {
         SocketAddr::V4(_) => SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
@@ -1165,58 +1509,73 @@ async fn announce_udp_tracker_address(
             source,
         })?;
 
-    let connect_transaction = TransactionId::new(random_nonzero_u32()?);
-    send_udp_tracker_packet(
-        &socket,
-        &encode_connect_request(connect_transaction),
-        "send UDP tracker connect",
-    )
-    .await?;
-    let connection_id = receive_udp_tracker_response(&socket, "connect response", |bytes| {
-        parse_connect_response(bytes, connect_transaction)
-    })
-    .await?;
+    let connection_id = match token_cache.get(address, Instant::now()) {
+        Some(connection_id) => connection_id,
+        None => {
+            let connect_transaction = TransactionId::new(random_nonzero_u32()?);
+            let connect_request = encode_connect_request(connect_transaction);
+            let connection_id = exchange_udp_tracker_packet(
+                &socket,
+                &connect_request,
+                "connect response",
+                exchange.timing,
+                exchange.control,
+                exchange.tracker_label,
+                |bytes| parse_connect_response(bytes, connect_transaction),
+            )
+            .await?;
+            token_cache.insert(address, connection_id, Instant::now());
+            connection_id
+        }
+    };
 
-    let mut announce_transaction = TransactionId::new(random_nonzero_u32()?);
-    if announce_transaction == connect_transaction {
-        announce_transaction = TransactionId::new(connect_transaction.get().wrapping_add(1).max(1));
-    }
+    let announce_transaction = TransactionId::new(random_nonzero_u32()?);
     let request = encode_announce_request(AnnounceRequest {
         connection_id,
         transaction_id: announce_transaction,
-        info_hash,
+        info_hash: announce.info_hash,
         peer_id: CLIENT_PEER_ID,
         downloaded: 0,
         left: UNKNOWN_MAGNET_LEFT,
         uploaded: 0,
-        event: AnnounceEvent::Started,
+        event: announce.event,
         ip_address: 0,
-        key,
+        key: announce.key,
         num_want: MAX_COMPACT_PEERS as i32,
         port: 0,
     });
-    send_udp_tracker_packet(&socket, &request, "send UDP tracker announce").await?;
     let family = match address {
         SocketAddr::V4(_) => TrackerAddressFamily::Ipv4,
         SocketAddr::V6(_) => TrackerAddressFamily::Ipv6,
     };
-    receive_udp_tracker_response(&socket, "announce response", |bytes| {
-        parse_announce_response(bytes, announce_transaction, family)
-    })
-    .await
+    let result = exchange_udp_tracker_packet(
+        &socket,
+        &request,
+        "announce response",
+        exchange.timing,
+        exchange.control,
+        exchange.tracker_label,
+        |bytes| parse_announce_response(bytes, announce_transaction, family),
+    )
+    .await;
+    if result.is_err() {
+        token_cache.remove(address);
+    }
+    result
 }
 
 async fn send_udp_tracker_packet(
     socket: &UdpSocket,
     packet: &[u8],
     operation: &'static str,
+    timeout_duration: Duration,
 ) -> Result<(), DownloadError> {
     let sent = socket.send(packet);
-    let sent = timeout(UDP_TRACKER_RESPONSE_TIMEOUT, sent)
+    let sent = timeout(timeout_duration, sent)
         .await
         .map_err(|_| DownloadError::NetworkTimedOut {
             operation,
-            timeout: UDP_TRACKER_RESPONSE_TIMEOUT,
+            timeout: timeout_duration,
         })?
         .map_err(|source| DownloadError::Io { operation, source })?;
     if sent != packet.len() {
@@ -1228,24 +1587,60 @@ async fn send_udp_tracker_packet(
     Ok(())
 }
 
-async fn receive_udp_tracker_response<T>(
+async fn exchange_udp_tracker_packet<T>(
     socket: &UdpSocket,
+    packet: &[u8],
     operation: &'static str,
+    timing: UdpTrackerTiming,
+    control: &DownloadControl,
+    tracker_label: &str,
     parse: impl Fn(&[u8]) -> Result<T, UdpTrackerError>,
 ) -> Result<T, DownloadError> {
-    let deadline = TokioInstant::now() + UDP_TRACKER_RESPONSE_TIMEOUT;
+    send_udp_tracker_packet(
+        socket,
+        packet,
+        "send UDP tracker request",
+        timing.completion_timeout,
+    )
+    .await?;
+    let started = TokioInstant::now();
+    let retransmit_at = started + timing.retransmit_after;
+    let deadline = started + timing.completion_timeout;
+    let mut retransmitted = false;
     let mut buffer = [0; UDP_TRACKER_RECEIVE_LENGTH];
     loop {
-        let received = timeout_at(deadline, socket.recv(&mut buffer))
-            .await
-            .map_err(|_| DownloadError::UdpTrackerTimedOut {
-                operation,
-                timeout: UDP_TRACKER_RESPONSE_TIMEOUT,
-            })?
-            .map_err(|source| DownloadError::Io {
+        let next_deadline = if retransmitted {
+            deadline
+        } else {
+            retransmit_at.min(deadline)
+        };
+        let received = match timeout_at(next_deadline, socket.recv(&mut buffer)).await {
+            Ok(result) => result.map_err(|source| DownloadError::Io {
                 operation: "receive UDP tracker response",
                 source,
-            })?;
+            })?,
+            Err(_) if !retransmitted && next_deadline < deadline => {
+                send_udp_tracker_packet(
+                    socket,
+                    packet,
+                    "retransmit UDP tracker request",
+                    timing.completion_timeout,
+                )
+                .await?;
+                retransmitted = true;
+                control.emit(DownloadActivityEvent::TrackerUdpRetransmitted {
+                    tracker: tracker_label.to_owned(),
+                    operation,
+                });
+                continue;
+            }
+            Err(_) => {
+                return Err(DownloadError::UdpTrackerTimedOut {
+                    operation,
+                    timeout: timing.completion_timeout,
+                });
+            }
+        };
         if received > MAX_ANNOUNCE_RESPONSE_LENGTH {
             return Err(DownloadError::UdpTrackerResponseTooLarge {
                 maximum: MAX_ANNOUNCE_RESPONSE_LENGTH,
@@ -1308,8 +1703,23 @@ async fn run_magnet_download(
     control: DownloadControl,
 ) -> Result<DownloadReport, DownloadError> {
     let magnet = Magnet::parse(&config.magnet).map_err(DownloadError::Magnet)?;
-    let mut peers = PeerSession::from_magnet(&magnet, config.network).await?;
-    run_magnet_download_with_peers(config, control, magnet, &mut peers).await
+    let mut peers = tokio::select! {
+        biased;
+        _ = control.inner.cancellation.cancelled() => return Err(DownloadError::Cancelled),
+        peers = PeerSession::from_magnet(&magnet, config.network, control.clone()) => peers?,
+    };
+    let operation_control = control.clone();
+    let result = tokio::select! {
+        biased;
+        _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
+        result = run_magnet_download_with_peers(
+            config,
+            operation_control,
+            magnet,
+            &mut peers,
+        ) => result,
+    };
+    merge_tracker_shutdown(result, peers.shutdown_tracker().await)
 }
 
 async fn run_magnet_download_with_peers(
@@ -1331,12 +1741,34 @@ async fn run_magnet_download_with_peers(
 async fn run_magnet_metadata(
     magnet: String,
     network: NetworkConfig,
+    control: DownloadControl,
 ) -> Result<Vec<u8>, DownloadError> {
     let magnet = Magnet::parse(&magnet).map_err(DownloadError::Magnet)?;
-    let mut peers = PeerSession::from_magnet(&magnet, network).await?;
-    let (raw_info, _) = peers.acquire_metadata(magnet.info_hash).await?;
-    peers.close_current(None)?;
-    Ok(raw_info)
+    let mut peers = tokio::select! {
+        biased;
+        _ = control.inner.cancellation.cancelled() => return Err(DownloadError::Cancelled),
+        peers = PeerSession::from_magnet(&magnet, network, control.clone()) => peers?,
+    };
+    let result = tokio::select! {
+        biased;
+        _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
+        result = async {
+            let (raw_info, _) = peers.acquire_metadata(magnet.info_hash).await?;
+            peers.close_current(None)?;
+            Ok(raw_info)
+        } => result,
+    };
+    merge_tracker_shutdown(result, peers.shutdown_tracker().await)
+}
+
+fn merge_tracker_shutdown<T>(
+    result: Result<T, DownloadError>,
+    shutdown: Result<(), DownloadError>,
+) -> Result<T, DownloadError> {
+    match (result, shutdown) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Ok(_), Err(error)) | (Err(error), _) => Err(error),
+    }
 }
 
 #[derive(Clone)]
@@ -1369,22 +1801,31 @@ async fn run_resumable_magnet_download(
                 "stored metadata does not match the magnet identity".to_owned(),
             ));
         }
-        let mut peers = PeerSession::from_magnet(&magnet, config.network).await?;
+        let mut peers = tokio::select! {
+            biased;
+            _ = control.inner.cancellation.cancelled() => return Err(DownloadError::Cancelled),
+            peers = PeerSession::from_magnet(&magnet, config.network, control.clone()) => peers?,
+        };
         let content_config = ContentDownloadConfig {
             output_path: config.output_path,
             max_buffered_payload_bytes: config.max_buffered_payload_bytes,
             skip_files: config.skip_files,
             materialize_files: Vec::new(),
         };
-        return run_content_download(
-            content_config,
-            metainfo,
-            control,
-            descriptors,
-            &mut peers,
-            Some(resume),
-        )
-        .await;
+        let operation_control = control.clone();
+        let result = tokio::select! {
+            biased;
+            _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
+            result = run_content_download(
+                content_config,
+                metainfo,
+                operation_control,
+                descriptors,
+                &mut peers,
+                Some(resume),
+            ) => result,
+        };
+        return merge_tracker_shutdown(result, peers.shutdown_tracker().await);
     }
 
     if descriptors.is_some() {
@@ -1392,27 +1833,39 @@ async fn run_resumable_magnet_download(
             "descriptor storage requires verified metadata".to_owned(),
         ));
     }
-    let mut peers = PeerSession::from_magnet(&magnet, config.network).await?;
-    let (raw_info, metainfo) = peers.acquire_metadata(magnet.info_hash).await?;
-    if let Err(message) = checkpoints.metadata_verified(&raw_info) {
-        peers.close_current(None)?;
-        return Err(DownloadError::Checkpoint(message));
-    }
-    let content_config = ContentDownloadConfig {
-        output_path: config.output_path,
-        max_buffered_payload_bytes: config.max_buffered_payload_bytes,
-        skip_files: config.skip_files,
-        materialize_files: Vec::new(),
+    let mut peers = tokio::select! {
+        biased;
+        _ = control.inner.cancellation.cancelled() => return Err(DownloadError::Cancelled),
+        peers = PeerSession::from_magnet(&magnet, config.network, control.clone()) => peers?,
     };
-    run_content_download(
-        content_config,
-        metainfo,
-        control,
-        None,
-        &mut peers,
-        Some(resume),
-    )
-    .await
+    let operation_control = control.clone();
+    let result = tokio::select! {
+        biased;
+        _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
+        result = async {
+            let (raw_info, metainfo) = peers.acquire_metadata(magnet.info_hash).await?;
+            if let Err(message) = checkpoints.metadata_verified(&raw_info) {
+                peers.close_current(None)?;
+                return Err(DownloadError::Checkpoint(message));
+            }
+            let content_config = ContentDownloadConfig {
+                output_path: config.output_path,
+                max_buffered_payload_bytes: config.max_buffered_payload_bytes,
+                skip_files: config.skip_files,
+                materialize_files: Vec::new(),
+            };
+            run_content_download(
+                content_config,
+                metainfo,
+                operation_control,
+                None,
+                &mut peers,
+                Some(resume),
+            )
+            .await
+        } => result,
+    };
+    merge_tracker_shutdown(result, peers.shutdown_tracker().await)
 }
 
 async fn acquire_metadata_from_connection(
@@ -2454,7 +2907,8 @@ mod tests {
     use std::net::SocketAddr;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::Duration;
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
 
     use rstorrent_protocol::magnet::Magnet;
     use rstorrent_protocol::metadata::{
@@ -2467,14 +2921,17 @@ mod tests {
         encode_message,
     };
     use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
+    use rstorrent_protocol::udp_tracker::AnnounceEvent;
     use sha1::{Digest, Sha1};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream, UdpSocket};
     use tokio::time::timeout;
 
     use super::{
-        CLIENT_PEER_ID, DownloadConfig, DownloadControl, DownloadError, MagnetDownloadConfig,
-        PeerConnection, PeerSession, download_magnet, download_magnet_metadata_with_control,
+        CLIENT_PEER_ID, DownloadActivityEvent, DownloadActivitySink, DownloadConfig,
+        DownloadControl, DownloadError, MagnetDownloadConfig, PeerConnection, PeerSession,
+        UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache,
+        announce_udp_tracker_address, download_magnet, download_magnet_metadata_with_control,
         download_magnet_with_control, download_verified_piece,
         download_verified_piece_with_control, next_peer_message, run_magnet_download_with_peers,
         send_message,
@@ -3062,7 +3519,8 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         assert!(parsed.peer_hints.is_empty());
         assert_eq!(parsed.udp_trackers.len(), 2);
         let network = loopback_network(Duration::from_secs(2));
-        let mut peers = PeerSession::from_magnet(&parsed, network)
+        let control = DownloadControl::new();
+        let mut peers = PeerSession::from_magnet(&parsed, network, control.clone())
             .await
             .expect("prepare tracker discovery");
         assert!(peers.registry.is_empty());
@@ -3076,14 +3534,13 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
             },
-            DownloadControl::new(),
+            control,
             parsed,
             &mut peers,
         )
         .await
         .expect("tracker-discovered magnet download");
 
-        assert_eq!(peers.next_udp_tracker, 2);
         assert_eq!(peers.registry.len(), 2);
         let failed = peers
             .registry
@@ -3108,24 +3565,29 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 .expect("published tracker output"),
             payload
         );
-        rejecting_tracker_task
+        peers
+            .shutdown_tracker()
             .await
-            .expect("rejecting tracker task");
+            .expect("stop tracker manager");
+        if rejecting_tracker_task.is_finished() {
+            rejecting_tracker_task
+                .await
+                .expect("rejecting tracker task");
+        } else {
+            rejecting_tracker_task.abort();
+            let _ = rejecting_tracker_task.await;
+        }
         tracker_task.await.expect("scripted tracker task");
         peer_task.await.expect("scripted peer task");
         let _ = tokio::fs::remove_file(output_path).await;
     }
 
-    async fn assert_tracker_wait_terminates(cancel: bool) {
+    async fn assert_tracker_wait_cancels_without_socket_leaks() {
         let tracker = UdpSocket::bind("127.0.0.1:0")
             .await
             .expect("bind silent tracker");
         let tracker_address = tracker.local_addr().expect("tracker address");
-        let output_path = test_path(if cancel {
-            "cancelled-tracker-output.bin"
-        } else {
-            "timed-out-tracker-output.bin"
-        });
+        let output_path = test_path("cancelled-tracker-output.bin");
         let control = DownloadControl::new();
         let task_control = control.clone();
         let task = tokio::spawn(download_magnet_with_control(
@@ -3149,18 +3611,9 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             .expect("tracker connect deadline")
             .expect("receive tracker connect");
         assert_eq!(length, 16);
-        if cancel {
-            control.cancel();
-        }
+        control.cancel();
         let result = task.await.expect("join tracker-wait download");
-        if cancel {
-            assert!(matches!(result, Err(DownloadError::Cancelled)));
-        } else {
-            assert!(matches!(
-                result,
-                Err(DownloadError::UdpTrackerTimedOut { .. })
-            ));
-        }
+        assert!(matches!(result, Err(DownloadError::Cancelled)));
         assert!(!tokio::fs::try_exists(&output_path).await.expect("output"));
         assert!(
             !tokio::fs::try_exists(staging_path(&output_path).expect("staging path"))
@@ -3173,10 +3626,298 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             .expect("tracker client socket released after terminal result");
     }
 
+    #[derive(Debug, Default)]
+    struct RecordingActivitySink {
+        events: Mutex<Vec<DownloadActivityEvent>>,
+    }
+
+    impl DownloadActivitySink for RecordingActivitySink {
+        fn record(&self, event: DownloadActivityEvent) {
+            self.events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(event);
+        }
+    }
+
+    async fn serve_empty_udp_tracker(socket: UdpSocket) {
+        let mut packet = [0; 256];
+        let (connect_length, client) = socket
+            .recv_from(&mut packet)
+            .await
+            .expect("receive empty-tracker connect");
+        assert_eq!(connect_length, 16);
+        let connect_transaction =
+            u32::from_be_bytes(packet[12..16].try_into().expect("connect transaction"));
+        let connection_id = 0x0102_0304_0506_0708_u64;
+        let mut connect_response = Vec::from(0_u32.to_be_bytes());
+        connect_response.extend_from_slice(&connect_transaction.to_be_bytes());
+        connect_response.extend_from_slice(&connection_id.to_be_bytes());
+        socket
+            .send_to(&connect_response, client)
+            .await
+            .expect("send empty-tracker connect response");
+
+        let (announce_length, announce_client) = socket
+            .recv_from(&mut packet)
+            .await
+            .expect("receive empty-tracker announce");
+        assert_eq!(announce_length, 98);
+        assert_eq!(announce_client, client);
+        let announce_transaction =
+            u32::from_be_bytes(packet[12..16].try_into().expect("announce transaction"));
+        let mut announce_response = Vec::from(1_u32.to_be_bytes());
+        announce_response.extend_from_slice(&announce_transaction.to_be_bytes());
+        announce_response.extend_from_slice(&600_u32.to_be_bytes());
+        announce_response.extend_from_slice(&0_u32.to_be_bytes());
+        announce_response.extend_from_slice(&0_u32.to_be_bytes());
+        socket
+            .send_to(&announce_response, client)
+            .await
+            .expect("send valid zero-peer announce response");
+    }
+
     #[tokio::test]
-    async fn tracker_wait_honors_timeout_and_cancellation_without_socket_leaks() {
-        assert_tracker_wait_terminates(false).await;
-        assert_tracker_wait_terminates(true).await;
+    async fn zero_peer_success_waits_for_reannounce_without_tracker_failure() {
+        let tracker = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind empty tracker");
+        let tracker_address = tracker.local_addr().expect("empty tracker address");
+        let server = tokio::spawn(serve_empty_udp_tracker(tracker));
+        let magnet = Magnet::parse(&format!(
+            "magnet:?xt=urn:btih:{}&tr=udp%3A%2F%2F{tracker_address}",
+            "00".repeat(20)
+        ))
+        .expect("parse empty tracker magnet");
+        let control = DownloadControl::new();
+        let activity = Arc::new(RecordingActivitySink::default());
+        control.set_activity_sink(activity.clone());
+        let mut peers =
+            PeerSession::from_magnet(&magnet, loopback_network(Duration::from_secs(1)), control)
+                .await
+                .expect("start empty tracker");
+
+        timeout(Duration::from_secs(1), peers.receive_tracker_peers())
+            .await
+            .expect("empty tracker result deadline")
+            .expect("valid empty tracker result");
+        assert!(peers.registry.is_empty());
+        timeout(Duration::from_secs(1), async {
+            loop {
+                let has_reannounce = activity
+                    .events
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .iter()
+                    .any(|event| {
+                        matches!(
+                            event,
+                            DownloadActivityEvent::TrackerReannounceScheduled { .. }
+                        )
+                    });
+                if has_reannounce {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("reannounce diagnostic deadline");
+        {
+            let events = activity
+                .events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            assert!(events.iter().any(|event| matches!(
+                event,
+                DownloadActivityEvent::TrackerAnnounceSucceeded { peer_count: 0, .. }
+            )));
+            assert!(events.iter().any(|event| matches!(
+                event,
+                DownloadActivityEvent::TrackerPeersUnavailable { peer_count: 0, .. }
+            )));
+            assert!(
+                !events.iter().any(|event| matches!(
+                    event,
+                    DownloadActivityEvent::TrackerAnnounceFailed { .. }
+                ))
+            );
+        }
+        peers.shutdown_tracker().await.expect("stop empty tracker");
+        server.await.expect("empty tracker server");
+    }
+
+    #[test]
+    fn udp_tracker_tokens_expire_after_the_protocol_lifetime() {
+        let address = "127.0.0.1:6969".parse().expect("tracker address");
+        let inserted_at = Instant::now();
+        let mut tokens = UdpTrackerTokenCache::default();
+        tokens.insert(address, 42, inserted_at);
+
+        assert_eq!(
+            tokens.get(address, inserted_at + Duration::from_secs(59)),
+            Some(42)
+        );
+        assert_eq!(
+            tokens.get(address, inserted_at + Duration::from_secs(60)),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn udp_tracker_retransmits_reuses_token_and_cancels_cleanly() {
+        let tracker = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind scripted tracker");
+        let tracker_address = tracker.local_addr().expect("tracker address");
+        let server = tokio::spawn(async move {
+            let mut packet = [0; 256];
+
+            let (first_connect, first_client) =
+                timeout(Duration::from_secs(1), tracker.recv_from(&mut packet))
+                    .await
+                    .expect("first connect deadline")
+                    .expect("first connect");
+            assert_eq!(first_connect, 16);
+            let connect_transaction =
+                u32::from_be_bytes(packet[12..16].try_into().expect("connect transaction"));
+
+            let (second_connect, second_client) =
+                timeout(Duration::from_secs(1), tracker.recv_from(&mut packet))
+                    .await
+                    .expect("retransmitted connect deadline")
+                    .expect("retransmitted connect");
+            assert_eq!(second_connect, 16);
+            assert_eq!(second_client, first_client);
+            assert_eq!(
+                u32::from_be_bytes(packet[12..16].try_into().expect("connect transaction")),
+                connect_transaction
+            );
+            let connection_id = 0x0102_0304_0506_0708_u64;
+            let mut connect_response = Vec::from(0_u32.to_be_bytes());
+            connect_response.extend_from_slice(&connect_transaction.to_be_bytes());
+            connect_response.extend_from_slice(&connection_id.to_be_bytes());
+            tracker
+                .send_to(&connect_response, first_client)
+                .await
+                .expect("connect response");
+
+            let (first_announce, announce_client) =
+                timeout(Duration::from_secs(1), tracker.recv_from(&mut packet))
+                    .await
+                    .expect("first announce deadline")
+                    .expect("first announce");
+            assert_eq!(first_announce, 98);
+            assert_eq!(
+                u32::from_be_bytes(packet[80..84].try_into().expect("started event")),
+                AnnounceEvent::Started as u32
+            );
+            let announce_transaction =
+                u32::from_be_bytes(packet[12..16].try_into().expect("announce transaction"));
+
+            let (second_announce, second_announce_client) =
+                timeout(Duration::from_secs(1), tracker.recv_from(&mut packet))
+                    .await
+                    .expect("retransmitted announce deadline")
+                    .expect("retransmitted announce");
+            assert_eq!(second_announce, 98);
+            assert_eq!(second_announce_client, announce_client);
+            assert_eq!(
+                u32::from_be_bytes(packet[12..16].try_into().expect("announce transaction")),
+                announce_transaction
+            );
+            let mut announce_response = Vec::from(1_u32.to_be_bytes());
+            announce_response.extend_from_slice(&announce_transaction.to_be_bytes());
+            announce_response.extend_from_slice(&600_u32.to_be_bytes());
+            announce_response.extend_from_slice(&0_u32.to_be_bytes());
+            announce_response.extend_from_slice(&0_u32.to_be_bytes());
+            tracker
+                .send_to(&announce_response, announce_client)
+                .await
+                .expect("first announce response");
+
+            let (cached_announce, cached_client) =
+                timeout(Duration::from_secs(1), tracker.recv_from(&mut packet))
+                    .await
+                    .expect("cached announce deadline")
+                    .expect("cached announce");
+            assert_eq!(cached_announce, 98, "cached token should skip connect");
+            assert_eq!(
+                u64::from_be_bytes(packet[0..8].try_into().expect("connection ID")),
+                connection_id
+            );
+            assert_eq!(
+                u32::from_be_bytes(packet[80..84].try_into().expect("ordinary event")),
+                AnnounceEvent::None as u32
+            );
+            let cached_transaction =
+                u32::from_be_bytes(packet[12..16].try_into().expect("announce transaction"));
+            announce_response[4..8].copy_from_slice(&cached_transaction.to_be_bytes());
+            tracker
+                .send_to(&announce_response, cached_client)
+                .await
+                .expect("cached announce response");
+        });
+
+        let timing = UdpTrackerTiming {
+            retransmit_after: Duration::from_millis(20),
+            completion_timeout: Duration::from_millis(100),
+        };
+        let control = DownloadControl::new();
+        let activity = Arc::new(RecordingActivitySink::default());
+        control.set_activity_sink(activity.clone());
+        let mut tokens = UdpTrackerTokenCache::default();
+        let first = announce_udp_tracker_address(
+            tracker_address,
+            &mut tokens,
+            UdpTrackerAnnounce {
+                info_hash: [7; 20],
+                key: 1,
+                event: AnnounceEvent::Started,
+            },
+            UdpTrackerExchange {
+                timing,
+                control: &control,
+                tracker_label: "udp://127.0.0.1",
+            },
+        )
+        .await
+        .expect("loss-recovered announce");
+        assert!(first.peers.is_empty());
+        let second = announce_udp_tracker_address(
+            tracker_address,
+            &mut tokens,
+            UdpTrackerAnnounce {
+                info_hash: [7; 20],
+                key: 1,
+                event: AnnounceEvent::None,
+            },
+            UdpTrackerExchange {
+                timing,
+                control: &control,
+                tracker_label: "udp://127.0.0.1",
+            },
+        )
+        .await
+        .expect("cached-token announce");
+        assert!(second.peers.is_empty());
+        server.await.expect("scripted tracker");
+
+        let retransmissions = {
+            let events = activity
+                .events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            events
+                .iter()
+                .filter(|event| {
+                    matches!(event, DownloadActivityEvent::TrackerUdpRetransmitted { .. })
+                })
+                .count()
+        };
+        assert_eq!(retransmissions, 2);
+
+        assert_tracker_wait_cancels_without_socket_leaks().await;
     }
 
     #[tokio::test]
@@ -3209,7 +3950,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         );
         let parsed = Magnet::parse(&magnet).expect("parse failover magnet");
         let network = loopback_network(Duration::from_secs(2));
-        let mut peers = PeerSession::from_magnet(&parsed, network)
+        let mut peers = PeerSession::from_magnet(&parsed, network, DownloadControl::new())
             .await
             .expect("resolve failover peers");
         assert_eq!(peers.registry.len(), 2);
@@ -3264,7 +4005,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
     }
 
     #[tokio::test]
-    async fn public_magnet_entry_uses_peer_registry_path() {
+    async fn public_magnet_entry_starts_tracker_and_uses_peer_registry_path() {
         let payload = b"public entry payload".to_vec();
         let info = single_file_info(&payload);
         let info_hash: [u8; 20] = Sha1::digest(&info).into();
@@ -3338,16 +4079,15 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         );
         unsupported_task.await.expect("non-extension peer task");
         peer_task.await.expect("scripted peer task");
-        let mut tracker_packet = [0; 1];
-        assert!(
-            timeout(
-                Duration::from_millis(25),
-                unused_tracker.recv_from(&mut tracker_packet)
-            )
-            .await
-            .is_err(),
-            "eligible explicit hints should not trigger tracker discovery"
-        );
+        let mut tracker_packet = [0; 16];
+        let (tracker_length, _) = timeout(
+            Duration::from_secs(1),
+            unused_tracker.recv_from(&mut tracker_packet),
+        )
+        .await
+        .expect("tracker lifecycle should start alongside explicit hints")
+        .expect("receive initial tracker connect");
+        assert_eq!(tracker_length, 16);
         let _ = tokio::fs::remove_file(output_path).await;
     }
 

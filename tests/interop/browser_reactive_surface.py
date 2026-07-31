@@ -310,12 +310,12 @@ def run_chrome(
                     "headless browser did not click both rendered transfer controls"
                 )
         elif (
-            result.get("progress") != "blocked"
-            or result.get("reason") != "no_enabled_discovery_source"
-            or "discovery_exhausted" not in result.get("diagnosticCodes", [])
+            result.get("progress") != "waiting"
+            or result.get("reason") != "waiting_for_discovery"
+            or "tracker_retry_scheduled" not in result.get("diagnosticCodes", [])
         ):
             raise ScenarioFailure(
-                "browser did not render the blocked discovery assessment"
+                "browser did not render the scheduled tracker retry"
             )
         if not result.get("profileClicked") or not result.get("categoryClicked"):
             raise ScenarioFailure(

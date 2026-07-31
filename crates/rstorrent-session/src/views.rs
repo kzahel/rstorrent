@@ -705,6 +705,31 @@ impl ViewHub {
         hub.publish_changes(&previous)
     }
 
+    pub(crate) fn set_discovery_activity(
+        &self,
+        torrent_id: &str,
+        active: bool,
+        retry_scheduled: bool,
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let previous = hub.torrents.clone();
+        let Some(model) = hub.torrents.get_mut(torrent_id) else {
+            return Ok(());
+        };
+        if model.snapshot.state != TorrentState::AwaitingMetadata {
+            return Ok(());
+        }
+        model.progress_inputs.task_active = active;
+        model.progress_inputs.discovery_active = active;
+        model.progress_inputs.discovery_retry_scheduled = retry_scheduled;
+        model.progress_inputs.discovery_exhausted = false;
+        model.view.progress = assess_progress(&model.snapshot, model.progress_inputs);
+        hub.publish_changes(&previous)
+    }
+
     pub fn record_diagnostic(
         &self,
         severity: DiagnosticSeverity,

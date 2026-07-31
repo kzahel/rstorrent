@@ -1134,9 +1134,10 @@ fn classify_failure(error: &DownloadError) -> FailureKind {
         | DownloadError::SelectiveStorage(_)
         | DownloadError::Io { .. } => FailureKind::Storage,
         DownloadError::CleanupAfterFailure { .. } => FailureKind::Cleanup,
-        DownloadError::Entropy(_) | DownloadError::Checkpoint(_) | DownloadError::Cancelled => {
-            FailureKind::Runtime
-        }
+        DownloadError::Entropy(_)
+        | DownloadError::Checkpoint(_)
+        | DownloadError::TrackerTask(_)
+        | DownloadError::Cancelled => FailureKind::Runtime,
     }
 }
 

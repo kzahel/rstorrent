@@ -84,6 +84,12 @@ online outbound policy, selects online networking for desktop and Android,
 and replaces the former whole-download timeout with bounded network-operation
 deadlines.
 
+[`014-scheduled-udp-tracker-lifecycle.md`](docs/tactical/014-scheduled-udp-tracker-lifecycle.md)
+is complete. It replaces one-shot tracker exhaustion with supervised
+per-torrent UDP scheduling, multi-tracker fallback and promotion, bounded
+retransmission and connection-token reuse, automatic reannounce, and
+equivalent waiting/retry diagnostics in the web and Android clients.
+
 ## Toolchain
 
 On the maintainer's configured development machines, load installed Rust,

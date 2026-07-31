@@ -9,6 +9,7 @@ mod part_file;
 pub mod peer;
 mod selective_storage;
 mod storage;
+mod tracker;
 
 pub use driver::{
     DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink, DownloadConfig,

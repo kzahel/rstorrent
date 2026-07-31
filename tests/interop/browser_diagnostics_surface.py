@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render blocked progress and bounded diagnostics in headless Chrome."""
+"""Render a scheduled tracker retry and diagnostics in headless Chrome."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ def run(
                 "VITE_RSTORRENT_INTEROP_MAGNET": MAGNET,
                 "VITE_RSTORRENT_INTEROP_GATEWAY_URL": f"ws://{address}/control",
                 "VITE_RSTORRENT_INTEROP_GATEWAY_TOKEN": TOKEN,
-                "VITE_RSTORRENT_INTEROP_EXPECT_BLOCKED": "1",
+                "VITE_RSTORRENT_INTEROP_EXPECT_TRACKER_RETRY": "1",
             }
         )
         vite = start_vite(repository, environment, origin, vite_port)
@@ -72,7 +72,7 @@ def run(
             repository,
             origin,
             screenshot,
-            "blocked",
+            "retry",
         )
         if dom_output is not None:
             dom_output.parent.mkdir(parents=True, exist_ok=True)
@@ -82,9 +82,9 @@ def run(
         stop_gateway(gateway)
         gateway = None
         print(
-            "browser=chrome scenario=blocked "
+            "browser=chrome scenario=tracker_retry "
             f"info_hash={TORRENT_ID} progress={result['progress']} "
-            f"reason={result['reason']} diagnostic=discovery_exhausted "
+            f"reason={result['reason']} diagnostic=tracker_retry_scheduled "
             "ui_filters=profile,category public_socket=none "
             f"origin={origin} screenshot={screenshot or 'disabled'} cleanup=ok"
         )

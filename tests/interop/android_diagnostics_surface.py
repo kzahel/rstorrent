@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render blocked progress and diagnostics on an isolated Android target."""
+"""Render a scheduled tracker retry on an isolated Android target."""
 
 from __future__ import annotations
 
@@ -122,7 +122,7 @@ def click_text(adb: Adb, label: str) -> None:
     time.sleep(0.3)
 
 
-def wait_for_blocked(adb: Adb) -> str:
+def wait_for_tracker_retry(adb: Adb) -> str:
     deadline = time.monotonic() + 15
     trace = ""
     while time.monotonic() < deadline:
@@ -130,14 +130,14 @@ def wait_for_blocked(adb: Adb) -> str:
         if "FATAL EXCEPTION" in trace:
             raise ScenarioFailure(f"Android product client failed:\n{trace}")
         if (
-            "progress=BLOCKED" in trace
-            and "reason=NO_ENABLED_DISCOVERY_SOURCE" in trace
-            and "diagnostic=discovery_exhausted" in trace
+            "progress=WAITING" in trace
+            and "reason=WAITING_FOR_DISCOVERY" in trace
+            and "diagnostic=tracker_retry_scheduled" in trace
         ):
             return trace
         time.sleep(0.1)
     raise ScenarioFailure(
-        "Android client did not render blocked discovery diagnostics:\n" + trace
+        "Android client did not render a scheduled tracker retry:\n" + trace
     )
 
 
@@ -153,19 +153,19 @@ def run(arguments: argparse.Namespace) -> None:
         install_and_start(adb, arguments.apk.resolve())
         select_controlled_tree(adb)
         add_magnet(adb, MAGNET)
-        wait_for_blocked(adb)
+        wait_for_tracker_retry(adb)
         scroll_to_text(adb, "Diagnostics")
         click_text(adb, "detailed")
-        click_text(adb, "discovery")
-        wait_for_blocked(adb)
+        click_text(adb, "tracker")
+        wait_for_tracker_retry(adb)
         root = dump_ui(adb)
         rendered = " ".join(
             node.attrib.get("text", "") for node in root.iter()
         ).casefold()
         for expected in (
             "diagnostics",
-            "selected progress · blocked",
-            "discovery_exhausted",
+            "selected progress · waiting",
+            "tracker_retry_scheduled",
         ):
             if expected not in rendered:
                 raise ScenarioFailure(
@@ -179,10 +179,10 @@ def run(arguments: argparse.Namespace) -> None:
         stop_from_notification(adb)
         adb.shell("pm", "clear", PACKAGE)
         print(
-            f"android_serial={arguments.serial} scenario=blocked api={api} abi={abi} "
-            f"info_hash={TORRENT_ID} progress=blocked "
-            "reason=no_enabled_discovery_source "
-            "diagnostic=discovery_exhausted ui_filters=profile,category "
+            f"android_serial={arguments.serial} scenario=tracker_retry "
+            f"api={api} abi={abi} info_hash={TORRENT_ID} progress=waiting "
+            "reason=waiting_for_discovery "
+            "diagnostic=tracker_retry_scheduled ui_filters=profile,category "
             "activity_recreation=ok activity_background=ok "
             f"screenshot={screenshot or 'disabled'} foreground_stop=joined cleanup=ok"
         )

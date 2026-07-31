@@ -23,7 +23,7 @@ let pauseClicked = false;
 let resumeClicked = false;
 let profileClicked = false;
 let categoryClicked = false;
-const categoryToSelect = scenario === "blocked" ? "discovery" : "lifecycle";
+const categoryToSelect = scenario === "retry" ? "tracker" : "lifecycle";
 
 socket.addEventListener("message", (event) => {
   const message = JSON.parse(String(event.data));
@@ -178,8 +178,8 @@ while (Date.now() < deadline) {
   });
   if (
     result.result?.value?.complete === "true" &&
-    (scenario === "blocked"
-      ? result.result?.value?.control === "blocked"
+    (scenario === "retry"
+      ? result.result?.value?.control === "retry_waiting"
       : result.result?.value?.control === "resumed") &&
     profileClicked &&
     categoryClicked

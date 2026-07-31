@@ -1040,46 +1040,49 @@ struct ViewActivitySink {
 
 impl DownloadActivitySink for ViewActivitySink {
     fn record(&self, event: DownloadActivityEvent) {
-        let activity = match event {
+        let piece_activity = match &event {
             DownloadActivityEvent::PieceStarted {
                 piece_index,
                 piece_length,
             } => TorrentActivity::PieceStarted {
-                piece_index,
-                piece_length,
+                piece_index: *piece_index,
+                piece_length: *piece_length,
             },
             DownloadActivityEvent::BlockRequested {
                 piece_index,
                 begin,
                 length,
             } => TorrentActivity::BlockRequested {
-                piece_index,
-                begin,
-                length,
+                piece_index: *piece_index,
+                begin: *begin,
+                length: *length,
             },
             DownloadActivityEvent::BlockReceived {
                 piece_index,
                 begin,
                 length,
             } => TorrentActivity::BlockReceived {
-                piece_index,
-                begin,
-                length,
+                piece_index: *piece_index,
+                begin: *begin,
+                length: *length,
             },
             DownloadActivityEvent::BlockStored {
                 piece_index,
                 begin,
                 length,
             } => TorrentActivity::BlockStored {
-                piece_index,
-                begin,
-                length,
+                piece_index: *piece_index,
+                begin: *begin,
+                length: *length,
             },
             DownloadActivityEvent::PieceVerified { piece_index } => {
-                TorrentActivity::PieceVerified { piece_index }
+                TorrentActivity::PieceVerified {
+                    piece_index: *piece_index,
+                }
             }
+            _ => return self.record_discovery_event(event),
         };
-        let _ = self.views.record_activity(&self.torrent_id, activity);
+        let _ = self.views.record_activity(&self.torrent_id, piece_activity);
         let (severity, category, code, summary) = match event {
             DownloadActivityEvent::PieceStarted { .. } => (
                 DiagnosticSeverity::Debug,
@@ -1111,6 +1114,7 @@ impl DownloadActivitySink for ViewActivitySink {
                 "piece_verified",
                 "Piece hash verified",
             ),
+            _ => unreachable!("discovery events returned before piece diagnostics"),
         };
         let _ = self.views.record_diagnostic(
             severity,
@@ -1120,6 +1124,170 @@ impl DownloadActivitySink for ViewActivitySink {
             summary,
             &[],
         );
+    }
+}
+
+impl ViewActivitySink {
+    fn record_discovery_event(&self, event: DownloadActivityEvent) {
+        match event {
+            DownloadActivityEvent::TrackerAnnounceStarted {
+                tracker,
+                tier,
+                attempt,
+                event,
+            } => {
+                let _ = self
+                    .views
+                    .set_discovery_activity(&self.torrent_id, true, false);
+                let tier = tier.to_string();
+                let attempt = attempt.to_string();
+                let announce_event = format!("{event:?}").to_ascii_lowercase();
+                let _ = self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    DiagnosticCategory::Tracker,
+                    "tracker_announce_started",
+                    Some(&self.torrent_id),
+                    "Contacting UDP tracker",
+                    &[
+                        ("tracker", &tracker),
+                        ("tier", &tier),
+                        ("attempt", &attempt),
+                        ("event", &announce_event),
+                    ],
+                );
+            }
+            DownloadActivityEvent::TrackerUdpRetransmitted { tracker, operation } => {
+                let _ = self.views.record_diagnostic(
+                    DiagnosticSeverity::Debug,
+                    DiagnosticCategory::Tracker,
+                    "tracker_udp_retransmitted",
+                    Some(&self.torrent_id),
+                    "UDP tracker request retransmitted after silence",
+                    &[("tracker", &tracker), ("operation", operation)],
+                );
+            }
+            DownloadActivityEvent::TrackerAnnounceFailed {
+                tracker,
+                failures,
+                retry_in_seconds,
+                detail,
+            } => {
+                let failures = failures.to_string();
+                let retry = retry_in_seconds.to_string();
+                let _ = self.views.record_diagnostic(
+                    DiagnosticSeverity::Warning,
+                    DiagnosticCategory::Tracker,
+                    "tracker_announce_failed",
+                    Some(&self.torrent_id),
+                    "UDP tracker announce failed temporarily",
+                    &[
+                        ("tracker", &tracker),
+                        ("failures", &failures),
+                        ("retry_seconds", &retry),
+                        ("detail", &detail),
+                    ],
+                );
+            }
+            DownloadActivityEvent::TrackerFallbackSelected { tracker, tier } => {
+                let tier = tier.to_string();
+                let _ = self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    DiagnosticCategory::Tracker,
+                    "tracker_fallback_selected",
+                    Some(&self.torrent_id),
+                    "Trying another tracker in the tier",
+                    &[("tracker", &tracker), ("tier", &tier)],
+                );
+            }
+            DownloadActivityEvent::TrackerRetryScheduled {
+                tracker,
+                retry_in_seconds,
+            } => {
+                let _ = self
+                    .views
+                    .set_discovery_activity(&self.torrent_id, false, true);
+                let retry = retry_in_seconds.to_string();
+                let _ = self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    DiagnosticCategory::Tracker,
+                    "tracker_retry_scheduled",
+                    Some(&self.torrent_id),
+                    "Tracker discovery will retry automatically",
+                    &[("tracker", &tracker), ("retry_seconds", &retry)],
+                );
+            }
+            DownloadActivityEvent::TrackerReannounceScheduled {
+                tracker,
+                announce_in_seconds,
+            } => {
+                let announce = announce_in_seconds.to_string();
+                let _ = self.views.record_diagnostic(
+                    DiagnosticSeverity::Debug,
+                    DiagnosticCategory::Tracker,
+                    "tracker_reannounce_scheduled",
+                    Some(&self.torrent_id),
+                    "Tracker accepted the announce interval",
+                    &[("tracker", &tracker), ("announce_seconds", &announce)],
+                );
+            }
+            DownloadActivityEvent::TrackerAnnounceSucceeded {
+                tracker,
+                peer_count,
+                interval_seconds,
+            } => {
+                let peers = peer_count.to_string();
+                let interval = interval_seconds.to_string();
+                let _ = self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    DiagnosticCategory::Tracker,
+                    "tracker_announce_succeeded",
+                    Some(&self.torrent_id),
+                    "UDP tracker announce succeeded",
+                    &[
+                        ("tracker", &tracker),
+                        ("peers", &peers),
+                        ("interval_seconds", &interval),
+                    ],
+                );
+            }
+            DownloadActivityEvent::TrackerPeersUnavailable {
+                tracker,
+                peer_count,
+            } => {
+                let _ = self
+                    .views
+                    .set_discovery_activity(&self.torrent_id, false, true);
+                let peers = peer_count.to_string();
+                let _ = self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    DiagnosticCategory::Peer,
+                    "tracker_peers_unavailable",
+                    Some(&self.torrent_id),
+                    "Tracker response has no currently eligible peer",
+                    &[("tracker", &tracker), ("peers", &peers)],
+                );
+            }
+            DownloadActivityEvent::PeerDialStarted { peer } => {
+                let _ = self
+                    .views
+                    .set_discovery_activity(&self.torrent_id, true, false);
+                let _ = self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    DiagnosticCategory::Peer,
+                    "peer_dial_started",
+                    Some(&self.torrent_id),
+                    "Connecting to discovered peer",
+                    &[("peer", &peer)],
+                );
+            }
+            DownloadActivityEvent::PieceStarted { .. }
+            | DownloadActivityEvent::BlockRequested { .. }
+            | DownloadActivityEvent::BlockReceived { .. }
+            | DownloadActivityEvent::BlockStored { .. }
+            | DownloadActivityEvent::PieceVerified { .. } => {
+                unreachable!("piece events are handled before discovery events")
+            }
+        }
     }
 }
 
@@ -1384,8 +1552,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn discovery_exhaustion_is_observed_without_another_command() {
-        let root = test_root("discovery-exhaustion");
+    async fn tracker_retry_waiting_is_observed_without_another_command() {
+        let root = test_root("tracker-retry-waiting");
         let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
         let mut service = ApplicationService::open(config(&root))
             .await
@@ -1438,31 +1606,33 @@ mod tests {
             .await
             .expect("add");
 
-        let blocked = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        let waiting = tokio::time::timeout(std::time::Duration::from_secs(2), async {
             loop {
                 let update = summary.next_update().await.expect("summary update");
-                let is_blocked = match update.payload {
+                let is_waiting = match update.payload {
                     ViewUpdatePayload::Snapshot {
                         snapshot: ViewSnapshot::TorrentList { torrents },
                     } => torrents.first().is_some_and(|torrent| {
-                        torrent.progress.disposition == ProgressDisposition::Blocked
+                        torrent.progress.disposition == ProgressDisposition::Waiting
+                            && torrent.progress.reason == ProgressReason::WaitingForDiscovery
                     }),
                     ViewUpdatePayload::Patch {
                         patch: ViewPatch::TorrentList { upsert, .. },
                     } => upsert.first().is_some_and(|torrent| {
-                        torrent.progress.disposition == ProgressDisposition::Blocked
+                        torrent.progress.disposition == ProgressDisposition::Waiting
+                            && torrent.progress.reason == ProgressReason::WaitingForDiscovery
                     }),
                     _ => false,
                 };
-                if is_blocked {
+                if is_waiting {
                     break;
                 }
             }
         })
         .await;
         assert!(
-            blocked.is_ok(),
-            "terminal supervisor did not publish blocked progress"
+            waiting.is_ok(),
+            "tracker owner did not publish scheduled discovery waiting"
         );
 
         let diagnostic = tokio::time::timeout(std::time::Duration::from_secs(1), async {
@@ -1470,7 +1640,7 @@ mod tests {
                 let update = diagnostics.next_update().await.expect("diagnostic update");
                 if serde_json::to_string(&update)
                     .expect("serialize diagnostic")
-                    .contains("discovery_exhausted")
+                    .contains("tracker_retry_scheduled")
                 {
                     break;
                 }
@@ -1479,7 +1649,7 @@ mod tests {
         .await;
         assert!(
             diagnostic.is_ok(),
-            "missing discovery exhaustion diagnostic"
+            "missing scheduled tracker retry diagnostic"
         );
         let resume = service
             .load_resume_conservative(torrent_id)

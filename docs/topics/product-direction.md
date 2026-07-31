@@ -7,7 +7,8 @@ foundations are proven on an AVD, Chromebook ARCVM, Pixel 7a, and Moto X4
 internal and removable exFAT storage; the in-process engine bootstrap is
 proven on the AVD, Chromebook, Pixel 7a, and Moto. Desktop and Android product
 clients now select explicit online tracker and peer networking while
-controlled tools retain loopback-only policy.
+controlled tools retain loopback-only policy. Active magnets retain supervised
+scheduled UDP tracker discovery with bounded retry and reannounce behavior.
 
 ## Scope
 
@@ -270,6 +271,14 @@ produces blocked progress without changing torrent intent. Peer connect and
 I/O waits are bounded independently, while a torrent no longer has an
 artificial whole-download deadline.
 
+Tactical `014` replaced the one-shot tracker cursor with a supervised
+per-torrent schedule. Magnet UDP trackers form one shuffled synthetic tier,
+fall through on failure, remain eligible under bounded quadratic backoff, and
+promote on success. UDP exchanges retransmit once, reuse short-lived
+connection IDs, and reannounce on bounded tracker intervals. Headless Chrome
+and an owned no-window Android AVD prove that a temporary tracker failure
+renders as waiting for automatic discovery rather than externally blocked.
+
 This is an accepted starting shape backed by unit and libtorrent
 interoperability evidence, not a promise that two crates are the final engine
 layout. Add or split crates only when later ownership, reuse, lifecycle, or
@@ -370,10 +379,15 @@ This is recommended direction beyond the accepted first slice:
     made outbound policy explicit, enabled routed networking in product
     clients, retained loopback isolation in harnesses, and bounded individual
     network waits instead of whole torrent lifetime.
-15. Grow the resulting thin surfaces only through capabilities the engine and
+15. Completed:
+    [`014-scheduled-udp-tracker-lifecycle.md`](../tactical/014-scheduled-udp-tracker-lifecycle.md)
+    established supervised UDP tracker records, multi-tracker fallback,
+    bounded retry/reannounce, loss recovery and token reuse, and equivalent
+    waiting diagnostics on the web and Android surfaces.
+16. Grow the resulting thin surfaces only through capabilities the engine and
     application service actually own. Desktop content UI remains web-based;
     native desktop code owns the shell, tray, and operating-system integration.
-16. Evaluate product migration, extension control, and JSTorrent brand
+17. Evaluate product migration, extension control, and JSTorrent brand
     graduation from the proven application contracts.
 
 The platform feasibility probe remains a separate tactical so failure in it
@@ -384,8 +398,9 @@ does not distort the protocol vertical slice.
 The next protocol slice should establish a small bounded set of live peer
 connections with explicit content-request ownership and failover. That gives
 the peer registry and tracker results practical effect without prematurely
-choosing mature performance, endgame, or choking policy. Scheduled tracker
-records and reannounce behavior can follow when multiple announce cycles
-become material. Product growth should continue through the established
-application service, generated contracts, and platform capability seams
-rather than creating another orchestration surface.
+choosing mature performance, endgame, or choking policy. A later tracker slice
+can add metainfo tiers, non-UDP transports, completed/stopped announces, real
+transfer counters, and a listening port once their owners exist. Product
+growth should continue through the established application service, generated
+contracts, and platform capability seams rather than creating another
+orchestration surface.

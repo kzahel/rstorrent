@@ -64,8 +64,8 @@ const interop =
         gatewayToken: import.meta.env.VITE_RSTORRENT_INTEROP_GATEWAY_TOKEN,
         externalControl:
           import.meta.env.VITE_RSTORRENT_INTEROP_EXTERNAL_CONTROL === "1",
-        expectBlocked:
-          import.meta.env.VITE_RSTORRENT_INTEROP_EXPECT_BLOCKED === "1",
+        expectTrackerRetry:
+          import.meta.env.VITE_RSTORRENT_INTEROP_EXPECT_TRACKER_RETRY === "1",
         requested: 0,
         received: 0,
         stored: 0,
@@ -75,7 +75,7 @@ const interop =
           | "paused"
           | "resume_requested"
           | "resumed"
-          | "blocked",
+          | "retry_waiting",
       }
     : undefined;
 
@@ -326,23 +326,23 @@ async function exerciseInteropControl(): Promise<void> {
 async function finishInteropIfReady(): Promise<void> {
   if (
     interop !== undefined &&
-    interop.expectBlocked &&
+    interop.expectTrackerRetry &&
     !interopComplete &&
     Object.values(state.torrents).some(
       (torrent) =>
-        torrent.progress.disposition === "blocked" &&
-        torrent.progress.reason === "no_enabled_discovery_source",
+        torrent.progress.disposition === "waiting" &&
+        torrent.progress.reason === "waiting_for_discovery",
     ) &&
-    state.diagnostics.some((event) => event.code === "discovery_exhausted")
+    state.diagnostics.some((event) => event.code === "tracker_retry_scheduled")
   ) {
-    interop.control = "blocked";
+    interop.control = "retry_waiting";
     interopComplete = true;
     renderApplication();
     return;
   }
   if (
     interop === undefined ||
-    interop.expectBlocked ||
+    interop.expectTrackerRetry ||
     interopShutdownRequested ||
     interop.control !== "resumed" ||
     !Object.values(state.torrents).some((torrent) => torrent.state === "complete") ||
