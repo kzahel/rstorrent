@@ -270,6 +270,21 @@ sustained connection/request-width gap well before endgame. The earlier user
 observation of a 99.9% stall remains relevant to endgame, but it was not the
 first limiting boundary in this run.
 
+### Sustained-Transfer Pre-Change Screen: 2026-07-31
+
+Tactical `020` began with three alternating common-denominator Big Buck Bunny
+pairs to first verified piece. Both owners completed 3/3. RSTorrent reached
+the milestone in 0.74, 75.85, and 0.81 seconds versus libtorrent's 20.83,
+20.40, and 20.68 seconds. The slow RSTorrent result spent 75.47 seconds in
+tracker and metadata acquisition; the transfer interval from verified
+metadata to first piece was only 0.22--0.38 seconds in all three samples.
+
+Every RSTorrent terminal snapshot nevertheless reported one unchoked peer,
+four outstanding requests, a 65,536-byte payload high-water mark, and
+`requestwindowsfull`. First-piece startup is functional. Combined with the
+older 43.7%-after-900-seconds run, the repeatable internal boundary is the
+static sustained request window rather than initial piece selection.
+
 ## Result Classification
 
 Classify each paired attempt before interpreting speed:

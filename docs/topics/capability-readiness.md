@@ -184,7 +184,7 @@ does not.
 | Derived progress and bounded diagnostics | Implemented | deterministic, runtime, web, AVD | Scheduler and per-peer facts must grow with the corresponding owners. | [`application-control`](application-control.md) |
 | Offline, loopback-only, and online egress policy | Implemented | deterministic, runtime, web, AVD | Policy is fixed for one service lifetime; Android VPN and metered-network controls are absent. | [`application-control`](application-control.md) |
 | Headless product validation | Implemented | web, AVD | Physical devices and visible desktop automation still require explicit authorization. | [`client-surfaces`](client-surfaces.md) |
-| Comparative live performance harness | Absent | none | Public observations are not yet repeatable or comparable with pinned libtorrent behavior. | [`performance-and-live-evidence`](performance-and-live-evidence.md) |
+| Comparative live performance harness | Implemented | deterministic, interop, live | The headless catalog comparator is repeatable and pinned, but public speed remains a distribution rather than a CI threshold. | [`performance-and-live-evidence`](performance-and-live-evidence.md) |
 | Multi-torrent queue and resource budgets | Absent | none | The application can retain multiple records but has no mature concurrent scheduling policy. | [`application-control`](application-control.md) |
 
 ## Maintenance Contract

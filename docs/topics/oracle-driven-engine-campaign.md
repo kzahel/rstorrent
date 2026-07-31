@@ -313,13 +313,15 @@ reason to stop.
 
 Campaign state: **active**.
 
-Active tactical: the next numbered first-piece and sustained-transfer parity
-slice. Tactical
+Active tactical:
+[`020-sustained-transfer-parity.md`](../tactical/020-sustained-transfer-parity.md).
+Tactical
 [`019-torrent-owned-metadata-acquisition.md`](../tactical/019-torrent-owned-metadata-acquisition.md)
 is complete.
 
-Current milestone: use the completed metadata path and pinned libtorrent peer,
-picker, and request owners to reach first-piece, 50%, and publication parity.
+Current milestone: replace the static four-request/four-piece transfer ceiling
+with a bounded connection feedback window, then use first-piece and 50%
+evidence before returning to publication.
 
 Last completed evidence:
 
@@ -370,16 +372,20 @@ Last completed evidence:
   that edge case; and
 - after the source-derived one-second ramp, Cosmos, Sintel, Tears of Steel,
   and WIRED CD completed 12/12 paired confirmations for each owner with two
-  requests, two blocks, zero hash failures, and clean shutdown.
+  requests, two blocks, zero hash failures, and clean shutdown; and
+- Tactical `020`'s pre-change first-piece screen completed 3/3 for both
+  owners. RSTorrent took only 0.22--0.38 seconds from metadata to first piece,
+  but every terminal snapshot remained capped at four requests and 64 KiB
+  with `requestwindowsfull`, confirming sustained width as the next owner.
 
 Next executable action:
 
-1. open Tactical `020` for first-piece and sustained-transfer parity;
-2. survey pinned `peer_connection`, `request_blocks`, `piece_picker`, and
-   related tests around request width, peer replacement, snubbing, and
-   availability;
-3. turn the 43.7%-after-900-seconds Big Buck Bunny snapshot into deterministic
-   request-window and stalled-peer hypotheses before changing policy; and
-4. screen first piece and 50% before the next full publication cohort.
+1. retain the Tactical `020` pre-change first-piece screen;
+2. encode the pinned four-request slow start, three-second rate target,
+   one-request stalled probe, and global payload bound as pure failing cases;
+3. install the connection-owned feedback window and bounded wider active work;
+   and
+4. prove scripted growth and slow-peer coexistence before paired first-piece
+   and 50% screens.
 
 Human blocker: **none**.
