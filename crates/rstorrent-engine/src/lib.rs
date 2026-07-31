@@ -8,6 +8,7 @@ mod metadata_seed;
 mod network;
 mod part_file;
 pub mod peer;
+mod peer_socket;
 mod selective_storage;
 mod storage;
 pub mod swarm;

@@ -569,6 +569,12 @@ impl PeerRegistry {
         apply_failure(record, now, failure, backoff)
     }
 
+    pub fn dial_cancelled(&mut self, attempt: DialAttempt) -> Result<(), PeerRegistryError> {
+        let record = self.record_for_attempt_mut(attempt, false)?;
+        record.phase = PeerPhase::Idle;
+        Ok(())
+    }
+
     pub fn dial_succeeded(
         &mut self,
         attempt: DialAttempt,
@@ -923,6 +929,31 @@ mod tests {
             registry.connection_closed(successful_attempt, Duration::from_secs(15), None),
             Err(PeerRegistryError::StaleAttempt(_))
         ));
+    }
+
+    #[test]
+    fn cancelled_dial_returns_idle_without_recording_a_failure() {
+        let mut registry = PeerRegistry::new(config(1)).expect("registry");
+        registry
+            .observe(
+                PeerObservation::dialable(endpoint(6_881), PeerSource::Manual),
+                Duration::ZERO,
+            )
+            .expect("observation");
+        let context = PeerSelectionContext {
+            now: Duration::ZERO,
+        };
+        let candidate = PeerSelector.select(&registry, context).expect("candidate");
+        let attempt = registry.begin_dial(candidate, context).expect("dial");
+        registry.dial_cancelled(attempt).expect("cancel dial");
+        let record = registry
+            .find_endpoint(endpoint(6_881))
+            .expect("retained record");
+        assert_eq!(record.phase(), PeerPhase::Idle);
+        assert_eq!(record.history().dial_attempts, 1);
+        assert_eq!(record.history().total_failures, 0);
+        assert_eq!(record.history().consecutive_failures, 0);
+        assert!(PeerSelector.select(&registry, context).is_some());
     }
 
     #[test]

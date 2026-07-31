@@ -16,11 +16,7 @@ use rstorrent_protocol::metadata::{
     encode_metadata_request, parse_extension_handshake, parse_metadata_message,
 };
 use rstorrent_protocol::metainfo::{MAX_PIECES, Metainfo, MetainfoError};
-use rstorrent_protocol::peer_wire::{
-    EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX, FrameDecoder, FrameError,
-    HANDSHAKE_LENGTH, Handshake, HandshakeError, PeerMessage, decode_handshake, encode_handshake,
-    encode_handshake_with_reserved, encode_message,
-};
+use rstorrent_protocol::peer_wire::{FrameError, Handshake, HandshakeError, PeerMessage};
 use rstorrent_protocol::piece::{DownloadAction, OnePieceDownload, PieceError, VerifiedPiece};
 use rstorrent_protocol::storage_layout::{FileSelection, LayoutError, TorrentLayout};
 use rstorrent_protocol::udp_tracker::{
@@ -30,8 +26,8 @@ use rstorrent_protocol::udp_tracker::{
     parse_connect_response,
 };
 use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpStream, UdpSocket, lookup_host};
+use tokio::io::AsyncReadExt;
+use tokio::net::{UdpSocket, lookup_host};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::{Instant as TokioInstant, timeout, timeout_at};
@@ -43,6 +39,10 @@ use crate::peer::{
     DialAttempt, PeerEndpoint, PeerFailure, PeerObservation, PeerRegistry, PeerRegistryConfig,
     PeerRegistryError, PeerSelectionContext, PeerSelector, PeerSource,
 };
+use crate::peer_socket::{
+    self, PeerConnection, PeerSetError, PeerSetEvent, PeerSocketError, PeerSocketSet,
+    PeerTaskEvent, connection_id,
+};
 use crate::selective_storage::{
     DescriptorStorage, PreparedFileHash, ResumedStorage, SelectiveStorage, SelectiveStorageError,
     remove_selective_part_if_present, remove_selective_staging_if_present,
@@ -50,10 +50,13 @@ use crate::selective_storage::{
 use crate::storage::{
     StagingFile, StorageError, VERIFICATION_CHUNK_LENGTH, remove_staging_if_present, staging_path,
 };
+use crate::swarm::{
+    BlockKey, ConnectionId, ConnectionRemoval, NoRequestReason, PendingDialId, PiecePlan,
+    ReceiveDisposition, SwarmConfig, SwarmError, SwarmState,
+};
 use crate::tracker::{TrackerAction, TrackerSchedule, TrackerWaitKind};
 
 const CLIENT_PEER_ID: [u8; 20] = *b"-RS0001-000000000000";
-const NETWORK_READ_LENGTH: usize = 16 * 1024;
 const NETWORK_RESOLUTION_TIMEOUT: Duration = Duration::from_secs(10);
 const UDP_TRACKER_RETRANSMIT_AFTER: Duration = Duration::from_secs(15);
 const UDP_TRACKER_COMPLETION_TIMEOUT: Duration = Duration::from_secs(30);
@@ -68,15 +71,6 @@ const SAFE_CANCEL_CRITICAL_MASK: usize = SAFE_CANCEL_REQUESTED - 1;
 const DHT_RETRY_INITIAL_DELAY: Duration = Duration::from_secs(15);
 const DHT_RETRY_MAX_DELAY: Duration = Duration::from_secs(5 * 60);
 const DHT_SUCCESS_REQUERY_DELAY: Duration = Duration::from_secs(60);
-
-#[derive(Debug)]
-struct PeerConnection {
-    attempt: DialAttempt,
-    stream: TcpStream,
-    decoder: FrameDecoder,
-    queued_messages: VecDeque<PeerMessage>,
-    io_timeout: Duration,
-}
 
 #[derive(Clone, Debug)]
 pub struct DownloadConfig {
@@ -355,6 +349,16 @@ impl DownloadControl {
             .fetch_max(budget.high_water, Ordering::AcqRel);
     }
 
+    fn observe_swarm(&self, swarm: &SwarmState, now: Duration) {
+        let snapshot = swarm.snapshot(now);
+        self.inner
+            .buffered_payload_bytes
+            .store(snapshot.payload_reserved, Ordering::Release);
+        self.inner
+            .payload_high_water
+            .fetch_max(snapshot.payload_high_water, Ordering::AcqRel);
+    }
+
     fn record_stored(&self, bytes: usize) {
         self.inner.stored_bytes.fetch_add(bytes, Ordering::AcqRel);
     }
@@ -454,6 +458,8 @@ pub enum DownloadError {
     Dht(DhtError),
     UdpTracker(UdpTrackerError),
     PeerRegistry(PeerRegistryError),
+    PeerTask(String),
+    Swarm(SwarmError),
     Metadata(MetadataError),
     Handshake(HandshakeError),
     Frame(FrameError),
@@ -485,6 +491,10 @@ pub enum DownloadError {
         timeout: Duration,
     },
     TrackerTask(String),
+    PeerCleanup {
+        failure: String,
+        cleanup: String,
+    },
     CleanupAfterFailure {
         failure: String,
         source: io::Error,
@@ -514,6 +524,8 @@ impl fmt::Display for DownloadError {
             Self::Dht(error) => write!(formatter, "DHT: {error}"),
             Self::UdpTracker(error) => write!(formatter, "UDP tracker: {error}"),
             Self::PeerRegistry(error) => write!(formatter, "peer registry: {error}"),
+            Self::PeerTask(error) => write!(formatter, "peer task set: {error}"),
+            Self::Swarm(error) => write!(formatter, "swarm state: {error}"),
             Self::Metadata(error) => write!(formatter, "metadata: {error}"),
             Self::Handshake(error) => write!(formatter, "peer handshake: {error}"),
             Self::Frame(error) => write!(formatter, "peer frame: {error}"),
@@ -573,6 +585,12 @@ impl fmt::Display for DownloadError {
                 )
             }
             Self::TrackerTask(message) => write!(formatter, "tracker task: {message}"),
+            Self::PeerCleanup { failure, cleanup } => {
+                write!(
+                    formatter,
+                    "{failure}; additionally failed to stop peer tasks: {cleanup}"
+                )
+            }
             Self::CleanupAfterFailure { failure, source } => write!(
                 formatter,
                 "{failure}; additionally failed to remove staging output: {source}"
@@ -590,6 +608,7 @@ impl Error for DownloadError {
             Self::Dht(error) => Some(error),
             Self::UdpTracker(error) => Some(error),
             Self::PeerRegistry(error) => Some(error),
+            Self::Swarm(error) => Some(error),
             Self::Metadata(error) => Some(error),
             Self::Handshake(error) => Some(error),
             Self::Frame(error) => Some(error),
@@ -1617,7 +1636,7 @@ impl PeerSession {
             return Ok(());
         };
         self.registry
-            .connection_closed(connection.attempt, self.elapsed(), failure)
+            .connection_closed(connection.attempt(), self.elapsed(), failure)
             .map_err(DownloadError::PeerRegistry)
     }
 
@@ -1631,7 +1650,7 @@ impl PeerSession {
     async fn disable_dht_for_private(&mut self, info_hash: [u8; 20]) -> Result<(), DownloadError> {
         let current_is_dht_only = self.connection.as_ref().is_some_and(|connection| {
             self.registry
-                .get(connection.attempt.record_id())
+                .get(connection.attempt().record_id())
                 .is_some_and(|record| {
                     record.sources().contains(PeerSource::Dht) && record.sources().len() == 1
                 })
@@ -2243,9 +2262,7 @@ fn finish_metadata_acquisition(
     peer: &mut PeerConnection,
 ) -> Result<(Vec<u8>, Metainfo), DownloadError> {
     let metainfo = Metainfo::from_info_bytes(&bytes).map_err(DownloadError::Metainfo)?;
-    let mut queued_messages = peer_state.validated_messages(&metainfo)?;
-    queued_messages.append(&mut peer.queued_messages);
-    peer.queued_messages = queued_messages;
+    peer.prepend_messages(peer_state.validated_messages(&metainfo)?);
     Ok((bytes, metainfo))
 }
 
@@ -2380,6 +2397,581 @@ async fn run_single_download(
                 prepared_files: Vec::new(),
             });
         }
+    }
+}
+
+struct SelectiveSwarmDownload<'a> {
+    state: SwarmState,
+    storage: &'a mut SelectiveStorage,
+    metainfo: &'a Metainfo,
+    layout: &'a TorrentLayout,
+    resume: Option<&'a ResumeContext>,
+    control: &'a DownloadControl,
+    total_blocks: usize,
+    total_bytes: usize,
+    selected_written_bytes: usize,
+    part_written_bytes: usize,
+    last_piece: Option<VerifiedPiece>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ContentMessageDisposition {
+    Continue,
+    ClosePeer(PeerFailure),
+}
+
+impl<'a> SelectiveSwarmDownload<'a> {
+    fn new(
+        payload_limit: usize,
+        plans: Vec<(u32, Vec<rstorrent_protocol::storage_layout::RequestRange>)>,
+        storage: &'a mut SelectiveStorage,
+        metainfo: &'a Metainfo,
+        layout: &'a TorrentLayout,
+        resume: Option<&'a ResumeContext>,
+        control: &'a DownloadControl,
+    ) -> Result<Self, DownloadError> {
+        let mut total_blocks = 0;
+        let mut total_bytes = 0;
+        let mut swarm_plans = Vec::with_capacity(plans.len());
+        for (piece, ranges) in plans {
+            let piece_length = layout
+                .piece_length_at(piece)
+                .map_err(DownloadError::Layout)?;
+            control.emit(DownloadActivityEvent::PieceStarted {
+                piece_index: piece,
+                piece_length,
+            });
+            total_blocks += ranges.len();
+            total_bytes += ranges
+                .iter()
+                .map(|range| range.length as usize)
+                .sum::<usize>();
+            let ranges = ranges
+                .into_iter()
+                .map(|range| (range.begin, range.length))
+                .collect::<Vec<_>>();
+            swarm_plans.push(PiecePlan::new(piece, &ranges).map_err(DownloadError::Swarm)?);
+        }
+        let state = SwarmState::new(
+            SwarmConfig::for_payload_limit(payload_limit),
+            layout.piece_count(),
+            swarm_plans,
+        )
+        .map_err(DownloadError::Swarm)?;
+        Ok(Self {
+            state,
+            storage,
+            metainfo,
+            layout,
+            resume,
+            control,
+            total_blocks,
+            total_bytes,
+            selected_written_bytes: 0,
+            part_written_bytes: 0,
+            last_piece: None,
+        })
+    }
+
+    fn is_complete(&self, now: Duration) -> bool {
+        self.state.snapshot(now).no_request_reason == Some(NoRequestReason::Complete)
+    }
+
+    fn should_seek_discovery(&self, now: Duration) -> bool {
+        matches!(
+            self.state.snapshot(now).no_request_reason,
+            Some(NoRequestReason::NoConnections)
+                | Some(NoRequestReason::NoPeerHasWantedPiece)
+                | Some(NoRequestReason::AllUsefulPeersChoked)
+        )
+    }
+
+    async fn handle_message(
+        &mut self,
+        connection: ConnectionId,
+        message: PeerMessage,
+        now: Duration,
+    ) -> Result<ContentMessageDisposition, DownloadError> {
+        match message {
+            PeerMessage::Choke => {
+                self.state
+                    .set_choking(connection, true)
+                    .map_err(DownloadError::Swarm)?;
+            }
+            PeerMessage::Unchoke => {
+                self.state
+                    .set_choking(connection, false)
+                    .map_err(DownloadError::Swarm)?;
+            }
+            PeerMessage::Have(piece) => {
+                if self.state.peer_has(connection, piece).is_err() {
+                    return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+                }
+            }
+            PeerMessage::Bitfield(bitfield) => {
+                let Some(availability) =
+                    decode_validated_availability(&bitfield, self.layout.piece_count())
+                else {
+                    return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+                };
+                self.state
+                    .set_bitfield(connection, availability)
+                    .map_err(DownloadError::Swarm)?;
+            }
+            PeerMessage::Piece {
+                index,
+                begin,
+                block,
+            } => {
+                let Ok(length) = u32::try_from(block.len()) else {
+                    return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+                };
+                let Ok(key) = BlockKey::new(index, begin, length) else {
+                    return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+                };
+                match self
+                    .state
+                    .receive_block(connection, key)
+                    .map_err(DownloadError::Swarm)?
+                {
+                    ReceiveDisposition::Accept { .. } => {
+                        self.control.record_received(block.len());
+                        self.control.emit(DownloadActivityEvent::BlockReceived {
+                            piece_index: index,
+                            begin,
+                            length,
+                        });
+                        self.control.wait_before_storage().await;
+                        let stats = match self.storage.write_block(index, begin, block).await {
+                            Ok(stats) => stats,
+                            Err(error) => {
+                                self.state
+                                    .finish_write(key, false, now)
+                                    .map_err(DownloadError::Swarm)?;
+                                return Err(DownloadError::SelectiveStorage(error));
+                            }
+                        };
+                        self.state
+                            .finish_write(key, true, now)
+                            .map_err(DownloadError::Swarm)?;
+                        self.selected_written_bytes += stats.wanted_bytes;
+                        self.part_written_bytes += stats.skipped_bytes;
+                        self.control.record_stored(length as usize);
+                        self.control.emit(DownloadActivityEvent::BlockStored {
+                            piece_index: index,
+                            begin,
+                            length,
+                        });
+                        if self
+                            .state
+                            .piece_ready(index)
+                            .map_err(DownloadError::Swarm)?
+                        {
+                            self.verify_piece(index).await?;
+                        }
+                    }
+                    ReceiveDisposition::Redundant | ReceiveDisposition::Unsolicited => {}
+                }
+            }
+            PeerMessage::KeepAlive
+            | PeerMessage::Interested
+            | PeerMessage::NotInterested
+            | PeerMessage::Request(_)
+            | PeerMessage::Extended { .. } => {}
+        }
+        self.control.observe_swarm(&self.state, now);
+        Ok(ContentMessageDisposition::Continue)
+    }
+
+    async fn verify_piece(&mut self, piece: u32) -> Result<(), DownloadError> {
+        let piece_index = usize::try_from(piece)
+            .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+        let actual = self
+            .storage
+            .hash_piece(piece)
+            .await
+            .map_err(DownloadError::SelectiveStorage)?;
+        let expected = self.metainfo.piece_hashes[piece_index];
+        if actual != expected {
+            return Err(DownloadError::Piece(PieceError::HashMismatch {
+                expected,
+                actual,
+            }));
+        }
+        self.state
+            .mark_piece_verified(piece)
+            .map_err(DownloadError::Swarm)?;
+        if let Some(resume) = self.resume {
+            self.storage
+                .sync_piece(piece)
+                .await
+                .map_err(DownloadError::SelectiveStorage)?;
+            self.storage
+                .record_verified(piece_index)
+                .map_err(DownloadError::SelectiveStorage)?;
+            resume
+                .checkpoints
+                .piece_durable(piece_index)
+                .map_err(DownloadError::Checkpoint)?;
+        } else {
+            self.storage
+                .record_verified(piece_index)
+                .map_err(DownloadError::SelectiveStorage)?;
+        }
+        let length = self
+            .layout
+            .piece_length_at(piece)
+            .map_err(DownloadError::Layout)?;
+        self.last_piece = Some(VerifiedPiece {
+            index: piece,
+            hash: actual,
+            length,
+        });
+        self.control
+            .emit(DownloadActivityEvent::PieceVerified { piece_index: piece });
+        Ok(())
+    }
+}
+
+fn decode_validated_availability(bitfield: &[u8], piece_count: usize) -> Option<Vec<bool>> {
+    if bitfield.len() != piece_count.div_ceil(8) {
+        return None;
+    }
+    let remainder = piece_count % 8;
+    if remainder != 0 {
+        let unused_mask = (1_u8 << (8 - remainder)) - 1;
+        if bitfield.last().is_some_and(|byte| byte & unused_mask != 0) {
+            return None;
+        }
+    }
+    let mut availability = vec![false; piece_count];
+    decode_availability(bitfield, &mut availability);
+    Some(availability)
+}
+
+fn pending_dial_id(attempt: DialAttempt) -> PendingDialId {
+    PendingDialId::new(attempt.id().get()).expect("dial attempt identifiers are nonzero")
+}
+
+fn fill_content_dials(
+    peers: &mut PeerSession,
+    sockets: &mut PeerSocketSet,
+    state: &mut SwarmState,
+    info_hash: [u8; 20],
+) -> Result<usize, DownloadError> {
+    let mut started = 0;
+    while sockets.pending_len() < state.config().max_pending_dials
+        && sockets.established_len() + sockets.pending_len()
+            < state.config().max_established_connections
+    {
+        let context = PeerSelectionContext {
+            now: peers.elapsed(),
+        };
+        let Some(candidate) = peers.selector.select(&peers.registry, context) else {
+            break;
+        };
+        peers.control.emit(DownloadActivityEvent::PeerDialStarted {
+            peer: candidate.endpoint().to_string(),
+        });
+        let attempt = peers
+            .registry
+            .begin_dial(candidate, context)
+            .map_err(DownloadError::PeerRegistry)?;
+        state
+            .begin_dial(pending_dial_id(attempt))
+            .map_err(DownloadError::Swarm)?;
+        if let Err(error) = sockets.begin_dial(attempt, info_hash, false, peers.network) {
+            state
+                .finish_dial(pending_dial_id(attempt))
+                .map_err(DownloadError::Swarm)?;
+            peers
+                .registry
+                .dial_cancelled(attempt)
+                .map_err(DownloadError::PeerRegistry)?;
+            return Err(download_peer_set_error(error));
+        }
+        started += 1;
+    }
+    Ok(started)
+}
+
+async fn close_content_connection(
+    peers: &mut PeerSession,
+    sockets: &mut PeerSocketSet,
+    state: &mut SwarmState,
+    connection: ConnectionId,
+    failure: Option<PeerFailure>,
+) -> Result<(), DownloadError> {
+    if !sockets.contains(connection) {
+        return Ok(());
+    }
+    let attempt = sockets
+        .remove_connection(connection)
+        .await
+        .map_err(download_peer_set_error)?;
+    state
+        .remove_connection(connection, ConnectionRemoval::Disconnected)
+        .map_err(DownloadError::Swarm)?;
+    peers
+        .registry
+        .connection_closed(attempt, peers.elapsed(), failure)
+        .map_err(DownloadError::PeerRegistry)
+}
+
+async fn cleanup_content_connections(
+    peers: &mut PeerSession,
+    sockets: PeerSocketSet,
+    state: &mut SwarmState,
+    failure: Option<PeerFailure>,
+) -> Result<(), DownloadError> {
+    let active = sockets.connection_attempts();
+    let pending = sockets.shutdown().await.map_err(download_peer_set_error)?;
+    for attempt in active {
+        peers
+            .registry
+            .connection_closed(attempt, peers.elapsed(), failure)
+            .map_err(DownloadError::PeerRegistry)?;
+    }
+    for attempt in pending {
+        peers
+            .registry
+            .dial_cancelled(attempt)
+            .map_err(DownloadError::PeerRegistry)?;
+    }
+    state.cancel_all().map_err(DownloadError::Swarm)?;
+    peers.control.clear_buffered_payload();
+    Ok(())
+}
+
+async fn run_selective_swarm_loop(
+    peers: &mut PeerSession,
+    sockets: &mut PeerSocketSet,
+    download: &mut SelectiveSwarmDownload<'_>,
+) -> Result<(), DownloadError> {
+    if let Some(connection) = peers.connection.take() {
+        let attempt = connection.attempt();
+        let id = sockets
+            .add_connection(connection)
+            .map_err(download_peer_set_error)?;
+        download
+            .state
+            .add_connection(id, peers.elapsed())
+            .map_err(DownloadError::Swarm)?;
+        if sockets.send(id, PeerMessage::Interested).await.is_err() {
+            close_content_connection(
+                peers,
+                sockets,
+                &mut download.state,
+                id,
+                Some(PeerFailure::RemoteClosed),
+            )
+            .await?;
+        } else {
+            debug_assert_eq!(id, connection_id(attempt));
+        }
+    }
+
+    let mut peer_message_seen = false;
+    loop {
+        let now = peers.elapsed();
+        let expired = download
+            .state
+            .expire_requests(now)
+            .map_err(DownloadError::Swarm)?;
+        for request in expired {
+            let _ = request;
+        }
+        download.control.observe_swarm(&download.state, now);
+
+        let assignments = download.state.schedule(now).map_err(DownloadError::Swarm)?;
+        let mut failed_connections = BTreeSet::new();
+        for assignment in assignments {
+            if sockets
+                .send(
+                    assignment.connection,
+                    PeerMessage::Request(assignment.block.request()),
+                )
+                .await
+                .is_err()
+            {
+                failed_connections.insert(assignment.connection);
+                continue;
+            }
+            download
+                .control
+                .record_requested(assignment.block.length as usize);
+            download
+                .control
+                .emit(DownloadActivityEvent::BlockRequested {
+                    piece_index: assignment.block.piece,
+                    begin: assignment.block.begin,
+                    length: assignment.block.length,
+                });
+        }
+        for connection in failed_connections {
+            close_content_connection(
+                peers,
+                sockets,
+                &mut download.state,
+                connection,
+                Some(PeerFailure::RemoteClosed),
+            )
+            .await?;
+        }
+        download
+            .control
+            .observe_swarm(&download.state, peers.elapsed());
+        if download.is_complete(peers.elapsed()) {
+            return Ok(());
+        }
+
+        let started = fill_content_dials(
+            peers,
+            sockets,
+            &mut download.state,
+            download.metainfo.info_hash,
+        )?;
+        let discovery_available = peers.tracker.is_some() || peers.dht.is_some();
+        let needs_discovery = sockets.pending_len() == 0
+            && started == 0
+            && (sockets.established_len() == 0
+                || (peer_message_seen && download.should_seek_discovery(peers.elapsed())));
+        if needs_discovery && discovery_available {
+            match peers
+                .receive_discovery_peers(download.metainfo.info_hash)
+                .await
+            {
+                Ok(()) => continue,
+                Err(DownloadError::Cancelled) => return Err(DownloadError::Cancelled),
+                Err(error) if sockets.established_len() != 0 => {
+                    peers.last_error = Some(error);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        if sockets.established_len() == 0 && sockets.pending_len() == 0 {
+            return Err(peers
+                .last_error
+                .take()
+                .unwrap_or(DownloadError::NoUsablePeer));
+        }
+
+        let snapshot = download.state.snapshot(peers.elapsed());
+        let until_expiry = snapshot
+            .next_request_expiry
+            .map(|deadline| deadline.saturating_sub(peers.elapsed()));
+        let event = if let Some(wait) = until_expiry {
+            tokio::select! {
+                biased;
+                _ = peers.control.inner.cancellation.cancelled() => {
+                    return Err(DownloadError::Cancelled);
+                }
+                _ = tokio::time::sleep(wait) => continue,
+                event = sockets.next_event() => event,
+            }
+        } else {
+            tokio::select! {
+                biased;
+                _ = peers.control.inner.cancellation.cancelled() => {
+                    return Err(DownloadError::Cancelled);
+                }
+                event = sockets.next_event() => event,
+            }
+        }
+        .map_err(download_peer_set_error)?;
+
+        match event {
+            PeerSetEvent::DialCompleted { attempt, result } => {
+                download
+                    .state
+                    .finish_dial(pending_dial_id(attempt))
+                    .map_err(DownloadError::Swarm)?;
+                match result {
+                    Ok((connection, _handshake)) => {
+                        peers
+                            .registry
+                            .dial_succeeded(attempt, peers.elapsed())
+                            .map_err(DownloadError::PeerRegistry)?;
+                        let id = sockets
+                            .add_connection(connection)
+                            .map_err(download_peer_set_error)?;
+                        download
+                            .state
+                            .add_connection(id, peers.elapsed())
+                            .map_err(DownloadError::Swarm)?;
+                        if sockets.send(id, PeerMessage::Interested).await.is_err() {
+                            close_content_connection(
+                                peers,
+                                sockets,
+                                &mut download.state,
+                                id,
+                                Some(PeerFailure::RemoteClosed),
+                            )
+                            .await?;
+                        }
+                    }
+                    Err(error) => {
+                        let failure = error.peer_failure();
+                        peers
+                            .registry
+                            .dial_failed(attempt, peers.elapsed(), failure)
+                            .map_err(DownloadError::PeerRegistry)?;
+                        peers.last_error = Some(download_peer_socket_error(error));
+                    }
+                }
+            }
+            PeerSetEvent::Peer(PeerTaskEvent::Message { attempt, message }) => {
+                let id = connection_id(attempt);
+                if !sockets.contains(id) {
+                    continue;
+                }
+                peer_message_seen = true;
+                if download
+                    .handle_message(id, message, peers.elapsed())
+                    .await?
+                    == ContentMessageDisposition::ClosePeer(PeerFailure::Protocol)
+                {
+                    close_content_connection(
+                        peers,
+                        sockets,
+                        &mut download.state,
+                        id,
+                        Some(PeerFailure::Protocol),
+                    )
+                    .await?;
+                }
+            }
+            PeerSetEvent::Peer(PeerTaskEvent::Stopped { attempt, result }) => {
+                let id = connection_id(attempt);
+                if !sockets.contains(id) {
+                    continue;
+                }
+                let failure = result.as_ref().err().map(PeerSocketError::peer_failure);
+                if let Err(error) = result {
+                    peers.last_error = Some(download_peer_socket_error(error));
+                }
+                close_content_connection(peers, sockets, &mut download.state, id, failure).await?;
+            }
+        }
+    }
+}
+
+async fn download_selective_swarm<'a>(
+    peers: &mut PeerSession,
+    mut download: SelectiveSwarmDownload<'a>,
+) -> Result<SelectiveSwarmDownload<'a>, DownloadError> {
+    let mut sockets = PeerSocketSet::new();
+    let result = run_selective_swarm_loop(peers, &mut sockets, &mut download).await;
+    let failure = result.as_ref().err().and_then(content_peer_failure);
+    let cleanup = cleanup_content_connections(peers, sockets, &mut download.state, failure).await;
+    match (result, cleanup) {
+        (Ok(()), Ok(())) => Ok(download),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(()), Err(error)) => Err(error),
+        (Err(error), Err(cleanup)) => Err(DownloadError::PeerCleanup {
+            failure: error.to_string(),
+            cleanup: cleanup.to_string(),
+        }),
     }
 }
 
@@ -2586,156 +3178,37 @@ async fn run_selective_download(
     let skipped_file_bytes = storage.skipped_bytes();
     let padding_bytes = storage.padding_bytes();
     let part_path = storage.part_path().map(Path::to_path_buf);
-    if !plans.is_empty() {
-        peers.ensure_content_connection(metainfo.info_hash).await?;
-    }
-    let mut availability = vec![false; layout.piece_count()];
-    let mut availability_known = false;
-    let mut peer_choking = true;
-    let mut total_blocks = 0;
-    let mut total_bytes = 0;
-    let mut selected_written_bytes = 0;
-    let mut part_written_bytes = 0;
-    let mut payload_high_water = 0;
-    let mut last_piece = None;
-
-    for (piece_index, ranges) in plans {
-        let peer = peers.connection_mut()?;
-        let piece_index_usize = usize::try_from(piece_index)
-            .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
-        let piece_length = layout
-            .piece_length_at(piece_index)
-            .map_err(DownloadError::Layout)?;
-        let mut download = OnePieceDownload::new_for_torrent(
-            piece_index,
-            piece_length,
-            metainfo.piece_hashes[piece_index_usize],
+    let (
+        total_blocks,
+        total_bytes,
+        selected_written_bytes,
+        part_written_bytes,
+        payload_high_water,
+        last_piece,
+    ) = if plans.is_empty() {
+        (0, 0, 0, 0, 0, None)
+    } else {
+        let download = SelectiveSwarmDownload::new(
             config.max_buffered_payload_bytes,
-            layout.piece_count(),
-            &ranges,
-        )
-        .map_err(DownloadError::Piece)?;
-        control.emit(DownloadActivityEvent::PieceStarted {
-            piece_index,
-            piece_length,
-        });
-        total_blocks += download.block_count();
-        total_bytes += ranges
-            .iter()
-            .map(|range| range.length as usize)
-            .sum::<usize>();
-
-        let mut initial_actions = Vec::new();
-        if availability_known {
-            initial_actions.extend(
-                download
-                    .on_message(PeerMessage::Bitfield(encode_availability(&availability)))
-                    .map_err(DownloadError::Piece)?,
-            );
-        }
-        if !peer_choking {
-            initial_actions.extend(
-                download
-                    .on_message(PeerMessage::Unchoke)
-                    .map_err(DownloadError::Piece)?,
-            );
-        }
-        control.observe(&download);
-        if let Some(piece) = process_selective_actions(
-            peer,
+            plans,
             &mut storage,
-            &mut download,
-            initial_actions,
-            &mut selected_written_bytes,
-            &mut part_written_bytes,
+            &metainfo,
+            &layout,
+            resume.as_ref(),
             &control,
-        )
-        .await?
-        {
-            if let Some(resume) = &resume {
-                storage
-                    .sync_piece(piece.index)
-                    .await
-                    .map_err(DownloadError::SelectiveStorage)?;
-                storage
-                    .record_verified(piece.index as usize)
-                    .map_err(DownloadError::SelectiveStorage)?;
-                resume
-                    .checkpoints
-                    .piece_durable(piece.index as usize)
-                    .map_err(DownloadError::Checkpoint)?;
-            } else {
-                storage
-                    .record_verified(piece.index as usize)
-                    .map_err(DownloadError::SelectiveStorage)?;
-            }
-            payload_high_water = payload_high_water.max(download.payload_budget().high_water);
-            last_piece = Some(piece);
-            continue;
-        }
-
-        loop {
-            let message = match next_peer_message(peer).await {
-                Ok(message) => message,
-                Err(error) => {
-                    download.cancel_pending();
-                    control.observe(&download);
-                    return Err(error);
-                }
-            };
-            if matches!(message, PeerMessage::Extended { .. }) {
-                continue;
-            }
-            let availability_update = availability_update(&message);
-            let actions = download.on_message(message).map_err(DownloadError::Piece)?;
-            control.observe(&download);
-            match availability_update {
-                AvailabilityUpdate::None => {}
-                AvailabilityUpdate::Choke(choking) => peer_choking = choking,
-                AvailabilityUpdate::Have(index) => {
-                    availability[index as usize] = true;
-                    availability_known = true;
-                }
-                AvailabilityUpdate::Bitfield(bitfield) => {
-                    decode_availability(&bitfield, &mut availability);
-                    availability_known = true;
-                }
-            }
-
-            if let Some(piece) = process_selective_actions(
-                peer,
-                &mut storage,
-                &mut download,
-                actions,
-                &mut selected_written_bytes,
-                &mut part_written_bytes,
-                &control,
-            )
-            .await?
-            {
-                if let Some(resume) = &resume {
-                    storage
-                        .sync_piece(piece.index)
-                        .await
-                        .map_err(DownloadError::SelectiveStorage)?;
-                    storage
-                        .record_verified(piece.index as usize)
-                        .map_err(DownloadError::SelectiveStorage)?;
-                    resume
-                        .checkpoints
-                        .piece_durable(piece.index as usize)
-                        .map_err(DownloadError::Checkpoint)?;
-                } else {
-                    storage
-                        .record_verified(piece.index as usize)
-                        .map_err(DownloadError::SelectiveStorage)?;
-                }
-                payload_high_water = payload_high_water.max(download.payload_budget().high_water);
-                last_piece = Some(piece);
-                break;
-            }
-        }
-    }
+        )?;
+        let completed = download_selective_swarm(peers, download).await?;
+        let result = (
+            completed.total_blocks,
+            completed.total_bytes,
+            completed.selected_written_bytes,
+            completed.part_written_bytes,
+            completed.state.snapshot(peers.elapsed()).payload_high_water,
+            completed.last_piece,
+        );
+        drop(completed);
+        result
+    };
 
     if descriptor_backed {
         storage
@@ -2818,120 +3291,15 @@ async fn connect_peer(
     advertise_extensions: bool,
     network: NetworkConfig,
 ) -> Result<(PeerConnection, Handshake), DownloadError> {
-    let address = attempt.endpoint().address();
-    if !network.policy.allows(address) {
-        return Err(DownloadError::NetworkPolicyDenied {
-            address,
-            policy: network.policy,
-        });
-    }
-    let mut peer = timeout(network.peer_connect_timeout, TcpStream::connect(address))
+    peer_socket::connect(attempt, info_hash, advertise_extensions, network)
         .await
-        .map_err(|_| DownloadError::PeerTimedOut {
-            operation: "connect",
-            timeout: network.peer_connect_timeout,
-        })?
-        .map_err(|source| DownloadError::Io {
-            operation: "connect to peer",
-            source,
-        })?;
-    let handshake = if advertise_extensions {
-        let mut reserved = [0; 8];
-        reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
-        encode_handshake_with_reserved(info_hash, CLIENT_PEER_ID, reserved)
-    } else {
-        encode_handshake(info_hash, CLIENT_PEER_ID)
-    };
-    timeout(network.peer_io_timeout, peer.write_all(&handshake))
-        .await
-        .map_err(|_| DownloadError::PeerTimedOut {
-            operation: "handshake write",
-            timeout: network.peer_io_timeout,
-        })?
-        .map_err(|source| DownloadError::Io {
-            operation: "send peer handshake",
-            source,
-        })?;
-
-    let mut handshake = [0_u8; HANDSHAKE_LENGTH];
-    timeout(network.peer_io_timeout, peer.read_exact(&mut handshake))
-        .await
-        .map_err(|_| DownloadError::PeerTimedOut {
-            operation: "handshake read",
-            timeout: network.peer_io_timeout,
-        })?
-        .map_err(|source| DownloadError::Io {
-            operation: "read peer handshake",
-            source,
-        })?;
-    let handshake = decode_handshake(&handshake, info_hash).map_err(DownloadError::Handshake)?;
-    Ok((
-        PeerConnection {
-            attempt,
-            stream: peer,
-            decoder: FrameDecoder::new(),
-            queued_messages: VecDeque::new(),
-            io_timeout: network.peer_io_timeout,
-        },
-        handshake,
-    ))
+        .map_err(download_peer_socket_error)
 }
 
 async fn next_peer_message(peer: &mut PeerConnection) -> Result<PeerMessage, DownloadError> {
-    let deadline = TokioInstant::now() + peer.io_timeout;
-    while peer.queued_messages.is_empty() {
-        let mut network_buffer = [0_u8; NETWORK_READ_LENGTH];
-        let read = timeout_at(deadline, peer.stream.read(&mut network_buffer))
-            .await
-            .map_err(|_| DownloadError::PeerTimedOut {
-                operation: "message read",
-                timeout: peer.io_timeout,
-            })?
-            .map_err(|source| DownloadError::Io {
-                operation: "read peer message",
-                source,
-            })?;
-        if read == 0 {
-            return Err(DownloadError::PeerClosed);
-        }
-        peer.queued_messages.extend(
-            peer.decoder
-                .push(&network_buffer[..read])
-                .map_err(DownloadError::Frame)?,
-        );
-    }
-    Ok(peer
-        .queued_messages
-        .pop_front()
-        .expect("peer message queue is nonempty after receive loop"))
-}
-
-#[derive(Debug)]
-enum AvailabilityUpdate {
-    None,
-    Choke(bool),
-    Have(u32),
-    Bitfield(Vec<u8>),
-}
-
-fn availability_update(message: &PeerMessage) -> AvailabilityUpdate {
-    match message {
-        PeerMessage::Choke => AvailabilityUpdate::Choke(true),
-        PeerMessage::Unchoke => AvailabilityUpdate::Choke(false),
-        PeerMessage::Have(index) => AvailabilityUpdate::Have(*index),
-        PeerMessage::Bitfield(bitfield) => AvailabilityUpdate::Bitfield(bitfield.clone()),
-        _ => AvailabilityUpdate::None,
-    }
-}
-
-fn encode_availability(availability: &[bool]) -> Vec<u8> {
-    let mut bitfield = vec![0_u8; availability.len().div_ceil(8)];
-    for (index, available) in availability.iter().enumerate() {
-        if *available {
-            bitfield[index / 8] |= 1 << (7 - index % 8);
-        }
-    }
-    bitfield
+    peer_socket::next_message(peer)
+        .await
+        .map_err(download_peer_socket_error)
 }
 
 fn decode_availability(bitfield: &[u8], availability: &mut [bool]) {
@@ -2965,17 +3333,28 @@ async fn send_message(
     peer: &mut PeerConnection,
     message: &PeerMessage,
 ) -> Result<(), DownloadError> {
-    let frame = encode_message(message).map_err(DownloadError::Frame)?;
-    timeout(peer.io_timeout, peer.stream.write_all(&frame))
+    peer_socket::send_message(peer, message)
         .await
-        .map_err(|_| DownloadError::PeerTimedOut {
-            operation: "message write",
-            timeout: peer.io_timeout,
-        })?
-        .map_err(|source| DownloadError::Io {
-            operation: "send peer message",
-            source,
-        })
+        .map_err(download_peer_socket_error)
+}
+
+fn download_peer_socket_error(error: PeerSocketError) -> DownloadError {
+    match error {
+        PeerSocketError::NetworkPolicyDenied { address, policy } => {
+            DownloadError::NetworkPolicyDenied { address, policy }
+        }
+        PeerSocketError::Io { operation, source } => DownloadError::Io { operation, source },
+        PeerSocketError::TimedOut { operation, timeout } => {
+            DownloadError::PeerTimedOut { operation, timeout }
+        }
+        PeerSocketError::Closed => DownloadError::PeerClosed,
+        PeerSocketError::Handshake(error) => DownloadError::Handshake(error),
+        PeerSocketError::Frame(error) => DownloadError::Frame(error),
+    }
+}
+
+fn download_peer_set_error(error: PeerSetError) -> DownloadError {
+    DownloadError::PeerTask(error.to_string())
 }
 
 async fn process_actions(
@@ -3053,91 +3432,8 @@ async fn process_actions(
     Ok(None)
 }
 
-async fn process_selective_actions(
-    peer: &mut PeerConnection,
-    storage: &mut SelectiveStorage,
-    download: &mut OnePieceDownload,
-    actions: Vec<DownloadAction>,
-    selected_written_bytes: &mut usize,
-    part_written_bytes: &mut usize,
-    control: &DownloadControl,
-) -> Result<Option<VerifiedPiece>, DownloadError> {
-    let mut pending = VecDeque::from(actions);
-    while let Some(action) = pending.pop_front() {
-        match action {
-            DownloadAction::SendInterested => {
-                send_message(peer, &PeerMessage::Interested).await?;
-            }
-            DownloadAction::Request(request) => {
-                send_message(peer, &PeerMessage::Request(request)).await?;
-                control.record_requested(request.length as usize);
-                control.emit(DownloadActivityEvent::BlockRequested {
-                    piece_index: request.index,
-                    begin: request.begin,
-                    length: request.length,
-                });
-            }
-            DownloadAction::StoreBlock(block) => {
-                let index = block.index;
-                let begin = block.begin;
-                let length = block.bytes.len();
-                control.record_received(length);
-                control.emit(DownloadActivityEvent::BlockReceived {
-                    piece_index: index,
-                    begin,
-                    length: u32::try_from(length).expect("peer block length is bounded by u32"),
-                });
-                control.wait_before_storage().await;
-                let stats = match storage.write_block(index, begin, block.bytes).await {
-                    Ok(stats) => stats,
-                    Err(error) => {
-                        download
-                            .on_block_write_failed(index, begin)
-                            .map_err(DownloadError::Piece)?;
-                        control.observe(download);
-                        return Err(DownloadError::SelectiveStorage(error));
-                    }
-                };
-                control.record_stored(length);
-                control.emit(DownloadActivityEvent::BlockStored {
-                    piece_index: index,
-                    begin,
-                    length: u32::try_from(length).expect("peer block length is bounded by u32"),
-                });
-                *selected_written_bytes += stats.wanted_bytes;
-                *part_written_bytes += stats.skipped_bytes;
-                pending.extend(
-                    download
-                        .on_block_stored(index, begin)
-                        .map_err(DownloadError::Piece)?,
-                );
-                control.observe(download);
-            }
-            DownloadAction::VerifyPiece { index, .. } => {
-                let actual_hash = storage
-                    .hash_piece(index)
-                    .await
-                    .map_err(DownloadError::SelectiveStorage)?;
-                pending.push_back(
-                    download
-                        .finish_verification(index, actual_hash)
-                        .map_err(DownloadError::Piece)?,
-                );
-            }
-            DownloadAction::Verified(piece) => {
-                control.emit(DownloadActivityEvent::PieceVerified {
-                    piece_index: piece.index,
-                });
-                return Ok(Some(piece));
-            }
-        }
-    }
-    Ok(None)
-}
-
 #[cfg(test)]
 mod tests {
-    use std::collections::VecDeque;
     use std::net::{IpAddr, SocketAddr};
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -3154,8 +3450,8 @@ mod tests {
     };
     use rstorrent_protocol::metainfo::Metainfo;
     use rstorrent_protocol::peer_wire::{
-        EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX, FrameDecoder,
-        HANDSHAKE_LENGTH, PeerMessage, decode_handshake, encode_handshake_with_reserved,
+        EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX, HANDSHAKE_LENGTH,
+        PeerMessage, decode_handshake, encode_handshake, encode_handshake_with_reserved,
         encode_message,
     };
     use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
@@ -3166,14 +3462,14 @@ mod tests {
     use tokio::time::timeout;
 
     use super::{
-        CLIENT_PEER_ID, DhtRetryTiming, DownloadActivityEvent, DownloadActivitySink,
-        DownloadConfig, DownloadControl, DownloadError, MagnetDownloadConfig, PeerConnection,
-        PeerSession, UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming,
+        CLIENT_PEER_ID, ContentDownloadConfig, DhtRetryTiming, DownloadActivityEvent,
+        DownloadActivitySink, DownloadConfig, DownloadControl, DownloadError, MagnetDownloadConfig,
+        PeerConnection, PeerSession, UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming,
         UdpTrackerTokenCache, announce_udp_tracker_address, download_magnet,
         download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
         download_magnet_with_control, download_verified_piece,
         download_verified_piece_with_control, next_peer_message, retrying_dht_lookup,
-        run_magnet_download_with_peers, send_message,
+        run_content_download, run_magnet_download_with_peers, send_message,
     };
     use crate::dht::{BootstrapNode, DhtConfig, DhtService};
     use crate::network::{NetworkConfig, NetworkPolicy};
@@ -3300,13 +3596,7 @@ mod tests {
             .expect("connect peer message client");
         let (server, _) = listener.accept().await.expect("accept peer message client");
         (
-            PeerConnection {
-                attempt: test_dial_attempt(),
-                stream: client,
-                decoder: FrameDecoder::new(),
-                queued_messages: VecDeque::new(),
-                io_timeout,
-            },
+            PeerConnection::for_test(test_dial_attempt(), client, io_timeout),
             server,
         )
     }
@@ -3481,6 +3771,375 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         metainfo
     }
 
+    fn two_piece_metainfo(first: &[u8], second: &[u8]) -> Vec<u8> {
+        assert_eq!(first.len(), 16 * 1024);
+        assert_eq!(second.len(), 16 * 1024);
+        let mut metainfo = format!(
+            "d4:infod5:filesld6:lengthi{}e4:pathl1:aeed6:lengthi{}e4:pathl1:beee\
+             4:name7:fixture12:piece lengthi16384e6:pieces40:",
+            first.len(),
+            second.len()
+        )
+        .into_bytes();
+        metainfo.extend_from_slice(&Sha1::digest(first));
+        metainfo.extend_from_slice(&Sha1::digest(second));
+        metainfo.extend_from_slice(b"ee");
+        metainfo
+    }
+
+    async fn serve_content_peer(
+        listener: TcpListener,
+        info_hash: [u8; 20],
+        pieces: Arc<Vec<Vec<u8>>>,
+        available: Vec<bool>,
+    ) {
+        let (mut stream, _) = listener.accept().await.expect("accept content peer");
+        let mut handshake = [0; HANDSHAKE_LENGTH];
+        stream
+            .read_exact(&mut handshake)
+            .await
+            .expect("read content handshake");
+        decode_handshake(&handshake, info_hash).expect("valid content handshake");
+        stream
+            .write_all(&encode_handshake(info_hash, *b"-RS-SPLIT-0000000000"))
+            .await
+            .expect("send content handshake");
+        let mut peer =
+            PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(2));
+        let mut bitfield = vec![0_u8; available.len().div_ceil(8)];
+        for (piece, present) in available.iter().enumerate() {
+            if *present {
+                bitfield[piece / 8] |= 1 << (7 - piece % 8);
+            }
+        }
+        send_message(&mut peer, &PeerMessage::Bitfield(bitfield))
+            .await
+            .expect("send availability");
+        send_message(&mut peer, &PeerMessage::Unchoke)
+            .await
+            .expect("send unchoke");
+        loop {
+            match next_peer_message(&mut peer).await {
+                Ok(PeerMessage::Interested) => {}
+                Ok(PeerMessage::Request(request)) => {
+                    let piece = request.index as usize;
+                    assert!(available[piece], "request sent to unavailable peer");
+                    let begin = request.begin as usize;
+                    let end = begin + request.length as usize;
+                    send_message(
+                        &mut peer,
+                        &PeerMessage::Piece {
+                            index: request.index,
+                            begin: request.begin,
+                            block: pieces[piece][begin..end].to_vec(),
+                        },
+                    )
+                    .await
+                    .expect("send content block");
+                }
+                Err(DownloadError::PeerClosed)
+                | Err(DownloadError::Io {
+                    operation: "read peer message",
+                    ..
+                }) => break,
+                Ok(message) => panic!("unexpected content command {message:?}"),
+                Err(error) => panic!("content peer failed: {error}"),
+            }
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum AdverseRequestAction {
+        Disconnect,
+        Choke,
+    }
+
+    async fn serve_adverse_content_peer(
+        listener: TcpListener,
+        info_hash: [u8; 20],
+        action: AdverseRequestAction,
+    ) {
+        let (mut stream, _) = listener.accept().await.expect("accept adverse peer");
+        let mut handshake = [0; HANDSHAKE_LENGTH];
+        stream
+            .read_exact(&mut handshake)
+            .await
+            .expect("read adverse handshake");
+        decode_handshake(&handshake, info_hash).expect("valid adverse handshake");
+        stream
+            .write_all(&encode_handshake(info_hash, *b"-RS-ADVERS-000000000"))
+            .await
+            .expect("send adverse handshake");
+        let mut peer =
+            PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(2));
+        send_message(&mut peer, &PeerMessage::Bitfield(vec![0xc0]))
+            .await
+            .expect("send adverse availability");
+        send_message(&mut peer, &PeerMessage::Unchoke)
+            .await
+            .expect("send adverse unchoke");
+        loop {
+            match next_peer_message(&mut peer).await {
+                Ok(PeerMessage::Interested) => {}
+                Ok(PeerMessage::Request(_)) => match action {
+                    AdverseRequestAction::Disconnect => return,
+                    AdverseRequestAction::Choke => {
+                        send_message(&mut peer, &PeerMessage::Choke)
+                            .await
+                            .expect("send choke");
+                        break;
+                    }
+                },
+                Ok(message) => panic!("unexpected adverse command {message:?}"),
+                Err(error) => panic!("adverse peer failed before request: {error}"),
+            }
+        }
+        loop {
+            match next_peer_message(&mut peer).await {
+                Err(DownloadError::PeerClosed)
+                | Err(DownloadError::Io {
+                    operation: "read peer message",
+                    ..
+                }) => return,
+                Ok(PeerMessage::Interested) => {}
+                Ok(PeerMessage::Request(_)) => {
+                    // Requests queued before the choke crossed the wire are harmless.
+                }
+                Ok(message) => panic!("choked peer received command {message:?}"),
+                Err(error) => panic!("choked peer failed: {error}"),
+            }
+        }
+    }
+
+    async fn accept_handshake_without_reply(listener: TcpListener) {
+        let (mut stream, _) = listener.accept().await.expect("accept silent peer");
+        let mut handshake = [0; HANDSHAKE_LENGTH];
+        stream
+            .read_exact(&mut handshake)
+            .await
+            .expect("read silent handshake");
+        let mut end = [0; 1];
+        assert_eq!(stream.read(&mut end).await.expect("wait for close"), 0);
+    }
+
+    async fn run_adverse_reassignment_case(action: AdverseRequestAction) {
+        let first = vec![0x44; 16 * 1024];
+        let second = vec![0x99; 16 * 1024];
+        let metainfo =
+            Metainfo::from_bytes(&two_piece_metainfo(&first, &second)).expect("two-piece metainfo");
+        let payload = Arc::new(vec![first, second]);
+        let adverse_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind adverse");
+        let adverse_address = adverse_listener.local_addr().expect("adverse address");
+        let useful_listener = TcpListener::bind("127.0.0.1:0").await.expect("bind useful");
+        let useful_address = useful_listener.local_addr().expect("useful address");
+        let adverse = tokio::spawn(serve_adverse_content_peer(
+            adverse_listener,
+            metainfo.info_hash,
+            action,
+        ));
+        let useful = tokio::spawn(serve_content_peer(
+            useful_listener,
+            metainfo.info_hash,
+            payload,
+            vec![true, true],
+        ));
+        let output = test_path(match action {
+            AdverseRequestAction::Disconnect => "disconnect-reassignment",
+            AdverseRequestAction::Choke => "choke-reassignment",
+        });
+        let mut peers = PeerSession::from_endpoint(
+            adverse_address,
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(2)),
+        )
+        .expect("peer session");
+        peers
+            .observe_address(useful_address, PeerSource::Manual)
+            .expect("useful peer");
+        let report = timeout(
+            Duration::from_secs(3),
+            run_content_download(
+                ContentDownloadConfig {
+                    output_path: output.clone(),
+                    max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                    skip_files: Vec::new(),
+                    materialize_files: Vec::new(),
+                },
+                metainfo,
+                DownloadControl::new(),
+                None,
+                &mut peers,
+                None,
+            ),
+        )
+        .await
+        .expect("bounded reassignment")
+        .expect("reassigned download");
+        assert_eq!(report.verified_piece_count, 2);
+        timeout(Duration::from_secs(1), adverse)
+            .await
+            .expect("adverse peer joined")
+            .expect("adverse peer task");
+        timeout(Duration::from_secs(1), useful)
+            .await
+            .expect("useful peer joined")
+            .expect("useful peer task");
+        let _ = tokio::fs::remove_dir_all(output).await;
+    }
+
+    #[tokio::test]
+    async fn multi_peer_split_availability_completes_and_joins_every_socket() {
+        let first = vec![0x31; 16 * 1024];
+        let second = vec![0x72; 16 * 1024];
+        let metainfo =
+            Metainfo::from_bytes(&two_piece_metainfo(&first, &second)).expect("two-piece metainfo");
+        let peers_payload = Arc::new(vec![first.clone(), second.clone()]);
+        let first_listener = TcpListener::bind("127.0.0.1:0").await.expect("bind A");
+        let first_address = first_listener.local_addr().expect("address A");
+        let second_listener = TcpListener::bind("127.0.0.1:0").await.expect("bind B");
+        let second_address = second_listener.local_addr().expect("address B");
+        let peer_a = tokio::spawn(serve_content_peer(
+            first_listener,
+            metainfo.info_hash,
+            peers_payload.clone(),
+            vec![true, false],
+        ));
+        let peer_b = tokio::spawn(serve_content_peer(
+            second_listener,
+            metainfo.info_hash,
+            peers_payload,
+            vec![false, true],
+        ));
+
+        let control = DownloadControl::new();
+        let output = test_path("split-availability");
+        let mut peers = PeerSession::from_endpoint(
+            first_address,
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(2)),
+        )
+        .expect("peer session");
+        peers
+            .observe_address(second_address, PeerSource::Manual)
+            .expect("second peer");
+        let report = timeout(
+            Duration::from_secs(3),
+            run_content_download(
+                ContentDownloadConfig {
+                    output_path: output.clone(),
+                    max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                    skip_files: Vec::new(),
+                    materialize_files: Vec::new(),
+                },
+                metainfo,
+                control,
+                None,
+                &mut peers,
+                None,
+            ),
+        )
+        .await
+        .expect("bounded multi-peer download")
+        .expect("multi-peer download");
+
+        assert_eq!(report.block_count, 2);
+        assert_eq!(report.verified_piece_count, 2);
+        assert!(report.payload_high_water <= 2 * MIN_PAYLOAD_ALLOWANCE);
+        assert_eq!(
+            tokio::fs::read(output.join("a")).await.expect("file A"),
+            first
+        );
+        assert_eq!(
+            tokio::fs::read(output.join("b")).await.expect("file B"),
+            second
+        );
+        timeout(Duration::from_secs(1), peer_a)
+            .await
+            .expect("peer A joined")
+            .expect("peer A task");
+        timeout(Duration::from_secs(1), peer_b)
+            .await
+            .expect("peer B joined")
+            .expect("peer B task");
+        let _ = tokio::fs::remove_dir_all(output).await;
+    }
+
+    #[tokio::test]
+    async fn disconnect_and_choke_reassign_only_their_outstanding_blocks() {
+        run_adverse_reassignment_case(AdverseRequestAction::Disconnect).await;
+        run_adverse_reassignment_case(AdverseRequestAction::Choke).await;
+    }
+
+    #[tokio::test]
+    async fn silent_handshakes_do_not_block_a_parallel_useful_peer() {
+        let first = vec![0x13; 16 * 1024];
+        let second = vec![0x57; 16 * 1024];
+        let metainfo =
+            Metainfo::from_bytes(&two_piece_metainfo(&first, &second)).expect("two-piece metainfo");
+        let silent_a = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind silent A");
+        let address_a = silent_a.local_addr().expect("silent A address");
+        let silent_b = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind silent B");
+        let address_b = silent_b.local_addr().expect("silent B address");
+        let useful = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind useful peer");
+        let useful_address = useful.local_addr().expect("useful address");
+        let silent_task_a = tokio::spawn(accept_handshake_without_reply(silent_a));
+        let silent_task_b = tokio::spawn(accept_handshake_without_reply(silent_b));
+        let useful_task = tokio::spawn(serve_content_peer(
+            useful,
+            metainfo.info_hash,
+            Arc::new(vec![first, second]),
+            vec![true, true],
+        ));
+        let mut peers = PeerSession::from_endpoint(
+            address_a,
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(5)),
+        )
+        .expect("peer session");
+        peers
+            .observe_address(address_b, PeerSource::Manual)
+            .expect("silent B");
+        peers
+            .observe_address(useful_address, PeerSource::Manual)
+            .expect("useful peer");
+        let output = test_path("silent-handshake-parallel");
+        let report = timeout(
+            Duration::from_secs(2),
+            run_content_download(
+                ContentDownloadConfig {
+                    output_path: output.clone(),
+                    max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                    skip_files: Vec::new(),
+                    materialize_files: Vec::new(),
+                },
+                metainfo,
+                DownloadControl::new(),
+                None,
+                &mut peers,
+                None,
+            ),
+        )
+        .await
+        .expect("silent handshakes did not serialize progress")
+        .expect("useful peer completed");
+        assert_eq!(report.verified_piece_count, 2);
+        for task in [silent_task_a, silent_task_b, useful_task] {
+            timeout(Duration::from_secs(1), task)
+                .await
+                .expect("peer joined")
+                .expect("peer task");
+        }
+        let _ = tokio::fs::remove_dir_all(output).await;
+    }
+
     fn single_file_info(payload: &[u8]) -> Vec<u8> {
         let piece_hash: [u8; 20] = Sha1::digest(payload).into();
         let mut info = format!(
@@ -3644,13 +4303,8 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             ))
             .await
             .expect("send server handshake");
-        let mut peer = PeerConnection {
-            attempt: test_dial_attempt(),
-            stream,
-            decoder: FrameDecoder::new(),
-            queued_messages: VecDeque::new(),
-            io_timeout: Duration::from_secs(1),
-        };
+        let mut peer =
+            PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(1));
 
         let PeerMessage::Extended { id: 0, .. } = next_peer_message(&mut peer)
             .await

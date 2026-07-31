@@ -574,10 +574,9 @@ impl SwarmState {
         if !self.connections.contains_key(&connection) {
             return Err(SwarmError::UnknownConnection(connection));
         }
-        let state = self
-            .blocks
-            .get(&block)
-            .ok_or(SwarmError::UnknownBlock(block))?;
+        let Some(state) = self.blocks.get(&block) else {
+            return Ok(ReceiveDisposition::Unsolicited);
+        };
         let evidence = state
             .attempts
             .iter()
