@@ -320,6 +320,10 @@ comparator before further engine tuning.
 
 Last completed evidence:
 
+- commit `948ea96` closed Tactical `018`'s inspectable metadata acquisition,
+  lifecycle fixes, and provisional tracker-port implementation;
+- commit `e199b1f` established this runbook and retained the initial paired
+  reference evidence;
 - RSTorrent metadata-only Big Buck Bunny cohorts completed 8/10 through UDP
   trackers and 7/10 through fresh DHT sessions;
 - pinned libtorrent `2.0.13.0` completed both corresponding cohorts 10/10;
@@ -333,13 +337,11 @@ Last completed evidence:
 
 Next executable action:
 
-1. close and commit the existing inspectable-metadata/default-port evidence
-   slice without losing its validated changes;
-2. make Tactical `015` decision-complete against this runbook;
-3. implement the catalog, result schema, libtorrent adapter, RSTorrent adapter,
+1. make Tactical `015` decision-complete against this runbook;
+2. implement the catalog, result schema, libtorrent adapter, RSTorrent adapter,
    alternating runner, cleanup, and deterministic classification tests;
-4. capture the first paired metadata and full-download baseline; and
-5. open the next numbered tactical for torrent-owned multi-source metadata
+3. capture the first paired metadata and full-download baseline; and
+4. open the next numbered tactical for torrent-owned multi-source metadata
    acquisition using the completed source dossier.
 
 Human blocker: **none**.
