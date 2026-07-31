@@ -191,6 +191,14 @@ at least five minutes after the first valid response. Tactical `021` owns a
 bounded initial fan-out while preserving RSTorrent's documented synthetic
 tier and later promoted-tracker policy.
 
+The first Tactical `021` checkpoint installs that bounded fan-out. Pure
+tracker records now explicitly distinguish an in-flight update, and one
+manager owns up to eight operations with per-record token caches and joined
+cancellation. Scripted barriers prove true concurrency, the exact ceiling,
+failure-driven admission beyond the ceiling, multi-response peer intake, and
+socket release. Endpoint-free probe totals expose response batches, reported
+peers, and dial attempts. Live evidence is not yet recorded.
+
 ## Current Limits And Next Work
 
 The manager still has one UDP operation at a time and volatile state; the

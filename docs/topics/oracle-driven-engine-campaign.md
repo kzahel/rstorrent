@@ -393,11 +393,11 @@ Last completed evidence:
 
 Next executable action:
 
-1. add a bounded initial tracker-operation owner with exact cancellation and
-   per-record token-cache ownership;
-2. prove concurrent startup, multi-response registry intake, and cleanup with
-   scripted trackers;
-3. add endpoint-free response/dial aggregates to the headless comparator; and
-4. rerun the owner-only 50% screen before alternating confirmation cohorts.
+1. finish workspace gates for the bounded eight-operation tracker owner;
+2. commit the deterministic and controlled checkpoint;
+3. rerun the owner-only 50% screen with response-batch, reported-peer, dial,
+   and current-registry diagnostics; and
+4. retain or adjust only the next source-derived owner before alternating
+   confirmation cohorts.
 
 Human blocker: **none**.

@@ -107,6 +107,9 @@ struct Observation {
     geometry: Geometry,
     verified_pieces: BTreeSet<u32>,
     verified_bytes: u64,
+    tracker_response_batches: u64,
+    tracker_reported_peers: u64,
+    peer_dial_attempts: u64,
 }
 
 #[derive(Debug)]
@@ -133,6 +136,9 @@ impl ProbeSink {
             geometry: observation.geometry.clone(),
             verified_piece_count: observation.verified_pieces.len(),
             verified_bytes: observation.verified_bytes,
+            tracker_response_batches: observation.tracker_response_batches,
+            tracker_reported_peers: observation.tracker_reported_peers,
+            peer_dial_attempts: observation.peer_dial_attempts,
         }
     }
 
@@ -241,6 +247,16 @@ impl DownloadActivitySink for ProbeSink {
                         .get_or_insert(elapsed);
                 }
             }
+            DownloadActivityEvent::TrackerAnnounceSucceeded { peer_count, .. } => {
+                observation.tracker_response_batches =
+                    observation.tracker_response_batches.saturating_add(1);
+                observation.tracker_reported_peers = observation
+                    .tracker_reported_peers
+                    .saturating_add(u64::from(peer_count));
+            }
+            DownloadActivityEvent::PeerDialStarted { .. } => {
+                observation.peer_dial_attempts = observation.peer_dial_attempts.saturating_add(1);
+            }
             _ => {}
         }
     }
@@ -256,6 +272,9 @@ struct ObservationSnapshot {
     geometry: Geometry,
     verified_piece_count: usize,
     verified_bytes: u64,
+    tracker_response_batches: u64,
+    tracker_reported_peers: u64,
+    peer_dial_attempts: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -284,6 +303,9 @@ struct Diagnostics {
     metadata_hash_failures: usize,
     metadata_hash_failure_contributors: usize,
     metadata_attempt_details: Vec<MetadataAttemptDiagnostics>,
+    tracker_response_batches: u64,
+    tracker_reported_peers: u64,
+    peer_dial_attempts: u64,
     content_candidate_count: Option<usize>,
     content_eligible_candidates: Option<usize>,
     content_dialing_candidates: Option<usize>,
@@ -559,6 +581,7 @@ fn result(
     terminal: TerminalState,
 ) -> ProbeResult {
     let observation = sink.snapshot();
+    let diagnostics = diagnostic_result(diagnostics, &observation);
     ProbeResult {
         schema_version: 1,
         implementation: "rstorrent",
@@ -582,11 +605,14 @@ fn result(
             web_seed: false,
             websocket_trackers: false,
         },
-        diagnostics: diagnostic_result(diagnostics),
+        diagnostics,
     }
 }
 
-fn diagnostic_result(snapshot: &DownloadDiagnosticSnapshot) -> Diagnostics {
+fn diagnostic_result(
+    snapshot: &DownloadDiagnosticSnapshot,
+    observation: &ObservationSnapshot,
+) -> Diagnostics {
     let registry = snapshot.metadata.registry.as_ref();
     let content_registry = snapshot.content_registry.as_ref();
     let swarm = snapshot.swarm.as_ref();
@@ -625,6 +651,9 @@ fn diagnostic_result(snapshot: &DownloadDiagnosticSnapshot) -> Diagnostics {
                 terminal_detail: attempt.terminal_detail.clone(),
             })
             .collect(),
+        tracker_response_batches: observation.tracker_response_batches,
+        tracker_reported_peers: observation.tracker_reported_peers,
+        peer_dial_attempts: observation.peer_dial_attempts,
         content_candidate_count: content_registry.map(|value| value.total),
         content_eligible_candidates: content_registry.map(|value| value.eligible),
         content_dialing_candidates: content_registry.map(|value| value.dialing),
@@ -728,7 +757,9 @@ impl fmt::Display for Target {
 
 #[cfg(test)]
 mod tests {
-    use super::crosses;
+    use std::time::Instant;
+
+    use super::{DownloadActivityEvent, DownloadActivitySink, ProbeSink, crosses};
 
     #[test]
     fn percentage_thresholds_do_not_round_down() {
@@ -736,5 +767,25 @@ mod tests {
         assert!(crosses(1, 1, 50));
         assert!(crosses(95, 100, 95));
         assert!(!crosses(94, 100, 95));
+    }
+
+    #[test]
+    fn discovery_diagnostics_accumulate_without_endpoint_retention() {
+        let sink = ProbeSink::new(Instant::now());
+        for peer_count in [3, 7] {
+            sink.record(DownloadActivityEvent::TrackerAnnounceSucceeded {
+                tracker: "redacted by aggregate".to_owned(),
+                peer_count,
+                interval_seconds: 600,
+            });
+        }
+        sink.record(DownloadActivityEvent::PeerDialStarted {
+            peer: "redacted by aggregate".to_owned(),
+        });
+
+        let snapshot = sink.snapshot();
+        assert_eq!(snapshot.tracker_response_batches, 2);
+        assert_eq!(snapshot.tracker_reported_peers, 10);
+        assert_eq!(snapshot.peer_dial_attempts, 1);
     }
 }

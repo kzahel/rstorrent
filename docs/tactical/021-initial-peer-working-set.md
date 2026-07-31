@@ -131,6 +131,48 @@ The comparable claim still requires two independent 10-run cohorts with at
 least 8/10 RSTorrent successes and median paired latency no worse than 2.0x
 libtorrent. A changing public swarm cannot be a deterministic CI gate.
 
+## Implementation Evidence
+
+The first checkpoint adds explicit `updating` state to each pure tracker
+record. Selecting an announce enters that state; success and failure leave it;
+and the schedule returns `Pending` instead of wrapping a round while an
+operation is unresolved. This makes concurrent runtime ownership visible to
+the deterministic schedule without introducing Tokio or task handles there.
+
+The async manager now owns a `JoinSet` of at most eight operations. It fills
+the startup window from schedule actions, serializes completions back through
+the pure state owner, and permits every already-started response to contribute
+peers after another tracker succeeds. Each task temporarily owns only its
+record's BEP 15 token cache and returns it with the result, so different
+trackers share no socket state and reannounce token reuse remains intact.
+Cancellation, result-receiver closure, and a task join failure abort and join
+the remaining set before the manager returns.
+
+Adversarial loopback tests prove three trackers begin before a response barrier
+opens, three disjoint response batches merge through the peer registry, eight
+silent operations hold the exact ceiling, a ninth begins only after a failed
+operation frees capacity, and cancellation of three silent operations permits
+immediate rebinding of every client socket. A pure test proves an unresolved
+round cannot reselect the same tracker. Existing tracker schedule,
+retransmission, token, metadata, content-discovery, and mixed-peer tests remain
+green.
+
+The public probe now reports saturating endpoint-free totals for successful
+tracker response batches, peers reported by those batches, and peer dial
+attempts. A unit test proves accumulation without retaining the event's
+tracker or peer strings. The independent controlled UDP tracker fixture was
+also corrected to assert the already-accepted provisional port `6881` instead
+of the obsolete port-zero behavior; its three complete metadata/content runs
+then passed.
+
+At this checkpoint, workspace formatting and warning-denying clippy pass. The
+workspace has 223 passing tests, three changing public-network tests ignored,
+and no failures; the engine library contributes 112 of those passes. The
+three-run UDP tracker interop, mixed-peer liveness scenario, controlled paired
+publication, and all seven comparator unit tests also pass. The live 50%
+screen remains next; this checkpoint does not claim improved public
+reliability yet.
+
 ## Non-Goals
 
 - HTTP, HTTPS, WebSocket trackers, BEP 12 metainfo tiers, announce-all user

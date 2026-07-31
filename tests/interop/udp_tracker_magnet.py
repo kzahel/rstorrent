@@ -45,6 +45,7 @@ STARTED_EVENT = 2
 CONNECTION_ID = 0x0102030405060708
 UNKNOWN_MAGNET_LEFT = 16 * 1024
 NUM_WANT = 200
+ANNOUNCED_PORT = 6881
 DIAGNOSTIC_PEER_ID = b"-RS0001-000000000000"
 ANNOUNCE_FORMAT = "!QII20s20sQQQIIIiH"
 
@@ -164,7 +165,7 @@ class OneShotUdpTracker:
                 raise ScenarioFailure("UDP announce has unexpected transfer counters")
             if event != STARTED_EVENT or announced_ip != 0:
                 raise ScenarioFailure("UDP announce has the wrong event or IP field")
-            if key == 0 or num_want != NUM_WANT or listen_port != 0:
+            if key == 0 or num_want != NUM_WANT or listen_port != ANNOUNCED_PORT:
                 raise ScenarioFailure("UDP announce has the wrong key, peer limit, or port")
 
             response = struct.pack(

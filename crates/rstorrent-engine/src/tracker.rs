@@ -28,6 +28,7 @@ pub(crate) struct TrackerRecord {
     failures: u8,
     total_attempts: u32,
     start_acknowledged: bool,
+    updating: bool,
     last_success: Option<Duration>,
     last_failure: Option<Duration>,
     next_announce: Duration,
@@ -44,6 +45,7 @@ impl TrackerRecord {
             failures: 0,
             total_attempts: 0,
             start_acknowledged: false,
+            updating: false,
             last_success: None,
             last_failure: None,
             next_announce: Duration::ZERO,
@@ -73,6 +75,7 @@ pub(crate) enum TrackerAction {
         url: UdpTrackerUrl,
         kind: TrackerWaitKind,
     },
+    Pending,
     Exhausted,
 }
 
@@ -145,6 +148,7 @@ impl TrackerSchedule {
                 let fallback = !self.attempted.is_empty();
                 self.attempted.insert(record.id);
                 record.total_attempts = record.total_attempts.saturating_add(1);
+                record.updating = true;
                 return TrackerAction::Announce {
                     id: record.id,
                     url: record.url.clone(),
@@ -158,6 +162,10 @@ impl TrackerSchedule {
                     attempt: record.total_attempts,
                     fallback,
                 };
+            }
+
+            if self.records.iter().any(|record| record.updating) {
+                return TrackerAction::Pending;
             }
 
             if let Some(record) = self
@@ -187,6 +195,7 @@ impl TrackerSchedule {
 
     pub(crate) fn failed(&mut self, id: TrackerId, now: Duration) -> TrackerFailure {
         let record = self.record_mut(id);
+        record.updating = false;
         record.failures = record.failures.saturating_add(1).min(MAX_TRACKER_FAILURES);
         record.last_failure = Some(now);
         let retry_in = tracker_failure_delay(record.failures);
@@ -212,6 +221,7 @@ impl TrackerSchedule {
             .expect("selected tracker record remains installed");
         {
             let record = &mut self.records[position];
+            record.updating = false;
             record.failures = 0;
             record.start_acknowledged = true;
             record.last_success = Some(now);
@@ -348,6 +358,28 @@ mod tests {
                 fallback: false,
                 ..
             } if url == second
+        ));
+    }
+
+    #[test]
+    fn concurrent_round_does_not_reselect_inflight_trackers() {
+        let mut schedule = TrackerSchedule::new(vec![
+            tracker("first.example", 80),
+            tracker("second.example", 81),
+        ]);
+        let first = announce(&mut schedule, Duration::ZERO);
+        let second = announce(&mut schedule, Duration::ZERO);
+        assert_eq!(schedule.next_action(Duration::ZERO), TrackerAction::Pending);
+
+        schedule.failed(first, Duration::ZERO);
+        assert_eq!(schedule.next_action(Duration::ZERO), TrackerAction::Pending);
+        schedule.failed(second, Duration::ZERO);
+        assert!(matches!(
+            schedule.next_action(Duration::ZERO),
+            TrackerAction::Wait {
+                kind: TrackerWaitKind::FailureRetry,
+                ..
+            }
         ));
     }
 
