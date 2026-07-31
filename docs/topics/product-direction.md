@@ -395,12 +395,16 @@ does not distort the protocol vertical slice.
 
 ## Recommended Next Work
 
-The next protocol slice should establish a small bounded set of live peer
-connections with explicit content-request ownership and failover. That gives
-the peer registry and tracker results practical effect without prematurely
-choosing mature performance, endgame, or choking policy. A later tracker slice
-can add metainfo tiers, non-UDP transports, completed/stopped announces, real
-transfer counters, and a listening port once their owners exist. Product
-growth should continue through the established application service, generated
-contracts, and platform capability seams rather than creating another
-orchestration surface.
+[`capability-readiness.md`](capability-readiness.md) owns the current prioritized
+queue so this durable direction does not become a competing backlog. The next
+protocol direction remains completion liveness: establish a small bounded set
+of live peer connections with explicit content-request ownership and failover.
+That gives the peer registry and tracker results practical effect before
+mature performance, endgame, or choking policy.
+
+Product growth should continue through the established application service,
+generated contracts, and platform capability seams rather than creating
+another orchestration surface. Protocol support claims and download
+correctness evidence are tracked separately in
+[`protocol-support.md`](protocol-support.md) and
+[`download-correctness.md`](download-correctness.md).

@@ -36,6 +36,13 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`product-direction.md`](product-direction.md): initial product motivation,
   first-party Rust engine decision, platform posture, non-goals, open choices,
   and recommended bring-up sequence.
+- [`capability-readiness.md`](capability-readiness.md): master engine and product
+  scoreboard, evidence vocabulary, priority policy, and bounded current queue.
+- [`download-correctness.md`](download-correctness.md): completion, integrity,
+  request ownership, recovery invariants, observed incidents, and executable
+  scenario ledger.
+- [`protocol-support.md`](protocol-support.md): precise BEP support claims,
+  deliberate limits, interoperability evidence, and protocol sequencing.
 - [`client-persistence.md`](client-persistence.md): SQLite-backed client state,
   verified metadata and resume invariants, cross-platform storage-root
   identity, and the application-service boundary above the torrent engine.

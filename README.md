@@ -121,7 +121,13 @@ provenance policy.
   simplicity, ownership, integrity, observability, and evidence standards that
   guide implementation.
 - [Product and engine direction](docs/topics/product-direction.md) records the
-  current decisions, open questions, and next direction.
+  durable decisions, open questions, and bring-up sequence.
+- [Capability readiness](docs/topics/capability-readiness.md) is the current
+  engine and product scoreboard and owns the prioritized work queue.
+- [Download correctness](docs/topics/download-correctness.md) tracks completion,
+  integrity, recovery, and liveness scenarios.
+- [Protocol support](docs/topics/protocol-support.md) records exact BEP support,
+  limitations, and evidence.
 - [Topics](docs/topics/README.md) hold living truth for continuing concerns.
 - [Tacticals](docs/tactical/README.md) hold numbered, bounded implementation
   plans and their execution records.

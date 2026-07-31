@@ -92,5 +92,11 @@ direction belongs in `../topics/`.
   online desktop and Android product networking, loopback-isolated harnesses,
   offline progress, and bounded network-operation deadlines without a
   whole-download timeout.
+- [`014-scheduled-udp-tracker-lifecycle.md`](014-scheduled-udp-tracker-lifecycle.md):
+  completed supervised UDP tracker records, multi-tracker fallback, bounded
+  retry and reannounce scheduling, loss recovery, token reuse, and equivalent
+  waiting diagnostics on the web and Android surfaces.
 
-The next tactical number is `014`.
+The next tactical number is `015`. Current prioritization lives in
+[`../topics/capability-readiness.md`](../topics/capability-readiness.md); the
+next candidate is bounded multi-peer content transfer and request failover.

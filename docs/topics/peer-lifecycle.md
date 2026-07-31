@@ -3,8 +3,8 @@
 Topic: `peer-lifecycle`
 
 Status: Tactical `010` completed the first bounded peer registry, selection,
-dial, failure, and live-connection lifecycle. Tactical `011` now feeds it
-bounded one-shot UDP tracker observations. Tactical `013` applies explicit
+dial, failure, and live-connection lifecycle. Tacticals `011` and `014` feed it
+bounded scheduled UDP tracker observations. Tactical `013` applies explicit
 destination policy and per-operation deadlines to the runtime owner. Multiple
 simultaneous peers remain unimplemented.
 
@@ -134,6 +134,11 @@ deduplicate in the registry, and follow the existing dial and failure
 lifecycle. A tracker rejection advances to another tracker; an unreachable
 tracker peer advances to the next record; and a successful explicit hint
 avoids tracker traffic.
+
+Tactical `014` keeps that same boundary while the tracker manager retries and
+reannounces. Later observations continue to enter the registry, but the
+one-live-connection content path cannot yet use a newly discovered peer while
+another content connection remains installed.
 
 Tactical `013` removed the implicit loopback preference and restriction.
 Desktop and Android product owners explicitly use `Online`; diagnostic and
