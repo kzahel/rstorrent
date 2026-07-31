@@ -5,7 +5,9 @@ Topic: `client-surfaces`
 Status: Accepted and implemented through Tacticals `008` and `009` across a
 browser-hosted web view, a Tauri desktop webview, and Android Compose. The
 Android foreground product client now uses durable SAF storage without
-placing platform capabilities in the portable UI command contract.
+placing platform capabilities in the portable UI command contract. The
+one-command desktop launcher is smoke-tested on Apple silicon macOS as well as
+the original Linux development host.
 
 ## Scope
 

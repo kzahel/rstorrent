@@ -553,6 +553,16 @@ per-handle upload throttling so pause acted during an active transfer. All
 published payloads matched their fixture SHA-1. Temporary profiles, payloads,
 ADB reverse mappings, and seed sessions were removed.
 
+Follow-up validation on Apple silicon macOS on 2026-07-31 completed the npm
+lock with cross-platform optional peer entries and converted the existing
+desktop icon from 16-bit to 8-bit RGBA, as required by Tauri's macOS runtime.
+`./scripts/desktop` then performed a clean locked dependency install, built the
+production web assets and native desktop binary, and remained running until
+stopped from its attached terminal. Deterministic TypeScript generation,
+type checking, five Vitest cases, the production Vite build, workspace
+formatting, Clippy with warnings denied, workspace tests, and one fresh
+bidirectional libtorrent `2.0.13.0` magnet-metadata run also passed.
+
 ## Remaining Boundary
 
 This is a product-thread proof, not a production remote-control release. The
