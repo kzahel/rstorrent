@@ -3,9 +3,10 @@
 Topic: `tracker-discovery`
 
 Status: Tactical `011` completed the first bounded tracker operation: one
-loopback-only BEP 15 UDP connect and started announce whose compact peers
-enter the existing peer registry. Scheduling, tiers, other tracker transports,
-and public-network product support remain unimplemented.
+BEP 15 UDP connect and started announce whose compact peers enter the existing
+peer registry. Tactical `013` permits routed UDP trackers in desktop and
+Android product configurations while controlled tools remain loopback-only.
+Scheduling, tiers, and other tracker transports remain unimplemented.
 
 ## Scope
 
@@ -65,11 +66,13 @@ a malformed packet correlated to the active transaction fails that tracker
 operation. Bounded tracker error text may be diagnostic context but never
 application state or an allocation authority.
 
-The first magnet path remains loopback-only. It lazily tries retained tracker
-URLs when the selector has no eligible peer, so explicit hints can work
-without tracker traffic while a failed hint can still fall through to
-tracker discovery. One successful response may add several observations, but
-the existing diagnostic still connects to only one peer at a time.
+The magnet path lazily tries retained tracker URLs when the selector has no
+eligible peer, so explicit hints can work without tracker traffic while a
+failed hint can still fall through to tracker discovery. Runtime policy is
+checked before DNS when offline, after tracker resolution, on every compact
+peer observation, and again before peer dialing. One successful response may
+add several observations, but the runtime still connects to only one peer at
+a time.
 
 ## Reference Direction
 
@@ -110,6 +113,14 @@ connect and one announce per run and all processes and artifacts terminated
 cleanly. Android API-28 cross-builds passed for x86_64 and arm64-v8a; this
 tactical did not claim a public tracker run or on-device networking evidence.
 
+Tactical `013` retained the controlled loopback exchange while making the
+policy choice explicit. Desktop and Android product adapters select `Online`;
+engine/session diagnostics and the authenticated browser gateway select
+`LoopbackOnly`. An opt-in Big Buck Bunny metadata probe reached a public UDP
+tracker operation under online policy, then timed out waiting for that
+tracker's connect response. This is evidence that policy no longer rejects
+the public route, not evidence of a reachable public swarm.
+
 ## First-Slice Limits And Next Work
 
 Tactical `011` does not cache the connection ID, retransmit UDP requests,
@@ -126,7 +137,8 @@ the real per-torrent tracker record and scheduled lifecycle when reannounce
 behavior becomes material. A live public test-torrent run remains useful
 manual evidence but must not replace controlled protocol and libtorrent tests.
 
-Completed Tactical `012` does not broaden tracker networking. It makes current
-loopback-policy rejection and source exhaustion observable, keeps the torrent
-in its awaiting-metadata phase, and reports blocked progress only because this
-build has no other enabled or scheduled discovery mechanism.
+Completed Tactical `012` made policy rejection and source exhaustion
+observable, keeps the torrent in its awaiting-metadata phase, and reports
+blocked progress only because the current runtime has no other enabled or
+scheduled discovery mechanism. Tactical `013` broadens product egress but does
+not add retransmission, tracker scheduling, DHT, or another discovery source.

@@ -145,6 +145,7 @@ pub enum ProgressPhase {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum ProgressReason {
+    NetworkDisabled,
     DiscoveringPeers,
     WaitingForDiscovery,
     NoEnabledDiscoverySource,
@@ -164,6 +165,7 @@ pub enum ProgressReason {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum ProgressAction {
+    EnableNetwork,
     EnableDiscovery,
     SelectStorage,
     Resume,
@@ -182,6 +184,7 @@ pub struct ProgressAssessment {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ProgressInputs {
     pub task_active: bool,
+    pub network_disabled: bool,
     pub discovery_exhausted: bool,
     pub discovery_active: bool,
     pub discovery_retry_scheduled: bool,
@@ -189,11 +192,11 @@ pub struct ProgressInputs {
 }
 
 pub fn assess_progress(snapshot: &TorrentSnapshot, inputs: ProgressInputs) -> ProgressAssessment {
-    use ProgressAction::{EnableDiscovery, RepairStorage, Resume, SelectStorage};
+    use ProgressAction::{EnableDiscovery, EnableNetwork, RepairStorage, Resume, SelectStorage};
     use ProgressDisposition::{Active, Blocked, Inactive, Waiting};
     use ProgressPhase::{Discovery, Publication, Storage, Transfer, Verification};
     use ProgressReason::{
-        AcquiringMetadata, Complete, DiscoveringPeers, Failed, NeedsRepair,
+        AcquiringMetadata, Complete, DiscoveringPeers, Failed, NeedsRepair, NetworkDisabled,
         NoEnabledDiscoverySource, Paused, PreparingStorage, TransferringPieces, VerifyingPieces,
         WaitingForDiscovery, WaitingForPublication, WaitingForStorage,
     };
@@ -252,6 +255,12 @@ pub fn assess_progress(snapshot: &TorrentSnapshot, inputs: ProgressInputs) -> Pr
             phase: Transfer,
             reason: TransferringPieces,
             actions: Vec::new(),
+        },
+        TorrentState::AwaitingMetadata if inputs.network_disabled => ProgressAssessment {
+            disposition: Blocked,
+            phase: Discovery,
+            reason: NetworkDisabled,
+            actions: vec![EnableNetwork],
         },
         TorrentState::AwaitingMetadata if inputs.task_active || inputs.discovery_active => {
             ProgressAssessment {
@@ -1545,9 +1554,9 @@ mod tests {
 
     use super::{
         DeliveryPolicy, DiagnosticCategory, DiagnosticFilter, DiagnosticProfile,
-        DiagnosticSeverity, IndexRange, ProgressDisposition, ProgressInputs, ProgressReason,
-        ResetReason, SubscriptionSpec, TorrentActivity, ViewHub, ViewProjection, ViewSelector,
-        ViewSnapshot, ViewUpdatePayload, assess_progress, ranges_from_pieces,
+        DiagnosticSeverity, IndexRange, ProgressAction, ProgressDisposition, ProgressInputs,
+        ProgressReason, ResetReason, SubscriptionSpec, TorrentActivity, ViewHub, ViewProjection,
+        ViewSelector, ViewSnapshot, ViewUpdatePayload, assess_progress, ranges_from_pieces,
     };
     use crate::{ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState};
 
@@ -1769,6 +1778,25 @@ mod tests {
         );
         assert_eq!(waiting.disposition, ProgressDisposition::Waiting);
         assert_eq!(waiting.reason, ProgressReason::WaitingForDiscovery);
+    }
+
+    #[test]
+    fn disabled_network_is_blocked_without_changing_torrent_intent() {
+        let mut torrent = snapshot(0, 0).torrents.remove(0);
+        torrent.state = TorrentState::AwaitingMetadata;
+        torrent.metadata_available = false;
+        let assessment = assess_progress(
+            &torrent,
+            ProgressInputs {
+                network_disabled: true,
+                discovery_exhausted: true,
+                ..ProgressInputs::default()
+            },
+        );
+
+        assert_eq!(assessment.disposition, ProgressDisposition::Blocked);
+        assert_eq!(assessment.reason, ProgressReason::NetworkDisabled);
+        assert_eq!(assessment.actions, vec![ProgressAction::EnableNetwork]);
     }
 
     #[tokio::test]

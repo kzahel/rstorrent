@@ -12,6 +12,9 @@ view while Dock activation recreates and focuses it without restarting the
 application service. Tactical `012` completed isolated headless Chrome and
 no-window Android AVD harnesses plus equivalent bounded diagnostics and
 progress explanations on the shared web and Android Compose surfaces.
+Tactical `013` made desktop and Android select online torrent networking while
+the browser gateway and presentation harnesses explicitly remain
+loopback-only.
 
 ## Scope
 
@@ -179,6 +182,13 @@ uses generated-contract, reducer, Compose, and UIAutomator checks. Physical
 devices, visible emulators, and host GUI automation require explicit user
 authorization.
 
+The browser gateway's listener policy and the application service's torrent
+egress policy are independent. Routine browser evidence binds the gateway and
+limits engine egress to loopback. Product desktop control remains in-process
+even though its engine permits routed peers and trackers. Android likewise
+runs the online engine inside its foreground service rather than through a
+socket proxy.
+
 ## Diagnostics Parity
 
 Tactical `012` gives the shared web/Tauri surface and Android Compose the same
@@ -220,13 +230,20 @@ future server.
 - The current UI proves one controlled torrent. General multi-torrent
   scheduling and complete product presentation remain absent.
 - Diagnostics currently cover application lifecycle, discovery exhaustion,
-  tracker policy rejection, metadata, storage, piece, and integrity edges.
+  network restriction, tracker policy rejection, metadata, storage, piece,
+  and integrity edges.
   Deeper typed peer negotiation, tracker-attempt, scheduler, and performance
   instrumentation remains to be added as those runtime owners grow.
+- Android has no connectivity, metered-network, or VPN-only settings yet.
+  Those controls should extend application network prerequisites while
+  preserving torrent intent; VPN-grade leak prevention requires explicit
+  Android network binding and race analysis.
 - No HTTP playback server exists.
 
 Tacticals `008` and `009` record the implemented contract, exact controlled
 evidence, and bounded deferrals. Tactical `012` records the completed
 cross-surface observability slice motivated by the first public-magnet desktop
-run. Production remote authorization, general multi-torrent scheduling, and
-broader desktop lifecycle work remain later boundaries.
+run. Tactical `013` records explicit product and harness network selection.
+Production remote authorization, dynamic Android network controls, general
+multi-torrent scheduling, and broader desktop lifecycle work remain later
+boundaries.

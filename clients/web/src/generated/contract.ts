@@ -43,9 +43,9 @@ export type ProgressDisposition = "active" | "waiting" | "blocked" | "inactive";
 
 export type ProgressPhase = "discovery" | "metadata" | "storage" | "transfer" | "verification" | "publication";
 
-export type ProgressReason = "discovering_peers" | "waiting_for_discovery" | "no_enabled_discovery_source" | "acquiring_metadata" | "preparing_storage" | "waiting_for_storage" | "transferring_pieces" | "verifying_pieces" | "waiting_for_publication" | "paused" | "complete" | "needs_repair" | "failed";
+export type ProgressReason = "network_disabled" | "discovering_peers" | "waiting_for_discovery" | "no_enabled_discovery_source" | "acquiring_metadata" | "preparing_storage" | "waiting_for_storage" | "transferring_pieces" | "verifying_pieces" | "waiting_for_publication" | "paused" | "complete" | "needs_repair" | "failed";
 
-export type ProgressAction = "enable_discovery" | "select_storage" | "resume" | "repair_storage";
+export type ProgressAction = "enable_network" | "enable_discovery" | "select_storage" | "resume" | "repair_storage";
 
 export type ProgressAssessment = { disposition: ProgressDisposition, phase: ProgressPhase, reason: ProgressReason, actions: Array<ProgressAction>, };
 

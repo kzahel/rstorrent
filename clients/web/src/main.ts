@@ -596,6 +596,8 @@ async function copyDiagnostics(): Promise<void> {
 
 function progressExplanation(torrent: TorrentView): string {
   switch (torrent.progress.reason) {
+    case "network_disabled":
+      return "Outbound networking is disabled. Torrent intent is preserved and can continue when networking is enabled.";
     case "no_enabled_discovery_source":
       return "No enabled discovery source can currently provide an eligible peer. The torrent remains ready for a future discovery capability.";
     case "waiting_for_storage":

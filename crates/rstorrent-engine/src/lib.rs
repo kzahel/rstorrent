@@ -4,6 +4,7 @@
 
 mod driver;
 mod metadata_seed;
+mod network;
 mod part_file;
 pub mod peer;
 mod selective_storage;
@@ -21,6 +22,7 @@ pub use metadata_seed::{
     MetadataSeedConfig, MetadataSeedError, MetadataSeedReport, MetadataSeedServer,
     bind_metadata_seed,
 };
+pub use network::{NetworkConfig, NetworkPolicy};
 pub use part_file::{PartFile, PartFileError, PartFileIdentity};
 pub use selective_storage::{
     DescriptorFile, DescriptorFileRole, DescriptorStorage, DescriptorStoragePlan,

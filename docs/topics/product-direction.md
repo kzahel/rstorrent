@@ -5,7 +5,9 @@ Topic: `product-direction`
 Status: initial direction and successor vision accepted. Android storage
 foundations are proven on an AVD, Chromebook ARCVM, Pixel 7a, and Moto X4
 internal and removable exFAT storage; the in-process engine bootstrap is
-proven on the AVD, Chromebook, Pixel 7a, and Moto.
+proven on the AVD, Chromebook, Pixel 7a, and Moto. Desktop and Android product
+clients now select explicit online tracker and peer networking while
+controlled tools retain loopback-only policy.
 
 ## Scope
 
@@ -255,6 +257,19 @@ tracker results into that peer registry. Controlled protocol tests and three
 libtorrent runs prove tracker and peer failover through verified metadata and
 content while keeping the runtime loopback-only and one-shot.
 
+Tactical `012` added prompt task supervision, a derived progress assessment,
+and bounded structured diagnostics with equivalent web/Tauri and Android
+presentation. Its headless browser gateway and no-window AVD harnesses provide
+routine UI evidence without disturbing the desktop development session.
+
+Tactical `013` replaced the bring-up runtime's implicit loopback restriction
+with explicit `Offline`, `LoopbackOnly`, and `Online` destination policies.
+Desktop and Android choose `Online`; diagnostic CLIs, the loopback browser
+gateway, and controlled harnesses choose `LoopbackOnly`. Offline networking
+produces blocked progress without changing torrent intent. Peer connect and
+I/O waits are bounded independently, while a torrent no longer has an
+artificial whole-download deadline.
+
 This is an accepted starting shape backed by unit and libtorrent
 interoperability evidence, not a promise that two crates are the final engine
 layout. Add or split crates only when later ownership, reuse, lifecycle, or
@@ -346,10 +361,19 @@ This is recommended direction beyond the accepted first slice:
     established bounded UDP tracker connect/announce, tracker observations,
     durable tracker-only magnet retention, and controlled libtorrent
     metadata/content transfer.
-13. Grow the resulting thin surfaces only through capabilities the engine and
+13. Completed:
+    [`012-bounded-diagnostics-progress.md`](../tactical/012-bounded-diagnostics-progress.md)
+    established prompt task supervision, derived progress, bounded structured
+    diagnostics, and equivalent headless-tested web and Android presentation.
+14. Completed:
+    [`013-explicit-live-network-policy.md`](../tactical/013-explicit-live-network-policy.md)
+    made outbound policy explicit, enabled routed networking in product
+    clients, retained loopback isolation in harnesses, and bounded individual
+    network waits instead of whole torrent lifetime.
+15. Grow the resulting thin surfaces only through capabilities the engine and
     application service actually own. Desktop content UI remains web-based;
     native desktop code owns the shell, tray, and operating-system integration.
-14. Evaluate product migration, extension control, and JSTorrent brand
+16. Evaluate product migration, extension control, and JSTorrent brand
     graduation from the proven application contracts.
 
 The platform feasibility probe remains a separate tactical so failure in it

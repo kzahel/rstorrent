@@ -5,7 +5,8 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use rstorrent_engine::{
-    DownloadConfig, MagnetDownloadConfig, download_magnet, download_verified_piece,
+    DownloadConfig, MagnetDownloadConfig, NetworkConfig, NetworkPolicy, download_magnet,
+    download_verified_piece,
 };
 use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
 
@@ -173,13 +174,14 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
     }
 
     let output_path = output_path.ok_or_else(|| "--output is required".to_owned())?;
-    let timeout = Duration::from_secs(timeout_seconds);
+    let peer_timeout = Duration::from_secs(timeout_seconds);
+    let network = NetworkConfig::new(NetworkPolicy::LoopbackOnly, peer_timeout, peer_timeout);
     match (metainfo_path, magnet, peer) {
         (Some(metainfo_path), None, Some(peer)) => Ok(DownloadCommand::Metainfo(DownloadConfig {
             metainfo_path,
             peer,
             output_path,
-            timeout,
+            network,
             max_buffered_payload_bytes,
             skip_files,
             materialize_files,
@@ -187,7 +189,7 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
         (None, Some(magnet), None) => Ok(DownloadCommand::Magnet(MagnetDownloadConfig {
             magnet,
             output_path,
-            timeout,
+            network,
             max_buffered_payload_bytes,
             skip_files,
             materialize_files,
@@ -241,7 +243,7 @@ mod tests {
 
     use super::{
         DEFAULT_MAX_BUFFERED_PAYLOAD_BYTES, DEFAULT_TIMEOUT_SECONDS, DownloadCommand,
-        parse_arguments,
+        NetworkConfig, NetworkPolicy, parse_arguments,
     };
 
     fn strings(arguments: &[&str]) -> Vec<OsString> {
@@ -267,7 +269,14 @@ mod tests {
         assert!(config.peer.ip().is_loopback());
         assert_eq!(config.peer.port(), 6881);
         assert_eq!(config.output_path.to_string_lossy(), "payload.bin");
-        assert_eq!(config.timeout, Duration::from_secs(DEFAULT_TIMEOUT_SECONDS));
+        assert_eq!(
+            config.network,
+            NetworkConfig::new(
+                NetworkPolicy::LoopbackOnly,
+                Duration::from_secs(DEFAULT_TIMEOUT_SECONDS),
+                Duration::from_secs(DEFAULT_TIMEOUT_SECONDS),
+            )
+        );
         assert_eq!(
             config.max_buffered_payload_bytes,
             DEFAULT_MAX_BUFFERED_PAYLOAD_BYTES
@@ -291,7 +300,14 @@ mod tests {
 
         assert!(config.magnet.starts_with("magnet:?"));
         assert_eq!(config.output_path.to_string_lossy(), "payload");
-        assert_eq!(config.timeout, Duration::from_secs(DEFAULT_TIMEOUT_SECONDS));
+        assert_eq!(
+            config.network,
+            NetworkConfig::new(
+                NetworkPolicy::LoopbackOnly,
+                Duration::from_secs(DEFAULT_TIMEOUT_SECONDS),
+                Duration::from_secs(DEFAULT_TIMEOUT_SECONDS),
+            )
+        );
     }
 
     #[test]

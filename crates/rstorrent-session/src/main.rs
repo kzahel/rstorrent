@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use rstorrent_session::{
     ApplicationConfig, ApplicationService, Command, ConfiguredStorageRoot, ErrorCode,
-    RequestEnvelope, ResponseEnvelope, application_error_response,
+    NetworkConfig, NetworkPolicy, RequestEnvelope, ResponseEnvelope, application_error_response,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 
@@ -167,8 +167,8 @@ fn parse_arguments(
             .ok_or_else(|| DiagnosticError::Arguments("--profile-root is required".to_owned()))?,
         profile_id,
         storage_roots,
+        NetworkConfig::new(NetworkPolicy::LoopbackOnly, timeout, timeout),
     );
-    config.download_timeout = timeout;
     config.max_buffered_payload_bytes = max_buffered_payload_bytes;
     Ok(config)
 }
@@ -239,7 +239,7 @@ mod tests {
     use std::ffi::OsString;
     use std::path::PathBuf;
 
-    use super::parse_arguments;
+    use super::{NetworkPolicy, parse_arguments};
 
     #[test]
     fn parses_profile_and_storage_root() {
@@ -261,7 +261,9 @@ mod tests {
         assert_eq!(config.profile_root, PathBuf::from("/tmp/profile"));
         assert_eq!(config.profile_id, "test");
         assert_eq!(config.storage_roots[0].id, "downloads");
-        assert_eq!(config.download_timeout.as_secs(), 9);
+        assert_eq!(config.network.peer_connect_timeout.as_secs(), 9);
+        assert_eq!(config.network.peer_io_timeout.as_secs(), 9);
+        assert_eq!(config.network.policy, NetworkPolicy::LoopbackOnly);
     }
 
     #[test]

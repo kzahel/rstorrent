@@ -35,6 +35,7 @@ use tokio::net::{TcpStream, UdpSocket, lookup_host};
 use tokio::time::{Instant as TokioInstant, timeout, timeout_at};
 use tokio_util::sync::CancellationToken;
 
+use crate::network::{NetworkConfig, NetworkPolicy};
 use crate::peer::{
     DialAttempt, PeerEndpoint, PeerFailure, PeerObservation, PeerRegistry, PeerRegistryConfig,
     PeerRegistryError, PeerSelectionContext, PeerSelector, PeerSource,
@@ -47,9 +48,11 @@ use crate::storage::{
     StagingFile, StorageError, VERIFICATION_CHUNK_LENGTH, remove_staging_if_present, staging_path,
 };
 
-const DIAGNOSTIC_PEER_ID: [u8; 20] = *b"-RS0001-000000000000";
+const CLIENT_PEER_ID: [u8; 20] = *b"-RS0001-000000000000";
 const NETWORK_READ_LENGTH: usize = 16 * 1024;
+const NETWORK_RESOLUTION_TIMEOUT: Duration = Duration::from_secs(10);
 const UDP_TRACKER_RESPONSE_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_RESOLVED_ADDRESSES: usize = 32;
 const UNKNOWN_MAGNET_LEFT: u64 = 16 * 1024;
 const UDP_TRACKER_RECEIVE_LENGTH: usize = MAX_ANNOUNCE_RESPONSE_LENGTH + 1;
 const SAFE_CANCEL_REQUESTED: usize = 1 << (usize::BITS - 1);
@@ -61,6 +64,7 @@ struct PeerConnection {
     stream: TcpStream,
     decoder: FrameDecoder,
     queued_messages: VecDeque<PeerMessage>,
+    io_timeout: Duration,
 }
 
 #[derive(Clone, Debug)]
@@ -68,7 +72,7 @@ pub struct DownloadConfig {
     pub metainfo_path: PathBuf,
     pub peer: SocketAddr,
     pub output_path: PathBuf,
-    pub timeout: Duration,
+    pub network: NetworkConfig,
     pub max_buffered_payload_bytes: usize,
     pub skip_files: Vec<usize>,
     pub materialize_files: Vec<usize>,
@@ -78,7 +82,7 @@ pub struct DownloadConfig {
 pub struct MagnetDownloadConfig {
     pub magnet: String,
     pub output_path: PathBuf,
-    pub timeout: Duration,
+    pub network: NetworkConfig,
     pub max_buffered_payload_bytes: usize,
     pub skip_files: Vec<usize>,
     pub materialize_files: Vec<usize>,
@@ -88,7 +92,7 @@ pub struct MagnetDownloadConfig {
 pub struct ResumableMagnetDownloadConfig {
     pub magnet: String,
     pub output_path: PathBuf,
-    pub timeout: Duration,
+    pub network: NetworkConfig,
     pub max_buffered_payload_bytes: usize,
     pub skip_files: Vec<usize>,
     pub verified_info: Option<Vec<u8>>,
@@ -365,8 +369,14 @@ pub struct DownloadReport {
 
 #[derive(Debug)]
 pub enum DownloadError {
-    NonLoopbackPeer(SocketAddr),
-    InvalidTimeout,
+    NetworkDisabled,
+    NetworkPolicyDenied {
+        address: SocketAddr,
+        policy: NetworkPolicy,
+    },
+    InvalidNetworkTimeout {
+        operation: &'static str,
+    },
     MetainfoTooLarge {
         maximum: usize,
     },
@@ -401,7 +411,12 @@ pub enum DownloadError {
     InvalidPremetadataState(&'static str),
     Checkpoint(String),
     Cancelled,
-    TimedOut {
+    PeerTimedOut {
+        operation: &'static str,
+        timeout: Duration,
+    },
+    NetworkTimedOut {
+        operation: &'static str,
         timeout: Duration,
     },
     CleanupAfterFailure {
@@ -413,13 +428,16 @@ pub enum DownloadError {
 impl fmt::Display for DownloadError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NonLoopbackPeer(peer) => {
+            Self::NetworkDisabled => write!(formatter, "outbound networking is disabled"),
+            Self::NetworkPolicyDenied { address, policy } => {
                 write!(
                     formatter,
-                    "diagnostic peer {peer} is not a loopback address"
+                    "outbound address {address} is denied by network policy {policy}"
                 )
             }
-            Self::InvalidTimeout => write!(formatter, "diagnostic timeout must be nonzero"),
+            Self::InvalidNetworkTimeout { operation } => {
+                write!(formatter, "{operation} timeout must be nonzero")
+            }
             Self::MetainfoTooLarge { maximum } => {
                 write!(formatter, "metainfo exceeds input limit {maximum}")
             }
@@ -438,13 +456,13 @@ impl fmt::Display for DownloadError {
             Self::SelectiveStorage(error) => write!(formatter, "selective storage: {error}"),
             Self::PeerClosed => write!(formatter, "peer closed before piece verification"),
             Self::NoUsablePeer => {
-                write!(
-                    formatter,
-                    "magnet discovery produced no eligible loopback peer"
-                )
+                write!(formatter, "magnet discovery produced no eligible peer")
             }
             Self::NoUsableTrackerAddress => {
-                write!(formatter, "UDP tracker has no resolvable loopback address")
+                write!(
+                    formatter,
+                    "UDP tracker has no resolvable address allowed by network policy"
+                )
             }
             Self::UdpTrackerResponseTooLarge { maximum } => {
                 write!(
@@ -473,10 +491,17 @@ impl fmt::Display for DownloadError {
             }
             Self::Checkpoint(message) => write!(formatter, "durable checkpoint: {message}"),
             Self::Cancelled => write!(formatter, "download cancelled"),
-            Self::TimedOut { timeout } => {
+            Self::PeerTimedOut { operation, timeout } => {
                 write!(
                     formatter,
-                    "diagnostic timed out after {}s",
+                    "peer {operation} timed out after {}s",
+                    timeout.as_secs()
+                )
+            }
+            Self::NetworkTimedOut { operation, timeout } => {
+                write!(
+                    formatter,
+                    "{operation} timed out after {}s",
                     timeout.as_secs()
                 )
             }
@@ -570,23 +595,15 @@ async fn resume_magnet_owned(
     descriptors: Option<(DescriptorStorage, bool)>,
 ) -> Result<DownloadReport, DownloadError> {
     validate_resumable_magnet_download_config(&config)?;
-    let configured_timeout = config.timeout;
     let result = tokio::select! {
         biased;
         _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
-        result = timeout(
-            configured_timeout,
-            run_resumable_magnet_download(
-                config,
-                checkpoints,
-                control.clone(),
-                descriptors,
-            ),
-        ) => result
-            .map_err(|_| DownloadError::TimedOut {
-                timeout: configured_timeout,
-            })
-            .and_then(|result| result),
+        result = run_resumable_magnet_download(
+            config,
+            checkpoints,
+            control.clone(),
+            descriptors,
+        ) => result,
     };
     control.clear_buffered_payload();
     result
@@ -594,20 +611,14 @@ async fn resume_magnet_owned(
 
 pub async fn download_magnet_metadata_with_control(
     magnet: String,
-    configured_timeout: Duration,
+    network: NetworkConfig,
     control: DownloadControl,
 ) -> Result<Vec<u8>, DownloadError> {
-    if configured_timeout.is_zero() {
-        return Err(DownloadError::InvalidTimeout);
-    }
+    validate_network_config(network)?;
     let result = tokio::select! {
         biased;
         _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
-        result = timeout(configured_timeout, run_magnet_metadata(magnet)) => result
-            .map_err(|_| DownloadError::TimedOut {
-                timeout: configured_timeout,
-            })
-            .and_then(|result| result),
+        result = run_magnet_metadata(magnet, network) => result,
     };
     control.clear_buffered_payload();
     result
@@ -618,20 +629,12 @@ pub async fn download_magnet_with_control(
     control: DownloadControl,
 ) -> Result<DownloadReport, DownloadError> {
     validate_magnet_download_config(&config)?;
-    let configured_timeout = config.timeout;
     let output_path = config.output_path.clone();
     let staging = staging_path(&output_path).map_err(DownloadError::Storage)?;
     let result = tokio::select! {
         biased;
         _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
-        result = timeout(
-            configured_timeout,
-            run_magnet_download(config, control.clone()),
-        ) => result
-            .map_err(|_| DownloadError::TimedOut {
-                timeout: configured_timeout,
-            })
-            .and_then(|result| result),
+        result = run_magnet_download(config, control.clone()) => result,
     };
     control.clear_buffered_payload();
 
@@ -662,20 +665,12 @@ pub async fn download_verified_piece_with_control(
 ) -> Result<DownloadReport, DownloadError> {
     validate_download_config(&config)?;
 
-    let configured_timeout = config.timeout;
     let staging = staging_path(&config.output_path).map_err(DownloadError::Storage)?;
     let output_path = config.output_path.clone();
     let result = tokio::select! {
         biased;
         _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
-        result = timeout(
-            configured_timeout,
-            run_download(config, control.clone(), None),
-        ) => result
-            .map_err(|_| DownloadError::TimedOut {
-                timeout: configured_timeout,
-            })
-            .and_then(|result| result),
+        result = run_download(config, control.clone(), None) => result,
     };
     control.clear_buffered_payload();
 
@@ -706,45 +701,49 @@ pub async fn download_verified_piece_to_descriptors_with_control(
     control: DownloadControl,
 ) -> Result<DownloadReport, DownloadError> {
     validate_download_config(&config)?;
-    let configured_timeout = config.timeout;
     let result = tokio::select! {
         biased;
         _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
-        result = timeout(
-            configured_timeout,
-            run_download(config, control.clone(), Some(descriptors)),
-        ) => result
-            .map_err(|_| DownloadError::TimedOut {
-                timeout: configured_timeout,
-            })
-            .and_then(|result| result),
+        result = run_download(config, control.clone(), Some(descriptors)) => result,
     };
     control.clear_buffered_payload();
     result
 }
 
 fn validate_download_config(config: &DownloadConfig) -> Result<(), DownloadError> {
-    if !config.peer.ip().is_loopback() {
-        return Err(DownloadError::NonLoopbackPeer(config.peer));
+    validate_network_config(config.network)?;
+    if matches!(config.network.policy, NetworkPolicy::Offline) {
+        return Err(DownloadError::NetworkDisabled);
     }
-    if config.timeout.is_zero() {
-        return Err(DownloadError::InvalidTimeout);
+    if !config.network.policy.allows(config.peer) {
+        return Err(DownloadError::NetworkPolicyDenied {
+            address: config.peer,
+            policy: config.network.policy,
+        });
     }
     Ok(())
 }
 
 fn validate_magnet_download_config(config: &MagnetDownloadConfig) -> Result<(), DownloadError> {
-    if config.timeout.is_zero() {
-        return Err(DownloadError::InvalidTimeout);
-    }
-    Ok(())
+    validate_network_config(config.network)
 }
 
 fn validate_resumable_magnet_download_config(
     config: &ResumableMagnetDownloadConfig,
 ) -> Result<(), DownloadError> {
-    if config.timeout.is_zero() {
-        return Err(DownloadError::InvalidTimeout);
+    validate_network_config(config.network)
+}
+
+fn validate_network_config(config: NetworkConfig) -> Result<(), DownloadError> {
+    if config.peer_connect_timeout.is_zero() {
+        return Err(DownloadError::InvalidNetworkTimeout {
+            operation: "peer connect",
+        });
+    }
+    if config.peer_io_timeout.is_zero() {
+        return Err(DownloadError::InvalidNetworkTimeout {
+            operation: "peer I/O",
+        });
     }
     Ok(())
 }
@@ -854,10 +853,11 @@ impl PremetadataPeerState {
 }
 
 #[derive(Debug)]
-struct DiagnosticPeerSession {
+struct PeerSession {
     registry: PeerRegistry,
     selector: PeerSelector,
     started_at: Instant,
+    network: NetworkConfig,
     udp_trackers: Vec<UdpTrackerUrl>,
     next_udp_tracker: usize,
     tracker_key: Option<u32>,
@@ -865,13 +865,15 @@ struct DiagnosticPeerSession {
     last_error: Option<DownloadError>,
 }
 
-impl DiagnosticPeerSession {
-    fn new() -> Result<Self, DownloadError> {
+impl PeerSession {
+    fn new(network: NetworkConfig) -> Result<Self, DownloadError> {
+        validate_network_config(network)?;
         Ok(Self {
             registry: PeerRegistry::new(PeerRegistryConfig::default())
                 .map_err(DownloadError::PeerRegistry)?,
             selector: PeerSelector,
             started_at: Instant::now(),
+            network,
             udp_trackers: Vec::new(),
             next_udp_tracker: 0,
             tracker_key: None,
@@ -880,14 +882,24 @@ impl DiagnosticPeerSession {
         })
     }
 
-    fn from_endpoint(address: SocketAddr, source: PeerSource) -> Result<Self, DownloadError> {
-        let mut peers = Self::new()?;
+    fn from_endpoint(
+        address: SocketAddr,
+        source: PeerSource,
+        network: NetworkConfig,
+    ) -> Result<Self, DownloadError> {
+        let mut peers = Self::new(network)?;
+        if matches!(network.policy, NetworkPolicy::Offline) {
+            return Err(DownloadError::NetworkDisabled);
+        }
         peers.observe_address(address, source)?;
         Ok(peers)
     }
 
-    async fn from_magnet(magnet: &Magnet) -> Result<Self, DownloadError> {
-        let mut peers = Self::new()?;
+    async fn from_magnet(magnet: &Magnet, network: NetworkConfig) -> Result<Self, DownloadError> {
+        let mut peers = Self::new(network)?;
+        if !network.policy.permits_dns() {
+            return Err(DownloadError::NetworkDisabled);
+        }
         peers.udp_trackers.clone_from(&magnet.udp_trackers);
         peers.resolve_peer_hints(&magnet.peer_hints).await;
         if peers.registry.is_empty() && peers.udp_trackers.is_empty() {
@@ -901,20 +913,15 @@ impl DiagnosticPeerSession {
 
     async fn resolve_peer_hints(&mut self, hints: &[PeerHint]) {
         for hint in hints {
-            let addresses = match lookup_host((hint.host.as_str(), hint.port)).await {
-                Ok(addresses) => addresses,
-                Err(source) => {
-                    self.last_error = Some(DownloadError::Io {
-                        operation: "resolve magnet peer hint",
-                        source,
-                    });
-                    continue;
-                }
-            };
+            let addresses =
+                match resolve_host(&hint.host, hint.port, "resolve magnet peer hint").await {
+                    Ok(addresses) => addresses,
+                    Err(error) => {
+                        self.last_error = Some(error);
+                        continue;
+                    }
+                };
             for address in addresses {
-                if !address.ip().is_loopback() {
-                    continue;
-                }
                 if let Err(error) = self.observe_address(address, PeerSource::MagnetHint) {
                     self.last_error = Some(error);
                 }
@@ -927,6 +934,12 @@ impl DiagnosticPeerSession {
         address: SocketAddr,
         source: PeerSource,
     ) -> Result<(), DownloadError> {
+        if !self.network.policy.allows(address) {
+            return Err(DownloadError::NetworkPolicyDenied {
+                address,
+                policy: self.network.policy,
+            });
+        }
         let endpoint = PeerEndpoint::new(address).map_err(DownloadError::PeerRegistry)?;
         self.registry
             .observe(PeerObservation::dialable(endpoint, source), self.elapsed())
@@ -954,13 +967,11 @@ impl DiagnosticPeerSession {
         };
         while let Some(tracker) = self.udp_trackers.get(self.next_udp_tracker).cloned() {
             self.next_udp_tracker += 1;
-            match announce_udp_tracker(&tracker, info_hash, tracker_key).await {
+            match announce_udp_tracker(&tracker, info_hash, tracker_key, self.network.policy).await
+            {
                 Ok(response) => {
                     for compact_peer in response.peers {
                         let address = compact_peer_address(compact_peer);
-                        if !address.ip().is_loopback() {
-                            continue;
-                        }
                         if let Err(error) = self.observe_address(address, PeerSource::Tracker) {
                             self.last_error = Some(error);
                         }
@@ -1005,7 +1016,7 @@ impl DiagnosticPeerSession {
                 .registry
                 .begin_dial(candidate, context)
                 .map_err(DownloadError::PeerRegistry)?;
-            match connect_peer(attempt, info_hash, advertise_extensions).await {
+            match connect_peer(attempt, info_hash, advertise_extensions, self.network).await {
                 Ok((connection, handshake)) => {
                     self.registry
                         .dial_succeeded(attempt, self.elapsed())
@@ -1085,31 +1096,45 @@ fn compact_peer_address(peer: CompactPeer) -> SocketAddr {
     }
 }
 
+async fn resolve_host(
+    host: &str,
+    port: u16,
+    operation: &'static str,
+) -> Result<Vec<SocketAddr>, DownloadError> {
+    timeout(NETWORK_RESOLUTION_TIMEOUT, lookup_host((host, port)))
+        .await
+        .map_err(|_| DownloadError::NetworkTimedOut {
+            operation,
+            timeout: NETWORK_RESOLUTION_TIMEOUT,
+        })?
+        .map(|addresses| addresses.take(MAX_RESOLVED_ADDRESSES).collect())
+        .map_err(|source| DownloadError::Io { operation, source })
+}
+
 async fn announce_udp_tracker(
     tracker: &UdpTrackerUrl,
     info_hash: [u8; 20],
     key: u32,
+    network_policy: NetworkPolicy,
 ) -> Result<AnnounceResponse, DownloadError> {
-    let addresses = lookup_host((tracker.host.as_str(), tracker.port))
-        .await
-        .map_err(|source| DownloadError::Io {
-            operation: "resolve UDP tracker",
-            source,
-        })?;
+    if !network_policy.permits_dns() {
+        return Err(DownloadError::NetworkDisabled);
+    }
+    let addresses = resolve_host(&tracker.host, tracker.port, "resolve UDP tracker").await?;
     let mut last_error = None;
-    let mut found_loopback = false;
+    let mut found_allowed = false;
     for address in addresses {
-        if !address.ip().is_loopback() {
+        if !network_policy.allows(address) {
             continue;
         }
-        found_loopback = true;
+        found_allowed = true;
         match announce_udp_tracker_address(address, info_hash, key).await {
             Ok(response) => return Ok(response),
             Err(error) => last_error = Some(error),
         }
     }
     Err(last_error.unwrap_or({
-        if found_loopback {
+        if found_allowed {
             DownloadError::NoUsablePeer
         } else {
             DownloadError::NoUsableTrackerAddress
@@ -1160,7 +1185,7 @@ async fn announce_udp_tracker_address(
         connection_id,
         transaction_id: announce_transaction,
         info_hash,
-        peer_id: DIAGNOSTIC_PEER_ID,
+        peer_id: CLIENT_PEER_ID,
         downloaded: 0,
         left: UNKNOWN_MAGNET_LEFT,
         uploaded: 0,
@@ -1186,9 +1211,13 @@ async fn send_udp_tracker_packet(
     packet: &[u8],
     operation: &'static str,
 ) -> Result<(), DownloadError> {
-    let sent = socket
-        .send(packet)
+    let sent = socket.send(packet);
+    let sent = timeout(UDP_TRACKER_RESPONSE_TIMEOUT, sent)
         .await
+        .map_err(|_| DownloadError::NetworkTimedOut {
+            operation,
+            timeout: UDP_TRACKER_RESPONSE_TIMEOUT,
+        })?
         .map_err(|source| DownloadError::Io { operation, source })?;
     if sent != packet.len() {
         return Err(DownloadError::Io {
@@ -1237,7 +1266,15 @@ fn peer_failure(error: &DownloadError) -> PeerFailure {
         DownloadError::Io {
             operation: "connect to peer",
             ..
+        }
+        | DownloadError::PeerTimedOut {
+            operation: "connect",
+            ..
         } => PeerFailure::Connect,
+        DownloadError::PeerTimedOut {
+            operation: "handshake read" | "handshake write",
+            ..
+        } => PeerFailure::Handshake,
         DownloadError::Handshake(_) => PeerFailure::Handshake,
         DownloadError::PeerClosed => PeerFailure::RemoteClosed,
         _ => PeerFailure::Protocol,
@@ -1253,7 +1290,11 @@ fn content_peer_failure(error: &DownloadError) -> Option<PeerFailure> {
         | DownloadError::InvalidPremetadataState(_)
         | DownloadError::Metadata(_)
         | DownloadError::MetadataExtensionDisabled
-        | DownloadError::ExtensionProtocolUnsupported => Some(peer_failure(error)),
+        | DownloadError::ExtensionProtocolUnsupported
+        | DownloadError::PeerTimedOut {
+            operation: "message read" | "message write",
+            ..
+        } => Some(peer_failure(error)),
         DownloadError::Io {
             operation: "read peer message" | "send peer message",
             ..
@@ -1267,7 +1308,7 @@ async fn run_magnet_download(
     control: DownloadControl,
 ) -> Result<DownloadReport, DownloadError> {
     let magnet = Magnet::parse(&config.magnet).map_err(DownloadError::Magnet)?;
-    let mut peers = DiagnosticPeerSession::from_magnet(&magnet).await?;
+    let mut peers = PeerSession::from_magnet(&magnet, config.network).await?;
     run_magnet_download_with_peers(config, control, magnet, &mut peers).await
 }
 
@@ -1275,7 +1316,7 @@ async fn run_magnet_download_with_peers(
     config: MagnetDownloadConfig,
     control: DownloadControl,
     magnet: Magnet,
-    peers: &mut DiagnosticPeerSession,
+    peers: &mut PeerSession,
 ) -> Result<DownloadReport, DownloadError> {
     let (_raw_info, metainfo) = peers.acquire_metadata(magnet.info_hash).await?;
     let content_config = ContentDownloadConfig {
@@ -1287,9 +1328,12 @@ async fn run_magnet_download_with_peers(
     run_content_download(content_config, metainfo, control, None, peers, None).await
 }
 
-async fn run_magnet_metadata(magnet: String) -> Result<Vec<u8>, DownloadError> {
+async fn run_magnet_metadata(
+    magnet: String,
+    network: NetworkConfig,
+) -> Result<Vec<u8>, DownloadError> {
     let magnet = Magnet::parse(&magnet).map_err(DownloadError::Magnet)?;
-    let mut peers = DiagnosticPeerSession::from_magnet(&magnet).await?;
+    let mut peers = PeerSession::from_magnet(&magnet, network).await?;
     let (raw_info, _) = peers.acquire_metadata(magnet.info_hash).await?;
     peers.close_current(None)?;
     Ok(raw_info)
@@ -1325,7 +1369,7 @@ async fn run_resumable_magnet_download(
                 "stored metadata does not match the magnet identity".to_owned(),
             ));
         }
-        let mut peers = DiagnosticPeerSession::from_magnet(&magnet).await?;
+        let mut peers = PeerSession::from_magnet(&magnet, config.network).await?;
         let content_config = ContentDownloadConfig {
             output_path: config.output_path,
             max_buffered_payload_bytes: config.max_buffered_payload_bytes,
@@ -1348,7 +1392,7 @@ async fn run_resumable_magnet_download(
             "descriptor storage requires verified metadata".to_owned(),
         ));
     }
-    let mut peers = DiagnosticPeerSession::from_magnet(&magnet).await?;
+    let mut peers = PeerSession::from_magnet(&magnet, config.network).await?;
     let (raw_info, metainfo) = peers.acquire_metadata(magnet.info_hash).await?;
     if let Err(message) = checkpoints.metadata_verified(&raw_info) {
         peers.close_current(None)?;
@@ -1380,7 +1424,7 @@ async fn acquire_metadata_from_connection(
         return Err(DownloadError::ExtensionProtocolUnsupported);
     }
     send_message(
-        &mut peer.stream,
+        peer,
         &PeerMessage::Extended {
             id: 0,
             payload: encode_extension_handshake(None),
@@ -1456,7 +1500,7 @@ async fn acquire_metadata_from_connection(
                 if let MetadataMessage::Request { piece } = message {
                     if let Some(remote_id) = remote_metadata_id {
                         send_message(
-                            &mut peer.stream,
+                            peer,
                             &PeerMessage::Extended {
                                 id: remote_id,
                                 payload: encode_metadata_reject(piece),
@@ -1492,7 +1536,7 @@ async fn process_metadata_download_actions(
                 let remote_id =
                     remote_metadata_id.ok_or(DownloadError::MetadataExtensionDisabled)?;
                 send_message(
-                    &mut peer.stream,
+                    peer,
                     &PeerMessage::Extended {
                         id: remote_id,
                         payload: encode_metadata_request(piece),
@@ -1525,7 +1569,7 @@ async fn run_download(
 ) -> Result<DownloadReport, DownloadError> {
     let metainfo_bytes = read_bounded_metainfo(&config.metainfo_path).await?;
     let metainfo = Metainfo::from_bytes(&metainfo_bytes).map_err(DownloadError::Metainfo)?;
-    let mut peers = DiagnosticPeerSession::from_endpoint(config.peer, PeerSource::Manual)?;
+    let mut peers = PeerSession::from_endpoint(config.peer, PeerSource::Manual, config.network)?;
     let content_config = ContentDownloadConfig {
         output_path: config.output_path,
         max_buffered_payload_bytes: config.max_buffered_payload_bytes,
@@ -1548,7 +1592,7 @@ async fn run_content_download(
     metainfo: Metainfo,
     control: DownloadControl,
     descriptors: Option<DescriptorStorage>,
-    peers: &mut DiagnosticPeerSession,
+    peers: &mut PeerSession,
     resume: Option<ResumeContext>,
 ) -> Result<DownloadReport, DownloadError> {
     let result = match metainfo.mode {
@@ -1584,7 +1628,7 @@ async fn run_single_download(
     config: ContentDownloadConfig,
     metainfo: Metainfo,
     control: DownloadControl,
-    peers: &mut DiagnosticPeerSession,
+    peers: &mut PeerSession,
 ) -> Result<DownloadReport, DownloadError> {
     let piece_length = u32::try_from(metainfo.total_length)
         .map_err(|_| DownloadError::Metainfo(MetainfoError::InvalidField("info.length")))?;
@@ -1619,14 +1663,8 @@ async fn run_single_download(
         }
         let actions = download.on_message(message).map_err(DownloadError::Piece)?;
         control.observe(&download);
-        if let Some(piece) = process_actions(
-            &mut peer.stream,
-            &mut storage,
-            &mut download,
-            actions,
-            &control,
-        )
-        .await?
+        if let Some(piece) =
+            process_actions(peer, &mut storage, &mut download, actions, &control).await?
         {
             let budget = download.payload_budget();
             let block_count = download.block_count();
@@ -1663,7 +1701,7 @@ async fn run_selective_download(
     metainfo: Metainfo,
     control: DownloadControl,
     descriptors: Option<DescriptorStorage>,
-    peers: &mut DiagnosticPeerSession,
+    peers: &mut PeerSession,
     resume: Option<ResumeContext>,
 ) -> Result<DownloadReport, DownloadError> {
     let layout = TorrentLayout::from_metainfo(&metainfo);
@@ -1917,7 +1955,7 @@ async fn run_selective_download(
         }
         control.observe(&download);
         if let Some(piece) = process_selective_actions(
-            &mut peer.stream,
+            peer,
             &mut storage,
             &mut download,
             initial_actions,
@@ -1978,7 +2016,7 @@ async fn run_selective_download(
             }
 
             if let Some(piece) = process_selective_actions(
-                &mut peer.stream,
+                peer,
                 &mut storage,
                 &mut download,
                 actions,
@@ -2091,9 +2129,21 @@ async fn connect_peer(
     attempt: DialAttempt,
     info_hash: [u8; 20],
     advertise_extensions: bool,
+    network: NetworkConfig,
 ) -> Result<(PeerConnection, Handshake), DownloadError> {
-    let mut peer = TcpStream::connect(attempt.endpoint().address())
+    let address = attempt.endpoint().address();
+    if !network.policy.allows(address) {
+        return Err(DownloadError::NetworkPolicyDenied {
+            address,
+            policy: network.policy,
+        });
+    }
+    let mut peer = timeout(network.peer_connect_timeout, TcpStream::connect(address))
         .await
+        .map_err(|_| DownloadError::PeerTimedOut {
+            operation: "connect",
+            timeout: network.peer_connect_timeout,
+        })?
         .map_err(|source| DownloadError::Io {
             operation: "connect to peer",
             source,
@@ -2101,20 +2151,28 @@ async fn connect_peer(
     let handshake = if advertise_extensions {
         let mut reserved = [0; 8];
         reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
-        encode_handshake_with_reserved(info_hash, DIAGNOSTIC_PEER_ID, reserved)
+        encode_handshake_with_reserved(info_hash, CLIENT_PEER_ID, reserved)
     } else {
-        encode_handshake(info_hash, DIAGNOSTIC_PEER_ID)
+        encode_handshake(info_hash, CLIENT_PEER_ID)
     };
-    peer.write_all(&handshake)
+    timeout(network.peer_io_timeout, peer.write_all(&handshake))
         .await
+        .map_err(|_| DownloadError::PeerTimedOut {
+            operation: "handshake write",
+            timeout: network.peer_io_timeout,
+        })?
         .map_err(|source| DownloadError::Io {
             operation: "send peer handshake",
             source,
         })?;
 
     let mut handshake = [0_u8; HANDSHAKE_LENGTH];
-    peer.read_exact(&mut handshake)
+    timeout(network.peer_io_timeout, peer.read_exact(&mut handshake))
         .await
+        .map_err(|_| DownloadError::PeerTimedOut {
+            operation: "handshake read",
+            timeout: network.peer_io_timeout,
+        })?
         .map_err(|source| DownloadError::Io {
             operation: "read peer handshake",
             source,
@@ -2126,18 +2184,22 @@ async fn connect_peer(
             stream: peer,
             decoder: FrameDecoder::new(),
             queued_messages: VecDeque::new(),
+            io_timeout: network.peer_io_timeout,
         },
         handshake,
     ))
 }
 
 async fn next_peer_message(peer: &mut PeerConnection) -> Result<PeerMessage, DownloadError> {
+    let deadline = TokioInstant::now() + peer.io_timeout;
     while peer.queued_messages.is_empty() {
         let mut network_buffer = [0_u8; NETWORK_READ_LENGTH];
-        let read = peer
-            .stream
-            .read(&mut network_buffer)
+        let read = timeout_at(deadline, peer.stream.read(&mut network_buffer))
             .await
+            .map_err(|_| DownloadError::PeerTimedOut {
+                operation: "message read",
+                timeout: peer.io_timeout,
+            })?
             .map_err(|source| DownloadError::Io {
                 operation: "read peer message",
                 source,
@@ -2212,10 +2274,17 @@ async fn read_bounded_metainfo(path: &Path) -> Result<Vec<u8>, DownloadError> {
     Ok(bytes)
 }
 
-async fn send_message(peer: &mut TcpStream, message: &PeerMessage) -> Result<(), DownloadError> {
+async fn send_message(
+    peer: &mut PeerConnection,
+    message: &PeerMessage,
+) -> Result<(), DownloadError> {
     let frame = encode_message(message).map_err(DownloadError::Frame)?;
-    peer.write_all(&frame)
+    timeout(peer.io_timeout, peer.stream.write_all(&frame))
         .await
+        .map_err(|_| DownloadError::PeerTimedOut {
+            operation: "message write",
+            timeout: peer.io_timeout,
+        })?
         .map_err(|source| DownloadError::Io {
             operation: "send peer message",
             source,
@@ -2223,7 +2292,7 @@ async fn send_message(peer: &mut TcpStream, message: &PeerMessage) -> Result<(),
 }
 
 async fn process_actions(
-    peer: &mut TcpStream,
+    peer: &mut PeerConnection,
     storage: &mut StagingFile,
     download: &mut OnePieceDownload,
     actions: Vec<DownloadAction>,
@@ -2298,7 +2367,7 @@ async fn process_actions(
 }
 
 async fn process_selective_actions(
-    peer: &mut TcpStream,
+    peer: &mut PeerConnection,
     storage: &mut SelectiveStorage,
     download: &mut OnePieceDownload,
     actions: Vec<DownloadAction>,
@@ -2391,22 +2460,26 @@ mod tests {
     use rstorrent_protocol::metadata::{
         MetadataMessage, encode_extension_handshake, encode_metadata_data, parse_metadata_message,
     };
+    use rstorrent_protocol::metainfo::Metainfo;
     use rstorrent_protocol::peer_wire::{
         EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX, FrameDecoder,
         HANDSHAKE_LENGTH, PeerMessage, decode_handshake, encode_handshake_with_reserved,
+        encode_message,
     };
     use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
     use sha1::{Digest, Sha1};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::{TcpListener, UdpSocket};
+    use tokio::net::{TcpListener, TcpStream, UdpSocket};
     use tokio::time::timeout;
 
     use super::{
-        DIAGNOSTIC_PEER_ID, DiagnosticPeerSession, DownloadConfig, DownloadControl, DownloadError,
-        MagnetDownloadConfig, PeerConnection, download_magnet, download_magnet_with_control,
-        download_verified_piece, download_verified_piece_with_control, next_peer_message,
-        run_magnet_download_with_peers, send_message,
+        CLIENT_PEER_ID, DownloadConfig, DownloadControl, DownloadError, MagnetDownloadConfig,
+        PeerConnection, PeerSession, download_magnet, download_magnet_metadata_with_control,
+        download_magnet_with_control, download_verified_piece,
+        download_verified_piece_with_control, next_peer_message, run_magnet_download_with_peers,
+        send_message,
     };
+    use crate::network::{NetworkConfig, NetworkPolicy};
     use crate::peer::{
         DialAttempt, PeerEndpoint, PeerFailure, PeerObservation, PeerPhase, PeerRegistry,
         PeerRegistryConfig, PeerSelectionContext, PeerSelector, PeerSource,
@@ -2417,6 +2490,10 @@ mod tests {
     use crate::storage::staging_path;
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    fn loopback_network(timeout: Duration) -> NetworkConfig {
+        NetworkConfig::new(NetworkPolicy::LoopbackOnly, timeout, timeout)
+    }
 
     fn test_path(name: &str) -> PathBuf {
         let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
@@ -2446,6 +2523,187 @@ mod tests {
         registry
             .begin_dial(candidate, context)
             .expect("test dial attempt")
+    }
+
+    #[tokio::test]
+    async fn explicit_policies_gate_non_loopback_peers_and_offline_dns() {
+        let public = "192.0.2.1:6881".parse().expect("documentation peer");
+        let loopback = PeerSession::from_endpoint(
+            public,
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(1)),
+        );
+        assert!(matches!(
+            loopback,
+            Err(DownloadError::NetworkPolicyDenied {
+                address,
+                policy: NetworkPolicy::LoopbackOnly,
+            }) if address == public
+        ));
+
+        let online = PeerSession::from_endpoint(
+            public,
+            PeerSource::Manual,
+            NetworkConfig::new(
+                NetworkPolicy::Online,
+                Duration::from_secs(1),
+                Duration::from_secs(1),
+            ),
+        )
+        .expect("online policy accepts valid public peer");
+        assert_eq!(online.registry.len(), 1);
+
+        let offline = download_magnet_metadata_with_control(
+            "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213\
+             &x.pe=must-not-resolve.invalid:6881"
+                .to_owned(),
+            NetworkConfig::new(
+                NetworkPolicy::Offline,
+                Duration::from_secs(1),
+                Duration::from_secs(1),
+            ),
+            DownloadControl::new(),
+        )
+        .await;
+        assert!(matches!(offline, Err(DownloadError::NetworkDisabled)));
+    }
+
+    #[tokio::test]
+    async fn final_dial_rechecks_network_policy() {
+        let public = "192.0.2.1:6881".parse().expect("documentation peer");
+        let mut peers = PeerSession::from_endpoint(
+            public,
+            PeerSource::Manual,
+            NetworkConfig::new(
+                NetworkPolicy::Online,
+                Duration::from_secs(1),
+                Duration::from_secs(1),
+            ),
+        )
+        .expect("online peer session");
+        peers.network.policy = NetworkPolicy::LoopbackOnly;
+
+        let result = peers.connect_next([0; 20], false).await;
+        assert!(matches!(
+            result,
+            Err(DownloadError::NetworkPolicyDenied {
+                address,
+                policy: NetworkPolicy::LoopbackOnly,
+            }) if address == public
+        ));
+    }
+
+    async fn connected_pair(io_timeout: Duration) -> (PeerConnection, TcpStream) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind peer message test");
+        let address = listener.local_addr().expect("peer message address");
+        let client = TcpStream::connect(address)
+            .await
+            .expect("connect peer message client");
+        let (server, _) = listener.accept().await.expect("accept peer message client");
+        (
+            PeerConnection {
+                attempt: test_dial_attempt(),
+                stream: client,
+                decoder: FrameDecoder::new(),
+                queued_messages: VecDeque::new(),
+                io_timeout,
+            },
+            server,
+        )
+    }
+
+    #[tokio::test]
+    async fn fragmented_bytes_cannot_extend_one_message_deadline() {
+        let (mut peer, mut server) = connected_pair(Duration::from_millis(50)).await;
+        let frame = encode_message(&PeerMessage::KeepAlive).expect("keepalive frame");
+        let writer = tokio::spawn(async move {
+            for byte in frame {
+                if server.write_all(&[byte]).await.is_err() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        });
+
+        let result = next_peer_message(&mut peer).await;
+        assert!(matches!(
+            result,
+            Err(DownloadError::PeerTimedOut {
+                operation: "message read",
+                ..
+            })
+        ));
+        writer.await.expect("fragment writer");
+    }
+
+    #[tokio::test]
+    async fn timely_messages_can_outlive_one_io_deadline() {
+        let io_timeout = Duration::from_millis(150);
+        let (mut peer, mut server) = connected_pair(io_timeout).await;
+        let frame = encode_message(&PeerMessage::KeepAlive).expect("keepalive frame");
+        let writer = tokio::spawn(async move {
+            for _ in 0..4 {
+                server
+                    .write_all(&frame)
+                    .await
+                    .expect("write complete keepalive");
+                tokio::time::sleep(Duration::from_millis(80)).await;
+            }
+        });
+
+        for _ in 0..4 {
+            assert_eq!(
+                next_peer_message(&mut peer)
+                    .await
+                    .expect("timely complete message"),
+                PeerMessage::KeepAlive
+            );
+        }
+        writer.await.expect("timely message writer");
+    }
+
+    #[tokio::test]
+    #[ignore = "uses changing public trackers and swarm state"]
+    async fn live_big_buck_bunny_metadata_probe() {
+        let magnet = "magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c\
+&dn=Big+Buck+Bunny\
+&tr=udp%3A%2F%2Fexplodie.org%3A6969\
+&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969\
+&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337\
+&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969\
+&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337";
+        let control = DownloadControl::new();
+        let task_control = control.clone();
+        let mut task = tokio::spawn(download_magnet_metadata_with_control(
+            magnet.to_owned(),
+            NetworkConfig::new(
+                NetworkPolicy::Online,
+                Duration::from_secs(15),
+                Duration::from_secs(30),
+            ),
+            task_control,
+        ));
+
+        let raw_info = match timeout(Duration::from_secs(90), &mut task).await {
+            Ok(result) => result
+                .expect("join public metadata probe")
+                .expect("acquire public metadata"),
+            Err(_) => {
+                control.cancel();
+                if timeout(Duration::from_secs(5), &mut task).await.is_err() {
+                    task.abort();
+                    let _ = task.await;
+                }
+                panic!("public metadata probe exceeded 90 seconds");
+            }
+        };
+        let metainfo = Metainfo::from_info_bytes(&raw_info).expect("verified public metadata");
+        assert_eq!(
+            hex(&metainfo.info_hash),
+            "dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c"
+        );
     }
 
     #[test]
@@ -2518,7 +2776,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let handshake =
             decode_handshake(&handshake_bytes, info_hash).expect("client handshake identity");
         assert!(handshake.supports_extensions());
-        assert_eq!(handshake.peer_id, DIAGNOSTIC_PEER_ID);
+        assert_eq!(handshake.peer_id, CLIENT_PEER_ID);
         let mut reserved = [0; 8];
         reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
         stream
@@ -2534,6 +2792,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             stream,
             decoder: FrameDecoder::new(),
             queued_messages: VecDeque::new(),
+            io_timeout: Duration::from_secs(1),
         };
 
         let PeerMessage::Extended { id: 0, .. } = next_peer_message(&mut peer)
@@ -2542,14 +2801,14 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         else {
             panic!("expected extension handshake");
         };
-        send_message(&mut peer.stream, &PeerMessage::Bitfield(bitfield))
+        send_message(&mut peer, &PeerMessage::Bitfield(bitfield))
             .await
             .expect("send early bitfield");
-        send_message(&mut peer.stream, &PeerMessage::Unchoke)
+        send_message(&mut peer, &PeerMessage::Unchoke)
             .await
             .expect("send early unchoke");
         send_message(
-            &mut peer.stream,
+            &mut peer,
             &PeerMessage::Extended {
                 id: 0,
                 payload: encode_extension_handshake(Some(info.len())),
@@ -2573,7 +2832,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             MetadataMessage::Request { piece: 0 }
         );
         send_message(
-            &mut peer.stream,
+            &mut peer,
             &PeerMessage::Extended {
                 id: 1,
                 payload: encode_metadata_data(0, info.len(), &info).expect("encode metadata block"),
@@ -2590,7 +2849,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                     let begin = request.begin as usize;
                     let end = begin + request.length as usize;
                     send_message(
-                        &mut peer.stream,
+                        &mut peer,
                         &PeerMessage::Piece {
                             index: 0,
                             begin: request.begin,
@@ -2670,7 +2929,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         assert_ne!(announce_transaction, 0);
         assert_ne!(announce_transaction, connect_transaction);
         assert_eq!(&request[16..36], &info_hash);
-        assert_eq!(&request[36..56], &DIAGNOSTIC_PEER_ID);
+        assert_eq!(&request[36..56], &CLIENT_PEER_ID);
         assert_eq!(
             u64::from_be_bytes(request[56..64].try_into().expect("downloaded")),
             0
@@ -2802,7 +3061,8 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let parsed = Magnet::parse(&magnet).expect("parse tracker magnet");
         assert!(parsed.peer_hints.is_empty());
         assert_eq!(parsed.udp_trackers.len(), 2);
-        let mut peers = DiagnosticPeerSession::from_magnet(&parsed)
+        let network = loopback_network(Duration::from_secs(2));
+        let mut peers = PeerSession::from_magnet(&parsed, network)
             .await
             .expect("prepare tracker discovery");
         assert!(peers.registry.is_empty());
@@ -2811,7 +3071,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             MagnetDownloadConfig {
                 magnet,
                 output_path: output_path.clone(),
-                timeout: Duration::from_secs(2),
+                network,
                 max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
@@ -2875,11 +3135,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                     "00".repeat(20)
                 ),
                 output_path: output_path.clone(),
-                timeout: if cancel {
-                    Duration::from_secs(2)
-                } else {
-                    Duration::from_millis(50)
-                },
+                network: loopback_network(Duration::from_secs(2)),
                 max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
@@ -2900,7 +3156,10 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         if cancel {
             assert!(matches!(result, Err(DownloadError::Cancelled)));
         } else {
-            assert!(matches!(result, Err(DownloadError::TimedOut { .. })));
+            assert!(matches!(
+                result,
+                Err(DownloadError::UdpTrackerTimedOut { .. })
+            ));
         }
         assert!(!tokio::fs::try_exists(&output_path).await.expect("output"));
         assert!(
@@ -2949,7 +3208,8 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             hex(&info_hash)
         );
         let parsed = Magnet::parse(&magnet).expect("parse failover magnet");
-        let mut peers = DiagnosticPeerSession::from_magnet(&parsed)
+        let network = loopback_network(Duration::from_secs(2));
+        let mut peers = PeerSession::from_magnet(&parsed, network)
             .await
             .expect("resolve failover peers");
         assert_eq!(peers.registry.len(), 2);
@@ -2958,7 +3218,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             MagnetDownloadConfig {
                 magnet,
                 output_path: output_path.clone(),
-                timeout: Duration::from_secs(2),
+                network,
                 max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
@@ -3061,7 +3321,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 hex(&info_hash)
             ),
             output_path: output_path.clone(),
-            timeout: Duration::from_secs(2),
+            network: loopback_network(Duration::from_secs(2)),
             max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
             skip_files: Vec::new(),
             materialize_files: Vec::new(),
@@ -3112,7 +3372,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let result = download_magnet(MagnetDownloadConfig {
             magnet: format!("magnet:?xt=urn:btih:{}&x.pe={address}", hex(&info_hash)),
             output_path: output_path.clone(),
-            timeout: Duration::from_secs(2),
+            network: loopback_network(Duration::from_secs(2)),
             max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
             skip_files: Vec::new(),
             materialize_files: Vec::new(),
@@ -3164,7 +3424,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let result = download_magnet(MagnetDownloadConfig {
             magnet: format!("magnet:?xt=urn:btih:{}&x.pe={address}", hex(&info_hash)),
             output_path: output_path.clone(),
-            timeout: Duration::from_secs(2),
+            network: loopback_network(Duration::from_secs(2)),
             max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
             skip_files: Vec::new(),
             materialize_files: Vec::new(),
@@ -3213,14 +3473,24 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let result = download_magnet(MagnetDownloadConfig {
             magnet: format!("magnet:?xt=urn:btih:{}&x.pe={address}", hex(&info_hash)),
             output_path: output_path.clone(),
-            timeout: Duration::from_secs(2),
+            network: loopback_network(Duration::from_secs(2)),
             max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
             skip_files: Vec::new(),
             materialize_files: Vec::new(),
         })
         .await;
 
-        assert!(matches!(result, Err(DownloadError::PeerClosed)));
+        assert!(
+            matches!(
+                &result,
+                Err(DownloadError::PeerClosed)
+                    | Err(DownloadError::Io {
+                        operation: "read peer message",
+                        ..
+                    })
+            ),
+            "unexpected disconnect result: {result:?}"
+        );
         assert!(!tokio::fs::try_exists(&output_path).await.expect("output"));
         assert!(!tokio::fs::try_exists(&staging).await.expect("staging"));
         peer_task.await.expect("disconnecting peer task");
@@ -3252,14 +3522,14 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             metainfo_path: metainfo_path.clone(),
             peer: address,
             output_path: output_path.clone(),
-            timeout: Duration::from_millis(50),
+            network: loopback_network(Duration::from_millis(50)),
             max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
             skip_files: Vec::new(),
             materialize_files: Vec::new(),
         })
         .await;
 
-        assert!(matches!(result, Err(DownloadError::TimedOut { .. })));
+        assert!(matches!(result, Err(DownloadError::PeerTimedOut { .. })));
         assert!(
             !tokio::fs::try_exists(&output_path)
                 .await
@@ -3299,14 +3569,14 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             metainfo_path: metainfo_path.clone(),
             peer: address,
             output_path: output_path.clone(),
-            timeout: Duration::from_millis(50),
+            network: loopback_network(Duration::from_millis(50)),
             max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
             skip_files: vec![1],
             materialize_files: Vec::new(),
         })
         .await;
 
-        assert!(matches!(result, Err(DownloadError::TimedOut { .. })));
+        assert!(matches!(result, Err(DownloadError::PeerTimedOut { .. })));
         assert!(!tokio::fs::try_exists(&output_path).await.expect("output"));
         assert!(!tokio::fs::try_exists(&staging).await.expect("staging"));
         assert!(!tokio::fs::try_exists(&part).await.expect("part"));
@@ -3342,7 +3612,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 metainfo_path: metainfo_path.clone(),
                 peer: address,
                 output_path: output_path.clone(),
-                timeout: Duration::from_secs(5),
+                network: loopback_network(Duration::from_secs(5)),
                 max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
                 skip_files: vec![1],
                 materialize_files: Vec::new(),
@@ -3402,7 +3672,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             metainfo_path: metainfo_path.clone(),
             peer: address,
             output_path: output_path.clone(),
-            timeout: Duration::from_secs(1),
+            network: loopback_network(Duration::from_secs(1)),
             max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
             skip_files: vec![1],
             materialize_files: Vec::new(),

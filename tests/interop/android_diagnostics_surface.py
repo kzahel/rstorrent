@@ -34,7 +34,7 @@ from headless_avd import OwnedHeadlessAvd, default_adb, default_emulator
 TORRENT_ID = "000102030405060708090a0b0c0d0e0f10111213"
 MAGNET = (
     f"magnet:?xt=urn:btih:{TORRENT_ID}"
-    "&tr=udp%3A%2F%2F192.0.2.1%3A6969%2Fannounce"
+    "&tr=udp%3A%2F%2F0.0.0.0%3A6969%2Fannounce"
 )
 
 
@@ -61,13 +61,32 @@ def parse_arguments() -> argparse.Namespace:
 
 def scroll_to_text(adb: Adb, label: str) -> ET.Element:
     last_root: ET.Element | None = None
-    gestures = [
-        ("2200", "1100", "2200", "760")
-        for _ in range(16)
-    ] + [
-        ("2200", "520", "2200", "900")
-        for _ in range(16)
-    ]
+    size = adb.shell("wm", "size").stdout
+    dimensions = next(
+        (
+            value
+            for value in reversed(size.split())
+            if "x" in value and all(part.isdigit() for part in value.split("x", 1))
+        ),
+        None,
+    )
+    if dimensions is None:
+        raise ScenarioFailure(f"could not determine Android display size: {size!r}")
+    width, height = (int(part) for part in dimensions.split("x", 1))
+    x = str(width // 2)
+    upward = (
+        x,
+        str(height * 4 // 5),
+        x,
+        str(height // 4),
+    )
+    downward = (
+        x,
+        str(height // 4),
+        x,
+        str(height * 4 // 5),
+    )
+    gestures = [upward for _ in range(16)] + [downward for _ in range(16)]
     for gesture in gestures:
         root = dump_ui(adb)
         last_root = root

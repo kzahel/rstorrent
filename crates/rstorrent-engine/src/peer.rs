@@ -3,8 +3,10 @@
 use std::cmp::Ordering;
 use std::error::Error;
 use std::fmt;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::time::Duration;
+
+use crate::network::is_valid_outbound_address;
 
 pub const DEFAULT_MAX_PEER_RECORDS: usize = 1_000;
 pub const DEFAULT_MAX_CONSECUTIVE_FAILURES: u32 = 3;
@@ -15,16 +17,7 @@ pub struct PeerEndpoint(SocketAddr);
 
 impl PeerEndpoint {
     pub fn new(address: SocketAddr) -> Result<Self, PeerRegistryError> {
-        let invalid_ip = address.ip().is_unspecified()
-            || address.ip().is_multicast()
-            || address.ip() == IpAddr::V4(Ipv4Addr::BROADCAST);
-        let unscoped_link_local = match address {
-            SocketAddr::V6(address) => {
-                address.ip().is_unicast_link_local() && address.scope_id() == 0
-            }
-            SocketAddr::V4(_) => false,
-        };
-        if address.port() == 0 || invalid_ip || unscoped_link_local {
+        if !is_valid_outbound_address(address) {
             return Err(PeerRegistryError::InvalidEndpoint(address));
         }
         Ok(Self(address))
@@ -32,10 +25,6 @@ impl PeerEndpoint {
 
     pub fn address(self) -> SocketAddr {
         self.0
-    }
-
-    pub fn is_loopback(self) -> bool {
-        self.0.ip().is_loopback()
     }
 }
 
@@ -366,12 +355,6 @@ fn compare_dial_candidates(left: &PeerRecord, right: &PeerRecord) -> Ordering {
     left.history
         .consecutive_failures
         .cmp(&right.history.consecutive_failures)
-        .then_with(|| {
-            right
-                .endpoint
-                .is_loopback()
-                .cmp(&left.endpoint.is_loopback())
-        })
         .then_with(
             || match (left.history.last_dial_at, right.history.last_dial_at) {
                 (None, None) => Ordering::Equal,

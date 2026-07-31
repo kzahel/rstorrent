@@ -4,8 +4,9 @@ Topic: `peer-lifecycle`
 
 Status: Tactical `010` completed the first bounded peer registry, selection,
 dial, failure, and live-connection lifecycle. Tactical `011` now feeds it
-bounded one-shot UDP tracker observations. Multiple simultaneous peers remain
-unimplemented.
+bounded one-shot UDP tracker observations. Tactical `013` applies explicit
+destination policy and per-operation deadlines to the runtime owner. Multiple
+simultaneous peers remain unimplemented.
 
 ## Scope
 
@@ -86,6 +87,14 @@ that socket closes. Dynamic peer records are reconstructible engine state and
 are not part of the initial SQLite authority; a later bounded good-peer cache
 may persist selected endpoint observations explicitly.
 
+Destination permission is runtime infrastructure rather than peer-record
+truth. Observations enter the registry only when allowed by the configured
+policy, and the runtime checks again immediately before dialing. `Online`
+permits otherwise valid routed unicast endpoints, `LoopbackOnly` isolates
+controlled tools, and `Offline` prevents network work. Changing a future
+session policy must close active network resources without pretending their
+peer records failed.
+
 ## Reference Direction
 
 Rasterbar libtorrent `v2.0.13` supplies the mature behavioral reference:
@@ -126,10 +135,16 @@ lifecycle. A tracker rejection advances to another tracker; an unreachable
 tracker peer advances to the next record; and a successful explicit hint
 avoids tracker traffic.
 
-The current runtime is still loopback-only and deliberately permits only one
-live connection. It does not fail over during content transfer, persist peer
-records, resolve duplicate peer IDs, perform simultaneous dialing, or own
-multi-peer request selection.
+Tactical `013` removed the implicit loopback preference and restriction.
+Desktop and Android product owners explicitly use `Online`; diagnostic and
+controlled runtimes use `LoopbackOnly`. TCP connect, handshake read/write,
+complete-message reads across fragmentation, and complete-frame writes now
+have bounded deadlines owned by the peer connection. Timely messages can
+continue indefinitely because no deadline bounds the torrent's lifetime.
+
+The runtime still deliberately permits only one live connection. It does not
+fail over during content transfer, persist peer records, resolve duplicate
+peer IDs, perform simultaneous dialing, or own multi-peer request selection.
 
 The next recommended peer slice is a small bounded live-peer set with explicit
 request ownership and content-transfer failover. Reannounce scheduling,

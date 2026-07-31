@@ -19,6 +19,7 @@ pub use control::{
     ResponseOutcome, ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState,
 };
 pub use have::{HaveError, HaveState};
+pub use rstorrent_engine::{NetworkConfig, NetworkPolicy};
 pub use store::{
     ConfiguredStorageRoot, PreparedFileRecord, ResumeRecord, SessionStore, StorageRootLocation,
     StoreError,

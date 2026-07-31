@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use rstorrent_engine::{
     DescriptorFile, DescriptorFileRole, DescriptorStorage, DescriptorStoragePlan, DownloadConfig,
-    DownloadControl, DownloadError, DownloadProgress, DownloadReport,
+    DownloadControl, DownloadError, DownloadProgress, DownloadReport, NetworkConfig, NetworkPolicy,
     download_verified_piece_to_descriptors_with_control, download_verified_piece_with_control,
     plan_descriptor_storage,
 };
@@ -43,8 +43,17 @@ pub struct AndroidApplicationConfig {
     pub profile_id: String,
     pub storage_root: String,
     pub platform_storage: bool,
-    pub timeout_seconds: u64,
+    pub network_policy: AndroidNetworkPolicy,
+    pub peer_connect_timeout_seconds: u64,
+    pub peer_io_timeout_seconds: u64,
     pub max_buffered_payload_bytes: u64,
+}
+
+#[derive(Clone, Copy, Debug, uniffi::Enum)]
+pub enum AndroidNetworkPolicy {
+    Offline,
+    LoopbackOnly,
+    Online,
 }
 
 #[derive(Debug, uniffi::Error)]
@@ -278,9 +287,16 @@ fn validate_application_config(
         }
         Ok(path)
     }
-    if config.timeout_seconds == 0 || config.timeout_seconds > MAX_TIMEOUT_SECONDS {
+    if config.peer_connect_timeout_seconds == 0
+        || config.peer_connect_timeout_seconds > MAX_TIMEOUT_SECONDS
+    {
         return Err(AndroidClientError::message(format!(
-            "timeout must be 1..={MAX_TIMEOUT_SECONDS} seconds"
+            "peer connect timeout must be 1..={MAX_TIMEOUT_SECONDS} seconds"
+        )));
+    }
+    if config.peer_io_timeout_seconds == 0 || config.peer_io_timeout_seconds > MAX_TIMEOUT_SECONDS {
+        return Err(AndroidClientError::message(format!(
+            "peer I/O timeout must be 1..={MAX_TIMEOUT_SECONDS} seconds"
         )));
     }
     if !(MIN_PAYLOAD_BYTES..=MAX_PAYLOAD_BYTES).contains(&config.max_buffered_payload_bytes) {
@@ -293,12 +309,21 @@ fn validate_application_config(
     } else {
         ConfiguredStorageRoot::path("downloads", path(config.storage_root, "storage root")?)
     };
+    let network_policy = match config.network_policy {
+        AndroidNetworkPolicy::Offline => NetworkPolicy::Offline,
+        AndroidNetworkPolicy::LoopbackOnly => NetworkPolicy::LoopbackOnly,
+        AndroidNetworkPolicy::Online => NetworkPolicy::Online,
+    };
     let mut application = ApplicationConfig::new(
         path(config.profile_root, "profile root")?,
         config.profile_id,
         vec![storage_root],
+        NetworkConfig::new(
+            network_policy,
+            Duration::from_secs(config.peer_connect_timeout_seconds),
+            Duration::from_secs(config.peer_io_timeout_seconds),
+        ),
     );
-    application.download_timeout = Duration::from_secs(config.timeout_seconds);
     application.max_buffered_payload_bytes = usize::try_from(config.max_buffered_payload_bytes)
         .map_err(|_| AndroidClientError::message("payload allowance exceeds usize"))?;
     Ok(application)
@@ -975,7 +1000,11 @@ fn validate_config(config: EngineConfig) -> Result<(DownloadConfig, Duration), S
             metainfo_path: PathBuf::from(config.metainfo_path),
             peer: SocketAddr::from((Ipv4Addr::LOCALHOST, config.peer_port)),
             output_path: PathBuf::from(config.output_path),
-            timeout: Duration::from_secs(config.timeout_seconds),
+            network: NetworkConfig::new(
+                NetworkPolicy::LoopbackOnly,
+                Duration::from_secs(config.timeout_seconds),
+                Duration::from_secs(config.timeout_seconds),
+            ),
             max_buffered_payload_bytes: config.max_buffered_payload_bytes as usize,
             skip_files: config
                 .skip_files
@@ -1086,11 +1115,12 @@ fn classify_failure(error: &DownloadError) -> FailureKind {
         {
             FailureKind::Peer
         }
-        DownloadError::TimedOut { .. } | DownloadError::UdpTrackerTimedOut { .. } => {
-            FailureKind::Timeout
-        }
-        DownloadError::NonLoopbackPeer(_)
-        | DownloadError::InvalidTimeout
+        DownloadError::PeerTimedOut { .. }
+        | DownloadError::NetworkTimedOut { .. }
+        | DownloadError::UdpTrackerTimedOut { .. } => FailureKind::Timeout,
+        DownloadError::NetworkDisabled
+        | DownloadError::NetworkPolicyDenied { .. }
+        | DownloadError::InvalidNetworkTimeout { .. }
         | DownloadError::MetainfoTooLarge { .. }
         | DownloadError::Magnet(_)
         | DownloadError::Metainfo(_)
@@ -1198,6 +1228,14 @@ mod tests {
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+    fn test_path(label: &str) -> PathBuf {
+        let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!(
+            "rstorrent-android-{label}-{}-{sequence}",
+            std::process::id()
+        ))
+    }
+
     fn config(metainfo_path: String, output_path: String, peer_port: u16) -> EngineConfig {
         EngineConfig {
             metainfo_path,
@@ -1209,6 +1247,26 @@ mod tests {
             skip_files: Vec::new(),
             materialize_files: Vec::new(),
         }
+    }
+
+    #[test]
+    fn product_application_policy_maps_online_explicitly() {
+        let root = test_path("application-network");
+        let config = validate_application_config(AndroidApplicationConfig {
+            profile_root: root.join("profile").display().to_string(),
+            profile_id: "test".to_owned(),
+            storage_root: String::new(),
+            platform_storage: true,
+            network_policy: AndroidNetworkPolicy::Online,
+            peer_connect_timeout_seconds: 15,
+            peer_io_timeout_seconds: 60,
+            max_buffered_payload_bytes: 32 * 1024,
+        })
+        .expect("valid Android application config");
+
+        assert_eq!(config.network.policy, NetworkPolicy::Online);
+        assert_eq!(config.network.peer_connect_timeout, Duration::from_secs(15));
+        assert_eq!(config.network.peer_io_timeout, Duration::from_secs(60));
     }
 
     fn two_file_metainfo() -> Vec<u8> {

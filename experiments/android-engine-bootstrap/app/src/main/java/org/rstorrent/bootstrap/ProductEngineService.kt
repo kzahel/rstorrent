@@ -32,6 +32,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.rstorrent.bootstrap.uniffi.AndroidApplicationClient
 import org.rstorrent.bootstrap.uniffi.AndroidApplicationConfig
+import org.rstorrent.bootstrap.uniffi.AndroidNetworkPolicy
 import org.rstorrent.bootstrap.uniffi.AndroidViewSubscription
 import org.rstorrent.session.uniffi.Command
 import org.rstorrent.session.uniffi.DeliveryPolicy
@@ -102,7 +103,9 @@ class ProductEngineService : Service() {
                             "default",
                             "",
                             true,
-                            120UL,
+                            AndroidNetworkPolicy.ONLINE,
+                            15UL,
+                            60UL,
                             (32 * 1024).toULong(),
                         ),
                     )

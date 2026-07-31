@@ -618,12 +618,13 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::Duration;
 
     use futures_util::{SinkExt, StreamExt};
     use rstorrent_session::{
         ApplicationConfig, ApplicationService, Command, ConfiguredStorageRoot, DeliveryPolicy,
-        RequestEnvelope, ResponseOutcome, SubscriptionSpec, ViewProjection, ViewSelector,
-        ViewUpdatePayload,
+        NetworkConfig, NetworkPolicy, RequestEnvelope, ResponseOutcome, SubscriptionSpec,
+        ViewProjection, ViewSelector, ViewUpdatePayload,
     };
     use tokio::sync::Mutex;
     use tokio_tungstenite::connect_async;
@@ -655,6 +656,11 @@ mod tests {
                     "downloads",
                     root.join("payload"),
                 )],
+                NetworkConfig::new(
+                    NetworkPolicy::LoopbackOnly,
+                    Duration::from_secs(1),
+                    Duration::from_secs(1),
+                ),
             ))
             .await
             .expect("open service"),

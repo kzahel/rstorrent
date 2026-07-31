@@ -87,5 +87,10 @@ direction belongs in `../topics/`.
   assessment, a bounded filtered typed diagnostic stream, equivalent
   web/Tauri and Android presentation, and isolated headless Chrome and
   no-window AVD evidence.
+- [`013-explicit-live-network-policy.md`](013-explicit-live-network-policy.md):
+  completed explicit offline, loopback-only, and online outbound policy,
+  online desktop and Android product networking, loopback-isolated harnesses,
+  offline progress, and bounded network-operation deadlines without a
+  whole-download timeout.
 
-The next tactical number is `013`.
+The next tactical number is `014`.

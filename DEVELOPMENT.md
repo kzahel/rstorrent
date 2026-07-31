@@ -1,8 +1,10 @@
 # RSTorrent Development
 
-RSTorrent now has its first bounded engine slice: a pure protocol crate, a
-Tokio runtime crate, and a loopback libtorrent interoperability harness. It is
-not yet a generally useful torrent client.
+RSTorrent has a pure protocol core, a Tokio runtime, an application service,
+first-party desktop and Android clients, and loopback libtorrent
+interoperability harnesses. Product clients explicitly use online tracker and
+peer networking while diagnostic tools retain loopback-only policy. It is not
+yet a generally useful torrent client.
 
 ## Starting A Session
 
@@ -68,6 +70,19 @@ is complete. It added bounded recoverable reactive views and generated client
 types, then proved the same controlled pause/resume download through Chrome
 over authenticated WebSocket, Tauri over commands and Channels, and Android
 Compose/UniFFI under foreground-service ownership.
+
+[`009-android-saf-session-storage.md`](docs/tactical/009-android-saf-session-storage.md)
+through
+[`012-bounded-diagnostics-progress.md`](docs/tactical/012-bounded-diagnostics-progress.md)
+are complete. They connected Android to durable SAF session storage, added
+bounded peer and one-shot UDP tracker lifecycles, and established equivalent
+typed progress and diagnostics on the shared web and Compose surfaces.
+
+[`013-explicit-live-network-policy.md`](docs/tactical/013-explicit-live-network-policy.md)
+is complete. It gives every runtime an explicit offline, loopback-only, or
+online outbound policy, selects online networking for desktop and Android,
+and replaces the former whole-download timeout with bounded network-operation
+deadlines.
 
 ## Toolchain
 

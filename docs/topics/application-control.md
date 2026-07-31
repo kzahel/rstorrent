@@ -6,8 +6,10 @@ Status: Tactical `007` implemented the first transport-neutral semantic
 control contract and in-process application service. Tactical `008` added
 recoverable reactive views and browser, Tauri, and Android adapters. Tactical
 `012` added bounded typed diagnostics, derived progress assessment, and prompt
-task-terminal supervision with isolated headless presentation evidence. No
-stable public wire format is accepted yet.
+task-terminal supervision with isolated headless presentation evidence.
+Tactical `013` added explicit application network configuration and a blocked
+offline prerequisite without changing durable torrent intent. No stable
+public wire format is accepted yet.
 
 ## Scope
 
@@ -52,6 +54,14 @@ inactive torrents. Failure or exhaustion of one tracker, peer, or discovery
 mechanism is not itself a torrent error and is not blockage while another
 automatic mechanism can still act.
 
+Application network permission remains separate from each torrent's desired
+running or paused state. An offline policy prevents DNS and socket work and
+reports `network_disabled` with an `enable_network` action; it does not turn
+the torrent into an error or durable pause. Future Android connectivity,
+metered-network, and VPN settings should combine platform facts and user
+preferences in an application-level owner, then change the engine permission
+without rewriting torrent intent.
+
 Typed diagnostics use a separate bounded reactive projection. They may explain
 the facts behind a progress assessment, but clients do not parse diagnostic
 text to determine torrent state, available actions, or correctness. A
@@ -95,6 +105,8 @@ separate tactical and threat model.
 - A task terminal result is observed without requiring a later client command.
 - Blocked progress is asserted only when no installed or scheduled automatic
   mechanism can provide the next prerequisite.
+- Temporary application network restriction does not rewrite a torrent's
+  desired running or paused state.
 - User-controlled magnets, paths, peer hints, and errors are bounded and are
   not emitted unredacted as routine logs.
 
@@ -125,6 +137,14 @@ records the completed application-control slice. It corrects command-driven
 task-completion polling, adds a derived progress assessment, and carries typed
 bounded diagnostics through generated browser/Tauri and Android contracts
 without treating the diagnostic WebSocket gateway as a product daemon.
+
+[`../tactical/013-explicit-live-network-policy.md`](../tactical/013-explicit-live-network-policy.md)
+records explicit offline, loopback-only, and online engine policy selection.
+The current application configuration is immutable for the service lifetime.
+A later control slice must own safe runtime mutation, cancel active network
+resources promptly, preserve torrent intent, and restart eligible work when
+network prerequisites return. Android network binding and VPN leak prevention
+require separate platform evidence.
 
 The implemented subscription and client direction is recorded in
 [`client-surfaces.md`](client-surfaces.md) and

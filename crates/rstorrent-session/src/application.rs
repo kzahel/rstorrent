@@ -4,13 +4,13 @@ use std::fmt;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
 
 use rstorrent_engine::{
     DescriptorFile, DescriptorStorage, DescriptorStoragePlan, DownloadActivityEvent,
-    DownloadActivitySink, DownloadCheckpointSink, DownloadControl, DownloadError, PreparedFileHash,
-    ResumableMagnetDownloadConfig, ResumedStorage, download_magnet_metadata_with_control,
-    plan_descriptor_storage, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
+    DownloadActivitySink, DownloadCheckpointSink, DownloadControl, DownloadError, NetworkConfig,
+    PreparedFileHash, ResumableMagnetDownloadConfig, ResumedStorage,
+    download_magnet_metadata_with_control, plan_descriptor_storage,
+    resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
     verify_prepared_descriptors,
 };
 use rstorrent_protocol::metainfo::Metainfo;
@@ -30,7 +30,6 @@ use crate::views::{
     SubscriptionSpec, TorrentActivity, ViewHub, ViewSubscription, ranges_from_pieces,
 };
 
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 const DEFAULT_PAYLOAD_ALLOWANCE: usize = 32 * 1024;
 
 #[derive(Clone, Debug)]
@@ -38,7 +37,7 @@ pub struct ApplicationConfig {
     pub profile_root: PathBuf,
     pub profile_id: String,
     pub storage_roots: Vec<ConfiguredStorageRoot>,
-    pub download_timeout: Duration,
+    pub network: NetworkConfig,
     pub max_buffered_payload_bytes: usize,
 }
 
@@ -47,12 +46,13 @@ impl ApplicationConfig {
         profile_root: PathBuf,
         profile_id: String,
         storage_roots: Vec<ConfiguredStorageRoot>,
+        network: NetworkConfig,
     ) -> Self {
         Self {
             profile_root,
             profile_id,
             storage_roots,
-            download_timeout: DEFAULT_TIMEOUT,
+            network,
             max_buffered_payload_bytes: DEFAULT_PAYLOAD_ALLOWANCE,
         }
     }
@@ -75,7 +75,7 @@ enum ApplicationTaskReport {
 pub struct ApplicationService {
     store: Arc<Mutex<SessionStore>>,
     storage_roots: BTreeMap<String, StorageRootLocation>,
-    download_timeout: Duration,
+    network: NetworkConfig,
     max_buffered_payload_bytes: usize,
     active: Option<ActiveDownload>,
     views: ViewHub,
@@ -83,9 +83,14 @@ pub struct ApplicationService {
 
 impl ApplicationService {
     pub async fn open(config: ApplicationConfig) -> Result<Self, ApplicationError> {
-        if config.download_timeout.is_zero() {
+        if config.network.peer_connect_timeout.is_zero() {
             return Err(ApplicationError::Configuration(
-                "download timeout must be nonzero".to_owned(),
+                "peer connect timeout must be nonzero".to_owned(),
+            ));
+        }
+        if config.network.peer_io_timeout.is_zero() {
+            return Err(ApplicationError::Configuration(
+                "peer I/O timeout must be nonzero".to_owned(),
             ));
         }
         let mut storage_roots = BTreeMap::new();
@@ -116,7 +121,7 @@ impl ApplicationService {
         let mut service = Self {
             store: Arc::new(Mutex::new(store)),
             storage_roots,
-            download_timeout: config.download_timeout,
+            network: config.network,
             max_buffered_payload_bytes: config.max_buffered_payload_bytes,
             active: None,
             views,
@@ -127,7 +132,10 @@ impl ApplicationService {
             "application_opened",
             None,
             "Application profile opened",
-            &[("profile", &config.profile_id)],
+            &[
+                ("profile", &config.profile_id),
+                ("network_policy", config.network.policy.as_str()),
+            ],
         )?;
         service.refresh_views()?;
         service.restore_running().await?;
@@ -301,7 +309,7 @@ impl ApplicationService {
         let config = ResumableMagnetDownloadConfig {
             magnet: resume.magnet,
             output_path: PathBuf::new(),
-            timeout: self.download_timeout,
+            network: self.network,
             max_buffered_payload_bytes: self.max_buffered_payload_bytes,
             skip_files,
             verified_info: Some(raw_info),
@@ -520,10 +528,10 @@ impl ApplicationService {
             let control = self.download_control(torrent_id);
             let task_control = control.clone();
             let magnet = resume.magnet;
-            let timeout = self.download_timeout;
+            let network = self.network;
             let operation = async move {
                 let raw_info =
-                    download_magnet_metadata_with_control(magnet, timeout, task_control).await?;
+                    download_magnet_metadata_with_control(magnet, network, task_control).await?;
                 checkpoints
                     .metadata_verified(&raw_info)
                     .map_err(DownloadError::Checkpoint)?;
@@ -559,7 +567,7 @@ impl ApplicationService {
         let config = ResumableMagnetDownloadConfig {
             magnet: resume.magnet,
             output_path: root.join(torrent_id),
-            timeout: self.download_timeout,
+            network: self.network,
             max_buffered_payload_bytes: self.max_buffered_payload_bytes,
             skip_files,
             verified_info: resume.raw_info,
@@ -733,6 +741,27 @@ fn handle_task_outcome(
                 )
                 .map_err(|error| error.to_string())
         }
+        Err(DownloadError::NetworkDisabled) => {
+            views
+                .set_progress_inputs(
+                    torrent_id,
+                    ProgressInputs {
+                        network_disabled: true,
+                        ..ProgressInputs::default()
+                    },
+                )
+                .map_err(|error| error.to_string())?;
+            views
+                .record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    DiagnosticCategory::Discovery,
+                    "network_disabled",
+                    Some(torrent_id),
+                    "Outbound networking is disabled by application policy",
+                    &[],
+                )
+                .map_err(|error| error.to_string())
+        }
         Err(error) if is_discovery_exhaustion(&error) => {
             views
                 .set_progress_inputs(
@@ -809,14 +838,15 @@ fn handle_task_outcome(
 fn is_discovery_exhaustion(error: &DownloadError) -> bool {
     matches!(
         error,
-        DownloadError::NonLoopbackPeer(_)
+        DownloadError::NetworkPolicyDenied { .. }
             | DownloadError::UdpTracker(_)
             | DownloadError::NoUsablePeer
             | DownloadError::NoUsableTrackerAddress
             | DownloadError::UdpTrackerResponseTooLarge { .. }
             | DownloadError::UdpTrackerTimedOut { .. }
+            | DownloadError::NetworkTimedOut { .. }
             | DownloadError::PeerClosed
-            | DownloadError::TimedOut { .. }
+            | DownloadError::PeerTimedOut { .. }
     )
 }
 
@@ -1202,15 +1232,16 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
 
+    use rstorrent_engine::{NetworkConfig, NetworkPolicy};
     use rusqlite::Connection;
     use sha1::{Digest, Sha1};
 
     use super::{ApplicationConfig, ApplicationService};
     use crate::{
         CONTROL_VERSION, Command, ConfiguredStorageRoot, DeliveryPolicy, DiagnosticFilter,
-        DiagnosticProfile, DiagnosticSeverity, ProgressDisposition, RequestEnvelope,
-        ResponseOutcome, SessionStore, SubscriptionSpec, TorrentState, ViewPatch, ViewProjection,
-        ViewSelector, ViewSnapshot, ViewUpdatePayload,
+        DiagnosticProfile, DiagnosticSeverity, ProgressDisposition, ProgressReason,
+        RequestEnvelope, ResponseOutcome, SessionStore, SubscriptionSpec, TorrentState, ViewPatch,
+        ViewProjection, ViewSelector, ViewSnapshot, ViewUpdatePayload,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -1224,16 +1255,19 @@ mod tests {
     }
 
     fn config(root: &Path) -> ApplicationConfig {
-        let mut config = ApplicationConfig::new(
+        ApplicationConfig::new(
             root.join("profile"),
             "test".to_owned(),
             vec![ConfiguredStorageRoot::path(
                 "downloads",
                 root.join("payload"),
             )],
-        );
-        config.download_timeout = std::time::Duration::from_secs(5);
-        config
+            NetworkConfig::new(
+                NetworkPolicy::LoopbackOnly,
+                std::time::Duration::from_secs(5),
+                std::time::Duration::from_secs(5),
+            ),
+        )
     }
 
     fn add_request(request_id: &str, torrent_id: &str) -> RequestEnvelope {
@@ -1456,6 +1490,62 @@ mod tests {
         service.shutdown().await.expect("shutdown");
         drop(service);
         fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn offline_policy_reports_network_blockage_without_torrent_error() {
+        let root = test_root("network-offline");
+        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let mut application_config = config(&root);
+        application_config.network.policy = NetworkPolicy::Offline;
+        let mut service = ApplicationService::open(application_config)
+            .await
+            .expect("open offline service");
+        let summary = service
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::TorrentList,
+                projection: ViewProjection::Summary,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 256 * 1024,
+                },
+                diagnostics: None,
+            })
+            .expect("summary");
+        summary.next_update().await.expect("initial summary");
+
+        service
+            .dispatch(add_request("offline-add", torrent_id))
+            .await
+            .expect("add while offline");
+
+        let torrent = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            loop {
+                let update = summary.next_update().await.expect("summary update");
+                let candidate = match update.payload {
+                    ViewUpdatePayload::Snapshot {
+                        snapshot: ViewSnapshot::TorrentList { mut torrents },
+                    } => torrents.pop(),
+                    ViewUpdatePayload::Patch {
+                        patch: ViewPatch::TorrentList { mut upsert, .. },
+                    } => upsert.pop(),
+                    _ => None,
+                };
+                if let Some(torrent) = candidate
+                    && torrent.progress.reason == ProgressReason::NetworkDisabled
+                {
+                    break torrent;
+                }
+            }
+        })
+        .await
+        .expect("network-disabled progress");
+
+        assert_eq!(torrent.state, TorrentState::AwaitingMetadata);
+        assert!(torrent.error.is_none());
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove offline test root");
     }
 
     #[tokio::test]

@@ -3,10 +3,11 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::Duration;
 
 use rstorrent_session::{
-    ApplicationConfig, ApplicationService, ConfiguredStorageRoot, RequestEnvelope,
-    ResponseEnvelope, SubscriptionSpec, ViewSubscription, ViewUpdate,
+    ApplicationConfig, ApplicationService, ConfiguredStorageRoot, NetworkConfig, NetworkPolicy,
+    RequestEnvelope, ResponseEnvelope, SubscriptionSpec, ViewSubscription, ViewUpdate,
 };
 #[cfg(target_os = "macos")]
 use tauri::WebviewWindowBuilder;
@@ -16,6 +17,8 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 const MAIN_WINDOW_LABEL: &str = "main";
+const PEER_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+const PEER_IO_TIMEOUT: Duration = Duration::from_secs(60);
 
 struct DesktopState {
     service: Arc<Mutex<ApplicationService>>,
@@ -236,16 +239,10 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .map_err(|error| format!("resolve application data directory: {error}"))?;
-            let service =
-                tauri::async_runtime::block_on(ApplicationService::open(ApplicationConfig::new(
-                    app_data.join("profile"),
-                    "default".to_owned(),
-                    vec![ConfiguredStorageRoot::path(
-                        "downloads",
-                        app_data.join("downloads"),
-                    )],
-                )))
-                .map_err(|error| error.to_string())?;
+            let service = tauri::async_runtime::block_on(ApplicationService::open(
+                desktop_application_config(&app_data),
+            ))
+            .map_err(|error| error.to_string())?;
             let state = DesktopState {
                 service: Arc::new(Mutex::new(service)),
                 subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
@@ -287,4 +284,27 @@ pub fn run() {
         }
         _ => {}
     });
+}
+
+fn desktop_application_config(app_data: &std::path::Path) -> ApplicationConfig {
+    ApplicationConfig::new(
+        app_data.join("profile"),
+        "default".to_owned(),
+        vec![ConfiguredStorageRoot::path(
+            "downloads",
+            app_data.join("downloads"),
+        )],
+        NetworkConfig::new(NetworkPolicy::Online, PEER_CONNECT_TIMEOUT, PEER_IO_TIMEOUT),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{NetworkPolicy, desktop_application_config};
+
+    #[test]
+    fn desktop_product_explicitly_uses_online_networking() {
+        let config = desktop_application_config(std::path::Path::new("/tmp/rstorrent-desktop"));
+        assert_eq!(config.network.policy, NetworkPolicy::Online);
+    }
 }

@@ -3,9 +3,12 @@ use std::error::Error;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use rstorrent_gateway::{GatewayConfig, bind};
-use rstorrent_session::{ApplicationConfig, ApplicationService, ConfiguredStorageRoot};
+use rstorrent_session::{
+    ApplicationConfig, ApplicationService, ConfiguredStorageRoot, NetworkConfig, NetworkPolicy,
+};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
@@ -19,11 +22,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let bind_addr = env::var("RSTORRENT_GATEWAY_BIND")
         .unwrap_or_else(|_| "127.0.0.1:3030".to_owned())
         .parse::<SocketAddr>()?;
+    let network_policy = match env::var("RSTORRENT_NETWORK_POLICY")
+        .unwrap_or_else(|_| "loopback_only".to_owned())
+        .as_str()
+    {
+        "offline" => NetworkPolicy::Offline,
+        "loopback_only" => NetworkPolicy::LoopbackOnly,
+        "online" => NetworkPolicy::Online,
+        value => {
+            return Err(format!(
+                "RSTORRENT_NETWORK_POLICY must be offline, loopback_only, or online; got {value}"
+            )
+            .into());
+        }
+    };
 
     let application = ApplicationService::open(ApplicationConfig::new(
         profile_root,
         "default".to_owned(),
         vec![ConfiguredStorageRoot::path("downloads", storage_root)],
+        NetworkConfig::new(
+            network_policy,
+            Duration::from_secs(15),
+            Duration::from_secs(60),
+        ),
     ))
     .await?;
     let application = Arc::new(Mutex::new(application));

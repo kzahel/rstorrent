@@ -7,13 +7,14 @@ generation of the JSTorrent product rather than a permanently separate brand.
 
 The project is in its engine bring-up stage. Its completed vertical thread
 parses bounded v1 single- and multi-file torrents, acquires metadata from
-magnet peers, discovers peers through one bounded loopback UDP tracker
-announce, and downloads selected files through a bounded 16 KiB block
-pipeline. Cross-file pieces combine wanted staging files, compact skipped-file
-part slots, and synthetic padding during streamed verification. Controlled
-large-piece, selective-file, tracker, and libtorrent fixtures provide
-reproducible interoperability evidence; this is not yet a generally useful
-torrent client.
+magnet peers, discovers peers through one bounded UDP tracker announce, and
+downloads selected files through a bounded 16 KiB block pipeline. Desktop and
+Android explicitly permit ordinary routed tracker and peer destinations while
+diagnostic tools and controlled harnesses remain loopback-only. Cross-file
+pieces combine wanted staging files, compact skipped-file part slots, and
+synthetic padding during streamed verification. Controlled large-piece,
+selective-file, tracker, and libtorrent fixtures provide reproducible
+interoperability evidence; this is not yet a generally useful torrent client.
 
 ## Motivation
 

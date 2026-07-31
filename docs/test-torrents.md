@@ -6,6 +6,14 @@ behavior, and remote content can change independently of this repository.
 Treat successful live retrieval as current evidence, not a permanent
 guarantee.
 
+RSTorrent currently understands the retained UDP tracker URLs but not the
+WebSocket trackers, WebSeed, or exact-source URL in these magnets. Tactical
+`013` added an ignored, metadata-only Big Buck Bunny probe under explicit
+online policy. Its 2026-07-31 execution reached the first public UDP tracker
+and timed out waiting for the connect response; it did not acquire metadata.
+That result proves the product route was no longer rejected by loopback policy,
+not that the listed swarm was reachable.
+
 ## WebTorrent Free Torrents
 
 Source: [WebTorrent Free Torrents](https://webtorrent.io/free-torrents)
@@ -56,4 +64,3 @@ Info hash: `a88fda5954e89178c372716a6a78b8180ed4dad3`
 ```text
 magnet:?xt=urn:btih:a88fda5954e89178c372716a6a78b8180ed4dad3&dn=The+WIRED+CD+-+Rip.+Sample.+Mash.+Share&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fwired-cd.torrent
 ```
-

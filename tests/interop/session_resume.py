@@ -36,7 +36,9 @@ from magnet_metadata import (
 
 PROCESS_TIMEOUT_SECONDS = 45
 POLL_SECONDS = 0.02
-UPLOAD_RATE_LIMIT = 8 * 1024
+UPLOAD_RATE_LIMIT = 1024 * 1024
+RESUME_PAYLOAD_SIZE = 8 * 1024 * 1024
+RESUME_PIECE_SIZE = 1024 * 1024
 
 
 @dataclass
@@ -200,27 +202,6 @@ def wait_for_piece_checkpoint(
     raise ScenarioFailure("session did not durably checkpoint two partial pieces")
 
 
-def wait_for_recheck_clear(
-    database_path: Path,
-    fixture: Fixture,
-    expected: int,
-) -> None:
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        raw_info, _, verified, state = read_durable_state(
-            database_path,
-            fixture.info_hash,
-        )
-        if bytes(raw_info or b"") != fixture.info_bytes:
-            raise ScenarioFailure("restart changed exact retained info bytes")
-        if verified == expected and state in {"checking", "downloading"}:
-            return
-        time.sleep(POLL_SECONDS)
-    raise ScenarioFailure(
-        f"restart did not clear only the corrupt claim to {expected} pieces"
-    )
-
-
 def wait_for_complete(
     process: subprocess.Popen[str],
     fixture: Fixture,
@@ -280,7 +261,11 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
     handle: lt.torrent_handle | None = None
     started = time.monotonic()
     try:
-        fixture = create_fixture(run_path)
+        fixture = create_fixture(
+            run_path,
+            payload_size=RESUME_PAYLOAD_SIZE,
+            piece_size=RESUME_PIECE_SIZE,
+        )
         profile_root = run_path / "profile"
         payload_root = run_path / "payload"
         database_path = profile_root / "session.db"
@@ -315,9 +300,9 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
             database_path,
             fixture,
         )
-        if piece_count != 3:
+        if piece_count < 4:
             raise ScenarioFailure(
-                f"session fixture has {piece_count} pieces, expected 3"
+                f"session fixture has only {piece_count} pieces; expected at least 4"
             )
         process.kill()
         process.wait(timeout=5)
@@ -341,17 +326,18 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
         upload_before_restart = handle.status().total_payload_upload
         process = start_process(binary, profile_root, payload_root)
         pieces_after_recheck = pieces_before_kill - 1
-        wait_for_recheck_clear(
-            database_path,
-            fixture,
-            pieces_after_recheck,
-        )
         completion = wait_for_complete(process, fixture)
         upload_after_restart = handle.status().total_payload_upload
         restart_payload_upload = upload_after_restart - upload_before_restart
-        if restart_payload_upload >= fixture.torrent_info.total_size():
+        expected_restart_upload = (
+            fixture.torrent_info.total_size()
+            - pieces_after_recheck * RESUME_PIECE_SIZE
+        )
+        if restart_payload_upload != expected_restart_upload:
             raise ScenarioFailure(
-                "restart uploaded a full payload and did not retain the valid claim"
+                "restart payload upload did not retain every valid claim and "
+                "redownload exactly the corrupt and missing pieces: "
+                f"expected {expected_restart_upload}, got {restart_payload_upload}"
             )
 
         output_payload = payload_root / fixture.info_hash / "payload.bin"
