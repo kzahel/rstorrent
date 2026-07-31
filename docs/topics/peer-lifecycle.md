@@ -339,11 +339,28 @@ peer remains choked.
 Metadata acquisition now keeps up to eight dial/negotiation work items in
 flight, continues tracker or DHT discovery, and gives them one bounded
 torrent-owned BEP 9 coordinator. Each peer receives at most two requests;
-ordinary assignments are unique for three seconds, after which untried peers
+the first is immediate and the second follows a response or a one-second ramp.
+Ordinary assignments are unique for three seconds, after which untried peers
 are preferred. Disjoint peers can complete one dictionary, disconnect/reject
 releases work, and a hash-invalid generation resets with contributor
 attribution. The worker delivering the final hash-valid block is preserved for
 content while losing work is cooperatively canceled and joined.
+
+Tactical `019` met the public metadata gates. Two independent Big Buck Bunny
+tracker cohorts each completed 9/10 for RSTorrent versus 10/10 for libtorrent;
+successful RSTorrent medians were 5.72 and 4.12 seconds versus 20.52 and 20.33
+seconds, with paired p90 ratios below 1.6x. Ten isolated fresh-DHT RSTorrent
+runs completed 10/10; the locked reference produced no torrent candidates in
+three contemporaneous attempts despite a populated DHT routing table, so
+paired DHT latency remains externally blocked.
+
+The first four-torrent breadth matrix exposed peers that ignored an immediately
+pipelined second metadata request. Endpoint-free attempt diagnostics and
+`ut_metadata.cpp::maybe_send_request` identified libtorrent's one-request-per-
+event/tick cadence. After adding the deterministic request ramp, Cosmos,
+Sintel, Tears of Steel, and WIRED CD all completed 3/3 for both owners. Each
+RSTorrent run used two requests for two accepted blocks without a hash or
+cleanup failure.
 
 `DownloadControl::diagnostic_snapshot` now exposes a bounded read-only peer
 registry table and active/recent metadata attempts. Initial BEP 10 handshakes

@@ -6522,6 +6522,114 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         }
     }
 
+    async fn serve_one_at_a_time_metadata_peer(listener: TcpListener, info: Vec<u8>) {
+        let (mut stream, _) = listener.accept().await.expect("accept metadata client");
+        let info_hash: [u8; 20] = Sha1::digest(&info).into();
+        let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
+        stream
+            .read_exact(&mut handshake_bytes)
+            .await
+            .expect("read client handshake");
+        assert!(
+            decode_handshake(&handshake_bytes, info_hash)
+                .expect("client handshake identity")
+                .supports_extensions()
+        );
+        let mut reserved = [0; 8];
+        reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+        stream
+            .write_all(&encode_handshake_with_reserved(
+                info_hash,
+                *b"-RS-ONE-AT-A-TIME000",
+                reserved,
+            ))
+            .await
+            .expect("send server handshake");
+        let mut peer =
+            PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(2));
+        assert!(matches!(
+            next_peer_message(&mut peer).await,
+            Ok(PeerMessage::Extended { id: 0, .. })
+        ));
+        send_message(
+            &mut peer,
+            &PeerMessage::Extended {
+                id: 0,
+                payload: encode_extension_handshake(Some(info.len())),
+            },
+        )
+        .await
+        .expect("send metadata extension handshake");
+
+        let first = next_peer_message(&mut peer)
+            .await
+            .expect("first metadata request");
+        let PeerMessage::Extended {
+            id: 1,
+            payload: first,
+        } = first
+        else {
+            panic!("expected first metadata request");
+        };
+        assert_eq!(
+            parse_metadata_message(&first).expect("parse first request"),
+            MetadataMessage::Request { piece: 0 }
+        );
+        assert!(
+            timeout(Duration::from_millis(200), next_peer_message(&mut peer))
+                .await
+                .is_err(),
+            "client must not pipeline a second metadata request immediately"
+        );
+        send_message(
+            &mut peer,
+            &PeerMessage::Extended {
+                id: 1,
+                payload: encode_metadata_data(
+                    0,
+                    info.len(),
+                    &info[..rstorrent_protocol::metadata::METADATA_BLOCK_LENGTH],
+                )
+                .expect("encode first metadata block"),
+            },
+        )
+        .await
+        .expect("send first metadata block");
+
+        let second = next_peer_message(&mut peer)
+            .await
+            .expect("second metadata request after response");
+        let PeerMessage::Extended {
+            id: 1,
+            payload: second,
+        } = second
+        else {
+            panic!("expected second metadata request");
+        };
+        assert_eq!(
+            parse_metadata_message(&second).expect("parse second request"),
+            MetadataMessage::Request { piece: 1 }
+        );
+        send_message(
+            &mut peer,
+            &PeerMessage::Extended {
+                id: 1,
+                payload: encode_metadata_data(
+                    1,
+                    info.len(),
+                    &info[rstorrent_protocol::metadata::METADATA_BLOCK_LENGTH..],
+                )
+                .expect("encode second metadata block"),
+            },
+        )
+        .await
+        .expect("send second metadata block");
+        assert!(matches!(
+            next_peer_message(&mut peer).await,
+            Err(DownloadError::PeerClosed)
+        ));
+    }
+
     async fn serve_metadata_peer_without_ut_metadata(listener: TcpListener, info_hash: [u8; 20]) {
         let (mut stream, _) = listener.accept().await.expect("accept magnet client");
         let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
@@ -7655,6 +7763,51 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 .expect("corrupt recovery peer joined")
                 .expect("corrupt recovery peer task");
         }
+    }
+
+    #[tokio::test]
+    async fn metadata_requests_ramp_for_one_at_a_time_peer() {
+        let payload = vec![0x71; 1_000];
+        let info = single_file_info_with_piece_length(&payload, 1);
+        assert!(
+            info.len() > rstorrent_protocol::metadata::METADATA_BLOCK_LENGTH
+                && info.len() <= 2 * rstorrent_protocol::metadata::METADATA_BLOCK_LENGTH,
+            "fixture must span exactly two metadata blocks"
+        );
+        let info_hash: [u8; 20] = Sha1::digest(&info).into();
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind one-at-a-time metadata peer");
+        let address = listener.local_addr().expect("one-at-a-time address");
+        let server = tokio::spawn(serve_one_at_a_time_metadata_peer(listener, info.clone()));
+        let magnet = format!("magnet:?xt=urn:btih:{}&x.pe={address}", hex(&info_hash));
+        let parsed = Magnet::parse(&magnet).expect("parse one-at-a-time magnet");
+        let control = DownloadControl::new();
+        let mut peers = PeerSession::from_magnet(
+            &parsed,
+            loopback_network(Duration::from_secs(2)),
+            control.clone(),
+            None,
+        )
+        .await
+        .expect("resolve one-at-a-time peer");
+
+        let (raw_info, metainfo) =
+            timeout(Duration::from_secs(2), peers.acquire_metadata(info_hash))
+                .await
+                .expect("one-at-a-time metadata completion bound")
+                .expect("pace requests until first response");
+        assert_eq!(raw_info, info);
+        assert_eq!(metainfo.info_hash, info_hash);
+        let snapshot = control.diagnostic_snapshot().metadata;
+        assert_eq!(snapshot.total_requests_sent, 2);
+        assert_eq!(snapshot.total_blocks_received, 2);
+
+        peers.close_current(None).expect("close metadata winner");
+        timeout(Duration::from_secs(1), server)
+            .await
+            .expect("one-at-a-time peer joined")
+            .expect("one-at-a-time peer task");
     }
 
     #[tokio::test]

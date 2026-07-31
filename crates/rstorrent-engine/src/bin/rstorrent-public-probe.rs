@@ -283,6 +283,7 @@ struct Diagnostics {
     metadata_bytes: usize,
     metadata_hash_failures: usize,
     metadata_hash_failure_contributors: usize,
+    metadata_attempt_details: Vec<MetadataAttemptDiagnostics>,
     connected_peers: Option<usize>,
     unchoked_peers: Option<usize>,
     missing_blocks: Option<usize>,
@@ -293,6 +294,25 @@ struct Diagnostics {
     received_bytes: usize,
     stored_bytes: usize,
     payload_high_water: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct MetadataAttemptDiagnostics {
+    stage: String,
+    started_seconds: f64,
+    last_activity_seconds: f64,
+    last_progress_seconds: f64,
+    supports_extensions: Option<bool>,
+    remote_metadata_id: Option<u8>,
+    metadata_size: Option<usize>,
+    metadata_blocks: Option<usize>,
+    requests_sent: usize,
+    pending_requests: usize,
+    blocks_received: usize,
+    bytes_received: usize,
+    messages_received: usize,
+    rejects_received: usize,
+    terminal_detail: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -568,6 +588,29 @@ fn diagnostic_result(snapshot: &DownloadDiagnosticSnapshot) -> Diagnostics {
         metadata_bytes: snapshot.metadata.total_bytes_received,
         metadata_hash_failures: snapshot.metadata.total_hash_failures,
         metadata_hash_failure_contributors: snapshot.metadata.last_hash_failure_contributors,
+        metadata_attempt_details: snapshot
+            .metadata
+            .recent_attempts
+            .iter()
+            .chain(snapshot.metadata.active_attempts.iter())
+            .map(|attempt| MetadataAttemptDiagnostics {
+                stage: format!("{:?}", attempt.stage).to_ascii_lowercase(),
+                started_seconds: attempt.started_at.as_secs_f64(),
+                last_activity_seconds: attempt.last_activity_at.as_secs_f64(),
+                last_progress_seconds: attempt.last_progress_at.as_secs_f64(),
+                supports_extensions: attempt.supports_extensions,
+                remote_metadata_id: attempt.remote_metadata_id,
+                metadata_size: attempt.metadata_size,
+                metadata_blocks: attempt.metadata_blocks,
+                requests_sent: attempt.requests_sent,
+                pending_requests: attempt.pending_requests,
+                blocks_received: attempt.blocks_received,
+                bytes_received: attempt.bytes_received,
+                messages_received: attempt.messages_received,
+                rejects_received: attempt.rejects_received,
+                terminal_detail: attempt.terminal_detail.clone(),
+            })
+            .collect(),
         connected_peers: swarm.map(|value| value.connected_peers),
         unchoked_peers: swarm.map(|value| value.unchoked_peers),
         missing_blocks: swarm.map(|value| value.missing_blocks),

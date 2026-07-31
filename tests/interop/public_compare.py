@@ -31,6 +31,7 @@ TARGETS = (
     "complete",
 )
 PROFILES = ("common", "dht", "full-reference")
+OWNERS = ("both", "rstorrent", "libtorrent")
 MILESTONE_KEYS = {
     "metadata": "metadata_verified",
     "first-piece": "first_piece_verified",
@@ -43,6 +44,13 @@ MAX_RUNS = 100
 MAX_TIMEOUT_SECONDS = 24 * 60 * 60
 MAX_DIAGNOSTIC_CHARS = 16_384
 POLL_SECONDS = 0.05
+DHT_BOOTSTRAP_NODES = ",".join(
+    (
+        "dht.libtorrent.org:25401",
+        "router.bittorrent.com:6881",
+        "dht.transmissionbt.com:6881",
+    )
+)
 
 
 class HarnessError(RuntimeError):
@@ -130,6 +138,10 @@ def implementation_order(ordinal: int) -> list[str]:
     return ["rstorrent", "libtorrent"] if ordinal % 2 == 0 else ["libtorrent", "rstorrent"]
 
 
+def selected_implementations(ordinal: int, owner: str) -> list[str]:
+    return implementation_order(ordinal) if owner == "both" else [owner]
+
+
 def classify_pair(rstorrent: dict[str, Any], libtorrent: dict[str, Any]) -> str:
     outcomes = (rstorrent.get("outcome"), libtorrent.get("outcome"))
     if "harness_error" in outcomes:
@@ -145,12 +157,40 @@ def classify_pair(rstorrent: dict[str, Any], libtorrent: dict[str, Any]) -> str:
     return "both_incomplete"
 
 
+def classify_owner(result: dict[str, Any]) -> str:
+    outcome = result.get("outcome")
+    if outcome == "harness_error":
+        return "harness_error"
+    return "owner_reached" if outcome == "milestone_reached" else "owner_incomplete"
+
+
 def milestone_seconds(result: dict[str, Any], target: str) -> float | None:
     value = result.get("milestones", {}).get(MILESTONE_KEYS[target])
     return float(value) if isinstance(value, (int, float)) and value >= 0 else None
 
 
-def summarize(runs: list[dict[str, Any]], target: str) -> dict[str, Any]:
+def summarize(
+    runs: list[dict[str, Any]], target: str, owner: str = "both"
+) -> dict[str, Any]:
+    if owner != "both":
+        classifications = {
+            name: sum(run["classification"] == name for run in runs)
+            for name in ("owner_reached", "owner_incomplete", "harness_error")
+        }
+        times = [
+            seconds
+            for run in runs
+            if run["classification"] == "owner_reached"
+            for seconds in [milestone_seconds(run["implementations"][owner], target)]
+            if seconds is not None
+        ]
+        return {
+            "attempts": len(runs),
+            "owner": owner,
+            "classifications": classifications,
+            "milestone_samples": len(times),
+            "owner_seconds": distribution(times),
+        }
     classifications = {
         name: sum(run["classification"] == name for run in runs)
         for name in (
@@ -310,6 +350,7 @@ def libtorrent_settings(profile: str) -> tuple[dict[str, Any], dict[str, Any]]:
     settings = {
         "listen_interfaces": "0.0.0.0:0",
         "enable_dht": dht,
+        "dht_bootstrap_nodes": DHT_BOOTSTRAP_NODES if dht else "",
         "enable_lsd": False,
         "enable_upnp": False,
         "enable_natpmp": False,
@@ -549,6 +590,12 @@ def parse_args(arguments: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--torrent", default="big-buck-bunny")
     parser.add_argument("--profile", choices=PROFILES, default="common")
+    parser.add_argument(
+        "--owner",
+        choices=OWNERS,
+        default="both",
+        help="run the alternating pair or one owner under the same harness",
+    )
     parser.add_argument("--target", choices=TARGETS, default="metadata")
     parser.add_argument("--runs", type=int, default=1)
     parser.add_argument("--timeout-seconds", type=int, default=120)
@@ -573,9 +620,9 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
     torrent = select_torrent(catalog, args.torrent)
     rst_magnet, lib_magnet = scenario_magnets(torrent, args.profile)
     binary = repository / "target" / "debug" / "rstorrent-public-probe"
-    if not args.no_build:
+    if args.owner != "libtorrent" and not args.no_build:
         binary = build_probe(repository)
-    elif not binary.is_file():
+    elif args.owner != "libtorrent" and not binary.is_file():
         raise HarnessError(f"--no-build probe does not exist at {binary}")
 
     runs: list[dict[str, Any]] = []
@@ -583,7 +630,7 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="rstorrent-public-compare-") as temporary:
         owned_root = Path(temporary).resolve()
         for ordinal in range(args.runs):
-            order = implementation_order(ordinal)
+            order = selected_implementations(ordinal, args.owner)
             implementations: dict[str, Any] = {}
             for implementation in order:
                 output_root = owned_root / f"run-{ordinal}" / implementation
@@ -611,8 +658,10 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
                 resolved = output_root.resolve()
                 if resolved != owned_root and owned_root in resolved.parents:
                     shutil.rmtree(resolved, ignore_errors=True)
-            classification = classify_pair(
-                implementations["rstorrent"], implementations["libtorrent"]
+            classification = (
+                classify_pair(implementations["rstorrent"], implementations["libtorrent"])
+                if args.owner == "both"
+                else classify_owner(implementations[args.owner])
             )
             runs.append(
                 {
@@ -629,11 +678,15 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
         "config": {
             "torrent": args.torrent,
             "profile": args.profile,
+            "owner": args.owner,
             "target": args.target,
             "runs": args.runs,
             "timeout_seconds": args.timeout_seconds,
             "cleanup_seconds": args.cleanup_seconds,
-            "order": "alternating-rstorrent-first",
+            "order": (
+                "alternating-rstorrent-first" if args.owner == "both" else "single-owner"
+            ),
+            "libtorrent_settings": libtorrent_settings(args.profile)[0],
             "rstorrent_magnet": rst_magnet,
             "libtorrent_magnet": lib_magnet,
         },
@@ -644,7 +697,7 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
             "torrent": torrent,
         },
         "runs": runs,
-        "summary": summarize(runs, args.target),
+        "summary": summarize(runs, args.target, args.owner),
     }
 
 

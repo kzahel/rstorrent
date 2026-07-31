@@ -313,11 +313,13 @@ reason to stop.
 
 Campaign state: **active**.
 
-Active tactical:
-[`019-torrent-owned-metadata-acquisition.md`](../tactical/019-torrent-owned-metadata-acquisition.md).
+Active tactical: the next numbered first-piece and sustained-transfer parity
+slice. Tactical
+[`019-torrent-owned-metadata-acquisition.md`](../tactical/019-torrent-owned-metadata-acquisition.md)
+is complete.
 
-Current milestone: use the completed comparator and pinned libtorrent source
-to establish torrent-owned multi-source metadata acquisition.
+Current milestone: use the completed metadata path and pinned libtorrent peer,
+picker, and request owners to reach first-piece, 50%, and publication parity.
 
 Last completed evidence:
 
@@ -343,28 +345,41 @@ Last completed evidence:
   versus 0.90 seconds for DHT;
 - repeated tracker failures retained partial metadata from multiple attempts;
   repeated DHT failures discovered many peers but sent no metadata request;
-  and Tactical `019` now installs one runtime-independent torrent metadata
+- Tactical `019` installed one runtime-independent torrent metadata
   owner shared by eight workers, with two requests per peer, three-second
   reassignment, cross-peer assembly, source attribution, and hash recovery;
 - its pure hostile cases and scripted two-source, three-block socket case pass;
-  and
 - direct metadata, DHT-only metadata/content, and paired controlled full
   publication remain green against locked libtorrent 2.0.13;
 - a two-pair tracker screen completed 2/2 for both owners at 3.64 seconds
   median for RSTorrent versus 20.51 seconds for libtorrent; and
 - a two-pair fresh-DHT screen completed 2/2 for RSTorrent at 30.10 and 55.37
   seconds, while libtorrent found zero candidates and timed out twice at 120
-  seconds, so the screen proves RSTorrent function but not paired parity.
+  seconds, so the screen proves RSTorrent function but not paired parity;
+- commits `11eecb1` and `111e2a6` established torrent-wide assembly, corrupt
+  generation recovery, and hash-failure diagnostics;
+- two independent ten-pair tracker cohorts each completed 9/10 for RSTorrent
+  and 10/10 for libtorrent, with RSTorrent median paired ratios of 0.28x and
+  0.20x and p90 ratios of 1.50x and 1.58x;
+- ten owner-only fresh-DHT RSTorrent runs completed 10/10 with a 56.64-second
+  median and no integrity or cleanup failure, while the contemporaneous
+  libtorrent torrent lookup produced zero candidates in three bounded runs;
+- the first four-torrent breadth matrix exposed immediate request pipelining
+  as a sparse-peer interoperability failure; pinned `ut_metadata.cpp` showed
+  one request per event/tick, and a deterministic one-at-a-time peer now owns
+  that edge case; and
+- after the source-derived one-second ramp, Cosmos, Sintel, Tears of Steel,
+  and WIRED CD completed 12/12 paired confirmations for each owner with two
+  requests, two blocks, zero hash failures, and clean shutdown.
 
 Next executable action:
 
-1. run and record the ten-pair common-denominator tracker metadata cohort;
-2. retest the locked libtorrent fresh-DHT adapter and classify whether the
-   zero-candidate result is transient public state or a harness boundary;
-3. run the ten-pair DHT cohort only when it remains evidence-producing, or
-   record a bounded owner-only confirmation plus the reference blocker; and
-4. close Tactical `019` and rotate to sustained-transfer connection/request
-   width once metadata meets the campaign gate or its remaining gap is
-   explicitly classified.
+1. open Tactical `020` for first-piece and sustained-transfer parity;
+2. survey pinned `peer_connection`, `request_blocks`, `piece_picker`, and
+   related tests around request width, peer replacement, snubbing, and
+   availability;
+3. turn the 43.7%-after-900-seconds Big Buck Bunny snapshot into deterministic
+   request-window and stalled-peer hypotheses before changing policy; and
+4. screen first piece and 50% before the next full publication cohort.
 
 Human blocker: **none**.

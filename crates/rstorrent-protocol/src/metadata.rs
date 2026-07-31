@@ -16,6 +16,7 @@ pub const MAX_METADATA_BLOCKS: usize = MAX_METADATA_LENGTH / METADATA_BLOCK_LENG
 pub const MAX_METADATA_REQUESTS_IN_FLIGHT: usize = 2;
 pub const MAX_METADATA_UPLOAD_REQUESTS: usize = 256;
 pub const MAX_TORRENT_METADATA_PEERS: usize = 32;
+pub const METADATA_REQUEST_RAMP_MILLIS: u64 = 1_000;
 pub const METADATA_ASSIGNMENT_TIMEOUT_MILLIS: u64 = 3_000;
 pub const METADATA_REJECT_COOLDOWN_MILLIS: u64 = 20_000;
 pub const METADATA_HASH_FAILURE_COOLDOWN_MILLIS: u64 = 20_000;
@@ -554,6 +555,7 @@ struct TorrentMetadataBlock {
 struct TorrentMetadataPeer {
     pending: BTreeSet<u32>,
     cooldown_until: Option<MetadataInstant>,
+    last_request: Option<MetadataInstant>,
 }
 
 #[derive(Debug)]
@@ -625,6 +627,13 @@ impl TorrentMetadataDownload {
             if pending >= MAX_METADATA_REQUESTS_IN_FLIGHT {
                 break;
             }
+            if pending != 0
+                && self.peer(peer)?.last_request.is_some_and(|last_request| {
+                    last_request.saturating_add(METADATA_REQUEST_RAMP_MILLIS) > now
+                })
+            {
+                break;
+            }
             let candidate = self
                 .blocks
                 .iter()
@@ -654,11 +663,9 @@ impl TorrentMetadataDownload {
             block.assignments.insert(peer, now);
             block.requested_by.insert(peer);
             block.request_count = block.request_count.saturating_add(1);
-            self.peers
-                .get_mut(&peer)
-                .expect("registered metadata peer")
-                .pending
-                .insert(piece);
+            let peer_state = self.peers.get_mut(&peer).expect("registered metadata peer");
+            peer_state.pending.insert(piece);
+            peer_state.last_request = Some(now);
             requests.push(piece);
         }
         Ok(requests)
@@ -1085,11 +1092,12 @@ mod tests {
         ExtensionHandshake, MAX_METADATA_LENGTH, MAX_METADATA_REQUESTS_IN_FLIGHT,
         MAX_METADATA_UPLOAD_REQUESTS, MAX_TORRENT_METADATA_PEERS,
         METADATA_ASSIGNMENT_TIMEOUT_MILLIS, METADATA_BLOCK_LENGTH, METADATA_REJECT_COOLDOWN_MILLIS,
-        MetadataDownload, MetadataDownloadAction, MetadataError, MetadataExtensionUpdate,
-        MetadataInstant, MetadataMessage, MetadataUpload, MetadataUploadAction,
-        TorrentMetadataDownload, TorrentMetadataEvent, encode_extension_handshake,
-        encode_extension_handshake_with_id, encode_metadata_data, encode_metadata_reject,
-        encode_metadata_request, parse_extension_handshake, parse_metadata_message,
+        METADATA_REQUEST_RAMP_MILLIS, MetadataDownload, MetadataDownloadAction, MetadataError,
+        MetadataExtensionUpdate, MetadataInstant, MetadataMessage, MetadataUpload,
+        MetadataUploadAction, TorrentMetadataDownload, TorrentMetadataEvent,
+        encode_extension_handshake, encode_extension_handshake_with_id, encode_metadata_data,
+        encode_metadata_reject, encode_metadata_request, parse_extension_handshake,
+        parse_metadata_message,
     };
 
     const fn instant(millis: u64) -> MetadataInstant {
@@ -1348,13 +1356,13 @@ mod tests {
             download
                 .requests_for_peer(1, MetadataInstant::ZERO)
                 .expect("first peer requests"),
-            [0, 1]
+            [0]
         );
         assert_eq!(
             download
                 .requests_for_peer(2, MetadataInstant::ZERO)
                 .expect("second peer requests"),
-            [2]
+            [1]
         );
         assert_eq!(
             download
@@ -1370,23 +1378,29 @@ mod tests {
         );
         assert_eq!(
             download
+                .requests_for_peer(1, MetadataInstant::ZERO)
+                .expect("response opens the next request"),
+            [2]
+        );
+        assert_eq!(
+            download
                 .on_data(
                     2,
-                    2,
+                    1,
                     bytes.len(),
-                    &bytes[METADATA_BLOCK_LENGTH * 2..],
+                    &bytes[METADATA_BLOCK_LENGTH..METADATA_BLOCK_LENGTH * 2],
                     MetadataInstant::ZERO,
                 )
-                .expect("third block"),
-            TorrentMetadataEvent::BlockAccepted { piece: 2 }
+                .expect("second block"),
+            TorrentMetadataEvent::BlockAccepted { piece: 1 }
         );
         assert_eq!(
             download
                 .on_data(
                     1,
-                    1,
+                    2,
                     bytes.len(),
-                    &bytes[METADATA_BLOCK_LENGTH..METADATA_BLOCK_LENGTH * 2],
+                    &bytes[METADATA_BLOCK_LENGTH * 2..],
                     MetadataInstant::ZERO,
                 )
                 .expect("combined completion"),
@@ -1407,7 +1421,19 @@ mod tests {
             download
                 .requests_for_peer(1, MetadataInstant::ZERO)
                 .expect("initial requests"),
-            [0, 1]
+            [0]
+        );
+        assert!(
+            download
+                .requests_for_peer(1, instant(METADATA_REQUEST_RAMP_MILLIS - 1))
+                .expect("second request is paced")
+                .is_empty()
+        );
+        assert_eq!(
+            download
+                .requests_for_peer(1, instant(METADATA_REQUEST_RAMP_MILLIS))
+                .expect("second request after ramp"),
+            [1]
         );
         assert!(
             download
@@ -1419,7 +1445,7 @@ mod tests {
             download
                 .requests_for_peer(2, instant(METADATA_ASSIGNMENT_TIMEOUT_MILLIS))
                 .expect("expired requests reassign"),
-            [0, 1]
+            [0]
         );
         assert_eq!(
             download
@@ -1448,13 +1474,13 @@ mod tests {
         assert_eq!(
             download
                 .on_data(
-                    2,
+                    1,
                     1,
                     bytes.len(),
                     &bytes[METADATA_BLOCK_LENGTH..],
                     instant(METADATA_ASSIGNMENT_TIMEOUT_MILLIS),
                 )
-                .expect("reassigned completion"),
+                .expect("original second request completes"),
             TorrentMetadataEvent::Complete(bytes)
         );
     }
@@ -1472,7 +1498,7 @@ mod tests {
             download
                 .requests_for_peer(1, MetadataInstant::ZERO)
                 .expect("first requests"),
-            [0, 1]
+            [0]
         );
         download
             .on_reject(1, 0, MetadataInstant::ZERO)
@@ -1487,7 +1513,13 @@ mod tests {
             download
                 .requests_for_peer(2, MetadataInstant::ZERO)
                 .expect("replacement peer"),
-            [0, 1]
+            [1]
+        );
+        assert_eq!(
+            download
+                .requests_for_peer(2, instant(METADATA_REQUEST_RAMP_MILLIS))
+                .expect("replacement fills its second slot after ramp"),
+            [0]
         );
         assert!(download.remove_peer(2));
         assert_eq!(download.pending_requests(), 0);
@@ -1500,7 +1532,7 @@ mod tests {
         let mut corrupt = correct.clone();
         corrupt[METADATA_BLOCK_LENGTH * 2] ^= 0xff;
         let mut download = TorrentMetadataDownload::new(Sha1::digest(&correct).into());
-        for peer in [1, 2, 3] {
+        for peer in [1, 2] {
             download
                 .register_peer(peer, Some(correct.len()))
                 .expect("register peer");
@@ -1509,13 +1541,13 @@ mod tests {
             download
                 .requests_for_peer(1, MetadataInstant::ZERO)
                 .unwrap(),
-            [0, 1]
+            [0]
         );
         assert_eq!(
             download
                 .requests_for_peer(2, MetadataInstant::ZERO)
                 .unwrap(),
-            [2]
+            [1]
         );
         assert!(matches!(
             download
@@ -1529,10 +1561,16 @@ mod tests {
                 .unwrap(),
             TorrentMetadataEvent::BlockAccepted { piece: 0 }
         ));
+        assert_eq!(
+            download
+                .requests_for_peer(1, MetadataInstant::ZERO)
+                .unwrap(),
+            [2]
+        );
         assert!(matches!(
             download
                 .on_data(
-                    1,
+                    2,
                     1,
                     correct.len(),
                     &correct[METADATA_BLOCK_LENGTH..METADATA_BLOCK_LENGTH * 2],
@@ -1544,7 +1582,7 @@ mod tests {
         assert_eq!(
             download
                 .on_data(
-                    2,
+                    1,
                     2,
                     correct.len(),
                     &corrupt[METADATA_BLOCK_LENGTH * 2..],
@@ -1568,46 +1606,39 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+        download
+            .register_peer(3, Some(correct.len()))
+            .expect("register clean peer after mismatch");
         assert_eq!(
             download
                 .requests_for_peer(3, MetadataInstant::ZERO)
                 .unwrap(),
-            [0, 1]
+            [0]
         );
-        for piece in [0_u32, 1] {
+        for piece in [0_u32, 1, 2] {
             let begin = piece as usize * METADATA_BLOCK_LENGTH;
             let end = (begin + METADATA_BLOCK_LENGTH).min(correct.len());
-            assert!(matches!(
-                download
-                    .on_data(
-                        3,
-                        i64::from(piece),
-                        correct.len(),
-                        &correct[begin..end],
-                        MetadataInstant::ZERO,
-                    )
-                    .unwrap(),
-                TorrentMetadataEvent::BlockAccepted { .. }
-            ));
-        }
-        assert_eq!(
-            download
-                .requests_for_peer(3, MetadataInstant::ZERO)
-                .unwrap(),
-            [2]
-        );
-        assert_eq!(
-            download
+            let event = download
                 .on_data(
                     3,
-                    2,
+                    i64::from(piece),
                     correct.len(),
-                    &correct[METADATA_BLOCK_LENGTH * 2..],
+                    &correct[begin..end],
                     MetadataInstant::ZERO,
                 )
-                .unwrap(),
-            TorrentMetadataEvent::Complete(correct)
-        );
+                .unwrap();
+            if piece == 2 {
+                assert_eq!(event, TorrentMetadataEvent::Complete(correct.clone()));
+            } else {
+                assert_eq!(event, TorrentMetadataEvent::BlockAccepted { piece });
+                assert_eq!(
+                    download
+                        .requests_for_peer(3, MetadataInstant::ZERO)
+                        .unwrap(),
+                    [piece + 1]
+                );
+            }
+        }
     }
 
     #[test]

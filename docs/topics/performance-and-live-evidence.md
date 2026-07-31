@@ -208,6 +208,42 @@ the harness contract, but one sample is not a distribution or a parity claim.
 It points the next source-first slice at metadata candidate concurrency and
 torrent-wide request ownership.
 
+### Torrent-Owned Metadata Result: 2026-07-31
+
+Tactical `019` replaced per-peer dictionaries with one bounded torrent owner
+and added endpoint-free per-attempt diagnostics to temporary comparator
+reports. Two independent ten-pair Big Buck Bunny tracker cohorts each
+completed 9/10 for RSTorrent versus 10/10 for libtorrent. RSTorrent medians
+were 5.72 and 4.12 seconds versus 20.52 and 20.33 seconds. Median paired ratios
+were 0.28x and 0.20x; p90 ratios were 1.50x and 1.58x. Each RSTorrent miss
+retained the first 16 KiB block from six exhausted candidates and had no hash,
+cleanup, or resource-bound failure. Tracker metadata therefore meets both the
+functional and two-cohort comparable gates.
+
+Three contemporaneous fresh-DHT pairs completed for RSTorrent but timed out
+for libtorrent with zero torrent candidates. Giving the reference adapter the
+same three bootstrap hosts documented by libtorrent and used by RSTorrent did
+not change that result; a separate exact-settings session populated its DHT
+routing table, so the retained boundary is live info-hash lookup evidence, not
+an empty bootstrap table. The comparator now supports `--owner` to preserve
+the same catalog, deadline, diagnostics, identity, cleanup, and JSON contract
+without repeatedly running a blocked counterpart. Ten isolated RSTorrent DHT
+runs completed 10/10 in 31.40–66.96 seconds, with a 56.64-second median and
+59.80-second p90. All had exact identity, zero hash failures, and clean
+shutdown. This is functional evidence, not a paired DHT latency claim.
+
+The initial three-pair breadth run completed only 0/3 Cosmos, 2/3 Sintel, 1/3
+Tears of Steel, and 2/3 WIRED CD for RSTorrent, while libtorrent completed all
+twelve. Every miss retained block zero and repeatedly requested block one from
+a capable peer until the 15-second progress deadline. Pinned source showed
+libtorrent emits one metadata request per event/tick even though it permits
+two outstanding. RSTorrent had filled both slots immediately. After a
+deterministic one-request-at-a-time peer and a one-second request ramp were
+added, the identical breadth matrix completed 12/12 for each owner. Every
+RSTorrent run used exactly two requests and two accepted blocks, with zero
+hash and cleanup failures. This before/after result is the causal evidence for
+the pacing change.
+
 ### First Full-Download Comparator Evidence: 2026-07-31
 
 A controlled loopback fixture first ran both exact adapters against one

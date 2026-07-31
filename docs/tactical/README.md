@@ -158,8 +158,9 @@ that scope and its cleanup or compatibility rules explicitly.
   closed metadata-slot starvation, and classified tracker-only failure versus
   repeated public DHT metadata completion.
 - [`019-torrent-owned-metadata-acquisition.md`](019-torrent-owned-metadata-acquisition.md):
-  in progress; replaces independent per-peer BEP 9 transfers with one bounded
-  cross-peer block owner and validates metadata parity through the comparator.
+  complete; replaced independent per-peer BEP 9 transfers with one bounded
+  cross-peer block owner, added source-derived request pacing, and met the
+  tracker, DHT functional, and catalog metadata gates.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
