@@ -2,6 +2,10 @@ import "./styles.css";
 
 import type {
   Command,
+  DiagnosticCategory,
+  DiagnosticEvent,
+  DiagnosticProfile,
+  DiagnosticSeverity,
   RequestEnvelope,
   TorrentView,
 } from "./generated/contract";
@@ -25,25 +29,53 @@ const root: HTMLElement = rootElement;
 let client: ApplicationClient | undefined;
 let listSubscription: ApplicationSubscription | undefined;
 let pieceSubscription: ApplicationSubscription | undefined;
+let diagnosticsSubscription: ApplicationSubscription | undefined;
 let state = emptyApplicationViewState();
 let selectedTorrent: string | undefined;
 let nextRequest = 1;
 let interopComplete = false;
 let interopShutdownRequested = false;
+let diagnosticProfile: DiagnosticProfile = "normal";
+let diagnosticSeverity: DiagnosticSeverity = "info";
+let diagnosticCategories: DiagnosticCategory[] = [];
+let diagnosticScope: "global" | "torrent" = "global";
+let diagnosticSearch = "";
+let diagnosticAutoscroll = true;
+let diagnosticResets = 0;
+const diagnosticCategoryOptions: DiagnosticCategory[] = [
+  "lifecycle",
+  "discovery",
+  "tracker",
+  "peer",
+  "metadata",
+  "protocol",
+  "scheduler",
+  "piece",
+  "storage",
+  "integrity",
+  "platform",
+  "performance",
+];
 const interop =
   import.meta.env.DEV && import.meta.env.VITE_RSTORRENT_INTEROP_MAGNET
     ? {
         magnet: import.meta.env.VITE_RSTORRENT_INTEROP_MAGNET,
         gatewayUrl: import.meta.env.VITE_RSTORRENT_INTEROP_GATEWAY_URL,
         gatewayToken: import.meta.env.VITE_RSTORRENT_INTEROP_GATEWAY_TOKEN,
+        externalControl:
+          import.meta.env.VITE_RSTORRENT_INTEROP_EXTERNAL_CONTROL === "1",
+        expectBlocked:
+          import.meta.env.VITE_RSTORRENT_INTEROP_EXPECT_BLOCKED === "1",
         requested: 0,
         received: 0,
         stored: 0,
         control: "waiting" as
           | "waiting"
           | "pause_requested"
+          | "paused"
           | "resume_requested"
-          | "resumed",
+          | "resumed"
+          | "blocked",
       }
     : undefined;
 
@@ -111,6 +143,7 @@ async function startClient(applicationClient: ApplicationClient): Promise<void> 
     });
     renderApplication();
     void consume(listSubscription);
+    await subscribeDiagnostics();
     if (interop !== undefined) {
       void dispatch({
         type: "add_magnet",
@@ -132,6 +165,8 @@ async function consume(subscription: ApplicationSubscription): Promise<void> {
         state = reduceViewUpdate(state, update);
       } catch (error) {
         if (error instanceof ResetRequiredError) {
+          diagnosticResets += 1;
+          renderApplication();
           await subscription.resync();
           continue;
         }
@@ -155,6 +190,8 @@ function renderApplication(): void {
   const torrents = Object.values(state.torrents);
   const selected =
     selectedTorrent === undefined ? undefined : state.pieces[selectedTorrent];
+  const selectedView =
+    selectedTorrent === undefined ? undefined : state.torrents[selectedTorrent];
   root.innerHTML = `
     <header class="app-header">
       <div><span class="brand-dot"></span><strong>RSTorrent</strong></div>
@@ -166,7 +203,9 @@ function renderApplication(): void {
           `data-requested="${interop.requested}" ` +
           `data-received="${interop.received}" ` +
           `data-stored="${interop.stored}" ` +
-          `data-control="${interop.control}">controlled download complete</output>`
+          `data-control="${interop.control}" ` +
+          `data-progress="${selectedView?.progress.disposition ?? ""}" ` +
+          `data-reason="${selectedView?.progress.reason ?? ""}">controlled scenario complete</output>`
         : ""
     }
     <section class="workspace">
@@ -186,7 +225,9 @@ function renderApplication(): void {
         <div class="torrent-list">
           ${torrents.length === 0 ? '<div class="empty panel">No torrents yet. Add a controlled magnet to begin.</div>' : torrents.map(renderTorrent).join("")}
         </div>
+        ${selectedView === undefined ? "" : renderProgressDetail(selectedView)}
         ${selected === undefined ? "" : renderPieceActivity(selected)}
+        ${renderDiagnostics()}
       </section>
     </section>
   `;
@@ -211,6 +252,10 @@ function renderApplication(): void {
       if (torrentId === undefined) return;
       const type = button.dataset.command;
       if (type === "pause" || type === "resume") {
+        if (interop?.externalControl === true) {
+          interop.control =
+            type === "pause" ? "pause_requested" : "resume_requested";
+        }
         void dispatch({ type, torrent_id: torrentId });
       }
     });
@@ -221,8 +266,14 @@ function renderApplication(): void {
       if (torrentId !== undefined) void selectTorrent(torrentId);
     });
   }
+  bindDiagnosticControls();
   if (selected !== undefined) {
     drawPieceMap(selected);
+  }
+  if (diagnosticAutoscroll) {
+    root.querySelector<HTMLElement>(".diagnostic-events")?.scrollTo({
+      top: Number.MAX_SAFE_INTEGER,
+    });
   }
 }
 
@@ -241,6 +292,20 @@ async function exerciseInteropControl(): Promise<void> {
   if (interop === undefined) return;
   const torrent = Object.values(state.torrents)[0];
   if (torrent === undefined) return;
+  if (interop.externalControl) {
+    if (
+      interop.control === "pause_requested" &&
+      torrent.state === "paused"
+    ) {
+      interop.control = "paused";
+    } else if (
+      interop.control === "resume_requested" &&
+      torrent.state === "downloading"
+    ) {
+      interop.control = "resumed";
+    }
+    return;
+  }
   if (interop.control === "waiting" && torrent.state === "downloading") {
     interop.control = "pause_requested";
     await dispatch({ type: "pause", torrent_id: torrent.torrent_id });
@@ -260,7 +325,24 @@ async function exerciseInteropControl(): Promise<void> {
 
 async function finishInteropIfReady(): Promise<void> {
   if (
+    interop !== undefined &&
+    interop.expectBlocked &&
+    !interopComplete &&
+    Object.values(state.torrents).some(
+      (torrent) =>
+        torrent.progress.disposition === "blocked" &&
+        torrent.progress.reason === "no_enabled_discovery_source",
+    ) &&
+    state.diagnostics.some((event) => event.code === "discovery_exhausted")
+  ) {
+    interop.control = "blocked";
+    interopComplete = true;
+    renderApplication();
+    return;
+  }
+  if (
     interop === undefined ||
+    interop.expectBlocked ||
     interopShutdownRequested ||
     interop.control !== "resumed" ||
     !Object.values(state.torrents).some((torrent) => torrent.state === "complete") ||
@@ -293,6 +375,8 @@ function renderTorrent(torrent: TorrentView): string {
         <span class="state-pill state-${torrent.state}">${torrent.state.replaceAll("_", " ")}</span>
         <h2>${torrent.torrent_id.slice(0, 12)}<span>${torrent.torrent_id.slice(12)}</span></h2>
         <p>${torrent.verified_piece_count.toLocaleString()} / ${torrent.piece_count.toLocaleString()} pieces</p>
+        <p class="progress-reason disposition-${torrent.progress.disposition}">${torrent.progress.disposition} · ${humanize(torrent.progress.phase)} · ${humanize(torrent.progress.reason)}</p>
+        ${torrent.error == null ? "" : `<p class="torrent-error">${escapeHtml(torrent.error)}</p>`}
       </div>
       <div class="torrent-progress">
         <strong>${percent.toFixed(2)}%</strong>
@@ -301,6 +385,230 @@ function renderTorrent(torrent: TorrentView): string {
       <button class="quiet" data-command="${command}" data-torrent="${torrent.torrent_id}">${command}</button>
     </article>
   `;
+}
+
+function renderProgressDetail(torrent: TorrentView): string {
+  const actions =
+    torrent.progress.actions.length === 0
+      ? ""
+      : `<p>Suggested: ${torrent.progress.actions.map(humanize).join(", ")}</p>`;
+  return `
+    <section class="progress-panel panel disposition-${torrent.progress.disposition}" data-progress-disposition="${torrent.progress.disposition}">
+      <div><p class="eyebrow">Progress assessment</p><h2>${humanize(torrent.progress.disposition)} · ${humanize(torrent.progress.phase)}</h2></div>
+      <p>${progressExplanation(torrent)}</p>
+      ${actions}
+    </section>
+  `;
+}
+
+function renderDiagnostics(): string {
+  const events = visibleDiagnostics();
+  return `
+    <section class="diagnostics-panel panel" aria-label="Diagnostics">
+      <div class="section-heading compact">
+        <div><p class="eyebrow">Bounded timeline</p><h2>Diagnostics</h2></div>
+        <span>${events.length} shown · ${state.diagnosticDropped} dropped · ${diagnosticResets} resyncs</span>
+      </div>
+      <div class="diagnostic-toolbar">
+        <div class="profile-buttons" role="group" aria-label="Diagnostic profile">
+          ${(["normal", "detailed", "trace"] as const)
+            .map(
+              (profile) =>
+                `<button class="filter-button ${profile === diagnosticProfile ? "active" : ""}" data-profile="${profile}">${humanize(profile)}</button>`,
+            )
+            .join("")}
+        </div>
+        <label>Scope
+          <select id="diagnostic-scope">
+            <option value="global" ${diagnosticScope === "global" ? "selected" : ""}>Global</option>
+            <option value="torrent" ${diagnosticScope === "torrent" ? "selected" : ""} ${selectedTorrent === undefined ? "disabled" : ""}>Selected torrent</option>
+          </select>
+        </label>
+        <label>Minimum severity
+          <select id="diagnostic-severity">
+            ${(["trace", "debug", "info", "warning", "error"] as const)
+              .map(
+                (severity) =>
+                  `<option value="${severity}" ${severity === diagnosticSeverity ? "selected" : ""}>${humanize(severity)}</option>`,
+              )
+              .join("")}
+          </select>
+        </label>
+        <label>Search
+          <input id="diagnostic-search" value="${escapeAttribute(diagnosticSearch)}" placeholder="code, category, summary" />
+        </label>
+        <button class="quiet" id="diagnostic-autoscroll">${diagnosticAutoscroll ? "Pause autoscroll" : "Resume autoscroll"}</button>
+        <button class="quiet" id="diagnostic-copy">Copy shown</button>
+      </div>
+      <div class="category-filters" aria-label="Diagnostic categories">
+        ${diagnosticCategoryOptions
+          .map(
+            (category) =>
+              `<button class="filter-button ${diagnosticCategories.includes(category) ? "active" : ""}" data-category="${category}">${humanize(category)}</button>`,
+          )
+          .join("")}
+      </div>
+      ${
+        diagnosticProfile === "trace"
+          ? '<p class="trace-warning">Trace is high volume and lasts only for this session.</p>'
+          : ""
+      }
+      <div class="diagnostic-events" role="log" aria-live="polite">
+        ${
+          events.length === 0
+            ? '<p class="diagnostic-empty">No diagnostics match the current filters.</p>'
+            : events.map(renderDiagnosticEvent).join("")
+        }
+      </div>
+    </section>
+  `;
+}
+
+function renderDiagnosticEvent(event: DiagnosticEvent): string {
+  const fields = event.context
+    .map(
+      (field) =>
+        `<span><b>${escapeHtml(field.key)}</b>=${escapeHtml(field.value)}</span>`,
+    )
+    .join("");
+  return `
+    <article class="diagnostic-event severity-${event.severity}" data-event-code="${escapeAttribute(event.code)}">
+      <time>${escapeHtml(new Date(Number(event.timestamp_millis)).toLocaleTimeString())}</time>
+      <strong>${escapeHtml(event.severity)}</strong>
+      <code>${escapeHtml(event.category)} / ${escapeHtml(event.code)}</code>
+      <p>${escapeHtml(event.summary)}</p>
+      ${fields === "" ? "" : `<div>${fields}</div>`}
+    </article>
+  `;
+}
+
+function visibleDiagnostics(): DiagnosticEvent[] {
+  const needle = diagnosticSearch.trim().toLocaleLowerCase();
+  return state.diagnostics.filter((event) => {
+    if (
+      diagnosticScope === "torrent" &&
+      event.torrent_id !== selectedTorrent
+    ) {
+      return false;
+    }
+    if (needle === "") return true;
+    return [
+      event.code,
+      event.category,
+      event.severity,
+      event.summary,
+      ...event.context.flatMap((field) => [field.key, field.value]),
+    ].some((value) => value.toLocaleLowerCase().includes(needle));
+  });
+}
+
+function bindDiagnosticControls(): void {
+  for (const button of root.querySelectorAll<HTMLButtonElement>(
+    "[data-profile]",
+  )) {
+    button.addEventListener("click", () => {
+      diagnosticProfile = button.dataset.profile as DiagnosticProfile;
+      void subscribeDiagnostics();
+    });
+  }
+  for (const button of root.querySelectorAll<HTMLButtonElement>(
+    "[data-category]",
+  )) {
+    button.addEventListener("click", () => {
+      const category = button.dataset.category as DiagnosticCategory;
+      diagnosticCategories = diagnosticCategories.includes(category)
+        ? diagnosticCategories.filter((value) => value !== category)
+        : [...diagnosticCategories, category];
+      void subscribeDiagnostics();
+    });
+  }
+  root
+    .querySelector<HTMLSelectElement>("#diagnostic-scope")
+    ?.addEventListener("change", (event) => {
+      diagnosticScope = (event.currentTarget as HTMLSelectElement).value as
+        | "global"
+        | "torrent";
+      void subscribeDiagnostics();
+    });
+  root
+    .querySelector<HTMLSelectElement>("#diagnostic-severity")
+    ?.addEventListener("change", (event) => {
+      diagnosticSeverity = (event.currentTarget as HTMLSelectElement)
+        .value as DiagnosticSeverity;
+      void subscribeDiagnostics();
+    });
+  root
+    .querySelector<HTMLInputElement>("#diagnostic-search")
+    ?.addEventListener("change", (event) => {
+      diagnosticSearch = (event.currentTarget as HTMLInputElement).value;
+      renderApplication();
+    });
+  root
+    .querySelector<HTMLButtonElement>("#diagnostic-autoscroll")
+    ?.addEventListener("click", () => {
+      diagnosticAutoscroll = !diagnosticAutoscroll;
+      renderApplication();
+    });
+  root
+    .querySelector<HTMLButtonElement>("#diagnostic-copy")
+    ?.addEventListener("click", () => void copyDiagnostics());
+}
+
+async function subscribeDiagnostics(): Promise<void> {
+  await diagnosticsSubscription?.close();
+  if (client === undefined) return;
+  const selector =
+    diagnosticScope === "torrent" && selectedTorrent !== undefined
+      ? { type: "torrent" as const, torrent_id: selectedTorrent }
+      : { type: "torrent_list" as const };
+  diagnosticsSubscription = await client.subscribe({
+    selector,
+    projection: "diagnostics",
+    delivery: {
+      min_interval_millis: interop === undefined ? 100 : 0,
+      max_queue_bytes: 256 * 1024,
+    },
+    diagnostics: {
+      profile: diagnosticProfile,
+      minimum_severity: diagnosticSeverity,
+      categories: diagnosticCategories,
+    },
+  });
+  void consume(diagnosticsSubscription);
+  renderApplication();
+}
+
+async function copyDiagnostics(): Promise<void> {
+  const text = visibleDiagnostics()
+    .map(
+      (event) =>
+        `${event.timestamp_millis} ${event.severity} ${event.category} ${event.code} ${event.summary}`,
+    )
+    .join("\n")
+    .slice(0, 64 * 1024);
+  try {
+    await navigator.clipboard.writeText(text);
+    showStatus(`Copied ${text.length.toLocaleString()} diagnostic characters.`, false);
+  } catch (error) {
+    showStatus(`Copy failed: ${errorMessage(error)}`, true);
+  }
+}
+
+function progressExplanation(torrent: TorrentView): string {
+  switch (torrent.progress.reason) {
+    case "no_enabled_discovery_source":
+      return "No enabled discovery source can currently provide an eligible peer. The torrent remains ready for a future discovery capability.";
+    case "waiting_for_storage":
+      return "Verified metadata is waiting for a download folder.";
+    case "waiting_for_discovery":
+      return "Another automatic discovery mechanism or retry is scheduled.";
+    default:
+      return humanize(torrent.progress.reason);
+  }
+}
+
+function humanize(value: string): string {
+  return value.replaceAll("_", " ");
 }
 
 function renderPieceActivity(activity: PieceActivityState): string {
@@ -346,6 +654,7 @@ async function selectTorrent(torrentId: string): Promise<void> {
     },
   });
   if (pieceSubscription !== undefined) void consume(pieceSubscription);
+  if (diagnosticScope === "torrent") await subscribeDiagnostics();
   renderApplication();
 }
 

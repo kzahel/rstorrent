@@ -4,8 +4,10 @@ use std::path::PathBuf;
 
 use rstorrent_gateway::{GatewayClientMessage, GatewayErrorCode, GatewayServerMessage};
 use rstorrent_session::{
-    ActivePiece, Command, DeliveryPolicy, ErrorCode, ErrorResponse, IndexRange, RequestEnvelope,
-    ResetReason, ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState,
+    ActivePiece, Command, DeliveryPolicy, DiagnosticCategory, DiagnosticEvent, DiagnosticField,
+    DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity, ErrorCode, ErrorResponse, IndexRange,
+    ProgressAction, ProgressAssessment, ProgressDisposition, ProgressPhase, ProgressReason,
+    RequestEnvelope, ResetReason, ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState,
     SubscriptionSpec, TorrentSnapshot, TorrentState, TorrentView, ViewPatch, ViewProjection,
     ViewSelector, ViewSnapshot, ViewUpdate, ViewUpdatePayload,
 };
@@ -33,6 +35,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     append::<ViewSelector>(&mut declarations)?;
     append::<ViewProjection>(&mut declarations)?;
     append::<DeliveryPolicy>(&mut declarations)?;
+    append::<DiagnosticSeverity>(&mut declarations)?;
+    append::<DiagnosticCategory>(&mut declarations)?;
+    append::<DiagnosticProfile>(&mut declarations)?;
+    append::<DiagnosticFilter>(&mut declarations)?;
+    append::<DiagnosticField>(&mut declarations)?;
+    append::<DiagnosticEvent>(&mut declarations)?;
+    append::<ProgressDisposition>(&mut declarations)?;
+    append::<ProgressPhase>(&mut declarations)?;
+    append::<ProgressReason>(&mut declarations)?;
+    append::<ProgressAction>(&mut declarations)?;
+    append::<ProgressAssessment>(&mut declarations)?;
     append::<SubscriptionSpec>(&mut declarations)?;
     append::<IndexRange>(&mut declarations)?;
     append::<ActivePiece>(&mut declarations)?;
@@ -63,7 +76,7 @@ fn write_fixture(output: PathBuf) -> Result<(), Box<dyn Error>> {
     let torrent_id = "000102030405060708090a0b0c0d0e0f10111213".to_owned();
     let updates = vec![
         ViewUpdate {
-            contract_version: 1,
+            contract_version: rstorrent_session::VIEW_CONTRACT_VERSION,
             stream_id: "41".to_owned(),
             epoch: "9".to_owned(),
             sequence: "1".to_owned(),
@@ -82,7 +95,7 @@ fn write_fixture(output: PathBuf) -> Result<(), Box<dyn Error>> {
             },
         },
         ViewUpdate {
-            contract_version: 1,
+            contract_version: rstorrent_session::VIEW_CONTRACT_VERSION,
             stream_id: "41".to_owned(),
             epoch: "9".to_owned(),
             sequence: "2".to_owned(),

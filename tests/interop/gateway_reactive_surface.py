@@ -56,6 +56,7 @@ def start_gateway(
     binary: Path,
     profile: Path,
     storage: Path,
+    origin: str = ORIGIN,
 ) -> tuple[subprocess.Popen[str], str]:
     profile.mkdir()
     storage.mkdir()
@@ -65,7 +66,7 @@ def start_gateway(
             "RSTORRENT_PROFILE_ROOT": str(profile),
             "RSTORRENT_STORAGE_ROOT": str(storage),
             "RSTORRENT_GATEWAY_TOKEN": TOKEN,
-            "RSTORRENT_GATEWAY_ORIGIN": ORIGIN,
+            "RSTORRENT_GATEWAY_ORIGIN": origin,
             "RSTORRENT_GATEWAY_BIND": "127.0.0.1:0",
         }
     )
@@ -95,6 +96,13 @@ def start_gateway(
                 return process, line[len(prefix) :].strip()
     finally:
         selector.close()
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate(timeout=5)
     raise ScenarioFailure(
         "gateway did not announce its listener\n" + "\n".join(diagnostics)
     )

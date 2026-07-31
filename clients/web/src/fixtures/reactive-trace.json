@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": 1,
+    "contract_version": 2,
     "stream_id": "41",
     "epoch": "9",
     "sequence": "1",
@@ -21,7 +21,7 @@
     }
   },
   {
-    "contract_version": 1,
+    "contract_version": 2,
     "stream_id": "41",
     "epoch": "9",
     "sequence": "2",

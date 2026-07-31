@@ -35,6 +35,10 @@ import org.rstorrent.bootstrap.uniffi.AndroidApplicationConfig
 import org.rstorrent.bootstrap.uniffi.AndroidViewSubscription
 import org.rstorrent.session.uniffi.Command
 import org.rstorrent.session.uniffi.DeliveryPolicy
+import org.rstorrent.session.uniffi.DiagnosticCategory
+import org.rstorrent.session.uniffi.DiagnosticFilter
+import org.rstorrent.session.uniffi.DiagnosticProfile
+import org.rstorrent.session.uniffi.DiagnosticSeverity
 import org.rstorrent.session.uniffi.RequestEnvelope
 import org.rstorrent.session.uniffi.ResponseOutcome
 import org.rstorrent.session.uniffi.SubscriptionSpec
@@ -63,6 +67,12 @@ class ProductEngineService : Service() {
     private var listJob: Job? = null
     private var pieceSubscription: AndroidViewSubscription? = null
     private var pieceJob: Job? = null
+    private var diagnosticSubscription: AndroidViewSubscription? = null
+    private var diagnosticJob: Job? = null
+    private var diagnosticTorrentOnly = false
+    private var diagnosticProfile = DiagnosticProfile.NORMAL
+    private var diagnosticSeverity = DiagnosticSeverity.INFO
+    private var diagnosticCategories: List<DiagnosticCategory> = emptyList()
     private var selectedTorrent: String? = null
     private var safTreeUri: Uri? = null
     private val safWork = ConcurrentHashMap.newKeySet<String>()
@@ -102,9 +112,11 @@ class ProductEngineService : Service() {
                             ViewSelector.TorrentList,
                             ViewProjection.SUMMARY,
                             DeliveryPolicy(250U, 256U * 1024U),
+                            null,
                         ),
                     )
                 listJob = consume(requireNotNull(listSubscription), driveSaf = true)
+                subscribeDiagnostics()
                 mutableState.update { it.copy(ready = true, error = null) }
                 clientReady.complete(Unit)
                 observePowerAndNotification()
@@ -185,6 +197,7 @@ class ProductEngineService : Service() {
         if (selectedTorrent == torrentId) return
         selectedTorrent = torrentId
         mutableState.update { it.copy(selectedTorrent = torrentId) }
+        if (diagnosticTorrentOnly) subscribeDiagnostics()
         pieceJob?.cancel()
         pieceSubscription?.close()
         pieceJob = null
@@ -198,6 +211,7 @@ class ProductEngineService : Service() {
                             ViewSelector.Torrent(torrentId),
                             ViewProjection.PIECE_ACTIVITY,
                             DeliveryPolicy(0U, 256U * 1024U),
+                            null,
                         ),
                     )
                 if (selectedTorrent != torrentId) {
@@ -208,6 +222,54 @@ class ProductEngineService : Service() {
                 pieceJob = consume(subscription, driveSaf = false)
             } catch (error: Throwable) {
                 reportError(error)
+            }
+        }
+    }
+
+    fun configureDiagnostics(
+        profile: DiagnosticProfile,
+        severity: DiagnosticSeverity,
+        categories: List<DiagnosticCategory>,
+        torrentOnly: Boolean,
+    ) {
+        diagnosticProfile = profile
+        diagnosticSeverity = severity
+        diagnosticCategories = categories
+        diagnosticTorrentOnly = torrentOnly
+        subscribeDiagnostics()
+    }
+
+    private fun subscribeDiagnostics() {
+        diagnosticJob?.cancel()
+        diagnosticSubscription?.close()
+        diagnosticJob = null
+        diagnosticSubscription = null
+        scope.launch {
+            try {
+                clientReady.await()
+                val selector =
+                    if (diagnosticTorrentOnly && selectedTorrent != null) {
+                        ViewSelector.Torrent(requireNotNull(selectedTorrent))
+                    } else {
+                        ViewSelector.TorrentList
+                    }
+                val subscription =
+                    client.subscribe(
+                        SubscriptionSpec(
+                            selector,
+                            ViewProjection.DIAGNOSTICS,
+                            DeliveryPolicy(100U, 256U * 1024U),
+                            DiagnosticFilter(
+                                diagnosticProfile,
+                                diagnosticSeverity,
+                                diagnosticCategories,
+                            ),
+                        ),
+                    )
+                diagnosticSubscription = subscription
+                diagnosticJob = consume(subscription, driveSaf = false)
+            } catch (error: Throwable) {
+                if (!stopped.get()) reportError(error)
             }
         }
     }
@@ -257,6 +319,9 @@ class ProductEngineService : Service() {
                             product.torrents.keys.firstOrNull()?.let(::selectTorrent)
                         }
                     } catch (_: ViewResetRequiredException) {
+                        mutableState.update {
+                            it.copy(diagnosticResets = it.diagnosticResets + 1UL)
+                        }
                         subscription.resync()
                     }
                 }
@@ -361,6 +426,9 @@ class ProductEngineService : Service() {
                 "kind=$kind state=${torrent?.state?.name ?: "none"} " +
                 "storage=${torrent?.storageState?.name ?: "none"} " +
                 "metadata=${torrent?.metadataAvailable ?: false} " +
+                "progress=${torrent?.progress?.disposition?.name ?: "none"} " +
+                "reason=${torrent?.progress?.reason?.name ?: "none"} " +
+                "diagnostic=${product.diagnostics.lastOrNull()?.code ?: "none"} " +
                 "verified=${torrent?.verifiedPieceCount ?: 0U} " +
                 "piece=${active?.pieceIndex?.toString() ?: "none"} " +
                 "requested=${active?.requested?.sumOf(::rangeBytes) ?: 0UL} " +
@@ -435,8 +503,10 @@ class ProductEngineService : Service() {
         if (!stopped.compareAndSet(false, true)) return
         listJob?.cancel()
         pieceJob?.cancel()
+        diagnosticJob?.cancel()
         listSubscription?.close()
         pieceSubscription?.close()
+        diagnosticSubscription?.close()
         if (::client.isInitialized) {
             try {
                 client.shutdown()

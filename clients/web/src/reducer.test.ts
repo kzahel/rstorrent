@@ -25,7 +25,7 @@ describe("reactive reducer", () => {
 
   it("keeps indices beyond 65535 and checks continuity", () => {
     const initial: ViewUpdate = {
-      contract_version: 1,
+      contract_version: 2,
       stream_id: "1",
       epoch: "2",
       sequence: "1",
@@ -41,7 +41,7 @@ describe("reactive reducer", () => {
       },
     };
     const patched: ViewUpdate = {
-      contract_version: 1,
+      contract_version: 2,
       stream_id: "1",
       epoch: "2",
       sequence: "2",
@@ -74,5 +74,50 @@ describe("reactive reducer", () => {
     expect(() =>
       reduceViewUpdate(second, { ...patched, sequence: "4" }),
     ).toThrow(ContinuityError);
+  });
+
+  it("reduces bounded diagnostic snapshots and patches", () => {
+    const diagnostic = {
+      sequence: "7",
+      timestamp_millis: "1000",
+      severity: "warning" as const,
+      category: "discovery" as const,
+      code: "discovery_exhausted",
+      torrent_id: torrentId,
+      summary: "No discovery source",
+      context: [],
+    };
+    const initial: ViewUpdate = {
+      contract_version: 2,
+      stream_id: "9",
+      epoch: "2",
+      sequence: "1",
+      base_revision: "0",
+      revision: "0",
+      type: "snapshot",
+      snapshot: {
+        type: "diagnostics",
+        events: [diagnostic],
+        dropped_count: "3",
+      },
+    };
+    const patched: ViewUpdate = {
+      ...initial,
+      sequence: "2",
+      type: "patch",
+      patch: {
+        type: "diagnostics",
+        events: [
+          { ...diagnostic, sequence: "8", code: "retry_scheduled" },
+        ],
+        dropped_count: "3",
+      },
+    };
+    const state = reduceViewUpdate(
+      reduceViewUpdate(emptyApplicationViewState(), initial),
+      patched,
+    );
+    expect(state.diagnostics.map((event) => event.sequence)).toEqual(["7", "8"]);
+    expect(state.diagnosticDropped).toBe("3");
   });
 });

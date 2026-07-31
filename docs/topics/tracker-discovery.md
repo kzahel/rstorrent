@@ -46,6 +46,13 @@ The runtime supplies transaction IDs and the announce key, resolves URLs,
 owns one socket, enforces a deadline, and translates accepted compact
 endpoints into `PeerObservation` values with `PeerSource::Tracker`.
 
+Tracker failure and tracker exhaustion are mechanism outcomes, not necessarily
+torrent errors. Application progress assessment must combine tracker status
+with peer hints, scheduled retries, and other installed discovery mechanisms.
+It may report externally blocked discovery only when none can still act
+automatically. Bounded typed tracker events explain attempts and outcomes
+without making formatted tracker log text application state.
+
 Peer endpoints from a tracker are untrusted hints. Invalid endpoints are
 discarded, duplicates merge through the registry, and a tracker does not
 confirm reachability, peer identity, seed status, or integrity merely by
@@ -118,3 +125,8 @@ and eventually throughput. The next tracker-focused tactical should introduce
 the real per-torrent tracker record and scheduled lifecycle when reannounce
 behavior becomes material. A live public test-torrent run remains useful
 manual evidence but must not replace controlled protocol and libtorrent tests.
+
+Completed Tactical `012` does not broaden tracker networking. It makes current
+loopback-policy rejection and source exhaustion observable, keeps the torrent
+in its awaiting-metadata phase, and reports blocked progress only because this
+build has no other enabled or scheduled discovery mechanism.

@@ -802,6 +802,7 @@ mod tests {
                             min_interval_millis: 0,
                             max_queue_bytes: 4096,
                         },
+                        diagnostics: None,
                     },
                 })
                 .expect("encode subscription")

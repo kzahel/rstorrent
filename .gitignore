@@ -18,6 +18,8 @@ local.properties
 .env.*
 !.env.example
 **/.venv/
+__pycache__/
+*.py[cod]
 
 # Editors and operating systems
 .idea/

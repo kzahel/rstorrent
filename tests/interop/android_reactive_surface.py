@@ -23,6 +23,7 @@ from first_verified_piece import (
     create_session,
     wait_for_listener,
 )
+from headless_avd import OwnedHeadlessAvd, default_adb, default_emulator
 from magnet_metadata import create_fixture, magnet_uri
 
 
@@ -33,6 +34,8 @@ DOWNLOAD_TIMEOUT_SECONDS = 45
 UPLOAD_RATE_LIMIT = 8 * 1024
 ANDROID_PAYLOAD_SIZE = 128 * 1024
 BOUNDS_PATTERN = re.compile(r"\[(\d+),(\d+)]\[(\d+),(\d+)]")
+GRANT_FOLDER = "RSTorrentReactiveGrant"
+GRANT_PATH = f"/sdcard/Download/{GRANT_FOLDER}"
 
 
 class Adb:
@@ -68,16 +71,47 @@ class Adb:
     ) -> subprocess.CompletedProcess[str]:
         return self.run("shell", *arguments, timeout=timeout, check=check)
 
+    def capture_screenshot(self, path: Path) -> None:
+        completed = subprocess.run(
+            [*self.command, "exec-out", "screencap", "-p"],
+            capture_output=True,
+            timeout=20,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise ScenarioFailure(
+                "Android screenshot capture failed\n"
+                + completed.stderr.decode("utf-8", errors="replace")
+            )
+        if not completed.stdout.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise ScenarioFailure("Android screenshot did not contain PNG data")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(completed.stdout)
+
 
 def parse_arguments() -> argparse.Namespace:
     repository = Path(__file__).resolve().parents[2]
-    default_sdk = Path.home() / "Android" / "Sdk"
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--serial", required=True, help="authorized ADB serial")
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument(
+        "--serial",
+        help="explicitly authorized existing ADB serial",
+    )
+    target.add_argument("--avd", help="AVD name for a harness-owned emulator")
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="required with --avd; launch with no host window",
+    )
     parser.add_argument(
         "--adb",
         type=Path,
-        default=default_sdk / "platform-tools" / "adb",
+        default=default_adb(),
+    )
+    parser.add_argument(
+        "--emulator",
+        type=Path,
+        default=default_emulator(),
     )
     parser.add_argument(
         "--apk",
@@ -86,6 +120,11 @@ def parse_arguments() -> argparse.Namespace:
             repository
             / "experiments/android-engine-bootstrap/app/build/outputs/apk/debug/app-debug.apk"
         ),
+    )
+    parser.add_argument(
+        "--screenshot",
+        type=Path,
+        help="write a PNG of the live Compose transfer surface",
     )
     return parser.parse_args()
 
@@ -107,7 +146,6 @@ def require_unlocked(adb: Adb) -> None:
 def install_and_start(
     adb: Adb,
     apk: Path,
-    magnet: str,
 ) -> None:
     if not apk.is_file():
         raise ScenarioFailure(f"Android APK does not exist: {apk}")
@@ -121,11 +159,130 @@ def install_and_start(
             PACKAGE,
             "android.permission.POST_NOTIFICATIONS",
         )
+    adb.shell("rm", "-rf", GRANT_PATH)
+    adb.shell("mkdir", "-p", GRANT_PATH)
+    adb.shell("cmd", "statusbar", "collapse", check=False)
     adb.run("logcat", "-c")
     started = adb.shell(
         "am",
         "start",
         "-W",
+        "--activity-clear-task",
+        "-n",
+        ACTIVITY,
+        timeout=30,
+    )
+    if "Status: ok" not in started.stdout:
+        raise ScenarioFailure(f"product Activity did not start:\n{started.stdout}")
+
+
+def click_labeled(
+    nodes: list[ET.Element],
+    labels: set[str],
+) -> ET.Element | None:
+    wanted = {label.casefold() for label in labels}
+    candidates = []
+    for node in nodes:
+        if node.attrib.get("clickable") != "true":
+            continue
+        values = {
+            descendant.attrib.get("text", "").strip().casefold()
+            for descendant in node.iter()
+        }
+        values.add(node.attrib.get("content-desc", "").strip().casefold())
+        if values & wanted:
+            candidates.append(node)
+    return min(
+        candidates,
+        key=lambda node: bounds_area(node.attrib["bounds"]),
+        default=None,
+    )
+
+
+def select_controlled_tree(adb: Adb) -> None:
+    deadline = time.monotonic() + 15
+    control: ET.Element | None = None
+    while time.monotonic() < deadline:
+        try:
+            control = find_control(adb, "Select download folder")
+            break
+        except ScenarioFailure:
+            time.sleep(0.2)
+    if control is None:
+        raise ScenarioFailure("Android product UI did not expose SAF root selection")
+    tap_bounds(adb, control.attrib["bounds"])
+
+    deadline = time.monotonic() + 60
+    entered = False
+    accepted = False
+    last_xml = ""
+    while time.monotonic() < deadline:
+        root = dump_ui(adb)
+        nodes = list(root.iter())
+        last_xml = ET.tostring(root, encoding="unicode")
+        showing_documents = any(
+            "documentsui" in node.attrib.get("package", "").casefold()
+            for node in nodes
+        )
+        if not showing_documents and not accepted:
+            retry = click_labeled(nodes, {"Select download folder"})
+            if retry is not None:
+                tap_bounds(adb, retry.attrib["bounds"])
+                time.sleep(0.4)
+                continue
+        if any(
+            node.attrib.get("text") == GRANT_FOLDER
+            and node.attrib.get("resource-id", "").endswith(":id/breadcrumb_text")
+            for node in nodes
+        ):
+            entered = True
+        if not entered:
+            entries = [
+                node
+                for node in nodes
+                if node.attrib.get("resource-id") == "android:id/title"
+                and node.attrib.get("text") == GRANT_FOLDER
+            ]
+            if entries:
+                tap_bounds(adb, entries[0].attrib["bounds"])
+                entered = True
+                time.sleep(0.4)
+                continue
+        if entered and not accepted:
+            use = click_labeled(nodes, {"Use this folder", "Select"})
+            if use is not None:
+                tap_bounds(adb, use.attrib["bounds"])
+                accepted = True
+                time.sleep(0.4)
+                continue
+        if accepted:
+            allow = click_labeled(nodes, {"Allow"})
+            if allow is not None:
+                tap_bounds(adb, allow.attrib["bounds"])
+                time.sleep(0.4)
+                continue
+            if not showing_documents:
+                break
+        time.sleep(0.25)
+    else:
+        raise ScenarioFailure(f"could not grant controlled SAF tree:\n{last_xml}")
+
+    preferences = adb.shell(
+        "run-as",
+        PACKAGE,
+        "cat",
+        "shared_prefs/product-saf.xml",
+    ).stdout
+    if GRANT_FOLDER not in preferences:
+        raise ScenarioFailure("product did not persist the controlled SAF tree URI")
+
+
+def add_magnet(adb: Adb, magnet: str) -> None:
+    started = adb.shell(
+        "am",
+        "start",
+        "-W",
+        "--activity-single-top",
         "-n",
         ACTIVITY,
         "--es",
@@ -134,7 +291,7 @@ def install_and_start(
         timeout=30,
     )
     if "Status: ok" not in started.stdout:
-        raise ScenarioFailure(f"product Activity did not start:\n{started.stdout}")
+        raise ScenarioFailure(f"product magnet Activity did not start:\n{started.stdout}")
 
 
 def product_logs(adb: Adb) -> str:
@@ -149,7 +306,10 @@ def product_logs(adb: Adb) -> str:
     ).stdout
 
 
-def wait_for_download(adb: Adb) -> tuple[str, bool, bool]:
+def wait_for_download(
+    adb: Adb,
+    screenshot: Path | None,
+) -> tuple[str, bool, bool]:
     deadline = time.monotonic() + DOWNLOAD_TIMEOUT_SECONDS
     trace = ""
     lifecycle_checked = False
@@ -161,6 +321,9 @@ def wait_for_download(adb: Adb) -> tuple[str, bool, bool]:
         if not control_checked and positive_counter(trace, "requested"):
             verify_pause_resume(adb)
             control_checked = True
+            if screenshot is not None:
+                time.sleep(0.25)
+                adb.capture_screenshot(screenshot)
             trace = product_logs(adb)
         if control_checked and not lifecycle_checked:
             verify_activity_independence(adb)
@@ -261,11 +424,10 @@ def verify_activity_independence(adb: Adb) -> None:
 
 def verify_payload(
     adb: Adb,
-    info_hash: str,
     expected_hash: str,
 ) -> None:
-    relative = f"files/product-downloads/{info_hash}/payload.bin"
-    completed = adb.shell("run-as", PACKAGE, "sha1sum", relative)
+    payload = f"{GRANT_PATH}/magnet-fixture/payload.bin"
+    completed = adb.shell("sha1sum", payload)
     actual = completed.stdout.split(maxsplit=1)[0] if completed.stdout else ""
     if actual != expected_hash:
         raise ScenarioFailure(
@@ -343,6 +505,8 @@ def stop_from_notification(adb: Adb) -> None:
 
 
 def run(arguments: argparse.Namespace) -> None:
+    if arguments.serial is None:
+        raise ScenarioFailure("Android target serial was not resolved")
     adb = Adb(arguments.adb, arguments.serial)
     require_unlocked(adb)
     run_path = Path(tempfile.mkdtemp(prefix="rstorrent-android-reactive-"))
@@ -350,6 +514,11 @@ def run(arguments: argparse.Namespace) -> None:
     handle: lt.torrent_handle | None = None
     port: int | None = None
     diagnostics: list[str] = []
+    screenshot = (
+        arguments.screenshot.resolve() if arguments.screenshot is not None else None
+    )
+    if screenshot is not None:
+        screenshot.unlink(missing_ok=True)
     try:
         fixture = create_fixture(run_path, payload_size=ANDROID_PAYLOAD_SIZE)
         session = create_session()
@@ -363,18 +532,16 @@ def run(arguments: argparse.Namespace) -> None:
         )
         handle.set_upload_limit(UPLOAD_RATE_LIMIT)
         adb.run("reverse", f"tcp:{port}", f"tcp:{port}")
-        install_and_start(
-            adb,
-            arguments.apk.resolve(),
-            magnet_uri(fixture.info_hash, f"127.0.0.1:{port}"),
-        )
-        trace, _, _ = wait_for_download(adb)
+        install_and_start(adb, arguments.apk.resolve())
+        select_controlled_tree(adb)
+        add_magnet(adb, magnet_uri(fixture.info_hash, f"127.0.0.1:{port}"))
+        trace, _, _ = wait_for_download(adb, screenshot)
         for counter in ("requested", "received", "stored"):
             if not positive_counter(trace, counter):
                 raise ScenarioFailure(
                     f"Android trace never exposed positive {counter} bytes:\n{trace}"
                 )
-        verify_payload(adb, fixture.info_hash, fixture.payload_hash)
+        verify_payload(adb, fixture.payload_hash)
         stop_from_notification(adb)
         if "FATAL EXCEPTION" in product_logs(adb):
             raise ScenarioFailure("Android runtime failed during joined shutdown")
@@ -386,11 +553,26 @@ def run(arguments: argparse.Namespace) -> None:
             f"pieces={fixture.torrent_info.num_pieces()} "
             f"view_updates={updates} activity_recreation=ok "
             f"activity_background=ok payload_sha1={fixture.payload_hash} "
+            f"screenshot={screenshot or 'disabled'} "
             "pause_resume=ok foreground_stop=joined cleanup=ok"
         )
+    except BaseException:
+        if screenshot is not None and not screenshot.exists():
+            try:
+                adb.capture_screenshot(screenshot)
+            except BaseException as screenshot_error:
+                print(
+                    "Android failure screenshot could not be captured: "
+                    f"{screenshot_error}",
+                    file=sys.stderr,
+                )
+        raise
     finally:
         if port is not None:
             adb.run("reverse", "--remove", f"tcp:{port}", check=False)
+        adb.shell("am", "force-stop", PACKAGE, check=False)
+        adb.shell("pm", "clear", PACKAGE, check=False)
+        adb.shell("rm", "-rf", GRANT_PATH, check=False)
         adb.shell("rm", "-f", "/sdcard/rstorrent-window.xml", check=False)
         if session is not None:
             if handle is not None:
@@ -410,11 +592,35 @@ def main() -> int:
     arguments = parse_arguments()
     print(f"libtorrent_binding_version={lt.__version__}")
     print(f"libtorrent_native_version={lt.version}")
+    owned_avd: OwnedHeadlessAvd | None = None
+    avd_work: Path | None = None
     try:
+        if arguments.avd is not None:
+            if not arguments.headless:
+                raise ScenarioFailure("--avd requires --headless")
+            avd_work = Path(tempfile.mkdtemp(prefix="rstorrent-headless-avd-"))
+            owned_avd = OwnedHeadlessAvd.start(
+                arguments.avd,
+                arguments.adb.resolve(),
+                arguments.emulator.resolve(),
+                avd_work,
+            )
+            arguments.serial = owned_avd.serial
+            print(
+                f"android_target=headless-avd name={owned_avd.name} "
+                f"serial={owned_avd.serial}"
+            )
+        elif arguments.headless:
+            raise ScenarioFailure("--headless is only valid with --avd")
         run(arguments)
     except (ScenarioFailure, OSError, subprocess.SubprocessError, ValueError) as error:
         print(error, file=sys.stderr)
         return 1
+    finally:
+        if owned_avd is not None:
+            owned_avd.close()
+        if avd_work is not None:
+            shutil.rmtree(avd_work, ignore_errors=True)
     return 0
 
 

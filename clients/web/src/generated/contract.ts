@@ -23,21 +23,43 @@ export type ServiceSnapshot = { profile_id: string, revision: string, torrents: 
 
 export type ViewSelector = { "type": "torrent_list" } | { "type": "torrent", torrent_id: string, };
 
-export type ViewProjection = "summary" | "piece_activity";
+export type ViewProjection = "summary" | "piece_activity" | "diagnostics";
 
 export type DeliveryPolicy = { min_interval_millis: number, max_queue_bytes: number, };
 
-export type SubscriptionSpec = { selector: ViewSelector, projection: ViewProjection, delivery: DeliveryPolicy, };
+export type DiagnosticSeverity = "trace" | "debug" | "info" | "warning" | "error";
+
+export type DiagnosticCategory = "lifecycle" | "discovery" | "tracker" | "peer" | "metadata" | "protocol" | "scheduler" | "piece" | "storage" | "integrity" | "platform" | "performance";
+
+export type DiagnosticProfile = "normal" | "detailed" | "trace";
+
+export type DiagnosticFilter = { profile: DiagnosticProfile, minimum_severity: DiagnosticSeverity, categories: Array<DiagnosticCategory>, };
+
+export type DiagnosticField = { key: string, value: string, };
+
+export type DiagnosticEvent = { sequence: string, timestamp_millis: string, severity: DiagnosticSeverity, category: DiagnosticCategory, code: string, torrent_id?: string | null, summary: string, context: Array<DiagnosticField>, };
+
+export type ProgressDisposition = "active" | "waiting" | "blocked" | "inactive";
+
+export type ProgressPhase = "discovery" | "metadata" | "storage" | "transfer" | "verification" | "publication";
+
+export type ProgressReason = "discovering_peers" | "waiting_for_discovery" | "no_enabled_discovery_source" | "acquiring_metadata" | "preparing_storage" | "waiting_for_storage" | "transferring_pieces" | "verifying_pieces" | "waiting_for_publication" | "paused" | "complete" | "needs_repair" | "failed";
+
+export type ProgressAction = "enable_discovery" | "select_storage" | "resume" | "repair_storage";
+
+export type ProgressAssessment = { disposition: ProgressDisposition, phase: ProgressPhase, reason: ProgressReason, actions: Array<ProgressAction>, };
+
+export type SubscriptionSpec = { selector: ViewSelector, projection: ViewProjection, delivery: DeliveryPolicy, diagnostics?: DiagnosticFilter | null, };
 
 export type IndexRange = { start: number, end_exclusive: number, };
 
 export type ActivePiece = { piece_index: number, piece_length: number, requested: Array<IndexRange>, received: Array<IndexRange>, stored: Array<IndexRange>, };
 
-export type TorrentView = { torrent_id: string, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, requested_bytes: string, received_bytes: string, stored_bytes: string, error?: string | null, };
+export type TorrentView = { torrent_id: string, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, requested_bytes: string, received_bytes: string, stored_bytes: string, progress: ProgressAssessment, error?: string | null, };
 
-export type ViewSnapshot = { "type": "torrent_list", torrents: Array<TorrentView>, } | { "type": "torrent", torrent: TorrentView | null, } | { "type": "piece_activity", torrent_id: string, piece_count: number, verified: Array<IndexRange>, active: ActivePiece | null, };
+export type ViewSnapshot = { "type": "torrent_list", torrents: Array<TorrentView>, } | { "type": "torrent", torrent: TorrentView | null, } | { "type": "piece_activity", torrent_id: string, piece_count: number, verified: Array<IndexRange>, active: ActivePiece | null, } | { "type": "diagnostics", events: Array<DiagnosticEvent>, dropped_count: string, };
 
-export type ViewPatch = { "type": "torrent_list", upsert: Array<TorrentView>, removed: Array<string>, } | { "type": "torrent", torrent: TorrentView | null, } | { "type": "piece_activity", torrent_id: string, piece_count: number, verified: Array<IndexRange>, cleared: Array<IndexRange>, active: ActivePiece | null, };
+export type ViewPatch = { "type": "torrent_list", upsert: Array<TorrentView>, removed: Array<string>, } | { "type": "torrent", torrent: TorrentView | null, } | { "type": "piece_activity", torrent_id: string, piece_count: number, verified: Array<IndexRange>, cleared: Array<IndexRange>, active: ActivePiece | null, } | { "type": "diagnostics", events: Array<DiagnosticEvent>, dropped_count: string, };
 
 export type ResetReason = "queue_overflow";
 

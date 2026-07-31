@@ -9,7 +9,9 @@ placing platform capabilities in the portable UI command contract. The
 one-command desktop launcher is smoke-tested on Apple silicon macOS as well as
 the original Linux development host. Closing its macOS window detaches that
 view while Dock activation recreates and focuses it without restarting the
-application service.
+application service. Tactical `012` completed isolated headless Chrome and
+no-window Android AVD harnesses plus equivalent bounded diagnostics and
+progress explanations on the shared web and Android Compose surfaces.
 
 ## Scope
 
@@ -161,6 +163,35 @@ active download.
 Every subscription and adapter task has explicit close, cancellation,
 termination observation, and bounded queued state.
 
+## Headless Presentation Validation
+
+The authenticated loopback browser gateway is the preferred automated seam
+for shared web presentation. Repository harnesses run the real application
+service and shared browser UI with temporary profile, storage, and browser
+directories, then drive a headless Chrome process. This proves the same web
+components embedded by Tauri without launching or focusing a desktop window.
+Tauri still compiles and its transport adapter remains directly testable; the
+gateway does not become the local desktop product transport.
+
+Android presentation requires separate evidence because it is implemented in
+Compose. Routine automation targets an explicitly owned no-window AVD and
+uses generated-contract, reducer, Compose, and UIAutomator checks. Physical
+devices, visible emulators, and host GUI automation require explicit user
+authorization.
+
+## Diagnostics Parity
+
+Tactical `012` gives the shared web/Tauri surface and Android Compose the same
+semantic progress dispositions, reason codes, diagnostic categories,
+severity filters, default profiles, dropped-event indication, and bounded
+copy behavior. The web surface uses a desktop timeline region and Compose
+uses a phone/tablet-appropriate section with a latest-event summary; they are
+semantically equivalent rather than pixel-identical.
+
+Progress assessment remains a deliberate product view. Diagnostic records are
+a separate bounded timeline and are never scraped to decide torrent state or
+actions.
+
 ## Future HTTP Playback Data Plane
 
 Desktop and Android are expected eventually to expose an embedded HTTP server
@@ -188,10 +219,14 @@ future server.
   media policy, and file-selection presentation remain product gaps.
 - The current UI proves one controlled torrent. General multi-torrent
   scheduling and complete product presentation remain absent.
+- Diagnostics currently cover application lifecycle, discovery exhaustion,
+  tracker policy rejection, metadata, storage, piece, and integrity edges.
+  Deeper typed peer negotiation, tracker-attempt, scheduler, and performance
+  instrumentation remains to be added as those runtime owners grow.
 - No HTTP playback server exists.
 
 Tacticals `008` and `009` record the implemented contract, exact controlled
-evidence, and bounded deferrals. The most useful next client slice is one of
-production remote authorization, desktop lifecycle/tray integration, or
-general multi-torrent application scheduling rather than unrelated UI
-breadth.
+evidence, and bounded deferrals. Tactical `012` records the completed
+cross-surface observability slice motivated by the first public-magnet desktop
+run. Production remote authorization, general multi-torrent scheduling, and
+broader desktop lifecycle work remain later boundaries.

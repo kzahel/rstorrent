@@ -4,8 +4,10 @@ Topic: `application-control`
 
 Status: Tactical `007` implemented the first transport-neutral semantic
 control contract and in-process application service. Tactical `008` added
-recoverable reactive views and browser, Tauri, and Android adapters. No stable
-public wire format is accepted yet.
+recoverable reactive views and browser, Tauri, and Android adapters. Tactical
+`012` added bounded typed diagnostics, derived progress assessment, and prompt
+task-terminal supervision with isolated headless presentation evidence. No
+stable public wire format is accepted yet.
 
 ## Scope
 
@@ -42,6 +44,21 @@ piece buffers, SQL rows, logs, and task handles are not part of the contract.
 Structured observability remains separate from command responses and product
 state.
 
+Application views may expose a derived progress assessment without promoting
+it to a second durable state machine. The assessment distinguishes an active
+owner, an automatic mechanism or scheduled retry that is still waiting,
+external blockage where no installed mechanism can advance, and deliberately
+inactive torrents. Failure or exhaustion of one tracker, peer, or discovery
+mechanism is not itself a torrent error and is not blockage while another
+automatic mechanism can still act.
+
+Typed diagnostics use a separate bounded reactive projection. They may explain
+the facts behind a progress assessment, but clients do not parse diagnostic
+text to determine torrent state, available actions, or correctness. A
+subscriber begins from bounded recent history, filters before its transport
+queue, detects overflow or sequence loss, and can resynchronize independently
+from product-state views.
+
 Storage roots and platform capabilities are installed when an application
 service instance is constructed or through a later platform-specific
 capability operation. A remotely meaningful command selects an established
@@ -75,6 +92,9 @@ separate tactical and threat model.
 - Local and diagnostic callers do not gain alternate privileged code paths.
 - Shutdown, pause, profile close, and task failure have observable terminal
   states and joined owners.
+- A task terminal result is observed without requiring a later client command.
+- Blocked progress is asserted only when no installed or scheduled automatic
+  mechanism can provide the next prerequisite.
 - User-controlled magnets, paths, peer hints, and errors are bounded and are
   not emitted unredacted as routine logs.
 
@@ -99,6 +119,12 @@ Later work must define multi-torrent scheduling, stable product error
 taxonomy, capability installation, removals and deletion, production remote
 authentication and relay semantics, and compatibility rules for any
 published wire protocol.
+
+[`../tactical/012-bounded-diagnostics-progress.md`](../tactical/012-bounded-diagnostics-progress.md)
+records the completed application-control slice. It corrects command-driven
+task-completion polling, adds a derived progress assessment, and carries typed
+bounded diagnostics through generated browser/Tauri and Android contracts
+without treating the diagnostic WebSocket gateway as a product daemon.
 
 The implemented subscription and client direction is recorded in
 [`client-surfaces.md`](client-surfaces.md) and

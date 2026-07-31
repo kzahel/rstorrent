@@ -112,7 +112,7 @@ function validateServiceSnapshot(value: unknown): void {
 
 function validateUpdate(value: unknown): void {
   const update = asRecord(value, "view update");
-  if (update.contract_version !== 1) {
+  if (update.contract_version !== 2) {
     throw new ContractError("unsupported view contract version");
   }
   decimal(update.stream_id, "stream ID");
@@ -158,6 +158,12 @@ function validateViewSnapshot(value: unknown): void {
       validateActivePiece(snapshot.active, pieceCount);
       break;
     }
+    case "diagnostics":
+      array(snapshot.events, "diagnostic events").forEach(
+        validateDiagnosticEvent,
+      );
+      decimal(snapshot.dropped_count, "diagnostic dropped count");
+      break;
     default:
       throw new ContractError("unknown view snapshot type");
   }
@@ -186,6 +192,10 @@ function validateViewPatch(value: unknown): void {
       validateActivePiece(patch.active, pieceCount);
       break;
     }
+    case "diagnostics":
+      array(patch.events, "diagnostic events").forEach(validateDiagnosticEvent);
+      decimal(patch.dropped_count, "diagnostic dropped count");
+      break;
     default:
       throw new ContractError("unknown view patch type");
   }
@@ -196,12 +206,19 @@ function validateTorrentView(value: unknown): asserts value is TorrentView {
   torrentId(torrent.torrent_id);
   oneOf(torrent.state, "torrent state", [
     "awaiting_metadata",
+    "awaiting_storage",
     "checking",
     "downloading",
+    "awaiting_publication",
     "paused",
     "complete",
     "needs_repair",
     "error",
+  ]);
+  oneOf(torrent.storage_state, "storage state", [
+    "none",
+    "staging",
+    "published",
   ]);
   boolean(torrent.metadata_available, "metadata available");
   boundedInteger(torrent.piece_count, "piece count", 0, MAX_U32);
@@ -214,7 +231,54 @@ function validateTorrentView(value: unknown): asserts value is TorrentView {
   decimal(torrent.requested_bytes, "requested bytes");
   decimal(torrent.received_bytes, "received bytes");
   decimal(torrent.stored_bytes, "stored bytes");
+  const progress = asRecord(torrent.progress, "progress assessment");
+  oneOf(progress.disposition, "progress disposition", [
+    "active",
+    "waiting",
+    "blocked",
+    "inactive",
+  ]);
+  oneOf(progress.phase, "progress phase", [
+    "discovery",
+    "metadata",
+    "storage",
+    "transfer",
+    "verification",
+    "publication",
+  ]);
+  boundedString(progress.reason, "progress reason", 64);
+  array(progress.actions, "progress actions").forEach((action) =>
+    boundedString(action, "progress action", 64),
+  );
   optionalString(torrent.error, "torrent error", 1_024);
+}
+
+function validateDiagnosticEvent(value: unknown): void {
+  const event = asRecord(value, "diagnostic event");
+  decimal(event.sequence, "diagnostic sequence");
+  decimal(event.timestamp_millis, "diagnostic timestamp");
+  oneOf(event.severity, "diagnostic severity", [
+    "trace",
+    "debug",
+    "info",
+    "warning",
+    "error",
+  ]);
+  boundedString(event.category, "diagnostic category", 32);
+  boundedString(event.code, "diagnostic code", 64);
+  if (event.torrent_id !== undefined && event.torrent_id !== null) {
+    torrentId(event.torrent_id);
+  }
+  boundedString(event.summary, "diagnostic summary", 240);
+  const context = array(event.context, "diagnostic context");
+  if (context.length > 8) {
+    throw new ContractError("diagnostic context exceeds its bound");
+  }
+  for (const field of context) {
+    const record = asRecord(field, "diagnostic field");
+    boundedString(record.key, "diagnostic field key", 32);
+    boundedString(record.value, "diagnostic field value", 160);
+  }
 }
 
 function validateActivePiece(

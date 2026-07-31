@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -21,13 +22,16 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -35,6 +39,10 @@ import org.rstorrent.bootstrap.ProductEngineService
 import org.rstorrent.bootstrap.ProductState
 import org.rstorrent.session.uniffi.TorrentState
 import org.rstorrent.session.uniffi.TorrentView
+import org.rstorrent.session.uniffi.DiagnosticCategory
+import org.rstorrent.session.uniffi.DiagnosticEvent
+import org.rstorrent.session.uniffi.DiagnosticProfile
+import org.rstorrent.session.uniffi.DiagnosticSeverity
 
 private val RSTorrentColors =
     darkColorScheme(
@@ -73,9 +81,22 @@ private fun ProductContent(
     onSelectStorage: () -> Unit,
 ) {
     var magnet by remember { mutableStateOf("") }
+    var diagnosticProfile by remember { mutableStateOf(DiagnosticProfile.NORMAL) }
+    var diagnosticSeverity by remember { mutableStateOf(DiagnosticSeverity.INFO) }
+    var diagnosticCategories by remember { mutableStateOf(emptySet<DiagnosticCategory>()) }
+    var diagnosticTorrentOnly by remember { mutableStateOf(false) }
+    var diagnosticSearch by remember { mutableStateOf("") }
+    var diagnosticAutoscroll by remember { mutableStateOf(false) }
     val torrents = state.torrents.values.sortedBy { it.torrentId }
+    val listState = rememberLazyListState()
+    LaunchedEffect(state.diagnostics.size, diagnosticAutoscroll) {
+        if (diagnosticAutoscroll && state.diagnostics.isNotEmpty()) {
+            listState.animateScrollToItem(1 + torrents.size)
+        }
+    }
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        state = listState,
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
@@ -183,6 +204,72 @@ private fun ProductContent(
                 }
             }
         }
+        item {
+            DiagnosticsPanel(
+                events = state.diagnostics,
+                dropped = state.diagnosticDropped,
+                resets = state.diagnosticResets,
+                selectedTorrent = state.selectedTorrent,
+                progressLabel =
+                    state.selectedTorrent
+                        ?.let(state.torrents::get)
+                        ?.progress
+                        ?.let {
+                            "${it.disposition.name.lowercase()} · " +
+                                "${it.phase.name.lowercase()} · " +
+                                it.reason.name.lowercase().replace('_', ' ')
+                        },
+                profile = diagnosticProfile,
+                severity = diagnosticSeverity,
+                categories = diagnosticCategories,
+                torrentOnly = diagnosticTorrentOnly,
+                search = diagnosticSearch,
+                autoscroll = diagnosticAutoscroll,
+                onProfile = {
+                    diagnosticProfile = it
+                    service.configureDiagnostics(
+                        diagnosticProfile,
+                        diagnosticSeverity,
+                        diagnosticCategories.toList(),
+                        diagnosticTorrentOnly,
+                    )
+                },
+                onSeverity = {
+                    diagnosticSeverity = it
+                    service.configureDiagnostics(
+                        diagnosticProfile,
+                        diagnosticSeverity,
+                        diagnosticCategories.toList(),
+                        diagnosticTorrentOnly,
+                    )
+                },
+                onCategory = { category ->
+                    diagnosticCategories =
+                        if (category in diagnosticCategories) {
+                            diagnosticCategories - category
+                        } else {
+                            diagnosticCategories + category
+                        }
+                    service.configureDiagnostics(
+                        diagnosticProfile,
+                        diagnosticSeverity,
+                        diagnosticCategories.toList(),
+                        diagnosticTorrentOnly,
+                    )
+                },
+                onTorrentOnly = {
+                    diagnosticTorrentOnly = !diagnosticTorrentOnly
+                    service.configureDiagnostics(
+                        diagnosticProfile,
+                        diagnosticSeverity,
+                        diagnosticCategories.toList(),
+                        diagnosticTorrentOnly,
+                    )
+                },
+                onSearch = { diagnosticSearch = it },
+                onAutoscroll = { diagnosticAutoscroll = !diagnosticAutoscroll },
+            )
+        }
         item { Spacer(Modifier.height(28.dp)) }
     }
 }
@@ -223,6 +310,25 @@ private fun TorrentCard(
                 fontFamily = FontFamily.Monospace,
                 style = MaterialTheme.typography.bodyMedium,
             )
+            Text(
+                "${torrent.progress.disposition.name.lowercase()} · " +
+                    "${torrent.progress.phase.name.lowercase()} · " +
+                    torrent.progress.reason.name.lowercase().replace('_', ' '),
+                color =
+                    if (torrent.progress.disposition.name == "BLOCKED") {
+                        MaterialTheme.colorScheme.secondary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                style = MaterialTheme.typography.bodySmall,
+            )
+            torrent.error?.let {
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             Spacer(Modifier.height(5.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -241,5 +347,190 @@ private fun TorrentCard(
                 Text(if (torrent.state == TorrentState.PAUSED) "Resume" else "Pause")
             }
         }
+    }
+}
+
+@Composable
+private fun DiagnosticsPanel(
+    events: List<DiagnosticEvent>,
+    dropped: String,
+    resets: ULong,
+    selectedTorrent: String?,
+    progressLabel: String?,
+    profile: DiagnosticProfile,
+    severity: DiagnosticSeverity,
+    categories: Set<DiagnosticCategory>,
+    torrentOnly: Boolean,
+    search: String,
+    autoscroll: Boolean,
+    onProfile: (DiagnosticProfile) -> Unit,
+    onSeverity: (DiagnosticSeverity) -> Unit,
+    onCategory: (DiagnosticCategory) -> Unit,
+    onTorrentOnly: () -> Unit,
+    onSearch: (String) -> Unit,
+    onAutoscroll: () -> Unit,
+) {
+    val clipboard = LocalClipboardManager.current
+    val needle = search.trim().lowercase()
+    val visible =
+        events.filter { event ->
+            (!torrentOnly || event.torrentId == selectedTorrent) &&
+                (
+                    needle.isEmpty() ||
+                        listOf(
+                            event.code,
+                            event.category.name,
+                            event.severity.name,
+                            event.summary,
+                        ).any { it.lowercase().contains(needle) }
+                )
+        }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF0D151B)),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("Diagnostics", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "${visible.size} shown · $dropped dropped · $resets resyncs",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            progressLabel?.let {
+                Text(
+                    "Selected progress · $it",
+                    color =
+                        if (it.startsWith("blocked")) {
+                            MaterialTheme.colorScheme.secondary
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            visible.lastOrNull()?.let { latest ->
+                Text(
+                    "Latest · ${latest.severity.name.lowercase()} · " +
+                        latest.category.name.lowercase(),
+                    color =
+                        if (latest.severity == DiagnosticSeverity.WARNING) {
+                            MaterialTheme.colorScheme.secondary
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Text(
+                    latest.code,
+                    fontFamily = FontFamily.Monospace,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Text(latest.summary, style = MaterialTheme.typography.bodySmall)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                DiagnosticProfile.entries.forEach { value ->
+                    Button(onClick = { onProfile(value) }, enabled = value != profile) {
+                        Text(value.name.lowercase())
+                    }
+                }
+            }
+            Text("Minimum severity", style = MaterialTheme.typography.labelSmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                DiagnosticSeverity.entries.forEach { value ->
+                    Button(onClick = { onSeverity(value) }, enabled = value != severity) {
+                        Text(value.name.lowercase().take(3))
+                    }
+                }
+            }
+            Text("Categories", style = MaterialTheme.typography.labelSmall)
+            DiagnosticCategory.entries.chunked(3).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    row.forEach { category ->
+                        Button(
+                            onClick = { onCategory(category) },
+                            enabled = category !in categories,
+                        ) {
+                            Text(category.name.lowercase().take(9))
+                        }
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Button(
+                    onClick = onTorrentOnly,
+                    enabled = selectedTorrent != null,
+                ) {
+                    Text(if (torrentOnly) "Selected torrent" else "Global scope")
+                }
+                Button(onClick = onAutoscroll) {
+                    Text(if (autoscroll) "Pause scroll" else "Resume scroll")
+                }
+            }
+            OutlinedTextField(
+                value = search,
+                onValueChange = onSearch,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Search diagnostics") },
+            )
+            Button(
+                onClick = {
+                    val text =
+                        visible
+                            .joinToString("\n") {
+                                "${it.timestampMillis} ${it.severity.name.lowercase()} " +
+                                    "${it.category.name.lowercase()} ${it.code} ${it.summary}"
+                            }.take(64 * 1024)
+                    clipboard.setText(AnnotatedString(text))
+                },
+            ) {
+                Text("Copy shown")
+            }
+            if (profile == DiagnosticProfile.TRACE) {
+                Text(
+                    "Trace is high volume and session-scoped.",
+                    color = MaterialTheme.colorScheme.secondary,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            if (visible.isEmpty()) {
+                Text(
+                    "No diagnostics match the current filters.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                visible.takeLast(80).forEach { DiagnosticRow(it) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticRow(event: DiagnosticEvent) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                "${event.severity.name.lowercase()} · ${event.category.name.lowercase()}",
+                color =
+                    when (event.severity) {
+                        DiagnosticSeverity.ERROR -> MaterialTheme.colorScheme.error
+                        DiagnosticSeverity.WARNING -> MaterialTheme.colorScheme.secondary
+                        else -> MaterialTheme.colorScheme.primary
+                    },
+                style = MaterialTheme.typography.labelSmall,
+            )
+            Text(
+                event.code,
+                fontFamily = FontFamily.Monospace,
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+        Text(event.summary, style = MaterialTheme.typography.bodySmall)
     }
 }

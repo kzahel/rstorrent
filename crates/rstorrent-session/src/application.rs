@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
+use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -25,8 +26,8 @@ use crate::store::{
     StoreError,
 };
 use crate::views::{
-    IndexRange, SubscriptionError, SubscriptionSpec, TorrentActivity, ViewHub, ViewSubscription,
-    ranges_from_pieces,
+    DiagnosticCategory, DiagnosticSeverity, IndexRange, ProgressInputs, SubscriptionError,
+    SubscriptionSpec, TorrentActivity, ViewHub, ViewSubscription, ranges_from_pieces,
 };
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
@@ -61,7 +62,7 @@ impl ApplicationConfig {
 struct ActiveDownload {
     torrent_id: String,
     control: DownloadControl,
-    task: JoinHandle<Result<ApplicationTaskReport, DownloadError>>,
+    task: JoinHandle<Result<(), String>>,
 }
 
 #[derive(Debug)]
@@ -120,6 +121,14 @@ impl ApplicationService {
             active: None,
             views,
         };
+        service.views.record_diagnostic(
+            DiagnosticSeverity::Info,
+            DiagnosticCategory::Lifecycle,
+            "application_opened",
+            None,
+            "Application profile opened",
+            &[("profile", &config.profile_id)],
+        )?;
         service.refresh_views()?;
         service.restore_running().await?;
         service.refresh_views()?;
@@ -165,14 +174,39 @@ impl ApplicationService {
                 let torrent_id = rstorrent_protocol::magnet::Magnet::parse(&magnet)
                     .map(|magnet| encode_info_hash(magnet.info_hash))
                     .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+                self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    DiagnosticCategory::Lifecycle,
+                    "torrent_added",
+                    Some(&torrent_id),
+                    "Torrent added to the session",
+                    &[],
+                )?;
                 self.start_if_possible(&torrent_id).await?;
             }
             Command::Resume { torrent_id } => {
-                self.start_if_possible(&torrent_id.to_ascii_lowercase())
-                    .await?;
+                let torrent_id = torrent_id.to_ascii_lowercase();
+                self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    DiagnosticCategory::Lifecycle,
+                    "torrent_resumed",
+                    Some(&torrent_id),
+                    "Torrent resume requested",
+                    &[],
+                )?;
+                self.start_if_possible(&torrent_id).await?;
             }
             Command::Pause { torrent_id } => {
-                self.pause(&torrent_id.to_ascii_lowercase()).await?;
+                let torrent_id = torrent_id.to_ascii_lowercase();
+                self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    DiagnosticCategory::Lifecycle,
+                    "torrent_paused",
+                    Some(&torrent_id),
+                    "Torrent pause requested",
+                    &[],
+                )?;
+                self.pause(&torrent_id).await?;
             }
             Command::Shutdown => {
                 self.shutdown().await?;
@@ -280,7 +314,7 @@ impl ApplicationService {
         });
         let control = self.download_control(&torrent_id);
         let task_control = control.clone();
-        let task = tokio::spawn(async move {
+        let operation = async move {
             resume_magnet_to_descriptors_with_control(
                 config,
                 descriptors,
@@ -290,7 +324,8 @@ impl ApplicationService {
             )
             .await
             .map(|_| ApplicationTaskReport::Download)
-        });
+        };
+        let task = self.spawn_supervised_task(&torrent_id, operation)?;
         self.active = Some(ActiveDownload {
             torrent_id,
             control,
@@ -368,12 +403,20 @@ impl ApplicationService {
         if let Some(active) = self.active.take() {
             active.control.cancel();
             match active.task.await {
-                Ok(Ok(_)) | Ok(Err(DownloadError::Cancelled)) => {}
-                Ok(Err(error)) => self.record_task_error(&active.torrent_id, &error)?,
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => return Err(ApplicationError::Join(error)),
                 Err(error) if error.is_cancelled() => {}
                 Err(error) => return Err(ApplicationError::Join(error.to_string())),
             }
         }
+        self.views.record_diagnostic(
+            DiagnosticSeverity::Info,
+            DiagnosticCategory::Lifecycle,
+            "application_shutdown",
+            None,
+            "Application shutdown completed",
+            &[],
+        )?;
         Ok(())
     }
 
@@ -478,7 +521,7 @@ impl ApplicationService {
             let task_control = control.clone();
             let magnet = resume.magnet;
             let timeout = self.download_timeout;
-            let task = tokio::spawn(async move {
+            let operation = async move {
                 let raw_info =
                     download_magnet_metadata_with_control(magnet, timeout, task_control).await?;
                 checkpoints
@@ -488,7 +531,8 @@ impl ApplicationService {
                     .waiting_for_storage()
                     .map_err(DownloadError::Checkpoint)?;
                 Ok(ApplicationTaskReport::Metadata)
-            });
+            };
+            let task = self.spawn_supervised_task(torrent_id, operation)?;
             self.active = Some(ActiveDownload {
                 torrent_id: torrent_id.to_owned(),
                 control,
@@ -528,11 +572,12 @@ impl ApplicationService {
         });
         let control = self.download_control(torrent_id);
         let task_control = control.clone();
-        let task = tokio::spawn(async move {
+        let operation = async move {
             resume_magnet_with_control(config, checkpoints, task_control)
                 .await
                 .map(|_| ApplicationTaskReport::Download)
-        });
+        };
+        let task = self.spawn_supervised_task(torrent_id, operation)?;
         self.active = Some(ActiveDownload {
             torrent_id: torrent_id.to_owned(),
             control,
@@ -548,6 +593,38 @@ impl ApplicationService {
             views: self.views.clone(),
         }));
         control
+    }
+
+    fn spawn_supervised_task<F>(
+        &self,
+        torrent_id: &str,
+        operation: F,
+    ) -> Result<JoinHandle<Result<(), String>>, ApplicationError>
+    where
+        F: Future<Output = Result<ApplicationTaskReport, DownloadError>> + Send + 'static,
+    {
+        self.views.set_progress_inputs(
+            torrent_id,
+            ProgressInputs {
+                task_active: true,
+                ..ProgressInputs::default()
+            },
+        )?;
+        self.views.record_diagnostic(
+            DiagnosticSeverity::Info,
+            DiagnosticCategory::Lifecycle,
+            "engine_task_started",
+            Some(torrent_id),
+            "Engine task started",
+            &[],
+        )?;
+        let store = self.store.clone();
+        let views = self.views.clone();
+        let torrent_id = torrent_id.to_owned();
+        Ok(tokio::spawn(async move {
+            let outcome = operation.await;
+            handle_task_outcome(&store, &views, &torrent_id, outcome)
+        }))
     }
 
     fn load_resume_conservative(&self, torrent_id: &str) -> Result<ResumeRecord, ApplicationError> {
@@ -573,11 +650,8 @@ impl ApplicationService {
         let active = self.active.take().expect("matching active task exists");
         active.control.cancel_when_safe();
         match active.task.await {
-            Ok(Ok(_)) | Ok(Err(DownloadError::Cancelled)) => Ok(()),
-            Ok(Err(error)) => {
-                self.record_task_error(torrent_id, &error)?;
-                Ok(())
-            }
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => Err(ApplicationError::Join(error)),
             Err(error) if error.is_cancelled() => Ok(()),
             Err(error) => Err(ApplicationError::Join(error.to_string())),
         }
@@ -593,30 +667,11 @@ impl ApplicationService {
         }
         let active = self.active.take().expect("finished active task exists");
         match active.task.await {
-            Ok(Ok(_)) | Ok(Err(DownloadError::Cancelled)) => Ok(()),
-            Ok(Err(error)) => {
-                self.record_task_error(&active.torrent_id, &error)?;
-                Ok(())
-            }
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => Err(ApplicationError::Join(error)),
             Err(error) if error.is_cancelled() => Ok(()),
             Err(error) => Err(ApplicationError::Join(error.to_string())),
         }
-    }
-
-    fn record_task_error(
-        &self,
-        torrent_id: &str,
-        error: &DownloadError,
-    ) -> Result<(), ApplicationError> {
-        let mut store = self.store_mut()?;
-        if matches!(error, DownloadError::SelectiveStorage(_)) {
-            store.mark_needs_repair(torrent_id, &error.to_string())?;
-        } else {
-            store.mark_error(torrent_id, &error.to_string())?;
-        }
-        drop(store);
-        self.refresh_views()?;
-        Ok(())
     }
 
     fn refresh_views(&self) -> Result<(), ApplicationError> {
@@ -635,6 +690,134 @@ impl Drop for ApplicationService {
             active.control.cancel();
         }
     }
+}
+
+fn handle_task_outcome(
+    store: &Arc<Mutex<SessionStore>>,
+    views: &ViewHub,
+    torrent_id: &str,
+    outcome: Result<ApplicationTaskReport, DownloadError>,
+) -> Result<(), String> {
+    match outcome {
+        Ok(report) => {
+            views
+                .set_progress_inputs(torrent_id, ProgressInputs::default())
+                .map_err(|error| error.to_string())?;
+            let operation = match report {
+                ApplicationTaskReport::Metadata => "metadata",
+                ApplicationTaskReport::Download => "download",
+            };
+            views
+                .record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    DiagnosticCategory::Lifecycle,
+                    "engine_task_completed",
+                    Some(torrent_id),
+                    "Engine task completed",
+                    &[("operation", operation)],
+                )
+                .map_err(|error| error.to_string())
+        }
+        Err(DownloadError::Cancelled) => {
+            views
+                .set_progress_inputs(torrent_id, ProgressInputs::default())
+                .map_err(|error| error.to_string())?;
+            views
+                .record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    DiagnosticCategory::Lifecycle,
+                    "engine_task_cancelled",
+                    Some(torrent_id),
+                    "Engine task stopped at a cancellation point",
+                    &[],
+                )
+                .map_err(|error| error.to_string())
+        }
+        Err(error) if is_discovery_exhaustion(&error) => {
+            views
+                .set_progress_inputs(
+                    torrent_id,
+                    ProgressInputs {
+                        discovery_exhausted: true,
+                        ..ProgressInputs::default()
+                    },
+                )
+                .map_err(|error| error.to_string())?;
+            let detail = error.to_string();
+            if matches!(error, DownloadError::NoUsableTrackerAddress) {
+                views
+                    .record_diagnostic(
+                        DiagnosticSeverity::Warning,
+                        DiagnosticCategory::Tracker,
+                        "tracker_address_rejected",
+                        Some(torrent_id),
+                        "Tracker supplied no address allowed by the current network policy",
+                        &[("detail", &detail)],
+                    )
+                    .map_err(|error| error.to_string())?;
+            }
+            views
+                .record_diagnostic(
+                    DiagnosticSeverity::Warning,
+                    DiagnosticCategory::Discovery,
+                    "discovery_exhausted",
+                    Some(torrent_id),
+                    "No enabled discovery source can currently supply an eligible peer",
+                    &[("detail", &detail)],
+                )
+                .map_err(|error| error.to_string())
+        }
+        Err(error) => {
+            let detail = error.to_string();
+            {
+                let mut store = store
+                    .lock()
+                    .map_err(|_| "session store lock is poisoned".to_owned())?;
+                if matches!(error, DownloadError::SelectiveStorage(_)) {
+                    store
+                        .mark_needs_repair(torrent_id, &detail)
+                        .map_err(|error| error.to_string())?;
+                } else {
+                    store
+                        .mark_error(torrent_id, &detail)
+                        .map_err(|error| error.to_string())?;
+                }
+                let (snapshot, verified) =
+                    durable_view_state(&store).map_err(|error| error.to_string())?;
+                drop(store);
+                views
+                    .replace_durable(&snapshot, &verified)
+                    .map_err(|error| error.to_string())?;
+            }
+            views
+                .set_progress_inputs(torrent_id, ProgressInputs::default())
+                .map_err(|error| error.to_string())?;
+            views
+                .record_diagnostic(
+                    DiagnosticSeverity::Error,
+                    DiagnosticCategory::Lifecycle,
+                    "engine_task_failed",
+                    Some(torrent_id),
+                    "Engine task failed",
+                    &[("detail", &detail)],
+                )
+                .map_err(|error| error.to_string())
+        }
+    }
+}
+
+fn is_discovery_exhaustion(error: &DownloadError) -> bool {
+    matches!(
+        error,
+        DownloadError::NonLoopbackPeer(_)
+            | DownloadError::UdpTracker(_)
+            | DownloadError::NoUsablePeer
+            | DownloadError::NoUsableTrackerAddress
+            | DownloadError::UdpTrackerResponseTooLarge { .. }
+            | DownloadError::UdpTrackerTimedOut { .. }
+            | DownloadError::PeerClosed
+            | DownloadError::TimedOut { .. }
+    )
 }
 
 #[derive(Debug)]
@@ -668,7 +851,17 @@ impl StoreCheckpointSink {
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         })?;
-        self.refresh()
+        self.refresh()?;
+        self.views
+            .record_diagnostic(
+                DiagnosticSeverity::Info,
+                DiagnosticCategory::Storage,
+                "storage_selection_required",
+                Some(&self.torrent_id),
+                "Verified metadata is waiting for platform storage",
+                &[],
+            )
+            .map_err(|error| error.to_string())
     }
 }
 
@@ -680,7 +873,17 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         })?;
-        self.refresh()
+        self.refresh()?;
+        self.views
+            .record_diagnostic(
+                DiagnosticSeverity::Info,
+                DiagnosticCategory::Metadata,
+                "metadata_verified",
+                Some(&self.torrent_id),
+                "Torrent metadata verified",
+                &[],
+            )
+            .map_err(|error| error.to_string())
     }
 
     fn storage_prepared(&self, storage: ResumedStorage) -> Result<(), String> {
@@ -694,7 +897,17 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         })?;
-        self.refresh()
+        self.refresh()?;
+        self.views
+            .record_diagnostic(
+                DiagnosticSeverity::Info,
+                DiagnosticCategory::Storage,
+                "storage_prepared",
+                Some(&self.torrent_id),
+                "Torrent storage prepared",
+                &[],
+            )
+            .map_err(|error| error.to_string())
     }
 
     fn have_rechecked(&self, verified_pieces: &[bool]) -> Result<(), String> {
@@ -714,7 +927,17 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         })?;
-        self.refresh()
+        self.refresh()?;
+        self.views
+            .record_diagnostic(
+                DiagnosticSeverity::Info,
+                DiagnosticCategory::Integrity,
+                "have_rechecked",
+                Some(&self.torrent_id),
+                "Existing piece state rechecked",
+                &[],
+            )
+            .map_err(|error| error.to_string())
     }
 
     fn piece_durable(&self, piece_index: usize) -> Result<(), String> {
@@ -724,7 +947,18 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         })?;
-        self.refresh()
+        self.refresh()?;
+        let piece = piece_index.to_string();
+        self.views
+            .record_diagnostic(
+                DiagnosticSeverity::Debug,
+                DiagnosticCategory::Piece,
+                "piece_durable",
+                Some(&self.torrent_id),
+                "Verified piece became durable",
+                &[("piece", &piece)],
+            )
+            .map_err(|error| error.to_string())
     }
 
     fn descriptor_prepared(&self, files: &[PreparedFileHash]) -> Result<(), String> {
@@ -734,7 +968,17 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         })?;
-        self.refresh()
+        self.refresh()?;
+        self.views
+            .record_diagnostic(
+                DiagnosticSeverity::Info,
+                DiagnosticCategory::Storage,
+                "publication_prepared",
+                Some(&self.torrent_id),
+                "Payload files prepared for publication",
+                &[],
+            )
+            .map_err(|error| error.to_string())
     }
 
     fn published(&self) -> Result<(), String> {
@@ -744,7 +988,17 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         })?;
-        self.refresh()
+        self.refresh()?;
+        self.views
+            .record_diagnostic(
+                DiagnosticSeverity::Info,
+                DiagnosticCategory::Lifecycle,
+                "torrent_completed",
+                Some(&self.torrent_id),
+                "Torrent completed",
+                &[],
+            )
+            .map_err(|error| error.to_string())
     }
 }
 
@@ -796,6 +1050,46 @@ impl DownloadActivitySink for ViewActivitySink {
             }
         };
         let _ = self.views.record_activity(&self.torrent_id, activity);
+        let (severity, category, code, summary) = match event {
+            DownloadActivityEvent::PieceStarted { .. } => (
+                DiagnosticSeverity::Debug,
+                DiagnosticCategory::Scheduler,
+                "piece_started",
+                "Piece transfer started",
+            ),
+            DownloadActivityEvent::BlockRequested { .. } => (
+                DiagnosticSeverity::Trace,
+                DiagnosticCategory::Protocol,
+                "block_requested",
+                "Piece block requested",
+            ),
+            DownloadActivityEvent::BlockReceived { .. } => (
+                DiagnosticSeverity::Trace,
+                DiagnosticCategory::Protocol,
+                "block_received",
+                "Piece block received",
+            ),
+            DownloadActivityEvent::BlockStored { .. } => (
+                DiagnosticSeverity::Trace,
+                DiagnosticCategory::Storage,
+                "block_stored",
+                "Piece block stored",
+            ),
+            DownloadActivityEvent::PieceVerified { .. } => (
+                DiagnosticSeverity::Info,
+                DiagnosticCategory::Integrity,
+                "piece_verified",
+                "Piece hash verified",
+            ),
+        };
+        let _ = self.views.record_diagnostic(
+            severity,
+            category,
+            code,
+            Some(&self.torrent_id),
+            summary,
+            &[],
+        );
     }
 }
 
@@ -913,9 +1207,10 @@ mod tests {
 
     use super::{ApplicationConfig, ApplicationService};
     use crate::{
-        CONTROL_VERSION, Command, ConfiguredStorageRoot, DeliveryPolicy, RequestEnvelope,
-        ResponseOutcome, SessionStore, SubscriptionSpec, TorrentState, ViewProjection,
-        ViewSelector, ViewUpdatePayload,
+        CONTROL_VERSION, Command, ConfiguredStorageRoot, DeliveryPolicy, DiagnosticFilter,
+        DiagnosticProfile, DiagnosticSeverity, ProgressDisposition, RequestEnvelope,
+        ResponseOutcome, SessionStore, SubscriptionSpec, TorrentState, ViewPatch, ViewProjection,
+        ViewSelector, ViewSnapshot, ViewUpdatePayload,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -969,6 +1264,7 @@ mod tests {
                     min_interval_millis: 0,
                     max_queue_bytes: 4096,
                 },
+                diagnostics: None,
             })
             .expect("subscribe");
         assert!(matches!(
@@ -1050,6 +1346,115 @@ mod tests {
         assert_eq!(snapshot.torrents[0].state, TorrentState::Paused);
         reopened.shutdown().await.expect("shutdown reopened");
         drop(reopened);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn discovery_exhaustion_is_observed_without_another_command() {
+        let root = test_root("discovery-exhaustion");
+        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let mut service = ApplicationService::open(config(&root))
+            .await
+            .expect("open service");
+        let summary = service
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::TorrentList,
+                projection: ViewProjection::Summary,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 256 * 1024,
+                },
+                diagnostics: None,
+            })
+            .expect("summary");
+        summary.next_update().await.expect("summary snapshot");
+        let diagnostics = service
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::TorrentList,
+                projection: ViewProjection::Diagnostics,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 256 * 1024,
+                },
+                diagnostics: Some(DiagnosticFilter {
+                    profile: DiagnosticProfile::Normal,
+                    minimum_severity: DiagnosticSeverity::Info,
+                    categories: Vec::new(),
+                }),
+            })
+            .expect("diagnostics");
+        diagnostics
+            .next_update()
+            .await
+            .expect("diagnostic snapshot");
+
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "blocked-add".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!(
+                        "magnet:?xt=urn:btih:{torrent_id}&tr=udp%3A%2F%2F192.0.2.1%3A6969%2Fannounce"
+                    ),
+                    storage_root: "downloads".to_owned(),
+                    skip_files: Vec::new(),
+                },
+            })
+            .await
+            .expect("add");
+
+        let blocked = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let update = summary.next_update().await.expect("summary update");
+                let is_blocked = match update.payload {
+                    ViewUpdatePayload::Snapshot {
+                        snapshot: ViewSnapshot::TorrentList { torrents },
+                    } => torrents.first().is_some_and(|torrent| {
+                        torrent.progress.disposition == ProgressDisposition::Blocked
+                    }),
+                    ViewUpdatePayload::Patch {
+                        patch: ViewPatch::TorrentList { upsert, .. },
+                    } => upsert.first().is_some_and(|torrent| {
+                        torrent.progress.disposition == ProgressDisposition::Blocked
+                    }),
+                    _ => false,
+                };
+                if is_blocked {
+                    break;
+                }
+            }
+        })
+        .await;
+        assert!(
+            blocked.is_ok(),
+            "terminal supervisor did not publish blocked progress"
+        );
+
+        let diagnostic = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            loop {
+                let update = diagnostics.next_update().await.expect("diagnostic update");
+                if serde_json::to_string(&update)
+                    .expect("serialize diagnostic")
+                    .contains("discovery_exhausted")
+                {
+                    break;
+                }
+            }
+        })
+        .await;
+        assert!(
+            diagnostic.is_ok(),
+            "missing discovery exhaustion diagnostic"
+        );
+        let resume = service
+            .load_resume_conservative(torrent_id)
+            .expect("resume state");
+        assert!(resume.desired_running);
+        assert_eq!(resume.state, TorrentState::AwaitingMetadata);
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
         fs::remove_dir_all(root).expect("remove test root");
     }
 

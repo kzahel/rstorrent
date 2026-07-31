@@ -1,6 +1,7 @@
 package org.rstorrent.bootstrap
 
 import org.rstorrent.session.uniffi.ActivePiece
+import org.rstorrent.session.uniffi.DiagnosticEvent
 import org.rstorrent.session.uniffi.IndexRange
 import org.rstorrent.session.uniffi.TorrentView
 import org.rstorrent.session.uniffi.ViewPatch
@@ -23,6 +24,9 @@ data class ProductState(
     val selectedTorrent: String? = null,
     val torrents: Map<String, TorrentView> = emptyMap(),
     val pieces: Map<String, PieceActivityState> = emptyMap(),
+    val diagnostics: List<DiagnosticEvent> = emptyList(),
+    val diagnosticDropped: String = "0",
+    val diagnosticResets: ULong = 0UL,
     internal val streams: Map<String, StreamPosition> = emptyMap(),
 )
 
@@ -41,7 +45,7 @@ internal object ProductStateReducer {
         state: ProductState,
         update: ViewUpdate,
     ): ProductState {
-        require(update.contractVersion == 1.toUShort()) {
+        require(update.contractVersion == 2.toUShort()) {
             "unsupported view contract ${update.contractVersion}"
         }
         val current = state.streams[update.streamId]
@@ -110,6 +114,11 @@ internal object ProductStateReducer {
                                     )
                             ),
                 )
+            is ViewSnapshot.Diagnostics ->
+                state.copy(
+                    diagnostics = snapshot.events.takeLast(512),
+                    diagnosticDropped = snapshot.droppedCount,
+                )
         }
 
     private fun applyPatch(
@@ -147,6 +156,18 @@ internal object ProductStateReducer {
                                         patch.active,
                                     )
                             ),
+                )
+            }
+            is ViewPatch.Diagnostics -> {
+                val events =
+                    (state.diagnostics + patch.events)
+                        .associateBy(DiagnosticEvent::sequence)
+                        .values
+                        .sortedBy { it.sequence.toULong() }
+                        .takeLast(512)
+                state.copy(
+                    diagnostics = events,
+                    diagnosticDropped = patch.droppedCount,
                 )
             }
         }

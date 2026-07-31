@@ -1,5 +1,6 @@
 import type {
   ActivePiece,
+  DiagnosticEvent,
   IndexRange,
   TorrentView,
   ViewPatch,
@@ -23,6 +24,8 @@ interface StreamPosition {
 export interface ApplicationViewState {
   torrents: Record<string, TorrentView>;
   pieces: Record<string, PieceActivityState>;
+  diagnostics: DiagnosticEvent[];
+  diagnosticDropped: string;
   streams: Record<string, StreamPosition>;
 }
 
@@ -30,7 +33,13 @@ export class ContinuityError extends Error {}
 export class ResetRequiredError extends Error {}
 
 export function emptyApplicationViewState(): ApplicationViewState {
-  return { torrents: {}, pieces: {}, streams: {} };
+  return {
+    torrents: {},
+    pieces: {},
+    diagnostics: [],
+    diagnosticDropped: "0",
+    streams: {},
+  };
 }
 
 export function reduceViewUpdate(
@@ -55,6 +64,8 @@ export function reduceViewUpdate(
   const next: ApplicationViewState = {
     torrents: { ...state.torrents },
     pieces: { ...state.pieces },
+    diagnostics: [...state.diagnostics],
+    diagnosticDropped: state.diagnosticDropped,
     streams: {
       ...state.streams,
       [update.stream_id]: {
@@ -95,6 +106,10 @@ function applySnapshot(
         active: snapshot.active,
       };
       break;
+    case "diagnostics":
+      state.diagnostics = snapshot.events.slice(-512);
+      state.diagnosticDropped = snapshot.dropped_count;
+      break;
   }
 }
 
@@ -126,6 +141,19 @@ function applyPatch(state: ApplicationViewState, patch: ViewPatch): void {
         verified,
         active: patch.active,
       };
+      break;
+    }
+    case "diagnostics": {
+      const bySequence = new Map(
+        state.diagnostics.map((event) => [event.sequence, event]),
+      );
+      for (const event of patch.events) bySequence.set(event.sequence, event);
+      state.diagnostics = [...bySequence.values()]
+        .sort((left, right) =>
+          BigInt(left.sequence) < BigInt(right.sequence) ? -1 : 1,
+        )
+        .slice(-512);
+      state.diagnosticDropped = patch.dropped_count;
       break;
     }
   }

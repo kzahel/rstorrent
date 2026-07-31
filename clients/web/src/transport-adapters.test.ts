@@ -83,7 +83,7 @@ async function next(
 
 function update(sequence: number): ViewUpdate {
   return {
-    contract_version: 1,
+    contract_version: 2,
     stream_id: "stream-1",
     epoch: "epoch-1",
     sequence: String(sequence),
@@ -103,6 +103,12 @@ function update(sequence: number): ViewUpdate {
           requested_bytes: String(sequence * 16_384),
           received_bytes: String(sequence * 16_384),
           stored_bytes: String(sequence * 16_384),
+          progress: {
+            disposition: "active",
+            phase: "transfer",
+            reason: "transferring_pieces",
+            actions: [],
+          },
         },
       ],
       removed: [],

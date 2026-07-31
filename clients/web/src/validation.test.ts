@@ -12,7 +12,7 @@ describe("gateway validation", () => {
         JSON.stringify({
           type: "update",
           update: {
-            contract_version: 1,
+            contract_version: 2,
             stream_id: "1",
             epoch: "1",
             sequence: "1",

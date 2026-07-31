@@ -24,7 +24,10 @@ pub use store::{
     StoreError,
 };
 pub use views::{
-    ActivePiece, DeliveryPolicy, IndexRange, ResetReason, SubscriptionError, SubscriptionSpec,
-    SubscriptionStats, TorrentView, VIEW_CONTRACT_VERSION, ViewHub, ViewPatch, ViewProjection,
-    ViewSelector, ViewSnapshot, ViewSubscription, ViewUpdate, ViewUpdatePayload,
+    ActivePiece, DeliveryPolicy, DiagnosticCategory, DiagnosticEvent, DiagnosticField,
+    DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity, IndexRange, ProgressAction,
+    ProgressAssessment, ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason,
+    ResetReason, SubscriptionError, SubscriptionSpec, SubscriptionStats, TorrentView,
+    VIEW_CONTRACT_VERSION, ViewHub, ViewPatch, ViewProjection, ViewSelector, ViewSnapshot,
+    ViewSubscription, ViewUpdate, ViewUpdatePayload, assess_progress,
 };

@@ -3,7 +3,7 @@ use std::error::Error;
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::Notify;
@@ -12,10 +12,16 @@ use ts_rs::TS;
 
 use crate::control::{ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState};
 
-pub const VIEW_CONTRACT_VERSION: u16 = 1;
+pub const VIEW_CONTRACT_VERSION: u16 = 2;
 pub const MIN_SUBSCRIPTION_QUEUE_BYTES: u32 = 4 * 1024;
 pub const MAX_SUBSCRIPTION_QUEUE_BYTES: u32 = 4 * 1024 * 1024;
 pub const MAX_SUBSCRIPTION_INTERVAL_MILLIS: u32 = 60_000;
+const MAX_DIAGNOSTIC_EVENTS: usize = 512;
+const MAX_DIAGNOSTIC_BYTES: usize = 192 * 1024;
+const MAX_DIAGNOSTIC_CONTEXT_FIELDS: usize = 8;
+const MAX_DIAGNOSTIC_SUMMARY_CHARS: usize = 240;
+const MAX_DIAGNOSTIC_KEY_CHARS: usize = 32;
+const MAX_DIAGNOSTIC_VALUE_CHARS: usize = 160;
 
 static NEXT_EPOCH: AtomicU64 = AtomicU64::new(1);
 
@@ -33,6 +39,269 @@ pub enum ViewSelector {
 pub enum ViewProjection {
     Summary,
     PieceActivity,
+    Diagnostics,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum DiagnosticSeverity {
+    Trace,
+    Debug,
+    Info,
+    Warning,
+    Error,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum DiagnosticCategory {
+    Lifecycle,
+    Discovery,
+    Tracker,
+    Peer,
+    Metadata,
+    Protocol,
+    Scheduler,
+    Piece,
+    Storage,
+    Integrity,
+    Platform,
+    Performance,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum DiagnosticProfile {
+    Normal,
+    Detailed,
+    Trace,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct DiagnosticFilter {
+    pub profile: DiagnosticProfile,
+    pub minimum_severity: DiagnosticSeverity,
+    pub categories: Vec<DiagnosticCategory>,
+}
+
+impl Default for DiagnosticFilter {
+    fn default() -> Self {
+        Self {
+            profile: DiagnosticProfile::Normal,
+            minimum_severity: DiagnosticSeverity::Info,
+            categories: Vec::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct DiagnosticField {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct DiagnosticEvent {
+    pub sequence: String,
+    pub timestamp_millis: String,
+    pub severity: DiagnosticSeverity,
+    pub category: DiagnosticCategory,
+    pub code: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub torrent_id: Option<String>,
+    pub summary: String,
+    pub context: Vec<DiagnosticField>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum ProgressDisposition {
+    Active,
+    Waiting,
+    Blocked,
+    Inactive,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum ProgressPhase {
+    Discovery,
+    Metadata,
+    Storage,
+    Transfer,
+    Verification,
+    Publication,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum ProgressReason {
+    DiscoveringPeers,
+    WaitingForDiscovery,
+    NoEnabledDiscoverySource,
+    AcquiringMetadata,
+    PreparingStorage,
+    WaitingForStorage,
+    TransferringPieces,
+    VerifyingPieces,
+    WaitingForPublication,
+    Paused,
+    Complete,
+    NeedsRepair,
+    Failed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum ProgressAction {
+    EnableDiscovery,
+    SelectStorage,
+    Resume,
+    RepairStorage,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ProgressAssessment {
+    pub disposition: ProgressDisposition,
+    pub phase: ProgressPhase,
+    pub reason: ProgressReason,
+    pub actions: Vec<ProgressAction>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ProgressInputs {
+    pub task_active: bool,
+    pub discovery_exhausted: bool,
+    pub discovery_active: bool,
+    pub discovery_retry_scheduled: bool,
+    pub dht_enabled: bool,
+}
+
+pub fn assess_progress(snapshot: &TorrentSnapshot, inputs: ProgressInputs) -> ProgressAssessment {
+    use ProgressAction::{EnableDiscovery, RepairStorage, Resume, SelectStorage};
+    use ProgressDisposition::{Active, Blocked, Inactive, Waiting};
+    use ProgressPhase::{Discovery, Publication, Storage, Transfer, Verification};
+    use ProgressReason::{
+        AcquiringMetadata, Complete, DiscoveringPeers, Failed, NeedsRepair,
+        NoEnabledDiscoverySource, Paused, PreparingStorage, TransferringPieces, VerifyingPieces,
+        WaitingForDiscovery, WaitingForPublication, WaitingForStorage,
+    };
+
+    match snapshot.state {
+        TorrentState::Paused => ProgressAssessment {
+            disposition: Inactive,
+            phase: phase_for(snapshot),
+            reason: Paused,
+            actions: vec![Resume],
+        },
+        TorrentState::Complete => ProgressAssessment {
+            disposition: Inactive,
+            phase: Publication,
+            reason: Complete,
+            actions: Vec::new(),
+        },
+        TorrentState::NeedsRepair => ProgressAssessment {
+            disposition: Blocked,
+            phase: Storage,
+            reason: NeedsRepair,
+            actions: vec![RepairStorage],
+        },
+        TorrentState::Error => ProgressAssessment {
+            disposition: Inactive,
+            phase: phase_for(snapshot),
+            reason: Failed,
+            actions: Vec::new(),
+        },
+        TorrentState::AwaitingStorage if inputs.task_active => ProgressAssessment {
+            disposition: Active,
+            phase: Storage,
+            reason: PreparingStorage,
+            actions: Vec::new(),
+        },
+        TorrentState::AwaitingStorage => ProgressAssessment {
+            disposition: Blocked,
+            phase: Storage,
+            reason: WaitingForStorage,
+            actions: vec![SelectStorage],
+        },
+        TorrentState::AwaitingPublication => ProgressAssessment {
+            disposition: Waiting,
+            phase: Publication,
+            reason: WaitingForPublication,
+            actions: Vec::new(),
+        },
+        TorrentState::Checking => ProgressAssessment {
+            disposition: if inputs.task_active { Active } else { Waiting },
+            phase: Verification,
+            reason: VerifyingPieces,
+            actions: Vec::new(),
+        },
+        TorrentState::Downloading => ProgressAssessment {
+            disposition: if inputs.task_active { Active } else { Waiting },
+            phase: Transfer,
+            reason: TransferringPieces,
+            actions: Vec::new(),
+        },
+        TorrentState::AwaitingMetadata if inputs.task_active || inputs.discovery_active => {
+            ProgressAssessment {
+                disposition: Active,
+                phase: Discovery,
+                reason: if inputs.task_active {
+                    AcquiringMetadata
+                } else {
+                    DiscoveringPeers
+                },
+                actions: Vec::new(),
+            }
+        }
+        TorrentState::AwaitingMetadata
+            if inputs.discovery_retry_scheduled || inputs.dht_enabled =>
+        {
+            ProgressAssessment {
+                disposition: Waiting,
+                phase: Discovery,
+                reason: WaitingForDiscovery,
+                actions: Vec::new(),
+            }
+        }
+        TorrentState::AwaitingMetadata if inputs.discovery_exhausted => ProgressAssessment {
+            disposition: Blocked,
+            phase: Discovery,
+            reason: NoEnabledDiscoverySource,
+            actions: vec![EnableDiscovery],
+        },
+        TorrentState::AwaitingMetadata => ProgressAssessment {
+            disposition: Waiting,
+            phase: Discovery,
+            reason: WaitingForDiscovery,
+            actions: Vec::new(),
+        },
+    }
+}
+
+fn phase_for(snapshot: &TorrentSnapshot) -> ProgressPhase {
+    match snapshot.state {
+        TorrentState::AwaitingMetadata => ProgressPhase::Discovery,
+        TorrentState::AwaitingStorage | TorrentState::NeedsRepair => ProgressPhase::Storage,
+        TorrentState::Checking => ProgressPhase::Verification,
+        TorrentState::Downloading => ProgressPhase::Transfer,
+        TorrentState::AwaitingPublication | TorrentState::Complete => ProgressPhase::Publication,
+        TorrentState::Paused | TorrentState::Error if snapshot.metadata_available => {
+            ProgressPhase::Transfer
+        }
+        TorrentState::Paused | TorrentState::Error => ProgressPhase::Discovery,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
@@ -57,6 +326,8 @@ pub struct SubscriptionSpec {
     pub selector: ViewSelector,
     pub projection: ViewProjection,
     pub delivery: DeliveryPolicy,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostics: Option<DiagnosticFilter>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
@@ -97,6 +368,7 @@ pub struct TorrentView {
     pub requested_bytes: String,
     pub received_bytes: String,
     pub stored_bytes: String,
+    pub progress: ProgressAssessment,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
@@ -117,6 +389,10 @@ pub enum ViewSnapshot {
         verified: Vec<IndexRange>,
         active: Option<ActivePiece>,
     },
+    Diagnostics {
+        events: Vec<DiagnosticEvent>,
+        dropped_count: String,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
@@ -136,6 +412,10 @@ pub enum ViewPatch {
         verified: Vec<IndexRange>,
         cleared: Vec<IndexRange>,
         active: Option<ActivePiece>,
+    },
+    Diagnostics {
+        events: Vec<DiagnosticEvent>,
+        dropped_count: String,
     },
 }
 
@@ -185,6 +465,10 @@ struct HubState {
     epoch: u64,
     revision: u64,
     torrents: BTreeMap<String, TorrentModel>,
+    diagnostics: VecDeque<StoredDiagnostic>,
+    diagnostic_bytes: usize,
+    diagnostic_dropped: u64,
+    next_diagnostic_sequence: u64,
     subscribers: BTreeMap<u64, Weak<SubscriberInner>>,
     next_stream_id: u64,
 }
@@ -192,8 +476,16 @@ struct HubState {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TorrentModel {
     view: TorrentView,
+    snapshot: TorrentSnapshot,
+    progress_inputs: ProgressInputs,
     verified: Vec<IndexRange>,
     active: Option<ActivePiece>,
+}
+
+#[derive(Clone, Debug)]
+struct StoredDiagnostic {
+    event: DiagnosticEvent,
+    encoded_bytes: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -288,6 +580,10 @@ impl ViewHub {
                         )
                     })
                     .collect(),
+                diagnostics: VecDeque::new(),
+                diagnostic_bytes: 0,
+                diagnostic_dropped: 0,
+                next_diagnostic_sequence: 1,
                 subscribers: BTreeMap::new(),
                 next_stream_id: 1,
             })),
@@ -354,6 +650,8 @@ impl ViewHub {
                 model.view.requested_bytes = old.view.requested_bytes.clone();
                 model.view.received_bytes = old.view.received_bytes.clone();
                 model.view.stored_bytes = old.view.stored_bytes.clone();
+                model.progress_inputs = old.progress_inputs;
+                model.view.progress = assess_progress(torrent, model.progress_inputs);
                 model.active = old.active.clone();
             }
             next.insert(torrent.torrent_id.clone(), model);
@@ -378,6 +676,79 @@ impl ViewHub {
         };
         model.apply_activity(activity);
         hub.publish_changes(&previous)
+    }
+
+    pub(crate) fn set_progress_inputs(
+        &self,
+        torrent_id: &str,
+        inputs: ProgressInputs,
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let previous = hub.torrents.clone();
+        let Some(model) = hub.torrents.get_mut(torrent_id) else {
+            return Ok(());
+        };
+        model.progress_inputs = inputs;
+        model.view.progress = assess_progress(&model.snapshot, inputs);
+        hub.publish_changes(&previous)
+    }
+
+    pub fn record_diagnostic(
+        &self,
+        severity: DiagnosticSeverity,
+        category: DiagnosticCategory,
+        code: &str,
+        torrent_id: Option<&str>,
+        summary: &str,
+        context: &[(&str, &str)],
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let event = DiagnosticEvent {
+            sequence: hub.next_diagnostic_sequence.to_string(),
+            timestamp_millis: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+                .to_string(),
+            severity,
+            category,
+            code: sanitize_text(code, MAX_DIAGNOSTIC_KEY_CHARS),
+            torrent_id: torrent_id.map(|value| sanitize_text(value, 40)),
+            summary: sanitize_text(summary, MAX_DIAGNOSTIC_SUMMARY_CHARS),
+            context: context
+                .iter()
+                .take(MAX_DIAGNOSTIC_CONTEXT_FIELDS)
+                .map(|(key, value)| DiagnosticField {
+                    key: sanitize_text(key, MAX_DIAGNOSTIC_KEY_CHARS),
+                    value: sanitize_text(value, MAX_DIAGNOSTIC_VALUE_CHARS),
+                })
+                .collect(),
+        };
+        hub.next_diagnostic_sequence = hub.next_diagnostic_sequence.saturating_add(1);
+        let encoded_bytes = serde_json::to_vec(&event)
+            .map_err(|error| SubscriptionError::Internal(error.to_string()))?
+            .len();
+        hub.diagnostics.push_back(StoredDiagnostic {
+            event: event.clone(),
+            encoded_bytes,
+        });
+        hub.diagnostic_bytes = hub.diagnostic_bytes.saturating_add(encoded_bytes);
+        while hub.diagnostics.len() > MAX_DIAGNOSTIC_EVENTS
+            || hub.diagnostic_bytes > MAX_DIAGNOSTIC_BYTES
+        {
+            let Some(dropped) = hub.diagnostics.pop_front() else {
+                break;
+            };
+            hub.diagnostic_bytes = hub.diagnostic_bytes.saturating_sub(dropped.encoded_bytes);
+            hub.diagnostic_dropped = hub.diagnostic_dropped.saturating_add(1);
+        }
+        hub.publish_diagnostic(event)
     }
 }
 
@@ -408,6 +779,19 @@ impl HubState {
                     active: torrent.and_then(|torrent| torrent.active.clone()),
                 }
             }
+            (selector, ViewProjection::Diagnostics) => {
+                let filter = spec.diagnostics.clone().unwrap_or_default();
+                ViewSnapshot::Diagnostics {
+                    events: self
+                        .diagnostics
+                        .iter()
+                        .map(|stored| &stored.event)
+                        .filter(|event| diagnostic_matches(selector, &filter, event))
+                        .cloned()
+                        .collect(),
+                    dropped_count: self.diagnostic_dropped.to_string(),
+                }
+            }
             (ViewSelector::TorrentList, ViewProjection::PieceActivity) => {
                 unreachable!("invalid projection is rejected before snapshot construction")
             }
@@ -434,10 +818,38 @@ impl HubState {
         }
         Ok(())
     }
+
+    fn publish_diagnostic(&mut self, event: DiagnosticEvent) -> Result<(), SubscriptionError> {
+        let revision = self.revision;
+        let dropped_count = self.diagnostic_dropped.to_string();
+        self.subscribers.retain(|_, weak| weak.strong_count() != 0);
+        let subscribers = self
+            .subscribers
+            .values()
+            .filter_map(Weak::upgrade)
+            .collect::<Vec<_>>();
+        for subscriber in subscribers {
+            if subscriber.spec.projection != ViewProjection::Diagnostics {
+                continue;
+            }
+            let filter = subscriber.spec.diagnostics.clone().unwrap_or_default();
+            if diagnostic_matches(&subscriber.spec.selector, &filter, &event) {
+                subscriber.enqueue_diagnostic_patch(
+                    revision,
+                    ViewPatch::Diagnostics {
+                        events: vec![event.clone()],
+                        dropped_count: dropped_count.clone(),
+                    },
+                )?;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl TorrentModel {
     fn from_snapshot(snapshot: &TorrentSnapshot) -> Self {
+        let progress_inputs = ProgressInputs::default();
         Self {
             view: TorrentView {
                 torrent_id: snapshot.torrent_id.clone(),
@@ -449,8 +861,11 @@ impl TorrentModel {
                 requested_bytes: "0".to_owned(),
                 received_bytes: "0".to_owned(),
                 stored_bytes: "0".to_owned(),
+                progress: assess_progress(snapshot, progress_inputs),
                 error: snapshot.error.clone(),
             },
+            snapshot: snapshot.clone(),
+            progress_inputs,
             verified: Vec::new(),
             active: None,
         }
@@ -636,6 +1051,14 @@ impl SubscriberInner {
         self.enqueue(revision, ViewUpdatePayload::Patch { patch }, true)
     }
 
+    fn enqueue_diagnostic_patch(
+        &self,
+        revision: u64,
+        patch: ViewPatch,
+    ) -> Result<(), SubscriptionError> {
+        self.enqueue(revision, ViewUpdatePayload::Patch { patch }, false)
+    }
+
     fn replace_with_snapshot(
         &self,
         revision: u64,
@@ -753,6 +1176,19 @@ fn validate_spec(spec: &SubscriptionSpec) -> Result<(), SubscriptionError> {
     {
         return Err(SubscriptionError::InvalidProjection);
     }
+    if spec.projection != ViewProjection::Diagnostics && spec.diagnostics.is_some() {
+        return Err(SubscriptionError::InvalidProjection);
+    }
+    if let Some(filter) = &spec.diagnostics
+        && (filter.categories.len() > 12
+            || filter
+                .categories
+                .iter()
+                .enumerate()
+                .any(|(index, category)| filter.categories[..index].contains(category)))
+    {
+        return Err(SubscriptionError::InvalidProjection);
+    }
     Ok(())
 }
 
@@ -844,6 +1280,7 @@ fn patch_for(
             })
         }
         (ViewSelector::TorrentList, ViewProjection::PieceActivity) => None,
+        (_, ViewProjection::Diagnostics) => None,
     }
 }
 
@@ -912,8 +1349,76 @@ fn coalesce(update: &mut ViewUpdate, next: &ViewUpdatePayload) -> bool {
             *active = next_active.clone();
             true
         }
+        (
+            ViewPatch::Diagnostics {
+                events,
+                dropped_count,
+            },
+            ViewPatch::Diagnostics {
+                events: next_events,
+                dropped_count: next_dropped_count,
+            },
+        ) => {
+            events.extend(next_events.iter().cloned());
+            *dropped_count = next_dropped_count.clone();
+            true
+        }
         _ => false,
     }
+}
+
+fn diagnostic_matches(
+    selector: &ViewSelector,
+    filter: &DiagnosticFilter,
+    event: &DiagnosticEvent,
+) -> bool {
+    if event.severity < filter.minimum_severity {
+        return false;
+    }
+    if let ViewSelector::Torrent { torrent_id } = selector
+        && event.torrent_id.as_deref() != Some(torrent_id.as_str())
+    {
+        return false;
+    }
+    if !filter.categories.is_empty() && !filter.categories.contains(&event.category) {
+        return filter.profile == DiagnosticProfile::Normal
+            && event.severity >= DiagnosticSeverity::Warning;
+    }
+    match filter.profile {
+        DiagnosticProfile::Trace => true,
+        DiagnosticProfile::Detailed => event.category != DiagnosticCategory::Piece,
+        DiagnosticProfile::Normal => {
+            event.severity >= DiagnosticSeverity::Warning
+                || matches!(
+                    event.category,
+                    DiagnosticCategory::Lifecycle
+                        | DiagnosticCategory::Discovery
+                        | DiagnosticCategory::Tracker
+                        | DiagnosticCategory::Peer
+                        | DiagnosticCategory::Storage
+                        | DiagnosticCategory::Integrity
+                        | DiagnosticCategory::Platform
+                )
+        }
+    }
+}
+
+fn sanitize_text(value: &str, maximum_chars: usize) -> String {
+    value
+        .chars()
+        .filter(|character| {
+            !character.is_control()
+                && !matches!(
+                    *character,
+                    '\u{061c}'
+                        | '\u{200e}'
+                        | '\u{200f}'
+                        | '\u{202a}'..='\u{202e}'
+                        | '\u{2066}'..='\u{2069}'
+                )
+        })
+        .take(maximum_chars)
+        .collect()
 }
 
 fn matching_active(active: &mut Option<ActivePiece>, piece_index: u32) -> Option<&mut ActivePiece> {
@@ -1039,8 +1544,10 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::{
-        DeliveryPolicy, IndexRange, ResetReason, SubscriptionSpec, TorrentActivity, ViewHub,
-        ViewProjection, ViewSelector, ViewSnapshot, ViewUpdatePayload, ranges_from_pieces,
+        DeliveryPolicy, DiagnosticCategory, DiagnosticFilter, DiagnosticProfile,
+        DiagnosticSeverity, IndexRange, ProgressDisposition, ProgressInputs, ProgressReason,
+        ResetReason, SubscriptionSpec, TorrentActivity, ViewHub, ViewProjection, ViewSelector,
+        ViewSnapshot, ViewUpdatePayload, assess_progress, ranges_from_pieces,
     };
     use crate::{ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState};
 
@@ -1072,6 +1579,7 @@ mod tests {
                 min_interval_millis: 0,
                 max_queue_bytes: queue,
             },
+            diagnostics: None,
         }
     }
 
@@ -1234,5 +1742,132 @@ mod tests {
             )]),
         )
         .expect("replace");
+    }
+
+    #[test]
+    fn discovery_exhaustion_waits_when_another_mechanism_can_act() {
+        let mut torrent = snapshot(0, 0).torrents.remove(0);
+        torrent.state = TorrentState::AwaitingMetadata;
+        torrent.metadata_available = false;
+        let blocked = assess_progress(
+            &torrent,
+            ProgressInputs {
+                discovery_exhausted: true,
+                ..ProgressInputs::default()
+            },
+        );
+        assert_eq!(blocked.disposition, ProgressDisposition::Blocked);
+        assert_eq!(blocked.reason, ProgressReason::NoEnabledDiscoverySource);
+
+        let waiting = assess_progress(
+            &torrent,
+            ProgressInputs {
+                discovery_exhausted: true,
+                dht_enabled: true,
+                ..ProgressInputs::default()
+            },
+        );
+        assert_eq!(waiting.disposition, ProgressDisposition::Waiting);
+        assert_eq!(waiting.reason, ProgressReason::WaitingForDiscovery);
+    }
+
+    #[tokio::test]
+    async fn diagnostics_filter_before_queue_and_report_ring_drops() {
+        let hub = ViewHub::new(&snapshot(0, 1)).expect("hub");
+        let filtered = hub
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::TorrentList,
+                projection: ViewProjection::Diagnostics,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 4 * 1024 * 1024,
+                },
+                diagnostics: Some(DiagnosticFilter {
+                    profile: DiagnosticProfile::Normal,
+                    minimum_severity: DiagnosticSeverity::Trace,
+                    categories: vec![DiagnosticCategory::Piece],
+                }),
+            })
+            .expect("subscribe");
+        filtered.next_update().await.expect("snapshot");
+        hub.record_diagnostic(
+            DiagnosticSeverity::Trace,
+            DiagnosticCategory::Piece,
+            "block_received",
+            None,
+            "trace",
+            &[],
+        )
+        .expect("record trace");
+        assert_eq!(filtered.stats().expect("stats").queued_bytes, 0);
+
+        hub.record_diagnostic(
+            DiagnosticSeverity::Warning,
+            DiagnosticCategory::Tracker,
+            "tracker_unavailable",
+            None,
+            "warning",
+            &[],
+        )
+        .expect("record warning");
+        let warning = filtered.next_update().await.expect("warning patch");
+        assert!(
+            serde_json::to_string(&warning)
+                .expect("encode")
+                .contains("tracker_unavailable")
+        );
+
+        for index in 0..600 {
+            hub.record_diagnostic(
+                DiagnosticSeverity::Warning,
+                DiagnosticCategory::Tracker,
+                "bounded",
+                None,
+                &format!("event {index}"),
+                &[("hostile", "\u{202e}<script>")],
+            )
+            .expect("record bounded event");
+        }
+        let snapshot = hub
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::TorrentList,
+                projection: ViewProjection::Diagnostics,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 4 * 1024 * 1024,
+                },
+                diagnostics: Some(DiagnosticFilter {
+                    profile: DiagnosticProfile::Normal,
+                    minimum_severity: DiagnosticSeverity::Info,
+                    categories: Vec::new(),
+                }),
+            })
+            .expect("bounded subscription")
+            .next_update()
+            .await
+            .expect("bounded snapshot");
+        let ViewUpdatePayload::Snapshot {
+            snapshot:
+                ViewSnapshot::Diagnostics {
+                    events,
+                    dropped_count,
+                },
+        } = snapshot.payload
+        else {
+            panic!("expected diagnostic snapshot");
+        };
+        assert_eq!(events.len(), super::MAX_DIAGNOSTIC_EVENTS);
+        assert_ne!(dropped_count, "0");
+        assert!(
+            events
+                .iter()
+                .all(|event| !event.summary.contains('\u{202e}'))
+        );
+        assert!(
+            events
+                .iter()
+                .flat_map(|event| &event.context)
+                .all(|field| !field.value.contains('\u{202e}'))
+        );
     }
 }

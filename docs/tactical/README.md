@@ -82,5 +82,10 @@ direction belongs in `../topics/`.
   bounded BEP 15 connect/announce exchange, tracker observations, session
   source retention, and tracker-only magnet metadata/content transfer from a
   controlled libtorrent seed.
+- [`012-bounded-diagnostics-progress.md`](012-bounded-diagnostics-progress.md):
+  completed prompt task-terminal supervision, active/waiting/blocked progress
+  assessment, a bounded filtered typed diagnostic stream, equivalent
+  web/Tauri and Android presentation, and isolated headless Chrome and
+  no-window AVD evidence.
 
-The next tactical number is `012`.
+The next tactical number is `013`.

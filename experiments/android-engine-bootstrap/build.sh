@@ -35,12 +35,28 @@ cargo ndk \
     build --release -p rstorrent-android --lib
 
 cargo build -p rstorrent-android --lib
+case "$(uname -s)" in
+    Darwin)
+        bindgen_library="$repository_root/target/debug/librstorrent_android.dylib"
+        ;;
+    Linux)
+        bindgen_library="$repository_root/target/debug/librstorrent_android.so"
+        ;;
+    *)
+        echo "Unsupported UniFFI bindgen host: $(uname -s)" >&2
+        exit 1
+        ;;
+esac
+if [[ ! -f "$bindgen_library" ]]; then
+    echo "UniFFI bindgen library is unavailable at $bindgen_library" >&2
+    exit 1
+fi
 cargo run \
     -p rstorrent-android \
     --features bindgen \
     --bin rstorrent-uniffi-bindgen \
     -- generate \
-    --library "$repository_root/target/debug/librstorrent_android.so" \
+    --library "$bindgen_library" \
     --crate rstorrent_android \
     --config "$repository_root/crates/rstorrent-android/uniffi.toml" \
     --language kotlin \
@@ -51,7 +67,7 @@ cargo run \
     --features bindgen \
     --bin rstorrent-uniffi-bindgen \
     -- generate \
-    --library "$repository_root/target/debug/librstorrent_android.so" \
+    --library "$bindgen_library" \
     --crate rstorrent_session \
     --config "$repository_root/crates/rstorrent-session/uniffi.toml" \
     --language kotlin \
