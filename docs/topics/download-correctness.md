@@ -110,9 +110,11 @@ asserted only over installed mechanisms and retained schedules.
 One torrent supervisor owns a bounded set of live connection generations,
 piece/block state, request attempts and deadlines, payload reservations,
 storage acceptance, verification, and child-task joins. It schedules across
-up to four active pieces and eight peers while tracker and DHT discovery remain
-live. Choke, disconnect, expiry, and replacement release only the affected
-generation's requests; valid late payload cannot release newer ownership.
+up to 64 active pieces and eight peers while tracker and DHT discovery remain
+live. Each connection has a bounded useful-payload-driven request window;
+the torrent payload allowance remains the aggregate authority. Choke,
+disconnect, expiry, and replacement release only the affected generation's
+requests; valid late payload cannot release newer ownership.
 
 The remaining known near-completion mechanisms are narrower:
 

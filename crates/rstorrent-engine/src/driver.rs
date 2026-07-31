@@ -223,6 +223,12 @@ pub struct SwarmActivitySnapshot {
     pub verified_blocks: usize,
     pub payload_reserved: usize,
     pub payload_high_water: usize,
+    pub request_target_total: usize,
+    pub request_target_max: usize,
+    pub slow_start_peers: usize,
+    pub stalled_peers: usize,
+    pub useful_payload_bytes: usize,
+    pub observed_payload_rate: usize,
     pub oldest_request_age_seconds: Option<u64>,
     pub next_request_expiry_seconds: Option<u64>,
     pub next_replacement_seconds: Option<u64>,
@@ -802,6 +808,12 @@ impl DownloadControl {
             verified_blocks: snapshot.verified_blocks,
             payload_reserved: snapshot.payload_reserved,
             payload_high_water: snapshot.payload_high_water,
+            request_target_total: snapshot.request_target_total,
+            request_target_max: snapshot.request_target_max,
+            slow_start_peers: snapshot.slow_start_peers,
+            stalled_peers: snapshot.stalled_peers,
+            useful_payload_bytes: snapshot.useful_payload_bytes,
+            observed_payload_rate: snapshot.observed_payload_rate,
             oldest_request_age_seconds: snapshot.oldest_request_age.map(|age| age.as_secs()),
             next_request_expiry_seconds: snapshot
                 .next_request_expiry
@@ -3676,7 +3688,7 @@ impl<'a> ContentSwarmDownload<'a> {
                 };
                 match self
                     .state
-                    .receive_block(connection, key)
+                    .receive_block(connection, key, now)
                     .map_err(DownloadError::Swarm)?
                 {
                     ReceiveDisposition::Accept { .. } => {
@@ -4666,7 +4678,7 @@ fn download_peer_set_error(error: PeerSetError) -> DownloadError {
 mod tests {
     use std::net::{IpAddr, SocketAddr};
     use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
 
@@ -4714,6 +4726,7 @@ mod tests {
         SelectiveStorageError, selective_part_path, selective_staging_path,
     };
     use crate::storage::staging_path;
+    use crate::swarm::DEFAULT_INITIAL_REQUESTS_PER_CONNECTION;
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -5222,6 +5235,99 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         }
     }
 
+    async fn serve_window_probe_peer(
+        listener: TcpListener,
+        info_hash: [u8; 20],
+        payload: Arc<Vec<u8>>,
+        max_pending: Arc<AtomicUsize>,
+    ) {
+        let (mut stream, _) = listener.accept().await.expect("accept window peer");
+        let mut handshake = [0; HANDSHAKE_LENGTH];
+        stream
+            .read_exact(&mut handshake)
+            .await
+            .expect("read window handshake");
+        decode_handshake(&handshake, info_hash).expect("valid window handshake");
+        stream
+            .write_all(&encode_handshake(info_hash, *b"-RS-WINDOW-000000000"))
+            .await
+            .expect("send window handshake");
+        let mut peer =
+            PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(2));
+        send_message(&mut peer, &PeerMessage::Bitfield(vec![0x80]))
+            .await
+            .expect("send window availability");
+        send_message(&mut peer, &PeerMessage::Unchoke)
+            .await
+            .expect("send window unchoke");
+
+        let mut pending = Vec::new();
+        while pending.len() < DEFAULT_INITIAL_REQUESTS_PER_CONNECTION {
+            match next_peer_message(&mut peer).await {
+                Ok(PeerMessage::Interested) => {}
+                Ok(PeerMessage::Request(request)) => pending.push(request),
+                Ok(message) => panic!("unexpected initial window command {message:?}"),
+                Err(error) => panic!("window peer failed before initial requests: {error}"),
+            }
+        }
+        max_pending.fetch_max(pending.len(), Ordering::AcqRel);
+
+        let mut served_bytes = 0;
+        while served_bytes < payload.len() {
+            while pending.is_empty() {
+                match next_peer_message(&mut peer).await {
+                    Ok(PeerMessage::Request(request)) => pending.push(request),
+                    Ok(PeerMessage::Interested) => {}
+                    Ok(message) => panic!("unexpected refill window command {message:?}"),
+                    Err(error) => panic!("window peer failed while awaiting refill: {error}"),
+                }
+            }
+            let request = pending.remove(0);
+            let begin = request.begin as usize;
+            let end = begin + request.length as usize;
+            send_message(
+                &mut peer,
+                &PeerMessage::Piece {
+                    index: request.index,
+                    begin: request.begin,
+                    block: payload[begin..end].to_vec(),
+                },
+            )
+            .await
+            .expect("send window payload");
+            served_bytes += request.length as usize;
+
+            loop {
+                match timeout(Duration::from_millis(20), next_peer_message(&mut peer)).await {
+                    Ok(Ok(PeerMessage::Request(request))) => pending.push(request),
+                    Ok(Ok(PeerMessage::Interested)) => {}
+                    Ok(Err(DownloadError::PeerClosed))
+                    | Ok(Err(DownloadError::Io {
+                        operation: "read peer message",
+                        ..
+                    })) => return,
+                    Ok(Ok(message)) => panic!("unexpected window command {message:?}"),
+                    Ok(Err(error)) => panic!("window peer failed: {error}"),
+                    Err(_) => break,
+                }
+            }
+            max_pending.fetch_max(pending.len(), Ordering::AcqRel);
+        }
+
+        loop {
+            match next_peer_message(&mut peer).await {
+                Ok(PeerMessage::Request(_)) | Ok(PeerMessage::Interested) => {}
+                Err(DownloadError::PeerClosed)
+                | Err(DownloadError::Io {
+                    operation: "read peer message",
+                    ..
+                }) => return,
+                Ok(message) => panic!("unexpected final window command {message:?}"),
+                Err(error) => panic!("window peer failed after queue drained: {error}"),
+            }
+        }
+    }
+
     #[derive(Clone, Copy, Debug)]
     enum AdverseRequestAction {
         Disconnect,
@@ -5538,6 +5644,82 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             .await
             .expect("multi-piece peer joined")
             .expect("multi-piece peer task");
+        let _ = tokio::fs::remove_file(output).await;
+    }
+
+    #[tokio::test]
+    async fn capable_peer_grows_pipeline_beyond_initial_request_window() {
+        let payload = Arc::new(
+            (0..(32 * MIN_PAYLOAD_ALLOWANCE))
+                .map(|index| ((index * 31 + index / 23) & 0xff) as u8)
+                .collect::<Vec<_>>(),
+        );
+        let info = single_file_info_with_piece_length(&payload, payload.len());
+        let metainfo = Metainfo::from_info_bytes(&info).expect("window probe metainfo");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind window probe peer");
+        let address = listener.local_addr().expect("window probe address");
+        let max_pending = Arc::new(AtomicUsize::new(0));
+        let peer_task = tokio::spawn(serve_window_probe_peer(
+            listener,
+            metainfo.info_hash,
+            payload.clone(),
+            max_pending.clone(),
+        ));
+        let output = test_path("adaptive-window.bin");
+        let mut peers = PeerSession::from_endpoint(
+            address,
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(2)),
+        )
+        .expect("peer session");
+        let control = DownloadControl::new();
+        let payload_limit = payload.len();
+
+        let report = timeout(
+            Duration::from_secs(5),
+            run_content_download(
+                ContentDownloadConfig {
+                    output_path: output.clone(),
+                    max_buffered_payload_bytes: payload_limit,
+                    swarm_config: SwarmConfig::for_payload_limit(payload_limit),
+                    skip_files: Vec::new(),
+                    materialize_files: Vec::new(),
+                },
+                metainfo,
+                control.clone(),
+                None,
+                &mut peers,
+                None,
+            ),
+        )
+        .await
+        .expect("bounded window probe")
+        .expect("window probe completion");
+
+        assert_eq!(report.verified_piece_count, 1);
+        assert_eq!(report.bytes_written, payload.len());
+        assert!(
+            max_pending.load(Ordering::Acquire) > DEFAULT_INITIAL_REQUESTS_PER_CONNECTION,
+            "peer never observed the request window grow"
+        );
+        assert!(
+            report.payload_high_water
+                > DEFAULT_INITIAL_REQUESTS_PER_CONNECTION * MIN_PAYLOAD_ALLOWANCE
+        );
+        assert!(report.payload_high_water <= payload_limit);
+        let swarm = control
+            .diagnostic_snapshot()
+            .swarm
+            .expect("window diagnostics");
+        assert!(swarm.request_target_max > DEFAULT_INITIAL_REQUESTS_PER_CONNECTION);
+        assert_eq!(swarm.useful_payload_bytes, payload.len());
+        assert_eq!(tokio::fs::read(&output).await.expect("output"), *payload);
+        timeout(Duration::from_secs(1), peer_task)
+            .await
+            .expect("window peer joined")
+            .expect("window peer task");
         let _ = tokio::fs::remove_file(output).await;
     }
 

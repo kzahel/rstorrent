@@ -381,11 +381,10 @@ Last completed evidence:
 Next executable action:
 
 1. retain the Tactical `020` pre-change first-piece screen;
-2. encode the pinned four-request slow start, three-second rate target,
-   one-request stalled probe, and global payload bound as pure failing cases;
-3. install the connection-owned feedback window and bounded wider active work;
-   and
-4. prove scripted growth and slow-peer coexistence before paired first-piece
-   and 50% screens.
+2. retain the post-change paired first-piece screen now in progress;
+3. run the three-pair 50% screen and classify its bounded request, peer, and
+   payload facts; and
+4. adjust only the narrow source-derived owner identified by that evidence
+   before the independent confirmation cohorts.
 
 Human blocker: **none**.

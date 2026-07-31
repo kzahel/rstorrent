@@ -209,6 +209,32 @@ temporary-root cleanup passed. First-piece startup is therefore functional;
 the falsifiable owner remains the static sustained request window already
 present in the older 43.7%-after-900-seconds publication snapshot.
 
+## Implementation Evidence
+
+The first implementation checkpoint installs a runtime-independent
+`RequestWindow` inside each connection state. It starts at four, grows only on
+accepted requested payload, samples one-second useful-payload rates, settles
+on a bounded three-second rate target, and drops to a one-request probe after
+expiry. Targets cap at the pinned reference default of 500, while the existing
+torrent payload allowance remains authoritative. The separate active-piece
+bound is now 64 and existing active pieces are still filled before another is
+opened.
+
+Pure tests prove two-peer selective growth/refill, slow-start exit and rate
+clamping, stalled probing and recovery, payload pressure, expiry, late data,
+choke, disconnect, active-piece and history bounds, and overflow-safe target
+math. A loopback 512 KiB peer deliberately buffers the request pipeline and
+proves that the observed queue and engine payload high-water both exceed the
+old four-request ceiling while exact bytes publish and the task joins.
+
+The engine's 105 non-live tests pass with three public tests ignored. The
+three-run controlled first-piece scenario, mixed healthy/permanently-choked
+16-piece scenario, and full paired controlled comparator all pass. The
+controlled comparator's final RSTorrent snapshot reported a target of nine,
+79,000 accepted useful bytes, exact three-piece publication, and clean
+shutdown. The post-change public first-piece and 50% screens remain in
+progress; this checkpoint does not yet claim live parity.
+
 ## Non-Goals And Next Boundary
 
 - No product UI, Tauri launch, visible browser, Android device, incoming
