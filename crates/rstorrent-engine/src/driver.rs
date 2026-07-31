@@ -38,8 +38,8 @@ use crate::dht::{DhtError, DhtHandle};
 use crate::network::{NetworkConfig, NetworkPolicy};
 use crate::peer::{
     DialAttempt, DialAttemptId, PeerEndpoint, PeerFailure, PeerObservation, PeerRegistry,
-    PeerRegistryConfig, PeerRegistryError, PeerRegistrySnapshot, PeerSelectionContext,
-    PeerSelector, PeerSource,
+    PeerRegistryConfig, PeerRegistryCounts, PeerRegistryError, PeerRegistrySnapshot,
+    PeerSelectionContext, PeerSelector, PeerSource,
 };
 use crate::peer_socket::{
     self, PeerConnection, PeerSetError, PeerSetEvent, PeerSocketError, PeerSocketSet,
@@ -229,6 +229,8 @@ pub struct SwarmActivitySnapshot {
     pub stalled_peers: usize,
     pub useful_payload_bytes: usize,
     pub observed_payload_rate: usize,
+    pub request_timeout_min_seconds: Option<u64>,
+    pub request_timeout_max_seconds: Option<u64>,
     pub oldest_request_age_seconds: Option<u64>,
     pub next_request_expiry_seconds: Option<u64>,
     pub next_replacement_seconds: Option<u64>,
@@ -301,6 +303,7 @@ pub struct MetadataAcquisitionSnapshot {
 pub struct DownloadDiagnosticSnapshot {
     pub progress: DownloadProgress,
     pub swarm: Option<SwarmActivitySnapshot>,
+    pub content_registry: Option<PeerRegistryCounts>,
     pub metadata: MetadataAcquisitionSnapshot,
 }
 
@@ -330,6 +333,7 @@ struct DownloadControlInner {
     storage_write_delay_millis: AtomicU64,
     activity_sink: Mutex<Option<Arc<dyn DownloadActivitySink>>>,
     last_swarm_activity: Mutex<Option<SwarmActivitySnapshot>>,
+    last_content_registry: Mutex<Option<PeerRegistryCounts>>,
     metadata_diagnostics: Mutex<MetadataDiagnosticState>,
     safe_cancel_state: AtomicUsize,
 }
@@ -380,6 +384,7 @@ impl DownloadControl {
                 storage_write_delay_millis: AtomicU64::new(0),
                 activity_sink: Mutex::new(None),
                 last_swarm_activity: Mutex::new(None),
+                last_content_registry: Mutex::new(None),
                 metadata_diagnostics: Mutex::new(MetadataDiagnosticState::default()),
                 safe_cancel_state: AtomicUsize::new(0),
             }),
@@ -421,6 +426,11 @@ impl DownloadControl {
             .last_swarm_activity
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let content_registry = *self
+            .inner
+            .last_content_registry
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let captured_at = self.diagnostic_elapsed();
         let metadata = {
             let state = self
@@ -449,6 +459,7 @@ impl DownloadControl {
         DownloadDiagnosticSnapshot {
             progress,
             swarm,
+            content_registry,
             metadata,
         }
     }
@@ -814,6 +825,8 @@ impl DownloadControl {
             stalled_peers: snapshot.stalled_peers,
             useful_payload_bytes: snapshot.useful_payload_bytes,
             observed_payload_rate: snapshot.observed_payload_rate,
+            request_timeout_min_seconds: snapshot.request_timeout_min.map(|value| value.as_secs()),
+            request_timeout_max_seconds: snapshot.request_timeout_max.map(|value| value.as_secs()),
             oldest_request_age_seconds: snapshot.oldest_request_age.map(|age| age.as_secs()),
             next_request_expiry_seconds: snapshot
                 .next_request_expiry
@@ -839,6 +852,15 @@ impl DownloadControl {
         if changed {
             self.emit(DownloadActivityEvent::SwarmState(activity));
         }
+    }
+
+    fn observe_content_registry(&self, registry: &PeerRegistry, now: Duration) {
+        *self
+            .inner
+            .last_content_registry
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+            Some(registry.counts(PeerSelectionContext { now }));
     }
 
     fn record_stored(&self, bytes: usize) {
@@ -4033,6 +4055,9 @@ async fn run_selective_swarm_loop(
 
     loop {
         let now = peers.elapsed();
+        download
+            .control
+            .observe_content_registry(&peers.registry, now);
         let expired = download
             .state
             .expire_requests(now)
@@ -5180,6 +5205,23 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         pieces: Arc<Vec<Vec<u8>>>,
         available: Vec<bool>,
     ) {
+        serve_content_peer_with_timeout(
+            listener,
+            info_hash,
+            pieces,
+            available,
+            Duration::from_secs(2),
+        )
+        .await;
+    }
+
+    async fn serve_content_peer_with_timeout(
+        listener: TcpListener,
+        info_hash: [u8; 20],
+        pieces: Arc<Vec<Vec<u8>>>,
+        available: Vec<bool>,
+        io_timeout: Duration,
+    ) {
         let (mut stream, _) = listener.accept().await.expect("accept content peer");
         let mut handshake = [0; HANDSHAKE_LENGTH];
         stream
@@ -5191,8 +5233,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             .write_all(&encode_handshake(info_hash, *b"-RS-SPLIT-0000000000"))
             .await
             .expect("send content handshake");
-        let mut peer =
-            PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(2));
+        let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, io_timeout);
         let mut bitfield = vec![0_u8; available.len().div_ceil(8)];
         for (piece, present) in available.iter().enumerate() {
             if *present {
@@ -5444,6 +5485,25 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         delay: Duration,
         keepalive_interval: Option<Duration>,
     ) {
+        serve_delayed_block_peer_with_timeout(
+            listener,
+            info_hash,
+            payload,
+            delay,
+            keepalive_interval,
+            Duration::from_secs(2),
+        )
+        .await;
+    }
+
+    async fn serve_delayed_block_peer_with_timeout(
+        listener: TcpListener,
+        info_hash: [u8; 20],
+        payload: Vec<u8>,
+        delay: Duration,
+        keepalive_interval: Option<Duration>,
+        io_timeout: Duration,
+    ) {
         let (mut stream, _) = listener.accept().await.expect("accept delayed peer");
         let mut handshake = [0; HANDSHAKE_LENGTH];
         stream
@@ -5455,8 +5515,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             .write_all(&encode_handshake(info_hash, *b"-RS-DELAY--000000000"))
             .await
             .expect("send delayed handshake");
-        let mut peer =
-            PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(2));
+        let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, io_timeout);
         send_message(&mut peer, &PeerMessage::Bitfield(vec![0x80]))
             .await
             .expect("send delayed availability");
@@ -6229,6 +6288,84 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 .await
                 .expect("delayed peer joined")
                 .expect("delayed peer task");
+        }
+        let _ = tokio::fs::remove_file(output).await;
+    }
+
+    #[tokio::test]
+    async fn sampled_stall_moves_a_burst_peers_window_to_a_healthy_peer() {
+        let payload = (0..(8 * MIN_PAYLOAD_ALLOWANCE))
+            .map(|index| ((index * 43 + index / 17) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let info = single_file_info_with_piece_length(&payload, payload.len());
+        let metainfo = Metainfo::from_info_bytes(&info).expect("stall metainfo");
+        let stalled_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind stalled peer");
+        let stalled_address = stalled_listener.local_addr().expect("stalled address");
+        let useful_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind useful peer");
+        let useful_address = useful_listener.local_addr().expect("useful address");
+        let stalled_task = tokio::spawn(serve_delayed_block_peer_with_timeout(
+            stalled_listener,
+            metainfo.info_hash,
+            payload.clone(),
+            Duration::ZERO,
+            None,
+            Duration::from_secs(10),
+        ));
+        let useful_task = tokio::spawn(serve_content_peer_with_timeout(
+            useful_listener,
+            metainfo.info_hash,
+            Arc::new(vec![payload.clone()]),
+            vec![true],
+            Duration::from_secs(10),
+        ));
+        let mut peers = PeerSession::from_endpoint(
+            stalled_address,
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(10)),
+        )
+        .expect("peer session");
+        peers
+            .observe_address(useful_address, PeerSource::Manual)
+            .expect("useful peer");
+        let payload_limit = payload.len();
+        let mut swarm_config = SwarmConfig::for_payload_limit(payload_limit);
+        swarm_config.request_timeout = Duration::from_secs(10);
+        let control = DownloadControl::new();
+        let output = test_path("sampled-stall.bin");
+
+        let report = timeout(
+            Duration::from_secs(7),
+            run_content_download(
+                ContentDownloadConfig {
+                    output_path: output.clone(),
+                    max_buffered_payload_bytes: payload_limit,
+                    swarm_config,
+                    skip_files: Vec::new(),
+                    materialize_files: Vec::new(),
+                },
+                metainfo,
+                control.clone(),
+                None,
+                &mut peers,
+                None,
+            ),
+        )
+        .await
+        .expect("adaptive stall deadline")
+        .expect("healthy peer completed stalled work");
+
+        assert_eq!(report.verified_piece_count, 1);
+        assert_eq!(tokio::fs::read(&output).await.expect("output"), payload);
+        assert!(control.snapshot().requested_bytes > report.bytes_written);
+        for task in [stalled_task, useful_task] {
+            timeout(Duration::from_secs(1), task)
+                .await
+                .expect("peer joined")
+                .expect("peer task");
         }
         let _ = tokio::fs::remove_file(output).await;
     }

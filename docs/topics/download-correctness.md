@@ -112,7 +112,9 @@ piece/block state, request attempts and deadlines, payload reservations,
 storage acceptance, verification, and child-task joins. It schedules across
 up to 64 active pieces and eight peers while tracker and DHT discovery remain
 live. Each connection has a bounded useful-payload-driven request window;
-the torrent payload allowance remains the aggregate authority. Choke,
+the torrent payload allowance remains the aggregate authority. Useful response
+samples derive a two-to-sixty-second connection inactivity deadline; a stall
+releases that generation's window and leaves one probe request. Choke,
 disconnect, expiry, and replacement release only the affected generation's
 requests; valid late payload cannot release newer ownership.
 

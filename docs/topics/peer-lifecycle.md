@@ -5,10 +5,10 @@ Topic: `peer-lifecycle`
 Status: Tactical `017` completed bounded simultaneous dialing, metadata
 acquisition, live content connections, torrent-owned requests, expiry,
 replacement, and failover. Tactical `020` is replacing the static request
-width with a bounded per-connection useful-payload feedback window. Tracker
-and DHT observations remain live while content runs. Endgame duplicates,
-integrity reputation, measured picker policy, incoming connections, and
-persistent peer records remain later work.
+width with a bounded per-connection useful-payload feedback window and sampled
+inactivity deadline. Tracker and DHT observations remain live while content
+runs. Endgame duplicates, integrity reputation, measured picker policy,
+incoming connections, and persistent peer records remain later work.
 
 ## Scope
 

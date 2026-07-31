@@ -227,13 +227,59 @@ math. A loopback 512 KiB peer deliberately buffers the request pipeline and
 proves that the observed queue and engine payload high-water both exceed the
 old four-request ceiling while exact bytes publish and the task joins.
 
-The engine's 105 non-live tests pass with three public tests ignored. The
+At the first checkpoint, the engine's 105 non-live tests passed with three
+public tests ignored. The
 three-run controlled first-piece scenario, mixed healthy/permanently-choked
 16-piece scenario, and full paired controlled comparator all pass. The
 controlled comparator's final RSTorrent snapshot reported a target of nine,
 79,000 accepted useful bytes, exact three-piece publication, and clean
-shutdown. The post-change public first-piece and 50% screens remain in
-progress; this checkpoint does not yet claim live parity.
+shutdown. Public first-piece and 50% evidence was still unmeasured at that
+checkpoint; it did not claim live parity.
+
+The post-change first-piece screen again completed 3/3 for both owners.
+RSTorrent's terminal request targets grew to 21--46 with 344--754 KiB payload
+high-water instead of the old four requests and 64 KiB. Its transfer interval
+from metadata to first piece remained about 0.2 seconds in the two immediate
+discovery runs; the slower run retained two productive connections and still
+completed.
+
+The first three-pair 50% screen completed only 1/3 for RSTorrent and 3/3 for
+libtorrent, so it did not meet the 2/3 functional screen. The productive pair
+is strong evidence for the window owner: RSTorrent reached 50% in 28.14
+seconds versus libtorrent's 27.98 seconds, a 1.006x ratio, with 529 verified
+pieces, a target of 521 requests, 8.68 MiB high-water, and exact cleanup.
+
+The two misses retained only 90 and 101 verified pieces after 300 seconds.
+They ended with two unchoked peers, 712 or 772 outstanding requests, aggregate
+targets of 713 or 777, 11.68 or 12.66 MiB high-water, and no peer classified
+stalled. Their connected peers had previously delivered about 26 MiB and
+grown targets near 500 before ceasing useful output. This rejects the static
+window as the remaining cause and identifies the pinned adaptive
+request-response timeout/snubbing behavior as the next narrow owner.
+
+The second checkpoint records a bounded twenty-sample request-response
+estimator per connection. Before samples, the configured 60-second deadline
+remains unchanged. Once useful blocks establish response timing, inactivity
+uses libtorrent's average-plus-deviation form, rounded and clamped from two
+seconds through the configured ceiling. A detected stall releases that
+generation's whole ordinary window, reduces it to one probe, and permits
+healthy peers to own the missing blocks; stale responses remain safe. Pure
+tests prove the estimator, configured sub-two-second fixture ceiling, full
+window release, reservations, and probe recovery. A real two-peer loopback
+case serves one burst then withholds every later request; another peer
+completes exact publication under the sampled deadline while the unsampled
+ceiling is ten seconds.
+
+Content diagnostics now retain current peer-registry totals, eligible,
+dialing, backed-off, and failure-limited counts separately from the metadata
+snapshot, plus the min/max adaptive timeout. The next live screen can
+therefore distinguish exhausted discovery from stalled connections without
+exposing endpoints.
+
+At the second checkpoint, formatting and warning-denying clippy pass across
+the workspace. The workspace test suite passes with 218 tests, three changing
+public-network tests ignored, and no failures. The controlled mixed-peer and
+paired publication gates also remain green.
 
 ## Non-Goals And Next Boundary
 

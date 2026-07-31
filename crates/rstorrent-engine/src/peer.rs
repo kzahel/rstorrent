@@ -476,24 +476,11 @@ impl PeerRegistry {
 
     pub fn snapshot(&self, context: PeerSelectionContext) -> PeerRegistrySnapshot {
         let selector = PeerSelector;
-        let mut counts = PeerRegistryCounts {
-            total: self.records.len(),
-            ..PeerRegistryCounts::default()
-        };
         let records = self
             .records
             .iter()
             .map(|record| {
                 let eligibility = selector.eligibility(record, context, self.config);
-                match eligibility {
-                    DialEligibility::Eligible => counts.eligible += 1,
-                    DialEligibility::NotConnectable => counts.not_connectable += 1,
-                    DialEligibility::Dialing => counts.dialing += 1,
-                    DialEligibility::Connected => counts.connected += 1,
-                    DialEligibility::Banned => counts.banned += 1,
-                    DialEligibility::Backoff { .. } => counts.backed_off += 1,
-                    DialEligibility::FailureLimit { .. } => counts.failure_limited += 1,
-                }
                 PeerRecordSnapshot {
                     id: record.id,
                     endpoint: record.endpoint,
@@ -510,9 +497,29 @@ impl PeerRegistry {
         PeerRegistrySnapshot {
             captured_at: context.now,
             maximum_records: self.config.max_records,
-            counts,
+            counts: self.counts(context),
             records,
         }
+    }
+
+    pub fn counts(&self, context: PeerSelectionContext) -> PeerRegistryCounts {
+        let selector = PeerSelector;
+        let mut counts = PeerRegistryCounts {
+            total: self.records.len(),
+            ..PeerRegistryCounts::default()
+        };
+        for record in &self.records {
+            match selector.eligibility(record, context, self.config) {
+                DialEligibility::Eligible => counts.eligible += 1,
+                DialEligibility::NotConnectable => counts.not_connectable += 1,
+                DialEligibility::Dialing => counts.dialing += 1,
+                DialEligibility::Connected => counts.connected += 1,
+                DialEligibility::Banned => counts.banned += 1,
+                DialEligibility::Backoff { .. } => counts.backed_off += 1,
+                DialEligibility::FailureLimit { .. } => counts.failure_limited += 1,
+            }
+        }
+        counts
     }
 
     /// Remove one discovery source and discard now-source-less idle records.

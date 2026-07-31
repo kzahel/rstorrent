@@ -376,15 +376,21 @@ Last completed evidence:
 - Tactical `020`'s pre-change first-piece screen completed 3/3 for both
   owners. RSTorrent took only 0.22--0.38 seconds from metadata to first piece,
   but every terminal snapshot remained capped at four requests and 64 KiB
-  with `requestwindowsfull`, confirming sustained width as the next owner.
+  with `requestwindowsfull`, confirming sustained width as the next owner;
+- the adaptive window grew live targets to 21--46 and retained 3/3
+  first-piece completion; and
+- the first 50% screen completed 1/3 for RSTorrent. Its successful pair was
+  28.14 versus 27.98 seconds, while both misses stranded more than 700
+  requests on formerly productive peers without marking them stalled,
+  selecting adaptive request-response inactivity as the next owner.
 
 Next executable action:
 
-1. retain the Tactical `020` pre-change first-piece screen;
-2. retain the post-change paired first-piece screen now in progress;
-3. run the three-pair 50% screen and classify its bounded request, peer, and
-   payload facts; and
-4. adjust only the narrow source-derived owner identified by that evidence
-   before the independent confirmation cohorts.
+1. finish controlled gates for the sampled connection-inactivity owner;
+2. run an owner-only 50% screen with current content-registry and timeout
+   diagnostics;
+3. retain or adjust only the source-derived stall/peer owner it identifies;
+   and
+4. return to alternating 50% confirmation cohorts before full publication.
 
 Human blocker: **none**.

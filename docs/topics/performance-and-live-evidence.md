@@ -285,6 +285,20 @@ four outstanding requests, a 65,536-byte payload high-water mark, and
 older 43.7%-after-900-seconds run, the repeatable internal boundary is the
 static sustained request window rather than initial piece selection.
 
+The first adaptive-window screen completed 3/3 first-piece pairs and grew the
+live RSTorrent request target to 21--46 with 344--754 KiB high-water. The next
+three-pair 50% screen classified one `both_reached` and two `reference_only`.
+The successful RSTorrent run reached 50% in 28.14 seconds versus 27.98 for
+libtorrent (1.006x), verifying 529 pieces under an 8.68 MiB high-water mark.
+
+The two RSTorrent timeouts stopped at 90 and 101 pieces. At 300 seconds each
+still had two unchoked peers, 712 or 772 outstanding requests, 11.68 or 12.66
+MiB high-water, and no stalled peer despite no further useful completion.
+Those peers had delivered about 26 MiB and grown near the 500-request cap.
+This is source-aligned evidence for adaptive connection inactivity detection,
+not for reducing the now-proven healthy-peer window. All three libtorrent runs
+reached 50% in 25.06--27.98 seconds with 16--22 peers at their milestones.
+
 ## Result Classification
 
 Classify each paired attempt before interpreting speed:

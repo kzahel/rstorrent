@@ -21,6 +21,8 @@ pub const DEFAULT_REQUEST_QUEUE_TIME: Duration = Duration::from_secs(3);
 const MIN_HEALTHY_REQUESTS_PER_CONNECTION: usize = 2;
 const REQUEST_RATE_SAMPLE_INTERVAL: Duration = Duration::from_secs(1);
 const SLOW_START_RATE_SLACK_BYTES: usize = 5_000;
+const MAX_REQUEST_TIME_SAMPLES: usize = 20;
+const MIN_ADAPTIVE_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ConnectionId(u64);
@@ -301,6 +303,8 @@ pub struct SwarmSnapshot {
     pub stalled_peers: usize,
     pub useful_payload_bytes: usize,
     pub observed_payload_rate: usize,
+    pub request_timeout_min: Option<Duration>,
+    pub request_timeout_max: Option<Duration>,
     pub oldest_request_age: Option<Duration>,
     pub next_request_expiry: Option<Duration>,
     pub next_replacement_at: Option<Duration>,
@@ -339,6 +343,8 @@ struct RequestWindow {
     previous_payload_rate: Option<usize>,
     observed_payload_rate: usize,
     useful_payload_bytes: usize,
+    last_payload_at: Option<Duration>,
+    request_time_samples: VecDeque<Duration>,
 }
 
 impl RequestWindow {
@@ -351,6 +357,8 @@ impl RequestWindow {
             previous_payload_rate: None,
             observed_payload_rate: 0,
             useful_payload_bytes: 0,
+            last_payload_at: None,
+            request_time_samples: VecDeque::new(),
         }
     }
 
@@ -382,8 +390,19 @@ impl RequestWindow {
         self.sample_payload_bytes = 0;
     }
 
-    fn accepted_payload(&mut self, now: Duration, length: usize, config: SwarmConfig) {
+    fn accepted_payload(
+        &mut self,
+        now: Duration,
+        length: usize,
+        request_issued_at: Option<Duration>,
+        config: SwarmConfig,
+    ) {
         self.refresh(now, config);
+        if let Some(issued_at) = request_issued_at {
+            let response_started_at = self.last_payload_at.unwrap_or(issued_at).max(issued_at);
+            self.record_request_time(now.saturating_sub(response_started_at));
+        }
+        self.last_payload_at = Some(now);
         self.sample_payload_bytes = self.sample_payload_bytes.saturating_add(length);
         self.useful_payload_bytes = self.useful_payload_bytes.saturating_add(length);
         match self.phase {
@@ -409,6 +428,54 @@ impl RequestWindow {
         self.sample_payload_bytes = 0;
         self.previous_payload_rate = None;
         self.observed_payload_rate = 0;
+        self.last_payload_at = None;
+    }
+
+    fn record_request_time(&mut self, request_time: Duration) {
+        if self.request_time_samples.len() == MAX_REQUEST_TIME_SAMPLES {
+            self.request_time_samples.pop_front();
+        }
+        self.request_time_samples.push_back(request_time);
+    }
+
+    fn request_timeout(&self, config: SwarmConfig) -> Duration {
+        if self.request_time_samples.is_empty() {
+            return config.request_timeout;
+        }
+        let sample_count = self.request_time_samples.len() as u128;
+        let total_millis = self
+            .request_time_samples
+            .iter()
+            .map(Duration::as_millis)
+            .fold(0_u128, u128::saturating_add);
+        let average = total_millis / sample_count;
+        let timeout_millis = if self.request_time_samples.len() == 1 {
+            average.saturating_add(average / 5)
+        } else {
+            let deviation = self
+                .request_time_samples
+                .iter()
+                .map(|sample| sample.as_millis().abs_diff(average))
+                .fold(0_u128, u128::saturating_add)
+                / sample_count;
+            average.saturating_add(deviation.saturating_mul(4))
+        };
+        let rounded_millis = timeout_millis
+            .saturating_add(999)
+            .checked_div(1_000)
+            .unwrap_or(0)
+            .saturating_mul(1_000);
+        let maximum = config.request_timeout.as_millis();
+        let minimum = MIN_ADAPTIVE_REQUEST_TIMEOUT.as_millis().min(maximum);
+        let bounded = rounded_millis.clamp(minimum, maximum);
+        Duration::from_millis(u64::try_from(bounded).unwrap_or(u64::MAX))
+    }
+
+    fn stall_deadline(&self, oldest_request: Duration, config: SwarmConfig) -> Duration {
+        self.last_payload_at
+            .unwrap_or(oldest_request)
+            .checked_add(self.request_timeout(config))
+            .unwrap_or(Duration::MAX)
     }
 }
 
@@ -690,17 +757,38 @@ impl SwarmState {
                     .attempts
                     .iter()
                     .find(|attempt| attempt.id == attempt_id)
-                    .filter(|attempt| {
-                        now.saturating_sub(attempt.issued_at) >= self.config.request_timeout
-                    })
                     .map(|attempt| (*key, *attempt)),
                 _ => None,
             })
             .collect::<Vec<_>>();
-        let mut stalled_connections = BTreeSet::new();
+
+        let mut stalled_connections = self
+            .connections
+            .iter()
+            .filter_map(|(id, connection)| {
+                let oldest = active
+                    .iter()
+                    .filter(|(_, attempt)| attempt.connection == *id)
+                    .map(|(_, attempt)| attempt.issued_at)
+                    .min()?;
+                (now >= connection
+                    .request_window
+                    .stall_deadline(oldest, self.config))
+                .then_some(*id)
+            })
+            .collect::<BTreeSet<_>>();
+
         for (block, attempt) in active {
+            let expired_by_connection = stalled_connections.contains(&attempt.connection);
+            let expired_by_request =
+                now.saturating_sub(attempt.issued_at) >= self.config.request_timeout;
+            if !expired_by_connection && !expired_by_request {
+                continue;
+            }
+            if expired_by_request {
+                stalled_connections.insert(attempt.connection);
+            }
             self.terminate_requested(block, attempt.id, RequestDisposition::Expired)?;
-            stalled_connections.insert(attempt.connection);
             expired.push(ExpiredRequest {
                 attempt: attempt.id,
                 connection: attempt.connection,
@@ -743,13 +831,14 @@ impl SwarmState {
         let Some(evidence_id) = evidence else {
             return Ok(ReceiveDisposition::Unsolicited);
         };
-        let active_connection = state
+        let active_attempt = state
             .attempts
             .iter()
             .find(|attempt| attempt.id == active_id)
-            .ok_or(SwarmError::Invariant("active request attempt is missing"))?
-            .connection;
+            .ok_or(SwarmError::Invariant("active request attempt is missing"))?;
+        let active_connection = active_attempt.connection;
         let late = active_connection != connection;
+        let request_issued_at = (!late).then_some(active_attempt.issued_at);
         let superseded = late.then_some(active_id);
         {
             let state = self
@@ -775,7 +864,7 @@ impl SwarmState {
         let config = self.config;
         self.connection_mut(connection)?
             .request_window
-            .accepted_payload(now, block.length as usize, config);
+            .accepted_payload(now, block.length as usize, request_issued_at, config);
         Ok(ReceiveDisposition::Accept {
             evidence: evidence_id,
             superseded,
@@ -950,6 +1039,7 @@ impl SwarmState {
         let mut verified = 0;
         let mut oldest_issued = None;
         let mut next_expiry = None;
+        let mut oldest_by_connection = BTreeMap::new();
         for block in self.blocks.values() {
             match block.phase {
                 BlockPhase::Missing => missing += 1,
@@ -964,6 +1054,12 @@ impl SwarmState {
                             Some(oldest_issued.map_or(attempt.issued_at, |oldest: Duration| {
                                 oldest.min(attempt.issued_at)
                             }));
+                        oldest_by_connection
+                            .entry(attempt.connection)
+                            .and_modify(|oldest: &mut Duration| {
+                                *oldest = (*oldest).min(attempt.issued_at);
+                            })
+                            .or_insert(attempt.issued_at);
                         let deadline = attempt
                             .issued_at
                             .checked_add(self.config.request_timeout)
@@ -975,6 +1071,22 @@ impl SwarmState {
                 BlockPhase::Writing { .. } => writing += 1,
                 BlockPhase::Received => received += 1,
                 BlockPhase::Verified => verified += 1,
+            }
+        }
+        let mut request_timeout_min = None;
+        let mut request_timeout_max = None;
+        for (id, connection) in &self.connections {
+            let timeout = connection.request_window.request_timeout(self.config);
+            request_timeout_min =
+                Some(request_timeout_min.map_or(timeout, |current: Duration| current.min(timeout)));
+            request_timeout_max =
+                Some(request_timeout_max.map_or(timeout, |current: Duration| current.max(timeout)));
+            if let Some(&oldest) = oldest_by_connection.get(id) {
+                let deadline = connection
+                    .request_window
+                    .stall_deadline(oldest, self.config);
+                next_expiry =
+                    Some(next_expiry.map_or(deadline, |next: Duration| next.min(deadline)));
             }
         }
         SwarmSnapshot {
@@ -1025,6 +1137,8 @@ impl SwarmState {
                 .values()
                 .map(|connection| connection.request_window.observed_payload_rate)
                 .sum(),
+            request_timeout_min,
+            request_timeout_max,
             oldest_request_age: oldest_issued.map(|issued| now.saturating_sub(issued)),
             next_request_expiry: next_expiry,
             next_replacement_at: self.next_replacement_at(),
@@ -1587,9 +1701,19 @@ mod tests {
     fn slow_start_settles_on_a_bounded_three_second_rate_target() {
         let config = SwarmConfig::for_payload_limit(64 * BLOCK as usize);
         let mut window = RequestWindow::new(Duration::ZERO, config.initial_requests_per_connection);
-        window.accepted_payload(Duration::from_millis(100), BLOCK as usize, config);
+        window.accepted_payload(
+            Duration::from_millis(100),
+            BLOCK as usize,
+            Some(Duration::ZERO),
+            config,
+        );
         assert_eq!(window.target, 5);
-        window.accepted_payload(Duration::from_millis(1_100), BLOCK as usize, config);
+        window.accepted_payload(
+            Duration::from_millis(1_100),
+            BLOCK as usize,
+            Some(Duration::from_secs(1)),
+            config,
+        );
         assert_eq!(window.phase, RequestWindowPhase::SlowStart);
         assert_eq!(window.target, 6);
 
@@ -1601,6 +1725,71 @@ mod tests {
             rate_target(usize::MAX, config),
             DEFAULT_MAX_REQUESTS_PER_CONNECTION
         );
+    }
+
+    #[test]
+    fn useful_response_samples_bound_connection_inactivity_timeout() {
+        let config = SwarmConfig::for_payload_limit(16 * BLOCK as usize);
+        let mut window = RequestWindow::new(Duration::ZERO, config.initial_requests_per_connection);
+        assert_eq!(window.request_timeout(config), DEFAULT_REQUEST_TIMEOUT);
+        window.accepted_payload(
+            Duration::from_millis(100),
+            BLOCK as usize,
+            Some(Duration::ZERO),
+            config,
+        );
+        assert_eq!(window.request_timeout(config), Duration::from_secs(2));
+        window.accepted_payload(
+            Duration::from_millis(200),
+            BLOCK as usize,
+            Some(Duration::from_millis(100)),
+            config,
+        );
+        assert_eq!(window.request_timeout(config), Duration::from_secs(2));
+
+        let mut short_config = config;
+        short_config.request_timeout = Duration::from_millis(75);
+        assert_eq!(
+            window.request_timeout(short_config),
+            Duration::from_millis(75)
+        );
+    }
+
+    #[test]
+    fn sampled_connection_stall_releases_its_whole_window() {
+        let mut state = state(1, vec![plan(0, 16)], 16);
+        add_peer(&mut state, connection(1), &[0], false);
+        let initial = state.schedule(Duration::ZERO).expect("initial");
+        state
+            .receive_block(
+                initial[0].connection,
+                initial[0].block,
+                Duration::from_millis(100),
+            )
+            .expect("first response");
+        state
+            .finish_write(initial[0].block, true, Duration::from_millis(100))
+            .expect("first stored");
+        let refill = state
+            .schedule(Duration::from_millis(100))
+            .expect("expanded refill");
+        assert_eq!(refill.len(), 2);
+        assert!(
+            state
+                .expire_requests(Duration::from_millis(2_099))
+                .expect("before adaptive deadline")
+                .is_empty()
+        );
+        let expired = state
+            .expire_requests(Duration::from_millis(2_100))
+            .expect("adaptive deadline");
+        assert_eq!(expired.len(), 5);
+        let snapshot = state.snapshot(Duration::from_millis(2_100));
+        assert_eq!(snapshot.requested_blocks, 0);
+        assert_eq!(snapshot.payload_reserved, 0);
+        assert_eq!(snapshot.request_target_total, 1);
+        assert_eq!(snapshot.stalled_peers, 1);
+        assert_eq!(snapshot.request_timeout_min, Some(Duration::from_secs(2)));
     }
 
     #[test]

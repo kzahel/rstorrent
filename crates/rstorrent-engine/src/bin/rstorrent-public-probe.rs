@@ -284,6 +284,11 @@ struct Diagnostics {
     metadata_hash_failures: usize,
     metadata_hash_failure_contributors: usize,
     metadata_attempt_details: Vec<MetadataAttemptDiagnostics>,
+    content_candidate_count: Option<usize>,
+    content_eligible_candidates: Option<usize>,
+    content_dialing_candidates: Option<usize>,
+    content_backed_off_candidates: Option<usize>,
+    content_failure_limited_candidates: Option<usize>,
     connected_peers: Option<usize>,
     unchoked_peers: Option<usize>,
     missing_blocks: Option<usize>,
@@ -295,6 +300,8 @@ struct Diagnostics {
     stalled_peers: Option<usize>,
     useful_payload_bytes: Option<usize>,
     observed_payload_rate: Option<usize>,
+    request_timeout_min_seconds: Option<u64>,
+    request_timeout_max_seconds: Option<u64>,
     no_request_reason: Option<String>,
     requested_bytes: usize,
     received_bytes: usize,
@@ -581,6 +588,7 @@ fn result(
 
 fn diagnostic_result(snapshot: &DownloadDiagnosticSnapshot) -> Diagnostics {
     let registry = snapshot.metadata.registry.as_ref();
+    let content_registry = snapshot.content_registry.as_ref();
     let swarm = snapshot.swarm.as_ref();
     Diagnostics {
         metadata_phase: format!("{:?}", snapshot.metadata.phase).to_ascii_lowercase(),
@@ -617,6 +625,11 @@ fn diagnostic_result(snapshot: &DownloadDiagnosticSnapshot) -> Diagnostics {
                 terminal_detail: attempt.terminal_detail.clone(),
             })
             .collect(),
+        content_candidate_count: content_registry.map(|value| value.total),
+        content_eligible_candidates: content_registry.map(|value| value.eligible),
+        content_dialing_candidates: content_registry.map(|value| value.dialing),
+        content_backed_off_candidates: content_registry.map(|value| value.backed_off),
+        content_failure_limited_candidates: content_registry.map(|value| value.failure_limited),
         connected_peers: swarm.map(|value| value.connected_peers),
         unchoked_peers: swarm.map(|value| value.unchoked_peers),
         missing_blocks: swarm.map(|value| value.missing_blocks),
@@ -628,6 +641,8 @@ fn diagnostic_result(snapshot: &DownloadDiagnosticSnapshot) -> Diagnostics {
         stalled_peers: swarm.map(|value| value.stalled_peers),
         useful_payload_bytes: swarm.map(|value| value.useful_payload_bytes),
         observed_payload_rate: swarm.map(|value| value.observed_payload_rate),
+        request_timeout_min_seconds: swarm.and_then(|value| value.request_timeout_min_seconds),
+        request_timeout_max_seconds: swarm.and_then(|value| value.request_timeout_max_seconds),
         no_request_reason: swarm
             .and_then(|value| value.no_request_reason)
             .map(|value| format!("{value:?}").to_ascii_lowercase()),
