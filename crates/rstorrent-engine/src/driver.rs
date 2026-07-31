@@ -2829,12 +2829,9 @@ async fn run_content_download(
                 Err(DownloadError::Metainfo(MetainfoError::Unsupported(
                     "descriptor diagnostic execution requires multi-file metainfo",
                 )))
-            } else if metainfo.piece_count() != 1
-                || !config.skip_files.is_empty()
-                || !config.materialize_files.is_empty()
-            {
+            } else if !config.skip_files.is_empty() || !config.materialize_files.is_empty() {
                 Err(DownloadError::Metainfo(MetainfoError::Unsupported(
-                    "multi-piece single-file or selected single-file diagnostic execution",
+                    "selected single-file diagnostic execution",
                 )))
             } else {
                 run_single_download(config, metainfo, control, peers).await
@@ -2858,15 +2855,23 @@ async fn run_single_download(
         .map_err(|_| DownloadError::Metainfo(MetainfoError::InvalidField("info.length")))?;
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let selection = FileSelection::new(&layout, &[]).map_err(DownloadError::Layout)?;
-    let ranges = layout
-        .request_ranges(0, &selection)
-        .map_err(DownloadError::Layout)?;
+    let piece_count = u32::try_from(layout.piece_count())
+        .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+    let mut plans = Vec::with_capacity(layout.piece_count());
+    for piece in 0..piece_count {
+        plans.push((
+            piece,
+            layout
+                .request_ranges(piece, &selection)
+                .map_err(DownloadError::Layout)?,
+        ));
+    }
     let mut storage = StagingFile::create(config.output_path.clone(), metainfo.total_length)
         .await
         .map_err(DownloadError::Storage)?;
     let download = ContentSwarmDownload::new(
         config.swarm_config,
-        vec![(0, ranges)],
+        plans,
         ContentStorage::Single(&mut storage),
         &metainfo,
         &layout,
@@ -2876,26 +2881,28 @@ async fn run_single_download(
     let completed = download_content_swarm(peers, download).await?;
     let piece = completed
         .last_piece
-        .expect("completed single-piece swarm has a verified piece");
+        .expect("completed single-file swarm has a verified piece");
     let block_count = completed.total_blocks;
+    let bytes_written = completed.total_bytes;
+    let selected_written_bytes = completed.selected_written_bytes;
     let payload_high_water = completed.state.snapshot(peers.elapsed()).payload_high_water;
     drop(completed);
     storage.finalize().await.map_err(DownloadError::Storage)?;
     Ok(DownloadReport {
         info_hash: metainfo.info_hash,
         piece_hash: piece.hash,
-        bytes_written: piece.length as usize,
+        bytes_written,
         block_count,
         payload_limit: config.max_buffered_payload_bytes,
         payload_high_water,
         verification_buffer: VERIFICATION_CHUNK_LENGTH,
-        piece_count: 1,
-        verified_piece_count: 1,
+        piece_count: layout.piece_count(),
+        verified_piece_count: layout.piece_count(),
         skipped_piece_count: 0,
         selected_file_bytes: metainfo.total_length,
         skipped_file_bytes: 0,
         padding_bytes: 0,
-        selected_written_bytes: piece.length as usize,
+        selected_written_bytes,
         part_written_bytes: 0,
         materialized_bytes: 0,
         part_slots_before_materialization: 0,
@@ -3042,11 +3049,14 @@ impl<'a> ContentSwarmDownload<'a> {
                         self.control.wait_before_storage().await;
                         let block_length = block.len();
                         let write_result = match &mut self.storage {
-                            ContentStorage::Single(storage) => storage
-                                .write_block(u64::from(begin), block)
-                                .await
-                                .map(|()| (block_length, 0))
-                                .map_err(DownloadError::Storage),
+                            ContentStorage::Single(storage) => {
+                                let offset = single_file_offset(self.layout, index, begin)?;
+                                storage
+                                    .write_block(offset, block)
+                                    .await
+                                    .map(|()| (block_length, 0))
+                                    .map_err(DownloadError::Storage)
+                            }
                             ContentStorage::Selective(storage) => storage
                                 .write_block(index, begin, block)
                                 .await
@@ -3102,10 +3112,13 @@ impl<'a> ContentSwarmDownload<'a> {
             .piece_length_at(piece)
             .map_err(DownloadError::Layout)?;
         let actual = match &mut self.storage {
-            ContentStorage::Single(storage) => storage
-                .hash_piece(0, piece_length)
-                .await
-                .map_err(DownloadError::Storage)?,
+            ContentStorage::Single(storage) => {
+                let offset = single_file_offset(self.layout, piece, 0)?;
+                storage
+                    .hash_piece(offset, piece_length)
+                    .await
+                    .map_err(DownloadError::Storage)?
+            }
             ContentStorage::Selective(storage) => storage
                 .hash_piece(piece)
                 .await
@@ -3149,6 +3162,17 @@ impl<'a> ContentSwarmDownload<'a> {
             .emit(DownloadActivityEvent::PieceVerified { piece_index: piece });
         Ok(())
     }
+}
+
+fn single_file_offset(
+    layout: &TorrentLayout,
+    piece: u32,
+    begin: u32,
+) -> Result<u64, DownloadError> {
+    u64::from(piece)
+        .checked_mul(u64::from(layout.piece_length()))
+        .and_then(|offset| offset.checked_add(u64::from(begin)))
+        .ok_or(DownloadError::Layout(LayoutError::ArithmeticOverflow))
 }
 
 fn decode_validated_availability(bitfield: &[u8], piece_count: usize) -> Option<Vec<bool>> {
@@ -4668,6 +4692,72 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
     }
 
     #[tokio::test]
+    async fn multi_piece_single_file_uses_torrent_offsets_and_publishes() {
+        let payload = (0..(3 * 16 * 1024 + 731))
+            .map(|index| ((index * 47 + index / 19) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let info = single_file_info_with_piece_length(&payload, 32 * 1024);
+        let metainfo = Metainfo::from_info_bytes(&info).expect("multi-piece single-file metainfo");
+        let pieces = payload
+            .chunks(32 * 1024)
+            .map(<[u8]>::to_vec)
+            .collect::<Vec<_>>();
+        assert_eq!(pieces.len(), 2);
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind multi-piece peer");
+        let address = listener.local_addr().expect("multi-piece peer address");
+        let peer_task = tokio::spawn(serve_content_peer(
+            listener,
+            metainfo.info_hash,
+            Arc::new(pieces),
+            vec![true; metainfo.piece_count()],
+        ));
+        let output = test_path("multi-piece-single-file.bin");
+        let mut peers = PeerSession::from_endpoint(
+            address,
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(2)),
+        )
+        .expect("peer session");
+
+        let report = timeout(
+            Duration::from_secs(3),
+            run_content_download(
+                ContentDownloadConfig {
+                    output_path: output.clone(),
+                    max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                    swarm_config: SwarmConfig::for_payload_limit(2 * MIN_PAYLOAD_ALLOWANCE),
+                    skip_files: Vec::new(),
+                    materialize_files: Vec::new(),
+                },
+                metainfo,
+                DownloadControl::new(),
+                None,
+                &mut peers,
+                None,
+            ),
+        )
+        .await
+        .expect("bounded multi-piece single-file download")
+        .expect("multi-piece single-file completion");
+
+        assert_eq!(report.piece_count, 2);
+        assert_eq!(report.verified_piece_count, 2);
+        assert_eq!(report.bytes_written, payload.len());
+        assert_eq!(report.selected_written_bytes, payload.len());
+        assert_eq!(
+            tokio::fs::read(&output).await.expect("published file"),
+            payload
+        );
+        timeout(Duration::from_secs(1), peer_task)
+            .await
+            .expect("multi-piece peer joined")
+            .expect("multi-piece peer task");
+        let _ = tokio::fs::remove_file(output).await;
+    }
+
+    #[tokio::test]
     async fn multi_peer_split_availability_completes_and_joins_every_socket() {
         let first = vec![0x31; 16 * 1024];
         let second = vec![0x72; 16 * 1024];
@@ -5032,13 +5122,23 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
     }
 
     fn single_file_info(payload: &[u8]) -> Vec<u8> {
-        let piece_hash: [u8; 20] = Sha1::digest(payload).into();
+        single_file_info_with_piece_length(payload, 16 * 1024)
+    }
+
+    fn single_file_info_with_piece_length(payload: &[u8], piece_length: usize) -> Vec<u8> {
+        assert!(piece_length > 0);
+        let piece_hashes = payload
+            .chunks(piece_length)
+            .flat_map(|piece| Sha1::digest(piece).to_vec())
+            .collect::<Vec<_>>();
         let mut info = format!(
-            "d6:lengthi{}e4:name1:x12:piece lengthi16384e6:pieces20:",
-            payload.len()
+            "d6:lengthi{}e4:name1:x12:piece lengthi{}e6:pieces{}:",
+            payload.len(),
+            piece_length,
+            piece_hashes.len()
         )
         .into_bytes();
-        info.extend_from_slice(&piece_hash);
+        info.extend_from_slice(&piece_hashes);
         info.push(b'e');
         info
     }

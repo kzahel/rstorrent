@@ -197,6 +197,8 @@ def build_diagnostic(repository: Path) -> Path:
 def create_fixture(
     run_directory: Path,
     config: ScenarioConfig,
+    *,
+    require_single_piece: bool = True,
 ) -> tuple[Path, Path, Path, str, lt.torrent_info]:
     seed_directory = run_directory / "seed"
     seed_directory.mkdir()
@@ -215,7 +217,7 @@ def create_fixture(
     torrent_path.write_bytes(bytes(lt.bencode(creator.generate())))
     torrent_info = lt.torrent_info(str(torrent_path))
 
-    if torrent_info.num_pieces() != 1:
+    if require_single_piece and torrent_info.num_pieces() != 1:
         raise ScenarioFailure(
             f"fixture has {torrent_info.num_pieces()} pieces instead of one"
         )

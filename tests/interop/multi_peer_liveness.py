@@ -32,7 +32,7 @@ from first_verified_piece import (
 MIXED_CONFIG = ScenarioConfig(
     name="mixed-multi-peer",
     payload_size=1024 * 1024,
-    piece_size=1024 * 1024,
+    piece_size=64 * 1024,
     payload_allowance=DEFAULT_PAYLOAD_ALLOWANCE,
     diagnostic_timeout_seconds=15,
     process_timeout_seconds=20,
@@ -59,9 +59,10 @@ def bencode(value: int | bytes | dict[bytes, object]) -> bytes:
 class AdversePeer:
     """Serve valid metadata, advertise the piece, and never unchoke."""
 
-    def __init__(self, info_hash: bytes, info: bytes) -> None:
+    def __init__(self, info_hash: bytes, info: bytes, piece_count: int) -> None:
         self.info_hash = info_hash
         self.info = info
+        self.piece_count = piece_count
         self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.listener.bind(("127.0.0.1", 0))
@@ -141,7 +142,10 @@ class AdversePeer:
             + self.info_hash
             + PEER_ID
         )
-        self._send_frame(connection, 5, b"\x80")
+        bitfield = bytearray([0xFF] * ((self.piece_count + 7) // 8))
+        if self.piece_count % 8:
+            bitfield[-1] &= 0xFF << (8 - self.piece_count % 8)
+        self._send_frame(connection, 5, bytes(bitfield))
 
         if supports_extensions:
             while True:
@@ -216,11 +220,11 @@ def run(repository: Path) -> None:
     try:
         binary = build_diagnostic(repository)
         torrent_path, seed_directory, payload_path, expected_hash, torrent_info = (
-            create_fixture(run_path, MIXED_CONFIG)
+            create_fixture(run_path, MIXED_CONFIG, require_single_piece=False)
         )
         info = bytes(torrent_info.info_section())
         info_hash = bytes.fromhex(str(torrent_info.info_hashes().v1))
-        adverse = AdversePeer(info_hash, info)
+        adverse = AdversePeer(info_hash, info, torrent_info.num_pieces())
         adverse.start()
 
         session = create_session()
@@ -258,8 +262,14 @@ def run(repository: Path) -> None:
             )
         fields = parse_diagnostic(completed.stdout, MIXED_CONFIG)
         actual_hash = compare_payloads(payload_path, output_path)
-        if actual_hash != expected_hash or fields["sha1"] != expected_hash:
+        if actual_hash != expected_hash:
             raise ScenarioFailure("mixed swarm published unexpected payload bytes")
+        piece_hashes = {
+            bytes(torrent_info.hash_for_piece(index)).hex()
+            for index in range(torrent_info.num_pieces())
+        }
+        if fields["sha1"] not in piece_hashes:
+            raise ScenarioFailure("mixed swarm reported an unknown verified piece hash")
         if fields["info_hash"] != info_hash.hex():
             raise ScenarioFailure("mixed swarm reported the wrong info hash")
         payload_uploaded = handle.status().total_payload_upload
