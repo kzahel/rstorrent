@@ -85,10 +85,9 @@ evidence.
 ### Now
 
 **Torrent-owned metadata acquisition.** Use pinned `ut_metadata` behavior and
-tests to replace independent per-peer full acquisition with bounded cross-peer
-block ownership, reassignment, attribution, and hash recovery. Validate the
-owner through deterministic hostile-peer cases, controlled interop, and the
-paired metadata cohorts before moving to sustained content transfer.
+tests to validate the new bounded cross-peer block owner, reassignment,
+attribution, and hash recovery through the remaining corrupt-source runtime
+case and paired metadata cohorts before moving to sustained content transfer.
 
 ### Next
 
@@ -119,7 +118,7 @@ does not.
 | --- | --- | --- | --- | --- |
 | Bounded bencode and v1 info dictionaries | Implemented | deterministic, interop | This is not complete outer `.torrent` ingestion; v2 and hybrid info dictionaries are rejected. | [`product-direction`](product-direction.md) |
 | Product add from a v1 magnet | Implemented | deterministic, runtime, interop, web, AVD, physical | Only a v1 `btih` identity and supported magnet fields survive canonicalization. | [`client-persistence`](client-persistence.md) |
-| BEP 9 metadata download | Implemented | deterministic, runtime, interop, live | Up to three peers are coordinated, acquisition is inspectable, and the first hash-verified result wins; multi-source block assembly is deliberately absent. | [`peer-lifecycle`](peer-lifecycle.md) |
+| BEP 9 metadata download | Implemented | deterministic, runtime, interop, live | One bounded torrent owner assembles blocks across up to eight workers and recovers from expiry, rejection, and hash failure; public parity confirmation remains. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Bounded diagnostic metadata upload | Implemented | deterministic, interop | It is not a general incoming listener or payload seeding service. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Product add from a `.torrent` file | Absent | deterministic parser only | The application command accepts magnets only and does not retain outer announce fields. | [`application-control`](application-control.md) |
 | v2 and hybrid identity, metadata, and hashing | Absent | deterministic rejection | BEP 52 requires a separate integrity and storage design. | [`protocol-support`](protocol-support.md) |
@@ -143,7 +142,7 @@ does not.
 | --- | --- | --- | --- | --- |
 | Bounded peer registry and source merging | Implemented | deterministic, runtime | Records are volatile and peer-ID duplicate resolution is absent. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Deterministic dial selection and guarded attempts | Implemented | deterministic, runtime | Selection is intentionally basic; peer-ID duplicate resolution and measured scoring are absent. | [`peer-lifecycle`](peer-lifecycle.md) |
-| Pre-content peer failover | Implemented | runtime, interop | Bounded parallel metadata peers are supported, but metadata blocks are not assembled across sources. | [`peer-lifecycle`](peer-lifecycle.md) |
+| Pre-content peer failover | Implemented | deterministic, runtime, interop | Bounded parallel metadata peers share one block owner; public candidate quality and latency remain under comparison. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Multiple simultaneous live peers | Implemented | deterministic, runtime, interop | Eight established and three pending are torrent-local defaults; no session-wide connection budget exists. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Transfer request ownership and failover | Implemented | deterministic, runtime, interop | Ordinary blocks have one generation and expiry owner; bounded endgame duplicates are absent. | [`download-correctness`](download-correctness.md) |
 | Incoming peer connections | Absent | diagnostic metadata listener only | No bound product listen port, accept budget, torrent routing, NAT mapping, or shutdown policy exists; this is lower priority than correct outbound downloading. | [`peer-lifecycle`](peer-lifecycle.md) |

@@ -314,10 +314,11 @@ A subsequent ten-run tracker-only and ten-run trackerless-DHT cohort completed
 8/10 and 7/10 respectively. The two tracker timeouts each received two full
 16 KiB metadata blocks across four requests but no verified dictionary. The
 three DHT timeouts discovered 29–83 candidates and attempted 23–38 peers but
-sent zero metadata requests. The next depth work should therefore retain
-per-source block identity and terminal negotiation detail across cohorts, then
-separate candidate ordering, connection/extension success, retry cadence, and
-single-source metadata assembly before broadening discovery protocols.
+sent zero metadata requests. Tactical `019` responds by replacing independent
+per-peer dictionaries with one torrent-owned block table. It retains accepted
+sources and request history, reassigns stalled or disconnected blocks, and can
+complete from disjoint peer contributions. Public cohorts still need to
+separate assembly ownership from candidate and negotiation quality.
 
 Tactical `013` removed the implicit loopback preference and restriction.
 Desktop and Android product owners explicitly use `Online`; diagnostic and
@@ -335,9 +336,14 @@ replacement, no-alternative waiting, and cancellation. Pinned libtorrent
 participates in a verified 16-piece completion while a scripted connected
 peer remains choked.
 
-Metadata acquisition also keeps up to three dial/negotiation work items in
-flight, continues tracker or DHT discovery, preserves the first hash-verified
-connection for content, and cooperatively cancels and joins losing work.
+Metadata acquisition now keeps up to eight dial/negotiation work items in
+flight, continues tracker or DHT discovery, and gives them one bounded
+torrent-owned BEP 9 coordinator. Each peer receives at most two requests;
+ordinary assignments are unique for three seconds, after which untried peers
+are preferred. Disjoint peers can complete one dictionary, disconnect/reject
+releases work, and a hash-invalid generation resets with contributor
+attribution. The worker delivering the final hash-valid block is preserved for
+content while losing work is cooperatively canceled and joined.
 
 `DownloadControl::diagnostic_snapshot` now exposes a bounded read-only peer
 registry table and active/recent metadata attempts. Initial BEP 10 handshakes

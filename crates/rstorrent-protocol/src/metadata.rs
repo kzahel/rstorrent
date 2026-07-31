@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
@@ -15,6 +15,35 @@ pub const MAX_METADATA_LENGTH: usize = 1024 * 1024;
 pub const MAX_METADATA_BLOCKS: usize = MAX_METADATA_LENGTH / METADATA_BLOCK_LENGTH;
 pub const MAX_METADATA_REQUESTS_IN_FLIGHT: usize = 2;
 pub const MAX_METADATA_UPLOAD_REQUESTS: usize = 256;
+pub const MAX_TORRENT_METADATA_PEERS: usize = 32;
+pub const METADATA_ASSIGNMENT_TIMEOUT_MILLIS: u64 = 3_000;
+pub const METADATA_REJECT_COOLDOWN_MILLIS: u64 = 20_000;
+pub const METADATA_HASH_FAILURE_COOLDOWN_MILLIS: u64 = 20_000;
+pub const METADATA_SINGLE_BLOCK_HASH_FAILURE_COOLDOWN_MILLIS: u64 = 5 * 60 * 1_000;
+
+/// A caller-supplied monotonic time for deterministic metadata scheduling.
+///
+/// The value has no wall-clock meaning. Runtime owners convert their elapsed
+/// monotonic clock to milliseconds at the protocol boundary.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct MetadataInstant(u64);
+
+impl MetadataInstant {
+    pub const ZERO: Self = Self(0);
+    pub const MAX: Self = Self(u64::MAX);
+
+    pub const fn from_millis(millis: u64) -> Self {
+        Self(millis)
+    }
+
+    pub const fn as_millis(self) -> u64 {
+        self.0
+    }
+
+    const fn saturating_add(self, millis: u64) -> Self {
+        Self(self.0.saturating_add(millis))
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MetadataExtensionUpdate {
@@ -84,6 +113,12 @@ pub enum MetadataError {
     UploadRequestLimit {
         maximum: usize,
     },
+    MetadataPeerLimit {
+        maximum: usize,
+    },
+    UnknownMetadataPeer {
+        peer: u64,
+    },
 }
 
 impl fmt::Display for MetadataError {
@@ -123,6 +158,12 @@ impl fmt::Display for MetadataError {
             Self::AlreadyComplete => write!(formatter, "metadata download is already complete"),
             Self::UploadRequestLimit { maximum } => {
                 write!(formatter, "metadata upload exceeded {maximum} requests")
+            }
+            Self::MetadataPeerLimit { maximum } => {
+                write!(formatter, "metadata download exceeded {maximum} peers")
+            }
+            Self::UnknownMetadataPeer { peer } => {
+                write!(formatter, "unknown metadata peer {peer}")
             }
         }
     }
@@ -493,6 +534,401 @@ impl MetadataDownload {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TorrentMetadataEvent {
+    BlockAccepted { piece: u32 },
+    Duplicate { piece: u32 },
+    HashMismatch { contributors: Vec<u64> },
+    Complete(Vec<u8>),
+}
+
+#[derive(Debug, Default)]
+struct TorrentMetadataBlock {
+    bytes: Option<Vec<u8>>,
+    source: Option<u64>,
+    assignments: BTreeMap<u64, MetadataInstant>,
+    requested_by: BTreeSet<u64>,
+    request_count: usize,
+}
+
+#[derive(Debug, Default)]
+struct TorrentMetadataPeer {
+    pending: BTreeSet<u32>,
+    cooldown_until: Option<MetadataInstant>,
+}
+
+#[derive(Debug)]
+pub struct TorrentMetadataDownload {
+    expected_info_hash: [u8; 20],
+    size: Option<usize>,
+    blocks: Vec<TorrentMetadataBlock>,
+    peers: BTreeMap<u64, TorrentMetadataPeer>,
+    complete: bool,
+    hash_failures: usize,
+}
+
+impl TorrentMetadataDownload {
+    pub fn new(expected_info_hash: [u8; 20]) -> Self {
+        Self {
+            expected_info_hash,
+            size: None,
+            blocks: vec![TorrentMetadataBlock::default()],
+            peers: BTreeMap::new(),
+            complete: false,
+            hash_failures: 0,
+        }
+    }
+
+    pub fn register_peer(
+        &mut self,
+        peer: u64,
+        advertised_size: Option<usize>,
+    ) -> Result<(), MetadataError> {
+        if !self.peers.contains_key(&peer) {
+            if self.peers.len() == MAX_TORRENT_METADATA_PEERS {
+                return Err(MetadataError::MetadataPeerLimit {
+                    maximum: MAX_TORRENT_METADATA_PEERS,
+                });
+            }
+            self.peers.insert(peer, TorrentMetadataPeer::default());
+        }
+        if let Some(size) = advertised_size {
+            self.accept_size(size)?;
+        }
+        Ok(())
+    }
+
+    pub fn accept_peer_size(&mut self, peer: u64, size: usize) -> Result<(), MetadataError> {
+        self.peer(peer)?;
+        self.accept_size(size)
+    }
+
+    pub fn requests_for_peer(
+        &mut self,
+        peer: u64,
+        now: MetadataInstant,
+    ) -> Result<Vec<u32>, MetadataError> {
+        if self.complete {
+            return Err(MetadataError::AlreadyComplete);
+        }
+        self.expire_assignments(now);
+        let cooling_down = self
+            .peer(peer)?
+            .cooldown_until
+            .is_some_and(|cooldown| cooldown > now);
+        if cooling_down {
+            return Ok(Vec::new());
+        }
+
+        let mut requests = Vec::new();
+        loop {
+            let pending = self.peer(peer)?.pending.len();
+            if pending >= MAX_METADATA_REQUESTS_IN_FLIGHT {
+                break;
+            }
+            let candidate = self
+                .blocks
+                .iter()
+                .enumerate()
+                .filter(|(_, block)| {
+                    if block.bytes.is_some() || !block.assignments.is_empty() {
+                        return false;
+                    }
+                    if !block.requested_by.contains(&peer) {
+                        return true;
+                    }
+                    !self.peers.iter().any(|(&other, state)| {
+                        other != peer
+                            && !block.requested_by.contains(&other)
+                            && state.pending.len() < MAX_METADATA_REQUESTS_IN_FLIGHT
+                            && state.cooldown_until.is_none_or(|cooldown| cooldown <= now)
+                    })
+                })
+                .min_by_key(|(index, block)| (block.request_count, *index))
+                .map(|(index, _)| index);
+            let Some(index) = candidate else {
+                break;
+            };
+            let piece = u32::try_from(index)
+                .map_err(|_| MetadataError::InvalidPiece { piece: i64::MAX })?;
+            let block = &mut self.blocks[index];
+            block.assignments.insert(peer, now);
+            block.requested_by.insert(peer);
+            block.request_count = block.request_count.saturating_add(1);
+            self.peers
+                .get_mut(&peer)
+                .expect("registered metadata peer")
+                .pending
+                .insert(piece);
+            requests.push(piece);
+        }
+        Ok(requests)
+    }
+
+    pub fn on_data(
+        &mut self,
+        peer: u64,
+        piece: i64,
+        total_size: usize,
+        block: &[u8],
+        now: MetadataInstant,
+    ) -> Result<TorrentMetadataEvent, MetadataError> {
+        if self.complete {
+            return Err(MetadataError::AlreadyComplete);
+        }
+        self.peer(peer)?;
+        let piece = valid_piece_number(piece)?;
+        if self.size.is_none() && piece != 0 {
+            return Err(MetadataError::UnsolicitedPiece {
+                piece: i64::from(piece),
+            });
+        }
+        self.accept_size(total_size)?;
+        let index = usize::try_from(piece).map_err(|_| MetadataError::InvalidPiece {
+            piece: i64::from(piece),
+        })?;
+        let Some(state) = self.blocks.get(index) else {
+            return Err(MetadataError::InvalidPiece {
+                piece: i64::from(piece),
+            });
+        };
+        if !state.requested_by.contains(&peer) {
+            return Err(MetadataError::UnsolicitedPiece {
+                piece: i64::from(piece),
+            });
+        }
+        if let Some(existing) = state.bytes.as_deref() {
+            return if existing == block {
+                Ok(TorrentMetadataEvent::Duplicate { piece })
+            } else {
+                Err(MetadataError::ConflictingDuplicate { piece })
+            };
+        }
+        let expected = metadata_block_length(total_size, piece)?;
+        if block.len() != expected {
+            return Err(MetadataError::InvalidBlockLength {
+                piece,
+                actual: block.len(),
+                expected,
+            });
+        }
+
+        self.release_piece(piece);
+        let state = &mut self.blocks[index];
+        state.bytes = Some(block.to_vec());
+        state.source = Some(peer);
+        if self
+            .blocks
+            .iter()
+            .any(|candidate| candidate.bytes.is_none())
+        {
+            return Ok(TorrentMetadataEvent::BlockAccepted { piece });
+        }
+
+        let mut bytes = Vec::with_capacity(total_size);
+        for candidate in &self.blocks {
+            bytes.extend_from_slice(
+                candidate
+                    .bytes
+                    .as_deref()
+                    .expect("all torrent metadata blocks are present"),
+            );
+        }
+        if bytes.len() == total_size
+            && <[u8; 20]>::from(Sha1::digest(&bytes)) == self.expected_info_hash
+        {
+            self.complete = true;
+            return Ok(TorrentMetadataEvent::Complete(bytes));
+        }
+
+        self.hash_failures = self.hash_failures.saturating_add(1);
+        let contributors: BTreeSet<u64> = self
+            .blocks
+            .iter()
+            .filter_map(|candidate| candidate.source)
+            .collect();
+        let cooldown = if self.blocks.len() == 1 {
+            METADATA_SINGLE_BLOCK_HASH_FAILURE_COOLDOWN_MILLIS
+        } else {
+            METADATA_HASH_FAILURE_COOLDOWN_MILLIS
+        };
+        let cooldown_until = now.saturating_add(cooldown);
+        for contributor in &contributors {
+            if let Some(peer_state) = self.peers.get_mut(contributor) {
+                peer_state.cooldown_until = Some(cooldown_until);
+            }
+        }
+        for candidate in &mut self.blocks {
+            *candidate = TorrentMetadataBlock::default();
+        }
+        for peer_state in self.peers.values_mut() {
+            peer_state.pending.clear();
+        }
+        Ok(TorrentMetadataEvent::HashMismatch {
+            contributors: contributors.into_iter().collect(),
+        })
+    }
+
+    pub fn on_reject(
+        &mut self,
+        peer: u64,
+        piece: i64,
+        now: MetadataInstant,
+    ) -> Result<(), MetadataError> {
+        let piece = valid_piece_number(piece)?;
+        if !self.peer(peer)?.pending.contains(&piece) {
+            return Err(MetadataError::UnsolicitedPiece {
+                piece: i64::from(piece),
+            });
+        }
+        let cooldown_until = now.saturating_add(METADATA_REJECT_COOLDOWN_MILLIS);
+        self.release_peer_assignments(peer);
+        self.peers
+            .get_mut(&peer)
+            .expect("registered metadata peer")
+            .cooldown_until = Some(cooldown_until);
+        Ok(())
+    }
+
+    pub fn remove_peer(&mut self, peer: u64) -> bool {
+        if self.peers.remove(&peer).is_none() {
+            return false;
+        }
+        for block in &mut self.blocks {
+            block.assignments.remove(&peer);
+            block.requested_by.remove(&peer);
+        }
+        true
+    }
+
+    pub fn next_assignment_expiry(&self) -> Option<MetadataInstant> {
+        self.blocks
+            .iter()
+            .flat_map(|block| block.assignments.values())
+            .map(|issued| issued.saturating_add(METADATA_ASSIGNMENT_TIMEOUT_MILLIS))
+            .min()
+    }
+
+    pub fn metadata_size(&self) -> Option<usize> {
+        self.size
+    }
+
+    pub fn allocated_blocks(&self) -> usize {
+        self.size.map_or(0, |_| self.blocks.len())
+    }
+
+    pub fn received_blocks(&self) -> usize {
+        self.blocks
+            .iter()
+            .filter(|block| block.bytes.is_some())
+            .count()
+    }
+
+    pub fn pending_requests(&self) -> usize {
+        self.peers.values().map(|peer| peer.pending.len()).sum()
+    }
+
+    pub fn pending_requests_for_peer(&self, peer: u64) -> Option<usize> {
+        self.peers.get(&peer).map(|state| state.pending.len())
+    }
+
+    pub fn peer_count(&self) -> usize {
+        self.peers.len()
+    }
+
+    pub fn hash_failures(&self) -> usize {
+        self.hash_failures
+    }
+
+    fn peer(&self, peer: u64) -> Result<&TorrentMetadataPeer, MetadataError> {
+        self.peers
+            .get(&peer)
+            .ok_or(MetadataError::UnknownMetadataPeer { peer })
+    }
+
+    fn accept_size(&mut self, size: usize) -> Result<(), MetadataError> {
+        let size = validate_size(i64::try_from(size).map_err(|_| MetadataError::InvalidSize {
+            size: i64::MAX,
+            maximum: MAX_METADATA_LENGTH,
+        })?)?;
+        if let Some(expected) = self.size {
+            return if expected == size {
+                Ok(())
+            } else {
+                Err(MetadataError::SizeChanged {
+                    expected,
+                    actual: size,
+                })
+            };
+        }
+        let count = metadata_block_count(size);
+        let first = std::mem::take(&mut self.blocks[0]);
+        self.blocks = (0..count)
+            .map(|index| {
+                if index == 0 {
+                    TorrentMetadataBlock {
+                        assignments: first.assignments.clone(),
+                        requested_by: first.requested_by.clone(),
+                        request_count: first.request_count,
+                        ..TorrentMetadataBlock::default()
+                    }
+                } else {
+                    TorrentMetadataBlock::default()
+                }
+            })
+            .collect();
+        self.size = Some(size);
+        Ok(())
+    }
+
+    fn expire_assignments(&mut self, now: MetadataInstant) {
+        let expired: Vec<(usize, u64)> = self
+            .blocks
+            .iter()
+            .enumerate()
+            .flat_map(|(index, block)| {
+                block
+                    .assignments
+                    .iter()
+                    .filter_map(move |(&peer, &issued)| {
+                        (issued.saturating_add(METADATA_ASSIGNMENT_TIMEOUT_MILLIS) <= now)
+                            .then_some((index, peer))
+                    })
+            })
+            .collect();
+        for (index, peer) in expired {
+            self.blocks[index].assignments.remove(&peer);
+            if let Some(peer_state) = self.peers.get_mut(&peer)
+                && let Ok(piece) = u32::try_from(index)
+            {
+                peer_state.pending.remove(&piece);
+            }
+        }
+    }
+
+    fn release_piece(&mut self, piece: u32) {
+        let Some(block) = self.blocks.get_mut(piece as usize) else {
+            return;
+        };
+        let assigned: Vec<u64> = block.assignments.keys().copied().collect();
+        block.assignments.clear();
+        for peer in assigned {
+            if let Some(peer_state) = self.peers.get_mut(&peer) {
+                peer_state.pending.remove(&piece);
+            }
+        }
+    }
+
+    fn release_peer_assignments(&mut self, peer: u64) {
+        if let Some(peer_state) = self.peers.get_mut(&peer) {
+            peer_state.pending.clear();
+        }
+        for block in &mut self.blocks {
+            block.assignments.remove(&peer);
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MetadataUploadAction {
     Data {
         piece: u32,
@@ -647,12 +1083,18 @@ mod tests {
 
     use super::{
         ExtensionHandshake, MAX_METADATA_LENGTH, MAX_METADATA_REQUESTS_IN_FLIGHT,
-        MAX_METADATA_UPLOAD_REQUESTS, METADATA_BLOCK_LENGTH, MetadataDownload,
-        MetadataDownloadAction, MetadataError, MetadataExtensionUpdate, MetadataMessage,
-        MetadataUpload, MetadataUploadAction, encode_extension_handshake,
+        MAX_METADATA_UPLOAD_REQUESTS, MAX_TORRENT_METADATA_PEERS,
+        METADATA_ASSIGNMENT_TIMEOUT_MILLIS, METADATA_BLOCK_LENGTH, METADATA_REJECT_COOLDOWN_MILLIS,
+        MetadataDownload, MetadataDownloadAction, MetadataError, MetadataExtensionUpdate,
+        MetadataInstant, MetadataMessage, MetadataUpload, MetadataUploadAction,
+        TorrentMetadataDownload, TorrentMetadataEvent, encode_extension_handshake,
         encode_extension_handshake_with_id, encode_metadata_data, encode_metadata_reject,
         encode_metadata_request, parse_extension_handshake, parse_metadata_message,
     };
+
+    const fn instant(millis: u64) -> MetadataInstant {
+        MetadataInstant::from_millis(millis)
+    }
 
     #[test]
     fn extension_handshake_round_trip_and_additive_updates_are_directional() {
@@ -889,6 +1331,306 @@ mod tests {
             }),
             Err(MetadataError::HashMismatch)
         );
+    }
+
+    #[test]
+    fn torrent_download_combines_disjoint_peer_blocks() {
+        let mut bytes = vec![3; METADATA_BLOCK_LENGTH * 2 + 7];
+        bytes[0] = b'd';
+        let mut download = TorrentMetadataDownload::new(Sha1::digest(&bytes).into());
+        download
+            .register_peer(1, Some(bytes.len()))
+            .expect("register first peer");
+        download
+            .register_peer(2, None)
+            .expect("register second peer");
+        assert_eq!(
+            download
+                .requests_for_peer(1, MetadataInstant::ZERO)
+                .expect("first peer requests"),
+            [0, 1]
+        );
+        assert_eq!(
+            download
+                .requests_for_peer(2, MetadataInstant::ZERO)
+                .expect("second peer requests"),
+            [2]
+        );
+        assert_eq!(
+            download
+                .on_data(
+                    1,
+                    0,
+                    bytes.len(),
+                    &bytes[..METADATA_BLOCK_LENGTH],
+                    MetadataInstant::ZERO,
+                )
+                .expect("first block"),
+            TorrentMetadataEvent::BlockAccepted { piece: 0 }
+        );
+        assert_eq!(
+            download
+                .on_data(
+                    2,
+                    2,
+                    bytes.len(),
+                    &bytes[METADATA_BLOCK_LENGTH * 2..],
+                    MetadataInstant::ZERO,
+                )
+                .expect("third block"),
+            TorrentMetadataEvent::BlockAccepted { piece: 2 }
+        );
+        assert_eq!(
+            download
+                .on_data(
+                    1,
+                    1,
+                    bytes.len(),
+                    &bytes[METADATA_BLOCK_LENGTH..METADATA_BLOCK_LENGTH * 2],
+                    MetadataInstant::ZERO,
+                )
+                .expect("combined completion"),
+            TorrentMetadataEvent::Complete(bytes)
+        );
+    }
+
+    #[test]
+    fn torrent_download_expires_assignments_and_accepts_late_duplicates() {
+        let bytes = vec![4; METADATA_BLOCK_LENGTH + 3];
+        let mut download = TorrentMetadataDownload::new(Sha1::digest(&bytes).into());
+        for peer in [1, 2] {
+            download
+                .register_peer(peer, Some(bytes.len()))
+                .expect("register peer");
+        }
+        assert_eq!(
+            download
+                .requests_for_peer(1, MetadataInstant::ZERO)
+                .expect("initial requests"),
+            [0, 1]
+        );
+        assert!(
+            download
+                .requests_for_peer(2, instant(METADATA_ASSIGNMENT_TIMEOUT_MILLIS - 1))
+                .expect("suppressed duplicate")
+                .is_empty()
+        );
+        assert_eq!(
+            download
+                .requests_for_peer(2, instant(METADATA_ASSIGNMENT_TIMEOUT_MILLIS))
+                .expect("expired requests reassign"),
+            [0, 1]
+        );
+        assert_eq!(
+            download
+                .on_data(
+                    1,
+                    0,
+                    bytes.len(),
+                    &bytes[..METADATA_BLOCK_LENGTH],
+                    instant(METADATA_ASSIGNMENT_TIMEOUT_MILLIS),
+                )
+                .expect("late original response"),
+            TorrentMetadataEvent::BlockAccepted { piece: 0 }
+        );
+        assert_eq!(
+            download
+                .on_data(
+                    2,
+                    0,
+                    bytes.len(),
+                    &bytes[..METADATA_BLOCK_LENGTH],
+                    instant(METADATA_ASSIGNMENT_TIMEOUT_MILLIS),
+                )
+                .expect("identical losing response"),
+            TorrentMetadataEvent::Duplicate { piece: 0 }
+        );
+        assert_eq!(
+            download
+                .on_data(
+                    2,
+                    1,
+                    bytes.len(),
+                    &bytes[METADATA_BLOCK_LENGTH..],
+                    instant(METADATA_ASSIGNMENT_TIMEOUT_MILLIS),
+                )
+                .expect("reassigned completion"),
+            TorrentMetadataEvent::Complete(bytes)
+        );
+    }
+
+    #[test]
+    fn torrent_download_reject_cools_peer_and_releases_all_work() {
+        let bytes = vec![5; METADATA_BLOCK_LENGTH + 1];
+        let mut download = TorrentMetadataDownload::new(Sha1::digest(&bytes).into());
+        for peer in [1, 2] {
+            download
+                .register_peer(peer, Some(bytes.len()))
+                .expect("register peer");
+        }
+        assert_eq!(
+            download
+                .requests_for_peer(1, MetadataInstant::ZERO)
+                .expect("first requests"),
+            [0, 1]
+        );
+        download
+            .on_reject(1, 0, MetadataInstant::ZERO)
+            .expect("reject assigned block");
+        assert!(
+            download
+                .requests_for_peer(1, instant(METADATA_REJECT_COOLDOWN_MILLIS - 1))
+                .expect("cooling peer")
+                .is_empty()
+        );
+        assert_eq!(
+            download
+                .requests_for_peer(2, MetadataInstant::ZERO)
+                .expect("replacement peer"),
+            [0, 1]
+        );
+        assert!(download.remove_peer(2));
+        assert_eq!(download.pending_requests(), 0);
+    }
+
+    #[test]
+    fn torrent_download_hash_failure_attributes_resets_and_mixes_sources() {
+        let mut correct = vec![6; METADATA_BLOCK_LENGTH * 2 + 11];
+        correct[0] = b'd';
+        let mut corrupt = correct.clone();
+        corrupt[METADATA_BLOCK_LENGTH * 2] ^= 0xff;
+        let mut download = TorrentMetadataDownload::new(Sha1::digest(&correct).into());
+        for peer in [1, 2, 3] {
+            download
+                .register_peer(peer, Some(correct.len()))
+                .expect("register peer");
+        }
+        assert_eq!(
+            download
+                .requests_for_peer(1, MetadataInstant::ZERO)
+                .unwrap(),
+            [0, 1]
+        );
+        assert_eq!(
+            download
+                .requests_for_peer(2, MetadataInstant::ZERO)
+                .unwrap(),
+            [2]
+        );
+        assert!(matches!(
+            download
+                .on_data(
+                    1,
+                    0,
+                    correct.len(),
+                    &correct[..METADATA_BLOCK_LENGTH],
+                    MetadataInstant::ZERO,
+                )
+                .unwrap(),
+            TorrentMetadataEvent::BlockAccepted { piece: 0 }
+        ));
+        assert!(matches!(
+            download
+                .on_data(
+                    1,
+                    1,
+                    correct.len(),
+                    &correct[METADATA_BLOCK_LENGTH..METADATA_BLOCK_LENGTH * 2],
+                    MetadataInstant::ZERO,
+                )
+                .unwrap(),
+            TorrentMetadataEvent::BlockAccepted { piece: 1 }
+        ));
+        assert_eq!(
+            download
+                .on_data(
+                    2,
+                    2,
+                    correct.len(),
+                    &corrupt[METADATA_BLOCK_LENGTH * 2..],
+                    MetadataInstant::ZERO,
+                )
+                .expect("hash mismatch is recoverable"),
+            TorrentMetadataEvent::HashMismatch {
+                contributors: vec![1, 2]
+            }
+        );
+        assert_eq!(download.hash_failures(), 1);
+        assert!(
+            download
+                .requests_for_peer(1, MetadataInstant::ZERO)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            download
+                .requests_for_peer(2, MetadataInstant::ZERO)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            download
+                .requests_for_peer(3, MetadataInstant::ZERO)
+                .unwrap(),
+            [0, 1]
+        );
+        for piece in [0_u32, 1] {
+            let begin = piece as usize * METADATA_BLOCK_LENGTH;
+            let end = (begin + METADATA_BLOCK_LENGTH).min(correct.len());
+            assert!(matches!(
+                download
+                    .on_data(
+                        3,
+                        i64::from(piece),
+                        correct.len(),
+                        &correct[begin..end],
+                        MetadataInstant::ZERO,
+                    )
+                    .unwrap(),
+                TorrentMetadataEvent::BlockAccepted { .. }
+            ));
+        }
+        assert_eq!(
+            download
+                .requests_for_peer(3, MetadataInstant::ZERO)
+                .unwrap(),
+            [2]
+        );
+        assert_eq!(
+            download
+                .on_data(
+                    3,
+                    2,
+                    correct.len(),
+                    &correct[METADATA_BLOCK_LENGTH * 2..],
+                    MetadataInstant::ZERO,
+                )
+                .unwrap(),
+            TorrentMetadataEvent::Complete(correct)
+        );
+    }
+
+    #[test]
+    fn torrent_download_preserves_geometry_and_peer_bounds() {
+        let mut download = TorrentMetadataDownload::new([0; 20]);
+        download.register_peer(1, Some(17)).expect("initial size");
+        assert!(matches!(
+            download.accept_peer_size(1, 18),
+            Err(MetadataError::SizeChanged {
+                expected: 17,
+                actual: 18
+            })
+        ));
+        assert_eq!(download.metadata_size(), Some(17));
+        assert_eq!(download.allocated_blocks(), 1);
+        for peer in 2..=MAX_TORRENT_METADATA_PEERS as u64 {
+            download.register_peer(peer, None).expect("bounded peer");
+        }
+        assert!(matches!(
+            download.register_peer(MAX_TORRENT_METADATA_PEERS as u64 + 1, None),
+            Err(MetadataError::MetadataPeerLimit { .. })
+        ));
+        assert_eq!(download.peer_count(), MAX_TORRENT_METADATA_PEERS);
     }
 
     #[test]

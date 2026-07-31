@@ -313,7 +313,8 @@ reason to stop.
 
 Campaign state: **active**.
 
-Active tactical: the next numbered torrent-owned metadata acquisition slice.
+Active tactical:
+[`019-torrent-owned-metadata-acquisition.md`](../tactical/019-torrent-owned-metadata-acquisition.md).
 
 Current milestone: use the completed comparator and pinned libtorrent source
 to establish torrent-owned multi-source metadata acquisition.
@@ -342,17 +343,21 @@ Last completed evidence:
   versus 0.90 seconds for DHT;
 - repeated tracker failures retained partial metadata from multiple attempts;
   repeated DHT failures discovered many peers but sent no metadata request;
+  and Tactical `019` now installs one runtime-independent torrent metadata
+  owner shared by eight workers, with two requests per peer, three-second
+  reassignment, cross-peer assembly, source attribution, and hash recovery;
+- its pure hostile cases and scripted two-source, three-block socket case pass;
   and
-- source inspection shows libtorrent owns metadata blocks torrent-wide across
-  peer plugins, while RSTorrent still performs complete per-peer acquisition.
+- direct metadata, DHT-only metadata/content, and paired controlled full
+  publication remain green against locked libtorrent 2.0.13.
 
 Next executable action:
 
-1. open the next numbered tactical for torrent-owned multi-source metadata
-   acquisition using the completed source dossier;
-2. implement its deterministic owner and hostile-peer scenarios;
-3. prove controlled interoperability and rerun paired metadata cohorts; and
-4. rotate to sustained-transfer connection/request width once metadata meets
-   the campaign gate or its remaining gap is explicitly classified.
+1. add the remaining scripted corrupt-source/hash-recovery scenario;
+2. screen common-denominator tracker and DHT metadata with small paired runs;
+3. run and record the ten-pair cohorts when the screen remains sound; and
+4. close Tactical `019` and rotate to sustained-transfer connection/request
+   width once metadata meets the campaign gate or its remaining gap is
+   explicitly classified.
 
 Human blocker: **none**.

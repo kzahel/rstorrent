@@ -11,9 +11,10 @@ use std::time::{Duration, Instant};
 use rstorrent_protocol::bencode::MAX_BENCODE_INPUT_LENGTH;
 use rstorrent_protocol::magnet::{Magnet, MagnetError, PeerHint, UdpTrackerUrl};
 use rstorrent_protocol::metadata::{
-    MetadataDownload, MetadataDownloadAction, MetadataError, MetadataExtensionUpdate,
-    MetadataMessage, UT_METADATA_LOCAL_ID, encode_extension_handshake, encode_metadata_reject,
-    encode_metadata_request, parse_extension_handshake, parse_metadata_message,
+    MetadataError, MetadataExtensionUpdate, MetadataInstant, MetadataMessage,
+    TorrentMetadataDownload, TorrentMetadataEvent, UT_METADATA_LOCAL_ID,
+    encode_extension_handshake, encode_metadata_reject, encode_metadata_request,
+    parse_extension_handshake, parse_metadata_message,
 };
 use rstorrent_protocol::metainfo::{MAX_PIECES, Metainfo, MetainfoError};
 use rstorrent_protocol::peer_wire::{FrameError, Handshake, HandshakeError, PeerMessage};
@@ -74,7 +75,8 @@ const SAFE_CANCEL_CRITICAL_MASK: usize = SAFE_CANCEL_REQUESTED - 1;
 const DHT_RETRY_INITIAL_DELAY: Duration = Duration::from_secs(15);
 const DHT_RETRY_MAX_DELAY: Duration = Duration::from_secs(5 * 60);
 const DHT_SUCCESS_REQUERY_DELAY: Duration = Duration::from_secs(60);
-const MAX_METADATA_PEERS: usize = 3;
+const MAX_METADATA_PEERS: usize = 8;
+const METADATA_SCHEDULER_TICK: Duration = Duration::from_millis(100);
 const MAX_RECENT_METADATA_ATTEMPTS: usize = 64;
 const MAX_DIAGNOSTIC_ERROR_LENGTH: usize = 256;
 
@@ -598,7 +600,7 @@ impl DownloadControl {
         &self,
         attempt_id: DialAttemptId,
         remote_metadata_id: Option<u8>,
-        download: &MetadataDownload,
+        download: &TorrentMetadataDownload,
         requests_sent: usize,
     ) {
         let now = self.diagnostic_elapsed();
@@ -613,7 +615,9 @@ impl DownloadControl {
             peer.remote_metadata_id = remote_metadata_id;
             peer.metadata_size = download.metadata_size();
             peer.metadata_blocks = metadata_block_count_for_diagnostics(download);
-            peer.pending_requests = download.pending_requests();
+            peer.pending_requests = download
+                .pending_requests_for_peer(attempt_id.get())
+                .unwrap_or(0);
             peer.requests_sent = peer.requests_sent.saturating_add(requests_sent);
             peer.last_activity_at = now;
             peer.last_progress_at = now;
@@ -624,7 +628,7 @@ impl DownloadControl {
         &self,
         attempt_id: DialAttemptId,
         block_bytes: usize,
-        download: &MetadataDownload,
+        download: &TorrentMetadataDownload,
         requests_sent: usize,
     ) {
         let now = self.diagnostic_elapsed();
@@ -640,12 +644,42 @@ impl DownloadControl {
             peer.stage = MetadataPeerStage::Requesting;
             peer.metadata_size = download.metadata_size();
             peer.metadata_blocks = metadata_block_count_for_diagnostics(download);
-            peer.pending_requests = download.pending_requests();
+            peer.pending_requests = download
+                .pending_requests_for_peer(attempt_id.get())
+                .unwrap_or(0);
             peer.requests_sent = peer.requests_sent.saturating_add(requests_sent);
-            peer.blocks_received = download.received_blocks();
+            peer.blocks_received = peer.blocks_received.saturating_add(1);
             peer.bytes_received = peer.bytes_received.saturating_add(block_bytes);
             peer.last_activity_at = now;
             peer.last_progress_at = now;
+        }
+    }
+
+    fn metadata_requests_sent(
+        &self,
+        attempt_id: DialAttemptId,
+        download: &TorrentMetadataDownload,
+        requests_sent: usize,
+    ) {
+        if requests_sent == 0 {
+            return;
+        }
+        let now = self.diagnostic_elapsed();
+        let mut state = self
+            .inner
+            .metadata_diagnostics
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.total_requests_sent = state.total_requests_sent.saturating_add(requests_sent);
+        if let Some(peer) = state.active_attempts.get_mut(&attempt_id) {
+            peer.stage = MetadataPeerStage::Requesting;
+            peer.metadata_size = download.metadata_size();
+            peer.metadata_blocks = metadata_block_count_for_diagnostics(download);
+            peer.pending_requests = download
+                .pending_requests_for_peer(attempt_id.get())
+                .unwrap_or(0);
+            peer.requests_sent = peer.requests_sent.saturating_add(requests_sent);
+            peer.last_activity_at = now;
         }
     }
 
@@ -2295,6 +2329,7 @@ impl PeerSession {
         let mut workers = JoinSet::new();
         let mut worker_cancellations = BTreeMap::new();
         let mut discovery_failed_while_active = false;
+        let metadata = Arc::new(Mutex::new(TorrentMetadataDownload::new(info_hash)));
 
         loop {
             while sockets.pending_len() + workers.len() < MAX_METADATA_PEERS {
@@ -2384,8 +2419,9 @@ impl PeerSession {
                     let cancellation = CancellationToken::new();
                     worker_cancellations.insert(attempt.id(), (attempt, cancellation.clone()));
                     let control = self.control.clone();
+                    let metadata = metadata.clone();
                     workers.spawn(async move {
-                        run_metadata_peer(connection, handshake, info_hash, cancellation, control)
+                        run_metadata_peer(connection, handshake, cancellation, control, metadata)
                             .await
                     });
                 }
@@ -2553,9 +2589,9 @@ impl PeerSession {
 async fn run_metadata_peer(
     mut connection: PeerConnection,
     handshake: Handshake,
-    info_hash: [u8; 20],
     cancellation: CancellationToken,
     control: DownloadControl,
+    metadata: Arc<Mutex<TorrentMetadataDownload>>,
 ) -> MetadataPeerResult {
     let attempt = connection.attempt();
     let result = tokio::select! {
@@ -2564,12 +2600,16 @@ async fn run_metadata_peer(
         result = acquire_metadata_from_connection(
             &mut connection,
             handshake,
-            info_hash,
             &control,
+            &metadata,
         ) => {
             Some(result)
         }
     };
+    metadata
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .remove_peer(attempt.id().get());
     match &result {
         Some(Ok(_)) => {
             control.metadata_peer_finished(attempt.id(), MetadataPeerStage::Complete, None)
@@ -3108,8 +3148,8 @@ async fn run_resumable_magnet_download(
 async fn acquire_metadata_from_connection(
     peer: &mut PeerConnection,
     handshake: Handshake,
-    info_hash: [u8; 20],
     control: &DownloadControl,
+    metadata: &Arc<Mutex<TorrentMetadataDownload>>,
 ) -> Result<(Vec<u8>, Metainfo), DownloadError> {
     if !handshake.supports_extensions() {
         return Err(DownloadError::ExtensionProtocolUnsupported);
@@ -3124,22 +3164,44 @@ async fn acquire_metadata_from_connection(
     .await?;
 
     let mut peer_state = PremetadataPeerState::new();
-    let mut download = MetadataDownload::new(info_hash);
     let mut remote_metadata_id = None;
-    let mut advertised_size = None;
-    let mut started = false;
     let mut received_extension_handshake = false;
     let metadata_progress_timeout = peer.io_timeout();
     let mut progress_deadline = TokioInstant::now() + metadata_progress_timeout;
     loop {
-        let message = match timeout_at(progress_deadline, next_peer_message(peer)).await {
-            Ok(result) => result?,
-            Err(_) => {
+        if TokioInstant::now() >= progress_deadline {
+            return Err(DownloadError::PeerTimedOut {
+                operation: "metadata progress",
+                timeout: metadata_progress_timeout,
+            });
+        }
+        if let Some(remote_id) = remote_metadata_id {
+            let requests_sent = send_torrent_metadata_requests(
+                peer,
+                remote_id,
+                metadata_instant(control.diagnostic_elapsed()),
+                metadata,
+            )
+            .await?;
+            let download = metadata
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            control.metadata_requests_sent(peer.attempt().id(), &download, requests_sent);
+        }
+
+        let scheduler_wake = TokioInstant::now() + METADATA_SCHEDULER_TICK;
+        let message = tokio::select! {
+            result = next_peer_message(peer) => Some(result?),
+            _ = tokio::time::sleep_until(scheduler_wake) => None,
+        };
+        let Some(message) = message else {
+            if TokioInstant::now() >= progress_deadline {
                 return Err(DownloadError::PeerTimedOut {
                     operation: "metadata progress",
                     timeout: metadata_progress_timeout,
                 });
             }
+            continue;
         };
         control.metadata_peer_message(peer.attempt().id());
         match message {
@@ -3152,52 +3214,43 @@ async fn acquire_metadata_from_connection(
                     return Err(DownloadError::MetadataExtensionDisabled);
                 }
                 received_extension_handshake = true;
-                if let Some(size) = handshake.metadata_size {
-                    if let Some(expected) = advertised_size
-                        && expected != size
-                    {
-                        return Err(DownloadError::Metadata(MetadataError::SizeChanged {
-                            expected,
-                            actual: size,
-                        }));
-                    }
-                    advertised_size = Some(size);
-                }
-                let actions = match handshake.metadata_extension {
+                match handshake.metadata_extension {
                     MetadataExtensionUpdate::Disabled => {
                         return Err(DownloadError::MetadataExtensionDisabled);
                     }
                     MetadataExtensionUpdate::Enabled(id) => {
                         remote_metadata_id = Some(id);
-                        if started {
-                            match handshake.metadata_size {
-                                Some(size) => download
-                                    .accept_advertised_size(size)
-                                    .map_err(DownloadError::Metadata)?,
-                                None => Vec::new(),
-                            }
-                        } else {
-                            started = true;
-                            download
-                                .start(advertised_size)
-                                .map_err(DownloadError::Metadata)?
-                        }
+                        metadata
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .register_peer(peer.attempt().id().get(), handshake.metadata_size)
+                            .map_err(DownloadError::Metadata)?;
                     }
                     MetadataExtensionUpdate::Unchanged => {
-                        if started {
-                            match handshake.metadata_size {
-                                Some(size) => download
-                                    .accept_advertised_size(size)
-                                    .map_err(DownloadError::Metadata)?,
-                                None => Vec::new(),
-                            }
-                        } else {
-                            Vec::new()
+                        if let Some(size) = handshake.metadata_size {
+                            metadata
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                .accept_peer_size(peer.attempt().id().get(), size)
+                                .map_err(DownloadError::Metadata)?;
                         }
                     }
+                }
+                let requests_sent = match remote_metadata_id {
+                    Some(remote_id) => {
+                        send_torrent_metadata_requests(
+                            peer,
+                            remote_id,
+                            metadata_instant(control.diagnostic_elapsed()),
+                            metadata,
+                        )
+                        .await?
+                    }
+                    None => 0,
                 };
-                let (bytes, requests_sent) =
-                    process_metadata_download_actions(peer, remote_metadata_id, actions).await?;
+                let download = metadata
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 control.metadata_extension_handshake(
                     peer.attempt().id(),
                     remote_metadata_id,
@@ -3205,9 +3258,6 @@ async fn acquire_metadata_from_connection(
                     requests_sent,
                 );
                 progress_deadline = TokioInstant::now() + metadata_progress_timeout;
-                if let Some(bytes) = bytes {
-                    return finish_metadata_acquisition(bytes, peer_state, peer);
-                }
             }
             PeerMessage::Extended {
                 id: UT_METADATA_LOCAL_ID,
@@ -3227,29 +3277,77 @@ async fn acquire_metadata_from_connection(
                     }
                     continue;
                 }
-                if matches!(message, MetadataMessage::Reject { .. }) {
-                    control.metadata_rejected(peer.attempt().id());
-                }
-                let block_bytes = match message {
-                    MetadataMessage::Data { block, .. } => Some(block.len()),
-                    _ => None,
-                };
-                let actions = download
-                    .on_message(message)
-                    .map_err(DownloadError::Metadata)?;
-                let (bytes, requests_sent) =
-                    process_metadata_download_actions(peer, remote_metadata_id, actions).await?;
-                if let Some(block_bytes) = block_bytes {
-                    control.metadata_block_received(
-                        peer.attempt().id(),
-                        block_bytes,
-                        &download,
-                        requests_sent,
-                    );
-                    progress_deadline = TokioInstant::now() + metadata_progress_timeout;
-                }
-                if let Some(bytes) = bytes {
-                    return finish_metadata_acquisition(bytes, peer_state, peer);
+                match message {
+                    MetadataMessage::Data {
+                        piece,
+                        total_size,
+                        block,
+                    } => {
+                        let block_bytes = block.len();
+                        let event = metadata
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .on_data(
+                                peer.attempt().id().get(),
+                                piece,
+                                total_size,
+                                block,
+                                metadata_instant(control.diagnostic_elapsed()),
+                            )
+                            .map_err(DownloadError::Metadata)?;
+                        if let TorrentMetadataEvent::Complete(bytes) = event {
+                            let download = metadata
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner());
+                            control.metadata_block_received(
+                                peer.attempt().id(),
+                                block_bytes,
+                                &download,
+                                0,
+                            );
+                            drop(download);
+                            return finish_metadata_acquisition(bytes, peer_state, peer);
+                        }
+                        let requests_sent = match remote_metadata_id {
+                            Some(remote_id) => {
+                                send_torrent_metadata_requests(
+                                    peer,
+                                    remote_id,
+                                    metadata_instant(control.diagnostic_elapsed()),
+                                    metadata,
+                                )
+                                .await?
+                            }
+                            None => 0,
+                        };
+                        let download = metadata
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner());
+                        control.metadata_block_received(
+                            peer.attempt().id(),
+                            block_bytes,
+                            &download,
+                            requests_sent,
+                        );
+                        progress_deadline = TokioInstant::now() + metadata_progress_timeout;
+                    }
+                    MetadataMessage::Reject { piece } => {
+                        metadata
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .on_reject(
+                                peer.attempt().id().get(),
+                                piece,
+                                metadata_instant(control.diagnostic_elapsed()),
+                            )
+                            .map_err(DownloadError::Metadata)?;
+                        control.metadata_rejected(peer.attempt().id());
+                        return Err(DownloadError::Metadata(MetadataError::Rejected {
+                            piece: u32::try_from(piece).expect("validated metadata piece"),
+                        }));
+                    }
+                    MetadataMessage::Unknown { .. } => {}
+                    MetadataMessage::Request { .. } => unreachable!("request returned above"),
                 }
             }
             PeerMessage::Extended { .. } => {}
@@ -3258,34 +3356,35 @@ async fn acquire_metadata_from_connection(
     }
 }
 
-async fn process_metadata_download_actions(
+async fn send_torrent_metadata_requests(
     peer: &mut PeerConnection,
-    remote_metadata_id: Option<u8>,
-    actions: Vec<MetadataDownloadAction>,
-) -> Result<(Option<Vec<u8>>, usize), DownloadError> {
-    let mut requests_sent = 0;
-    for action in actions {
-        match action {
-            MetadataDownloadAction::Request(piece) => {
-                let remote_id =
-                    remote_metadata_id.ok_or(DownloadError::MetadataExtensionDisabled)?;
-                send_message(
-                    peer,
-                    &PeerMessage::Extended {
-                        id: remote_id,
-                        payload: encode_metadata_request(piece),
-                    },
-                )
-                .await?;
-                requests_sent += 1;
-            }
-            MetadataDownloadAction::Complete(bytes) => return Ok((Some(bytes), requests_sent)),
-        }
+    remote_metadata_id: u8,
+    now: MetadataInstant,
+    metadata: &Arc<Mutex<TorrentMetadataDownload>>,
+) -> Result<usize, DownloadError> {
+    let requests = metadata
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .requests_for_peer(peer.attempt().id().get(), now)
+        .map_err(DownloadError::Metadata)?;
+    for piece in &requests {
+        send_message(
+            peer,
+            &PeerMessage::Extended {
+                id: remote_metadata_id,
+                payload: encode_metadata_request(*piece),
+            },
+        )
+        .await?;
     }
-    Ok((None, requests_sent))
+    Ok(requests.len())
 }
 
-fn metadata_block_count_for_diagnostics(download: &MetadataDownload) -> Option<usize> {
+fn metadata_instant(elapsed: Duration) -> MetadataInstant {
+    MetadataInstant::from_millis(u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX))
+}
+
+fn metadata_block_count_for_diagnostics(download: &TorrentMetadataDownload) -> Option<usize> {
     let blocks = download.allocated_blocks();
     (blocks != 0).then_some(blocks)
 }
@@ -6101,7 +6200,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             .await
             .expect("send server handshake");
         let mut peer =
-            PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(1));
+            PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(5));
 
         let PeerMessage::Extended { id: 0, .. } = next_peer_message(&mut peer)
             .await
@@ -6201,7 +6300,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             .await
             .expect("send server handshake");
         let mut peer =
-            PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(2));
+            PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(6));
         assert!(matches!(
             next_peer_message(&mut peer).await,
             Ok(PeerMessage::Extended { id: 0, .. })
@@ -6219,10 +6318,105 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             next_peer_message(&mut peer).await,
             Ok(PeerMessage::Extended { id: 1, .. })
         ));
+        loop {
+            match next_peer_message(&mut peer).await {
+                Ok(PeerMessage::Extended { id: 1, .. }) => {}
+                Err(DownloadError::PeerClosed | DownloadError::PeerTimedOut { .. }) => break,
+                Ok(message) => panic!("unexpected stalled metadata message {message:?}"),
+                Err(error) => panic!("stalled metadata peer failed: {error}"),
+            }
+        }
+    }
+
+    async fn serve_partial_metadata_peer(
+        listener: TcpListener,
+        info: Vec<u8>,
+        reject_second_request: bool,
+    ) {
+        let (mut stream, _) = listener.accept().await.expect("accept metadata client");
+        let info_hash: [u8; 20] = Sha1::digest(&info).into();
+        let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
+        stream
+            .read_exact(&mut handshake_bytes)
+            .await
+            .expect("read client handshake");
+        assert!(
+            decode_handshake(&handshake_bytes, info_hash)
+                .expect("client handshake identity")
+                .supports_extensions()
+        );
+        let mut reserved = [0; 8];
+        reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+        stream
+            .write_all(&encode_handshake_with_reserved(
+                info_hash,
+                *b"-RS-PARTIAL-00000000",
+                reserved,
+            ))
+            .await
+            .expect("send server handshake");
+        let mut peer =
+            PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(2));
         assert!(matches!(
             next_peer_message(&mut peer).await,
-            Err(DownloadError::PeerClosed)
+            Ok(PeerMessage::Extended { id: 0, .. })
         ));
+        send_message(
+            &mut peer,
+            &PeerMessage::Extended {
+                id: 0,
+                payload: encode_extension_handshake(Some(info.len())),
+            },
+        )
+        .await
+        .expect("send metadata extension handshake");
+
+        let mut request_count = 0;
+        loop {
+            match next_peer_message(&mut peer).await {
+                Ok(PeerMessage::Extended { id: 1, payload }) => {
+                    let MetadataMessage::Request { piece } =
+                        parse_metadata_message(&payload).expect("parse metadata request")
+                    else {
+                        panic!("expected metadata request");
+                    };
+                    request_count += 1;
+                    if reject_second_request && request_count == 2 {
+                        send_message(
+                            &mut peer,
+                            &PeerMessage::Extended {
+                                id: 1,
+                                payload: encode_metadata_reject(piece),
+                            },
+                        )
+                        .await
+                        .expect("reject second metadata request");
+                        continue;
+                    }
+                    let piece = usize::try_from(piece).expect("nonnegative metadata piece");
+                    let begin = piece * rstorrent_protocol::metadata::METADATA_BLOCK_LENGTH;
+                    let end = (begin + rstorrent_protocol::metadata::METADATA_BLOCK_LENGTH)
+                        .min(info.len());
+                    send_message(
+                        &mut peer,
+                        &PeerMessage::Extended {
+                            id: 1,
+                            payload: encode_metadata_data(
+                                piece as u32,
+                                info.len(),
+                                &info[begin..end],
+                            )
+                            .expect("encode metadata block"),
+                        },
+                    )
+                    .await
+                    .expect("send metadata block");
+                }
+                Err(DownloadError::PeerClosed) => break,
+                Ok(message) => panic!("unexpected partial metadata message {message:?}"),
+                Err(error) => panic!("partial metadata peer failed: {error}"),
+            }
+        }
     }
 
     async fn serve_metadata_peer_without_ut_metadata(listener: TcpListener, info_hash: [u8; 20]) {
@@ -6347,10 +6541,12 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         )
         .await
         .expect("send metadata extension handshake");
-        let PeerMessage::Extended { id: 1, payload } = next_peer_message(&mut peer)
-            .await
-            .expect("metadata request")
-        else {
+        let message = match next_peer_message(&mut peer).await {
+            Ok(message) => message,
+            Err(DownloadError::PeerClosed | DownloadError::PeerTimedOut { .. }) => return,
+            Err(error) => panic!("rejecting metadata peer failed: {error}"),
+        };
+        let PeerMessage::Extended { id: 1, payload } = message else {
             panic!("expected metadata request");
         };
         let MetadataMessage::Request { piece } =
@@ -7190,13 +7386,13 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             hex(&info_hash)
         );
         let parsed = Magnet::parse(&magnet).expect("parse parallel metadata magnet");
-        let network = loopback_network(Duration::from_secs(2));
+        let network = loopback_network(Duration::from_secs(5));
         let mut peers = PeerSession::from_magnet(&parsed, network, DownloadControl::new(), None)
             .await
             .expect("resolve metadata peers");
 
         let (raw_info, metainfo) =
-            timeout(Duration::from_secs(1), peers.acquire_metadata(info_hash))
+            timeout(Duration::from_secs(4), peers.acquire_metadata(info_hash))
                 .await
                 .expect("stalled metadata peer must not set the completion deadline")
                 .expect("useful metadata peer supplies verified metadata");
@@ -7216,6 +7412,75 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 .await
                 .expect("metadata peer joined")
                 .expect("metadata peer task");
+        }
+    }
+
+    #[tokio::test]
+    async fn metadata_blocks_from_multiple_peers_complete_one_dictionary() {
+        let payload = vec![0x5a; 1_700];
+        let info = single_file_info_with_piece_length(&payload, 1);
+        assert!(
+            info.len() > 2 * rstorrent_protocol::metadata::METADATA_BLOCK_LENGTH,
+            "fixture must span three metadata blocks"
+        );
+        let info_hash: [u8; 20] = Sha1::digest(&info).into();
+        let partial_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind partial metadata peer");
+        let partial_address = partial_listener.local_addr().expect("partial address");
+        let complete_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind complementary metadata peer");
+        let complete_address = complete_listener.local_addr().expect("complete address");
+        let partial_task = tokio::spawn(serve_partial_metadata_peer(
+            partial_listener,
+            info.clone(),
+            true,
+        ));
+        let complete_task = tokio::spawn(serve_partial_metadata_peer(
+            complete_listener,
+            info.clone(),
+            false,
+        ));
+        let magnet = format!(
+            "magnet:?xt=urn:btih:{}&x.pe={partial_address}&x.pe={complete_address}",
+            hex(&info_hash)
+        );
+        let parsed = Magnet::parse(&magnet).expect("parse multi-source metadata magnet");
+        let control = DownloadControl::new();
+        let mut peers = PeerSession::from_magnet(
+            &parsed,
+            loopback_network(Duration::from_secs(2)),
+            control.clone(),
+            None,
+        )
+        .await
+        .expect("resolve multi-source metadata peers");
+
+        let (raw_info, metainfo) =
+            timeout(Duration::from_secs(3), peers.acquire_metadata(info_hash))
+                .await
+                .expect("multi-source metadata completion bound")
+                .expect("combine metadata blocks across peers");
+        assert_eq!(raw_info, info);
+        assert_eq!(metainfo.info_hash, info_hash);
+        let snapshot = control.diagnostic_snapshot().metadata;
+        assert_eq!(snapshot.total_blocks_received, 3);
+        assert!(
+            snapshot
+                .recent_attempts
+                .iter()
+                .filter(|peer| peer.blocks_received > 0)
+                .count()
+                >= 2
+        );
+
+        peers.close_current(None).expect("close metadata winner");
+        for task in [partial_task, complete_task] {
+            timeout(Duration::from_secs(1), task)
+                .await
+                .expect("multi-source peer joined")
+                .expect("multi-source peer task");
         }
     }
 
@@ -7440,14 +7705,12 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let snapshot = control.diagnostic_snapshot().metadata;
         assert_eq!(snapshot.phase, MetadataAcquisitionPhase::Complete);
         assert_eq!(snapshot.total_attempts, MAX_METADATA_PEERS + 1);
-        assert_eq!(
-            snapshot
-                .recent_attempts
-                .iter()
-                .map(|peer| peer.rejects_received)
-                .sum::<usize>(),
-            MAX_METADATA_PEERS
-        );
+        let rejected_requests = snapshot
+            .recent_attempts
+            .iter()
+            .map(|peer| peer.rejects_received)
+            .sum::<usize>();
+        assert!((1..=MAX_METADATA_PEERS).contains(&rejected_requests));
         assert!(snapshot.recent_attempts.iter().any(|peer| {
             peer.stage == MetadataPeerStage::Complete && peer.blocks_received == 1
         }));
@@ -7522,7 +7785,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         .await
         .expect("start metadata discovery");
 
-        let (_, metainfo) = timeout(Duration::from_secs(1), peers.acquire_metadata(info_hash))
+        let (_, metainfo) = timeout(Duration::from_secs(4), peers.acquire_metadata(info_hash))
             .await
             .expect("late tracker peer must be consumed during metadata work")
             .expect("tracker peer supplies metadata");
