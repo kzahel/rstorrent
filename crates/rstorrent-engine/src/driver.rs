@@ -29,15 +29,15 @@ use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use tokio::net::{UdpSocket, lookup_host};
 use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{Instant as TokioInstant, timeout, timeout_at};
 use tokio_util::sync::CancellationToken;
 
 use crate::dht::{DhtError, DhtHandle};
 use crate::network::{NetworkConfig, NetworkPolicy};
 use crate::peer::{
-    DialAttempt, PeerEndpoint, PeerFailure, PeerObservation, PeerRegistry, PeerRegistryConfig,
-    PeerRegistryError, PeerSelectionContext, PeerSelector, PeerSource,
+    DialAttempt, DialAttemptId, PeerEndpoint, PeerFailure, PeerObservation, PeerRegistry,
+    PeerRegistryConfig, PeerRegistryError, PeerSelectionContext, PeerSelector, PeerSource,
 };
 use crate::peer_socket::{
     self, PeerConnection, PeerSetError, PeerSetEvent, PeerSocketError, PeerSocketSet,
@@ -72,6 +72,7 @@ const SAFE_CANCEL_CRITICAL_MASK: usize = SAFE_CANCEL_REQUESTED - 1;
 const DHT_RETRY_INITIAL_DELAY: Duration = Duration::from_secs(15);
 const DHT_RETRY_MAX_DELAY: Duration = Duration::from_secs(5 * 60);
 const DHT_SUCCESS_REQUERY_DELAY: Duration = Duration::from_secs(60);
+const MAX_METADATA_PEERS: usize = 3;
 
 #[derive(Clone, Debug)]
 pub struct DownloadConfig {
@@ -1490,6 +1491,40 @@ struct PeerSession {
     next_dht_lookup: Instant,
 }
 
+#[derive(Debug)]
+enum MetadataPeerResult {
+    Complete {
+        connection: PeerConnection,
+        raw_info: Vec<u8>,
+        metainfo: Metainfo,
+    },
+    Failed {
+        connection: PeerConnection,
+        error: DownloadError,
+    },
+    Cancelled {
+        connection: PeerConnection,
+    },
+}
+
+impl MetadataPeerResult {
+    fn attempt(&self) -> DialAttempt {
+        match self {
+            Self::Complete { connection, .. }
+            | Self::Failed { connection, .. }
+            | Self::Cancelled { connection } => connection.attempt(),
+        }
+    }
+}
+
+#[derive(Debug)]
+enum MetadataSupervisorEvent {
+    Cancelled,
+    Discovery(Result<(), DownloadError>),
+    Socket(Result<PeerSetEvent, PeerSetError>),
+    Worker(Option<Result<MetadataPeerResult, tokio::task::JoinError>>),
+}
+
 #[derive(Clone, Copy, Debug)]
 struct DhtRetryTiming {
     initial_delay: Duration,
@@ -1788,6 +1823,7 @@ impl PeerSession {
             .saturating_duration_since(Instant::now())
     }
 
+    #[cfg(test)]
     async fn connect_next(
         &mut self,
         info_hash: [u8; 20],
@@ -1834,27 +1870,197 @@ impl PeerSession {
         &mut self,
         info_hash: [u8; 20],
     ) -> Result<(Vec<u8>, Metainfo), DownloadError> {
+        debug_assert!(self.connection.is_none());
+        let mut sockets = PeerSocketSet::new();
+        let mut workers = JoinSet::new();
+        let mut worker_cancellations = BTreeMap::new();
+        let mut discovery_failed_while_active = false;
+
         loop {
-            let handshake = self.connect_next(info_hash, true).await?;
-            let result = acquire_metadata_from_connection(
-                self.connection
-                    .as_mut()
-                    .expect("successful dial installs peer connection"),
-                handshake,
-                info_hash,
-            )
-            .await;
-            match result {
-                Ok(metadata) => {
-                    if metadata.1.private {
+            while sockets.pending_len() + workers.len() < MAX_METADATA_PEERS {
+                let context = PeerSelectionContext {
+                    now: self.elapsed(),
+                };
+                let Some(candidate) = self.selector.select(&self.registry, context) else {
+                    break;
+                };
+                self.control.emit(DownloadActivityEvent::PeerDialStarted {
+                    peer: candidate.endpoint().to_string(),
+                });
+                let attempt = self
+                    .registry
+                    .begin_dial(candidate, context)
+                    .map_err(DownloadError::PeerRegistry)?;
+                if let Err(error) = sockets.begin_dial(attempt, info_hash, true, self.network) {
+                    self.registry
+                        .dial_cancelled(attempt)
+                        .map_err(DownloadError::PeerRegistry)?;
+                    return Err(download_peer_set_error(error));
+                }
+            }
+
+            if sockets.pending_len() == 0 && workers.is_empty() {
+                self.receive_discovery_peers(info_hash).await?;
+                discovery_failed_while_active = false;
+                continue;
+            }
+
+            let can_discover = !discovery_failed_while_active
+                && sockets.pending_len() + workers.len() < MAX_METADATA_PEERS
+                && (self.tracker.is_some() || self.dht.is_some());
+            let cancellation = self.control.inner.cancellation.clone();
+            let event = tokio::select! {
+                biased;
+                _ = cancellation.cancelled() => {
+                    MetadataSupervisorEvent::Cancelled
+                }
+                result = self.receive_discovery_peers(info_hash), if can_discover => {
+                    MetadataSupervisorEvent::Discovery(result)
+                }
+                event = sockets.next_event() => MetadataSupervisorEvent::Socket(event),
+                joined = workers.join_next(), if !workers.is_empty() => {
+                    MetadataSupervisorEvent::Worker(joined)
+                }
+            };
+            match event {
+                MetadataSupervisorEvent::Discovery(Ok(())) => {
+                    discovery_failed_while_active = false;
+                }
+                MetadataSupervisorEvent::Discovery(Err(error)) => {
+                    self.last_error = Some(error);
+                    discovery_failed_while_active = true;
+                }
+                MetadataSupervisorEvent::Cancelled => {
+                    let now = self.elapsed();
+                    cleanup_metadata_attempts(
+                        &mut self.registry,
+                        now,
+                        &mut sockets,
+                        &mut workers,
+                        &mut worker_cancellations,
+                    )
+                    .await?;
+                    return Err(DownloadError::Cancelled);
+                }
+                MetadataSupervisorEvent::Socket(Ok(PeerSetEvent::DialCompleted {
+                    attempt,
+                    result: Ok((connection, handshake)),
+                })) => {
+                    self.registry
+                        .dial_succeeded(attempt, self.elapsed())
+                        .map_err(DownloadError::PeerRegistry)?;
+                    let cancellation = CancellationToken::new();
+                    worker_cancellations.insert(attempt.id(), (attempt, cancellation.clone()));
+                    workers.spawn(async move {
+                        run_metadata_peer(connection, handshake, info_hash, cancellation).await
+                    });
+                }
+                MetadataSupervisorEvent::Socket(Ok(PeerSetEvent::DialCompleted {
+                    attempt,
+                    result: Err(error),
+                })) => {
+                    if matches!(error, PeerSocketError::Cancelled) {
+                        self.registry
+                            .dial_cancelled(attempt)
+                            .map_err(DownloadError::PeerRegistry)?;
+                    } else {
+                        self.registry
+                            .dial_failed(attempt, self.elapsed(), error.peer_failure())
+                            .map_err(DownloadError::PeerRegistry)?;
+                        self.last_error = Some(download_peer_socket_error(error));
+                    }
+                }
+                MetadataSupervisorEvent::Socket(Ok(PeerSetEvent::Peer(_))) => {
+                    let now = self.elapsed();
+                    cleanup_metadata_attempts(
+                        &mut self.registry,
+                        now,
+                        &mut sockets,
+                        &mut workers,
+                        &mut worker_cancellations,
+                    )
+                    .await?;
+                    return Err(DownloadError::PeerTask(
+                        "metadata socket set produced an impossible peer event".to_owned(),
+                    ));
+                }
+                MetadataSupervisorEvent::Socket(Err(error)) => {
+                    let now = self.elapsed();
+                    cleanup_metadata_attempts(
+                        &mut self.registry,
+                        now,
+                        &mut sockets,
+                        &mut workers,
+                        &mut worker_cancellations,
+                    )
+                    .await?;
+                    return Err(download_peer_set_error(error));
+                }
+                MetadataSupervisorEvent::Worker(Some(Ok(MetadataPeerResult::Complete {
+                    connection,
+                    raw_info,
+                    metainfo,
+                }))) => {
+                    worker_cancellations.remove(&connection.attempt().id());
+                    let now = self.elapsed();
+                    cleanup_metadata_attempts(
+                        &mut self.registry,
+                        now,
+                        &mut sockets,
+                        &mut workers,
+                        &mut worker_cancellations,
+                    )
+                    .await?;
+                    self.connection = Some(connection);
+                    if metainfo.private {
                         self.disable_dht_for_private(info_hash).await?;
                     }
-                    return Ok(metadata);
+                    return Ok((raw_info, metainfo));
                 }
-                Err(error) => {
+                MetadataSupervisorEvent::Worker(Some(Ok(MetadataPeerResult::Failed {
+                    connection,
+                    error,
+                }))) => {
+                    worker_cancellations.remove(&connection.attempt().id());
                     let failure = peer_failure(&error);
-                    self.close_current(Some(failure))?;
+                    self.registry
+                        .connection_closed(connection.attempt(), self.elapsed(), Some(failure))
+                        .map_err(DownloadError::PeerRegistry)?;
                     self.last_error = Some(error);
+                }
+                MetadataSupervisorEvent::Worker(Some(Ok(MetadataPeerResult::Cancelled {
+                    connection,
+                }))) => {
+                    worker_cancellations.remove(&connection.attempt().id());
+                    self.registry
+                        .connection_closed(connection.attempt(), self.elapsed(), None)
+                        .map_err(DownloadError::PeerRegistry)?;
+                }
+                MetadataSupervisorEvent::Worker(Some(Err(error))) => {
+                    let now = self.elapsed();
+                    cleanup_metadata_attempts(
+                        &mut self.registry,
+                        now,
+                        &mut sockets,
+                        &mut workers,
+                        &mut worker_cancellations,
+                    )
+                    .await?;
+                    return Err(DownloadError::PeerTask(error.to_string()));
+                }
+                MetadataSupervisorEvent::Worker(None) => {
+                    let now = self.elapsed();
+                    cleanup_metadata_attempts(
+                        &mut self.registry,
+                        now,
+                        &mut sockets,
+                        &mut workers,
+                        &mut worker_cancellations,
+                    )
+                    .await?;
+                    return Err(DownloadError::PeerTask(
+                        "metadata worker set ended unexpectedly".to_owned(),
+                    ));
                 }
             }
         }
@@ -1896,6 +2102,86 @@ impl PeerSession {
         self.control
             .emit(DownloadActivityEvent::DhtDisabledForPrivateTorrent);
         Ok(())
+    }
+}
+
+async fn run_metadata_peer(
+    mut connection: PeerConnection,
+    handshake: Handshake,
+    info_hash: [u8; 20],
+    cancellation: CancellationToken,
+) -> MetadataPeerResult {
+    let result = tokio::select! {
+        biased;
+        _ = cancellation.cancelled() => None,
+        result = acquire_metadata_from_connection(&mut connection, handshake, info_hash) => {
+            Some(result)
+        }
+    };
+    match result {
+        Some(Ok((raw_info, metainfo))) => MetadataPeerResult::Complete {
+            connection,
+            raw_info,
+            metainfo,
+        },
+        Some(Err(error)) => MetadataPeerResult::Failed { connection, error },
+        None => MetadataPeerResult::Cancelled { connection },
+    }
+}
+
+async fn cleanup_metadata_attempts(
+    registry: &mut PeerRegistry,
+    now: Duration,
+    sockets: &mut PeerSocketSet,
+    workers: &mut JoinSet<MetadataPeerResult>,
+    worker_cancellations: &mut BTreeMap<DialAttemptId, (DialAttempt, CancellationToken)>,
+) -> Result<(), DownloadError> {
+    for (_, cancellation) in worker_cancellations.values() {
+        cancellation.cancel();
+    }
+
+    let mut first_error = None;
+    match std::mem::take(sockets).shutdown().await {
+        Ok(pending) => {
+            for attempt in pending {
+                if let Err(error) = registry.dial_cancelled(attempt)
+                    && first_error.is_none()
+                {
+                    first_error = Some(DownloadError::PeerRegistry(error));
+                }
+            }
+        }
+        Err(error) => first_error = Some(download_peer_set_error(error)),
+    }
+
+    while let Some(joined) = workers.join_next().await {
+        match joined {
+            Ok(result) => {
+                let attempt = result.attempt();
+                worker_cancellations.remove(&attempt.id());
+                if let Err(error) = registry.connection_closed(attempt, now, None)
+                    && first_error.is_none()
+                {
+                    first_error = Some(DownloadError::PeerRegistry(error));
+                }
+            }
+            Err(error) if first_error.is_none() => {
+                first_error = Some(DownloadError::PeerTask(error.to_string()));
+            }
+            Err(_) => {}
+        }
+    }
+    for (_, (attempt, _)) in std::mem::take(worker_cancellations) {
+        if let Err(error) = registry.connection_closed(attempt, now, None)
+            && first_error.is_none()
+        {
+            first_error = Some(DownloadError::PeerRegistry(error));
+        }
+    }
+
+    match first_error {
+        Some(error) => Err(error),
+        None => Ok(()),
     }
 }
 
@@ -3638,6 +3924,7 @@ async fn run_selective_download(
     })
 }
 
+#[cfg(test)]
 async fn connect_peer(
     attempt: DialAttempt,
     info_hash: [u8; 20],
@@ -3693,6 +3980,7 @@ async fn send_message(
 
 fn download_peer_socket_error(error: PeerSocketError) -> DownloadError {
     match error {
+        PeerSocketError::Cancelled => DownloadError::Cancelled,
         PeerSocketError::NetworkPolicyDenied { address, policy } => {
             DownloadError::NetworkPolicyDenied { address, policy }
         }
@@ -4980,6 +5268,57 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         }
     }
 
+    async fn serve_stalled_metadata_peer(
+        listener: TcpListener,
+        info_hash: [u8; 20],
+        metadata_size: usize,
+    ) {
+        let (mut stream, _) = listener.accept().await.expect("accept magnet client");
+        let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
+        stream
+            .read_exact(&mut handshake_bytes)
+            .await
+            .expect("read client handshake");
+        assert!(
+            decode_handshake(&handshake_bytes, info_hash)
+                .expect("client handshake identity")
+                .supports_extensions()
+        );
+        let mut reserved = [0; 8];
+        reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+        stream
+            .write_all(&encode_handshake_with_reserved(
+                info_hash,
+                *b"-RS-STALL-0000000000",
+                reserved,
+            ))
+            .await
+            .expect("send server handshake");
+        let mut peer =
+            PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(2));
+        assert!(matches!(
+            next_peer_message(&mut peer).await,
+            Ok(PeerMessage::Extended { id: 0, .. })
+        ));
+        send_message(
+            &mut peer,
+            &PeerMessage::Extended {
+                id: 0,
+                payload: encode_extension_handshake(Some(metadata_size)),
+            },
+        )
+        .await
+        .expect("send extension handshake");
+        assert!(matches!(
+            next_peer_message(&mut peer).await,
+            Ok(PeerMessage::Extended { id: 1, .. })
+        ));
+        assert!(matches!(
+            next_peer_message(&mut peer).await,
+            Err(DownloadError::PeerClosed)
+        ));
+    }
+
     async fn serve_one_shot_udp_tracker(
         socket: UdpSocket,
         info_hash: [u8; 20],
@@ -5661,6 +6000,153 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         assert_eq!(retransmissions, 2);
 
         assert_tracker_wait_cancels_without_socket_leaks().await;
+    }
+
+    #[tokio::test]
+    async fn stalled_metadata_peer_does_not_delay_useful_peer() {
+        let payload = b"parallel verified metadata".to_vec();
+        let info = single_file_info(&payload);
+        let info_hash: [u8; 20] = Sha1::digest(&info).into();
+        let stalled_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind stalled metadata peer");
+        let stalled_address = stalled_listener
+            .local_addr()
+            .expect("stalled metadata address");
+        let stalled_task = tokio::spawn(serve_stalled_metadata_peer(
+            stalled_listener,
+            info_hash,
+            info.len(),
+        ));
+        let useful_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind useful metadata peer");
+        let useful_address = useful_listener
+            .local_addr()
+            .expect("useful metadata address");
+        let useful_task = tokio::spawn(serve_metadata_then_piece(
+            useful_listener,
+            info,
+            payload.clone(),
+            vec![0x80],
+        ));
+        let magnet = format!(
+            "magnet:?xt=urn:btih:{}&x.pe={stalled_address}&x.pe={useful_address}",
+            hex(&info_hash)
+        );
+        let parsed = Magnet::parse(&magnet).expect("parse parallel metadata magnet");
+        let network = loopback_network(Duration::from_secs(2));
+        let mut peers = PeerSession::from_magnet(&parsed, network, DownloadControl::new(), None)
+            .await
+            .expect("resolve metadata peers");
+
+        let (raw_info, metainfo) =
+            timeout(Duration::from_secs(1), peers.acquire_metadata(info_hash))
+                .await
+                .expect("stalled metadata peer must not set the completion deadline")
+                .expect("useful metadata peer supplies verified metadata");
+
+        assert_eq!(raw_info, single_file_info(&payload));
+        assert_eq!(metainfo.info_hash, info_hash);
+        let stalled = peers
+            .registry
+            .find_endpoint(PeerEndpoint::new(stalled_address).expect("stalled endpoint"))
+            .expect("stalled peer retained");
+        assert_eq!(stalled.phase(), PeerPhase::Idle);
+        assert_eq!(stalled.history().dial_attempts, 1);
+        assert_eq!(stalled.history().total_failures, 0);
+        peers.close_current(None).expect("close metadata winner");
+        for task in [stalled_task, useful_task] {
+            timeout(Duration::from_secs(1), task)
+                .await
+                .expect("metadata peer joined")
+                .expect("metadata peer task");
+        }
+    }
+
+    #[tokio::test]
+    async fn tracker_discovery_continues_while_metadata_peer_stalls() {
+        let payload = b"late tracker metadata".to_vec();
+        let info = single_file_info(&payload);
+        let info_hash: [u8; 20] = Sha1::digest(&info).into();
+        let stalled_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind stalled metadata peer");
+        let stalled_address = stalled_listener
+            .local_addr()
+            .expect("stalled metadata address");
+        let stalled_task = tokio::spawn(serve_stalled_metadata_peer(
+            stalled_listener,
+            info_hash,
+            info.len(),
+        ));
+        let useful_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind tracker metadata peer");
+        let useful_address = useful_listener
+            .local_addr()
+            .expect("tracker metadata address");
+        let useful_task = tokio::spawn(serve_metadata_then_piece(
+            useful_listener,
+            info,
+            payload,
+            vec![0x80],
+        ));
+        let unavailable_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind unavailable placeholder");
+        let unavailable = unavailable_listener
+            .local_addr()
+            .expect("unavailable address");
+        drop(unavailable_listener);
+        let tracker = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind delayed tracker");
+        let tracker_address = tracker.local_addr().expect("tracker address");
+        let tracker_task = tokio::spawn(serve_one_shot_udp_tracker(
+            tracker,
+            info_hash,
+            unavailable,
+            useful_address,
+            Duration::from_millis(100),
+        ));
+        let magnet = Magnet::parse(&format!(
+            "magnet:?xt=urn:btih:{}&x.pe={stalled_address}&\
+             tr=udp%3A%2F%2F{tracker_address}%2Fannounce",
+            hex(&info_hash)
+        ))
+        .expect("parse late metadata discovery magnet");
+        let mut peers = PeerSession::from_magnet(
+            &magnet,
+            loopback_network(Duration::from_secs(2)),
+            DownloadControl::new(),
+            None,
+        )
+        .await
+        .expect("start metadata discovery");
+
+        let (_, metainfo) = timeout(Duration::from_secs(1), peers.acquire_metadata(info_hash))
+            .await
+            .expect("late tracker peer must be consumed during metadata work")
+            .expect("tracker peer supplies metadata");
+
+        assert_eq!(metainfo.info_hash, info_hash);
+        let discovered = peers
+            .registry
+            .find_endpoint(PeerEndpoint::new(useful_address).expect("tracker endpoint"))
+            .expect("tracker peer retained");
+        assert!(discovered.sources().contains(PeerSource::Tracker));
+        peers.close_current(None).expect("close metadata winner");
+        peers
+            .shutdown_tracker()
+            .await
+            .expect("shutdown metadata tracker");
+        for task in [stalled_task, useful_task, tracker_task] {
+            timeout(Duration::from_secs(1), task)
+                .await
+                .expect("metadata fixture joined")
+                .expect("metadata fixture task");
+        }
     }
 
     #[tokio::test]

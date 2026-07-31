@@ -62,6 +62,7 @@ impl PeerConnection {
 
 #[derive(Debug)]
 pub(crate) enum PeerSocketError {
+    Cancelled,
     NetworkPolicyDenied {
         address: SocketAddr,
         policy: NetworkPolicy,
@@ -82,7 +83,8 @@ pub(crate) enum PeerSocketError {
 impl PeerSocketError {
     pub(crate) fn peer_failure(&self) -> PeerFailure {
         match self {
-            Self::NetworkPolicyDenied { .. }
+            Self::Cancelled
+            | Self::NetworkPolicyDenied { .. }
             | Self::Io {
                 operation: "connect to peer",
                 ..
@@ -105,6 +107,7 @@ impl PeerSocketError {
 impl fmt::Display for PeerSocketError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Cancelled => formatter.write_str("peer socket operation cancelled"),
             Self::NetworkPolicyDenied { address, policy } => {
                 write!(
                     formatter,
@@ -383,7 +386,7 @@ pub(crate) struct PeerSocketSet {
     events_rx: mpsc::Receiver<PeerTaskEvent>,
     tasks: BTreeMap<ConnectionId, PeerSocketTask>,
     pending: JoinSet<PendingDialResult>,
-    pending_attempts: BTreeMap<DialAttemptId, DialAttempt>,
+    pending_attempts: BTreeMap<DialAttemptId, (DialAttempt, CancellationToken)>,
 }
 
 impl PeerSocketSet {
@@ -421,15 +424,18 @@ impl PeerSocketSet {
         advertise_extensions: bool,
         network: NetworkConfig,
     ) -> Result<(), PeerSetError> {
-        if self
-            .pending_attempts
-            .insert(attempt.id(), attempt)
-            .is_some()
-        {
+        if self.pending_attempts.contains_key(&attempt.id()) {
             return Err(PeerSetError::DuplicateDial(attempt.id()));
         }
+        let cancellation = CancellationToken::new();
+        self.pending_attempts
+            .insert(attempt.id(), (attempt, cancellation.clone()));
         self.pending.spawn(async move {
-            let result = connect(attempt, info_hash, advertise_extensions, network).await;
+            let result = tokio::select! {
+                biased;
+                _ = cancellation.cancelled() => Err(PeerSocketError::Cancelled),
+                result = connect(attempt, info_hash, advertise_extensions, network) => result,
+            };
             (attempt, result)
         });
         Ok(())
@@ -506,14 +512,16 @@ impl PeerSocketSet {
         for (_, task) in self.tasks {
             task.join.await.map_err(PeerSetError::TaskJoin)?;
         }
-        let pending = self.pending_attempts.into_values().collect::<Vec<_>>();
-        self.pending.abort_all();
+        let pending = self
+            .pending_attempts
+            .values()
+            .map(|(attempt, _)| *attempt)
+            .collect::<Vec<_>>();
+        for (_, cancellation) in self.pending_attempts.into_values() {
+            cancellation.cancel();
+        }
         while let Some(joined) = self.pending.join_next().await {
-            if let Err(error) = joined
-                && !error.is_cancelled()
-            {
-                return Err(PeerSetError::TaskJoin(error));
-            }
+            drop(joined.map_err(PeerSetError::TaskJoin)?);
         }
         Ok(pending)
     }
