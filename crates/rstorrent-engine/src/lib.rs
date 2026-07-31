@@ -10,6 +10,7 @@ mod part_file;
 pub mod peer;
 mod selective_storage;
 mod storage;
+pub mod swarm;
 mod tracker;
 
 pub use driver::{
