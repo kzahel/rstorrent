@@ -84,10 +84,10 @@ evidence.
 
 ### Now
 
-**First-piece and sustained-transfer parity.** Follow libtorrent's peer,
-request, picker, and timeout owners. Preserve deterministic liveness and
-resource bounds while closing the measured common-denominator gap from first
-piece through 50% and full verified publication.
+**Initial peer working-set reliability.** Follow libtorrent's bounded initial
+tracker fan-out and connection admission behavior while preserving the peer
+registry, UDP validation, task cleanup, and torrent-local connection bounds.
+Then return to paired 50% and full verified publication evidence.
 
 ### Next
 
@@ -128,7 +128,7 @@ does not.
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
 | Explicit magnet peer hints | Implemented | deterministic, runtime, interop | Hints are bounded and feed the registry, but are not a general discovery mechanism. | [`peer-lifecycle`](peer-lifecycle.md) |
-| Scheduled UDP tracker announces | Implemented | deterministic, runtime, interop, web, AVD, live | The implemented scope is UDP connect/announce with fallback, backoff, retransmission, token reuse, and reannounce; port 6881 is a compatibility placeholder rather than an actually bound incoming listener. | [`tracker-discovery`](tracker-discovery.md) |
+| Scheduled UDP tracker announces | Implemented | deterministic, runtime, interop, web, AVD, live | UDP connect/announce, fallback, backoff, retransmission, token reuse, and reannounce work; initial operation breadth is the active Tactical `021` owner, and port 6881 is not actually bound. | [`tracker-discovery`](tracker-discovery.md) |
 | Multiple magnet trackers | Partial | deterministic, runtime, interop | Magnet trackers form one synthetic tier because magnets contain no BEP 12 tier structure. | [`tracker-discovery`](tracker-discovery.md) |
 | Metainfo tracker tiers | Absent | none | Outer `announce` and `announce-list` are not retained by the product path. | [`tracker-discovery`](tracker-discovery.md) |
 | HTTP and HTTPS trackers | Absent | none | No URL, transport, response, authentication, or redirect owner exists. | [`tracker-discovery`](tracker-discovery.md) |
@@ -152,7 +152,7 @@ does not.
 
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
-| Bounded 16 KiB block pipeline | Implemented | deterministic, runtime, interop | Per-connection depth now adapts from useful payload under one torrent allowance; live sustained parity and endgame duplicates remain open. | [`download-correctness`](download-correctness.md) |
+| Bounded 16 KiB block pipeline | Implemented | deterministic, runtime, interop, live | Per-connection depth adapts from useful payload under one torrent allowance and a capable public peer matches the reference 50% range; working-set reliability and endgame remain open. | [`download-correctness`](download-correctness.md) |
 | Sequential multi-piece download | Implemented | runtime, interop | Ordinary single-file and selective multi-file complete; single-file durable resume is absent. | [`download-correctness`](download-correctness.md) |
 | Availability-aware piece selection | Partial | deterministic, runtime, interop | Swarm-wide availability, partial-first work, fairness, and unique-piece retention exist; rarest-first and measured scoring are absent. | [`download-correctness`](download-correctness.md) |
 | Choke recovery | Implemented | deterministic, runtime, interop | Requests move to another peer and full choked sets are replaceable; mature choking/reputation policy is absent. | [`download-correctness`](download-correctness.md) |

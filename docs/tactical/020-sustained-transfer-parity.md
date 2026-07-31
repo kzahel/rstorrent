@@ -1,6 +1,6 @@
 # Tactical 020: Sustained Transfer Parity
 
-Status: Active
+Status: Completed; peer-source breadth continues in Tactical `021`.
 
 Topics: `download-correctness`, `peer-lifecycle`,
 `performance-and-live-evidence`, `oracle-driven-engine-campaign`
@@ -281,6 +281,27 @@ the workspace. The workspace test suite passes with 218 tests, three changing
 public-network tests ignored, and no failures. The controlled mixed-peer and
 paired publication gates also remain green.
 
+A clean owner-only three-run 50% screen from commit `6c636ab` reached the
+milestone once in 24.09 seconds and timed out twice at 180 seconds. The misses
+verified 90 and 244 pieces (8.5% and 23.1%). Their current content registries
+contained only nine and four candidates: two connected in each run, zero
+eligible, and seven backed off in one versus one backed off and one dialing in
+the other. The latter was again receiving about 4.45 MiB/s at termination.
+The adaptive timeout was two seconds on every sampled productive connection;
+one slow-start peer without a response sample retained the configured
+60-second ceiling as designed.
+
+This retains two distinct findings. Once a capable peer exists, RSTorrent now
+reaches the reference's 24--28 second 50% range. It does not yet find and keep
+enough alternatives reliably: live RSTorrent runs retained only four to nine
+content candidates and two connections, whereas the paired libtorrent runs
+had 16--22 connected peers at the same milestone. Pinned source identifies
+initial tracker-operation breadth and connection boost as a separate owner:
+libtorrent queues all not-yet-working magnet tracker tiers during its initial
+announce pass and immediately attempts up to thirty returned peers. Tactical
+`021` owns that peer-source boundary rather than expanding request-window
+policy without evidence.
+
 ## Non-Goals And Next Boundary
 
 - No product UI, Tauri launch, visible browser, Android device, incoming
@@ -305,9 +326,10 @@ input. Stop only if evidence requires materially different product behavior,
 a persistence or public compatibility change, an external dependency/license
 change, visible-device interaction, or work outside this tactical's owner.
 
-This tactical is complete when the adaptive request owner and expanded
-bounded work set pass pure and scripted hostile cases, controlled libtorrent
-publication remains exact, two first-piece and 50% cohorts meet the stated
-functional/comparable gates or retain a newly classified external boundary,
-all owned work cleans up, living topics record actual evidence, and the next
-endgame/integrity owner is decision-complete.
+The stopping condition is met through the explicitly permitted classified
+external boundary. The adaptive request owner and expanded bounded work set
+pass pure and scripted hostile cases, controlled libtorrent publication
+remains exact, first-piece evidence remains functional, healthy-peer 50%
+speed matches the reference range, and the failing 50% screen retains a
+current peer-registry classification. Tactical `021` owns that discovery and
+working-set boundary before endgame/integrity work resumes.

@@ -162,9 +162,12 @@ that scope and its cleanup or compatibility rules explicitly.
   cross-peer block owner, added source-derived request pacing, and met the
   tracker, DHT functional, and catalog metadata gates.
 - [`020-sustained-transfer-parity.md`](020-sustained-transfer-parity.md):
-  active; replaces the static four-request/four-piece transfer ceiling with a
-  bounded source-derived per-connection feedback window, then proves first
-  piece and 50% through deterministic, controlled, and paired live evidence.
+  complete; replaced the static four-request/four-piece transfer ceiling with
+  a bounded source-derived per-connection feedback window and classified
+  initial peer-source breadth as the remaining 50% boundary.
+- [`021-initial-peer-working-set.md`](021-initial-peer-working-set.md): active;
+  adds bounded initial tracker-operation breadth and verifies that tracker
+  responses become a useful, cleanly owned content-peer working set.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

@@ -299,6 +299,14 @@ This is source-aligned evidence for adaptive connection inactivity detection,
 not for reducing the now-proven healthy-peer window. All three libtorrent runs
 reached 50% in 25.06--27.98 seconds with 16--22 peers at their milestones.
 
+After sampled inactivity landed, a clean RSTorrent-only three-run screen
+reached 50% once in 24.09 seconds and timed out twice at 8.5% and 23.1%. The
+misses retained only four or nine current content candidates and two
+connections; no unused candidate was eligible. The 23.1% run was receiving
+about 4.45 MiB/s at termination, reinforcing that useful-peer throughput is no
+longer the broad failure owner. Pinned libtorrent tracker startup and connect
+boost behavior selects initial peer working-set breadth for Tactical `021`.
+
 ## Result Classification
 
 Classify each paired attempt before interpreting speed:

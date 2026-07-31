@@ -3,10 +3,9 @@
 Topic: `tracker-discovery`
 
 Status: Tactical `014` replaced the first one-shot operation with a supervised
-scheduled UDP tracker lifecycle. Magnet trackers form one shuffled synthetic
-tier, fall through on failure, remain eligible under bounded backoff, promote
-on success, and reannounce on a bounded response interval. Other transports
-and metainfo tracker tiers remain unimplemented.
+scheduled UDP tracker lifecycle. Tactical `021` is active to correct the
+single-operation/first-success startup boundary exposed by sustained live
+downloads. Other transports and metainfo tracker tiers remain unimplemented.
 
 ## Scope
 
@@ -179,9 +178,23 @@ listening, NAT-PMP/UPnP, and seeding are deliberately lower priority than
 correct outbound downloading. DHT therefore continues to omit
 `announce_peer` until the client can accept incoming peer connections.
 
+Tactical `020` then showed that a capable peer can reach Big Buck Bunny's 50%
+milestone in 24--28 seconds, but the clean post-stall screen completed only
+1/3. Its two misses retained only four or nine current tracker candidates and
+two connections. The same paired libtorrent profile reached 50% with 16--22
+peers. A renewed pinned-source audit found an omitted startup behavior:
+libtorrent assigns magnet trackers distinct tiers, queues every
+not-yet-working tier in the initial announce pass even with both announce-all
+settings disabled, accepts every already-started reply, and invokes a bounded
+30-peer connection boost. RSTorrent instead runs one operation and sleeps for
+at least five minutes after the first valid response. Tactical `021` owns a
+bounded initial fan-out while preserving RSTorrent's documented synthetic
+tier and later promoted-tracker policy.
+
 ## Current Limits And Next Work
 
-The manager still has one UDP operation at a time and volatile state. It does
+The manager still has one UDP operation at a time and volatile state; the
+single-operation startup limit is the active Tactical `021` owner. It does
 not parse `.torrent` `announce-list` tiers, support HTTP, HTTPS, WebSocket,
 authentication, proxying, or BEP 41 URL-data, emit completed/stopped events,
 announce real transfer counters or an actually bound listening port, scrape,

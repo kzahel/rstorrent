@@ -314,14 +314,14 @@ reason to stop.
 Campaign state: **active**.
 
 Active tactical:
-[`020-sustained-transfer-parity.md`](../tactical/020-sustained-transfer-parity.md).
+[`021-initial-peer-working-set.md`](../tactical/021-initial-peer-working-set.md).
 Tactical
-[`019-torrent-owned-metadata-acquisition.md`](../tactical/019-torrent-owned-metadata-acquisition.md)
+[`020-sustained-transfer-parity.md`](../tactical/020-sustained-transfer-parity.md)
 is complete.
 
-Current milestone: replace the static four-request/four-piece transfer ceiling
-with a bounded connection feedback window, then use first-piece and 50%
-evidence before returning to publication.
+Current milestone: broaden the bounded initial tracker and peer working set so
+the now-competitive healthy-peer transfer path reaches 50% reliably before
+returning to publication.
 
 Last completed evidence:
 
@@ -382,15 +382,22 @@ Last completed evidence:
 - the first 50% screen completed 1/3 for RSTorrent. Its successful pair was
   28.14 versus 27.98 seconds, while both misses stranded more than 700
   requests on formerly productive peers without marking them stalled,
-  selecting adaptive request-response inactivity as the next owner.
+  selecting adaptive request-response inactivity as the next owner;
+- commit `6c636ab` added bounded response-time sampling, whole-window stall
+  release, and current content-registry diagnostics; and
+- its clean owner-only 50% screen completed 1/3 in 24.09 seconds. The misses
+  retained only four or nine candidates and two connections, while pinned
+  libtorrent source showed bounded initial fan-out across not-yet-working
+  tracker tiers and a 30-peer connect boost, selecting Tactical `021`'s
+  startup working-set owner.
 
 Next executable action:
 
-1. finish controlled gates for the sampled connection-inactivity owner;
-2. run an owner-only 50% screen with current content-registry and timeout
-   diagnostics;
-3. retain or adjust only the source-derived stall/peer owner it identifies;
-   and
-4. return to alternating 50% confirmation cohorts before full publication.
+1. add a bounded initial tracker-operation owner with exact cancellation and
+   per-record token-cache ownership;
+2. prove concurrent startup, multi-response registry intake, and cleanup with
+   scripted trackers;
+3. add endpoint-free response/dial aggregates to the headless comparator; and
+4. rerun the owner-only 50% screen before alternating confirmation cohorts.
 
 Human blocker: **none**.

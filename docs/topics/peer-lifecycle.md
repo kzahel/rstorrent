@@ -4,11 +4,12 @@ Topic: `peer-lifecycle`
 
 Status: Tactical `017` completed bounded simultaneous dialing, metadata
 acquisition, live content connections, torrent-owned requests, expiry,
-replacement, and failover. Tactical `020` is replacing the static request
-width with a bounded per-connection useful-payload feedback window and sampled
-inactivity deadline. Tracker and DHT observations remain live while content
-runs. Endgame duplicates, integrity reputation, measured picker policy,
-incoming connections, and persistent peer records remain later work.
+replacement, and failover. Tactical `020` completed bounded per-connection
+useful-payload feedback and sampled inactivity. Tactical `021` now owns the
+initial tracker/peer working-set boundary. Tracker and DHT observations remain
+live while content runs. Endgame duplicates, integrity reputation, measured
+picker policy, incoming connections, and persistent peer records remain later
+work.
 
 ## Scope
 
@@ -369,6 +370,15 @@ registry table and active/recent metadata attempts. Initial BEP 10 handshakes
 that omit `ut_metadata` release their slot, metadata rejection is counted, and
 unrelated messages cannot extend the independent metadata-progress deadline.
 The snapshot is engine diagnostics; product UI projection remains separate.
+
+Tactical `020` installed adaptive per-connection request windows and measured
+stall deadlines. A capable public peer now reaches the 50% reference range,
+but a clean screen completed only 1/3 while the misses retained four or nine
+current candidates and two connections. Tactical `021` therefore owns the
+preceding working-set boundary: bounded initial tracker-operation breadth,
+multi-response registry intake, and prompt bounded dialing. The registry and
+content supervisor remain the owners of candidate history, connection limits,
+replacement, and cleanup; tracker success does not prove peer usefulness.
 
 Incoming listener ownership and advertised-port updates, measured performance
 selection, peer-ID duplicate resolution, endgame, integrity reputation, PEX,
