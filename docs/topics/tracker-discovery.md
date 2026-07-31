@@ -152,20 +152,50 @@ the loopback gateway and an owned API 34 arm64 no-window AVD rendered the same
 assessment and tracker-filtered timeline. The Android run also passed Activity
 recreation/backgrounding and joined foreground shutdown.
 
+A Tactical `018` tracker-only Big Buck Bunny rerun retained the complete
+90-second timeline. It discovered no peers: two trackers timed out during UDP
+connect, one hostname no longer resolved, and two trackers rejected the
+announce because RSTorrent reported port zero. No dial, peer connection, or
+BEP 9 request occurred. A follow-up made port `6881` an explicit provisional
+announce input. The same headless smoke then received six tracker candidates
+within 0.36 seconds and acquired hash-verified metadata in 11.41 seconds.
+Ten immediate tracker-only repetitions completed 8/10 within the 90-second
+bound. Successful acquisition had a 32.77-second median and 38.41-second mean,
+with a 1.71–75.51-second range. Candidate counts ranged from 6 to 131 and did
+not predict completion latency. Both timeouts had discovered and attempted six
+peers, so they were not tracker-silence failures.
+
+Pinned libtorrent `2.0.13.0` then completed the same metadata-only tracker
+scenario 10/10 with a 20.94-second median and a narrow 20.81–21.49-second
+range. Its alert timeline spent about 10 seconds apiece timing out against the
+first two listed trackers, received 71 peers from the third, and verified
+metadata 0.11 seconds later. This reference kept libtorrent's ordinary peer
+concurrency while disabling DHT, LSD, PEX, incoming peers, uTP, and NAT
+mapping; it is not yet an alternated paired result.
+
+Port `6881` is a compatibility placeholder, not a reachability claim: no
+incoming peer socket is bound and no NAT mapping is requested. Incoming
+listening, NAT-PMP/UPnP, and seeding are deliberately lower priority than
+correct outbound downloading. DHT therefore continues to omit
+`announce_peer` until the client can accept incoming peer connections.
+
 ## Current Limits And Next Work
 
 The manager still has one UDP operation at a time and volatile state. It does
 not parse `.torrent` `announce-list` tiers, support HTTP, HTTPS, WebSocket,
 authentication, proxying, or BEP 41 URL-data, emit completed/stopped events,
-announce real transfer counters or a nonzero listening port, scrape, or share
-a session-wide tracker-operation budget. It reports 16 KiB left while magnet
-metadata is unknown and owns no incoming peer listener.
+announce real transfer counters or an actually bound listening port, scrape,
+or share a session-wide tracker-operation budget. It reports 16 KiB left
+while magnet metadata is unknown and owns no incoming peer listener. Until
+that later capability exists, scheduled tracker announces explicitly carry
+the conventional port `6881` so trackers that reject port zero can still
+return endpoints for outbound dialing.
 
 The DHT owner is a separately owned source using the same peer-observation
 boundary and session network policy. Tactical `017` now lets later tracker and
 DHT observations improve active-transfer reliability. Later tracker work
-should follow ownership
-established by incoming listening, transfer accounting, metainfo tiers,
-persistence, and session-wide resource policy. The headless public-torrent
-comparator adds useful live evidence but cannot replace controlled protocol and
-libtorrent tests.
+should focus on transfer accounting, metainfo tiers, persistence, and
+session-wide resource policy. Incoming listening and NAT traversal are
+separate, lower-priority work. The headless public-torrent comparator adds
+useful live evidence but cannot replace controlled protocol and libtorrent
+tests.

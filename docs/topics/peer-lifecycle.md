@@ -269,7 +269,9 @@ The preferred sequence is:
 
 Incoming connections, payload upload, PEX, LSD, uTP, NAT traversal, persistent
 peer caches, mature peer-ID duplicate resolution, and dynamic VPN or metered
-policy remain separate tacticals.
+policy remain separate tacticals. Incoming listening, NAT-PMP/UPnP, and
+seeding are deliberately lower priority than correct outbound downloading;
+the provisional tracker announce port does not change that ordering.
 
 ## Current Evidence And Gaps
 
@@ -300,10 +302,22 @@ parallel dials while existing content connections remain installed.
 
 Tactical `016` adds a session-owned DHT participant and feeds its results
 through `PeerSource::Dht`. Controlled trackerless metadata/content completion
-passes, while a public metadata attempt found many peer values without
-completing. That evidence strengthens the need for bounded parallel dialing,
-useful-peer retention, and connection turnover; it does not justify bypassing
-the registry.
+passes. Tactical `018` made every registry and metadata-attempt disposition
+inspectable, then completed two public trackerless Big Buck Bunny metadata
+runs from 93 and 100 candidates after 9 and 12 attempts. Failures were ordinary
+connect, handshake, and extension-phase failures; one peer advertised
+`ut_metadata`, supplied both blocks, and won while remaining dials were
+canceled. The registry remains the authority rather than a diagnostic address
+loop.
+
+A subsequent ten-run tracker-only and ten-run trackerless-DHT cohort completed
+8/10 and 7/10 respectively. The two tracker timeouts each received two full
+16 KiB metadata blocks across four requests but no verified dictionary. The
+three DHT timeouts discovered 29–83 candidates and attempted 23–38 peers but
+sent zero metadata requests. The next depth work should therefore retain
+per-source block identity and terminal negotiation detail across cohorts, then
+separate candidate ordering, connection/extension success, retry cadence, and
+single-source metadata assembly before broadening discovery protocols.
 
 Tactical `013` removed the implicit loopback preference and restriction.
 Desktop and Android product owners explicitly use `Online`; diagnostic and
@@ -325,6 +339,12 @@ Metadata acquisition also keeps up to three dial/negotiation work items in
 flight, continues tracker or DHT discovery, preserves the first hash-verified
 connection for content, and cooperatively cancels and joins losing work.
 
-Incoming advertised-port updates, measured performance selection, peer-ID
-duplicate resolution, endgame, integrity reputation, PEX, and persisted peer
-caches remain later work.
+`DownloadControl::diagnostic_snapshot` now exposes a bounded read-only peer
+registry table and active/recent metadata attempts. Initial BEP 10 handshakes
+that omit `ut_metadata` release their slot, metadata rejection is counted, and
+unrelated messages cannot extend the independent metadata-progress deadline.
+The snapshot is engine diagnostics; product UI projection remains separate.
+
+Incoming listener ownership and advertised-port updates, measured performance
+selection, peer-ID duplicate resolution, endgame, integrity reputation, PEX,
+and persisted peer caches remain later work.

@@ -132,6 +132,8 @@ provenance policy.
   feature campaign, including privacy, resource, and warm-restart boundaries.
 - [Performance and live evidence](docs/topics/performance-and-live-evidence.md)
   defines the headless libtorrent comparator and public-smoke evidence policy.
+- [Oracle-driven engine campaign](docs/topics/oracle-driven-engine-campaign.md)
+  is the compaction-safe source-first runbook and current execution checkpoint.
 - [Topics](docs/topics/README.md) hold living truth for continuing concerns.
 - [Tacticals](docs/tactical/README.md) hold numbered, bounded implementation
   plans and their execution records.

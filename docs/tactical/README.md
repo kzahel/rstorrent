@@ -149,11 +149,16 @@ that scope and its cleanup or compatibility rules explicitly.
   gating, warm restart, peer integration, controlled libtorrent completion,
   and an honest public trackerless attempt.
 - [`017-adversarial-multi-peer-liveness.md`](017-adversarial-multi-peer-liveness.md):
-  in progress; replaces the one-live-peer content boundary with a bounded
+  complete; replaced the one-live-peer content boundary with a bounded
   torrent-owned connection set and request scheduler driven by adversarial
   liveness scenarios.
+- [`018-inspectable-metadata-acquisition.md`](018-inspectable-metadata-acquisition.md):
+  complete; added bounded peer-registry and BEP 9 acquisition snapshots,
+  closed metadata-slot starvation, and classified tracker-only failure versus
+  repeated public DHT metadata completion.
 
-The active engine implementation tactical is `017`. Tactical `015` remains an
-independent in-progress evidence-harness slice whose selective reference
-prerequisite and DHT single-sided smoke have landed. Current prioritization lives in
-[`../topics/capability-readiness.md`](../topics/capability-readiness.md).
+Tactical `015` is the active oracle-campaign slice. Its selective reference
+prerequisite and DHT single-sided smoke have landed; the paired milestone
+runner remains. Current prioritization and the compaction-safe restart
+checkpoint live in [`../topics/capability-readiness.md`](../topics/capability-readiness.md)
+and [`../topics/oracle-driven-engine-campaign.md`](../topics/oracle-driven-engine-campaign.md).

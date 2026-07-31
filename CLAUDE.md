@@ -8,9 +8,10 @@ Start with [`README.md`](README.md), then read [`docs/vision.md`](docs/vision.md
 [`docs/engineering-principles.md`](docs/engineering-principles.md),
 [`docs/topics/product-direction.md`](docs/topics/product-direction.md), and
 [`docs/topics/capability-readiness.md`](docs/topics/capability-readiness.md),
-then [`docs/references.md`](docs/references.md). Once an implementation tactical
-exists, read it and every focused topic it names before changing code in its
-scope.
+[`docs/topics/oracle-driven-engine-campaign.md`](docs/topics/oracle-driven-engine-campaign.md),
+then [`docs/references.md`](docs/references.md). Once an implementation
+tactical exists, read it and every focused topic it names before changing code
+in its scope.
 
 For maintainer-specific cross-project context, see
 `~/code/dotfiles/projects/README.md` when that checkout is available.
@@ -102,8 +103,11 @@ deferral only when a material known problem is deliberately left in place.
 ## Feature Campaign Execution
 
 [`docs/topics/capability-readiness.md`](docs/topics/capability-readiness.md)
-owns the current queue. For each engine, protocol, discovery, scheduling,
-storage, or performance feature:
+owns the current queue. During the active engine-parity campaign,
+[`docs/topics/oracle-driven-engine-campaign.md`](docs/topics/oracle-driven-engine-campaign.md)
+owns the source-first runbook, graduation rules, restart checkpoint, and next
+executable action. For each engine, protocol, discovery, scheduling, storage,
+or performance feature:
 
 1. Create or update one bounded tactical before implementation. State its
    stopping condition, non-goals, invariants, resource limits, and required
@@ -205,7 +209,8 @@ temporary logs, captures, downloads, and investigation artifacts before
 finishing.
 
 Live public-swarm and comparative performance smokes are opt-in and follow
-[`docs/topics/performance-and-live-evidence.md`](docs/topics/performance-and-live-evidence.md).
+[`docs/topics/performance-and-live-evidence.md`](docs/topics/performance-and-live-evidence.md)
+and the active campaign runbook.
 Engine-only work defaults to headless CLI or application-service validation;
 do not launch visible product clients merely to exercise engine behavior.
 

@@ -5,10 +5,11 @@ Topic: `capability-readiness`
 Status: This is the master roll-up for current product and engine readiness.
 RSTorrent now completes controlled v1 downloads through bounded simultaneous
 peers, live tracker/DHT discovery, request expiry, and replacement, including
-ordinary multi-piece single-file content. It is not yet a generally reliable
-torrent client because endgame and hash-failure recovery remain absent. Those
-form the active reliability slice; the paired live comparator remains
-independent evidence work.
+ordinary multi-piece single-file content. The active source-first campaign
+first completes the paired libtorrent comparator, then drives metadata,
+first-piece, sustained-transfer, endgame, and publication parity before
+measured BEP breadth. Endgame and hash-failure recovery remain known ordinary
+completion risks within that campaign.
 
 ## Purpose And Ownership
 
@@ -72,40 +73,44 @@ and no more than three in **Next**. A long inventory is useful; competing
 current priorities are not.
 
 The completed DHT and multi-peer foundations now let late tracker or DHT
-observations improve active content work. The highest remaining ordinary
-completion risk is the final-block/final-piece boundary: bounded endgame and
-hash-failure recovery.
+observations improve active content work. The current campaign and restart
+checkpoint live in
+[`oracle-driven-engine-campaign.md`](oracle-driven-engine-campaign.md). It
+uses pinned libtorrent source and tests to choose coherent owner-level changes,
+then validates them through deterministic, controlled, and paired public
+evidence.
 
 ## Current Queue
 
 ### Now
 
-**Endgame and integrity recovery.** Plan and execute the next bounded tactical
-for DL-C07 through DL-C09: core cancel messages, bounded duplicate attempts,
-harmless losing responses, piece reset/retry after hash failure, and bounded
-contributor attribution. Preserve Tactical `017`'s torrent-owned accounting
-and task boundary.
+**Complete the paired milestone comparator.** Finish Tactical `015` with a
+catalog-backed, machine-readable, alternating libtorrent/RSTorrent runner for
+metadata, first piece, 50%, endgame, verified publication, resource evidence,
+classification, cleanup, and bounded retained diagnostics. Keep all execution
+headless.
 
 ### Next
 
-1. **Finish the paired headless comparator.** Complete Tactical 015's catalog,
-   shared JSON classification, alternating runs, resource observations, and
-   bounded tracker/DHT public baselines.
-2. **Measured connection/picker policy.** Use paired public evidence to tune
-   live-peer budgets, availability-aware selection, and resource high-water
-   marks before broadening discovery again.
-3. **Complete single-file durable resume.** Reuse the established conservative
-   recheck/checkpoint owner for ordinary path-backed multi-piece files without
-   weakening publication ordering.
+1. **Torrent-owned metadata acquisition.** Use pinned `ut_metadata` behavior
+   and tests to replace independent per-peer full acquisition with bounded
+   cross-peer block ownership, reassignment, attribution, and hash recovery.
+2. **First-piece and sustained-transfer parity.** Follow libtorrent's peer,
+   request, picker, and timeout owners; preserve deterministic liveness and
+   resource bounds while closing measured common-denominator gaps.
+3. **Endgame, integrity recovery, and publication parity.** Complete DL-C07
+   through DL-C09 with cancel messages, bounded duplicate attempts, harmless
+   losing responses, hash-failure reset/attribution, and full headless cohorts.
 
 ### Later
 
-IPv6 DHT operation, incoming peer listening, payload upload and seeding, PEX,
-local service discovery, uTP, NAT traversal, v2 and hybrid torrents,
-playback-oriented file priorities, dynamic VPN and metered-network controls,
-and production remote access remain important. They do not displace the
-explicit current campaign merely because they are individually visible
-features.
+Complete single-file durable resume, IPv6 DHT operation, incoming peer
+listening, payload upload and seeding, PEX, local service discovery, uTP, NAT
+traversal, v2 and hybrid torrents, playback-oriented file priorities, dynamic
+VPN and metered-network controls, and production remote access remain
+important. After core parity, common-denominator versus full-reference deltas
+and the protocol evidence matrix choose BEP breadth; visible novelty alone
+does not.
 
 ## Capability Scoreboard
 
@@ -115,7 +120,7 @@ features.
 | --- | --- | --- | --- | --- |
 | Bounded bencode and v1 info dictionaries | Implemented | deterministic, interop | This is not complete outer `.torrent` ingestion; v2 and hybrid info dictionaries are rejected. | [`product-direction`](product-direction.md) |
 | Product add from a v1 magnet | Implemented | deterministic, runtime, interop, web, AVD, physical | Only a v1 `btih` identity and supported magnet fields survive canonicalization. | [`client-persistence`](client-persistence.md) |
-| BEP 9 metadata download | Implemented | deterministic, runtime, interop | Up to three peers are coordinated and the first hash-verified result wins; multi-source block assembly is deliberately absent. | [`peer-lifecycle`](peer-lifecycle.md) |
+| BEP 9 metadata download | Implemented | deterministic, runtime, interop, live | Up to three peers are coordinated, acquisition is inspectable, and the first hash-verified result wins; multi-source block assembly is deliberately absent. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Bounded diagnostic metadata upload | Implemented | deterministic, interop | It is not a general incoming listener or payload seeding service. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Product add from a `.torrent` file | Absent | deterministic parser only | The application command accepts magnets only and does not retain outer announce fields. | [`application-control`](application-control.md) |
 | v2 and hybrid identity, metadata, and hashing | Absent | deterministic rejection | BEP 52 requires a separate integrity and storage design. | [`protocol-support`](protocol-support.md) |
@@ -125,11 +130,11 @@ features.
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
 | Explicit magnet peer hints | Implemented | deterministic, runtime, interop | Hints are bounded and feed the registry, but are not a general discovery mechanism. | [`peer-lifecycle`](peer-lifecycle.md) |
-| Scheduled UDP tracker announces | Implemented | deterministic, runtime, interop, web, AVD | The implemented scope is UDP connect/announce with fallback, backoff, retransmission, token reuse, and reannounce; completion/stopped events and real transfer counters are absent. | [`tracker-discovery`](tracker-discovery.md) |
+| Scheduled UDP tracker announces | Implemented | deterministic, runtime, interop, web, AVD, live | The implemented scope is UDP connect/announce with fallback, backoff, retransmission, token reuse, and reannounce; port 6881 is a compatibility placeholder rather than an actually bound incoming listener. | [`tracker-discovery`](tracker-discovery.md) |
 | Multiple magnet trackers | Partial | deterministic, runtime, interop | Magnet trackers form one synthetic tier because magnets contain no BEP 12 tier structure. | [`tracker-discovery`](tracker-discovery.md) |
 | Metainfo tracker tiers | Absent | none | Outer `announce` and `announce-list` are not retained by the product path. | [`tracker-discovery`](tracker-discovery.md) |
 | HTTP and HTTPS trackers | Absent | none | No URL, transport, response, authentication, or redirect owner exists. | [`tracker-discovery`](tracker-discovery.md) |
-| DHT | Partial | deterministic, runtime, interop, live | A bounded IPv4 participant supports lookup, incoming queries, private gating, and revalidated warm restart. IPv6 UDP operation and self-announcement are absent; the first public metadata smoke discovered peers but did not complete. | [`dht-discovery`](dht-discovery.md) |
+| DHT | Partial | deterministic, runtime, interop, live | A bounded IPv4 participant supports lookup, incoming queries, private gating, revalidated warm restart, and repeated public metadata acquisition. IPv6 UDP operation and self-announcement are absent. | [`dht-discovery`](dht-discovery.md) |
 | Peer exchange | Absent | none | BEP 11 depends on a larger live-peer set, extension dispatch, and hostile-source bounds. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Local service discovery | Absent | none | Interface, multicast, and local-network policy are unimplemented. | [`protocol-support`](protocol-support.md) |
 
@@ -142,7 +147,7 @@ features.
 | Pre-content peer failover | Implemented | runtime, interop | Bounded parallel metadata peers are supported, but metadata blocks are not assembled across sources. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Multiple simultaneous live peers | Implemented | deterministic, runtime, interop | Eight established and three pending are torrent-local defaults; no session-wide connection budget exists. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Transfer request ownership and failover | Implemented | deterministic, runtime, interop | Ordinary blocks have one generation and expiry owner; bounded endgame duplicates are absent. | [`download-correctness`](download-correctness.md) |
-| Incoming peer connections | Absent | diagnostic metadata listener only | No advertised listen port, accept budget, torrent routing, or shutdown policy exists. | [`peer-lifecycle`](peer-lifecycle.md) |
+| Incoming peer connections | Absent | diagnostic metadata listener only | No bound product listen port, accept budget, torrent routing, NAT mapping, or shutdown policy exists; this is lower priority than correct outbound downloading. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Peer reputation and integrity attribution | Absent | none | A bad piece is detected but contributors cannot be attributed or penalized. | [`download-correctness`](download-correctness.md) |
 
 ### Content Transfer And Completion

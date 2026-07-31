@@ -19,6 +19,11 @@ This topic defines how to collect that evidence without confusing a noisy
 observation with a correctness claim. It also keeps performance work tied to
 end-to-end product outcomes instead of isolated micro-optimization.
 
+[`oracle-driven-engine-campaign.md`](oracle-driven-engine-campaign.md) owns the
+active source-first execution runbook, parity gates, and restart checkpoint.
+This topic owns the measurement and evidence contract consumed by that
+campaign.
+
 ## Evidence Roles
 
 Use several complementary layers:
@@ -109,9 +114,81 @@ A subsequent 120-second trackerless Big Buck Bunny RSTorrent probe built a
 16-node routing table, received 830 valid DHT responses, and observed 1,563
 peer values, but no contacted peer completed metadata. It was single-sided and
 therefore has no paired classification under the table below. It is retained
-as evidence that discovery is operating and that peer connection/transfer
-ownership remains an ordinary-swarm reliability gap; it is not a public
-completion or speed claim.
+as an honest historical outcome, not a public completion or speed claim.
+
+Tactical `018` added a coherent peer-registry and BEP 9 acquisition snapshot,
+then reran the trackerless smoke twice. The runs discovered 93 and 100 bounded
+peer records, attempted 9 and 12 peers, and acquired the hash-verified
+21,307-byte info dictionary in two requests and two blocks after 31.2 and 45.9
+seconds. The latter DHT traversal retained 8 routing nodes, sent 80 queries,
+received 56 valid responses, and discovered 100 peer values. Its 12 attempts
+ended as 3 connection refusals, 3 connect timeouts, 3 handshake or extension-
+phase resets, 1 verified metadata source, and 2 canceled losing dials. Final
+metadata request, dial, worker, transaction, and lookup counts were zero.
+
+A separate 90-second tracker-only rerun discovered no peers and made no dials.
+Two trackers timed out, one no longer resolved, and two explicitly rejected
+RSTorrent's port-zero announce. After scheduled announces began carrying the
+provisional compatibility port `6881`, the same tracker-only smoke received
+six candidates within 0.36 seconds and acquired hash-verified metadata in
+11.41 seconds. RSTorrent still owns no incoming listener or NAT mapping, so
+this is outbound metadata-acquisition evidence rather than inbound
+reachability or seeding evidence. Neither single-sided result replaces the
+still-pending paired comparator.
+
+An immediate 20-run cohort then exercised the same fixed Big Buck Bunny
+magnet ten times with trackers only and ten times with trackers absent and a
+fresh public DHT owner. These are unpaired, changing-public-swarm samples with
+different timeout bounds:
+
+| Discovery | Completed | Bound | Successful latency min / median / mean / max | Final candidates median / range |
+| --- | ---: | ---: | ---: | ---: |
+| UDP trackers only | 8/10 | 90 s | 1.71 / 32.77 / 38.41 / 75.51 s | 12.5 / 6–131 |
+| DHT only | 7/10 | 120 s | 30.84 / 78.69 / 72.59 / 104.35 s | 88 / 29–120 |
+
+Both tracker failures ended with six attempted and zero eligible candidates,
+four metadata requests, and two received 16 KiB blocks totaling 32,768 bytes,
+but no verified dictionary. One later tracker success received 37,691 bytes,
+consistent with an abandoned full first block plus a complete 21,307-byte
+dictionary from another attempt. This is evidence for inspecting per-source
+metadata progress and multi-source policy, not proof that aggregate blocks
+can safely be combined.
+
+All three DHT failures had successful lookup traffic and peer values: they
+ended with 29, 79, and 83 candidates and 23, 35, and 38 dial attempts, but
+zero metadata requests. Across all ten DHT runs, 2,759 queries received 2,223
+valid responses (80.6%) and produced 906 final candidate records. The failure
+boundary is therefore peer connection, selection, or extension negotiation,
+not an empty DHT lookup. Every successful DHT run needed exactly two metadata
+requests and two blocks once a usable peer was reached.
+
+The same metadata-only metric was then run ten times per discovery mode
+through pinned libtorrent `2.0.13.0`. Each run used a fresh temporary session
+and storage root; LSD, PEX, UPnP, NAT-PMP, incoming peer connections, and uTP
+were disabled. Tracker mode disabled DHT and used the same five UDP URLs; DHT
+mode omitted every tracker. Libtorrent otherwise retained its ordinary peer
+and metadata scheduler, including substantially more connection concurrency
+than RSTorrent's three metadata work slots.
+
+| Implementation and discovery | Completed | Bound | Successful latency min / median / mean / max |
+| --- | ---: | ---: | ---: |
+| RSTorrent, UDP trackers | 8/10 | 90 s | 1.71 / 32.77 / 38.41 / 75.51 s |
+| libtorrent, UDP trackers | 10/10 | 90 s | 20.81 / 20.94 / 21.01 / 21.49 s |
+| RSTorrent, DHT | 7/10 | 120 s | 30.84 / 78.69 / 72.59 / 104.35 s |
+| libtorrent, DHT | 10/10 | 120 s | 0.75 / 0.90 / 1.08 / 2.72 s |
+
+One isolated-process libtorrent DHT repetition completed in 0.757 seconds,
+ruling out reuse of a preceding session's routing table. A tracker alert
+timeline explained the reference's stable 21-second result: the first two
+trackers each timed out after about 10 seconds, the third returned 71 peers,
+and verified metadata arrived 0.11 seconds later. The RSTorrent and libtorrent
+cohorts were sequential rather than alternated, so these are a reference
+baseline and a large observed gap, not yet Tactical `015`'s paired comparator.
+
+All figures above stop at hash-verified `ut_metadata`. The actual torrent is
+276,445,467 payload bytes in 1,055 pieces across three files. Neither cohort
+measured full payload verification or publication; a ten-run cohort for both
+implementations would transfer about 5.53 GB before protocol overhead.
 
 ## Result Classification
 

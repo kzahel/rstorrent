@@ -9,10 +9,12 @@ guarantee.
 RSTorrent currently understands the retained UDP tracker URLs but not the
 WebSocket trackers, WebSeed, or exact-source URL in these magnets. Tactical
 `013` added an ignored, metadata-only Big Buck Bunny probe under explicit
-online policy. Its 2026-07-31 execution reached the first public UDP tracker
-and timed out waiting for the connect response; it did not acquire metadata.
-That result proves the product route was no longer rejected by loopback policy,
-not that the listed swarm was reachable.
+online policy. Tactical `018` made its peer and metadata state inspectable. A
+later ten-run RSTorrent cohort completed metadata 8/10 through UDP trackers
+and 7/10 through DHT; pinned libtorrent `2.0.13.0` completed the corresponding
+reference-only cohorts 10/10. These runs stop at the verified 21,307-byte info
+dictionary. They do not establish full completion of the 276,445,467-byte
+payload.
 
 ## Comparative Smoke Policy
 

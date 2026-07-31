@@ -2,7 +2,7 @@
 
 Status: In progress
 
-Topic: `performance-and-live-evidence`
+Topics: `performance-and-live-evidence`, `oracle-driven-engine-campaign`
 
 ## Motivation And Outcome
 
@@ -106,3 +106,14 @@ The tactical remains in progress because there is no catalog-backed paired
 runner, shared JSON result/classification schema, alternating run order, or
 paired public tracker baseline yet. The DHT harness is evidence consumed by
 that future comparator, not a substitute for it.
+
+A manual reference-only precursor exercised the exact current metadata metric
+through pinned libtorrent `2.0.13.0` in ten fresh tracker-only and ten fresh
+DHT-only sessions. Both modes completed 10/10; tracker acquisition had a
+20.94-second median and DHT acquisition a 0.90-second median. The corresponding
+RSTorrent cohorts completed 8/10 at a 32.77-second successful median and 7/10
+at a 78.69-second successful median. Discovery capabilities were restricted,
+but libtorrent retained its ordinary connection concurrency. These sequential
+cohorts do not satisfy the tactical's alternating paired-run stopping
+condition. They also stop at verified metadata: the 276,445,467-byte payload
+and its 1,055 pieces were not downloaded.

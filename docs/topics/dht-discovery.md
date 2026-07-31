@@ -51,11 +51,29 @@ discovery when private intent is unknowable.
 Controlled libtorrent 2.0.13 evidence completes metadata and payload download
 from an info-hash-only magnet and independently verifies RSTorrent's incoming
 `ping`, `get_peers`, token, and `announce_peer` behavior. A public bootstrap
-smoke reaches the deployed DHT. A first public Big Buck Bunny lookup found many
-peer values but did not acquire metadata in 120 seconds. After bounded multi-
-peer acquisition landed, a tracker-based retry still exceeded its 90-second
-bound; these changing public outcomes remain inconclusive and motivate the
-paired live comparator rather than weakening controlled DHT or peer evidence.
+smoke reaches the deployed DHT. The first public Big Buck Bunny lookup found
+many peer values but did not acquire metadata in 120 seconds. After bounded
+multi-peer acquisition and inspectable metadata state landed, two subsequent
+trackerless attempts acquired and hash-verified the 21,307-byte info dictionary
+in two blocks after 31.2 and 45.9 seconds. These changing single-sided public
+outcomes are useful live evidence, not a paired reliability or speed claim.
+
+Ten immediate trackerless repetitions completed 7/10 within the 120-second
+bound. Successful acquisition ranged from 30.84 to 104.35 seconds, with a
+78.69-second median and 72.59-second mean. Across the cohort, 2,759 queries
+received 2,223 valid responses and produced final registries of 29–120 peers.
+The three timeouts still discovered 29, 79, and 83 peers and attempted 23, 35,
+and 38, but never sent a metadata request. This evidence moves the observed
+failure boundary downstream from DHT traversal into peer connection,
+selection, or extension negotiation.
+
+Pinned libtorrent `2.0.13.0` completed the same trackerless metadata metric
+10/10 with a 0.90-second median, 1.08-second mean, and 0.75–2.72-second range.
+One additional isolated-process run completed in 0.757 seconds. DHT was the
+only discovery source and LSD, PEX, incoming peers, uTP, and NAT mapping were
+disabled, but libtorrent retained its ordinary peer and metadata concurrency.
+The result is a mature-reference baseline rather than an alternated paired
+comparison, and it exposes a large downstream traversal/selection gap.
 
 ## Scope And Protocol Baseline
 
@@ -204,9 +222,9 @@ The completed foundation followed these stages:
 4. **Warm restart and torrent integration.** Persist bounded bootstrap hints,
    prove cold/warm recovery, enforce private intent, and feed peers into the
    ordinary registry.
-5. **Live proof.** Public bootstrap succeeded. The bounded public trackerless
-   metadata attempt discovered peers but timed out; Tactical 015 still owns the
-   paired libtorrent comparator and richer resource/timing report.
+5. **Live proof.** Public bootstrap, repeated trackerless metadata completion,
+   and retained timeout diagnostics exist. Tactical 015 still owns the paired
+   libtorrent comparator and richer resource/timing report.
 
 Each slice follows the feature-work contract in the repository instructions:
 normative specifications and exact pinned libtorrent source/tests are studied

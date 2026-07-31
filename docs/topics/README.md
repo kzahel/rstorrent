@@ -49,6 +49,9 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`performance-and-live-evidence.md`](performance-and-live-evidence.md):
   headless libtorrent comparison, public-smoke classification, performance
   measurement, and artifact-safety policy.
+- [`oracle-driven-engine-campaign.md`](oracle-driven-engine-campaign.md):
+  source-first libtorrent-oracle runbook, parity gates, autonomous restart
+  checkpoint, milestone sequence, and transition to measured BEP breadth.
 - [`client-persistence.md`](client-persistence.md): SQLite-backed client state,
   verified metadata and resume invariants, cross-platform storage-root
   identity, and the application-service boundary above the torrent engine.
