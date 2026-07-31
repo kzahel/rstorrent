@@ -4836,6 +4836,72 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
     }
 
     #[tokio::test]
+    async fn slow_storage_preserves_multi_peer_payload_bound() {
+        let first = vec![0x29; 16 * 1024];
+        let second = vec![0xe3; 16 * 1024];
+        let metainfo =
+            Metainfo::from_bytes(&two_piece_metainfo(&first, &second)).expect("two-piece metainfo");
+        let payload = Arc::new(vec![first, second]);
+        let mut addresses = Vec::new();
+        let mut tasks = Vec::new();
+        for _ in 0..2 {
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind storage-pressure peer");
+            addresses.push(listener.local_addr().expect("storage-pressure address"));
+            tasks.push(tokio::spawn(serve_content_peer(
+                listener,
+                metainfo.info_hash,
+                payload.clone(),
+                vec![true, true],
+            )));
+        }
+        let mut peers = PeerSession::from_endpoint(
+            addresses[0],
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(2)),
+        )
+        .expect("peer session");
+        peers
+            .observe_address(addresses[1], PeerSource::Manual)
+            .expect("second peer");
+        let control = DownloadControl::new();
+        control.set_storage_write_delay(Duration::from_millis(25));
+        let output = test_path("slow-storage-multi-peer");
+
+        let report = timeout(
+            Duration::from_secs(3),
+            run_content_download(
+                ContentDownloadConfig {
+                    output_path: output.clone(),
+                    max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                    swarm_config: SwarmConfig::for_payload_limit(2 * MIN_PAYLOAD_ALLOWANCE),
+                    skip_files: Vec::new(),
+                    materialize_files: Vec::new(),
+                },
+                metainfo,
+                control,
+                None,
+                &mut peers,
+                None,
+            ),
+        )
+        .await
+        .expect("bounded slow-storage download")
+        .expect("slow-storage completion");
+
+        assert_eq!(report.verified_piece_count, 2);
+        assert!(report.payload_high_water <= 2 * MIN_PAYLOAD_ALLOWANCE);
+        for task in tasks {
+            timeout(Duration::from_secs(1), task)
+                .await
+                .expect("storage-pressure peer joined")
+                .expect("storage-pressure peer task");
+        }
+        let _ = tokio::fs::remove_dir_all(output).await;
+    }
+
+    #[tokio::test]
     async fn disconnect_and_choke_reassign_only_their_outstanding_blocks() {
         run_adverse_reassignment_case(AdverseRequestAction::Disconnect).await;
         run_adverse_reassignment_case(AdverseRequestAction::Choke).await;
