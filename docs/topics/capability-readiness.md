@@ -6,10 +6,10 @@ Status: This is the master roll-up for current product and engine readiness.
 RSTorrent now completes controlled v1 downloads through bounded simultaneous
 peers, live tracker/DHT discovery, request expiry, and replacement, including
 ordinary multi-piece single-file content. The active source-first campaign
-first completes the paired libtorrent comparator, then drives metadata,
-first-piece, sustained-transfer, endgame, and publication parity before
-measured BEP breadth. Endgame and hash-failure recovery remain known ordinary
-completion risks within that campaign.
+now drives metadata, first-piece, sustained-transfer, endgame, and publication
+parity through the completed paired libtorrent comparator before measured BEP
+breadth. Endgame and hash-failure recovery remain known ordinary completion
+risks within that campaign.
 
 ## Purpose And Ownership
 
@@ -84,23 +84,22 @@ evidence.
 
 ### Now
 
-**Complete the paired milestone comparator.** Finish Tactical `015` with a
-catalog-backed, machine-readable, alternating libtorrent/RSTorrent runner for
-metadata, first piece, 50%, endgame, verified publication, resource evidence,
-classification, cleanup, and bounded retained diagnostics. Keep all execution
-headless.
+**Torrent-owned metadata acquisition.** Use pinned `ut_metadata` behavior and
+tests to replace independent per-peer full acquisition with bounded cross-peer
+block ownership, reassignment, attribution, and hash recovery. Validate the
+owner through deterministic hostile-peer cases, controlled interop, and the
+paired metadata cohorts before moving to sustained content transfer.
 
 ### Next
 
-1. **Torrent-owned metadata acquisition.** Use pinned `ut_metadata` behavior
-   and tests to replace independent per-peer full acquisition with bounded
-   cross-peer block ownership, reassignment, attribution, and hash recovery.
-2. **First-piece and sustained-transfer parity.** Follow libtorrent's peer,
+1. **First-piece and sustained-transfer parity.** Follow libtorrent's peer,
    request, picker, and timeout owners; preserve deterministic liveness and
    resource bounds while closing measured common-denominator gaps.
-3. **Endgame, integrity recovery, and publication parity.** Complete DL-C07
+2. **Endgame, integrity recovery, and publication parity.** Complete DL-C07
    through DL-C09 with cancel messages, bounded duplicate attempts, harmless
    losing responses, hash-failure reset/attribution, and full headless cohorts.
+3. **Measured BEP breadth.** Use the protocol matrix and full-reference gaps
+   to choose the next discovery or transport BEP after core completion parity.
 
 ### Later
 

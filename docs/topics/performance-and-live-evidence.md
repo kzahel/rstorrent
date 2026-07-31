@@ -2,11 +2,11 @@
 
 Topic: `performance-and-live-evidence`
 
-Status: In progress. A catalog-backed paired RSTorrent/libtorrent comparator
-now emits milestone, geometry, diagnostic, cleanup, and classification JSON
-without opening a product surface. Tactical 015 still needs its bounded full
-completion baseline and final validation. Public-swarm speed remains a
-measured baseline, not a CI pass threshold.
+Status: Active measurement contract. The catalog-backed paired
+RSTorrent/libtorrent comparator emits milestone, geometry, diagnostic,
+cleanup, and classification JSON without opening a product surface. Its first
+controlled and public full-download baselines are recorded below.
+Public-swarm speed remains a measured baseline, not a CI pass threshold.
 
 ## Purpose
 
@@ -206,7 +206,33 @@ metadata attempts, two metadata requests, and the two blocks comprising the
 21,307-byte info dictionary. This is comparable paired evidence and confirms
 the harness contract, but one sample is not a distribution or a parity claim.
 It points the next source-first slice at metadata candidate concurrency and
-torrent-wide request ownership. Full-payload evidence is still pending.
+torrent-wide request ownership.
+
+### First Full-Download Comparator Evidence: 2026-07-31
+
+A controlled loopback fixture first ran both exact adapters against one
+libtorrent seed. Both independently verified and published a 79,000-byte,
+two-file, three-piece torrent, matched the output file hashes, produced
+`both_reached`, and cleaned up. This validates the completion schema and
+publication checks; its sub-second timings are not public speed evidence.
+
+The first public full pair used the common-denominator Big Buck Bunny profile
+with a 900-second deadline per owner. RSTorrent verified metadata at 16.71
+seconds and its first piece at 24.15 seconds. It then timed out at 461 of 1,055
+verified pieces and 120,848,384 of 276,445,467 bytes (43.7%), before the 50%
+milestone. Its terminal snapshot reported one connected, unchoked peer, four
+requests, no writes in flight, 9,491 missing blocks, and
+`requestwindowsfull`. An external read-only process sample saw about 15 MiB
+RSS and low CPU, so neither unbounded buffering nor a spin explained the wait.
+
+Libtorrent independently reached verified metadata at 20.57 seconds, first
+piece at 20.62, 50% at 24.75, 95% at 28.88, 99% at 29.91, and verified
+publication at 30.88 seconds. It downloaded 276,445,467 wanted bytes and the
+published file geometry matched. The pair is `reference_only`: the swarm was
+healthy enough for the constrained reference, while RSTorrent exposed a
+sustained connection/request-width gap well before endgame. The earlier user
+observation of a 99.9% stall remains relevant to endgame, but it was not the
+first limiting boundary in this run.
 
 ## Result Classification
 
@@ -289,9 +315,9 @@ controlled samples establish a defensible threshold.
 - Committed summaries contain no peer IP addresses, tokens, machine-specific
   paths, or large binary artifacts.
 
-## Current Tactical Boundary
+## Comparator Outcome
 
-Tactical `015` has added the smallest harness that can:
+Tactical `015` added the smallest harness that can:
 
 1. select a catalog entry and comparison mode;
 2. run a bounded libtorrent reference download and a bounded RSTorrent
@@ -303,10 +329,10 @@ Tactical `015` has added the smallest harness that can:
 
 Selective pinned-reference checkout tooling and the single-sided DHT harness
 landed as prerequisites. Deterministic catalog, classification, threshold,
-order, and summary tests plus the first paired metadata run now pass. The
-remaining stopping condition is a bounded full-download pair and workspace
-validation; the tactical does not add product UI, establish a CI speed gate,
-or change DHT scheduling itself.
+order, and summary tests, a controlled full comparison, the first paired
+metadata run, and the first bounded public full pair now pass or produce an
+honest classified result. The comparator does not add product UI, establish a
+CI speed gate, or change DHT scheduling itself.
 
 ## Maintenance Contract
 

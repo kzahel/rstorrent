@@ -1,6 +1,6 @@
 # Tactical 015: Headless Live Comparison
 
-Status: In progress
+Status: Complete
 
 Topics: `performance-and-live-evidence`, `oracle-driven-engine-campaign`
 
@@ -217,11 +217,10 @@ Tactical 016 required and landed two prerequisites from this plan:
   exchange, validates incoming DHT participation, cleans its owned processes,
   and can run an opt-in single-sided public probe.
 
-The tactical remains in progress because there is no paired full-download
-baseline yet. The catalog-backed runner, shared JSON result and classification
-schema, alternating order, bounded cleanup, and paired public tracker metadata
-baseline have landed. The DHT harness is evidence consumed by this comparator,
-not a substitute for it.
+The catalog-backed runner, shared JSON result and classification schema,
+alternating order, bounded cleanup, paired public tracker baselines, and a
+controlled full-download fixture have landed. The DHT harness is evidence
+consumed by this comparator, not a substitute for it.
 
 A manual reference-only precursor exercised the exact current metadata metric
 through pinned libtorrent `2.0.13.0` in ten fresh tracker-only and ten fresh
@@ -242,4 +241,27 @@ candidates, 110 eligible candidates, 20 attempts, and the two requests and two
 blocks that formed the 21,307-byte dictionary. This validates the paired
 contract and exposes a source-first metadata concurrency target; it is only
 one live sample and does not establish a distribution. A bounded paired full
-download remains before this tactical is complete.
+download remained before this tactical's final validation.
+
+The controlled final validation kept one libtorrent seed on loopback and ran
+both production adapters sequentially against the same 79,000-byte, two-file,
+three-piece magnet. Both verified and published every byte, independently
+matched both file hashes, emitted `both_reached`, and cleaned their roots.
+RSTorrent published in 0.018 seconds and libtorrent in 0.063 seconds. These
+times validate harness mechanics and are not public performance evidence.
+
+The first bounded full public pair then ran the same common-denominator Big
+Buck Bunny profile with 900-second owner deadlines. RSTorrent verified
+metadata at 16.71 seconds and its first piece at 24.15 seconds, but timed out
+after verifying 461 of 1,055 pieces and 120,848,384 of 276,445,467 bytes. It
+never reached 50%. Its final snapshot had one connected unchoked peer, four
+requests outstanding, zero writes pending, 9,491 missing blocks, and the
+named state `requestwindowsfull`. Libtorrent independently verified and
+published the payload in 30.88 seconds, crossing 50%, 95%, and 99% at 24.75,
+28.88, and 29.91 seconds. The pair is therefore `reference_only`, an
+actionable engine gap rather than a harness or public-swarm failure.
+
+All ordinary temporary payloads and processes were removed. The Rust workspace
+format, clippy, and test gates passed, as did the locked Python unit suite and
+the controlled comparison. This closes the harness tactical without claiming
+performance parity; the source-first campaign now owns the gaps it exposed.

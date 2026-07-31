@@ -313,11 +313,10 @@ reason to stop.
 
 Campaign state: **active**.
 
-Active tactical: [`015-headless-live-comparison.md`](../tactical/015-headless-live-comparison.md).
+Active tactical: the next numbered torrent-owned metadata acquisition slice.
 
-Current milestone: finish the bounded full-download baseline and validation
-for the paired, milestone-aware, catalog-backed headless comparator before
-further engine tuning.
+Current milestone: use the completed comparator and pinned libtorrent source
+to establish torrent-owned multi-source metadata acquisition.
 
 Last completed evidence:
 
@@ -331,6 +330,11 @@ Last completed evidence:
 - its first common-denominator metadata pair completed both owners at 51.32
   seconds for RSTorrent and 20.63 seconds for libtorrent, with identical
   276,445,467-byte, 1,055-piece, three-file geometry;
+- a controlled three-piece comparison verified both adapters, publication,
+  classification, and cleanup through the shared schema;
+- its first public full pair classified `reference_only`: RSTorrent timed out
+  at 461/1,055 pieces and 43.7% after 900 seconds, while libtorrent published
+  in 30.88 seconds through the same common-denominator profile;
 - RSTorrent metadata-only Big Buck Bunny cohorts completed 8/10 through UDP
   trackers and 7/10 through fresh DHT sessions;
 - pinned libtorrent `2.0.13.0` completed both corresponding cohorts 10/10;
@@ -344,10 +348,11 @@ Last completed evidence:
 
 Next executable action:
 
-1. harden completion identity and publication validation in Tactical `015`;
-2. capture its first bounded paired full-download baseline;
-3. run the workspace and locked-Python gates and close Tactical `015`; and
-4. open the next numbered tactical for torrent-owned multi-source metadata
-   acquisition using the completed source dossier.
+1. open the next numbered tactical for torrent-owned multi-source metadata
+   acquisition using the completed source dossier;
+2. implement its deterministic owner and hostile-peer scenarios;
+3. prove controlled interoperability and rerun paired metadata cohorts; and
+4. rotate to sustained-transfer connection/request width once metadata meets
+   the campaign gate or its remaining gap is explicitly classified.
 
 Human blocker: **none**.

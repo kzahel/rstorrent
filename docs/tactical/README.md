@@ -141,10 +141,10 @@ that scope and its cleanup or compatibility rules explicitly.
   completed supervised UDP tracker records, multi-tracker fallback, bounded
   retry and reannounce scheduling, loss recovery, token reuse, and equivalent
   waiting diagnostics on the web and Android surfaces.
-- [`015-headless-live-comparison.md`](015-headless-live-comparison.md): in
-  progress; its catalog-backed alternating comparator, deterministic result
-  tests, and first paired metadata baseline have landed, while the bounded
-  paired full-download baseline and final gates remain.
+- [`015-headless-live-comparison.md`](015-headless-live-comparison.md):
+  complete; added the catalog-backed alternating comparator, controlled
+  publication validation, deterministic result tests, and first paired
+  metadata and full-download baselines.
 - [`016-dht-discovery-foundation.md`](016-dht-discovery-foundation.md):
   complete; added the session-owned bounded IPv4 DHT participant, private
   gating, warm restart, peer integration, controlled libtorrent completion,
@@ -158,9 +158,7 @@ that scope and its cleanup or compatibility rules explicitly.
   closed metadata-slot starvation, and classified tracker-only failure versus
   repeated public DHT metadata completion.
 
-Tactical `015` is the active oracle-campaign slice. Its selective reference
-prerequisite, DHT single-sided smoke, paired milestone runner, and first
-metadata pair have landed; its full-download baseline remains. Current
-prioritization and the compaction-safe restart
+Tactical `015` completed the oracle campaign's headless measurement
+foundation. Current prioritization and the compaction-safe restart
 checkpoint live in [`../topics/capability-readiness.md`](../topics/capability-readiness.md)
 and [`../topics/oracle-driven-engine-campaign.md`](../topics/oracle-driven-engine-campaign.md).
