@@ -5759,6 +5759,92 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let _ = tokio::fs::remove_file(output).await;
     }
 
+    #[tokio::test]
+    async fn dht_peer_discovered_during_content_becomes_useful() {
+        let payload = b"late DHT peer payload".to_vec();
+        let metainfo =
+            Metainfo::from_info_bytes(&single_file_info(&payload)).expect("single-piece metainfo");
+        let unavailable_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind unavailable content peer");
+        let unavailable_address = unavailable_listener
+            .local_addr()
+            .expect("unavailable content address");
+        let unavailable_task = tokio::spawn(serve_content_peer(
+            unavailable_listener,
+            metainfo.info_hash,
+            Arc::new(vec![payload.clone()]),
+            vec![false],
+        ));
+        let useful_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind DHT content peer");
+        let useful_address = useful_listener.local_addr().expect("DHT content address");
+        let useful_task = tokio::spawn(serve_content_peer(
+            useful_listener,
+            metainfo.info_hash,
+            Arc::new(vec![payload.clone()]),
+            vec![true],
+        ));
+        let dht_socket = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind scripted DHT");
+        let dht_address = dht_socket.local_addr().expect("DHT address");
+        let dht_task = tokio::spawn(serve_dht_peer(
+            dht_socket,
+            metainfo.info_hash,
+            useful_address,
+        ));
+        let dht = DhtService::start(dht_config(dht_address))
+            .await
+            .expect("start DHT client");
+        let mut peers = PeerSession::from_endpoint(
+            unavailable_address,
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(2)),
+        )
+        .expect("peer session");
+        peers.dht = Some(dht.handle());
+        let output = test_path("late-dht-content.bin");
+
+        let report = timeout(
+            Duration::from_secs(3),
+            run_content_download(
+                ContentDownloadConfig {
+                    output_path: output.clone(),
+                    max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+                    swarm_config: SwarmConfig::for_payload_limit(MIN_PAYLOAD_ALLOWANCE),
+                    skip_files: Vec::new(),
+                    materialize_files: Vec::new(),
+                },
+                metainfo,
+                DownloadControl::new(),
+                None,
+                &mut peers,
+                None,
+            ),
+        )
+        .await
+        .expect("bounded late DHT discovery")
+        .expect("late DHT peer completed content");
+
+        assert_eq!(report.verified_piece_count, 1);
+        assert_eq!(tokio::fs::read(&output).await.expect("output"), payload);
+        let discovered = peers
+            .registry
+            .find_endpoint(PeerEndpoint::new(useful_address).expect("DHT endpoint"))
+            .expect("DHT peer retained");
+        assert!(discovered.sources().contains(PeerSource::Dht));
+        for task in [unavailable_task, useful_task, dht_task] {
+            timeout(Duration::from_secs(1), task)
+                .await
+                .expect("scripted DHT owner joined")
+                .expect("scripted DHT task");
+        }
+        dht.shutdown().await.expect("DHT shutdown");
+        let _ = tokio::fs::remove_file(output).await;
+    }
+
     async fn assert_tracker_wait_cancels_without_socket_leaks() {
         let tracker = UdpSocket::bind("127.0.0.1:0")
             .await
