@@ -277,6 +277,7 @@ pub struct SwarmSnapshot {
     pub payload_high_water: usize,
     pub oldest_request_age: Option<Duration>,
     pub next_request_expiry: Option<Duration>,
+    pub next_replacement_at: Option<Duration>,
     pub no_request_reason: Option<NoRequestReason>,
 }
 
@@ -840,8 +841,32 @@ impl SwarmState {
             payload_high_water: self.payload_high_water,
             oldest_request_age: oldest_issued.map(|issued| now.saturating_sub(issued)),
             next_request_expiry: next_expiry,
+            next_replacement_at: self.next_replacement_at(),
             no_request_reason: self.no_request_reason(),
         }
+    }
+
+    fn next_replacement_at(&self) -> Option<Duration> {
+        if self.connections.len() < self.config.max_established_connections {
+            return None;
+        }
+        let wanted_pieces = self.incomplete_piece_indices();
+        self.connections
+            .iter()
+            .filter(|(id, _)| !self.has_unique_wanted_piece(**id, &wanted_pieces))
+            .filter(|(id, connection)| {
+                let has_wanted = wanted_pieces
+                    .iter()
+                    .any(|piece| connection.availability[*piece]);
+                !has_wanted || connection.choking || self.connection_request_count(**id) == 0
+            })
+            .filter_map(|(_, connection)| {
+                connection
+                    .last_useful_at
+                    .unwrap_or(connection.connected_at)
+                    .checked_add(self.config.unproductive_grace)
+            })
+            .min()
     }
 
     fn connection_mut(&mut self, id: ConnectionId) -> Result<&mut ConnectionState, SwarmError> {
@@ -1398,6 +1423,13 @@ mod tests {
                 .expect("duplicate"),
             ReceiveDisposition::Redundant
         );
+        let never_requested = BlockKey::new(0, BLOCK * 4, BLOCK).expect("valid shape");
+        assert_eq!(
+            state
+                .receive_block(connection(1), never_requested)
+                .expect("unsolicited classification"),
+            ReceiveDisposition::Unsolicited
+        );
     }
 
     #[test]
@@ -1458,6 +1490,10 @@ mod tests {
             SwarmState::new(config, 2, vec![plan(0, 1), plan(1, 1)]).expect("swarm state");
         add_peer(&mut state, connection(1), &[0, 1], true);
         add_peer(&mut state, connection(2), &[0], true);
+        assert_eq!(
+            state.snapshot(Duration::from_secs(29)).next_replacement_at,
+            Some(Duration::from_secs(30))
+        );
         assert_eq!(state.replacement_candidate(Duration::from_secs(29)), None);
         assert_eq!(
             state.replacement_candidate(Duration::from_secs(30)),

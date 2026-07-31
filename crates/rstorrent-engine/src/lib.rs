@@ -17,8 +17,9 @@ mod tracker;
 pub use driver::{
     DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink, DownloadConfig,
     DownloadControl, DownloadError, DownloadProgress, DownloadReport, MagnetDownloadConfig,
-    ResumableMagnetDownloadConfig, download_magnet, download_magnet_metadata_with_control,
-    download_magnet_metadata_with_dht, download_magnet_with_control, download_verified_piece,
+    ResumableMagnetDownloadConfig, SwarmActivitySnapshot, download_magnet,
+    download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
+    download_magnet_with_control, download_verified_piece,
     download_verified_piece_to_descriptors_with_control, download_verified_piece_with_control,
     resume_magnet, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
 };

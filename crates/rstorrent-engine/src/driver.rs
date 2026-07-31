@@ -17,7 +17,7 @@ use rstorrent_protocol::metadata::{
 };
 use rstorrent_protocol::metainfo::{MAX_PIECES, Metainfo, MetainfoError};
 use rstorrent_protocol::peer_wire::{FrameError, Handshake, HandshakeError, PeerMessage};
-use rstorrent_protocol::piece::{DownloadAction, OnePieceDownload, PieceError, VerifiedPiece};
+use rstorrent_protocol::piece::{PieceError, VerifiedPiece};
 use rstorrent_protocol::storage_layout::{FileSelection, LayoutError, TorrentLayout};
 use rstorrent_protocol::udp_tracker::{
     AnnounceEvent, AnnounceRequest, AnnounceResponse, CompactPeer, MAX_ANNOUNCE_RESPONSE_LENGTH,
@@ -63,6 +63,7 @@ const UDP_TRACKER_COMPLETION_TIMEOUT: Duration = Duration::from_secs(30);
 const UDP_TRACKER_TOKEN_LIFETIME: Duration = Duration::from_secs(60);
 const MAX_UDP_TRACKER_TOKENS: usize = 64;
 const TRACKER_RESULT_QUEUE: usize = 4;
+const CONTENT_DISCOVERY_QUEUE: usize = 8;
 const MAX_RESOLVED_ADDRESSES: usize = 32;
 const UNKNOWN_MAGNET_LEFT: u64 = 16 * 1024;
 const UDP_TRACKER_RECEIVE_LENGTH: usize = MAX_ANNOUNCE_RESPONSE_LENGTH + 1;
@@ -194,12 +195,32 @@ pub enum DownloadActivityEvent {
     PeerDialStarted {
         peer: String,
     },
+    SwarmState(SwarmActivitySnapshot),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SwarmActivitySnapshot {
+    pub pending_dials: usize,
+    pub connected_peers: usize,
+    pub unchoked_peers: usize,
+    pub missing_blocks: usize,
+    pub requested_blocks: usize,
+    pub writing_blocks: usize,
+    pub received_blocks: usize,
+    pub verified_blocks: usize,
+    pub payload_reserved: usize,
+    pub payload_high_water: usize,
+    pub oldest_request_age_seconds: Option<u64>,
+    pub next_request_expiry_seconds: Option<u64>,
+    pub next_replacement_seconds: Option<u64>,
+    pub no_request_reason: Option<NoRequestReason>,
 }
 
 #[derive(Clone, Debug)]
 struct ContentDownloadConfig {
     output_path: PathBuf,
     max_buffered_payload_bytes: usize,
+    swarm_config: SwarmConfig,
     skip_files: Vec<usize>,
     materialize_files: Vec<usize>,
 }
@@ -219,6 +240,7 @@ struct DownloadControlInner {
     stored_bytes: AtomicUsize,
     storage_write_delay_millis: AtomicU64,
     activity_sink: Mutex<Option<Arc<dyn DownloadActivitySink>>>,
+    last_swarm_activity: Mutex<Option<SwarmActivitySnapshot>>,
     safe_cancel_state: AtomicUsize,
 }
 
@@ -248,6 +270,7 @@ impl DownloadControl {
                 stored_bytes: AtomicUsize::new(0),
                 storage_write_delay_millis: AtomicU64::new(0),
                 activity_sink: Mutex::new(None),
+                last_swarm_activity: Mutex::new(None),
                 safe_cancel_state: AtomicUsize::new(0),
             }),
         }
@@ -339,16 +362,6 @@ impl DownloadControl {
         }
     }
 
-    fn observe(&self, download: &OnePieceDownload) {
-        let budget = download.payload_budget();
-        self.inner
-            .buffered_payload_bytes
-            .store(budget.reserved, Ordering::Release);
-        self.inner
-            .payload_high_water
-            .fetch_max(budget.high_water, Ordering::AcqRel);
-    }
-
     fn observe_swarm(&self, swarm: &SwarmState, now: Duration) {
         let snapshot = swarm.snapshot(now);
         self.inner
@@ -357,6 +370,42 @@ impl DownloadControl {
         self.inner
             .payload_high_water
             .fetch_max(snapshot.payload_high_water, Ordering::AcqRel);
+        let activity = SwarmActivitySnapshot {
+            pending_dials: snapshot.pending_dials,
+            connected_peers: snapshot.connected_peers,
+            unchoked_peers: snapshot.unchoked_peers,
+            missing_blocks: snapshot.missing_blocks,
+            requested_blocks: snapshot.requested_blocks,
+            writing_blocks: snapshot.writing_blocks,
+            received_blocks: snapshot.received_blocks,
+            verified_blocks: snapshot.verified_blocks,
+            payload_reserved: snapshot.payload_reserved,
+            payload_high_water: snapshot.payload_high_water,
+            oldest_request_age_seconds: snapshot.oldest_request_age.map(|age| age.as_secs()),
+            next_request_expiry_seconds: snapshot
+                .next_request_expiry
+                .map(|deadline| deadline.saturating_sub(now).as_secs()),
+            next_replacement_seconds: snapshot
+                .next_replacement_at
+                .map(|deadline| deadline.saturating_sub(now).as_secs()),
+            no_request_reason: snapshot.no_request_reason,
+        };
+        let changed = {
+            let mut previous = self
+                .inner
+                .last_swarm_activity
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if previous.as_ref() == Some(&activity) {
+                false
+            } else {
+                *previous = Some(activity);
+                true
+            }
+        };
+        if changed {
+            self.emit(DownloadActivityEvent::SwarmState(activity));
+        }
     }
 
     fn record_stored(&self, bytes: usize) {
@@ -1093,6 +1142,200 @@ impl TrackerManager {
     }
 }
 
+#[derive(Debug)]
+enum ContentDiscoveryEvent {
+    Peers {
+        source: PeerSource,
+        tracker: Option<String>,
+        addresses: Vec<SocketAddr>,
+    },
+    Failed(DownloadError),
+}
+
+#[derive(Debug)]
+struct ContentDiscovery {
+    receiver: mpsc::Receiver<ContentDiscoveryEvent>,
+    cancellation: CancellationToken,
+    tasks: Vec<JoinHandle<Result<(), DownloadError>>>,
+}
+
+impl ContentDiscovery {
+    fn start(peers: &mut PeerSession, info_hash: [u8; 20]) -> Self {
+        let (sender, receiver) = mpsc::channel(CONTENT_DISCOVERY_QUEUE);
+        let cancellation = CancellationToken::new();
+        let mut tasks = Vec::new();
+        if let Some(tracker) = peers.tracker.take() {
+            tasks.push(tokio::spawn(run_content_tracker_discovery(
+                tracker,
+                sender.clone(),
+                cancellation.clone(),
+            )));
+        }
+        if let Some(dht) = peers.dht.clone() {
+            tasks.push(tokio::spawn(run_content_dht_discovery(
+                dht,
+                info_hash,
+                peers.control.clone(),
+                sender.clone(),
+                cancellation.clone(),
+            )));
+        }
+        drop(sender);
+        Self {
+            receiver,
+            cancellation,
+            tasks,
+        }
+    }
+
+    fn is_active(&self) -> bool {
+        !self.receiver.is_closed()
+    }
+
+    async fn next_event(&mut self) -> Option<ContentDiscoveryEvent> {
+        self.receiver.recv().await
+    }
+
+    async fn shutdown(mut self) -> Result<(), DownloadError> {
+        self.cancellation.cancel();
+        self.receiver.close();
+        for task in self.tasks {
+            task.await
+                .map_err(|error| DownloadError::PeerTask(error.to_string()))??;
+        }
+        Ok(())
+    }
+}
+
+async fn run_content_tracker_discovery(
+    mut tracker: TrackerManager,
+    sender: mpsc::Sender<ContentDiscoveryEvent>,
+    cancellation: CancellationToken,
+) -> Result<(), DownloadError> {
+    loop {
+        let result = tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => break,
+            result = tracker.next_peers() => result,
+        };
+        let event = match result {
+            Ok((tracker, peers)) => ContentDiscoveryEvent::Peers {
+                source: PeerSource::Tracker,
+                tracker: Some(tracker),
+                addresses: peers.into_iter().map(compact_peer_address).collect(),
+            },
+            Err(error) => {
+                send_content_discovery_event(
+                    &sender,
+                    ContentDiscoveryEvent::Failed(error),
+                    &cancellation,
+                )
+                .await;
+                break;
+            }
+        };
+        if !send_content_discovery_event(&sender, event, &cancellation).await {
+            break;
+        }
+    }
+    tracker.shutdown().await
+}
+
+async fn run_content_dht_discovery(
+    dht: DhtHandle,
+    info_hash: [u8; 20],
+    control: DownloadControl,
+    sender: mpsc::Sender<ContentDiscoveryEvent>,
+    cancellation: CancellationToken,
+) -> Result<(), DownloadError> {
+    let mut retry_delay = DHT_RETRY_INITIAL_DELAY;
+    loop {
+        control.emit(DownloadActivityEvent::DhtLookupStarted);
+        let result = tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => {
+                let _ = dht.cancel_lookup(info_hash).await;
+                return Ok(());
+            }
+            _ = control.inner.cancellation.cancelled() => {
+                let _ = dht.cancel_lookup(info_hash).await;
+                return Ok(());
+            }
+            result = dht.lookup(info_hash) => result,
+        };
+        match result {
+            Ok(addresses) => {
+                control.emit(DownloadActivityEvent::DhtLookupSucceeded {
+                    peer_count: addresses.len().try_into().unwrap_or(u32::MAX),
+                });
+                if !send_content_discovery_event(
+                    &sender,
+                    ContentDiscoveryEvent::Peers {
+                        source: PeerSource::Dht,
+                        tracker: None,
+                        addresses,
+                    },
+                    &cancellation,
+                )
+                .await
+                {
+                    return Ok(());
+                }
+                retry_delay = DHT_RETRY_INITIAL_DELAY;
+                tokio::select! {
+                    biased;
+                    _ = cancellation.cancelled() => return Ok(()),
+                    _ = control.inner.cancellation.cancelled() => return Ok(()),
+                    _ = tokio::time::sleep(DHT_SUCCESS_REQUERY_DELAY) => {}
+                }
+            }
+            Err(
+                error @ (DhtError::LookupTimedOut
+                | DhtError::NoReachableNodes
+                | DhtError::LookupCapacity),
+            ) => {
+                control.emit(DownloadActivityEvent::DhtLookupFailed {
+                    detail: error.to_string(),
+                });
+                control.emit(DownloadActivityEvent::DhtRetryScheduled {
+                    retry_in_seconds: retry_delay.as_secs(),
+                });
+                tokio::select! {
+                    biased;
+                    _ = cancellation.cancelled() => return Ok(()),
+                    _ = control.inner.cancellation.cancelled() => return Ok(()),
+                    _ = tokio::time::sleep(retry_delay) => {}
+                }
+                retry_delay = retry_delay.saturating_mul(2).min(DHT_RETRY_MAX_DELAY);
+            }
+            Err(error) => {
+                control.emit(DownloadActivityEvent::DhtLookupFailed {
+                    detail: error.to_string(),
+                });
+                send_content_discovery_event(
+                    &sender,
+                    ContentDiscoveryEvent::Failed(DownloadError::Dht(error)),
+                    &cancellation,
+                )
+                .await;
+                return Ok(());
+            }
+        }
+    }
+}
+
+async fn send_content_discovery_event(
+    sender: &mpsc::Sender<ContentDiscoveryEvent>,
+    event: ContentDiscoveryEvent,
+    cancellation: &CancellationToken,
+) -> bool {
+    tokio::select! {
+        biased;
+        _ = cancellation.cancelled() => false,
+        result = sender.send(event) => result.is_ok(),
+    }
+}
+
 impl Drop for TrackerManager {
     fn drop(&mut self) {
         self.cancellation.cancel();
@@ -1587,16 +1830,6 @@ impl PeerSession {
         }
     }
 
-    async fn ensure_content_connection(
-        &mut self,
-        info_hash: [u8; 20],
-    ) -> Result<(), DownloadError> {
-        if self.connection.is_none() {
-            self.connect_next(info_hash, false).await?;
-        }
-        Ok(())
-    }
-
     async fn acquire_metadata(
         &mut self,
         info_hash: [u8; 20],
@@ -1625,10 +1858,6 @@ impl PeerSession {
                 }
             }
         }
-    }
-
-    fn connection_mut(&mut self) -> Result<&mut PeerConnection, DownloadError> {
-        self.connection.as_mut().ok_or(DownloadError::NoUsablePeer)
     }
 
     fn close_current(&mut self, failure: Option<PeerFailure>) -> Result<(), DownloadError> {
@@ -1977,6 +2206,7 @@ async fn run_magnet_download_with_peers(
     let content_config = ContentDownloadConfig {
         output_path: config.output_path,
         max_buffered_payload_bytes: config.max_buffered_payload_bytes,
+        swarm_config: SwarmConfig::for_payload_limit(config.max_buffered_payload_bytes),
         skip_files: config.skip_files,
         materialize_files: config.materialize_files,
     };
@@ -2062,6 +2292,7 @@ async fn run_resumable_magnet_download(
         let content_config = ContentDownloadConfig {
             output_path: config.output_path,
             max_buffered_payload_bytes: config.max_buffered_payload_bytes,
+            swarm_config: SwarmConfig::for_payload_limit(config.max_buffered_payload_bytes),
             skip_files: config.skip_files,
             materialize_files: Vec::new(),
         };
@@ -2104,6 +2335,7 @@ async fn run_resumable_magnet_download(
             let content_config = ContentDownloadConfig {
                 output_path: config.output_path,
                 max_buffered_payload_bytes: config.max_buffered_payload_bytes,
+                swarm_config: SwarmConfig::for_payload_limit(config.max_buffered_payload_bytes),
                 skip_files: config.skip_files,
                 materialize_files: Vec::new(),
             };
@@ -2277,6 +2509,7 @@ async fn run_download(
     let content_config = ContentDownloadConfig {
         output_path: config.output_path,
         max_buffered_payload_bytes: config.max_buffered_payload_bytes,
+        swarm_config: SwarmConfig::for_payload_limit(config.max_buffered_payload_bytes),
         skip_files: config.skip_files,
         materialize_files: config.materialize_files,
     };
@@ -2299,6 +2532,7 @@ async fn run_content_download(
     peers: &mut PeerSession,
     resume: Option<ResumeContext>,
 ) -> Result<DownloadReport, DownloadError> {
+    peers.control = control.clone();
     let result = match metainfo.mode {
         rstorrent_protocol::metainfo::MetainfoMode::SingleFile => {
             if resume.is_some() {
@@ -2334,75 +2568,61 @@ async fn run_single_download(
     control: DownloadControl,
     peers: &mut PeerSession,
 ) -> Result<DownloadReport, DownloadError> {
-    let piece_length = u32::try_from(metainfo.total_length)
+    u32::try_from(metainfo.total_length)
         .map_err(|_| DownloadError::Metainfo(MetainfoError::InvalidField("info.length")))?;
-    let mut download = OnePieceDownload::new(
-        0,
-        piece_length,
-        metainfo.piece_hashes[0],
-        config.max_buffered_payload_bytes,
-    )
-    .map_err(DownloadError::Piece)?;
-    control.emit(DownloadActivityEvent::PieceStarted {
-        piece_index: 0,
-        piece_length,
-    });
+    let layout = TorrentLayout::from_metainfo(&metainfo);
+    let selection = FileSelection::new(&layout, &[]).map_err(DownloadError::Layout)?;
+    let ranges = layout
+        .request_ranges(0, &selection)
+        .map_err(DownloadError::Layout)?;
     let mut storage = StagingFile::create(config.output_path.clone(), metainfo.total_length)
         .await
         .map_err(DownloadError::Storage)?;
-
-    peers.ensure_content_connection(metainfo.info_hash).await?;
-    let peer = peers.connection_mut()?;
-    loop {
-        let message = match next_peer_message(peer).await {
-            Ok(message) => message,
-            Err(error) => {
-                download.cancel_pending();
-                control.observe(&download);
-                return Err(error);
-            }
-        };
-        if matches!(message, PeerMessage::Extended { .. }) {
-            continue;
-        }
-        let actions = download.on_message(message).map_err(DownloadError::Piece)?;
-        control.observe(&download);
-        if let Some(piece) =
-            process_actions(peer, &mut storage, &mut download, actions, &control).await?
-        {
-            let budget = download.payload_budget();
-            let block_count = download.block_count();
-            storage.finalize().await.map_err(DownloadError::Storage)?;
-            return Ok(DownloadReport {
-                info_hash: metainfo.info_hash,
-                piece_hash: piece.hash,
-                bytes_written: piece.length as usize,
-                block_count,
-                payload_limit: budget.limit,
-                payload_high_water: budget.high_water,
-                verification_buffer: VERIFICATION_CHUNK_LENGTH,
-                piece_count: 1,
-                verified_piece_count: 1,
-                skipped_piece_count: 0,
-                selected_file_bytes: metainfo.total_length,
-                skipped_file_bytes: 0,
-                padding_bytes: 0,
-                selected_written_bytes: piece.length as usize,
-                part_written_bytes: 0,
-                materialized_bytes: 0,
-                part_slots_before_materialization: 0,
-                part_slots_after_materialization: 0,
-                part_reopened: false,
-                part_path: None,
-                prepared_files: Vec::new(),
-            });
-        }
-    }
+    let download = ContentSwarmDownload::new(
+        config.swarm_config,
+        vec![(0, ranges)],
+        ContentStorage::Single(&mut storage),
+        &metainfo,
+        &layout,
+        None,
+        &control,
+    )?;
+    let completed = download_content_swarm(peers, download).await?;
+    let piece = completed
+        .last_piece
+        .expect("completed single-piece swarm has a verified piece");
+    let block_count = completed.total_blocks;
+    let payload_high_water = completed.state.snapshot(peers.elapsed()).payload_high_water;
+    drop(completed);
+    storage.finalize().await.map_err(DownloadError::Storage)?;
+    Ok(DownloadReport {
+        info_hash: metainfo.info_hash,
+        piece_hash: piece.hash,
+        bytes_written: piece.length as usize,
+        block_count,
+        payload_limit: config.max_buffered_payload_bytes,
+        payload_high_water,
+        verification_buffer: VERIFICATION_CHUNK_LENGTH,
+        piece_count: 1,
+        verified_piece_count: 1,
+        skipped_piece_count: 0,
+        selected_file_bytes: metainfo.total_length,
+        skipped_file_bytes: 0,
+        padding_bytes: 0,
+        selected_written_bytes: piece.length as usize,
+        part_written_bytes: 0,
+        materialized_bytes: 0,
+        part_slots_before_materialization: 0,
+        part_slots_after_materialization: 0,
+        part_reopened: false,
+        part_path: None,
+        prepared_files: Vec::new(),
+    })
 }
 
-struct SelectiveSwarmDownload<'a> {
+struct ContentSwarmDownload<'a> {
     state: SwarmState,
-    storage: &'a mut SelectiveStorage,
+    storage: ContentStorage<'a>,
     metainfo: &'a Metainfo,
     layout: &'a TorrentLayout,
     resume: Option<&'a ResumeContext>,
@@ -2414,17 +2634,22 @@ struct SelectiveSwarmDownload<'a> {
     last_piece: Option<VerifiedPiece>,
 }
 
+enum ContentStorage<'a> {
+    Single(&'a mut StagingFile),
+    Selective(&'a mut SelectiveStorage),
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ContentMessageDisposition {
     Continue,
     ClosePeer(PeerFailure),
 }
 
-impl<'a> SelectiveSwarmDownload<'a> {
+impl<'a> ContentSwarmDownload<'a> {
     fn new(
-        payload_limit: usize,
+        config: SwarmConfig,
         plans: Vec<(u32, Vec<rstorrent_protocol::storage_layout::RequestRange>)>,
-        storage: &'a mut SelectiveStorage,
+        storage: ContentStorage<'a>,
         metainfo: &'a Metainfo,
         layout: &'a TorrentLayout,
         resume: Option<&'a ResumeContext>,
@@ -2452,12 +2677,8 @@ impl<'a> SelectiveSwarmDownload<'a> {
                 .collect::<Vec<_>>();
             swarm_plans.push(PiecePlan::new(piece, &ranges).map_err(DownloadError::Swarm)?);
         }
-        let state = SwarmState::new(
-            SwarmConfig::for_payload_limit(payload_limit),
-            layout.piece_count(),
-            swarm_plans,
-        )
-        .map_err(DownloadError::Swarm)?;
+        let state = SwarmState::new(config, layout.piece_count(), swarm_plans)
+            .map_err(DownloadError::Swarm)?;
         Ok(Self {
             state,
             storage,
@@ -2475,15 +2696,6 @@ impl<'a> SelectiveSwarmDownload<'a> {
 
     fn is_complete(&self, now: Duration) -> bool {
         self.state.snapshot(now).no_request_reason == Some(NoRequestReason::Complete)
-    }
-
-    fn should_seek_discovery(&self, now: Duration) -> bool {
-        matches!(
-            self.state.snapshot(now).no_request_reason,
-            Some(NoRequestReason::NoConnections)
-                | Some(NoRequestReason::NoPeerHasWantedPiece)
-                | Some(NoRequestReason::AllUsefulPeersChoked)
-        )
     }
 
     async fn handle_message(
@@ -2542,20 +2754,33 @@ impl<'a> SelectiveSwarmDownload<'a> {
                             length,
                         });
                         self.control.wait_before_storage().await;
-                        let stats = match self.storage.write_block(index, begin, block).await {
+                        let block_length = block.len();
+                        let write_result = match &mut self.storage {
+                            ContentStorage::Single(storage) => storage
+                                .write_block(u64::from(begin), block)
+                                .await
+                                .map(|()| (block_length, 0))
+                                .map_err(DownloadError::Storage),
+                            ContentStorage::Selective(storage) => storage
+                                .write_block(index, begin, block)
+                                .await
+                                .map(|stats| (stats.wanted_bytes, stats.skipped_bytes))
+                                .map_err(DownloadError::SelectiveStorage),
+                        };
+                        let stats = match write_result {
                             Ok(stats) => stats,
                             Err(error) => {
                                 self.state
                                     .finish_write(key, false, now)
                                     .map_err(DownloadError::Swarm)?;
-                                return Err(DownloadError::SelectiveStorage(error));
+                                return Err(error);
                             }
                         };
                         self.state
                             .finish_write(key, true, now)
                             .map_err(DownloadError::Swarm)?;
-                        self.selected_written_bytes += stats.wanted_bytes;
-                        self.part_written_bytes += stats.skipped_bytes;
+                        self.selected_written_bytes += stats.0;
+                        self.part_written_bytes += stats.1;
                         self.control.record_stored(length as usize);
                         self.control.emit(DownloadActivityEvent::BlockStored {
                             piece_index: index,
@@ -2586,11 +2811,20 @@ impl<'a> SelectiveSwarmDownload<'a> {
     async fn verify_piece(&mut self, piece: u32) -> Result<(), DownloadError> {
         let piece_index = usize::try_from(piece)
             .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
-        let actual = self
-            .storage
-            .hash_piece(piece)
-            .await
-            .map_err(DownloadError::SelectiveStorage)?;
+        let piece_length = self
+            .layout
+            .piece_length_at(piece)
+            .map_err(DownloadError::Layout)?;
+        let actual = match &mut self.storage {
+            ContentStorage::Single(storage) => storage
+                .hash_piece(0, piece_length)
+                .await
+                .map_err(DownloadError::Storage)?,
+            ContentStorage::Selective(storage) => storage
+                .hash_piece(piece)
+                .await
+                .map_err(DownloadError::SelectiveStorage)?,
+        };
         let expected = self.metainfo.piece_hashes[piece_index];
         if actual != expected {
             return Err(DownloadError::Piece(PieceError::HashMismatch {
@@ -2601,31 +2835,29 @@ impl<'a> SelectiveSwarmDownload<'a> {
         self.state
             .mark_piece_verified(piece)
             .map_err(DownloadError::Swarm)?;
-        if let Some(resume) = self.resume {
-            self.storage
-                .sync_piece(piece)
-                .await
-                .map_err(DownloadError::SelectiveStorage)?;
-            self.storage
-                .record_verified(piece_index)
-                .map_err(DownloadError::SelectiveStorage)?;
-            resume
-                .checkpoints
-                .piece_durable(piece_index)
-                .map_err(DownloadError::Checkpoint)?;
-        } else {
-            self.storage
-                .record_verified(piece_index)
-                .map_err(DownloadError::SelectiveStorage)?;
+        if let ContentStorage::Selective(storage) = &mut self.storage {
+            if let Some(resume) = self.resume {
+                storage
+                    .sync_piece(piece)
+                    .await
+                    .map_err(DownloadError::SelectiveStorage)?;
+                storage
+                    .record_verified(piece_index)
+                    .map_err(DownloadError::SelectiveStorage)?;
+                resume
+                    .checkpoints
+                    .piece_durable(piece_index)
+                    .map_err(DownloadError::Checkpoint)?;
+            } else {
+                storage
+                    .record_verified(piece_index)
+                    .map_err(DownloadError::SelectiveStorage)?;
+            }
         }
-        let length = self
-            .layout
-            .piece_length_at(piece)
-            .map_err(DownloadError::Layout)?;
         self.last_piece = Some(VerifiedPiece {
             index: piece,
             hash: actual,
-            length,
+            length: piece_length,
         });
         self.control
             .emit(DownloadActivityEvent::PieceVerified { piece_index: piece });
@@ -2660,10 +2892,18 @@ fn fill_content_dials(
     info_hash: [u8; 20],
 ) -> Result<usize, DownloadError> {
     let mut started = 0;
-    while sockets.pending_len() < state.config().max_pending_dials
-        && sockets.established_len() + sockets.pending_len()
-            < state.config().max_established_connections
-    {
+    while sockets.pending_len() < state.config().max_pending_dials {
+        let at_capacity = sockets.established_len() >= state.config().max_established_connections;
+        if at_capacity {
+            if sockets.pending_len() != 0 || state.replacement_candidate(peers.elapsed()).is_none()
+            {
+                break;
+            }
+        } else if sockets.established_len() + sockets.pending_len()
+            >= state.config().max_established_connections
+        {
+            break;
+        }
         let context = PeerSelectionContext {
             now: peers.elapsed(),
         };
@@ -2718,6 +2958,25 @@ async fn close_content_connection(
         .map_err(DownloadError::PeerRegistry)
 }
 
+async fn replace_content_connection(
+    peers: &mut PeerSession,
+    sockets: &mut PeerSocketSet,
+    state: &mut SwarmState,
+    connection: ConnectionId,
+) -> Result<(), DownloadError> {
+    let attempt = sockets
+        .remove_connection(connection)
+        .await
+        .map_err(download_peer_set_error)?;
+    state
+        .remove_connection(connection, ConnectionRemoval::Replaced)
+        .map_err(DownloadError::Swarm)?;
+    peers
+        .registry
+        .connection_closed(attempt, peers.elapsed(), None)
+        .map_err(DownloadError::PeerRegistry)
+}
+
 async fn cleanup_content_connections(
     peers: &mut PeerSession,
     sockets: PeerSocketSet,
@@ -2743,10 +3002,49 @@ async fn cleanup_content_connections(
     Ok(())
 }
 
+enum ContentSupervisorEvent {
+    Peer(PeerSetEvent),
+    Discovery(Option<ContentDiscoveryEvent>),
+    Deadline,
+}
+
+async fn next_content_supervisor_event(
+    sockets: &mut PeerSocketSet,
+    discovery: &mut ContentDiscovery,
+    until_expiry: Option<Duration>,
+    cancellation: &CancellationToken,
+) -> Result<ContentSupervisorEvent, DownloadError> {
+    if let Some(wait) = until_expiry {
+        tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => Err(DownloadError::Cancelled),
+            _ = tokio::time::sleep(wait) => Ok(ContentSupervisorEvent::Deadline),
+            event = sockets.next_event() => event
+                .map(ContentSupervisorEvent::Peer)
+                .map_err(download_peer_set_error),
+            event = discovery.next_event(), if discovery.is_active() => {
+                Ok(ContentSupervisorEvent::Discovery(event))
+            }
+        }
+    } else {
+        tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => Err(DownloadError::Cancelled),
+            event = sockets.next_event() => event
+                .map(ContentSupervisorEvent::Peer)
+                .map_err(download_peer_set_error),
+            event = discovery.next_event(), if discovery.is_active() => {
+                Ok(ContentSupervisorEvent::Discovery(event))
+            }
+        }
+    }
+}
+
 async fn run_selective_swarm_loop(
     peers: &mut PeerSession,
     sockets: &mut PeerSocketSet,
-    download: &mut SelectiveSwarmDownload<'_>,
+    discovery: &mut ContentDiscovery,
+    download: &mut ContentSwarmDownload<'_>,
 ) -> Result<(), DownloadError> {
     if let Some(connection) = peers.connection.take() {
         let attempt = connection.attempt();
@@ -2771,7 +3069,6 @@ async fn run_selective_swarm_loop(
         }
     }
 
-    let mut peer_message_seen = false;
     loop {
         let now = peers.elapsed();
         let expired = download
@@ -2825,31 +3122,13 @@ async fn run_selective_swarm_loop(
             return Ok(());
         }
 
-        let started = fill_content_dials(
+        fill_content_dials(
             peers,
             sockets,
             &mut download.state,
             download.metainfo.info_hash,
         )?;
-        let discovery_available = peers.tracker.is_some() || peers.dht.is_some();
-        let needs_discovery = sockets.pending_len() == 0
-            && started == 0
-            && (sockets.established_len() == 0
-                || (peer_message_seen && download.should_seek_discovery(peers.elapsed())));
-        if needs_discovery && discovery_available {
-            match peers
-                .receive_discovery_peers(download.metainfo.info_hash)
-                .await
-            {
-                Ok(()) => continue,
-                Err(DownloadError::Cancelled) => return Err(DownloadError::Cancelled),
-                Err(error) if sockets.established_len() != 0 => {
-                    peers.last_error = Some(error);
-                }
-                Err(error) => return Err(error),
-            }
-        }
-        if sockets.established_len() == 0 && sockets.pending_len() == 0 {
+        if sockets.established_len() == 0 && sockets.pending_len() == 0 && !discovery.is_active() {
             return Err(peers
                 .last_error
                 .take()
@@ -2857,37 +3136,96 @@ async fn run_selective_swarm_loop(
         }
 
         let snapshot = download.state.snapshot(peers.elapsed());
-        let until_expiry = snapshot
-            .next_request_expiry
-            .map(|deadline| deadline.saturating_sub(peers.elapsed()));
-        let event = if let Some(wait) = until_expiry {
-            tokio::select! {
-                biased;
-                _ = peers.control.inner.cancellation.cancelled() => {
-                    return Err(DownloadError::Cancelled);
-                }
-                _ = tokio::time::sleep(wait) => continue,
-                event = sockets.next_event() => event,
-            }
-        } else {
-            tokio::select! {
-                biased;
-                _ = peers.control.inner.cancellation.cancelled() => {
-                    return Err(DownloadError::Cancelled);
-                }
-                event = sockets.next_event() => event,
-            }
-        }
-        .map_err(download_peer_set_error)?;
+        let replacement_deadline = peers
+            .selector
+            .select(
+                &peers.registry,
+                PeerSelectionContext {
+                    now: peers.elapsed(),
+                },
+            )
+            .and(snapshot.next_replacement_at);
+        let next_deadline = [snapshot.next_request_expiry, replacement_deadline]
+            .into_iter()
+            .flatten()
+            .min();
+        let until_expiry = next_deadline.map(|deadline| deadline.saturating_sub(peers.elapsed()));
+        let event = next_content_supervisor_event(
+            sockets,
+            discovery,
+            until_expiry,
+            &peers.control.inner.cancellation,
+        )
+        .await?;
 
         match event {
-            PeerSetEvent::DialCompleted { attempt, result } => {
+            ContentSupervisorEvent::Deadline => continue,
+            ContentSupervisorEvent::Discovery(Some(ContentDiscoveryEvent::Peers {
+                source,
+                tracker,
+                addresses,
+            })) => {
+                let peer_count = addresses.len().try_into().unwrap_or(u32::MAX);
+                for address in addresses {
+                    if let Err(error) = peers.observe_address(address, source) {
+                        peers.last_error = Some(error);
+                    }
+                }
+                if let Some(tracker) = tracker
+                    && peers
+                        .selector
+                        .select(
+                            &peers.registry,
+                            PeerSelectionContext {
+                                now: peers.elapsed(),
+                            },
+                        )
+                        .is_none()
+                {
+                    peers
+                        .control
+                        .emit(DownloadActivityEvent::TrackerPeersUnavailable {
+                            tracker,
+                            peer_count,
+                        });
+                }
+            }
+            ContentSupervisorEvent::Discovery(Some(ContentDiscoveryEvent::Failed(error))) => {
+                peers.last_error = Some(error);
+            }
+            ContentSupervisorEvent::Discovery(None) => {}
+            ContentSupervisorEvent::Peer(PeerSetEvent::DialCompleted { attempt, result }) => {
                 download
                     .state
                     .finish_dial(pending_dial_id(attempt))
                     .map_err(DownloadError::Swarm)?;
                 match result {
                     Ok((connection, _handshake)) => {
+                        if sockets.established_len()
+                            >= download.state.config().max_established_connections
+                        {
+                            if let Some(replaced) =
+                                download.state.replacement_candidate(peers.elapsed())
+                            {
+                                replace_content_connection(
+                                    peers,
+                                    sockets,
+                                    &mut download.state,
+                                    replaced,
+                                )
+                                .await?;
+                            } else {
+                                peers
+                                    .registry
+                                    .dial_succeeded(attempt, peers.elapsed())
+                                    .map_err(DownloadError::PeerRegistry)?;
+                                peers
+                                    .registry
+                                    .connection_closed(attempt, peers.elapsed(), None)
+                                    .map_err(DownloadError::PeerRegistry)?;
+                                continue;
+                            }
+                        }
                         peers
                             .registry
                             .dial_succeeded(attempt, peers.elapsed())
@@ -2920,12 +3258,14 @@ async fn run_selective_swarm_loop(
                     }
                 }
             }
-            PeerSetEvent::Peer(PeerTaskEvent::Message { attempt, message }) => {
+            ContentSupervisorEvent::Peer(PeerSetEvent::Peer(PeerTaskEvent::Message {
+                attempt,
+                message,
+            })) => {
                 let id = connection_id(attempt);
                 if !sockets.contains(id) {
                     continue;
                 }
-                peer_message_seen = true;
                 if download
                     .handle_message(id, message, peers.elapsed())
                     .await?
@@ -2941,7 +3281,10 @@ async fn run_selective_swarm_loop(
                     .await?;
                 }
             }
-            PeerSetEvent::Peer(PeerTaskEvent::Stopped { attempt, result }) => {
+            ContentSupervisorEvent::Peer(PeerSetEvent::Peer(PeerTaskEvent::Stopped {
+                attempt,
+                result,
+            })) => {
                 let id = connection_id(attempt);
                 if !sockets.contains(id) {
                     continue;
@@ -2956,14 +3299,24 @@ async fn run_selective_swarm_loop(
     }
 }
 
-async fn download_selective_swarm<'a>(
+async fn download_content_swarm<'a>(
     peers: &mut PeerSession,
-    mut download: SelectiveSwarmDownload<'a>,
-) -> Result<SelectiveSwarmDownload<'a>, DownloadError> {
+    mut download: ContentSwarmDownload<'a>,
+) -> Result<ContentSwarmDownload<'a>, DownloadError> {
     let mut sockets = PeerSocketSet::new();
-    let result = run_selective_swarm_loop(peers, &mut sockets, &mut download).await;
+    let mut discovery = ContentDiscovery::start(peers, download.metainfo.info_hash);
+    let result = run_selective_swarm_loop(peers, &mut sockets, &mut discovery, &mut download).await;
     let failure = result.as_ref().err().and_then(content_peer_failure);
-    let cleanup = cleanup_content_connections(peers, sockets, &mut download.state, failure).await;
+    let discovery_cleanup = discovery.shutdown().await;
+    let peer_cleanup =
+        cleanup_content_connections(peers, sockets, &mut download.state, failure).await;
+    let cleanup = match (discovery_cleanup, peer_cleanup) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
+        (Err(first), Err(second)) => Err(DownloadError::PeerTask(format!(
+            "{first}; additionally {second}"
+        ))),
+    };
     match (result, cleanup) {
         (Ok(()), Ok(())) => Ok(download),
         (Err(error), Ok(())) => Err(error),
@@ -3188,16 +3541,16 @@ async fn run_selective_download(
     ) = if plans.is_empty() {
         (0, 0, 0, 0, 0, None)
     } else {
-        let download = SelectiveSwarmDownload::new(
-            config.max_buffered_payload_bytes,
+        let download = ContentSwarmDownload::new(
+            config.swarm_config,
             plans,
-            &mut storage,
+            ContentStorage::Selective(&mut storage),
             &metainfo,
             &layout,
             resume.as_ref(),
             &control,
         )?;
-        let completed = download_selective_swarm(peers, download).await?;
+        let completed = download_content_swarm(peers, download).await?;
         let result = (
             completed.total_blocks,
             completed.total_bytes,
@@ -3357,81 +3710,6 @@ fn download_peer_set_error(error: PeerSetError) -> DownloadError {
     DownloadError::PeerTask(error.to_string())
 }
 
-async fn process_actions(
-    peer: &mut PeerConnection,
-    storage: &mut StagingFile,
-    download: &mut OnePieceDownload,
-    actions: Vec<DownloadAction>,
-    control: &DownloadControl,
-) -> Result<Option<VerifiedPiece>, DownloadError> {
-    let mut pending = VecDeque::from(actions);
-    while let Some(action) = pending.pop_front() {
-        match action {
-            DownloadAction::SendInterested => {
-                send_message(peer, &PeerMessage::Interested).await?;
-            }
-            DownloadAction::Request(request) => {
-                send_message(peer, &PeerMessage::Request(request)).await?;
-                control.record_requested(request.length as usize);
-                control.emit(DownloadActivityEvent::BlockRequested {
-                    piece_index: request.index,
-                    begin: request.begin,
-                    length: request.length,
-                });
-            }
-            DownloadAction::StoreBlock(block) => {
-                let index = block.index;
-                let begin = block.begin;
-                let length = block.bytes.len();
-                control.record_received(length);
-                control.emit(DownloadActivityEvent::BlockReceived {
-                    piece_index: index,
-                    begin,
-                    length: u32::try_from(length).expect("peer block length is bounded by u32"),
-                });
-                control.wait_before_storage().await;
-                if let Err(error) = storage.write_block(u64::from(begin), block.bytes).await {
-                    download
-                        .on_block_write_failed(index, begin)
-                        .map_err(DownloadError::Piece)?;
-                    control.observe(download);
-                    return Err(DownloadError::Storage(error));
-                }
-                control.record_stored(length);
-                control.emit(DownloadActivityEvent::BlockStored {
-                    piece_index: index,
-                    begin,
-                    length: u32::try_from(length).expect("peer block length is bounded by u32"),
-                });
-                pending.extend(
-                    download
-                        .on_block_stored(index, begin)
-                        .map_err(DownloadError::Piece)?,
-                );
-                control.observe(download);
-            }
-            DownloadAction::VerifyPiece { index, length } => {
-                let actual_hash = storage
-                    .hash_piece(0, length)
-                    .await
-                    .map_err(DownloadError::Storage)?;
-                pending.push_back(
-                    download
-                        .finish_verification(index, actual_hash)
-                        .map_err(DownloadError::Piece)?,
-                );
-            }
-            DownloadAction::Verified(piece) => {
-                control.emit(DownloadActivityEvent::PieceVerified {
-                    piece_index: piece.index,
-                });
-                return Ok(Some(piece));
-            }
-        }
-    }
-    Ok(None)
-}
-
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, SocketAddr};
@@ -3464,8 +3742,8 @@ mod tests {
     use super::{
         CLIENT_PEER_ID, ContentDownloadConfig, DhtRetryTiming, DownloadActivityEvent,
         DownloadActivitySink, DownloadConfig, DownloadControl, DownloadError, MagnetDownloadConfig,
-        PeerConnection, PeerSession, UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming,
-        UdpTrackerTokenCache, announce_udp_tracker_address, download_magnet,
+        PeerConnection, PeerSession, SwarmConfig, UdpTrackerAnnounce, UdpTrackerExchange,
+        UdpTrackerTiming, UdpTrackerTokenCache, announce_udp_tracker_address, download_magnet,
         download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
         download_magnet_with_control, download_verified_piece,
         download_verified_piece_with_control, next_peer_message, retrying_dht_lookup,
@@ -3922,6 +4200,117 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         assert_eq!(stream.read(&mut end).await.expect("wait for close"), 0);
     }
 
+    async fn serve_permanently_choked_peer(
+        listener: TcpListener,
+        info_hash: [u8; 20],
+        bitfield: Vec<u8>,
+    ) {
+        let (mut stream, _) = listener.accept().await.expect("accept choked peer");
+        let mut handshake = [0; HANDSHAKE_LENGTH];
+        stream
+            .read_exact(&mut handshake)
+            .await
+            .expect("read choked handshake");
+        decode_handshake(&handshake, info_hash).expect("valid choked handshake");
+        stream
+            .write_all(&encode_handshake(info_hash, *b"-RS-CHOKED-000000000"))
+            .await
+            .expect("send choked handshake");
+        let mut peer =
+            PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(2));
+        send_message(&mut peer, &PeerMessage::Bitfield(bitfield))
+            .await
+            .expect("send choked availability");
+        loop {
+            match next_peer_message(&mut peer).await {
+                Ok(PeerMessage::Interested) => {}
+                Err(DownloadError::PeerClosed)
+                | Err(DownloadError::Io {
+                    operation: "read peer message",
+                    ..
+                }) => return,
+                Ok(message) => panic!("unexpected command for choked peer {message:?}"),
+                Err(error) => panic!("choked peer failed: {error}"),
+            }
+        }
+    }
+
+    async fn serve_delayed_block_peer(
+        listener: TcpListener,
+        info_hash: [u8; 20],
+        payload: Vec<u8>,
+        delay: Duration,
+        keepalive_interval: Option<Duration>,
+    ) {
+        let (mut stream, _) = listener.accept().await.expect("accept delayed peer");
+        let mut handshake = [0; HANDSHAKE_LENGTH];
+        stream
+            .read_exact(&mut handshake)
+            .await
+            .expect("read delayed handshake");
+        decode_handshake(&handshake, info_hash).expect("valid delayed handshake");
+        stream
+            .write_all(&encode_handshake(info_hash, *b"-RS-DELAY--000000000"))
+            .await
+            .expect("send delayed handshake");
+        let mut peer =
+            PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(2));
+        send_message(&mut peer, &PeerMessage::Bitfield(vec![0x80]))
+            .await
+            .expect("send delayed availability");
+        send_message(&mut peer, &PeerMessage::Unchoke)
+            .await
+            .expect("send delayed unchoke");
+        let request = loop {
+            match next_peer_message(&mut peer).await {
+                Ok(PeerMessage::Interested) => {}
+                Ok(PeerMessage::Request(request)) => break request,
+                Ok(message) => panic!("unexpected delayed command {message:?}"),
+                Err(error) => panic!("delayed peer failed before request: {error}"),
+            }
+        };
+        let started = tokio::time::Instant::now();
+        if let Some(interval) = keepalive_interval {
+            while started.elapsed().saturating_add(interval) < delay {
+                tokio::time::sleep(interval).await;
+                if send_message(&mut peer, &PeerMessage::KeepAlive)
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        }
+        tokio::time::sleep(delay.saturating_sub(started.elapsed())).await;
+        let begin = request.begin as usize;
+        let end = begin + request.length as usize;
+        if send_message(
+            &mut peer,
+            &PeerMessage::Piece {
+                index: request.index,
+                begin: request.begin,
+                block: payload[begin..end].to_vec(),
+            },
+        )
+        .await
+        .is_err()
+        {
+            return;
+        }
+        loop {
+            match next_peer_message(&mut peer).await {
+                Err(DownloadError::PeerClosed)
+                | Err(DownloadError::Io {
+                    operation: "read peer message",
+                    ..
+                }) => return,
+                Ok(PeerMessage::Request(_)) | Ok(PeerMessage::Interested) => {}
+                Ok(message) => panic!("unexpected post-payload command {message:?}"),
+                Err(error) => panic!("delayed peer failed after payload: {error}"),
+            }
+        }
+    }
+
     async fn run_adverse_reassignment_case(action: AdverseRequestAction) {
         let first = vec![0x44; 16 * 1024];
         let second = vec![0x99; 16 * 1024];
@@ -3964,6 +4353,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 ContentDownloadConfig {
                     output_path: output.clone(),
                     max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                    swarm_config: SwarmConfig::for_payload_limit(2 * MIN_PAYLOAD_ALLOWANCE),
                     skip_files: Vec::new(),
                     materialize_files: Vec::new(),
                 },
@@ -4030,6 +4420,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 ContentDownloadConfig {
                     output_path: output.clone(),
                     max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                    swarm_config: SwarmConfig::for_payload_limit(2 * MIN_PAYLOAD_ALLOWANCE),
                     skip_files: Vec::new(),
                     materialize_files: Vec::new(),
                 },
@@ -4117,6 +4508,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 ContentDownloadConfig {
                     output_path: output.clone(),
                     max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                    swarm_config: SwarmConfig::for_payload_limit(2 * MIN_PAYLOAD_ALLOWANCE),
                     skip_files: Vec::new(),
                     materialize_files: Vec::new(),
                 },
@@ -4138,6 +4530,217 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 .expect("peer task");
         }
         let _ = tokio::fs::remove_dir_all(output).await;
+    }
+
+    #[tokio::test]
+    async fn full_choked_set_is_replaced_by_an_eligible_useful_peer() {
+        let first = vec![0x21; 16 * 1024];
+        let second = vec![0x84; 16 * 1024];
+        let metainfo =
+            Metainfo::from_bytes(&two_piece_metainfo(&first, &second)).expect("two-piece metainfo");
+        let mut addresses = Vec::new();
+        let mut tasks = Vec::new();
+        for _ in 0..8 {
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind choked peer");
+            addresses.push(listener.local_addr().expect("choked address"));
+            tasks.push(tokio::spawn(serve_permanently_choked_peer(
+                listener,
+                metainfo.info_hash,
+                vec![0xc0],
+            )));
+        }
+        let useful_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind replacement peer");
+        let useful_address = useful_listener.local_addr().expect("replacement address");
+        tasks.push(tokio::spawn(serve_content_peer(
+            useful_listener,
+            metainfo.info_hash,
+            Arc::new(vec![first, second]),
+            vec![true, true],
+        )));
+        let mut peers = PeerSession::from_endpoint(
+            addresses[0],
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(2)),
+        )
+        .expect("peer session");
+        for address in addresses.into_iter().skip(1) {
+            peers
+                .observe_address(address, PeerSource::Manual)
+                .expect("choked peer");
+        }
+        peers
+            .observe_address(useful_address, PeerSource::Manual)
+            .expect("replacement peer");
+        let mut swarm_config = SwarmConfig::for_payload_limit(2 * MIN_PAYLOAD_ALLOWANCE);
+        swarm_config.unproductive_grace = Duration::from_millis(100);
+        let output = test_path("choked-capacity-replacement");
+        let report = timeout(
+            Duration::from_secs(3),
+            run_content_download(
+                ContentDownloadConfig {
+                    output_path: output.clone(),
+                    max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                    swarm_config,
+                    skip_files: Vec::new(),
+                    materialize_files: Vec::new(),
+                },
+                metainfo,
+                DownloadControl::new(),
+                None,
+                &mut peers,
+                None,
+            ),
+        )
+        .await
+        .expect("bounded replacement")
+        .expect("replacement peer completed");
+        assert_eq!(report.verified_piece_count, 2);
+        for task in tasks {
+            timeout(Duration::from_secs(1), task)
+                .await
+                .expect("peer joined")
+                .expect("peer task");
+        }
+        let _ = tokio::fs::remove_dir_all(output).await;
+    }
+
+    #[tokio::test]
+    async fn full_choked_set_without_an_alternative_waits_without_churn() {
+        let payload = vec![0x5b; 16 * 1024];
+        let metainfo =
+            Metainfo::from_info_bytes(&single_file_info(&payload)).expect("single-piece metainfo");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind choked peer");
+        let address = listener.local_addr().expect("choked address");
+        let peer_task = tokio::spawn(serve_permanently_choked_peer(
+            listener,
+            metainfo.info_hash,
+            vec![0x80],
+        ));
+        let mut peers = PeerSession::from_endpoint(
+            address,
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(2)),
+        )
+        .expect("peer session");
+        let mut swarm_config = SwarmConfig::for_payload_limit(MIN_PAYLOAD_ALLOWANCE);
+        swarm_config.max_established_connections = 1;
+        swarm_config.unproductive_grace = Duration::from_millis(50);
+        let output = test_path("choked-no-alternative.bin");
+        let control = DownloadControl::new();
+        let result = {
+            let mut download = Box::pin(run_content_download(
+                ContentDownloadConfig {
+                    output_path: output.clone(),
+                    max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+                    swarm_config,
+                    skip_files: Vec::new(),
+                    materialize_files: Vec::new(),
+                },
+                metainfo,
+                control.clone(),
+                None,
+                &mut peers,
+                None,
+            ));
+            assert!(
+                timeout(Duration::from_millis(200), &mut download)
+                    .await
+                    .is_err(),
+                "no-alternative state must wait"
+            );
+            control.cancel();
+            download.await
+        };
+        assert!(matches!(result, Err(DownloadError::Cancelled)));
+        let record = peers.registry.records().next().expect("retained peer");
+        assert_eq!(record.history().dial_attempts, 1);
+        assert_eq!(record.history().total_failures, 0);
+        timeout(Duration::from_secs(1), peer_task)
+            .await
+            .expect("choked peer joined")
+            .expect("choked peer task");
+        let _ = tokio::fs::remove_file(staging_path(&output).expect("staging path")).await;
+    }
+
+    #[tokio::test]
+    async fn unrelated_messages_do_not_prevent_expiry_and_late_payload_is_safe() {
+        let payload = vec![0x6a; 16 * 1024];
+        let metainfo =
+            Metainfo::from_info_bytes(&single_file_info(&payload)).expect("single-piece metainfo");
+        let old_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind old peer");
+        let old_address = old_listener.local_addr().expect("old address");
+        let replacement_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind replacement peer");
+        let replacement_address = replacement_listener
+            .local_addr()
+            .expect("replacement address");
+        let old_task = tokio::spawn(serve_delayed_block_peer(
+            old_listener,
+            metainfo.info_hash,
+            payload.clone(),
+            Duration::from_millis(130),
+            Some(Duration::from_millis(25)),
+        ));
+        let replacement_task = tokio::spawn(serve_delayed_block_peer(
+            replacement_listener,
+            metainfo.info_hash,
+            payload.clone(),
+            Duration::from_millis(100),
+            None,
+        ));
+        let mut peers = PeerSession::from_endpoint(
+            old_address,
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(2)),
+        )
+        .expect("peer session");
+        peers
+            .observe_address(replacement_address, PeerSource::Manual)
+            .expect("replacement peer");
+        let mut swarm_config = SwarmConfig::for_payload_limit(MIN_PAYLOAD_ALLOWANCE);
+        swarm_config.request_timeout = Duration::from_millis(75);
+        let output = test_path("late-request-payload.bin");
+        let control = DownloadControl::new();
+        let report = timeout(
+            Duration::from_secs(3),
+            run_content_download(
+                ContentDownloadConfig {
+                    output_path: output.clone(),
+                    max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+                    swarm_config,
+                    skip_files: Vec::new(),
+                    materialize_files: Vec::new(),
+                },
+                metainfo,
+                control.clone(),
+                None,
+                &mut peers,
+                None,
+            ),
+        )
+        .await
+        .expect("bounded expiry and late response")
+        .expect("late response download");
+        assert_eq!(report.verified_piece_count, 1);
+        assert_eq!(report.payload_high_water, MIN_PAYLOAD_ALLOWANCE);
+        assert!(control.snapshot().requested_bytes >= 2 * MIN_PAYLOAD_ALLOWANCE);
+        assert_eq!(tokio::fs::read(&output).await.expect("output"), payload);
+        for task in [old_task, replacement_task] {
+            timeout(Duration::from_secs(1), task)
+                .await
+                .expect("delayed peer joined")
+                .expect("delayed peer task");
+        }
+        let _ = tokio::fs::remove_file(output).await;
     }
 
     fn single_file_info(payload: &[u8]) -> Vec<u8> {
@@ -4382,6 +4985,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         info_hash: [u8; 20],
         unreachable: SocketAddr,
         reachable: SocketAddr,
+        announce_delay: Duration,
     ) {
         let mut request = [0; 2048];
         let (connect_length, client) = socket
@@ -4440,6 +5044,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         assert_ne!(announce_transaction, 0);
         assert_ne!(announce_transaction, connect_transaction);
         assert_eq!(&request[16..36], &info_hash);
+        tokio::time::sleep(announce_delay).await;
         assert_eq!(&request[36..56], &CLIENT_PEER_ID);
         assert_eq!(
             u64::from_be_bytes(request[56..64].try_into().expect("downloaded")),
@@ -4555,6 +5160,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             info_hash,
             unreachable,
             reachable,
+            Duration::ZERO,
         ));
         let rejecting_tracker = UdpSocket::bind("127.0.0.1:0")
             .await
@@ -4635,6 +5241,83 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         tracker_task.await.expect("scripted tracker task");
         peer_task.await.expect("scripted peer task");
         let _ = tokio::fs::remove_file(output_path).await;
+    }
+
+    #[tokio::test]
+    async fn tracker_peer_discovered_during_content_becomes_useful() {
+        let payload = b"late tracker peer payload".to_vec();
+        let info = single_file_info(&payload);
+        let info_hash: [u8; 20] = Sha1::digest(&info).into();
+        let metadata_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind metadata-only peer");
+        let metadata_address = metadata_listener.local_addr().expect("metadata address");
+        let metadata_task = tokio::spawn(serve_metadata_then_piece(
+            metadata_listener,
+            info,
+            payload.clone(),
+            vec![0x00],
+        ));
+        let useful_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind late useful peer");
+        let useful_address = useful_listener.local_addr().expect("useful address");
+        let useful_task = tokio::spawn(serve_content_peer(
+            useful_listener,
+            info_hash,
+            Arc::new(vec![payload.clone()]),
+            vec![true],
+        ));
+        let unavailable_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind unavailable placeholder");
+        let unavailable = unavailable_listener
+            .local_addr()
+            .expect("unavailable address");
+        drop(unavailable_listener);
+        let tracker = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind delayed tracker");
+        let tracker_address = tracker.local_addr().expect("tracker address");
+        let tracker_task = tokio::spawn(serve_one_shot_udp_tracker(
+            tracker,
+            info_hash,
+            unavailable,
+            useful_address,
+            Duration::from_millis(150),
+        ));
+        let output = test_path("late-tracker-content.bin");
+        let result = timeout(
+            Duration::from_secs(3),
+            download_magnet(MagnetDownloadConfig {
+                magnet: format!(
+                    "magnet:?xt=urn:btih:{}&x.pe={metadata_address}&\
+                     tr=udp%3A%2F%2F{tracker_address}%2Fannounce",
+                    hex(&info_hash)
+                ),
+                output_path: output.clone(),
+                network: loopback_network(Duration::from_secs(2)),
+                max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+                skip_files: Vec::new(),
+                materialize_files: Vec::new(),
+                dht: None,
+            }),
+        )
+        .await
+        .expect("bounded late discovery")
+        .expect("late discovered peer completed content");
+        assert_eq!(result.verified_piece_count, 1);
+        assert_eq!(
+            tokio::fs::read(&output).await.expect("downloaded output"),
+            payload
+        );
+        for task in [metadata_task, useful_task, tracker_task] {
+            timeout(Duration::from_secs(1), task)
+                .await
+                .expect("scripted owner joined")
+                .expect("scripted task");
+        }
+        let _ = tokio::fs::remove_file(output).await;
     }
 
     async fn assert_tracker_wait_cancels_without_socket_leaks() {

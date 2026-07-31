@@ -1106,6 +1106,7 @@ fn classify_failure(error: &DownloadError) -> FailureKind {
         | DownloadError::Handshake(_)
         | DownloadError::Frame(_)
         | DownloadError::PeerRegistry(_)
+        | DownloadError::PeerTask(_)
         | DownloadError::UdpTracker(_)
         | DownloadError::NoUsablePeer
         | DownloadError::NoUsableTrackerAddress
@@ -1137,10 +1138,13 @@ fn classify_failure(error: &DownloadError) -> FailureKind {
         DownloadError::Storage(_)
         | DownloadError::SelectiveStorage(_)
         | DownloadError::Io { .. } => FailureKind::Storage,
-        DownloadError::CleanupAfterFailure { .. } => FailureKind::Cleanup,
+        DownloadError::CleanupAfterFailure { .. } | DownloadError::PeerCleanup { .. } => {
+            FailureKind::Cleanup
+        }
         DownloadError::Entropy(_)
         | DownloadError::Dht(_)
         | DownloadError::Checkpoint(_)
+        | DownloadError::Swarm(_)
         | DownloadError::TrackerTask(_)
         | DownloadError::Cancelled => FailureKind::Runtime,
     }

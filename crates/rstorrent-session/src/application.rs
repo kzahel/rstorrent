@@ -1373,6 +1373,47 @@ impl ViewActivitySink {
                     &[("peer", &peer)],
                 );
             }
+            DownloadActivityEvent::SwarmState(snapshot) => {
+                let connected = snapshot.connected_peers.to_string();
+                let pending = snapshot.pending_dials.to_string();
+                let unchoked = snapshot.unchoked_peers.to_string();
+                let missing = snapshot.missing_blocks.to_string();
+                let requested = snapshot.requested_blocks.to_string();
+                let writing = snapshot.writing_blocks.to_string();
+                let reserved = snapshot.payload_reserved.to_string();
+                let oldest = snapshot
+                    .oldest_request_age_seconds
+                    .map_or_else(|| "none".to_owned(), |value| value.to_string());
+                let next_expiry = snapshot
+                    .next_request_expiry_seconds
+                    .map_or_else(|| "none".to_owned(), |value| value.to_string());
+                let next_replacement = snapshot
+                    .next_replacement_seconds
+                    .map_or_else(|| "none".to_owned(), |value| value.to_string());
+                let reason = snapshot
+                    .no_request_reason
+                    .map_or_else(|| "requestable".to_owned(), |reason| format!("{reason:?}"));
+                let _ = self.views.record_diagnostic(
+                    DiagnosticSeverity::Debug,
+                    DiagnosticCategory::Scheduler,
+                    "swarm_state_changed",
+                    Some(&self.torrent_id),
+                    "Torrent request state changed",
+                    &[
+                        ("connected_peers", &connected),
+                        ("pending_dials", &pending),
+                        ("unchoked_peers", &unchoked),
+                        ("missing_blocks", &missing),
+                        ("requested_blocks", &requested),
+                        ("writing_blocks", &writing),
+                        ("payload_reserved", &reserved),
+                        ("oldest_request_seconds", &oldest),
+                        ("next_expiry_seconds", &next_expiry),
+                        ("next_replacement_seconds", &next_replacement),
+                        ("no_request_reason", &reason),
+                    ],
+                );
+            }
             DownloadActivityEvent::PieceStarted { .. }
             | DownloadActivityEvent::BlockRequested { .. }
             | DownloadActivityEvent::BlockReceived { .. }
