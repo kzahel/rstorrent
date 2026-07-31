@@ -2,24 +2,30 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use rstorrent_session::{
     ApplicationConfig, ApplicationService, ConfiguredStorageRoot, RequestEnvelope,
     ResponseEnvelope, SubscriptionSpec, ViewSubscription, ViewUpdate,
 };
+#[cfg(target_os = "macos")]
+use tauri::WebviewWindowBuilder;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, RunEvent, State, WebviewWindow, WindowEvent};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
+const MAIN_WINDOW_LABEL: &str = "main";
+
 struct DesktopState {
     service: Arc<Mutex<ApplicationService>>,
     subscriptions: Arc<Mutex<BTreeMap<(String, String), DesktopSubscription>>>,
+    window_generation: AtomicU64,
     allow_exit: AtomicBool,
 }
 
 struct DesktopSubscription {
+    window_generation: u64,
     subscription: ViewSubscription,
     cancellation: CancellationToken,
     task: tauri::async_runtime::JoinHandle<()>,
@@ -72,9 +78,11 @@ async fn application_subscribe(
         task_subscription.close();
     });
     let key = (window.label().to_owned(), stream_id.clone());
+    let window_generation = state.window_generation.load(Ordering::Acquire);
     let replaced = state.subscriptions.lock().await.insert(
         key,
         DesktopSubscription {
+            window_generation,
             subscription,
             cancellation,
             task,
@@ -151,13 +159,16 @@ async fn stop_subscription(subscription: DesktopSubscription) {
 async fn close_window_subscriptions(
     subscriptions: Arc<Mutex<BTreeMap<(String, String), DesktopSubscription>>>,
     label: String,
+    window_generation: u64,
 ) {
     let removed = {
         let mut subscriptions = subscriptions.lock().await;
         let keys = subscriptions
-            .keys()
-            .filter(|(window, _)| window == &label)
-            .cloned()
+            .iter()
+            .filter(|(key, subscription)| {
+                key.0 == label && subscription.window_generation == window_generation
+            })
+            .map(|(key, _)| key.clone())
             .collect::<Vec<_>>();
         keys.into_iter()
             .filter_map(|key| subscriptions.remove(&key))
@@ -166,6 +177,56 @@ async fn close_window_subscriptions(
     for subscription in removed {
         stop_subscription(subscription).await;
     }
+}
+
+fn observe_window_destruction(
+    window: &WebviewWindow,
+    subscriptions: Arc<Mutex<BTreeMap<(String, String), DesktopSubscription>>>,
+    window_generation: u64,
+) {
+    let label = window.label().to_owned();
+    window.on_window_event(move |event| {
+        if matches!(event, WindowEvent::Destroyed) {
+            let subscriptions = subscriptions.clone();
+            let label = label.clone();
+            tauri::async_runtime::spawn(async move {
+                close_window_subscriptions(subscriptions, label, window_generation).await;
+            });
+        }
+    });
+}
+
+#[cfg(target_os = "macos")]
+fn restore_main_window(app: &AppHandle) -> Result<(), String> {
+    let window = if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        window
+    } else {
+        let state = app.state::<DesktopState>();
+        let config = app
+            .config()
+            .app
+            .windows
+            .iter()
+            .find(|config| config.label == MAIN_WINDOW_LABEL)
+            .cloned()
+            .ok_or_else(|| "main webview window configuration is missing".to_owned())?;
+        let window_generation = state.window_generation.fetch_add(1, Ordering::AcqRel) + 1;
+        let window = WebviewWindowBuilder::from_config(app, &config)
+            .map_err(|error| format!("configure main webview window: {error}"))?
+            .build()
+            .map_err(|error| format!("recreate main webview window: {error}"))?;
+        observe_window_destruction(&window, state.subscriptions.clone(), window_generation);
+        window
+    };
+    window
+        .unminimize()
+        .map_err(|error| format!("restore main webview window: {error}"))?;
+    window
+        .show()
+        .map_err(|error| format!("show main webview window: {error}"))?;
+    window
+        .set_focus()
+        .map_err(|error| format!("focus main webview window: {error}"))
 }
 
 pub fn run() {
@@ -188,22 +249,14 @@ pub fn run() {
             let state = DesktopState {
                 service: Arc::new(Mutex::new(service)),
                 subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
+                window_generation: AtomicU64::new(1),
                 allow_exit: AtomicBool::new(false),
             };
             let subscriptions = state.subscriptions.clone();
             let window = app
-                .get_webview_window("main")
+                .get_webview_window(MAIN_WINDOW_LABEL)
                 .ok_or_else(|| "main webview window was not created".to_owned())?;
-            let label = window.label().to_owned();
-            window.on_window_event(move |event| {
-                if matches!(event, WindowEvent::Destroyed) {
-                    let subscriptions = subscriptions.clone();
-                    let label = label.clone();
-                    tauri::async_runtime::spawn(async move {
-                        close_window_subscriptions(subscriptions, label).await;
-                    });
-                }
-            });
+            observe_window_destruction(&window, subscriptions, 1);
             app.manage(state);
             Ok(())
         })
@@ -216,14 +269,22 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("build RSTorrent desktop application");
-    application.run(|handle, event| {
-        if let RunEvent::ExitRequested { api, .. } = event
-            && !handle
+    application.run(|handle, event| match event {
+        RunEvent::ExitRequested { api, .. } => {
+            if !handle
                 .state::<DesktopState>()
                 .allow_exit
                 .load(Ordering::Acquire)
-        {
-            api.prevent_exit();
+            {
+                api.prevent_exit();
+            }
         }
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen { .. } => {
+            if let Err(error) = restore_main_window(handle) {
+                eprintln!("failed to restore desktop window: {error}");
+            }
+        }
+        _ => {}
     });
 }

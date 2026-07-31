@@ -563,6 +563,13 @@ type checking, five Vitest cases, the production Vite build, workspace
 formatting, Clippy with warnings denied, workspace tests, and one fresh
 bidirectional libtorrent `2.0.13.0` magnet-metadata run also passed.
 
+A second macOS follow-up closed the bundled app's only window while confirming
+that the same process and application service remained alive. Activating the
+app again recreated and focused the configured main window, whose fresh view
+subscriptions reconnected to the retained profile state. Subscription cleanup
+is tagged with a window generation so delayed destruction work from the old
+window cannot cancel subscriptions owned by its replacement.
+
 ## Remaining Boundary
 
 This is a product-thread proof, not a production remote-control release. The

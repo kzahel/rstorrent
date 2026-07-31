@@ -7,7 +7,9 @@ browser-hosted web view, a Tauri desktop webview, and Android Compose. The
 Android foreground product client now uses durable SAF storage without
 placing platform capabilities in the portable UI command contract. The
 one-command desktop launcher is smoke-tested on Apple silicon macOS as well as
-the original Linux development host.
+the original Linux development host. Closing its macOS window detaches that
+view while Dock activation recreates and focuses it without restarting the
+application service.
 
 ## Scope
 
@@ -178,8 +180,9 @@ future server.
 - The loopback WebSocket gateway is an authenticated proof, not a production
   remote-access design. It has no pairing, principal/capability model, TLS,
   relay, wake-up path, or public wire compatibility promise.
-- The Tauri shell has no production tray/window policy, installers, updates,
-  file associations, or platform-capability adapter.
+- The Tauri shell has basic macOS close-and-reopen behavior but no production
+  tray or cross-platform window policy, installers, updates, file associations,
+  or platform-capability adapter.
 - Android durable SAF session storage and provider publication are proven for
   one persisted root. General root management, root migration, removable
   media policy, and file-selection presentation remain product gaps.
