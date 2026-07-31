@@ -2,11 +2,11 @@
 
 Topic: `performance-and-live-evidence`
 
-Status: In progress. A controlled headless DHT/libtorrent completion harness
-and one bounded single-sided public DHT probe now exist. Tactical 015 still
-owns the paired RSTorrent/libtorrent public comparator, result schema, and
-resource/timing report. Public-swarm speed remains a measured baseline, not a
-CI pass threshold.
+Status: In progress. A catalog-backed paired RSTorrent/libtorrent comparator
+now emits milestone, geometry, diagnostic, cleanup, and classification JSON
+without opening a product surface. Tactical 015 still needs its bounded full
+completion baseline and final validation. Public-swarm speed remains a
+measured baseline, not a CI pass threshold.
 
 ## Purpose
 
@@ -190,6 +190,24 @@ All figures above stop at hash-verified `ut_metadata`. The actual torrent is
 measured full payload verification or publication; a ten-run cohort for both
 implementations would transfer about 5.53 GB before protocol overhead.
 
+### First Alternating Comparator Evidence: 2026-07-31
+
+The Tactical `015` runner completed its first common-denominator pair through
+the same machine-readable schema. RSTorrent ran first; both owners used the
+UDP-only magnet, TCP outgoing connections, no DHT, no LSD, no incoming
+connections, and isolated temporary storage. Both acquired the same verified
+metadata geometry: 276,445,467 bytes, 1,055 pieces of 262,144 bytes, and three
+files. Owned tasks and payload roots were removed.
+
+RSTorrent reached verified metadata in 51.32 seconds and libtorrent in 20.63
+seconds, a 2.49x ratio for this one changing-swarm sample. At the RSTorrent
+milestone, its bounded snapshot held 128 candidates, 110 still eligible, 20
+metadata attempts, two metadata requests, and the two blocks comprising the
+21,307-byte info dictionary. This is comparable paired evidence and confirms
+the harness contract, but one sample is not a distribution or a parity claim.
+It points the next source-first slice at metadata candidate concurrency and
+torrent-wide request ownership. Full-payload evidence is still pending.
+
 ## Result Classification
 
 Classify each paired attempt before interpreting speed:
@@ -271,9 +289,9 @@ controlled samples establish a defensible threshold.
 - Committed summaries contain no peer IP addresses, tokens, machine-specific
   paths, or large binary artifacts.
 
-## First Tactical Boundary
+## Current Tactical Boundary
 
-The next tactical should add the smallest harness that can:
+Tactical `015` has added the smallest harness that can:
 
 1. select a catalog entry and comparison mode;
 2. run a bounded libtorrent reference download and a bounded RSTorrent
@@ -284,8 +302,11 @@ The next tactical should add the smallest harness that can:
 6. exercise one available tracker-based catalog entry.
 
 Selective pinned-reference checkout tooling and the single-sided DHT harness
-have landed as prerequisites. The remaining tactical does not add product UI,
-establish speed gates, or change the DHT implementation itself.
+landed as prerequisites. Deterministic catalog, classification, threshold,
+order, and summary tests plus the first paired metadata run now pass. The
+remaining stopping condition is a bounded full-download pair and workspace
+validation; the tactical does not add product UI, establish a CI speed gate,
+or change DHT scheduling itself.
 
 ## Maintenance Contract
 

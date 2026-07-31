@@ -127,6 +127,12 @@ pub trait DownloadActivitySink: Send + Sync + fmt::Debug {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DownloadActivityEvent {
+    MetadataVerified {
+        total_length: u64,
+        piece_length: u32,
+        piece_count: usize,
+        file_count: usize,
+    },
     PieceStarted {
         piece_index: u32,
         piece_length: u32,
@@ -2268,6 +2274,14 @@ impl PeerSession {
             0,
             self.last_error.as_ref(),
         );
+        if let Ok((_, metainfo)) = &result {
+            self.control.emit(DownloadActivityEvent::MetadataVerified {
+                total_length: metainfo.total_length,
+                piece_length: metainfo.piece_length,
+                piece_count: metainfo.piece_hashes.len(),
+                file_count: metainfo.files.len(),
+            });
+        }
         self.control.metadata_finished(&result);
         result
     }

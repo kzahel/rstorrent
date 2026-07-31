@@ -142,8 +142,9 @@ that scope and its cleanup or compatibility rules explicitly.
   retry and reannounce scheduling, loss recovery, token reuse, and equivalent
   waiting diagnostics on the web and Android surfaces.
 - [`015-headless-live-comparison.md`](015-headless-live-comparison.md): in
-  progress; its selective pinned-reference tooling and single-sided DHT smoke
-  have landed, while the paired RSTorrent/libtorrent comparator remains.
+  progress; its catalog-backed alternating comparator, deterministic result
+  tests, and first paired metadata baseline have landed, while the bounded
+  paired full-download baseline and final gates remain.
 - [`016-dht-discovery-foundation.md`](016-dht-discovery-foundation.md):
   complete; added the session-owned bounded IPv4 DHT participant, private
   gating, warm restart, peer integration, controlled libtorrent completion,
@@ -158,7 +159,8 @@ that scope and its cleanup or compatibility rules explicitly.
   repeated public DHT metadata completion.
 
 Tactical `015` is the active oracle-campaign slice. Its selective reference
-prerequisite and DHT single-sided smoke have landed; the paired milestone
-runner remains. Current prioritization and the compaction-safe restart
+prerequisite, DHT single-sided smoke, paired milestone runner, and first
+metadata pair have landed; its full-download baseline remains. Current
+prioritization and the compaction-safe restart
 checkpoint live in [`../topics/capability-readiness.md`](../topics/capability-readiness.md)
 and [`../topics/oracle-driven-engine-campaign.md`](../topics/oracle-driven-engine-campaign.md).

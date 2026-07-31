@@ -1076,6 +1076,9 @@ struct ViewActivitySink {
 impl DownloadActivitySink for ViewActivitySink {
     fn record(&self, event: DownloadActivityEvent) {
         let piece_activity = match &event {
+            DownloadActivityEvent::MetadataVerified { .. } => {
+                return self.record_discovery_event(event);
+            }
             DownloadActivityEvent::PieceStarted {
                 piece_index,
                 piece_length,
@@ -1165,6 +1168,30 @@ impl DownloadActivitySink for ViewActivitySink {
 impl ViewActivitySink {
     fn record_discovery_event(&self, event: DownloadActivityEvent) {
         match event {
+            DownloadActivityEvent::MetadataVerified {
+                total_length,
+                piece_length,
+                piece_count,
+                file_count,
+            } => {
+                let total_length = total_length.to_string();
+                let piece_length = piece_length.to_string();
+                let piece_count = piece_count.to_string();
+                let file_count = file_count.to_string();
+                let _ = self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    DiagnosticCategory::Protocol,
+                    "metadata_verified",
+                    Some(&self.torrent_id),
+                    "Torrent metadata verified",
+                    &[
+                        ("total_length", &total_length),
+                        ("piece_length", &piece_length),
+                        ("piece_count", &piece_count),
+                        ("file_count", &file_count),
+                    ],
+                );
+            }
             DownloadActivityEvent::TrackerAnnounceStarted {
                 tracker,
                 tier,

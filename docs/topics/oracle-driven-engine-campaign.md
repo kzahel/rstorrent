@@ -315,8 +315,9 @@ Campaign state: **active**.
 
 Active tactical: [`015-headless-live-comparison.md`](../tactical/015-headless-live-comparison.md).
 
-Current milestone: build the paired, milestone-aware, catalog-backed headless
-comparator before further engine tuning.
+Current milestone: finish the bounded full-download baseline and validation
+for the paired, milestone-aware, catalog-backed headless comparator before
+further engine tuning.
 
 Last completed evidence:
 
@@ -324,6 +325,12 @@ Last completed evidence:
   lifecycle fixes, and provisional tracker-port implementation;
 - commit `e199b1f` established this runbook and retained the initial paired
   reference evidence;
+- the Tactical `015` comparator now has its catalog, RSTorrent probe,
+  libtorrent adapter, alternating order, deterministic classification tests,
+  and bounded cleanup;
+- its first common-denominator metadata pair completed both owners at 51.32
+  seconds for RSTorrent and 20.63 seconds for libtorrent, with identical
+  276,445,467-byte, 1,055-piece, three-file geometry;
 - RSTorrent metadata-only Big Buck Bunny cohorts completed 8/10 through UDP
   trackers and 7/10 through fresh DHT sessions;
 - pinned libtorrent `2.0.13.0` completed both corresponding cohorts 10/10;
@@ -337,10 +344,9 @@ Last completed evidence:
 
 Next executable action:
 
-1. make Tactical `015` decision-complete against this runbook;
-2. implement the catalog, result schema, libtorrent adapter, RSTorrent adapter,
-   alternating runner, cleanup, and deterministic classification tests;
-3. capture the first paired metadata and full-download baseline; and
+1. harden completion identity and publication validation in Tactical `015`;
+2. capture its first bounded paired full-download baseline;
+3. run the workspace and locked-Python gates and close Tactical `015`; and
 4. open the next numbered tactical for torrent-owned multi-source metadata
    acquisition using the completed source dossier.
 
