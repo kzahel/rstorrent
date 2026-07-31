@@ -2,13 +2,11 @@
 
 Topic: `peer-lifecycle`
 
-Status: Tactical `010` completed the first bounded peer registry, selection,
-dial, failure, and live-connection lifecycle. Tacticals `011` and `014` feed it
-bounded scheduled UDP tracker observations. Tactical `013` applies explicit
-destination policy and per-operation deadlines to the runtime owner. Tactical
-`016` adds DHT observations through the same registry boundary. Multiple
-simultaneous peers, torrent-owned requests, and content failover remain
-unimplemented and form the next peer-liveness campaign.
+Status: Tactical `017` completed bounded simultaneous dialing, metadata
+acquisition, live content connections, torrent-owned requests, expiry,
+replacement, and failover. Tracker and DHT observations remain live while
+content runs. Endgame duplicates, integrity reputation, measured picker
+policy, incoming connections, and persistent peer records remain later work.
 
 ## Scope
 
@@ -297,9 +295,8 @@ tracker peer advances to the next record; and a successful explicit hint
 avoids tracker traffic.
 
 Tactical `014` keeps that same boundary while the tracker manager retries and
-reannounces. Later observations continue to enter the registry, but the
-one-live-connection content path cannot yet use a newly discovered peer while
-another content connection remains installed.
+reannounces. Tactical `017` now admits those later observations into bounded
+parallel dials while existing content connections remain installed.
 
 Tactical `016` adds a session-owned DHT participant and feeds its results
 through `PeerSource::Dht`. Controlled trackerless metadata/content completion
@@ -315,12 +312,19 @@ complete-message reads across fragmentation, and complete-frame writes now
 have bounded deadlines owned by the peer connection. Timely messages can
 continue indefinitely because no deadline bounds the torrent's lifetime.
 
-The runtime still deliberately permits only one live connection. It does not
-fail over during content transfer, persist peer records, resolve duplicate
-peer IDs, perform simultaneous dialing, or own multi-peer request selection.
+Tactical `017` installs up to eight live connections, three pending dials,
+four requests per peer, four active pieces, bounded terminal history, and one
+torrent supervisor that owns storage and task joins. Controlled scenarios
+prove split availability, disconnect/choke reassignment, request expiry,
+harmless late payload, late discovery, handshake silence, full-slot
+replacement, no-alternative waiting, and cancellation. Pinned libtorrent
+participates in a verified 16-piece completion while a scripted connected
+peer remains choked.
 
-The next peer-transfer slice is a small bounded live-peer set with explicit
-request ownership, request expiry, capacity-pressure replacement, and
-content-transfer failover. Incoming advertised-port updates,
-mature performance selection, peer-ID duplicate resolution, integrity
-reputation, PEX, and persisted peer caches remain later work.
+Metadata acquisition also keeps up to three dial/negotiation work items in
+flight, continues tracker or DHT discovery, preserves the first hash-verified
+connection for content, and cooperatively cancels and joins losing work.
+
+Incoming advertised-port updates, measured performance selection, peer-ID
+duplicate resolution, endgame, integrity reputation, PEX, and persisted peer
+caches remain later work.

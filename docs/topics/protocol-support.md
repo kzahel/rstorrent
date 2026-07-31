@@ -41,11 +41,11 @@ BEP is external protocol metadata, not RSTorrent readiness.
 
 | Specification | Claim | Implemented subset and evidence | Deliberate limits and dependencies |
 | --- | --- | --- | --- |
-| [BEP 3: The BitTorrent Protocol Specification](https://www.bittorrent.org/beps/bep_0003.html) | Partial | Strict bounded bencoding; v1 single- and multi-file info dictionaries; raw-info SHA-1 identity; TCP handshake; keepalive, choke, unchoke, interested, not-interested, have, bitfield, request, and piece messages; bounded block pipelining; full-piece SHA-1 verification. Deterministic tests and controlled libtorrent downloads cover the implemented subset. | No cancel message, general payload upload, incoming peer service, multi-peer content scheduling, endgame, choking algorithm, HTTP tracker, or reliable ordinary-swarm completion. Multi-piece single-file execution is rejected. |
+| [BEP 3: The BitTorrent Protocol Specification](https://www.bittorrent.org/beps/bep_0003.html) | Partial | Strict bounded bencoding; v1 single- and multi-file info dictionaries; raw-info SHA-1 identity; TCP handshake; keepalive, choke, unchoke, interested, not-interested, have, bitfield, request, and piece messages; bounded multi-peer block scheduling, request expiry, failover, full-piece SHA-1 verification, and single-/multi-file publication. Deterministic, scripted adverse, and controlled libtorrent downloads cover the implemented subset. | No cancel message, general payload upload, incoming peer service, endgame duplicates, hash-failure recovery, choking algorithm, HTTP tracker, or broad ordinary-swarm completion claim. |
 | [BEP 5: DHT Protocol](https://www.bittorrent.org/beps/bep_0005.html) | Partial | Bounded KRPC, fixed-distance K=8 routing and replacements, alpha-3 iterative lookup, exact transaction/source correlation, incoming query handling, token-authenticated peer announcements, bootstrap/refresh, warm persistence, network-policy integration, and ordinary peer-registry delivery. Deterministic, scripted runtime, controlled libtorrent, and public-bootstrap evidence passes. | The runtime operates one IPv4 UDP socket. Self-announcement remains absent until a real incoming peer port exists, and the first bounded public metadata smoke found peers but did not complete. |
 | [BEP 6: Fast Extension](https://www.bittorrent.org/beps/bep_0006.html) | Unsupported | None. | Have-all, have-none, suggest, reject-request, and allowed-fast negotiation and state are absent. |
 | [BEP 7: IPv6 Tracker Extension](https://www.bittorrent.org/beps/bep_0007.html) | Unsupported | None. | HTTP trackers are absent. BEP 15 UDP response parsing can represent bounded IPv6 compact peers, which is not a BEP 7 support claim. |
-| [BEP 9: Extension for Peers to Send Metadata Files](https://www.bittorrent.org/beps/bep_0009.html) | Supported | Bounded v1 `btih` magnets, extension negotiation, metadata size and block bounds, at most two acquisition requests in flight, request/data/reject messages, duplicate and ordering validation, assembled info-hash verification, and a bounded diagnostic metadata uploader. Controlled libtorrent runs pass in both directions. | The claim is v1 metadata exchange only. Simultaneous metadata peers, v2 identities, BEP 53 selection, and general seeding are outside it. |
+| [BEP 9: Extension for Peers to Send Metadata Files](https://www.bittorrent.org/beps/bep_0009.html) | Supported | Bounded v1 `btih` magnets, extension negotiation, metadata size and block bounds, at most two acquisition requests per peer, request/data/reject messages, duplicate and ordering validation, assembled info-hash verification, up to three simultaneous dial/metadata work items, and a bounded diagnostic metadata uploader. Controlled libtorrent runs pass in both directions. | The first complete hash-verified source wins; metadata blocks are not assembled across peers. V2 identities, BEP 53 selection, and general seeding are outside the claim. |
 | [BEP 10: Extension Protocol](https://www.bittorrent.org/beps/bep_0010.html) | Partial | Reserved-bit negotiation, extended message framing, directional extension IDs, and bounded extended handshake fields needed for `ut_metadata`; deterministic and libtorrent evidence exists. | There is no general extension registry or support for PEX, hole punching, upload-only, client-version fields, or arbitrary extensions. |
 | [BEP 11: Peer Exchange](https://www.bittorrent.org/beps/bep_0011.html) | Unsupported | None. | Requires BEP 10 extension growth, multiple live peers, source diversity limits, deduplication, rate bounds, private-torrent gating, and connection lifecycle evidence. |
 | [BEP 12: Multitracker Metadata Extension](https://www.bittorrent.org/beps/bep_0012.html) | Unsupported | None for `.torrent` `announce-list`. | Multiple magnet `tr` values work as one shuffled synthetic tier, but magnets do not encode BEP 12 tiers and that behavior is not a BEP 12 claim. |
@@ -107,12 +107,12 @@ without becoming RSTorrent's architecture or runtime dependency.
 
 Protocol breadth follows the current ownership campaign:
 
-1. finish the paired headless comparative smoke needed to measure live
+1. add core cancel/endgame behavior and hash-failure recovery under the
+   existing bounded multi-peer BEP 3 subset;
+2. finish the paired headless comparative smoke needed to measure live
    completion without adding a product UI;
-2. finish bounded multi-peer request ownership so discovered peers can remain
-   useful through metadata and content transfer failures;
-3. add core cancel/endgame behavior, per-request expiry, and hash-failure
-   recovery under the existing BEP 3 subset;
+3. measure and tune connection/picker policy against controlled and public
+   evidence;
 4. close measured DHT gaps, beginning with IPv6 runtime participation and
    incoming listen-port/self-announcement only when their owners exist;
 5. add measured picker and connection-set behavior, then evaluate BEP 6

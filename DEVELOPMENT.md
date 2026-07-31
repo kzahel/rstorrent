@@ -92,10 +92,14 @@ retransmission and connection-token reuse, automatic reannounce, and
 equivalent waiting/retry diagnostics in the web and Android clients.
 
 Tactical `016` completed the bounded session-owned IPv4 DHT foundation with
-private-torrent gating and useful warm restart. The active tactical is the
-paired headless RSTorrent/libtorrent live-comparison harness. See
-[`docs/topics/performance-and-live-evidence.md`](docs/topics/performance-and-live-evidence.md)
-and [`docs/topics/dht-discovery.md`](docs/topics/dht-discovery.md).
+private-torrent gating and useful warm restart. Tactical `017` completed the
+bounded multi-peer connection/request owner, parallel metadata acquisition,
+late discovery, expiry, replacement, failover, and ordinary multi-piece
+single-file execution. Endgame and integrity recovery are the next reliability
+slice; Tactical `015` remains the independent paired live-comparison work. See
+[`docs/topics/capability-readiness.md`](docs/topics/capability-readiness.md),
+[`docs/topics/peer-lifecycle.md`](docs/topics/peer-lifecycle.md), and
+[`docs/topics/download-correctness.md`](docs/topics/download-correctness.md).
 
 ## Toolchain
 
@@ -160,6 +164,15 @@ incoming query and token-authenticated announcement behavior:
 ```bash
 uv run --project tests/interop --locked \
   python tests/interop/dht_magnet.py
+```
+
+The controlled mixed-peer profile keeps a scripted, valid, permanently choked
+peer in the content swarm while pinned libtorrent supplies and accounts for a
+16-piece single-file payload:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/multi_peer_liveness.py
 ```
 
 Tactical `003`'s self-contained Android probe builds both supported native

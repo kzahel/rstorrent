@@ -66,9 +66,10 @@ The magnet path starts its tracker manager after bounded peer-hint resolution
 and before peer selection or dialing, then keeps it alive while metadata or
 content work is active. Runtime policy is checked before DNS when offline,
 after tracker resolution, on every compact peer observation, and again before
-peer dialing. One successful response may add several observations, but the
-runtime still connects to only one peer at a time. The parent explicitly
-cancels and joins the manager on completion, failure, pause, or shutdown.
+peer dialing. One successful response may add several observations; the
+torrent supervisor can dial them while other content peers remain active
+under its connection and pending-work bounds. The parent explicitly cancels
+and joins the manager on completion, failure, pause, or shutdown.
 
 Magnet `tr` parameters do not encode BEP 12 tier structure, so retained UDP
 trackers form one initially shuffled synthetic tier. Failure falls through to
@@ -160,10 +161,10 @@ announce real transfer counters or a nonzero listening port, scrape, or share
 a session-wide tracker-operation budget. It reports 16 KiB left while magnet
 metadata is unknown and owns no incoming peer listener.
 
-The current discovery campaign adds DHT as a separately owned source, using the
-same peer-observation boundary and session network policy. Bounded multi-peer
-transfer follows so tracker and DHT observations can improve active-transfer
-reliability and throughput. Later tracker work should follow ownership
+The DHT owner is a separately owned source using the same peer-observation
+boundary and session network policy. Tactical `017` now lets later tracker and
+DHT observations improve active-transfer reliability. Later tracker work
+should follow ownership
 established by incoming listening, transfer accounting, metainfo tiers,
 persistence, and session-wide resource policy. The headless public-torrent
 comparator adds useful live evidence but cannot replace controlled protocol and

@@ -399,15 +399,15 @@ does not distort the protocol vertical slice.
 queue so this durable direction does not become a competing backlog. The
 session-owned IPv4 DHT foundation now supplies bounded routing and traversal,
 private-torrent policy, controlled interoperability, and useful warm restart.
-The paired headless RSTorrent/libtorrent public-smoke comparator remains the
-next evidence tactical, not a separate product surface.
+The paired headless RSTorrent/libtorrent public-smoke comparator remains an
+active evidence tactical, not a separate product surface.
 
-Bounded multi-peer request ownership is the next major engine feature so newly
-discovered and late-arriving peers can improve an active transfer. Endgame,
-integrity recovery, and measured picker/throughput work build on that combined
-discovery and ownership foundation. No new product UI is planned during this
-engine campaign; typed headless diagnostics grow only with the engine owners
-that can report them accurately.
+Bounded multi-peer request ownership now lets newly discovered and late-
+arriving peers improve active transfers. Endgame, integrity recovery, and
+then measured picker/throughput work are the next engine sequence on that
+combined discovery and ownership foundation. No new product UI is planned
+during this engine campaign; typed headless diagnostics grow only with the
+engine owners that can report them accurately.
 
 Product growth should continue through the established application service,
 generated contracts, and platform capability seams rather than creating

@@ -14,12 +14,12 @@ Public trackers are independently operated, can time out, and may not know all
 peers in a swarm. DHT is therefore the highest-value breadth improvement now
 that scheduled tracker announces and controlled single-peer downloads exist.
 
-DHT and multi-peer transfer remain adjacent priorities:
+DHT and multi-peer transfer were intentionally adjacent foundations:
 
 - DHT supplies peers when trackers are absent, slow, or incomplete.
-- Multi-peer ownership lets the transfer engine exploit newly discovered and
+- Tactical `017` now lets the transfer engine exploit newly discovered and
   late-arriving peers instead of merely replacing one pre-content connection.
-- Endgame and piece-picker work then make that peer set useful near completion
+- Endgame and measured piece-picker work remain the next steps near completion
   and at realistic throughput.
 
 Selective reference tooling and the controlled headless DHT harness landed
@@ -51,9 +51,11 @@ discovery when private intent is unknowable.
 Controlled libtorrent 2.0.13 evidence completes metadata and payload download
 from an info-hash-only magnet and independently verifies RSTorrent's incoming
 `ping`, `get_peers`, token, and `announce_peer` behavior. A public bootstrap
-smoke reaches the deployed DHT. A public Big Buck Bunny lookup found many peer
-values but did not acquire metadata in 120 seconds, reinforcing that multi-peer
-connection/transfer ownership is the next reliability campaign.
+smoke reaches the deployed DHT. A first public Big Buck Bunny lookup found many
+peer values but did not acquire metadata in 120 seconds. After bounded multi-
+peer acquisition landed, a tracker-based retry still exceeded its 90-second
+bound; these changing public outcomes remain inconclusive and motivate the
+paired live comparator rather than weakening controlled DHT or peer evidence.
 
 ## Scope And Protocol Baseline
 

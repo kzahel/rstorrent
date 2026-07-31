@@ -2,12 +2,12 @@
 
 Topic: `download-correctness`
 
-Status: Controlled one-peer v1 downloads verify, persist, resume, and publish
-correctly within their recorded profiles. Reliable completion across ordinary
-multi-peer swarms is not established. A macOS desktop run on 2026-07-31 was
-observed near 99.9% without further progress; the exact cause was not captured,
-but the current single-live-peer architecture contains several sufficient
-causes for that class of stall.
+Status: Controlled v1 downloads now verify, persist, resume, and publish through
+a bounded multi-peer request owner across ordinary single-file and selective
+multi-file profiles. Tactical `017` closes the recorded one-peer liveness
+mechanisms with request expiry, failover, late discovery, and replacement.
+Endgame and hash-failure recovery remain sufficient causes of an ordinary
+near-completion stall, so broad public-swarm reliability is not yet claimed.
 
 ## Scope
 
@@ -107,26 +107,20 @@ asserted only over installed mechanisms and retained schedules.
 
 ## Current Architecture And Known Stall Mechanisms
 
-The current driver keeps one live content connection, one active piece, and a
-piece-local block pipeline. Multi-file wanted pieces are visited in index
-order. Choke releases outstanding block reservations for the same peer, but a
-content disconnect is terminal and newly discovered peers are not connected
-while the current content connection remains installed.
+One torrent supervisor owns a bounded set of live connection generations,
+piece/block state, request attempts and deadlines, payload reservations,
+storage acceptance, verification, and child-task joins. It schedules across
+up to four active pieces and eight peers while tracker and DHT discovery remain
+live. Choke, disconnect, expiry, and replacement release only the affected
+generation's requests; valid late payload cannot release newer ownership.
 
-That architecture admits several independent near-completion stalls:
+The remaining known near-completion mechanisms are narrower:
 
-- the current peer never advertised the final wanted piece;
-- the final block is withheld while keepalives or other timely messages keep
-  the connection-level read deadline from expiring;
-- a useful peer is discovered after content transfer begins but cannot join;
-- the current peer disconnects and content work terminates instead of moving;
-  or
-- a final piece hash fails and the torrent terminates instead of retrying.
-
-Endgame is also absent. Duplicate piece messages are correctly rejected under
-the current single-request model, but that behavior cannot remain torrent-
-fatal once intentional duplicate endgame requests exist. The peer wire codec
-does not yet implement the core cancel message.
+- ordinary scheduling sends only one request per block, so a slow final block
+  waits for expiry rather than using bounded endgame duplicates;
+- the peer-wire codec has no core cancel message for losing duplicates; and
+- a final piece hash failure is safe but terminal instead of resetting the
+  piece and applying bounded contributor evidence.
 
 These are structural facts, not a diagnosis of any particular public run.
 
@@ -142,12 +136,12 @@ These are structural facts, not a diagnosis of any particular public run.
   block, availability, peer, or request snapshot was retained.
 - **Current classification:** open completion-liveness observation, not a
   confirmed tracker error and not proof of corrupt state.
-- **Plausible sufficient mechanisms:** sole peer lacks the final piece,
-  stranded request without a per-request expiry, inability to use a later
-  discovered peer, or terminal hash-retry behavior.
-- **Required next evidence:** reproduce with controlled peers split so that
-  the final wanted piece exists only on the second peer, then retain scheduler
-  and peer-availability diagnostics through verified completion.
+- **Closed sufficient mechanisms:** controlled tests now pass when the final
+  piece exists only on a second peer, a requested block is withheld while
+  keepalives continue, a useful peer arrives later, or the first peer closes.
+- **Remaining plausible mechanisms:** absent endgame duplicates or terminal
+  hash-failure behavior. The observation remains open because its original
+  cause was not captured.
 
 ## Scenario Ledger
 
@@ -157,11 +151,11 @@ related unit test exists.
 | ID | Scenario | Required result | Current state and evidence |
 | --- | --- | --- | --- |
 | DL-C01 | One peer supplies a complete healthy torrent | Every wanted piece verifies and selected storage publishes. | Passing: controlled runtime and libtorrent interop across small, large-piece, selective, magnet, and tracker fixtures. |
-| DL-C02 | Peer A lacks the final wanted piece; peer B has it | Scheduler keeps or opens B, assigns the piece, and completes. | Failing by architecture: only one content connection and no transfer failover. Defining scenario for the next transfer tactical after the DHT campaign. |
-| DL-C03 | Active content peer disconnects with requests outstanding | Its generation releases requests and another eligible peer may receive them. | Partial: reservations are cancelled locally, but the torrent returns a terminal content error. |
-| DL-C04 | Peer chokes with requests outstanding | Requests cease belonging to that peer and remain schedulable without budget leakage. | Partial deterministic evidence: same-peer re-request after unchoke works; alternate-peer assignment is absent. |
-| DL-C05 | Peer remains responsive but withholds one requested block | Per-request expiry releases the block and another peer can serve it. | Absent: connection I/O deadlines do not constitute a per-request deadline. |
-| DL-C06 | Tracker discovers a useful peer after content begins | Observation joins the registry and may become a live content source while work remains. | Partial discovery only: observation is retained, but the one live content connection prevents use. |
+| DL-C02 | Peer A lacks the final wanted piece; peer B has it | Scheduler keeps or opens B, assigns the piece, and completes. | Passing deterministic and two-peer split-availability runtime evidence. |
+| DL-C03 | Active content peer disconnects with requests outstanding | Its generation releases requests and another eligible peer may receive them. | Passing deterministic and scripted disconnect/reassignment evidence. |
+| DL-C04 | Peer chokes with requests outstanding | Requests cease belonging to that peer and remain schedulable without budget leakage. | Passing deterministic and alternate-peer choke/reassignment evidence. |
+| DL-C05 | Peer remains responsive but withholds one requested block | Per-request expiry releases the block and another peer can serve it. | Passing explicit-clock and loopback keepalive/late-response evidence. |
+| DL-C06 | Tracker discovers a useful peer after content begins | Observation joins the registry and may become a live content source while work remains. | Passing independent delayed tracker and DHT runtime evidence through the same intake boundary. |
 | DL-C07 | Final blocks are slow across several peers | Endgame issues bounded duplicates without violating payload or request budgets. | Absent. |
 | DL-C08 | One endgame copy arrives after another completed | First valid block wins, losers are cancelled, and late duplicates are harmless. | Absent; duplicate blocks are terminal under the current single-request model. |
 | DL-C09 | A received piece fails its SHA-1 hash | No have bit is set; the whole piece becomes schedulable again; contributor evidence is bounded. | Partial: mismatch is detected and no have bit is set, but execution terminates and attribution is absent. |
@@ -170,17 +164,17 @@ related unit test exists.
 | DL-C12 | A claimed piece changed on disk before restart | Recheck clears only the bad claim and never publishes it as verified. | Passing controlled corruption and resume evidence. |
 | DL-C13 | Final wanted piece crosses selected and skipped files | Full logical piece is reconstructed, hash-verified, and bytes land in their correct storage classes. | Passing deterministic and controlled libtorrent selective-file evidence. |
 | DL-C14 | Wanted piece contains BEP 47 padding bytes | Synthetic zeros participate in verification without writing a padding file. | Passing deterministic and controlled selective-storage evidence. |
-| DL-C15 | Pause or shutdown occurs during active work | No new work starts, owners cancel and join, durable state stays conservative, and sockets close. | Passing runtime, web, AVD, and selected physical lifecycle evidence within current one-peer scope. |
+| DL-C15 | Pause or shutdown occurs during active work | No new work starts, owners cancel and join, durable state stays conservative, and sockets close. | Passing runtime, web, AVD, selected physical, saturated-queue, and multi-peer exact-join evidence. |
 | DL-C16 | All current trackers fail but retain retries | Torrent reports waiting with the next automatic discovery action, not blocked. | Passing deterministic, runtime, web, and AVD evidence. |
 | DL-C17 | Network policy is offline | No DNS or socket work occurs and UI requests network enablement without rewriting torrent intent. | Passing deterministic, runtime, web, and AVD evidence. |
 | DL-C18 | Torrent reaches displayed 100% before publication finishes | State remains incomplete until verified content completes the publication contract. | Passing path and Android SAF publication-state evidence for controlled fixtures. |
-| DL-C19 | Multi-piece single-file torrent | The ordinary product path downloads, verifies, resumes, and publishes all pieces. | Absent: current execution rejects this profile even though metainfo parsing understands it. |
-| DL-C20 | Every established slot is occupied by peers that never unchoke | A useful eligible candidate eventually replaces an unproductive peer after bounded grace and can receive work. | Absent: there is one live connection and no capacity-pressure replacement policy. |
-| DL-C21 | Every established peer lacks the remaining wanted piece | A peer advertising that piece is retained or opened, while irrelevant peers cannot monopolize every slot. | Absent: availability is one-connection state and newly discovered peers cannot join content transfer. |
-| DL-C22 | Pending dial slots connect but never finish handshake | Per-operation deadlines release dial capacity and another candidate can be tried without exceeding socket/task bounds. | Partial: individual handshake deadlines exist, but there is no bounded parallel dial set or capacity scenario. |
-| DL-C23 | An expired request is reassigned and the old generation sends its block late | Current ownership and payload accounting remain correct; valid late data is harmless and cannot release another attempt. | Absent: there is no torrent-level request generation or request expiry. |
-| DL-C24 | All current peers are unproductive and no replacement is eligible | The torrent retains discovery/retry deadlines and avoids destructive reconnect churn; it reports waiting rather than blocked. | Absent for a multi-peer connection set. |
-| DL-C25 | Hostile peer churn and observations fill every configured bound | Registry, connection, dial, request, payload, event, task, history, and diagnostic limits hold while uniquely useful or active state is protected. | Partial registry evidence only; multi-peer runtime resources do not exist. |
+| DL-C19 | Multi-piece single-file torrent | The ordinary product path downloads, verifies, resumes, and publishes all pieces. | Partial: controlled runtime and 16-piece libtorrent publication pass; durable single-file resume remains absent. |
+| DL-C20 | Every established slot is occupied by peers that never unchoke | A useful eligible candidate eventually replaces an unproductive peer after bounded grace and can receive work. | Passing deterministic and full eight-slot loopback replacement evidence. |
+| DL-C21 | Every established peer lacks the remaining wanted piece | A peer advertising that piece is retained or opened, while irrelevant peers cannot monopolize every slot. | Passing availability-aware retention/replacement and split-final-piece evidence. |
+| DL-C22 | Pending dial slots connect but never finish handshake | Per-operation deadlines release dial capacity and another candidate can be tried without exceeding socket/task bounds. | Passing bounded three-dial runtime evidence with two silent handshakes and one useful peer. |
+| DL-C23 | An expired request is reassigned and the old generation sends its block late | Current ownership and payload accounting remain correct; valid late data is harmless and cannot release another attempt. | Passing deterministic ownership/accounting and loopback late-payload evidence. |
+| DL-C24 | All current peers are unproductive and no replacement is eligible | The torrent retains discovery/retry deadlines and avoids destructive reconnect churn; it reports waiting rather than blocked. | Passing deterministic deadline and loopback no-churn evidence. |
+| DL-C25 | Hostile peer churn and observations fill every configured bound | Registry, connection, dial, request, payload, event, task, history, and diagnostic limits hold while uniquely useful or active state is protected. | Passing bounded deterministic state plus queue-saturation, cancellation, churn, and exact-join runtime evidence for the installed owner. |
 
 ## Required Scheduler Observability
 
@@ -220,15 +214,11 @@ downloads, captures, browser state, AVD state, and subprocesses they own.
 
 ## Next Stopping Condition
 
-The next transfer-correctness slice stops when DL-C02 through DL-C06 and
-DL-C20 through DL-C25 pass through one bounded multi-peer request and
-connection-set owner; all existing single-peer, storage, resume, tracker, and
-DHT evidence remains green; and OBS-2026-07-31-001 has enough new scheduler
-observability that a future occurrence can be classified from retained state.
-Endgame and recovery scenarios DL-C07 through DL-C09 remain the following
-transfer slice.
+The next transfer-correctness slice owns DL-C07 through DL-C09: bounded
+endgame duplicates, core cancel messages, harmless losing responses, whole-
+piece reset after hash failure, and bounded contributor attribution. It must
+preserve Tactical `017`'s request/payload accounting and all controlled
+storage, resume, tracker, DHT, and mixed-peer evidence.
 
-DHT discovery is now installed, so late and decentralized peer observations
-can exercise this campaign rather than merely populate the registry. Routine
-engine validation remains headless; no additional product UI is required by
-these slices.
+Routine engine validation remains headless; no additional product UI is
+required by that slice.

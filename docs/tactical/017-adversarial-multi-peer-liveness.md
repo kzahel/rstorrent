@@ -1,6 +1,6 @@
 # Tactical 017: Adversarial Multi-Peer Liveness
 
-Status: In progress
+Status: Complete
 
 Topics: `peer-lifecycle`, `download-correctness`
 
@@ -367,3 +367,89 @@ future near-completion stall.
 
 Endgame duplicates, cancel messages, automatic hash retry/reputation, and
 measured picker/connection tuning remain explicit subsequent tacticals.
+
+## Implementation Record
+
+Completed on 2026-07-31 in nine reviewable implementation slices after the
+planning commit:
+
+- `85f4e45` added the runtime-independent torrent-owned swarm scheduler and
+  adversarial state matrix;
+- `06b5969` moved ordinary and selective content through bounded peer socket
+  tasks and one supervisor-owned request/storage path;
+- `de0088f` kept tracker/DHT discovery live during content, added bounded
+  capacity-pressure replacement and no-alternative waiting, request expiry,
+  late-response handling, and typed swarm diagnostics;
+- `0e28780` parallelized dial, handshake, and BEP 9 metadata work across at
+  most three peers while continuing discovery and joining every loser;
+- `3cd82d9` added the mixed scripted/libtorrent multi-peer liveness gate;
+- `098ab89` removed the one-piece single-file restriction and proved checked
+  piece-relative storage offsets across a 16-piece independent swarm;
+- `94c44bc` added explicit late-DHT-during-content completion and join
+  evidence;
+- `d597725` proved full-capacity replacement when every established peer is
+  unchoked but advertises no wanted piece; and
+- `95f882f` proved global payload reservations remain bounded while storage is
+  slow and two peers are ready to deliver work.
+
+The final production bounds are the initial bounds in this tactical: 1,000
+peer records, 8 established connections, 3 pending dials, 4 requests per
+connection, 4 active pieces, 4 retained terminal attempts per block, 64
+events, 16 commands per peer, the configured global payload allowance, a
+60-second request timeout, and a 60-second replacement grace. Metadata uses
+the same three-work-item ceiling across pending handshakes and active metadata
+negotiations. Capacity replacement opens only one alternative while full.
+
+### Scenario evidence
+
+- DL-C02 passes through a two-peer split-availability runtime where only the
+  second peer has the final piece.
+- DL-C03 and DL-C04 pass through disconnect and choke fixtures that reassign
+  only that generation's outstanding work.
+- DL-C05 and DL-C23 pass with a short explicit request clock, unrelated
+  keepalives, reassignment, and a harmless late payload.
+- DL-C06 passes independently with useful tracker and DHT peers arriving after
+  content begins through the same registry/discovery intake owner.
+- DL-C20 and DL-C21 pass with all eight slots choked or unable to advance
+  wanted work and a later useful replacement.
+- DL-C22 passes with two silent handshakes while a third candidate completes.
+- DL-C24 passes by retaining one choked connection without reconnect churn
+  when no alternative exists.
+- DL-C25 is covered by peer-record, connection, dial, request, payload,
+  terminal-history, slow-storage, event-queue saturation, cancellation, and
+  exact-join assertions across pure and loopback tests.
+
+The locked `multi_peer_liveness.py` gate connects both a scripted peer that
+serves valid metadata but remains choked and pinned libtorrent `2.0.13.0`.
+RSTorrent verified and published a 16-piece, 1 MiB single-file torrent;
+libtorrent accounted for exactly 1,048,576 payload bytes, the scripted peer
+received `interested`, payload high-water remained 65,536 bytes under the
+262,144-byte allowance, and all owned processes and temporary paths cleaned
+up.
+
+### Final validation
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace --all-targets -- -D warnings`;
+- `cargo test --workspace --no-fail-fast`;
+- locked libtorrent `2.0.13.0` runs for direct one-piece, selective multi-file,
+  bidirectional BEP 9 metadata, UDP tracker, DHT, process-death resume, and the
+  mixed multi-peer scenario;
+- generated TypeScript contract/fixture drift, typecheck, six web tests with
+  one intentionally skipped, and the production Vite build;
+- release Tauri `--no-bundle` build at `target/release/rstorrent-desktop`;
+- Android release cross-builds for x86_64 and arm64-v8a at API 28, UniFFI
+  generation, two JVM contract/reducer test classes, and debug APK assembly;
+- pinned libtorrent reference status and locked workspace dependency tree; and
+- `git diff --check`.
+
+The opt-in tracker-based Big Buck Bunny metadata smoke exceeded its 90-second
+bound and was canceled without leaving an owned process. That changing public
+outcome is inconclusive and does not weaken the controlled completion claim.
+No visible Tauri process, Chrome, emulator, AVD, or physical device was
+launched or automated.
+
+The next reliability slice remains bounded endgame duplicates and core cancel
+messages together with hash-failure reset/retry and contributor attribution.
+Measured picker/connection tuning follows controlled evidence rather than
+changing this tactical's initial deterministic policy retroactively.

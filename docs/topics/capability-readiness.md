@@ -3,12 +3,12 @@
 Topic: `capability-readiness`
 
 Status: This is the master roll-up for current product and engine readiness.
-It records implemented scope separately from evidence, keeps one explicit next
-slice, and links to the topics and tacticals that own detail. RSTorrent can
-complete controlled v1 downloads but is not yet a generally reliable torrent
-client. A bounded IPv4 DHT foundation with useful warm restart is integrated.
-Adversarial multi-peer ownership is the active reliability campaign; the
-paired live comparator remains independent evidence work.
+RSTorrent now completes controlled v1 downloads through bounded simultaneous
+peers, live tracker/DHT discovery, request expiry, and replacement, including
+ordinary multi-piece single-file content. It is not yet a generally reliable
+torrent client because endgame and hash-failure recovery remain absent. Those
+form the active reliability slice; the paired live comparator remains
+independent evidence work.
 
 ## Purpose And Ownership
 
@@ -71,34 +71,32 @@ falsifiable end-to-end stopping condition. Keep exactly one item in **Now**
 and no more than three in **Next**. A long inventory is useful; competing
 current priorities are not.
 
-The completed DHT foundation addressed a common discovery dependency and
-established session-owned UDP and warm-restart state needed by later product
-policy. Multi-peer request ownership remains immediately adjacent so the
-transfer engine can exploit the broader peer set instead of depending on one
-peer through metadata and content completion.
+The completed DHT and multi-peer foundations now let late tracker or DHT
+observations improve active content work. The highest remaining ordinary
+completion risk is the final-block/final-piece boundary: bounded endgame and
+hash-failure recovery.
 
 ## Current Queue
 
 ### Now
 
-Tactical `017-adversarial-multi-peer-liveness` installs one bounded
-torrent-owned connection set and request scheduler. It must pass DL-C02 through
-DL-C06 and DL-C20 through DL-C25 with pure state, scripted swarms, and
-controlled libtorrent evidence, without launching a product UI. Detailed
-ownership, bounds, reference targets, and escalation rules live in
-[`peer-lifecycle.md`](peer-lifecycle.md) and the tactical.
+**Endgame and integrity recovery.** Plan and execute the next bounded tactical
+for DL-C07 through DL-C09: core cancel messages, bounded duplicate attempts,
+harmless losing responses, piece reset/retry after hash failure, and bounded
+contributor attribution. Preserve Tactical `017`'s torrent-owned accounting
+and task boundary.
 
 ### Next
 
-1. **Endgame and integrity recovery.** Add bounded duplicate requests and
-   cancel semantics, hash-failure reset/retry, and contributor attribution
-   sufficient to complete ordinary adverse swarms safely.
-2. **Finish the paired headless comparator.** Complete Tactical 015's catalog,
+1. **Finish the paired headless comparator.** Complete Tactical 015's catalog,
    shared JSON classification, alternating runs, resource observations, and
    bounded tracker/DHT public baselines.
-3. **Measured connection/picker policy.** Use paired public evidence to tune
+2. **Measured connection/picker policy.** Use paired public evidence to tune
    live-peer budgets, availability-aware selection, and resource high-water
    marks before broadening discovery again.
+3. **Complete single-file durable resume.** Reuse the established conservative
+   recheck/checkpoint owner for ordinary path-backed multi-piece files without
+   weakening publication ordering.
 
 ### Later
 
@@ -117,7 +115,7 @@ features.
 | --- | --- | --- | --- | --- |
 | Bounded bencode and v1 info dictionaries | Implemented | deterministic, interop | This is not complete outer `.torrent` ingestion; v2 and hybrid info dictionaries are rejected. | [`product-direction`](product-direction.md) |
 | Product add from a v1 magnet | Implemented | deterministic, runtime, interop, web, AVD, physical | Only a v1 `btih` identity and supported magnet fields survive canonicalization. | [`client-persistence`](client-persistence.md) |
-| BEP 9 metadata download | Implemented | deterministic, runtime, interop | Acquisition is not yet coordinated across simultaneous metadata peers. | [`peer-lifecycle`](peer-lifecycle.md) |
+| BEP 9 metadata download | Implemented | deterministic, runtime, interop | Up to three peers are coordinated and the first hash-verified result wins; multi-source block assembly is deliberately absent. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Bounded diagnostic metadata upload | Implemented | deterministic, interop | It is not a general incoming listener or payload seeding service. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Product add from a `.torrent` file | Absent | deterministic parser only | The application command accepts magnets only and does not retain outer announce fields. | [`application-control`](application-control.md) |
 | v2 and hybrid identity, metadata, and hashing | Absent | deterministic rejection | BEP 52 requires a separate integrity and storage design. | [`protocol-support`](protocol-support.md) |
@@ -140,10 +138,10 @@ features.
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
 | Bounded peer registry and source merging | Implemented | deterministic, runtime | Records are volatile and peer-ID duplicate resolution is absent. | [`peer-lifecycle`](peer-lifecycle.md) |
-| Deterministic dial selection and guarded attempts | Implemented | deterministic, runtime | Selection is deliberately basic and permits only one live connection. | [`peer-lifecycle`](peer-lifecycle.md) |
-| Pre-content peer failover | Implemented | runtime, interop | Failover covers connect, handshake, extension, and metadata failures, not content transfer. | [`peer-lifecycle`](peer-lifecycle.md) |
-| Multiple simultaneous live peers | Absent | none | Tracker results cannot yet improve an active content transfer. | [`peer-lifecycle`](peer-lifecycle.md) |
-| Transfer request ownership and failover | Absent | none | Blocks have no torrent-level peer, generation, or expiry owner. | [`download-correctness`](download-correctness.md) |
+| Deterministic dial selection and guarded attempts | Implemented | deterministic, runtime | Selection is intentionally basic; peer-ID duplicate resolution and measured scoring are absent. | [`peer-lifecycle`](peer-lifecycle.md) |
+| Pre-content peer failover | Implemented | runtime, interop | Bounded parallel metadata peers are supported, but metadata blocks are not assembled across sources. | [`peer-lifecycle`](peer-lifecycle.md) |
+| Multiple simultaneous live peers | Implemented | deterministic, runtime, interop | Eight established and three pending are torrent-local defaults; no session-wide connection budget exists. | [`peer-lifecycle`](peer-lifecycle.md) |
+| Transfer request ownership and failover | Implemented | deterministic, runtime, interop | Ordinary blocks have one generation and expiry owner; bounded endgame duplicates are absent. | [`download-correctness`](download-correctness.md) |
 | Incoming peer connections | Absent | diagnostic metadata listener only | No advertised listen port, accept budget, torrent routing, or shutdown policy exists. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Peer reputation and integrity attribution | Absent | none | A bad piece is detected but contributors cannot be attributed or penalized. | [`download-correctness`](download-correctness.md) |
 
@@ -151,14 +149,14 @@ features.
 
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
-| Bounded 16 KiB block pipeline | Implemented | deterministic, runtime, interop | It is owned by one piece and one peer connection at a time. | [`download-correctness`](download-correctness.md) |
-| Sequential multi-piece download | Partial | runtime, interop | Multi-file torrents work; multi-piece single-file execution is rejected. | [`download-correctness`](download-correctness.md) |
-| Availability-aware piece selection | Partial | deterministic, runtime | Pieces are traversed in index order against one peer; there is no swarm-wide picker. | [`download-correctness`](download-correctness.md) |
-| Choke recovery | Partial | deterministic | Requests are released and may be resent to the same peer after unchoke; there is no alternate-peer assignment. | [`download-correctness`](download-correctness.md) |
-| Per-request timeout and slow-peer handling | Absent | connection I/O deadlines only | Timely unrelated messages can keep a connection alive while a block remains stranded. | [`download-correctness`](download-correctness.md) |
+| Bounded 16 KiB block pipeline | Implemented | deterministic, runtime, interop | One ordinary attempt per block; endgame duplicates are the next extension. | [`download-correctness`](download-correctness.md) |
+| Sequential multi-piece download | Implemented | runtime, interop | Ordinary single-file and selective multi-file complete; single-file durable resume is absent. | [`download-correctness`](download-correctness.md) |
+| Availability-aware piece selection | Partial | deterministic, runtime, interop | Swarm-wide availability, partial-first work, fairness, and unique-piece retention exist; rarest-first and measured scoring are absent. | [`download-correctness`](download-correctness.md) |
+| Choke recovery | Implemented | deterministic, runtime, interop | Requests move to another peer and full choked sets are replaceable; mature choking/reputation policy is absent. | [`download-correctness`](download-correctness.md) |
+| Per-request timeout and slow-peer handling | Implemented | deterministic, runtime | A 60-second request deadline is independent of unrelated messages; adaptive RTT/snubbing policy is absent. | [`download-correctness`](download-correctness.md) |
 | Endgame | Absent | duplicate rejection only | There are no bounded duplicate requests or cancel messages. | [`download-correctness`](download-correctness.md) |
 | Hash-failure recovery | Absent | deterministic detection | A mismatch is terminal instead of resetting the piece for another attempt. | [`download-correctness`](download-correctness.md) |
-| Reliable completion on ordinary swarms | Partial | runtime, interop (controlled only) | A user observed a torrent remain near 99.9%; multi-peer liveness and endgame are unproved. | [`download-correctness`](download-correctness.md) |
+| Reliable completion on ordinary swarms | Partial | deterministic, runtime, interop (controlled only) | Multi-peer liveness is proved; endgame, hash retry, broader live evidence, and several common protocols remain unproved. | [`download-correctness`](download-correctness.md) |
 | Payload upload and seeding | Absent | none | Request serving, choking, accounting, listening, and seed lifecycle are unimplemented. | [`protocol-support`](protocol-support.md) |
 
 ### Integrity, Storage, And Resume
