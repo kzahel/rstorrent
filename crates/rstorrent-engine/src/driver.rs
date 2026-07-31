@@ -4987,6 +4987,86 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
     }
 
     #[tokio::test]
+    async fn full_irrelevant_set_is_replaced_by_a_wanted_piece_peer() {
+        let first = vec![0x18; 16 * 1024];
+        let second = vec![0xa6; 16 * 1024];
+        let metainfo =
+            Metainfo::from_bytes(&two_piece_metainfo(&first, &second)).expect("two-piece metainfo");
+        let payload = Arc::new(vec![first, second]);
+        let mut addresses = Vec::new();
+        let mut tasks = Vec::new();
+        for _ in 0..8 {
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind irrelevant peer");
+            addresses.push(listener.local_addr().expect("irrelevant address"));
+            tasks.push(tokio::spawn(serve_content_peer(
+                listener,
+                metainfo.info_hash,
+                payload.clone(),
+                vec![false, false],
+            )));
+        }
+        let useful_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind wanted-piece peer");
+        let useful_address = useful_listener.local_addr().expect("wanted-piece address");
+        tasks.push(tokio::spawn(serve_content_peer(
+            useful_listener,
+            metainfo.info_hash,
+            payload,
+            vec![true, true],
+        )));
+        let mut peers = PeerSession::from_endpoint(
+            addresses[0],
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(2)),
+        )
+        .expect("peer session");
+        for address in addresses.into_iter().skip(1) {
+            peers
+                .observe_address(address, PeerSource::Manual)
+                .expect("irrelevant peer");
+        }
+        peers
+            .observe_address(useful_address, PeerSource::Manual)
+            .expect("wanted-piece peer");
+        let mut swarm_config = SwarmConfig::for_payload_limit(2 * MIN_PAYLOAD_ALLOWANCE);
+        swarm_config.unproductive_grace = Duration::from_millis(50);
+        let output = test_path("irrelevant-capacity-replacement");
+
+        let report = timeout(
+            Duration::from_secs(3),
+            run_content_download(
+                ContentDownloadConfig {
+                    output_path: output.clone(),
+                    max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                    swarm_config,
+                    skip_files: Vec::new(),
+                    materialize_files: Vec::new(),
+                },
+                metainfo,
+                DownloadControl::new(),
+                None,
+                &mut peers,
+                None,
+            ),
+        )
+        .await
+        .expect("bounded wanted-piece replacement")
+        .expect("wanted-piece peer completed");
+
+        assert_eq!(report.verified_piece_count, 2);
+        for task in tasks {
+            timeout(Duration::from_secs(1), task)
+                .await
+                .expect("irrelevant peer joined")
+                .expect("irrelevant peer task");
+        }
+        let _ = tokio::fs::remove_dir_all(output).await;
+    }
+
+    #[tokio::test]
     async fn full_choked_set_without_an_alternative_waits_without_churn() {
         let payload = vec![0x5b; 16 * 1024];
         let metainfo =
