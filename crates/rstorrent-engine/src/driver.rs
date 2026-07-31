@@ -37,7 +37,8 @@ use crate::dht::{DhtError, DhtHandle};
 use crate::network::{NetworkConfig, NetworkPolicy};
 use crate::peer::{
     DialAttempt, DialAttemptId, PeerEndpoint, PeerFailure, PeerObservation, PeerRegistry,
-    PeerRegistryConfig, PeerRegistryError, PeerSelectionContext, PeerSelector, PeerSource,
+    PeerRegistryConfig, PeerRegistryError, PeerRegistrySnapshot, PeerSelectionContext,
+    PeerSelector, PeerSource,
 };
 use crate::peer_socket::{
     self, PeerConnection, PeerSetError, PeerSetEvent, PeerSocketError, PeerSocketSet,
@@ -57,6 +58,7 @@ use crate::swarm::{
 use crate::tracker::{TrackerAction, TrackerSchedule, TrackerWaitKind};
 
 const CLIENT_PEER_ID: [u8; 20] = *b"-RS0001-000000000000";
+const DEFAULT_ADVERTISED_PEER_PORT: u16 = 6881;
 const NETWORK_RESOLUTION_TIMEOUT: Duration = Duration::from_secs(10);
 const UDP_TRACKER_RETRANSMIT_AFTER: Duration = Duration::from_secs(15);
 const UDP_TRACKER_COMPLETION_TIMEOUT: Duration = Duration::from_secs(30);
@@ -73,6 +75,8 @@ const DHT_RETRY_INITIAL_DELAY: Duration = Duration::from_secs(15);
 const DHT_RETRY_MAX_DELAY: Duration = Duration::from_secs(5 * 60);
 const DHT_SUCCESS_REQUERY_DELAY: Duration = Duration::from_secs(60);
 const MAX_METADATA_PEERS: usize = 3;
+const MAX_RECENT_METADATA_ATTEMPTS: usize = 64;
+const MAX_DIAGNOSTIC_ERROR_LENGTH: usize = 256;
 
 #[derive(Clone, Debug)]
 pub struct DownloadConfig {
@@ -217,6 +221,73 @@ pub struct SwarmActivitySnapshot {
     pub no_request_reason: Option<NoRequestReason>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum MetadataAcquisitionPhase {
+    #[default]
+    Idle,
+    Discovering,
+    Acquiring,
+    Complete,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MetadataPeerStage {
+    Dialing,
+    AwaitingExtensionHandshake,
+    Requesting,
+    Complete,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MetadataPeerSnapshot {
+    pub record_id: u64,
+    pub attempt_id: u64,
+    pub endpoint: SocketAddr,
+    pub stage: MetadataPeerStage,
+    pub started_at: Duration,
+    pub last_activity_at: Duration,
+    pub last_progress_at: Duration,
+    pub supports_extensions: Option<bool>,
+    pub remote_metadata_id: Option<u8>,
+    pub metadata_size: Option<usize>,
+    pub metadata_blocks: Option<usize>,
+    pub requests_sent: usize,
+    pub pending_requests: usize,
+    pub blocks_received: usize,
+    pub bytes_received: usize,
+    pub messages_received: usize,
+    pub rejects_received: usize,
+    pub terminal_detail: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct MetadataAcquisitionSnapshot {
+    pub captured_at: Duration,
+    pub phase: MetadataAcquisitionPhase,
+    pub registry: Option<PeerRegistrySnapshot>,
+    pub pending_dials: usize,
+    pub active_workers: usize,
+    pub total_attempts: usize,
+    pub total_requests_sent: usize,
+    pub total_blocks_received: usize,
+    pub total_bytes_received: usize,
+    pub recent_attempts_dropped: usize,
+    pub last_error: Option<String>,
+    pub active_attempts: Vec<MetadataPeerSnapshot>,
+    pub recent_attempts: Vec<MetadataPeerSnapshot>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DownloadDiagnosticSnapshot {
+    pub progress: DownloadProgress,
+    pub swarm: Option<SwarmActivitySnapshot>,
+    pub metadata: MetadataAcquisitionSnapshot,
+}
+
 #[derive(Clone, Debug)]
 struct ContentDownloadConfig {
     output_path: PathBuf,
@@ -233,6 +304,7 @@ pub struct DownloadControl {
 
 #[derive(Debug)]
 struct DownloadControlInner {
+    started_at: Instant,
     cancellation: CancellationToken,
     buffered_payload_bytes: AtomicUsize,
     payload_high_water: AtomicUsize,
@@ -242,7 +314,24 @@ struct DownloadControlInner {
     storage_write_delay_millis: AtomicU64,
     activity_sink: Mutex<Option<Arc<dyn DownloadActivitySink>>>,
     last_swarm_activity: Mutex<Option<SwarmActivitySnapshot>>,
+    metadata_diagnostics: Mutex<MetadataDiagnosticState>,
     safe_cancel_state: AtomicUsize,
+}
+
+#[derive(Debug, Default)]
+struct MetadataDiagnosticState {
+    phase: MetadataAcquisitionPhase,
+    registry: Option<PeerRegistrySnapshot>,
+    pending_dials: usize,
+    active_workers: usize,
+    total_attempts: usize,
+    total_requests_sent: usize,
+    total_blocks_received: usize,
+    total_bytes_received: usize,
+    recent_attempts_dropped: usize,
+    last_error: Option<String>,
+    active_attempts: BTreeMap<DialAttemptId, MetadataPeerSnapshot>,
+    recent_attempts: VecDeque<MetadataPeerSnapshot>,
 }
 
 #[derive(Debug)]
@@ -263,6 +352,7 @@ impl DownloadControl {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(DownloadControlInner {
+                started_at: Instant::now(),
                 cancellation: CancellationToken::new(),
                 buffered_payload_bytes: AtomicUsize::new(0),
                 payload_high_water: AtomicUsize::new(0),
@@ -272,6 +362,7 @@ impl DownloadControl {
                 storage_write_delay_millis: AtomicU64::new(0),
                 activity_sink: Mutex::new(None),
                 last_swarm_activity: Mutex::new(None),
+                metadata_diagnostics: Mutex::new(MetadataDiagnosticState::default()),
                 safe_cancel_state: AtomicUsize::new(0),
             }),
         }
@@ -302,6 +393,43 @@ impl DownloadControl {
             requested_bytes: self.inner.requested_bytes.load(Ordering::Acquire),
             received_bytes: self.inner.received_bytes.load(Ordering::Acquire),
             stored_bytes: self.inner.stored_bytes.load(Ordering::Acquire),
+        }
+    }
+
+    pub fn diagnostic_snapshot(&self) -> DownloadDiagnosticSnapshot {
+        let progress = self.snapshot();
+        let swarm = *self
+            .inner
+            .last_swarm_activity
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let captured_at = self.diagnostic_elapsed();
+        let metadata = {
+            let state = self
+                .inner
+                .metadata_diagnostics
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            MetadataAcquisitionSnapshot {
+                captured_at,
+                phase: state.phase,
+                registry: state.registry.clone(),
+                pending_dials: state.pending_dials,
+                active_workers: state.active_workers,
+                total_attempts: state.total_attempts,
+                total_requests_sent: state.total_requests_sent,
+                total_blocks_received: state.total_blocks_received,
+                total_bytes_received: state.total_bytes_received,
+                recent_attempts_dropped: state.recent_attempts_dropped,
+                last_error: state.last_error.clone(),
+                active_attempts: state.active_attempts.values().cloned().collect(),
+                recent_attempts: state.recent_attempts.iter().cloned().collect(),
+            }
+        };
+        DownloadDiagnosticSnapshot {
+            progress,
+            swarm,
+            metadata,
         }
     }
 
@@ -360,6 +488,242 @@ impl DownloadControl {
             .clone();
         if let Some(sink) = sink {
             sink.record(event);
+        }
+    }
+
+    fn diagnostic_elapsed(&self) -> Duration {
+        self.inner.started_at.elapsed()
+    }
+
+    fn metadata_started(&self) {
+        let mut state = self
+            .inner
+            .metadata_diagnostics
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *state = MetadataDiagnosticState {
+            phase: MetadataAcquisitionPhase::Discovering,
+            ..MetadataDiagnosticState::default()
+        };
+    }
+
+    fn observe_metadata_supervisor(
+        &self,
+        registry: PeerRegistrySnapshot,
+        pending_dials: usize,
+        active_workers: usize,
+        last_error: Option<&DownloadError>,
+    ) {
+        let mut state = self
+            .inner
+            .metadata_diagnostics
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.registry = Some(registry);
+        state.pending_dials = pending_dials;
+        state.active_workers = active_workers;
+        if let Some(error) = last_error {
+            state.last_error = Some(bounded_diagnostic_detail(&error.to_string()));
+        }
+        if pending_dials != 0 || active_workers != 0 {
+            state.phase = MetadataAcquisitionPhase::Acquiring;
+        } else if !matches!(
+            state.phase,
+            MetadataAcquisitionPhase::Complete
+                | MetadataAcquisitionPhase::Failed
+                | MetadataAcquisitionPhase::Cancelled
+        ) {
+            state.phase = MetadataAcquisitionPhase::Discovering;
+        }
+    }
+
+    fn metadata_dial_started(&self, attempt: DialAttempt) {
+        let now = self.diagnostic_elapsed();
+        let mut state = self
+            .inner
+            .metadata_diagnostics
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.total_attempts = state.total_attempts.saturating_add(1);
+        state.active_attempts.insert(
+            attempt.id(),
+            MetadataPeerSnapshot {
+                record_id: attempt.record_id().get(),
+                attempt_id: attempt.id().get(),
+                endpoint: attempt.endpoint().address(),
+                stage: MetadataPeerStage::Dialing,
+                started_at: now,
+                last_activity_at: now,
+                last_progress_at: now,
+                supports_extensions: None,
+                remote_metadata_id: None,
+                metadata_size: None,
+                metadata_blocks: None,
+                requests_sent: 0,
+                pending_requests: 0,
+                blocks_received: 0,
+                bytes_received: 0,
+                messages_received: 0,
+                rejects_received: 0,
+                terminal_detail: None,
+            },
+        );
+    }
+
+    fn metadata_peer_connected(&self, attempt: DialAttempt, supports_extensions: bool) {
+        let now = self.diagnostic_elapsed();
+        self.update_metadata_peer(attempt.id(), |peer| {
+            peer.stage = MetadataPeerStage::AwaitingExtensionHandshake;
+            peer.supports_extensions = Some(supports_extensions);
+            peer.last_activity_at = now;
+            peer.last_progress_at = now;
+        });
+    }
+
+    fn metadata_peer_message(&self, attempt_id: DialAttemptId) {
+        let now = self.diagnostic_elapsed();
+        self.update_metadata_peer(attempt_id, |peer| {
+            peer.messages_received = peer.messages_received.saturating_add(1);
+            peer.last_activity_at = now;
+        });
+    }
+
+    fn metadata_extension_handshake(
+        &self,
+        attempt_id: DialAttemptId,
+        remote_metadata_id: Option<u8>,
+        download: &MetadataDownload,
+        requests_sent: usize,
+    ) {
+        let now = self.diagnostic_elapsed();
+        let mut state = self
+            .inner
+            .metadata_diagnostics
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.total_requests_sent = state.total_requests_sent.saturating_add(requests_sent);
+        if let Some(peer) = state.active_attempts.get_mut(&attempt_id) {
+            peer.stage = MetadataPeerStage::Requesting;
+            peer.remote_metadata_id = remote_metadata_id;
+            peer.metadata_size = download.metadata_size();
+            peer.metadata_blocks = metadata_block_count_for_diagnostics(download);
+            peer.pending_requests = download.pending_requests();
+            peer.requests_sent = peer.requests_sent.saturating_add(requests_sent);
+            peer.last_activity_at = now;
+            peer.last_progress_at = now;
+        }
+    }
+
+    fn metadata_block_received(
+        &self,
+        attempt_id: DialAttemptId,
+        block_bytes: usize,
+        download: &MetadataDownload,
+        requests_sent: usize,
+    ) {
+        let now = self.diagnostic_elapsed();
+        let mut state = self
+            .inner
+            .metadata_diagnostics
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.total_requests_sent = state.total_requests_sent.saturating_add(requests_sent);
+        state.total_blocks_received = state.total_blocks_received.saturating_add(1);
+        state.total_bytes_received = state.total_bytes_received.saturating_add(block_bytes);
+        if let Some(peer) = state.active_attempts.get_mut(&attempt_id) {
+            peer.stage = MetadataPeerStage::Requesting;
+            peer.metadata_size = download.metadata_size();
+            peer.metadata_blocks = metadata_block_count_for_diagnostics(download);
+            peer.pending_requests = download.pending_requests();
+            peer.requests_sent = peer.requests_sent.saturating_add(requests_sent);
+            peer.blocks_received = download.received_blocks();
+            peer.bytes_received = peer.bytes_received.saturating_add(block_bytes);
+            peer.last_activity_at = now;
+            peer.last_progress_at = now;
+        }
+    }
+
+    fn metadata_rejected(&self, attempt_id: DialAttemptId) {
+        let now = self.diagnostic_elapsed();
+        self.update_metadata_peer(attempt_id, |peer| {
+            peer.rejects_received = peer.rejects_received.saturating_add(1);
+            peer.last_activity_at = now;
+        });
+    }
+
+    fn metadata_peer_finished(
+        &self,
+        attempt_id: DialAttemptId,
+        stage: MetadataPeerStage,
+        detail: Option<&str>,
+    ) {
+        let now = self.diagnostic_elapsed();
+        let mut state = self
+            .inner
+            .metadata_diagnostics
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(mut peer) = state.active_attempts.remove(&attempt_id) else {
+            return;
+        };
+        peer.stage = stage;
+        peer.last_activity_at = now;
+        peer.terminal_detail = detail.map(bounded_diagnostic_detail);
+        if stage == MetadataPeerStage::Failed {
+            state.last_error = peer.terminal_detail.clone();
+        }
+        push_recent_metadata_attempt(&mut state, peer);
+    }
+
+    fn metadata_finished(&self, result: &Result<(Vec<u8>, Metainfo), DownloadError>) {
+        let now = self.diagnostic_elapsed();
+        let mut state = self
+            .inner
+            .metadata_diagnostics
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (phase, detail, peer_stage) = match result {
+            Ok(_) => (
+                MetadataAcquisitionPhase::Complete,
+                None,
+                MetadataPeerStage::Cancelled,
+            ),
+            Err(DownloadError::Cancelled) => (
+                MetadataAcquisitionPhase::Cancelled,
+                Some("download cancelled".to_owned()),
+                MetadataPeerStage::Cancelled,
+            ),
+            Err(error) => (
+                MetadataAcquisitionPhase::Failed,
+                Some(bounded_diagnostic_detail(&error.to_string())),
+                MetadataPeerStage::Failed,
+            ),
+        };
+        state.phase = phase;
+        state.last_error = detail.clone();
+        state.pending_dials = 0;
+        state.active_workers = 0;
+        let active = std::mem::take(&mut state.active_attempts);
+        for (_, mut peer) in active {
+            peer.stage = peer_stage;
+            peer.last_activity_at = now;
+            peer.terminal_detail = detail.clone();
+            push_recent_metadata_attempt(&mut state, peer);
+        }
+    }
+
+    fn update_metadata_peer(
+        &self,
+        attempt_id: DialAttemptId,
+        update: impl FnOnce(&mut MetadataPeerSnapshot),
+    ) {
+        let mut state = self
+            .inner
+            .metadata_diagnostics
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(peer) = state.active_attempts.get_mut(&attempt_id) {
+            update(peer);
         }
     }
 
@@ -452,6 +816,25 @@ impl Drop for SafeCancelGuard {
             self.control.cancel();
         }
     }
+}
+
+fn bounded_diagnostic_detail(detail: &str) -> String {
+    let mut bounded = String::with_capacity(detail.len().min(MAX_DIAGNOSTIC_ERROR_LENGTH));
+    for character in detail.chars() {
+        if bounded.len() + character.len_utf8() > MAX_DIAGNOSTIC_ERROR_LENGTH {
+            break;
+        }
+        bounded.push(character);
+    }
+    bounded
+}
+
+fn push_recent_metadata_attempt(state: &mut MetadataDiagnosticState, peer: MetadataPeerSnapshot) {
+    if state.recent_attempts.len() == MAX_RECENT_METADATA_ATTEMPTS {
+        state.recent_attempts.pop_front();
+        state.recent_attempts_dropped = state.recent_attempts_dropped.saturating_add(1);
+    }
+    state.recent_attempts.push_back(peer);
 }
 
 impl Default for DownloadControl {
@@ -610,7 +993,10 @@ impl fmt::Display for DownloadError {
                 write!(formatter, "peer does not advertise the extension protocol")
             }
             Self::MetadataExtensionDisabled => {
-                write!(formatter, "peer disabled ut_metadata during acquisition")
+                write!(
+                    formatter,
+                    "peer does not advertise an enabled ut_metadata extension"
+                )
             }
             Self::InvalidPremetadataState(reason) => {
                 write!(
@@ -1001,6 +1387,7 @@ struct UdpTrackerAnnounce {
     info_hash: [u8; 20],
     key: u32,
     event: AnnounceEvent,
+    port: u16,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1392,6 +1779,7 @@ async fn run_tracker_manager(
                             info_hash,
                             key: tracker_key,
                             event,
+                            port: DEFAULT_ADVERTISED_PEER_PORT,
                         },
                         UdpTrackerExchange {
                             timing: UdpTrackerTiming::PRODUCTION,
@@ -1870,6 +2258,24 @@ impl PeerSession {
         &mut self,
         info_hash: [u8; 20],
     ) -> Result<(Vec<u8>, Metainfo), DownloadError> {
+        self.control.metadata_started();
+        let result = self.acquire_metadata_inner(info_hash).await;
+        self.control.observe_metadata_supervisor(
+            self.registry.snapshot(PeerSelectionContext {
+                now: self.elapsed(),
+            }),
+            0,
+            0,
+            self.last_error.as_ref(),
+        );
+        self.control.metadata_finished(&result);
+        result
+    }
+
+    async fn acquire_metadata_inner(
+        &mut self,
+        info_hash: [u8; 20],
+    ) -> Result<(Vec<u8>, Metainfo), DownloadError> {
         debug_assert!(self.connection.is_none());
         let mut sockets = PeerSocketSet::new();
         let mut workers = JoinSet::new();
@@ -1891,6 +2297,7 @@ impl PeerSession {
                     .registry
                     .begin_dial(candidate, context)
                     .map_err(DownloadError::PeerRegistry)?;
+                self.control.metadata_dial_started(attempt);
                 if let Err(error) = sockets.begin_dial(attempt, info_hash, true, self.network) {
                     self.registry
                         .dial_cancelled(attempt)
@@ -1898,6 +2305,15 @@ impl PeerSession {
                     return Err(download_peer_set_error(error));
                 }
             }
+
+            self.control.observe_metadata_supervisor(
+                self.registry.snapshot(PeerSelectionContext {
+                    now: self.elapsed(),
+                }),
+                sockets.pending_len(),
+                workers.len(),
+                self.last_error.as_ref(),
+            );
 
             if sockets.pending_len() == 0 && workers.is_empty() {
                 self.receive_discovery_peers(info_hash).await?;
@@ -1949,25 +2365,40 @@ impl PeerSession {
                     self.registry
                         .dial_succeeded(attempt, self.elapsed())
                         .map_err(DownloadError::PeerRegistry)?;
+                    self.control
+                        .metadata_peer_connected(attempt, handshake.supports_extensions());
                     let cancellation = CancellationToken::new();
                     worker_cancellations.insert(attempt.id(), (attempt, cancellation.clone()));
+                    let control = self.control.clone();
                     workers.spawn(async move {
-                        run_metadata_peer(connection, handshake, info_hash, cancellation).await
+                        run_metadata_peer(connection, handshake, info_hash, cancellation, control)
+                            .await
                     });
                 }
                 MetadataSupervisorEvent::Socket(Ok(PeerSetEvent::DialCompleted {
                     attempt,
                     result: Err(error),
                 })) => {
-                    if matches!(error, PeerSocketError::Cancelled) {
+                    if matches!(&error, PeerSocketError::Cancelled) {
                         self.registry
                             .dial_cancelled(attempt)
                             .map_err(DownloadError::PeerRegistry)?;
+                        self.control.metadata_peer_finished(
+                            attempt.id(),
+                            MetadataPeerStage::Cancelled,
+                            Some("metadata dial cancelled"),
+                        );
                     } else {
+                        let detail = error.to_string();
                         self.registry
                             .dial_failed(attempt, self.elapsed(), error.peer_failure())
                             .map_err(DownloadError::PeerRegistry)?;
                         self.last_error = Some(download_peer_socket_error(error));
+                        self.control.metadata_peer_finished(
+                            attempt.id(),
+                            MetadataPeerStage::Failed,
+                            Some(&detail),
+                        );
                     }
                 }
                 MetadataSupervisorEvent::Socket(Ok(PeerSetEvent::Peer(_))) => {
@@ -2110,14 +2541,35 @@ async fn run_metadata_peer(
     handshake: Handshake,
     info_hash: [u8; 20],
     cancellation: CancellationToken,
+    control: DownloadControl,
 ) -> MetadataPeerResult {
+    let attempt = connection.attempt();
     let result = tokio::select! {
         biased;
         _ = cancellation.cancelled() => None,
-        result = acquire_metadata_from_connection(&mut connection, handshake, info_hash) => {
+        result = acquire_metadata_from_connection(
+            &mut connection,
+            handshake,
+            info_hash,
+            &control,
+        ) => {
             Some(result)
         }
     };
+    match &result {
+        Some(Ok(_)) => {
+            control.metadata_peer_finished(attempt.id(), MetadataPeerStage::Complete, None)
+        }
+        Some(Err(error)) => {
+            let detail = error.to_string();
+            control.metadata_peer_finished(attempt.id(), MetadataPeerStage::Failed, Some(&detail));
+        }
+        None => control.metadata_peer_finished(
+            attempt.id(),
+            MetadataPeerStage::Cancelled,
+            Some("metadata attempt cancelled"),
+        ),
+    }
     match result {
         Some(Ok((raw_info, metainfo))) => MetadataPeerResult::Complete {
             connection,
@@ -2302,7 +2754,7 @@ async fn announce_udp_tracker_address(
         ip_address: 0,
         key: announce.key,
         num_want: MAX_COMPACT_PEERS as i32,
-        port: 0,
+        port: announce.port,
     });
     let family = match address {
         SocketAddr::V4(_) => TrackerAddressFamily::Ipv4,
@@ -2643,6 +3095,7 @@ async fn acquire_metadata_from_connection(
     peer: &mut PeerConnection,
     handshake: Handshake,
     info_hash: [u8; 20],
+    control: &DownloadControl,
 ) -> Result<(Vec<u8>, Metainfo), DownloadError> {
     if !handshake.supports_extensions() {
         return Err(DownloadError::ExtensionProtocolUnsupported);
@@ -2661,11 +3114,30 @@ async fn acquire_metadata_from_connection(
     let mut remote_metadata_id = None;
     let mut advertised_size = None;
     let mut started = false;
+    let mut received_extension_handshake = false;
+    let metadata_progress_timeout = peer.io_timeout();
+    let mut progress_deadline = TokioInstant::now() + metadata_progress_timeout;
     loop {
-        match next_peer_message(peer).await? {
+        let message = match timeout_at(progress_deadline, next_peer_message(peer)).await {
+            Ok(result) => result?,
+            Err(_) => {
+                return Err(DownloadError::PeerTimedOut {
+                    operation: "metadata progress",
+                    timeout: metadata_progress_timeout,
+                });
+            }
+        };
+        control.metadata_peer_message(peer.attempt().id());
+        match message {
             PeerMessage::Extended { id: 0, payload } => {
                 let handshake =
                     parse_extension_handshake(&payload).map_err(DownloadError::Metadata)?;
+                if !received_extension_handshake
+                    && handshake.metadata_extension == MetadataExtensionUpdate::Unchanged
+                {
+                    return Err(DownloadError::MetadataExtensionDisabled);
+                }
+                received_extension_handshake = true;
                 if let Some(size) = handshake.metadata_size {
                     if let Some(expected) = advertised_size
                         && expected != size
@@ -2710,9 +3182,16 @@ async fn acquire_metadata_from_connection(
                         }
                     }
                 };
-                if let Some(bytes) =
-                    process_metadata_download_actions(peer, remote_metadata_id, actions).await?
-                {
+                let (bytes, requests_sent) =
+                    process_metadata_download_actions(peer, remote_metadata_id, actions).await?;
+                control.metadata_extension_handshake(
+                    peer.attempt().id(),
+                    remote_metadata_id,
+                    &download,
+                    requests_sent,
+                );
+                progress_deadline = TokioInstant::now() + metadata_progress_timeout;
+                if let Some(bytes) = bytes {
                     return finish_metadata_acquisition(bytes, peer_state, peer);
                 }
             }
@@ -2734,12 +3213,28 @@ async fn acquire_metadata_from_connection(
                     }
                     continue;
                 }
+                if matches!(message, MetadataMessage::Reject { .. }) {
+                    control.metadata_rejected(peer.attempt().id());
+                }
+                let block_bytes = match message {
+                    MetadataMessage::Data { block, .. } => Some(block.len()),
+                    _ => None,
+                };
                 let actions = download
                     .on_message(message)
                     .map_err(DownloadError::Metadata)?;
-                if let Some(bytes) =
-                    process_metadata_download_actions(peer, remote_metadata_id, actions).await?
-                {
+                let (bytes, requests_sent) =
+                    process_metadata_download_actions(peer, remote_metadata_id, actions).await?;
+                if let Some(block_bytes) = block_bytes {
+                    control.metadata_block_received(
+                        peer.attempt().id(),
+                        block_bytes,
+                        &download,
+                        requests_sent,
+                    );
+                    progress_deadline = TokioInstant::now() + metadata_progress_timeout;
+                }
+                if let Some(bytes) = bytes {
                     return finish_metadata_acquisition(bytes, peer_state, peer);
                 }
             }
@@ -2753,7 +3248,8 @@ async fn process_metadata_download_actions(
     peer: &mut PeerConnection,
     remote_metadata_id: Option<u8>,
     actions: Vec<MetadataDownloadAction>,
-) -> Result<Option<Vec<u8>>, DownloadError> {
+) -> Result<(Option<Vec<u8>>, usize), DownloadError> {
+    let mut requests_sent = 0;
     for action in actions {
         match action {
             MetadataDownloadAction::Request(piece) => {
@@ -2767,11 +3263,17 @@ async fn process_metadata_download_actions(
                     },
                 )
                 .await?;
+                requests_sent += 1;
             }
-            MetadataDownloadAction::Complete(bytes) => return Ok(Some(bytes)),
+            MetadataDownloadAction::Complete(bytes) => return Ok((Some(bytes), requests_sent)),
         }
     }
-    Ok(None)
+    Ok((None, requests_sent))
+}
+
+fn metadata_block_count_for_diagnostics(download: &MetadataDownload) -> Option<usize> {
+    let blocks = download.allocated_blocks();
+    (blocks != 0).then_some(blocks)
 }
 
 fn finish_metadata_acquisition(
@@ -4036,7 +4538,8 @@ mod tests {
     };
     use rstorrent_protocol::magnet::Magnet;
     use rstorrent_protocol::metadata::{
-        MetadataMessage, encode_extension_handshake, encode_metadata_data, parse_metadata_message,
+        MetadataMessage, UT_METADATA_LOCAL_ID, encode_extension_handshake, encode_metadata_data,
+        encode_metadata_reject, parse_metadata_message,
     };
     use rstorrent_protocol::metainfo::Metainfo;
     use rstorrent_protocol::peer_wire::{
@@ -4052,11 +4555,13 @@ mod tests {
     use tokio::time::timeout;
 
     use super::{
-        CLIENT_PEER_ID, ContentDownloadConfig, DhtRetryTiming, DownloadActivityEvent,
-        DownloadActivitySink, DownloadConfig, DownloadControl, DownloadError, MagnetDownloadConfig,
-        PeerConnection, PeerSession, SwarmConfig, UdpTrackerAnnounce, UdpTrackerExchange,
-        UdpTrackerTiming, UdpTrackerTokenCache, announce_udp_tracker_address, download_magnet,
-        download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
+        CLIENT_PEER_ID, ContentDownloadConfig, DEFAULT_ADVERTISED_PEER_PORT, DhtRetryTiming,
+        DownloadActivityEvent, DownloadActivitySink, DownloadConfig, DownloadControl,
+        DownloadError, MAX_DIAGNOSTIC_ERROR_LENGTH, MAX_METADATA_PEERS,
+        MAX_RECENT_METADATA_ATTEMPTS, MagnetDownloadConfig, MetadataAcquisitionPhase,
+        MetadataPeerStage, PeerConnection, PeerSession, SwarmConfig, UdpTrackerAnnounce,
+        UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache, announce_udp_tracker_address,
+        download_magnet, download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
         download_magnet_with_control, download_verified_piece,
         download_verified_piece_with_control, next_peer_message, retrying_dht_lookup,
         run_content_download, run_magnet_download_with_peers, send_message,
@@ -4106,6 +4611,55 @@ mod tests {
         registry
             .begin_dial(candidate, context)
             .expect("test dial attempt")
+    }
+
+    #[test]
+    fn metadata_diagnostic_history_and_error_detail_are_bounded() {
+        let control = DownloadControl::new();
+        control.metadata_started();
+        let mut registry = PeerRegistry::new(PeerRegistryConfig::default()).expect("registry");
+        for offset in 0..=MAX_RECENT_METADATA_ATTEMPTS {
+            let endpoint = PeerEndpoint::new(SocketAddr::from((
+                [127, 0, 0, 1],
+                10_000 + u16::try_from(offset).expect("bounded port"),
+            )))
+            .expect("valid endpoint");
+            registry
+                .observe(
+                    PeerObservation::dialable(endpoint, PeerSource::Tracker),
+                    Duration::ZERO,
+                )
+                .expect("observation");
+            let context = PeerSelectionContext {
+                now: Duration::ZERO,
+            };
+            let candidate = PeerSelector
+                .select(&registry, context)
+                .expect("diagnostic candidate");
+            let attempt = registry
+                .begin_dial(candidate, context)
+                .expect("diagnostic attempt");
+            control.metadata_dial_started(attempt);
+            control.metadata_peer_finished(
+                attempt.id(),
+                MetadataPeerStage::Failed,
+                Some(&"x".repeat(MAX_DIAGNOSTIC_ERROR_LENGTH + 50)),
+            );
+            registry
+                .dial_failed(attempt, Duration::ZERO, PeerFailure::Protocol)
+                .expect("terminal attempt");
+        }
+
+        let snapshot = control.diagnostic_snapshot().metadata;
+        assert_eq!(snapshot.recent_attempts.len(), MAX_RECENT_METADATA_ATTEMPTS);
+        assert_eq!(snapshot.recent_attempts_dropped, 1);
+        assert!(snapshot.active_attempts.is_empty());
+        assert!(snapshot.recent_attempts.iter().all(|attempt| {
+            attempt
+                .terminal_detail
+                .as_ref()
+                .is_some_and(|detail| detail.len() == MAX_DIAGNOSTIC_ERROR_LENGTH)
+        }));
     }
 
     #[tokio::test]
@@ -4252,6 +4806,8 @@ mod tests {
 &tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969\
 &tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337";
         let control = DownloadControl::new();
+        let activity = Arc::new(RecordingActivitySink::default());
+        control.set_activity_sink(activity.clone());
         let task_control = control.clone();
         let mut task = tokio::spawn(download_magnet_metadata_with_control(
             magnet.to_owned(),
@@ -4262,12 +4818,55 @@ mod tests {
             ),
             task_control,
         ));
+        let monitor_control = control.clone();
+        let monitor = tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                let snapshot = monitor_control.diagnostic_snapshot().metadata;
+                let registry = snapshot.registry.as_ref().map(|registry| registry.counts);
+                eprintln!(
+                    "public metadata probe: elapsed={:?} phase={:?} registry={registry:?} \
+                     pending_dials={} active_workers={} attempts={} requests={} blocks={} bytes={} \
+                     active={} recent={} dropped={}",
+                    snapshot.captured_at,
+                    snapshot.phase,
+                    snapshot.pending_dials,
+                    snapshot.active_workers,
+                    snapshot.total_attempts,
+                    snapshot.total_requests_sent,
+                    snapshot.total_blocks_received,
+                    snapshot.total_bytes_received,
+                    snapshot.active_attempts.len(),
+                    snapshot.recent_attempts.len(),
+                    snapshot.recent_attempts_dropped,
+                );
+            }
+        });
 
         let raw_info = match timeout(Duration::from_secs(90), &mut task).await {
-            Ok(result) => result
-                .expect("join public metadata probe")
-                .expect("acquire public metadata"),
+            Ok(result) => {
+                monitor.abort();
+                let _ = monitor.await;
+                let raw_info = result
+                    .expect("join public metadata probe")
+                    .expect("acquire public metadata");
+                eprintln!(
+                    "public metadata probe completed:\n{:#?}",
+                    control.diagnostic_snapshot()
+                );
+                raw_info
+            }
             Err(_) => {
+                monitor.abort();
+                let _ = monitor.await;
+                let timeout_snapshot = control.diagnostic_snapshot();
+                let events = activity
+                    .events
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .clone();
+                eprintln!("public metadata probe timeout snapshot:\n{timeout_snapshot:#?}");
+                eprintln!("public metadata probe activity:\n{events:#?}");
                 control.cancel();
                 if timeout(Duration::from_secs(5), &mut task).await.is_err() {
                     task.abort();
@@ -4291,6 +4890,8 @@ mod tests {
             .await
             .expect("start public DHT");
         let control = DownloadControl::new();
+        let activity = Arc::new(RecordingActivitySink::default());
+        control.set_activity_sink(activity.clone());
         let task_control = control.clone();
         let dht_handle = dht.handle();
         let mut task = tokio::spawn(async move {
@@ -4306,13 +4907,58 @@ mod tests {
             )
             .await
         });
+        let monitor_control = control.clone();
+        let monitor = tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                let snapshot = monitor_control.diagnostic_snapshot().metadata;
+                let registry = snapshot.registry.as_ref().map(|registry| registry.counts);
+                eprintln!(
+                    "public DHT metadata probe: elapsed={:?} phase={:?} registry={registry:?} \
+                     pending_dials={} active_workers={} attempts={} requests={} blocks={} bytes={} \
+                     active={} recent={} dropped={} last_error={:?}",
+                    snapshot.captured_at,
+                    snapshot.phase,
+                    snapshot.pending_dials,
+                    snapshot.active_workers,
+                    snapshot.total_attempts,
+                    snapshot.total_requests_sent,
+                    snapshot.total_blocks_received,
+                    snapshot.total_bytes_received,
+                    snapshot.active_attempts.len(),
+                    snapshot.recent_attempts.len(),
+                    snapshot.recent_attempts_dropped,
+                    snapshot.last_error,
+                );
+            }
+        });
 
         let raw_info = match timeout(Duration::from_secs(120), &mut task).await {
-            Ok(result) => result
-                .expect("join public DHT metadata probe")
-                .expect("acquire public DHT metadata"),
-            Err(_) => {
+            Ok(result) => {
+                monitor.abort();
+                let _ = monitor.await;
+                let raw_info = result
+                    .expect("join public DHT metadata probe")
+                    .expect("acquire public DHT metadata");
                 let stats = dht.handle().stats().await.ok();
+                eprintln!(
+                    "public DHT metadata probe completed; stats={stats:?}:\n{:#?}",
+                    control.diagnostic_snapshot()
+                );
+                raw_info
+            }
+            Err(_) => {
+                monitor.abort();
+                let _ = monitor.await;
+                let stats = dht.handle().stats().await.ok();
+                let timeout_snapshot = control.diagnostic_snapshot();
+                let events = activity
+                    .events
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .clone();
+                eprintln!("public DHT metadata timeout snapshot:\n{timeout_snapshot:#?}");
+                eprintln!("public DHT metadata activity:\n{events:#?}");
                 control.cancel();
                 if timeout(Duration::from_secs(5), &mut task).await.is_err() {
                     task.abort();
@@ -5565,6 +6211,154 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         ));
     }
 
+    async fn serve_metadata_peer_without_ut_metadata(listener: TcpListener, info_hash: [u8; 20]) {
+        let (mut stream, _) = listener.accept().await.expect("accept magnet client");
+        let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
+        stream
+            .read_exact(&mut handshake_bytes)
+            .await
+            .expect("read client handshake");
+        assert!(
+            decode_handshake(&handshake_bytes, info_hash)
+                .expect("client handshake identity")
+                .supports_extensions()
+        );
+        let mut reserved = [0; 8];
+        reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+        stream
+            .write_all(&encode_handshake_with_reserved(
+                info_hash,
+                *b"-RS-STALL-0000000000",
+                reserved,
+            ))
+            .await
+            .expect("send server handshake");
+        let mut peer =
+            PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(1));
+        assert!(matches!(
+            next_peer_message(&mut peer).await,
+            Ok(PeerMessage::Extended { id: 0, .. })
+        ));
+        send_message(
+            &mut peer,
+            &PeerMessage::Extended {
+                id: 0,
+                payload: b"d1:mdee".to_vec(),
+            },
+        )
+        .await
+        .expect("send extension handshake without ut_metadata");
+        assert!(matches!(
+            next_peer_message(&mut peer).await,
+            Err(DownloadError::PeerClosed)
+        ));
+    }
+
+    async fn serve_chattering_peer_without_extension_handshake(
+        listener: TcpListener,
+        info_hash: [u8; 20],
+    ) {
+        let (mut stream, _) = listener.accept().await.expect("accept magnet client");
+        let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
+        stream
+            .read_exact(&mut handshake_bytes)
+            .await
+            .expect("read client handshake");
+        assert!(
+            decode_handshake(&handshake_bytes, info_hash)
+                .expect("client handshake identity")
+                .supports_extensions()
+        );
+        let mut reserved = [0; 8];
+        reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+        stream
+            .write_all(&encode_handshake_with_reserved(
+                info_hash,
+                *b"-RS-STALL-0000000000",
+                reserved,
+            ))
+            .await
+            .expect("send server handshake");
+        let mut peer =
+            PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(1));
+        assert!(matches!(
+            next_peer_message(&mut peer).await,
+            Ok(PeerMessage::Extended { id: 0, .. })
+        ));
+        loop {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            if send_message(&mut peer, &PeerMessage::KeepAlive)
+                .await
+                .is_err()
+            {
+                break;
+            }
+        }
+    }
+
+    async fn serve_metadata_rejecting_peer(
+        listener: TcpListener,
+        info_hash: [u8; 20],
+        metadata_size: usize,
+    ) {
+        let (mut stream, _) = listener.accept().await.expect("accept magnet client");
+        let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
+        stream
+            .read_exact(&mut handshake_bytes)
+            .await
+            .expect("read client handshake");
+        decode_handshake(&handshake_bytes, info_hash).expect("client handshake identity");
+        let mut reserved = [0; 8];
+        reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+        stream
+            .write_all(&encode_handshake_with_reserved(
+                info_hash,
+                *b"-RS-STALL-0000000000",
+                reserved,
+            ))
+            .await
+            .expect("send server handshake");
+        let mut peer =
+            PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(1));
+        assert!(matches!(
+            next_peer_message(&mut peer).await,
+            Ok(PeerMessage::Extended { id: 0, .. })
+        ));
+        send_message(
+            &mut peer,
+            &PeerMessage::Extended {
+                id: 0,
+                payload: encode_extension_handshake(Some(metadata_size)),
+            },
+        )
+        .await
+        .expect("send metadata extension handshake");
+        let PeerMessage::Extended { id: 1, payload } = next_peer_message(&mut peer)
+            .await
+            .expect("metadata request")
+        else {
+            panic!("expected metadata request");
+        };
+        let MetadataMessage::Request { piece } =
+            parse_metadata_message(&payload).expect("parse metadata request")
+        else {
+            panic!("expected metadata request payload");
+        };
+        send_message(
+            &mut peer,
+            &PeerMessage::Extended {
+                id: 1,
+                payload: encode_metadata_reject(piece),
+            },
+        )
+        .await
+        .expect("reject metadata request");
+        assert!(matches!(
+            next_peer_message(&mut peer).await,
+            Err(DownloadError::PeerClosed)
+        ));
+    }
+
     async fn serve_one_shot_udp_tracker(
         socket: UdpSocket,
         info_hash: [u8; 20],
@@ -5661,7 +6455,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         );
         assert_eq!(
             u16::from_be_bytes(request[96..98].try_into().expect("listen port")),
-            0
+            DEFAULT_ADVERTISED_PEER_PORT
         );
 
         let mut response = Vec::new();
@@ -6184,6 +6978,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             .await
             .expect("bind scripted tracker");
         let tracker_address = tracker.local_addr().expect("tracker address");
+        let announced_port = 41_234;
         let server = tokio::spawn(async move {
             let mut packet = [0; 256];
 
@@ -6226,6 +7021,10 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 u32::from_be_bytes(packet[80..84].try_into().expect("started event")),
                 AnnounceEvent::Started as u32
             );
+            assert_eq!(
+                u16::from_be_bytes(packet[96..98].try_into().expect("announced port")),
+                announced_port
+            );
             let announce_transaction =
                 u32::from_be_bytes(packet[12..16].try_into().expect("announce transaction"));
 
@@ -6239,6 +7038,10 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             assert_eq!(
                 u32::from_be_bytes(packet[12..16].try_into().expect("announce transaction")),
                 announce_transaction
+            );
+            assert_eq!(
+                u16::from_be_bytes(packet[96..98].try_into().expect("announced port")),
+                announced_port
             );
             let mut announce_response = Vec::from(1_u32.to_be_bytes());
             announce_response.extend_from_slice(&announce_transaction.to_be_bytes());
@@ -6264,6 +7067,10 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 u32::from_be_bytes(packet[80..84].try_into().expect("ordinary event")),
                 AnnounceEvent::None as u32
             );
+            assert_eq!(
+                u16::from_be_bytes(packet[96..98].try_into().expect("announced port")),
+                announced_port
+            );
             let cached_transaction =
                 u32::from_be_bytes(packet[12..16].try_into().expect("announce transaction"));
             announce_response[4..8].copy_from_slice(&cached_transaction.to_be_bytes());
@@ -6288,6 +7095,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 info_hash: [7; 20],
                 key: 1,
                 event: AnnounceEvent::Started,
+                port: announced_port,
             },
             UdpTrackerExchange {
                 timing,
@@ -6305,6 +7113,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 info_hash: [7; 20],
                 key: 1,
                 event: AnnounceEvent::None,
+                port: announced_port,
             },
             UdpTrackerExchange {
                 timing,
@@ -6393,6 +7202,248 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 .await
                 .expect("metadata peer joined")
                 .expect("metadata peer task");
+        }
+    }
+
+    #[tokio::test]
+    async fn peers_without_ut_metadata_release_slots_and_remain_diagnosable() {
+        let payload = b"diagnosable metadata failover".to_vec();
+        let info = single_file_info(&payload);
+        let info_hash: [u8; 20] = Sha1::digest(&info).into();
+        let mut missing_addresses = Vec::new();
+        let mut missing_tasks = Vec::new();
+        for _ in 0..MAX_METADATA_PEERS {
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind metadata-incapable peer");
+            missing_addresses.push(listener.local_addr().expect("missing metadata address"));
+            missing_tasks.push(tokio::spawn(serve_metadata_peer_without_ut_metadata(
+                listener, info_hash,
+            )));
+        }
+        let useful_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind useful metadata peer");
+        let useful_address = useful_listener
+            .local_addr()
+            .expect("useful metadata address");
+        let useful_task = tokio::spawn(serve_metadata_then_piece(
+            useful_listener,
+            info.clone(),
+            payload,
+            vec![0x80],
+        ));
+        let mut magnet = format!("magnet:?xt=urn:btih:{}", hex(&info_hash));
+        for address in &missing_addresses {
+            magnet.push_str(&format!("&x.pe={address}"));
+        }
+        magnet.push_str(&format!("&x.pe={useful_address}"));
+        let parsed = Magnet::parse(&magnet).expect("parse diagnostic metadata magnet");
+        let control = DownloadControl::new();
+        let mut peers = PeerSession::from_magnet(
+            &parsed,
+            loopback_network(Duration::from_secs(1)),
+            control.clone(),
+            None,
+        )
+        .await
+        .expect("resolve diagnostic metadata peers");
+
+        let (raw_info, _) = timeout(Duration::from_secs(1), peers.acquire_metadata(info_hash))
+            .await
+            .expect("metadata-incapable peers must release all slots")
+            .expect("later useful peer supplies metadata");
+        assert_eq!(raw_info, info);
+
+        let snapshot = control.diagnostic_snapshot().metadata;
+        assert_eq!(snapshot.phase, MetadataAcquisitionPhase::Complete);
+        assert_eq!(snapshot.total_attempts, MAX_METADATA_PEERS + 1);
+        assert_eq!(snapshot.total_requests_sent, 1);
+        assert_eq!(snapshot.total_blocks_received, 1);
+        assert_eq!(snapshot.active_attempts, Vec::new());
+        assert_eq!(
+            snapshot
+                .recent_attempts
+                .iter()
+                .filter(|peer| peer.stage == MetadataPeerStage::Failed)
+                .count(),
+            MAX_METADATA_PEERS
+        );
+        assert!(snapshot.recent_attempts.iter().any(|peer| {
+            peer.stage == MetadataPeerStage::Complete
+                && peer.remote_metadata_id == Some(UT_METADATA_LOCAL_ID)
+                && peer.blocks_received == 1
+        }));
+        assert!(
+            snapshot
+                .recent_attempts
+                .iter()
+                .filter(|peer| {
+                    peer.terminal_detail
+                        .as_deref()
+                        .is_some_and(|detail| detail.contains("does not advertise"))
+                })
+                .count()
+                >= MAX_METADATA_PEERS
+        );
+        let registry = snapshot.registry.expect("peer registry snapshot");
+        assert_eq!(registry.counts.total, MAX_METADATA_PEERS + 1);
+
+        peers.close_current(None).expect("close metadata winner");
+        for task in missing_tasks.into_iter().chain([useful_task]) {
+            timeout(Duration::from_secs(1), task)
+                .await
+                .expect("metadata fixture joined")
+                .expect("metadata fixture task");
+        }
+    }
+
+    #[tokio::test]
+    async fn unrelated_messages_cannot_hold_every_metadata_slot() {
+        let payload = b"metadata after bounded chatter".to_vec();
+        let info = single_file_info(&payload);
+        let info_hash: [u8; 20] = Sha1::digest(&info).into();
+        let mut chatter_addresses = Vec::new();
+        let mut chatter_tasks = Vec::new();
+        for _ in 0..MAX_METADATA_PEERS {
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind chattering peer");
+            chatter_addresses.push(listener.local_addr().expect("chattering peer address"));
+            chatter_tasks.push(tokio::spawn(
+                serve_chattering_peer_without_extension_handshake(listener, info_hash),
+            ));
+        }
+        let useful_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind useful metadata peer");
+        let useful_address = useful_listener
+            .local_addr()
+            .expect("useful metadata address");
+        let useful_task = tokio::spawn(serve_metadata_then_piece(
+            useful_listener,
+            info.clone(),
+            payload,
+            vec![0x80],
+        ));
+        let mut magnet = format!("magnet:?xt=urn:btih:{}", hex(&info_hash));
+        for address in &chatter_addresses {
+            magnet.push_str(&format!("&x.pe={address}"));
+        }
+        magnet.push_str(&format!("&x.pe={useful_address}"));
+        let parsed = Magnet::parse(&magnet).expect("parse chattering metadata magnet");
+        let control = DownloadControl::new();
+        let mut peers = PeerSession::from_magnet(
+            &parsed,
+            loopback_network(Duration::from_millis(150)),
+            control.clone(),
+            None,
+        )
+        .await
+        .expect("resolve chattering metadata peers");
+
+        let (raw_info, _) = timeout(Duration::from_secs(2), peers.acquire_metadata(info_hash))
+            .await
+            .expect("metadata progress deadline releases chattering peers")
+            .expect("later useful peer supplies metadata");
+        assert_eq!(raw_info, info);
+        let snapshot = control.diagnostic_snapshot().metadata;
+        assert_eq!(snapshot.phase, MetadataAcquisitionPhase::Complete);
+        assert_eq!(snapshot.total_attempts, MAX_METADATA_PEERS + 1);
+        assert!(
+            snapshot
+                .recent_attempts
+                .iter()
+                .filter_map(|peer| peer.terminal_detail.as_deref())
+                .filter(|detail| detail.contains("metadata progress timed out"))
+                .count()
+                >= MAX_METADATA_PEERS
+        );
+        assert!(snapshot.recent_attempts.iter().any(|peer| {
+            peer.stage == MetadataPeerStage::Complete && peer.blocks_received == 1
+        }));
+
+        peers.close_current(None).expect("close metadata winner");
+        for task in chatter_tasks.into_iter().chain([useful_task]) {
+            timeout(Duration::from_secs(1), task)
+                .await
+                .expect("metadata fixture joined")
+                .expect("metadata fixture task");
+        }
+    }
+
+    #[tokio::test]
+    async fn metadata_rejections_release_slots_and_are_counted() {
+        let payload = b"metadata after explicit rejects".to_vec();
+        let info = single_file_info(&payload);
+        let info_hash: [u8; 20] = Sha1::digest(&info).into();
+        let mut rejecting_addresses = Vec::new();
+        let mut rejecting_tasks = Vec::new();
+        for _ in 0..MAX_METADATA_PEERS {
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind rejecting peer");
+            rejecting_addresses.push(listener.local_addr().expect("rejecting peer address"));
+            rejecting_tasks.push(tokio::spawn(serve_metadata_rejecting_peer(
+                listener,
+                info_hash,
+                info.len(),
+            )));
+        }
+        let useful_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind useful metadata peer");
+        let useful_address = useful_listener
+            .local_addr()
+            .expect("useful metadata address");
+        let useful_task = tokio::spawn(serve_metadata_then_piece(
+            useful_listener,
+            info.clone(),
+            payload,
+            vec![0x80],
+        ));
+        let mut magnet = format!("magnet:?xt=urn:btih:{}", hex(&info_hash));
+        for address in &rejecting_addresses {
+            magnet.push_str(&format!("&x.pe={address}"));
+        }
+        magnet.push_str(&format!("&x.pe={useful_address}"));
+        let parsed = Magnet::parse(&magnet).expect("parse rejecting metadata magnet");
+        let control = DownloadControl::new();
+        let mut peers = PeerSession::from_magnet(
+            &parsed,
+            loopback_network(Duration::from_secs(1)),
+            control.clone(),
+            None,
+        )
+        .await
+        .expect("resolve rejecting metadata peers");
+
+        let (raw_info, _) = timeout(Duration::from_secs(1), peers.acquire_metadata(info_hash))
+            .await
+            .expect("rejecting peers must release all slots")
+            .expect("later useful peer supplies metadata");
+        assert_eq!(raw_info, info);
+        let snapshot = control.diagnostic_snapshot().metadata;
+        assert_eq!(snapshot.phase, MetadataAcquisitionPhase::Complete);
+        assert_eq!(snapshot.total_attempts, MAX_METADATA_PEERS + 1);
+        assert_eq!(
+            snapshot
+                .recent_attempts
+                .iter()
+                .map(|peer| peer.rejects_received)
+                .sum::<usize>(),
+            MAX_METADATA_PEERS
+        );
+        assert!(snapshot.recent_attempts.iter().any(|peer| {
+            peer.stage == MetadataPeerStage::Complete && peer.blocks_received == 1
+        }));
+
+        peers.close_current(None).expect("close metadata winner");
+        for task in rejecting_tasks.into_iter().chain([useful_task]) {
+            timeout(Duration::from_secs(1), task)
+                .await
+                .expect("metadata fixture joined")
+                .expect("metadata fixture task");
         }
     }
 

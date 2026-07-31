@@ -266,6 +266,39 @@ pub enum DialEligibility {
     FailureLimit { failures: u32, maximum: u32 },
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PeerRegistryCounts {
+    pub total: usize,
+    pub eligible: usize,
+    pub not_connectable: usize,
+    pub dialing: usize,
+    pub connected: usize,
+    pub banned: usize,
+    pub backed_off: usize,
+    pub failure_limited: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PeerRecordSnapshot {
+    pub id: PeerRecordId,
+    pub endpoint: PeerEndpoint,
+    pub sources: PeerSources,
+    pub connectable: bool,
+    pub first_observed_at: Duration,
+    pub last_observed_at: Duration,
+    pub phase: PeerPhase,
+    pub eligibility: DialEligibility,
+    pub history: PeerHistory,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PeerRegistrySnapshot {
+    pub captured_at: Duration,
+    pub maximum_records: usize,
+    pub counts: PeerRegistryCounts,
+    pub records: Vec<PeerRecordSnapshot>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DialCandidate {
     record_id: PeerRecordId,
@@ -439,6 +472,47 @@ impl PeerRegistry {
         self.records
             .iter()
             .find(|record| record.endpoint == endpoint)
+    }
+
+    pub fn snapshot(&self, context: PeerSelectionContext) -> PeerRegistrySnapshot {
+        let selector = PeerSelector;
+        let mut counts = PeerRegistryCounts {
+            total: self.records.len(),
+            ..PeerRegistryCounts::default()
+        };
+        let records = self
+            .records
+            .iter()
+            .map(|record| {
+                let eligibility = selector.eligibility(record, context, self.config);
+                match eligibility {
+                    DialEligibility::Eligible => counts.eligible += 1,
+                    DialEligibility::NotConnectable => counts.not_connectable += 1,
+                    DialEligibility::Dialing => counts.dialing += 1,
+                    DialEligibility::Connected => counts.connected += 1,
+                    DialEligibility::Banned => counts.banned += 1,
+                    DialEligibility::Backoff { .. } => counts.backed_off += 1,
+                    DialEligibility::FailureLimit { .. } => counts.failure_limited += 1,
+                }
+                PeerRecordSnapshot {
+                    id: record.id,
+                    endpoint: record.endpoint,
+                    sources: record.sources,
+                    connectable: record.connectable,
+                    first_observed_at: record.first_observed_at,
+                    last_observed_at: record.last_observed_at,
+                    phase: record.phase,
+                    eligibility,
+                    history: record.history,
+                }
+            })
+            .collect();
+        PeerRegistrySnapshot {
+            captured_at: context.now,
+            maximum_records: self.config.max_records,
+            counts,
+            records,
+        }
     }
 
     /// Remove one discovery source and discard now-source-less idle records.
@@ -838,6 +912,50 @@ mod tests {
         assert!(record.sources().contains(PeerSource::Tracker));
         assert_eq!(record.sources().len(), 2);
         assert_eq!(registry.len(), 1);
+    }
+
+    #[test]
+    fn snapshot_classifies_every_record_without_mutating_selection() {
+        let mut registry = PeerRegistry::new(config(8)).expect("registry");
+        let eligible = registry
+            .observe(
+                PeerObservation::dialable(endpoint(6_881), PeerSource::Tracker),
+                Duration::ZERO,
+            )
+            .expect("eligible observation")
+            .record_id;
+        registry
+            .observe(
+                PeerObservation::new(endpoint(6_882), PeerSource::Incoming, false),
+                Duration::ZERO,
+            )
+            .expect("non-connectable observation");
+        let candidate = PeerSelector
+            .select(
+                &registry,
+                PeerSelectionContext {
+                    now: Duration::ZERO,
+                },
+            )
+            .expect("candidate");
+        assert_eq!(candidate.record_id(), eligible);
+        registry
+            .begin_dial(
+                candidate,
+                PeerSelectionContext {
+                    now: Duration::ZERO,
+                },
+            )
+            .expect("begin dial");
+
+        let snapshot = registry.snapshot(PeerSelectionContext {
+            now: Duration::from_secs(1),
+        });
+        assert_eq!(snapshot.counts.total, 2);
+        assert_eq!(snapshot.counts.dialing, 1);
+        assert_eq!(snapshot.counts.not_connectable, 1);
+        assert_eq!(snapshot.records.len(), 2);
+        assert_eq!(registry.len(), 2);
     }
 
     #[test]

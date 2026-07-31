@@ -43,6 +43,10 @@ impl PeerConnection {
         self.attempt
     }
 
+    pub(crate) const fn io_timeout(&self) -> Duration {
+        self.io_timeout
+    }
+
     pub(crate) fn prepend_messages(&mut self, mut messages: VecDeque<PeerMessage>) {
         messages.append(&mut self.queued_messages);
         self.queued_messages = messages;

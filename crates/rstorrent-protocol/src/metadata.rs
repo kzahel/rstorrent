@@ -388,6 +388,10 @@ impl MetadataDownload {
         self.blocks.len()
     }
 
+    pub fn received_blocks(&self) -> usize {
+        self.blocks.iter().filter(|block| block.is_some()).count()
+    }
+
     fn on_data(
         &mut self,
         piece: i64,
