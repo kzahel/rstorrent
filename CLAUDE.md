@@ -7,8 +7,10 @@
 Start with [`README.md`](README.md), then read [`docs/vision.md`](docs/vision.md),
 [`docs/engineering-principles.md`](docs/engineering-principles.md),
 [`docs/topics/product-direction.md`](docs/topics/product-direction.md), and
-[`docs/references.md`](docs/references.md). Once an implementation tactical
-exists, read it before changing code in its scope.
+[`docs/topics/capability-readiness.md`](docs/topics/capability-readiness.md),
+then [`docs/references.md`](docs/references.md). Once an implementation tactical
+exists, read it and every focused topic it names before changing code in its
+scope.
 
 For maintainer-specific cross-project context, see
 `~/code/dotfiles/projects/README.md` when that checkout is available.
@@ -37,6 +39,9 @@ a living topic records an accepted replacement:
 - A future JSTorrent extension is expected to control and integrate with the
   native engine rather than carry peer or file hot paths. This vision does not
   authorize extension or IPC work in an unrelated tactical.
+- During the current engine-correctness campaign, do not add product UI unless
+  the user explicitly changes the campaign. Operate and diagnose feature work
+  through the headless application boundary.
 
 These are direction guardrails, not permission to invent a complete
 architecture before the relevant tactical.
@@ -94,6 +99,44 @@ testing justify it; do not create speculative abstractions or
 one-file-per-type layouts merely in anticipation of future features. Record a
 deferral only when a material known problem is deliberately left in place.
 
+## Feature Campaign Execution
+
+[`docs/topics/capability-readiness.md`](docs/topics/capability-readiness.md)
+owns the current queue. For each engine, protocol, discovery, scheduling,
+storage, or performance feature:
+
+1. Create or update one bounded tactical before implementation. State its
+   stopping condition, non-goals, invariants, resource limits, and required
+   evidence.
+2. Read the normative specifications and inspect the exact pinned libtorrent
+   implementation **and tests** before finalizing the design. Record the paths,
+   relevant functions or cases, edge-case checklist, behavior adopted, and
+   intentional differences. Libtorrent is the required completeness and
+   edge-case oracle, not an architecture template or source donor.
+3. Inspect JSTorrent behavior and known failures when the feature has relevant
+   product or platform history. Record what was learned rather than assuming
+   parity.
+4. Write the owner/task/cancellation map and module-dependency direction before
+   adding runtime work. Identify the concrete boundary improvement if the
+   slice includes a refactor.
+5. Implement the common path together with edge cases that change ownership or
+   state shape, integrity or security, cancellation/retry/restart behavior,
+   common interoperability, resource bounds, or stall diagnosis. Optional
+   extensions, UI policy, unmeasured micro-optimization, and speculative
+   abstraction may be explicitly deferred.
+6. Validate in layers: deterministic transitions, scripted runtime failures,
+   controlled interoperability, and representative live evidence where useful.
+   Record resource high-water marks for work that changes hot paths or
+   long-lived state.
+7. Update the owning topics, readiness matrix, protocol claims, and tactical
+   evidence before committing the completed slice.
+
+Within an approved campaign, continue through these steps without requesting
+routine implementation choices from the user. Stop for direction when a
+choice materially expands scope, changes an accepted architecture or product
+policy, adds a dependency with meaningful tradeoffs, requires destructive or
+external action, or otherwise needs authority not already granted.
+
 ## Documentation Ownership
 
 Active documentation has these roles:
@@ -121,6 +164,14 @@ Use protocol specifications and reference implementations to understand
 behavior, construct interoperability tests, and compare outcomes. Do not copy
 source mechanically or let a reference implementation silently dictate the
 architecture.
+
+For every engine feature, inspect the version pinned in
+[`reference/pins.toml`](reference/pins.toml), including its tests, as required
+by the feature-campaign contract. A tactical records exact paths and the edge
+cases extracted from them so a future pin change can be audited. If a local
+reference checkout is unavailable, use the pinned upstream source or add
+bounded checkout tooling rather than silently substituting memory or an
+unversioned implementation.
 
 Before importing source, fixtures, or test data, identify its origin and
 license, record why reuse is permitted, and preserve required attribution.
@@ -152,6 +203,11 @@ Add interoperability, Android, desktop, and physical-ChromeOS validation as
 their tacticals establish supported paths. Report exactly what ran. Remove
 temporary logs, captures, downloads, and investigation artifacts before
 finishing.
+
+Live public-swarm and comparative performance smokes are opt-in and follow
+[`docs/topics/performance-and-live-evidence.md`](docs/topics/performance-and-live-evidence.md).
+Engine-only work defaults to headless CLI or application-service validation;
+do not launch visible product clients merely to exercise engine behavior.
 
 ## ChromeOS Hardware Testing
 

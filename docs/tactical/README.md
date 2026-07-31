@@ -99,4 +99,9 @@ direction belongs in `../topics/`.
 
 The next tactical number is `015`. Current prioritization lives in
 [`../topics/capability-readiness.md`](../topics/capability-readiness.md); the
-next candidate is bounded multi-peer content transfer and request failover.
+next candidate is the bounded headless RSTorrent/libtorrent live-comparison
+harness described in
+[`../topics/performance-and-live-evidence.md`](../topics/performance-and-live-evidence.md).
+It is the enabling proof layer for the DHT campaign in
+[`../topics/dht-discovery.md`](../topics/dht-discovery.md), not a product UI
+slice.

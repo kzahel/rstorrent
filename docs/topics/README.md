@@ -43,6 +43,11 @@ Topics own the current truth for a continuing concern. Tactical docs under
   scenario ledger.
 - [`protocol-support.md`](protocol-support.md): precise BEP support claims,
   deliberate limits, interoperability evidence, and protocol sequencing.
+- [`dht-discovery.md`](dht-discovery.md): planned session-owned DHT routing,
+  lookup, privacy, resource, fast-restart, and campaign boundaries.
+- [`performance-and-live-evidence.md`](performance-and-live-evidence.md):
+  headless libtorrent comparison, public-smoke classification, performance
+  measurement, and artifact-safety policy.
 - [`client-persistence.md`](client-persistence.md): SQLite-backed client state,
   verified metadata and resume invariants, cross-platform storage-root
   identity, and the application-service boundary above the torrent engine.

@@ -128,6 +128,10 @@ provenance policy.
   integrity, recovery, and liveness scenarios.
 - [Protocol support](docs/topics/protocol-support.md) records exact BEP support,
   limitations, and evidence.
+- [DHT discovery](docs/topics/dht-discovery.md) defines the first major engine
+  feature campaign, including privacy, resource, and warm-restart boundaries.
+- [Performance and live evidence](docs/topics/performance-and-live-evidence.md)
+  defines the headless libtorrent comparator and public-smoke evidence policy.
 - [Topics](docs/topics/README.md) hold living truth for continuing concerns.
 - [Tacticals](docs/tactical/README.md) hold numbered, bounded implementation
   plans and their execution records.

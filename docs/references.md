@@ -26,6 +26,14 @@ Do not copy code between implementations merely because both are open source.
 Reading an implementation does not make its internal API or architecture an
 RSTorrent requirement.
 
+For every engine, protocol, discovery, scheduling, storage, or performance
+feature, the tactical must inspect the exact pinned libtorrent source **and its
+tests** before the design is finalized. Libtorrent is the required feature-
+completeness and edge-case oracle: record the exact paths, functions or test
+cases studied, the resulting edge-case checklist, behavior RSTorrent adopts,
+and intentional differences. This requirement does not authorize copying
+source or silently adopting libtorrent's architecture.
+
 ## Local Reference Set
 
 RSTorrent keeps reproducible external source checkouts under the gitignored
@@ -163,6 +171,11 @@ Managed source checkout: `reference/libtorrent`, pinned to `v2.0.13`
 Rasterbar libtorrent is the primary external interoperability oracle. It can
 seed to RSTorrent, leech from it, create fixtures, enforce encryption modes,
 and expose peer/session state for black-box assertions.
+
+It is also the mandatory completeness and edge-case reference for feature
+work. Review both implementation and tests at the pinned revision; a successful
+black-box exchange alone does not establish that the relevant failure,
+lifecycle, persistence, and resource cases were considered.
 
 Use libtorrent as an independent peer rather than an RSTorrent runtime
 dependency. Interoperability tests should verify payload hashes and observable

@@ -397,14 +397,23 @@ does not distort the protocol vertical slice.
 
 [`capability-readiness.md`](capability-readiness.md) owns the current prioritized
 queue so this durable direction does not become a competing backlog. The next
-protocol direction remains completion liveness: establish a small bounded set
-of live peer connections with explicit content-request ownership and failover.
-That gives the peer registry and tracker results practical effect before
-mature performance, endgame, or choking policy.
+major engine feature is session-owned DHT discovery with bounded routing and
+traversal state, private-torrent policy, controlled interoperability, and
+useful warm restart. A headless RSTorrent/libtorrent public-smoke comparator is
+the enabling tactical immediately ahead of it, not a separate product surface.
+
+Bounded multi-peer request ownership follows closely so newly discovered and
+late-arriving peers can improve an active transfer. Endgame, integrity
+recovery, and measured picker/throughput work build on that combined discovery
+and ownership foundation. No new product UI is planned during this engine
+campaign; typed headless diagnostics grow only with the engine owners that can
+report them accurately.
 
 Product growth should continue through the established application service,
 generated contracts, and platform capability seams rather than creating
 another orchestration surface. Protocol support claims and download
 correctness evidence are tracked separately in
 [`protocol-support.md`](protocol-support.md) and
-[`download-correctness.md`](download-correctness.md).
+[`download-correctness.md`](download-correctness.md). The DHT and live-evidence
+campaign contracts live in [`dht-discovery.md`](dht-discovery.md) and
+[`performance-and-live-evidence.md`](performance-and-live-evidence.md).

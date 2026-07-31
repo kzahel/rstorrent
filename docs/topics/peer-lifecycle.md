@@ -151,8 +151,9 @@ The runtime still deliberately permits only one live connection. It does not
 fail over during content transfer, persist peer records, resolve duplicate
 peer IDs, perform simultaneous dialing, or own multi-peer request selection.
 
-The next recommended peer slice is a small bounded live-peer set with explicit
-request ownership and content-transfer failover. Reannounce scheduling,
-incoming advertised-port updates, mature performance selection, peer-ID
-duplicate resolution, integrity reputation, PEX, DHT, and persisted peer
-caches remain later work.
+The current campaign first adds DHT as a separately owned discovery source and
+feeds its results through the existing observation boundary. The next
+peer-transfer slice is then a small bounded live-peer set with explicit request
+ownership and content-transfer failover. Incoming advertised-port updates,
+mature performance selection, peer-ID duplicate resolution, integrity
+reputation, PEX, and persisted peer caches remain later work.

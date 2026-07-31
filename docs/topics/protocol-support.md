@@ -6,7 +6,8 @@ Status: RSTorrent implements a bounded subset of the v1 protocol sufficient
 for controlled verified downloads, BEP 9 metadata exchange, and scheduled
 BEP 15 UDP tracker announces. It does not claim complete BEP 3 support, general
 swarm reliability, seeding, decentralized discovery, HTTP trackers, uTP, or v2
-support.
+support. DHT is the next major protocol campaign after its headless comparison
+and evidence harness.
 
 ## Purpose And Claim Policy
 
@@ -42,7 +43,7 @@ BEP is external protocol metadata, not RSTorrent readiness.
 | Specification | Claim | Implemented subset and evidence | Deliberate limits and dependencies |
 | --- | --- | --- | --- |
 | [BEP 3: The BitTorrent Protocol Specification](https://www.bittorrent.org/beps/bep_0003.html) | Partial | Strict bounded bencoding; v1 single- and multi-file info dictionaries; raw-info SHA-1 identity; TCP handshake; keepalive, choke, unchoke, interested, not-interested, have, bitfield, request, and piece messages; bounded block pipelining; full-piece SHA-1 verification. Deterministic tests and controlled libtorrent downloads cover the implemented subset. | No cancel message, general payload upload, incoming peer service, multi-peer content scheduling, endgame, choking algorithm, HTTP tracker, or reliable ordinary-swarm completion. Multi-piece single-file execution is rejected. |
-| [BEP 5: DHT Protocol](https://www.bittorrent.org/beps/bep_0005.html) | Unsupported | None. | Requires bounded routing state, hostile-message policy, bootstrap and persistence ownership, network-policy integration, and BEP 27 private-torrent gating. |
+| [BEP 5: DHT Protocol](https://www.bittorrent.org/beps/bep_0005.html) | Unsupported | None. | The planned campaign in [`dht-discovery.md`](dht-discovery.md) requires bounded routing, transactions, iterative lookup, incoming queries, bootstrap and warm persistence, network-policy integration, and BEP 27 private-torrent gating. Self-announcement remains absent until a real incoming peer port exists. |
 | [BEP 6: Fast Extension](https://www.bittorrent.org/beps/bep_0006.html) | Unsupported | None. | Have-all, have-none, suggest, reject-request, and allowed-fast negotiation and state are absent. |
 | [BEP 7: IPv6 Tracker Extension](https://www.bittorrent.org/beps/bep_0007.html) | Unsupported | None. | HTTP trackers are absent. BEP 15 UDP response parsing can represent bounded IPv6 compact peers, which is not a BEP 7 support claim. |
 | [BEP 9: Extension for Peers to Send Metadata Files](https://www.bittorrent.org/beps/bep_0009.html) | Supported | Bounded v1 `btih` magnets, extension negotiation, metadata size and block bounds, at most two acquisition requests in flight, request/data/reject messages, duplicate and ordering validation, assembled info-hash verification, and a bounded diagnostic metadata uploader. Controlled libtorrent runs pass in both directions. | The claim is v1 metadata exchange only. Simultaneous metadata peers, v2 identities, BEP 53 selection, and general seeding are outside it. |
@@ -56,8 +57,11 @@ BEP is external protocol metadata, not RSTorrent readiness.
 | [BEP 23: Tracker Returns Compact Peer Lists](https://www.bittorrent.org/beps/bep_0023.html) | Unsupported | None for HTTP tracker responses. | BEP 15 has its own compact UDP response shapes. HTTP tracker request and bencoded response handling are absent. |
 | [BEP 27: Private Torrents](https://www.bittorrent.org/beps/bep_0027.html) | Unsupported | Current lack of DHT, PEX, and LSD prevents those sources from leaking peers, but the private flag is not retained as product policy. | Must be implemented before any decentralized or local discovery source can be enabled. Tracker-tier interaction and persisted intent require tests. |
 | [BEP 29: uTorrent Transport Protocol](https://www.bittorrent.org/beps/bep_0029.html) | Unsupported | None. | Peer transport is TCP only. Congestion control, socket ownership, MTU, timers, and network binding require a dedicated tactical. |
+| [BEP 32: IPv6 extension for DHT](https://www.bittorrent.org/beps/bep_0032.html) | Unsupported | None. | The DHT state model must support separate IPv4 and IPv6 routing tables even if IPv4 interop lands first. IPv6 bootstrap, traversal, compact values, policy, and evidence must be named before promotion. |
 | [BEP 40: Canonical Peer Priority](https://www.bittorrent.org/beps/bep_0040.html) | Unsupported | None. | Current deterministic selection is local policy, not canonical peer priority. Revisit with a bounded live-peer set and incoming connections. |
 | [BEP 41: UDP Tracker Protocol Extensions](https://www.bittorrent.org/beps/bep_0041.html) | Unsupported | The BEP 15 parser tolerates datagram length according to its own bounds, but emits no extension fields. | URL data, authentication, and future extension negotiation are absent. |
+| [BEP 42: DHT Security Extension](https://www.bittorrent.org/beps/bep_0042.html) | Unsupported | None. | The initial DHT identity and routing policy must validate address-bound node IDs and define behavior across external-address changes and warm restart. |
+| [BEP 43: Read-only DHT Nodes](https://www.bittorrent.org/beps/bep_0043.html) | Unsupported | None. | Relevant to future uncontactable or metered Android policy; ordinary unrestricted clients should participate normally, and no read-only runtime behavior exists yet. |
 | [BEP 47: Padding files and extended file attributes](https://www.bittorrent.org/beps/bep_0047.html) | Partial | Multi-file `p` attributes produce synthetic zero ranges for verification without writing padding files. Deterministic storage-layout and controlled selective-file evidence passes. | Symlinks are explicitly rejected. Executable, hidden, and per-file SHA-1 attributes are not product behavior. |
 | [BEP 48: Tracker Protocol Extension: Scrape](https://www.bittorrent.org/beps/bep_0048.html) | Unsupported | None. | Tracker scrape values and application presentation are absent. |
 | [BEP 52: The BitTorrent Protocol Specification v2](https://www.bittorrent.org/beps/bep_0052.html) | Unsupported | Metainfo and magnet parsers explicitly reject v2 and hybrid identities. | SHA-256 identities, file trees, piece layers, aligned storage, hybrid validation, and v2 peer behavior require a separate correctness design. |
@@ -102,17 +106,21 @@ without becoming RSTorrent's architecture or runtime dependency.
 
 ## Recommended Protocol Sequence
 
-Protocol breadth follows the ownership needed for correctness:
+Protocol breadth follows the current ownership campaign:
 
-1. finish bounded multi-peer request ownership and completion recovery under
-   the existing BEP 3 subset;
-2. add the core cancel message and endgame behavior, then decide whether the
-   BEP 6 reject semantics materially improve the scheduler;
-3. retain outer `.torrent` announce data and implement BEP 12 tiers plus HTTP
-   and HTTPS trackers, including BEP 23 responses;
-4. retain and enforce BEP 27 private intent;
-5. add BEP 5 DHT and BEP 11 PEX as separately bounded discovery sources; and
-6. evaluate incoming service, uTP, hole punching, web seeds, and v2 only after
+1. install the headless comparative smoke needed to measure trackerless
+   discovery without adding a product UI;
+2. retain and enforce BEP 27 private intent, then implement bounded BEP 5 DHT
+   with BEP 42 identity policy and a state shape compatible with BEP 32;
+3. prove the session UDP lifecycle, controlled interoperability, bounded warm
+   restart, peer-observation integration, and trackerless live discovery;
+4. finish bounded multi-peer request ownership, core cancel/endgame behavior,
+   and hash-failure recovery under the existing BEP 3 subset;
+5. add measured picker and connection-set behavior, then evaluate BEP 6
+   reject semantics and BEP 11 PEX against the established peer owner;
+6. retain outer `.torrent` announce data and implement BEP 12 tiers plus HTTP
+   and HTTPS trackers, including BEP 23 responses; and
+7. evaluate incoming service, uTP, hole punching, web seeds, and v2 only after
    their prerequisite owners and validation plans exist.
 
 This order is a default, not a promise to implement every listed proposal.

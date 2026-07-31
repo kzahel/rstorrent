@@ -14,8 +14,9 @@ Read these in order:
 2. [`docs/vision.md`](docs/vision.md)
 3. [`docs/engineering-principles.md`](docs/engineering-principles.md)
 4. [`docs/topics/product-direction.md`](docs/topics/product-direction.md)
-5. [`docs/references.md`](docs/references.md)
-6. The active document under [`docs/tactical/`](docs/tactical/README.md), once
+5. [`docs/topics/capability-readiness.md`](docs/topics/capability-readiness.md)
+6. [`docs/references.md`](docs/references.md)
+7. The active document under [`docs/tactical/`](docs/tactical/README.md), once
    one exists
 
 Before changing an established continuing concern, look for and read its topic
@@ -89,6 +90,12 @@ is complete. It replaces one-shot tracker exhaustion with supervised
 per-torrent UDP scheduling, multi-tracker fallback and promotion, bounded
 retransmission and connection-token reuse, automatic reannounce, and
 equivalent waiting/retry diagnostics in the web and Android clients.
+
+The next tactical is a bounded headless RSTorrent/libtorrent live-comparison
+harness. It enables the first major feature campaign: session-owned DHT with
+private-torrent gating and useful warm restart. See
+[`docs/topics/performance-and-live-evidence.md`](docs/topics/performance-and-live-evidence.md)
+and [`docs/topics/dht-discovery.md`](docs/topics/dht-discovery.md).
 
 ## Toolchain
 

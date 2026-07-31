@@ -6,7 +6,8 @@ Status: This is the master roll-up for current product and engine readiness.
 It records implemented scope separately from evidence, keeps one explicit next
 slice, and links to the topics and tacticals that own detail. RSTorrent can
 complete controlled v1 downloads but is not yet a generally reliable torrent
-client. Completion liveness is the current priority.
+client. DHT discovery with useful warm restart is the current feature campaign;
+a headless libtorrent comparison harness is its first enabling slice.
 
 ## Purpose And Ownership
 
@@ -69,47 +70,52 @@ falsifiable end-to-end stopping condition. Keep exactly one item in **Now**
 and no more than three in **Next**. A long inventory is useful; competing
 current priorities are not.
 
+The current deliberate ordering front-loads DHT ahead of multi-peer completion
+work. It addresses a common discovery dependency, enables trackerless public
+evidence, and establishes session-owned UDP and warm-restart state needed by
+later product policy. Multi-peer request ownership remains immediately adjacent
+so the transfer engine can exploit the broader peer set.
+
 ## Current Queue
 
 ### Now
 
-The next tactical should be `015-bounded-multi-peer-transfer`: establish a
-small bounded set of live content peers and one torrent-level request owner.
-Requests must carry peer and connection-generation ownership, become eligible
-elsewhere on choke, disconnect, or request expiry, and select only peers known
-to have the requested piece.
+The next tactical should be `015-headless-live-comparison`: add a bounded CLI
+or application-service harness that runs RSTorrent and the pinned libtorrent
+reference against one cataloged public torrent in isolated temporary profiles,
+verifies completion, and emits a paired JSON result with timing and resource
+metadata. It must not launch a visible desktop or mobile client.
 
-Its defining controlled scenario is:
-
-1. peer A has every wanted piece except the final one;
-2. peer B has the final piece;
-3. RSTorrent uses both through the normal registry and connection lifecycle;
-4. every wanted piece verifies and publishes; and
-5. diagnostics explain peer availability, request reassignment, and the
-   remaining work without launching a visible desktop application.
-
-The slice should establish completion liveness and ownership, not mature
-rarest-first, endgame duplication, upload choking, or throughput tuning.
+The first mode uses only shared tracker and TCP capabilities. The harness then
+becomes the public-smoke evidence layer for trackerless cold/warm DHT runs.
+Public speed ratios are recorded baselines, not flaky CI gates. Detailed rules
+live in
+[`performance-and-live-evidence.md`](performance-and-live-evidence.md).
 
 ### Next
 
-1. **Endgame and integrity recovery.** Permit bounded duplicate final-block
-   requests, cancel losing requests, accept late responses safely, and return
-   hash-failed pieces to schedulable work.
-2. **Piece and peer scheduling.** Add measured request pipelining, availability
-   accounting, piece selection, slow-peer handling, and connection-set policy
-   after multi-peer ownership exists.
-3. **Common discovery breadth.** Add metainfo tracker tiers and HTTP(S)
-   trackers, then evaluate DHT and PEX with private-torrent policy installed
-   before either decentralized source.
+1. **DHT core state.** Implement bounded BEP 5 KRPC, routing, transaction,
+   token, and iterative lookup state with hostile-input tests and an internal
+   shape that supports separate IPv4 and IPv6 tables.
+2. **DHT session runtime.** Add the owned UDP lifecycle, bootstrap,
+   maintenance, incoming query responses, network-policy integration,
+   cancellation, and controlled libtorrent interoperability.
+3. **DHT warm restart and torrent integration.** Persist a versioned bounded
+   sample of revalidated bootstrap hints, enforce private intent, feed peers
+   through `PeerObservation`, and compare cold/warm trackerless live smokes.
+
+[`dht-discovery.md`](dht-discovery.md) owns the campaign boundary, invariants,
+resource policy, and deliberate deferrals.
 
 ### Later
 
-Incoming peer listening, payload upload and seeding, DHT, PEX, local service
-discovery, uTP, NAT traversal, v2 and hybrid torrents, playback-oriented file
-priorities, dynamic VPN and metered-network controls, and production remote
-access remain important. They do not displace completion correctness merely
-because they are individually visible features.
+Bounded multi-peer request ownership follows the DHT campaign, then endgame,
+hash-failure recovery, and measured picker/throughput work. Incoming peer
+listening, payload upload and seeding, PEX, local service discovery, uTP, NAT
+traversal, v2 and hybrid torrents, playback-oriented file priorities, dynamic
+VPN and metered-network controls, and production remote access remain
+important. They do not displace the explicit current campaign merely because
+they are individually visible features.
 
 ## Capability Scoreboard
 
@@ -133,7 +139,7 @@ because they are individually visible features.
 | Multiple magnet trackers | Partial | deterministic, runtime, interop | Magnet trackers form one synthetic tier because magnets contain no BEP 12 tier structure. | [`tracker-discovery`](tracker-discovery.md) |
 | Metainfo tracker tiers | Absent | none | Outer `announce` and `announce-list` are not retained by the product path. | [`tracker-discovery`](tracker-discovery.md) |
 | HTTP and HTTPS trackers | Absent | none | No URL, transport, response, authentication, or redirect owner exists. | [`tracker-discovery`](tracker-discovery.md) |
-| DHT | Absent | none | BEP 5 state, routing, persistence, and private-torrent gating are unimplemented. | [`protocol-support`](protocol-support.md) |
+| DHT | Absent | none | BEP 5 state, routing, persistence, and private-torrent gating are unimplemented. | [`dht-discovery`](dht-discovery.md) |
 | Peer exchange | Absent | none | BEP 11 depends on a larger live-peer set, extension dispatch, and hostile-source bounds. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Local service discovery | Absent | none | Interface, multicast, and local-network policy are unimplemented. | [`protocol-support`](protocol-support.md) |
 
@@ -185,6 +191,7 @@ because they are individually visible features.
 | Derived progress and bounded diagnostics | Implemented | deterministic, runtime, web, AVD | Scheduler and per-peer facts must grow with the corresponding owners. | [`application-control`](application-control.md) |
 | Offline, loopback-only, and online egress policy | Implemented | deterministic, runtime, web, AVD | Policy is fixed for one service lifetime; Android VPN and metered-network controls are absent. | [`application-control`](application-control.md) |
 | Headless product validation | Implemented | web, AVD | Physical devices and visible desktop automation still require explicit authorization. | [`client-surfaces`](client-surfaces.md) |
+| Comparative live performance harness | Absent | none | Public observations are not yet repeatable or comparable with pinned libtorrent behavior. | [`performance-and-live-evidence`](performance-and-live-evidence.md) |
 | Multi-torrent queue and resource budgets | Absent | none | The application can retain multiple records but has no mature concurrent scheduling policy. | [`application-control`](application-control.md) |
 
 ## Maintenance Contract

@@ -14,6 +14,30 @@ and timed out waiting for the connect response; it did not acquire metadata.
 That result proves the product route was no longer rejected by loopback policy,
 not that the listed swarm was reachable.
 
+## Comparative Smoke Policy
+
+The planned headless comparator uses this catalog as variable live evidence,
+not as a deterministic test fixture. It runs RSTorrent and the pinned
+libtorrent reference sequentially in isolated temporary profiles and classifies
+the paired outcome before comparing speed:
+
+- both complete: compare timing, completion, and resource measurements;
+- libtorrent completes and RSTorrent does not: actionable RSTorrent gap;
+- both fail or time out: inconclusive public-swarm attempt; and
+- RSTorrent completes and libtorrent does not: record the success, but treat
+  the reference comparison as inconclusive.
+
+Common-denominator mode disables libtorrent capabilities that RSTorrent does
+not claim for the scenario. Full-reference mode retains them and reports the
+user-visible capability gap. DHT campaign runs remove tracker parameters and
+compare cold and warm session starts using the same stable info hash.
+
+Every run has explicit duration, payload, connection, bandwidth, disk, and
+artifact-retention bounds. Correct verified completion is a hard gate; public
+speed ratios are initially observations rather than CI thresholds. Detailed
+measurement and cleanup requirements live in
+[`topics/performance-and-live-evidence.md`](topics/performance-and-live-evidence.md).
+
 ## WebTorrent Free Torrents
 
 Source: [WebTorrent Free Torrents](https://webtorrent.io/free-torrents)

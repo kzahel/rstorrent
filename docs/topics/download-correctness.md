@@ -157,7 +157,7 @@ related unit test exists.
 | ID | Scenario | Required result | Current state and evidence |
 | --- | --- | --- | --- |
 | DL-C01 | One peer supplies a complete healthy torrent | Every wanted piece verifies and selected storage publishes. | Passing: controlled runtime and libtorrent interop across small, large-piece, selective, magnet, and tracker fixtures. |
-| DL-C02 | Peer A lacks the final wanted piece; peer B has it | Scheduler keeps or opens B, assigns the piece, and completes. | Failing by architecture: only one content connection and no transfer failover. Defining scenario for the next tactical. |
+| DL-C02 | Peer A lacks the final wanted piece; peer B has it | Scheduler keeps or opens B, assigns the piece, and completes. | Failing by architecture: only one content connection and no transfer failover. Defining scenario for the next transfer tactical after the DHT campaign. |
 | DL-C03 | Active content peer disconnects with requests outstanding | Its generation releases requests and another eligible peer may receive them. | Partial: reservations are cancelled locally, but the torrent returns a terminal content error. |
 | DL-C04 | Peer chokes with requests outstanding | Requests cease belonging to that peer and remain schedulable without budget leakage. | Partial deterministic evidence: same-peer re-request after unchoke works; alternate-peer assignment is absent. |
 | DL-C05 | Peer remains responsive but withholds one requested block | Per-request expiry releases the block and another peer can serve it. | Absent: connection I/O deadlines do not constitute a per-request deadline. |
@@ -214,9 +214,16 @@ downloads, captures, browser state, AVD state, and subprocesses they own.
 
 ## Next Stopping Condition
 
-The next correctness slice stops when DL-C02, DL-C03, DL-C04, DL-C05, and
-DL-C06 pass through one bounded multi-peer request owner; all existing
-single-peer, storage, resume, tracker, browser, and Android evidence remains
-green; and OBS-2026-07-31-001 has enough new scheduler observability that a
-future occurrence can be classified from retained state. Endgame scenarios
-DL-C07 through DL-C09 remain the following bounded slice.
+The next transfer-correctness slice still stops when DL-C02, DL-C03, DL-C04,
+DL-C05, and DL-C06 pass through one bounded multi-peer request owner; all
+existing single-peer, storage, resume, and tracker evidence remains green; and
+OBS-2026-07-31-001 has enough new scheduler observability that a future
+occurrence can be classified from retained state. Endgame scenarios DL-C07
+through DL-C09 remain the following transfer slice.
+
+The cross-project queue now installs the headless comparative evidence harness
+and DHT discovery first. That ordering does not close or weaken these
+correctness requirements: multi-peer ownership follows the DHT campaign so
+late and decentralized peer observations can actually advance an active
+download. Routine engine validation remains headless; no additional product UI
+is required by these slices.
