@@ -6,9 +6,9 @@ Status: This is the master roll-up for current product and engine readiness.
 It records implemented scope separately from evidence, keeps one explicit next
 slice, and links to the topics and tacticals that own detail. RSTorrent can
 complete controlled v1 downloads but is not yet a generally reliable torrent
-client. A bounded IPv4 DHT foundation with useful warm restart is integrated;
-the paired live comparator and multi-peer ownership are the next evidence and
-reliability work.
+client. A bounded IPv4 DHT foundation with useful warm restart is integrated.
+Adversarial multi-peer ownership is the active reliability campaign; the
+paired live comparator remains independent evidence work.
 
 ## Purpose And Ownership
 
@@ -81,26 +81,21 @@ peer through metadata and content completion.
 
 ### Now
 
-The next tactical should be `015-headless-live-comparison`: add a bounded CLI
-or application-service harness that runs RSTorrent and the pinned libtorrent
-reference against one cataloged public torrent in isolated temporary profiles,
-verifies completion, and emits a paired JSON result with timing and resource
-metadata. It must not launch a visible desktop or mobile client.
-
-The first mode uses only shared tracker and TCP capabilities. Tactical 016's
-single-sided DHT smoke is useful evidence but does not replace this paired
-result schema. Public speed ratios are recorded baselines, not flaky CI gates.
-Detailed rules live in
-[`performance-and-live-evidence.md`](performance-and-live-evidence.md).
+Tactical `017-adversarial-multi-peer-liveness` installs one bounded
+torrent-owned connection set and request scheduler. It must pass DL-C02 through
+DL-C06 and DL-C20 through DL-C25 with pure state, scripted swarms, and
+controlled libtorrent evidence, without launching a product UI. Detailed
+ownership, bounds, reference targets, and escalation rules live in
+[`peer-lifecycle.md`](peer-lifecycle.md) and the tactical.
 
 ### Next
 
-1. **Bounded multi-peer request ownership.** Give blocks a torrent-level peer,
-   generation, expiry, and reassignment owner; retain useful alternate peers
-   across metadata and content failures.
-2. **Endgame and integrity recovery.** Add bounded duplicate requests and
-   cancel semantics, slow-request expiry, hash-failure reset, and contributor
-   attribution sufficient to complete ordinary adverse swarms safely.
+1. **Endgame and integrity recovery.** Add bounded duplicate requests and
+   cancel semantics, hash-failure reset/retry, and contributor attribution
+   sufficient to complete ordinary adverse swarms safely.
+2. **Finish the paired headless comparator.** Complete Tactical 015's catalog,
+   shared JSON classification, alternating runs, resource observations, and
+   bounded tracker/DHT public baselines.
 3. **Measured connection/picker policy.** Use paired public evidence to tune
    live-peer budgets, availability-aware selection, and resource high-water
    marks before broadening discovery again.

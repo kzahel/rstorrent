@@ -175,6 +175,12 @@ related unit test exists.
 | DL-C17 | Network policy is offline | No DNS or socket work occurs and UI requests network enablement without rewriting torrent intent. | Passing deterministic, runtime, web, and AVD evidence. |
 | DL-C18 | Torrent reaches displayed 100% before publication finishes | State remains incomplete until verified content completes the publication contract. | Passing path and Android SAF publication-state evidence for controlled fixtures. |
 | DL-C19 | Multi-piece single-file torrent | The ordinary product path downloads, verifies, resumes, and publishes all pieces. | Absent: current execution rejects this profile even though metainfo parsing understands it. |
+| DL-C20 | Every established slot is occupied by peers that never unchoke | A useful eligible candidate eventually replaces an unproductive peer after bounded grace and can receive work. | Absent: there is one live connection and no capacity-pressure replacement policy. |
+| DL-C21 | Every established peer lacks the remaining wanted piece | A peer advertising that piece is retained or opened, while irrelevant peers cannot monopolize every slot. | Absent: availability is one-connection state and newly discovered peers cannot join content transfer. |
+| DL-C22 | Pending dial slots connect but never finish handshake | Per-operation deadlines release dial capacity and another candidate can be tried without exceeding socket/task bounds. | Partial: individual handshake deadlines exist, but there is no bounded parallel dial set or capacity scenario. |
+| DL-C23 | An expired request is reassigned and the old generation sends its block late | Current ownership and payload accounting remain correct; valid late data is harmless and cannot release another attempt. | Absent: there is no torrent-level request generation or request expiry. |
+| DL-C24 | All current peers are unproductive and no replacement is eligible | The torrent retains discovery/retry deadlines and avoids destructive reconnect churn; it reports waiting rather than blocked. | Absent for a multi-peer connection set. |
+| DL-C25 | Hostile peer churn and observations fill every configured bound | Registry, connection, dial, request, payload, event, task, history, and diagnostic limits hold while uniquely useful or active state is protected. | Partial registry evidence only; multi-peer runtime resources do not exist. |
 
 ## Required Scheduler Observability
 
@@ -214,16 +220,15 @@ downloads, captures, browser state, AVD state, and subprocesses they own.
 
 ## Next Stopping Condition
 
-The next transfer-correctness slice still stops when DL-C02, DL-C03, DL-C04,
-DL-C05, and DL-C06 pass through one bounded multi-peer request owner; all
-existing single-peer, storage, resume, and tracker evidence remains green; and
-OBS-2026-07-31-001 has enough new scheduler observability that a future
-occurrence can be classified from retained state. Endgame scenarios DL-C07
-through DL-C09 remain the following transfer slice.
+The next transfer-correctness slice stops when DL-C02 through DL-C06 and
+DL-C20 through DL-C25 pass through one bounded multi-peer request and
+connection-set owner; all existing single-peer, storage, resume, tracker, and
+DHT evidence remains green; and OBS-2026-07-31-001 has enough new scheduler
+observability that a future occurrence can be classified from retained state.
+Endgame and recovery scenarios DL-C07 through DL-C09 remain the following
+transfer slice.
 
-The cross-project queue now installs the headless comparative evidence harness
-and DHT discovery first. That ordering does not close or weaken these
-correctness requirements: multi-peer ownership follows the DHT campaign so
-late and decentralized peer observations can actually advance an active
-download. Routine engine validation remains headless; no additional product UI
-is required by these slices.
+DHT discovery is now installed, so late and decentralized peer observations
+can exercise this campaign rather than merely populate the registry. Routine
+engine validation remains headless; no additional product UI is required by
+these slices.

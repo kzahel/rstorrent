@@ -59,8 +59,8 @@ Topics own the current truth for a continuing concern. Tactical docs under
   presentation, Android Compose adaptation, generated client types, reactive
   view delivery, and platform lifecycle boundaries.
 - [`peer-lifecycle.md`](peer-lifecycle.md): peer observations, bounded records,
-  derived dial eligibility, connection attempts, live connections, and the
-  discovery-to-swarm boundary.
+  derived dial eligibility, connection attempts, adversarial multi-peer
+  ownership, slot replacement, and the discovery-to-swarm boundary.
 - [`tracker-discovery.md`](tracker-discovery.md): tracker URL and announce
   lifecycle, bounded results, scheduling direction, and the
   tracker-to-peer-observation boundary.

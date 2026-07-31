@@ -32,6 +32,51 @@ what landed, what validation actually ran, known gaps, and the recommended next
 slice. Completed tacticals remain in place as execution records; living
 direction belongs in `../topics/`.
 
+## Decision-Complete Tacticals
+
+A tactical intended for autonomous execution must settle enough direction that
+ordinary implementation discoveries do not require repeated approval. In
+addition to the fields above, record:
+
+- the stable topic scenarios or observations that define the problem and the
+  exact subset the tactical must make pass;
+- the normative specifications and pinned reference source/tests that must be
+  surveyed before finalizing state transitions;
+- the owner, task, cancellation, dependency, and data-flow map, including
+  which state must remain runtime independent;
+- exact initial resource bounds, or a bounded range plus explicit authority to
+  choose and tighten a conservative value from reference and test evidence;
+- shape-changing edge cases that must land with the common path rather than be
+  deferred into an incompatible architecture;
+- the staged implementation order and the intermediate gates that keep a
+  large slice diagnosable;
+- a validation matrix separating pure state, scripted runtime, controlled
+  interoperability, platform build, and opt-in live evidence;
+- explicit non-goals and the next-slice boundary; and
+- an escalation contract naming what does and does not require human input.
+
+Unless a tactical says otherwise, in-scope implementation authority includes
+ordinary refactoring, adding adversarial cases implied by its invariants,
+choosing internal names and module layout, tightening declared limits, fixing
+newly exposed bugs at the same ownership boundary, updating generated types,
+and updating the tactical and owning topics with actual evidence. These are not
+reasons to stop merely because the initial plan did not predict the exact code
+edit.
+
+Stop for human direction when evidence requires a materially different product
+behavior, protocol-support claim, persistence or compatibility contract,
+external dependency or license posture, destructive data action, visible or
+physical-device interaction not already authorized, or a significant expansion
+beyond the tactical's stated owner and non-goals. An ordinary test failure,
+internal refactor, conservative bound choice, public-smoke timeout, or a
+reference implementation whose architecture differs from RSTorrent is not by
+itself an escalation.
+
+Autonomy does not broaden permissions silently. A tactical that needs public
+network access, fixture downloads, emulator/device use, schema migration,
+generated-contract changes, or another externally visible action must state
+that scope and its cleanup or compatibility rules explicitly.
+
 ## Current Tacticals
 
 - [`000-first-verified-piece.md`](000-first-verified-piece.md): completed
@@ -103,8 +148,12 @@ direction belongs in `../topics/`.
   complete; added the session-owned bounded IPv4 DHT participant, private
   gating, warm restart, peer integration, controlled libtorrent completion,
   and an honest public trackerless attempt.
+- [`017-adversarial-multi-peer-liveness.md`](017-adversarial-multi-peer-liveness.md):
+  in progress; replaces the one-live-peer content boundary with a bounded
+  torrent-owned connection set and request scheduler driven by adversarial
+  liveness scenarios.
 
-The active tactical is `015`; its selective reference prerequisite and DHT
-single-sided smoke exist, while its paired public comparator remains. Current
-prioritization lives in
+The active engine implementation tactical is `017`. Tactical `015` remains an
+independent in-progress evidence-harness slice whose selective reference
+prerequisite and DHT single-sided smoke have landed. Current prioritization lives in
 [`../topics/capability-readiness.md`](../topics/capability-readiness.md).
