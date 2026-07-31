@@ -283,6 +283,8 @@ pub struct MetadataAcquisitionSnapshot {
     pub total_requests_sent: usize,
     pub total_blocks_received: usize,
     pub total_bytes_received: usize,
+    pub total_hash_failures: usize,
+    pub last_hash_failure_contributors: usize,
     pub recent_attempts_dropped: usize,
     pub last_error: Option<String>,
     pub active_attempts: Vec<MetadataPeerSnapshot>,
@@ -336,6 +338,8 @@ struct MetadataDiagnosticState {
     total_requests_sent: usize,
     total_blocks_received: usize,
     total_bytes_received: usize,
+    total_hash_failures: usize,
+    last_hash_failure_contributors: usize,
     recent_attempts_dropped: usize,
     last_error: Option<String>,
     active_attempts: BTreeMap<DialAttemptId, MetadataPeerSnapshot>,
@@ -428,6 +432,8 @@ impl DownloadControl {
                 total_requests_sent: state.total_requests_sent,
                 total_blocks_received: state.total_blocks_received,
                 total_bytes_received: state.total_bytes_received,
+                total_hash_failures: state.total_hash_failures,
+                last_hash_failure_contributors: state.last_hash_failure_contributors,
                 recent_attempts_dropped: state.recent_attempts_dropped,
                 last_error: state.last_error.clone(),
                 active_attempts: state.active_attempts.values().cloned().collect(),
@@ -689,6 +695,16 @@ impl DownloadControl {
             peer.rejects_received = peer.rejects_received.saturating_add(1);
             peer.last_activity_at = now;
         });
+    }
+
+    fn metadata_hash_failed(&self, contributors: usize) {
+        let mut state = self
+            .inner
+            .metadata_diagnostics
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.total_hash_failures = state.total_hash_failures.saturating_add(1);
+        state.last_hash_failure_contributors = contributors;
     }
 
     fn metadata_peer_finished(
@@ -3295,7 +3311,16 @@ async fn acquire_metadata_from_connection(
                                 metadata_instant(control.diagnostic_elapsed()),
                             )
                             .map_err(DownloadError::Metadata)?;
-                        if let TorrentMetadataEvent::Complete(bytes) = event {
+                        let completed = match event {
+                            TorrentMetadataEvent::Complete(bytes) => Some(bytes),
+                            TorrentMetadataEvent::HashMismatch { contributors } => {
+                                control.metadata_hash_failed(contributors.len());
+                                None
+                            }
+                            TorrentMetadataEvent::BlockAccepted { .. }
+                            | TorrentMetadataEvent::Duplicate { .. } => None,
+                        };
+                        if let Some(bytes) = completed {
                             let download = metadata
                                 .lock()
                                 .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -6419,6 +6444,84 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         }
     }
 
+    async fn serve_metadata_bytes_after_delay(
+        listener: TcpListener,
+        info_hash: [u8; 20],
+        bytes: Vec<u8>,
+        extension_delay: Duration,
+    ) {
+        let (mut stream, _) = listener.accept().await.expect("accept metadata client");
+        let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
+        stream
+            .read_exact(&mut handshake_bytes)
+            .await
+            .expect("read client handshake");
+        assert!(
+            decode_handshake(&handshake_bytes, info_hash)
+                .expect("client handshake identity")
+                .supports_extensions()
+        );
+        let mut reserved = [0; 8];
+        reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+        stream
+            .write_all(&encode_handshake_with_reserved(
+                info_hash,
+                *b"-RS-SCRIPT-000000000",
+                reserved,
+            ))
+            .await
+            .expect("send server handshake");
+        let mut peer =
+            PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(3));
+        assert!(matches!(
+            next_peer_message(&mut peer).await,
+            Ok(PeerMessage::Extended { id: 0, .. })
+        ));
+        tokio::time::sleep(extension_delay).await;
+        send_message(
+            &mut peer,
+            &PeerMessage::Extended {
+                id: 0,
+                payload: encode_extension_handshake(Some(bytes.len())),
+            },
+        )
+        .await
+        .expect("send metadata extension handshake");
+
+        loop {
+            match next_peer_message(&mut peer).await {
+                Ok(PeerMessage::Extended { id: 1, payload }) => {
+                    let MetadataMessage::Request { piece } =
+                        parse_metadata_message(&payload).expect("parse metadata request")
+                    else {
+                        panic!("expected metadata request");
+                    };
+                    let piece = usize::try_from(piece).expect("nonnegative metadata piece");
+                    let begin = piece * rstorrent_protocol::metadata::METADATA_BLOCK_LENGTH;
+                    let end = (begin + rstorrent_protocol::metadata::METADATA_BLOCK_LENGTH)
+                        .min(bytes.len());
+                    send_message(
+                        &mut peer,
+                        &PeerMessage::Extended {
+                            id: 1,
+                            payload: encode_metadata_data(
+                                piece as u32,
+                                bytes.len(),
+                                &bytes[begin..end],
+                            )
+                            .expect("encode metadata block"),
+                        },
+                    )
+                    .await
+                    .expect("send metadata block");
+                }
+                Err(DownloadError::PeerClosed) => break,
+                Ok(message) => panic!("unexpected metadata message {message:?}"),
+                Err(error) => panic!("scripted metadata peer failed: {error}"),
+            }
+        }
+    }
+
     async fn serve_metadata_peer_without_ut_metadata(listener: TcpListener, info_hash: [u8; 20]) {
         let (mut stream, _) = listener.accept().await.expect("accept magnet client");
         let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
@@ -7481,6 +7584,76 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 .await
                 .expect("multi-source peer joined")
                 .expect("multi-source peer task");
+        }
+    }
+
+    #[tokio::test]
+    async fn corrupt_metadata_generation_resets_before_clean_peer_completes() {
+        let payload = vec![0x39; 1_700];
+        let info = single_file_info_with_piece_length(&payload, 1);
+        assert!(
+            info.len() > 2 * rstorrent_protocol::metadata::METADATA_BLOCK_LENGTH,
+            "fixture must span three metadata blocks"
+        );
+        let info_hash: [u8; 20] = Sha1::digest(&info).into();
+        let mut corrupt = info.clone();
+        corrupt[rstorrent_protocol::metadata::METADATA_BLOCK_LENGTH + 7] ^= 0x01;
+
+        let corrupt_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind corrupt metadata peer");
+        let corrupt_address = corrupt_listener.local_addr().expect("corrupt address");
+        let clean_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind clean metadata peer");
+        let clean_address = clean_listener.local_addr().expect("clean address");
+        let corrupt_task = tokio::spawn(serve_metadata_bytes_after_delay(
+            corrupt_listener,
+            info_hash,
+            corrupt,
+            Duration::ZERO,
+        ));
+        let clean_task = tokio::spawn(serve_metadata_bytes_after_delay(
+            clean_listener,
+            info_hash,
+            info.clone(),
+            Duration::from_millis(200),
+        ));
+        let magnet = format!(
+            "magnet:?xt=urn:btih:{}&x.pe={corrupt_address}&x.pe={clean_address}",
+            hex(&info_hash)
+        );
+        let parsed = Magnet::parse(&magnet).expect("parse corrupt recovery magnet");
+        let control = DownloadControl::new();
+        let mut peers = PeerSession::from_magnet(
+            &parsed,
+            loopback_network(Duration::from_secs(2)),
+            control.clone(),
+            None,
+        )
+        .await
+        .expect("resolve corrupt recovery peers");
+
+        let (raw_info, metainfo) =
+            timeout(Duration::from_secs(3), peers.acquire_metadata(info_hash))
+                .await
+                .expect("corrupt metadata recovery bound")
+                .expect("clean source completes after corrupt generation");
+        assert_eq!(raw_info, info);
+        assert_eq!(metainfo.info_hash, info_hash);
+        let snapshot = control.diagnostic_snapshot().metadata;
+        assert_eq!(snapshot.total_hash_failures, 1);
+        assert_eq!(snapshot.last_hash_failure_contributors, 1);
+        assert_eq!(snapshot.total_blocks_received, 6);
+
+        peers
+            .close_current(None)
+            .expect("close clean metadata winner");
+        for task in [corrupt_task, clean_task] {
+            timeout(Duration::from_secs(1), task)
+                .await
+                .expect("corrupt recovery peer joined")
+                .expect("corrupt recovery peer task");
         }
     }
 

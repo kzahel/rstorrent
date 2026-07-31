@@ -1,8 +1,8 @@
 # Tactical 019: Torrent-Owned Metadata Acquisition
 
 Status: In progress. The pure owner, shared runtime path, hostile scheduling
-tests, and controlled interoperability are implemented; public comparison and
-the final corrupt-source runtime case remain.
+and corruption tests, controlled interoperability, and two-run public screens
+are implemented; full public cohort confirmation remains.
 
 Topics: `peer-lifecycle`, `performance-and-live-evidence`,
 `oracle-driven-engine-campaign`
@@ -175,7 +175,10 @@ The first bounded implementation checkpoint establishes:
 - pure tests for disjoint blocks, expiry/late duplicates, rejection,
   mixed-source corruption recovery, and geometry/peer bounds;
 - scripted real-socket completion where two peers each serve only part of a
-  three-block dictionary, plus stalled-source reassignment; and
+  three-block dictionary, stalled-source reassignment, and recovery from a
+  complete corrupt three-block generation through a delayed clean source;
+- snapshot and public-probe counters for whole-dictionary hash failures and
+  the number of contributors in the latest failed generation; and
 - passing loopback `magnet_metadata.py`, `dht_magnet.py`, and paired controlled
   full-publication interoperability against libtorrent 2.0.13.
 
@@ -183,6 +186,16 @@ The protocol architecture gate rejected an initial `std::time::Duration`
 input. The final owner instead accepts `MetadataInstant`, a millisecond
 monotonic value with no runtime dependency; the engine performs the conversion
 at its outward boundary.
+
+The first public screen ran two alternating Big Buck Bunny pairs per profile.
+Tracker discovery completed 2/2 for each owner: RSTorrent verified metadata in
+3.40 and 3.88 seconds (3.64-second median), while libtorrent took 20.35 and
+20.67 seconds (20.51-second median). Fresh DHT completed 2/2 for RSTorrent in
+30.10 and 55.37 seconds, but libtorrent timed out both 120-second runs with
+zero candidates. Those runs classify `rstorrent_only`; they prove functional
+RSTorrent DHT acquisition but cannot establish paired latency while the
+reference bootstrap is unavailable. All four RSTorrent runs received the
+exact two-block dictionary with zero hash failures and clean shutdown.
 
 ## Validation And Stopping Condition
 

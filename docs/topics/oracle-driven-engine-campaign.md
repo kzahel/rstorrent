@@ -349,13 +349,20 @@ Last completed evidence:
 - its pure hostile cases and scripted two-source, three-block socket case pass;
   and
 - direct metadata, DHT-only metadata/content, and paired controlled full
-  publication remain green against locked libtorrent 2.0.13.
+  publication remain green against locked libtorrent 2.0.13;
+- a two-pair tracker screen completed 2/2 for both owners at 3.64 seconds
+  median for RSTorrent versus 20.51 seconds for libtorrent; and
+- a two-pair fresh-DHT screen completed 2/2 for RSTorrent at 30.10 and 55.37
+  seconds, while libtorrent found zero candidates and timed out twice at 120
+  seconds, so the screen proves RSTorrent function but not paired parity.
 
 Next executable action:
 
-1. add the remaining scripted corrupt-source/hash-recovery scenario;
-2. screen common-denominator tracker and DHT metadata with small paired runs;
-3. run and record the ten-pair cohorts when the screen remains sound; and
+1. run and record the ten-pair common-denominator tracker metadata cohort;
+2. retest the locked libtorrent fresh-DHT adapter and classify whether the
+   zero-candidate result is transient public state or a harness boundary;
+3. run the ten-pair DHT cohort only when it remains evidence-producing, or
+   record a bounded owner-only confirmation plus the reference blocker; and
 4. close Tactical `019` and rotate to sustained-transfer connection/request
    width once metadata meets the campaign gate or its remaining gap is
    explicitly classified.

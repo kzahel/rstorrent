@@ -86,8 +86,9 @@ evidence.
 
 **Torrent-owned metadata acquisition.** Use pinned `ut_metadata` behavior and
 tests to validate the new bounded cross-peer block owner, reassignment,
-attribution, and hash recovery through the remaining corrupt-source runtime
-case and paired metadata cohorts before moving to sustained content transfer.
+attribution, and hash recovery through the full paired metadata cohorts before
+moving to sustained content transfer. The two-run tracker and DHT screens are
+functional; the DHT reference currently bootstraps no candidates.
 
 ### Next
 
