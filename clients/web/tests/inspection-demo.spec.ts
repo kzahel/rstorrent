@@ -14,7 +14,7 @@ test("wide inspection surface is accessible and drivable", async ({ page }) => {
     "aria-rowcount",
     "4",
   );
-  await expect(page.getByRole("grid", { name: "Connected and candidate peers" })).toBeVisible();
+  await expect(page.getByRole("grid", { name: "Active peer connections" })).toBeVisible();
   await expect(page.getByText("Big Buck Bunny 1080p surround").first()).toBeVisible();
 
   const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
@@ -35,7 +35,7 @@ test("wide inspection surface is accessible and drivable", async ({ page }) => {
 test("compact tracker recovery remains legible", async ({ page }) => {
   await page.setViewportSize({ width: 920, height: 720 });
   await openScenario(page, "tracker-recovery", 24_000);
-  await expect(page.getByRole("grid", { name: "Connected and candidate peers" })).toHaveAttribute(
+  await expect(page.getByRole("grid", { name: "Active peer connections" })).toHaveAttribute(
     "aria-rowcount",
     "15",
   );
@@ -50,7 +50,7 @@ test("phone navigation opens a full detail surface", async ({ page }) => {
   await library.getByRole("row").filter({ hasText: "Big Buck Bunny" }).click();
   const backButton = page.getByRole("button", { name: "Torrents", exact: true });
   await expect(backButton).toBeVisible();
-  await expect(page.getByRole("grid", { name: "Connected and candidate peers" })).toBeVisible();
+  await expect(page.getByRole("grid", { name: "Active peer connections" })).toBeVisible();
   await capture(page, "rstorrent-demo-phone.png");
   await backButton.click();
   await expect(library).toBeVisible();
@@ -71,7 +71,7 @@ test("large collections retain a bounded virtual DOM", async ({ page }) => {
   await openScenario(page, "large-swarm", 0);
   const initialRenderMs = performance.now() - openedAt;
   const torrents = page.getByRole("grid", { name: "Torrent library" });
-  const peers = page.getByRole("grid", { name: "Connected and candidate peers" });
+  const peers = page.getByRole("grid", { name: "Active peer connections" });
   await expect(torrents).toHaveAttribute("aria-rowcount", "2001");
   await expect(peers).toHaveAttribute("aria-rowcount", "10001");
   expect(await torrents.getByRole("row").count()).toBeLessThanOrEqual(100);

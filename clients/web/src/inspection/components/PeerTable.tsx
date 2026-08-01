@@ -2,7 +2,7 @@ import { useMemo } from "react";
 
 import { useInspectionStore } from "../context";
 import { formatBytes, formatProgress, formatRate } from "../format";
-import type { PeerRow } from "../model";
+import type { PeerRow, ViewMaterialization } from "../model";
 import { VirtualTable, type VirtualColumn } from "./VirtualTable";
 import styles from "./PeerTable.module.css";
 
@@ -35,7 +35,7 @@ const COLUMNS: readonly VirtualColumn<PeerRow>[] = [
     width: 154,
     sortable: true,
     sortValue: (row) => row.client,
-    render: (row) => <span title={row.client}>{row.client}</span>,
+    render: (row) => <span title={row.client ?? undefined}>{row.client ?? "—"}</span>,
   },
   {
     id: "source",
@@ -54,7 +54,7 @@ const COLUMNS: readonly VirtualColumn<PeerRow>[] = [
     align: "right",
     sortable: true,
     sortValue: (row) => row.progress,
-    render: (row) => formatProgress(row.progress),
+    render: (row) => (row.progress === null ? "—" : formatProgress(row.progress)),
   },
   {
     id: "down",
@@ -119,6 +119,7 @@ export function PeerTable({ torrentId }: { readonly torrentId: string }) {
     (state) => state.presentation.selectedPeerId,
   );
   const selectPeer = useInspectionStore((state) => state.selectPeer);
+  const materialization = useInspectionStore((state) => state.viewStatus.peers);
   const rows = useMemo(
     () =>
       (peerSet?.order ?? [])
@@ -129,14 +130,29 @@ export function PeerTable({ torrentId }: { readonly torrentId: string }) {
 
   return (
     <VirtualTable
-      label="Connected and candidate peers"
+      label="Active peer connections"
       rows={rows}
       getRowId={(row) => row.connectionId}
       columns={COLUMNS}
       selectedId={selectedPeerId}
       onSelect={(row) => selectPeer(row.connectionId)}
-      emptyMessage="No peer rows are available for this demo state."
+      emptyMessage={peerEmptyMessage(materialization)}
       initialSort={{ columnId: "down", direction: "desc" }}
     />
   );
+}
+
+function peerEmptyMessage(materialization: ViewMaterialization): string {
+  switch (materialization.status) {
+    case "not_requested":
+      return "Peer inspection is not requested.";
+    case "loading":
+      return "Loading active peer connections…";
+    case "unavailable":
+    case "unsupported":
+    case "stale":
+      return materialization.reason;
+    case "ready":
+      return "No peer connections are currently active.";
+  }
 }

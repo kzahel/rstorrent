@@ -10,8 +10,8 @@ export function formatBytes(value: number | null): string {
   return `${scaled >= 100 || exponent === 0 ? scaled.toFixed(0) : scaled.toFixed(1)} ${units[exponent]}`;
 }
 
-export function formatRate(value: number): string {
-  return value <= 0 ? "—" : `${formatBytes(value)}/s`;
+export function formatRate(value: number | null): string {
+  return value === null || value <= 0 ? "—" : `${formatBytes(value)}/s`;
 }
 
 export function formatProgress(value: number | null): string {

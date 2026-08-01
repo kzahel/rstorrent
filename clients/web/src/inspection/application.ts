@@ -3,6 +3,7 @@ import type {
   DemoScenarioSummary,
   InspectionCommand,
   InspectionUpdate,
+  DesiredInspectionViews,
 } from "./model";
 
 export interface InspectionApplication {
@@ -10,6 +11,7 @@ export interface InspectionApplication {
   readonly scenarios: readonly DemoScenarioSummary[];
 
   subscribe(listener: (update: InspectionUpdate) => void): () => void;
+  setViews(views: DesiredInspectionViews): Promise<void>;
   dispatch(command: InspectionCommand): Promise<CommandResult>;
   close(): Promise<void>;
 }

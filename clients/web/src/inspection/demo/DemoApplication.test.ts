@@ -95,8 +95,9 @@ describe("DemoApplication", () => {
     const torrentId = state.torrentOrder[0]!;
     expect(state.torrentOrder).toHaveLength(2_000);
     expect(state.peersByTorrent[torrentId]?.order).toHaveLength(10_000);
+    const revision = state.revision;
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(controller.store.getState().revision).toBe(1);
+    expect(controller.store.getState().revision).toBe(revision);
     await controller.close();
   });
 });

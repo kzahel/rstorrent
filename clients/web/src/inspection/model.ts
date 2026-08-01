@@ -8,10 +8,11 @@ export type TorrentStatus =
 
 export type PeerState =
   | "connecting"
+  | "handshaking"
   | "connected"
   | "choked"
   | "stalled"
-  | "disconnected";
+  | "disconnecting";
 
 export type DetailTab =
   | "general"
@@ -37,9 +38,30 @@ export type LibraryCategory =
 export interface SessionSummary {
   readonly connection: "demo" | "connected" | "reconnecting" | "offline";
   readonly downloadRate: number;
-  readonly uploadRate: number;
+  readonly uploadRate: number | null;
   readonly dhtNodes: number | null;
-  readonly knownPeers: number;
+  readonly knownPeers: number | null;
+}
+
+export type ViewMaterialization =
+  | { readonly status: "not_requested" }
+  | { readonly status: "loading" }
+  | { readonly status: "ready" }
+  | { readonly status: "unavailable"; readonly reason: string }
+  | { readonly status: "unsupported"; readonly reason: string }
+  | { readonly status: "stale"; readonly reason: string };
+
+export interface InspectionViewStatus {
+  readonly library: ViewMaterialization;
+  readonly torrentSummary: ViewMaterialization;
+  readonly peers: ViewMaterialization;
+  readonly logs: ViewMaterialization;
+}
+
+export interface DesiredInspectionViews {
+  readonly library: boolean;
+  readonly torrentId: string | null;
+  readonly detail: "general" | "peers" | "logs" | null;
 }
 
 export interface DemoState {
@@ -56,14 +78,14 @@ export interface TorrentRow {
   readonly sizeBytes: number | null;
   readonly progress: number | null;
   readonly downloadRate: number;
-  readonly uploadRate: number;
+  readonly uploadRate: number | null;
   readonly downloadedBytes: number;
-  readonly uploadedBytes: number;
+  readonly uploadedBytes: number | null;
   readonly peersConnected: number;
-  readonly peersKnown: number;
+  readonly peersKnown: number | null;
   readonly etaSeconds: number | null;
-  readonly addedAtMs: number;
-  readonly archived: boolean;
+  readonly addedAtMs: number | null;
+  readonly archived: boolean | null;
   readonly infoHash: string;
   readonly error: string | null;
   readonly progressReason: string;
@@ -74,14 +96,21 @@ export interface PeerRow {
   readonly torrentId: string;
   readonly state: PeerState;
   readonly endpoint: string;
-  readonly client: string;
-  readonly source: "tracker" | "dht" | "pex" | "manual";
+  readonly client: string | null;
+  readonly source:
+    | "tracker"
+    | "dht"
+    | "pex"
+    | "manual"
+    | "incoming"
+    | "cache"
+    | "unknown";
   readonly progress: number | null;
-  readonly downloadRate: number;
-  readonly uploadRate: number;
-  readonly downloadedBytes: number;
-  readonly uploadedBytes: number;
-  readonly requestsPending: number;
+  readonly downloadRate: number | null;
+  readonly uploadRate: number | null;
+  readonly downloadedBytes: number | null;
+  readonly uploadedBytes: number | null;
+  readonly requestsPending: number | null;
   readonly oldestRequestMs: number | null;
   readonly flags: string;
   readonly useful: boolean;
@@ -110,6 +139,7 @@ export interface InspectionSnapshot {
   readonly peersByTorrent: Readonly<Record<string, PeerSet>>;
   readonly logs: readonly LogRow[];
   readonly droppedLogs: number;
+  readonly viewStatus: InspectionViewStatus;
 }
 
 export interface KeyedPatch<T> {

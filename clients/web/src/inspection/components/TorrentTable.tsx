@@ -7,7 +7,7 @@ import {
   formatProgress,
   formatRate,
 } from "../format";
-import type { TorrentRow } from "../model";
+import type { TorrentRow, ViewMaterialization } from "../model";
 import { torrentMatchesCategory } from "../state";
 import { VirtualTable, type VirtualColumn } from "./VirtualTable";
 import styles from "./TorrentTable.module.css";
@@ -93,7 +93,10 @@ const COLUMNS: readonly VirtualColumn<TorrentRow>[] = [
     align: "right",
     sortable: true,
     sortValue: (row) => row.peersConnected,
-    render: (row) => `${row.peersConnected}/${row.peersKnown}`,
+    render: (row) =>
+      row.peersKnown === null
+        ? row.peersConnected.toLocaleString()
+        : `${row.peersConnected}/${row.peersKnown}`,
   },
   {
     id: "eta",
@@ -115,6 +118,8 @@ export function TorrentTable() {
     (state) => state.presentation.selectedTorrentId,
   );
   const selectTorrent = useInspectionStore((state) => state.selectTorrent);
+  const demo = useInspectionStore((state) => state.demo);
+  const materialization = useInspectionStore((state) => state.viewStatus.library);
   const rows = useMemo(
     () =>
       order
@@ -133,11 +138,30 @@ export function TorrentTable() {
       selectedId={selectedId}
       onSelect={(row) => selectTorrent(row.id)}
       emptyMessage={
-        category === "all"
+        materialization.status !== "ready"
+          ? materializationMessage(materialization)
+          : category === "all" && demo === null
+            ? "No torrents are present in the live engine."
+            : category === "all"
           ? "No torrents yet. Add a generated demo transfer or choose another scenario."
           : `No torrents in ${category}.`
       }
       initialSort={{ columnId: "name", direction: "asc" }}
     />
   );
+}
+
+function materializationMessage(materialization: ViewMaterialization): string {
+  switch (materialization.status) {
+    case "not_requested":
+      return "Torrent library is not requested in this layout.";
+    case "loading":
+      return "Loading torrent library…";
+    case "unavailable":
+    case "unsupported":
+    case "stale":
+      return materialization.reason;
+    case "ready":
+      return "No torrents are present.";
+  }
 }

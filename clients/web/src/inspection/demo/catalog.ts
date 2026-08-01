@@ -101,9 +101,9 @@ export function buildScenarioSnapshot(
     session: {
       connection: "demo",
       downloadRate: sum(active.map((torrent) => torrent.downloadRate)),
-      uploadRate: sum(active.map((torrent) => torrent.uploadRate)),
+      uploadRate: sum(active.map((torrent) => torrent.uploadRate ?? 0)),
       dhtNodes: scenarioId === "empty-library" ? 0 : 638,
-      knownPeers: sum(content.torrents.map((torrent) => torrent.peersKnown)),
+      knownPeers: sum(content.torrents.map((torrent) => torrent.peersKnown ?? 0)),
     },
     demo: {
       scenarioId,
@@ -116,6 +116,12 @@ export function buildScenarioSnapshot(
     peersByTorrent,
     logs: content.logs.slice(-256),
     droppedLogs: Math.max(0, content.logs.length - 256),
+    viewStatus: {
+      library: { status: "ready" },
+      torrentSummary: { status: "ready" },
+      peers: { status: "ready" },
+      logs: { status: "ready" },
+    },
   };
 }
 

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { ContractError, decodeGatewayServerMessage } from "./validation";
+import {
+  ContractError,
+  decodeGatewayServerMessage,
+  decodeUpdateBatch,
+} from "./validation";
 
 describe("gateway validation", () => {
   it("rejects unknown variants and non-canonical ranges", () => {
@@ -32,3 +36,87 @@ describe("gateway validation", () => {
     ).toThrow(ContractError);
   });
 });
+
+describe("peer view validation", () => {
+  it("accepts bounded active peers and rejects cross-torrent rows", () => {
+    const batch = peerBatch("0".repeat(40));
+    expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
+    batch.updates[0]!.snapshot.peers[0]!.torrent_id = "1".repeat(40);
+    expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
+      /another torrent/,
+    );
+  });
+});
+
+function peerBatch(torrentId: string) {
+  return {
+    api_version: 1,
+    view_set_id: "vs_000102030405060708090a0b0c0d0e0f",
+    epoch: "1",
+    base_cursor: "0",
+    cursor: "1",
+    durable_revision: "1",
+    updates: [
+      {
+        type: "snapshot" as const,
+        view_id: "torrent-peers",
+        snapshot: {
+          type: "peers" as const,
+          torrent_id: torrentId,
+          peers: [
+            {
+              connection_id: "1",
+              torrent_id: torrentId,
+              peer_record_id: "2",
+              direction: "outgoing",
+              transport: "tcp",
+              lifecycle: "protocol_handshaking",
+              role: "metadata",
+              lifecycle_age_millis: "5",
+              remote_endpoint: "127.0.0.1:6881",
+              local_endpoint: null,
+              sources: ["magnet_hint"],
+              peer_id: null,
+              client_name: null,
+              supports_extensions: null,
+              supports_ut_metadata: null,
+              local_interested: null,
+              remote_interested: null,
+              remote_choking: null,
+              local_choking: null,
+              available_piece_count: null,
+              wanted_piece_count: null,
+              payload_download_rate_bytes: null,
+              payload_downloaded_bytes: null,
+              protocol_download_rate_bytes: null,
+              protocol_downloaded_bytes: null,
+              payload_upload_rate_bytes: null,
+              payload_uploaded_bytes: null,
+              pending_requests: null,
+              target_requests: null,
+              queued_payload_bytes: null,
+              oldest_request_age_millis: null,
+              request_timeout_millis: null,
+              request_phase: null,
+              connected_age_millis: null,
+              last_useful_age_millis: null,
+              last_payload_age_millis: null,
+              disconnect_reason: null,
+              capabilities: {
+                local_endpoint: "unsupported",
+                client_name: "unsupported",
+                ut_metadata: "unavailable",
+                interest_directions: "unavailable",
+                local_choke: "unsupported",
+                piece_availability: "unavailable",
+                protocol_rates: "unsupported",
+                upload: "unsupported",
+                metadata_stage: "unavailable",
+              },
+            },
+          ],
+        },
+      },
+    ],
+  };
+}

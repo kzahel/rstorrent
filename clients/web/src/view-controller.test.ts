@@ -27,6 +27,7 @@ class FakeClient implements ApplicationViewClient {
   public maximumActive = 0;
   public closedViewSet = false;
   public openCount = 0;
+  public hangReopen = false;
   public readonly after: string[] = [];
   public batches: Array<UpdateBatch | Error> = [];
 
@@ -46,8 +47,16 @@ class FakeClient implements ApplicationViewClient {
 
   public async openViewSet(
     _request: OpenViewSetRequest,
+    signal?: AbortSignal,
   ): Promise<OpenViewSetResponse> {
     this.openCount += 1;
+    if (this.hangReopen && this.openCount > 1) {
+      await new Promise<void>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(new Error("aborted")), {
+          once: true,
+        });
+      });
+    }
     const openedId =
       this.openCount === 1
         ? viewSetId
@@ -166,6 +175,18 @@ describe("view controller", () => {
       "vs_111102030405060708090a0b0c0d0e0f",
     );
     await controller.close();
+  });
+
+  it("cancels and joins an in-flight reopen on close", async () => {
+    const client = new FakeClient();
+    client.hangReopen = true;
+    client.batches.push(
+      new HttpApiError(404, "unknown_view_set", "view set is unavailable"),
+    );
+    const controller = await ViewController.open(client, [listView], () => {});
+    await waitUntil(() => client.openCount === 2);
+    await controller.close();
+    expect(client.active).toBe(0);
   });
 });
 

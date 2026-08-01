@@ -17,6 +17,7 @@ export interface PresentationState {
   readonly activeTab: DetailTab;
   readonly detailOpen: boolean;
   readonly sidebarOpen: boolean;
+  readonly layout: "wide" | "compact" | "phone";
 }
 
 export interface InspectionState extends InspectionSnapshot {
@@ -32,6 +33,7 @@ export interface InspectionActions {
   readonly closeDetail: () => void;
   readonly toggleSidebar: () => void;
   readonly closeSidebar: () => void;
+  readonly setLayout: (layout: PresentationState["layout"]) => void;
 }
 
 export type InspectionStore = InspectionState & InspectionActions;
@@ -52,6 +54,12 @@ const EMPTY_SNAPSHOT: InspectionSnapshot = {
   peersByTorrent: {},
   logs: [],
   droppedLogs: 0,
+  viewStatus: {
+    library: { status: "not_requested" },
+    torrentSummary: { status: "not_requested" },
+    peers: { status: "not_requested" },
+    logs: { status: "not_requested" },
+  },
 };
 
 const DEFAULT_PRESENTATION: PresentationState = {
@@ -61,6 +69,7 @@ const DEFAULT_PRESENTATION: PresentationState = {
   activeTab: "peers",
   detailOpen: false,
   sidebarOpen: false,
+  layout: "wide",
 };
 
 export function createInspectionStore(): InspectionStoreApi {
@@ -115,6 +124,11 @@ export function createInspectionStore(): InspectionStoreApi {
     closeSidebar: () => {
       set((state) => ({
         presentation: { ...state.presentation, sidebarOpen: false },
+      }));
+    },
+    setLayout: (layout) => {
+      set((state) => ({
+        presentation: { ...state.presentation, layout },
       }));
     },
   }));
@@ -216,8 +230,8 @@ export function torrentMatchesCategory(
   torrent: TorrentRow,
   category: LibraryCategory,
 ): boolean {
-  if (category === "archived") return torrent.archived;
-  if (torrent.archived) return false;
+  if (category === "archived") return torrent.archived === true;
+  if (torrent.archived === true) return false;
   switch (category) {
     case "all":
       return true;

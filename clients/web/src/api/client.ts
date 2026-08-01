@@ -60,20 +60,27 @@ export class HttpApiError extends Error {
 
 export class HttpApplicationClient implements ApplicationViewClient {
   private closed = false;
+  private readonly ownerId: string;
 
   public constructor(
     private readonly baseUrl: string,
-    private readonly token: string,
+    private readonly token: string | null,
     private readonly origin: string,
-    private readonly fetchImplementation: FetchImplementation = globalThis.fetch,
+    private readonly fetchImplementation: FetchImplementation = (input, init) =>
+      globalThis.fetch(input, init),
     private readonly codec: ApiCodec = new JsonApiCodec(),
+    ownerId: string = generateOwnerId(),
   ) {
-    if (token.length === 0 || token.length > 128) {
+    if (token !== null && (token.length === 0 || token.length > 128)) {
       throw new Error("gateway token must be 1..=128 characters");
     }
     if (origin.length === 0 || origin.length > 512) {
       throw new Error("gateway origin must be 1..=512 characters");
     }
+    if (!/^[0-9a-f]{32}$/.test(ownerId)) {
+      throw new Error("gateway owner ID must be 32 lowercase hexadecimal characters");
+    }
+    this.ownerId = ownerId;
   }
 
   public async hello(signal?: AbortSignal): Promise<ApiHello> {
@@ -193,14 +200,23 @@ export class HttpApplicationClient implements ApplicationViewClient {
       method,
       headers: {
         Accept: "application/json",
-        Authorization: `Bearer ${this.token}`,
         Origin: this.origin,
+        "X-RSTorrent-Owner": this.ownerId,
+        ...(this.token === null
+          ? {}
+          : { Authorization: `Bearer ${this.token}` }),
         ...(encoded === undefined ? {} : { "Content-Type": "application/json" }),
       },
       ...(encoded === undefined ? {} : { body: encoded }),
       ...(signal === undefined ? {} : { signal }),
     });
   }
+}
+
+function generateOwnerId(): string {
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 async function boundedResponseText(response: Response): Promise<string> {

@@ -17,6 +17,7 @@ import { assertApiSchema, SchemaError } from "./api/schema";
 
 const MAX_FRAME_BYTES = 512 * 1024;
 const MAX_COLLECTION = 100_000;
+const MAX_ACTIVE_PEERS = 256;
 const MAX_U32 = 4_294_967_295;
 const DECIMAL = /^(0|[1-9][0-9]*)$/;
 const IDENTIFIER = /^[A-Za-z0-9._-]{1,128}$/;
@@ -288,6 +289,16 @@ function validateViewSnapshot(value: unknown): void {
       validateActivePiece(snapshot.active, pieceCount);
       break;
     }
+    case "peers": {
+      const owningTorrent = string(snapshot.torrent_id, "peer-view torrent ID");
+      torrentId(owningTorrent);
+      const peers = array(snapshot.peers, "active peers");
+      if (peers.length > MAX_ACTIVE_PEERS) {
+        throw new ContractError("active peer view exceeds its row bound");
+      }
+      peers.forEach((peer) => validatePeerView(peer, owningTorrent));
+      break;
+    }
     case "diagnostics":
       array(snapshot.events, "diagnostic events").forEach(
         validateDiagnosticEvent,
@@ -320,6 +331,19 @@ function validateViewPatch(value: unknown): void {
       validateRanges(patch.verified, pieceCount, "verified pieces");
       validateRanges(patch.cleared, pieceCount, "cleared pieces");
       validateActivePiece(patch.active, pieceCount);
+      break;
+    }
+    case "peers": {
+      const owningTorrent = string(patch.torrent_id, "peer-view torrent ID");
+      torrentId(owningTorrent);
+      const upserts = array(patch.upsert, "active peer upserts");
+      if (upserts.length > MAX_ACTIVE_PEERS) {
+        throw new ContractError("active peer patch exceeds its row bound");
+      }
+      upserts.forEach((peer) => validatePeerView(peer, owningTorrent));
+      array(patch.removed, "active peer removals").forEach((connection) =>
+        decimal(connection, "peer connection ID"),
+      );
       break;
     }
     case "diagnostics":
@@ -365,6 +389,102 @@ function validateTorrentView(value: unknown): asserts value is TorrentView {
     boundedString(action, "progress action", 64),
   );
   optionalString(torrent.error, "torrent error", 1_024);
+}
+
+function validatePeerView(value: unknown, owningTorrent: string): void {
+  const peer = asRecord(value, "active peer");
+  decimal(peer.connection_id, "peer connection ID");
+  torrentId(peer.torrent_id);
+  if (peer.torrent_id !== owningTorrent) {
+    throw new ContractError("active peer belongs to another torrent");
+  }
+  optionalDecimal(peer.peer_record_id, "peer record ID");
+  oneOf(peer.direction, "peer direction", ["incoming", "outgoing"]);
+  oneOf(peer.transport, "peer transport", ["tcp", "utp"]);
+  oneOf(peer.lifecycle, "peer lifecycle", [
+    "transport_connecting",
+    "protocol_handshaking",
+    "connected",
+    "disconnecting",
+  ]);
+  oneOf(peer.role, "peer role", ["metadata", "content"]);
+  decimal(peer.lifecycle_age_millis, "peer lifecycle age");
+  boundedString(peer.remote_endpoint, "peer remote endpoint", 128);
+  optionalString(peer.local_endpoint, "peer local endpoint", 128);
+  const sources = array(peer.sources, "peer sources");
+  if (sources.length > 8) throw new ContractError("peer sources exceed their bound");
+  sources.forEach((source) =>
+    oneOf(source, "peer source", [
+      "tracker",
+      "peer_exchange",
+      "dht",
+      "local_discovery",
+      "incoming",
+      "manual",
+      "magnet_hint",
+      "cache",
+    ]),
+  );
+  optionalString(peer.peer_id, "peer ID", 128);
+  optionalString(peer.client_name, "peer client name", 128);
+  [
+    "supports_extensions",
+    "supports_ut_metadata",
+    "local_interested",
+    "remote_interested",
+    "remote_choking",
+    "local_choking",
+  ].forEach((field) => optionalBoolean(peer[field], `peer ${field}`));
+  ["available_piece_count", "wanted_piece_count", "pending_requests", "target_requests"].forEach(
+    (field) => optionalInteger(peer[field], `peer ${field}`, MAX_U32),
+  );
+  [
+    "payload_download_rate_bytes",
+    "payload_downloaded_bytes",
+    "protocol_download_rate_bytes",
+    "protocol_downloaded_bytes",
+    "payload_upload_rate_bytes",
+    "payload_uploaded_bytes",
+    "queued_payload_bytes",
+    "oldest_request_age_millis",
+    "request_timeout_millis",
+    "connected_age_millis",
+    "last_useful_age_millis",
+    "last_payload_age_millis",
+  ].forEach((field) => optionalDecimal(peer[field], `peer ${field}`));
+  if (peer.request_phase !== null) {
+    oneOf(peer.request_phase, "peer request phase", [
+      "slow_start",
+      "steady",
+      "stalled",
+    ]);
+  }
+  if (peer.disconnect_reason !== null) {
+    oneOf(peer.disconnect_reason, "peer disconnect reason", [
+      "connect",
+      "handshake",
+      "protocol",
+      "remote_closed",
+    ]);
+  }
+  const capabilities = asRecord(peer.capabilities, "peer capabilities");
+  [
+    "local_endpoint",
+    "client_name",
+    "ut_metadata",
+    "interest_directions",
+    "local_choke",
+    "piece_availability",
+    "protocol_rates",
+    "upload",
+    "metadata_stage",
+  ].forEach((field) =>
+    oneOf(capabilities[field], `peer capability ${field}`, [
+      "available",
+      "unavailable",
+      "unsupported",
+    ]),
+  );
 }
 
 function validateDiagnosticEvent(value: unknown): void {
@@ -487,6 +607,20 @@ function optionalString(
 ): void {
   if (value !== undefined && value !== null) {
     boundedString(value, label, maximum);
+  }
+}
+
+function optionalDecimal(value: unknown, label: string): void {
+  if (value !== undefined && value !== null) decimal(value, label);
+}
+
+function optionalBoolean(value: unknown, label: string): void {
+  if (value !== undefined && value !== null) boolean(value, label);
+}
+
+function optionalInteger(value: unknown, label: string, maximum: number): void {
+  if (value !== undefined && value !== null) {
+    boundedInteger(value, label, 0, maximum);
   }
 }
 

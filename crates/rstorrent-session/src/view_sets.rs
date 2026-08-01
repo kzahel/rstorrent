@@ -1251,7 +1251,7 @@ mod tests {
     use rstorrent_engine::swarm::ConnectionId;
     use rstorrent_engine::{
         PeerConnectionDirection, PeerConnectionLifecycle, PeerConnectionObservation,
-        PeerConnectionRole, PeerTransport,
+        PeerConnectionRole, PeerContentActivity, PeerRequestWindowPhase, PeerTransport,
     };
 
     const TORRENT_ID: &str = "000102030405060708090a0b0c0d0e0f10111213";
@@ -1810,5 +1810,95 @@ mod tests {
                 ..
             }] if upsert.is_empty() && removed == &["7"]
         ));
+    }
+
+    #[test]
+    fn sixty_active_peer_snapshot_stays_inside_default_queue_bound() {
+        let hub = ViewHub::new(&service_snapshot(0, 0)).expect("hub");
+        let peers = (1..=60)
+            .map(|value| {
+                let connected = value > 30;
+                PeerConnectionObservation {
+                    connection_id: ConnectionId::new(value).expect("connection"),
+                    record_id: None,
+                    endpoint: format!("127.0.0.1:{}", 6_000 + value)
+                        .parse()
+                        .expect("endpoint"),
+                    sources: PeerSources::from_source(PeerSource::Manual),
+                    direction: PeerConnectionDirection::Outgoing,
+                    transport: PeerTransport::Tcp,
+                    lifecycle: if connected {
+                        PeerConnectionLifecycle::Connected
+                    } else {
+                        PeerConnectionLifecycle::TransportConnecting
+                    },
+                    role: if connected {
+                        PeerConnectionRole::Content
+                    } else {
+                        PeerConnectionRole::Metadata
+                    },
+                    started_at: Duration::from_secs(1),
+                    lifecycle_changed_at: Duration::from_secs(2),
+                    peer_id: connected.then_some([value as u8; 20]),
+                    supports_extensions: connected.then_some(true),
+                    content: connected.then_some(PeerContentActivity {
+                        choking: false,
+                        wanted_piece_count: 8,
+                        pending_requests: 2,
+                        target_requests: 4,
+                        queued_payload_bytes: 32 * 1_024,
+                        useful_payload_bytes: 16 * 1_024,
+                        observed_payload_rate: 8 * 1_024,
+                        connected_age: Duration::from_secs(3),
+                        last_useful_age: Some(Duration::from_millis(20)),
+                        last_payload_age: Some(Duration::from_millis(10)),
+                        request_timeout: Duration::from_secs(8),
+                        oldest_request_age: Some(Duration::from_millis(50)),
+                        request_window_phase: PeerRequestWindowPhase::Steady,
+                    }),
+                    close_reason: None,
+                }
+            })
+            .collect::<Vec<_>>();
+        let projection_started = Instant::now();
+        hub.record_peer_connections(TORRENT_ID, Duration::from_secs(5), &peers)
+            .expect("peer projection");
+        let projection_elapsed = projection_started.elapsed();
+        let owner = ViewSetOwner::trusted("pressure-owner");
+        let snapshot_started = Instant::now();
+        let opened = hub
+            .open_view_set(
+                owner.clone(),
+                open_request(vec![ViewSpec::TorrentPeers {
+                    view_id: "peers".to_owned(),
+                    torrent_id: TORRENT_ID.to_owned(),
+                    delivery: ViewDeliveryPolicy::default(),
+                }]),
+            )
+            .expect("peer view set");
+        let snapshot_elapsed = snapshot_started.elapsed();
+        let encoded_bytes = serde_json::to_vec(&opened.initial)
+            .expect("encode snapshot")
+            .len();
+        let view_set = hub.view_set(&owner, &opened.view_set_id).expect("view set");
+        let stats = view_set.stats().expect("view stats");
+        assert!(matches!(
+            opened.initial.updates.as_slice(),
+            [ViewSetUpdate::Snapshot {
+                snapshot: ViewSnapshot::Peers { peers, .. },
+                ..
+            }] if peers.len() == 60
+        ));
+        assert!(encoded_bytes < DEFAULT_VIEW_SET_QUEUE_BYTES as usize);
+        assert!(stats.queue_high_water < DEFAULT_VIEW_SET_QUEUE_BYTES as usize);
+        assert_eq!(stats.reset_count, 0);
+        eprintln!(
+            "peer_view_pressure rows=60 projection_micros={} snapshot_micros={} encoded_bytes={} queue_high_water={} resets={}",
+            projection_elapsed.as_micros(),
+            snapshot_elapsed.as_micros(),
+            encoded_bytes,
+            stats.queue_high_water,
+            stats.reset_count,
+        );
     }
 }

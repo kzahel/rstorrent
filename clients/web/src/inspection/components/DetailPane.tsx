@@ -7,7 +7,7 @@ import {
   formatRate,
   formatTime,
 } from "../format";
-import type { DetailTab, LogRow } from "../model";
+import type { DetailTab, LogRow, ViewMaterialization } from "../model";
 import { visibleLogs } from "../state";
 import { PeerTable } from "./PeerTable";
 import { VirtualTable, type VirtualColumn } from "./VirtualTable";
@@ -85,6 +85,7 @@ export function DetailPane() {
   const closeDetail = useInspectionStore((state) => state.closeDetail);
   const logs = useInspectionStore((state) => state.logs);
   const droppedLogs = useInspectionStore((state) => state.droppedLogs);
+  const logsMaterialization = useInspectionStore((state) => state.viewStatus.logs);
   const selectedLogs = useMemo(
     () => visibleLogs(logs, selectedId),
     [logs, selectedId],
@@ -161,7 +162,7 @@ export function DetailPane() {
               rows={selectedLogs}
               getRowId={(row) => row.id}
               columns={LOG_COLUMNS}
-              emptyMessage="No diagnostic events are available at this demo time."
+              emptyMessage={detailEmptyMessage(logsMaterialization, "diagnostic events")}
               initialSort={{ columnId: "time", direction: "asc" }}
             />
           </div>
@@ -171,6 +172,24 @@ export function DetailPane() {
       </div>
     </section>
   );
+}
+
+function detailEmptyMessage(
+  materialization: ViewMaterialization,
+  noun: string,
+): string {
+  switch (materialization.status) {
+    case "not_requested":
+      return `${titleCase(noun)} are not requested.`;
+    case "loading":
+      return `Loading ${noun}…`;
+    case "unavailable":
+    case "unsupported":
+    case "stale":
+      return materialization.reason;
+    case "ready":
+      return `No ${noun} are currently available.`;
+  }
 }
 
 function GeneralDetail({
@@ -201,7 +220,10 @@ function GeneralDetail({
         <Metric label="Download speed" value={formatRate(torrent.downloadRate)} />
         <Metric label="Upload speed" value={formatRate(torrent.uploadRate)} />
         <Metric label="Connected peers" value={torrent.peersConnected.toLocaleString()} />
-        <Metric label="Known peers" value={torrent.peersKnown.toLocaleString()} />
+        <Metric
+          label="Known peers"
+          value={torrent.peersKnown?.toLocaleString() ?? "—"}
+        />
       </dl>
       <div className={styles.identity}>
         <span>Info hash</span>
@@ -250,8 +272,8 @@ function UnavailableDetail({ tab }: { readonly tab: DetailTab }) {
       <span className={styles.emptyMark} aria-hidden="true">◇</span>
       <strong>{titleCase(tab)} view scaffold</strong>
       <p>
-        This named projection is not connected in Tactical 034. The empty state
-        is intentional and does not claim that the engine has no {tab} data.
+        This named projection is not connected yet. The empty state is
+        intentional and does not claim that the engine has no {tab} data.
       </p>
     </div>
   );

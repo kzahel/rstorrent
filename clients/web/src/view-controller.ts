@@ -30,6 +30,8 @@ export class ViewController {
   private state: ViewSetState;
   private inFlight: AbortController | undefined;
   private polling: Promise<void> | undefined;
+  private reopening: Promise<void> | undefined;
+  private readonly lifetime = new AbortController();
   private closed = false;
   private views: ViewSpec[];
 
@@ -82,25 +84,47 @@ export class ViewController {
 
   public async dispatch(request: RequestEnvelope): Promise<ResponseEnvelope> {
     this.ensureOpen();
-    const response = await this.client.dispatch(request);
+    const response = await this.client.dispatch(request, this.lifetime.signal);
     this.wake();
     return response;
   }
 
   public async setViews(views: ViewSpec[]): Promise<void> {
     this.ensureOpen();
-    const request: UpdateViewSetRequest = { views };
-    await this.client.updateViewSet(this.state.viewSetId, request);
     this.views = [...views];
+    const request: UpdateViewSetRequest = { views: this.views };
+    try {
+      await this.client.updateViewSet(
+        this.state.viewSetId,
+        request,
+        this.lifetime.signal,
+      );
+    } catch (error) {
+      const failure = asError(error);
+      if (!isUnavailableViewSet(failure)) throw failure;
+      this.onError(failure);
+      await this.reopen();
+    }
+    this.wake();
+  }
+
+  public requestImmediatePoll(): void {
+    this.ensureOpen();
     this.wake();
   }
 
   public async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    this.lifetime.abort("view controller closed");
     this.inFlight?.abort("view controller closed");
     await this.polling;
-    await this.client.closeViewSet(this.state.viewSetId);
+    await this.reopening?.catch(() => {});
+    try {
+      await this.client.closeViewSet(this.state.viewSetId);
+    } catch (error) {
+      if (!isUnavailableViewSet(asError(error))) throw error;
+    }
   }
 
   private async poll(): Promise<void> {
@@ -126,19 +150,9 @@ export class ViewController {
         if (request.signal.aborted) continue;
         const failure = asError(error);
         this.onError(failure);
-        if (
-          failure instanceof HttpApiError &&
-          (failure.code === "unknown_view_set" ||
-            failure.code === "view_set_closed")
-        ) {
+        if (isUnavailableViewSet(failure)) {
           try {
-            const reopened = await this.client.openViewSet(
-              { views: this.views, options: {} },
-              request.signal,
-            );
-            const next = reduceOpenViewSet(reopened);
-            this.onState(next);
-            this.state = next;
+            await this.reopen();
             retryMillis = this.retryBaseMillis;
             continue;
           } catch (reopenError) {
@@ -164,9 +178,43 @@ export class ViewController {
     this.inFlight?.abort("immediate poll requested");
   }
 
+  private async reopen(): Promise<void> {
+    if (this.reopening !== undefined) return this.reopening;
+    const reopening = (async () => {
+      const response = await this.client.openViewSet(
+        { views: this.views, options: {} },
+        this.lifetime.signal,
+      );
+      const next = reduceOpenViewSet(response);
+      try {
+        this.onState(next);
+      } catch (error) {
+        await this.client.closeViewSet(
+          response.view_set_id,
+          this.lifetime.signal,
+        );
+        throw error;
+      }
+      this.state = next;
+    })();
+    this.reopening = reopening;
+    try {
+      await reopening;
+    } finally {
+      if (this.reopening === reopening) this.reopening = undefined;
+    }
+  }
+
   private ensureOpen(): void {
     if (this.closed) throw new Error("view controller is closed");
   }
+}
+
+function isUnavailableViewSet(error: Error): boolean {
+  return (
+    error instanceof HttpApiError &&
+    (error.code === "unknown_view_set" || error.code === "view_set_closed")
+  );
 }
 
 function abortableDelay(millis: number, signal: AbortSignal): Promise<void> {

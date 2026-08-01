@@ -1,6 +1,7 @@
 import type { InspectionApplication } from "../application";
 import type {
   CommandResult,
+  DesiredInspectionViews,
   DemoScenarioId,
   InspectionCommand,
   InspectionSnapshot,
@@ -41,6 +42,11 @@ export class DemoApplication implements InspectionApplication {
   private extraTorrentCount = 0;
   private commandLogs: LogRow[] = [];
   private snapshot: InspectionSnapshot;
+  private desiredViews: DesiredInspectionViews = {
+    library: true,
+    torrentId: null,
+    detail: null,
+  };
 
   constructor(options: DemoApplicationOptions) {
     this.scenarioId = options.scenarioId;
@@ -60,6 +66,13 @@ export class DemoApplication implements InspectionApplication {
       this.listeners.delete(listener);
       this.reconcileTimer();
     };
+  }
+
+  async setViews(views: DesiredInspectionViews): Promise<void> {
+    this.ensureOpen();
+    if (sameDesiredViews(this.desiredViews, views)) return;
+    this.desiredViews = { ...views };
+    this.replaceSnapshot();
   }
 
   async dispatch(command: InspectionCommand): Promise<CommandResult> {
@@ -147,17 +160,20 @@ export class DemoApplication implements InspectionApplication {
   }
 
   private buildSnapshot(): InspectionSnapshot {
-    return applyOverlays(
-      buildScenarioSnapshot(
-        this.scenarioId,
-        this.elapsedMs,
-        this.running,
-        this.revision,
+    return materializeDemoViews(
+      applyOverlays(
+        buildScenarioSnapshot(
+          this.scenarioId,
+          this.elapsedMs,
+          this.running,
+          this.revision,
+        ),
+        this.paused,
+        this.archived,
+        this.extraTorrentCount,
+        this.commandLogs,
       ),
-      this.paused,
-      this.archived,
-      this.extraTorrentCount,
-      this.commandLogs,
+      this.desiredViews,
     );
   }
 
@@ -204,6 +220,66 @@ export class DemoApplication implements InspectionApplication {
   private ensureOpen(): void {
     if (this.closed) throw new Error("demo application is closed");
   }
+}
+
+function sameDesiredViews(
+  left: DesiredInspectionViews,
+  right: DesiredInspectionViews,
+): boolean {
+  return (
+    left.library === right.library &&
+    left.torrentId === right.torrentId &&
+    left.detail === right.detail
+  );
+}
+
+function materializeDemoViews(
+  source: InspectionSnapshot,
+  desired: DesiredInspectionViews,
+): InspectionSnapshot {
+  const selected =
+    desired.torrentId === null ? undefined : source.torrents[desired.torrentId];
+  const torrents = desired.library
+    ? source.torrents
+    : selected === undefined
+      ? {}
+      : { [selected.id]: selected };
+  const peersByTorrent =
+    desired.detail === "peers" && desired.torrentId !== null
+      ? {
+          [desired.torrentId]: source.peersByTorrent[desired.torrentId] ?? {
+            order: [],
+            rows: {},
+          },
+        }
+      : {};
+  return {
+    ...source,
+    torrentOrder: desired.library ? source.torrentOrder : [],
+    torrents,
+    peersByTorrent,
+    logs: desired.detail === "logs" ? source.logs : [],
+    droppedLogs: desired.detail === "logs" ? source.droppedLogs : 0,
+    viewStatus: {
+      library: desired.library
+        ? { status: "ready" }
+        : { status: "not_requested" },
+      torrentSummary:
+        desired.torrentId === null
+          ? { status: "not_requested" }
+          : selected === undefined
+            ? { status: "unavailable", reason: "Torrent is no longer present" }
+            : { status: "ready" },
+      peers:
+        desired.detail === "peers"
+          ? { status: "ready" }
+          : { status: "not_requested" },
+      logs:
+        desired.detail === "logs"
+          ? { status: "ready" }
+          : { status: "not_requested" },
+    },
+  };
 }
 
 function applyOverlays(
@@ -264,8 +340,11 @@ function applyOverlays(
     session: {
       ...source.session,
       downloadRate: active.reduce((sum, row) => sum + row.downloadRate, 0),
-      uploadRate: active.reduce((sum, row) => sum + row.uploadRate, 0),
-      knownPeers: Object.values(torrents).reduce((sum, row) => sum + row.peersKnown, 0),
+      uploadRate: active.reduce((sum, row) => sum + (row.uploadRate ?? 0), 0),
+      knownPeers: Object.values(torrents).reduce(
+        (sum, row) => sum + (row.peersKnown ?? 0),
+        0,
+      ),
     },
     torrentOrder,
     torrents,

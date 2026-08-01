@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use rstorrent_gateway::{GatewayConfig, bind};
+use rstorrent_gateway::{GatewayAuthentication, GatewayConfig, bind};
 use rstorrent_session::{
     ApplicationConfig, ApplicationService, ConfiguredStorageRoot, NetworkConfig, NetworkPolicy,
 };
@@ -16,12 +16,37 @@ use tokio_util::sync::CancellationToken;
 async fn main() -> Result<(), Box<dyn Error>> {
     let profile_root = required_path("RSTORRENT_PROFILE_ROOT")?;
     let storage_root = required_path("RSTORRENT_STORAGE_ROOT")?;
-    let token = required_string("RSTORRENT_GATEWAY_TOKEN")?;
     let origin =
         env::var("RSTORRENT_GATEWAY_ORIGIN").unwrap_or_else(|_| "http://127.0.0.1:5173".to_owned());
-    let bind_addr = env::var("RSTORRENT_GATEWAY_BIND")
-        .unwrap_or_else(|_| "127.0.0.1:3030".to_owned())
-        .parse::<SocketAddr>()?;
+    let authentication = env::var("RSTORRENT_GATEWAY_AUTH").unwrap_or_else(|_| "bearer".to_owned());
+    let (bind_addr, authentication) = match authentication.as_str() {
+        "bearer" => (
+            env::var("RSTORRENT_GATEWAY_BIND")
+                .unwrap_or_else(|_| "127.0.0.1:3030".to_owned())
+                .parse::<SocketAddr>()?,
+            GatewayAuthentication::Bearer {
+                token: required_string("RSTORRENT_GATEWAY_TOKEN")?,
+            },
+        ),
+        "unauthenticated_loopback_development" => {
+            if env::var_os("RSTORRENT_GATEWAY_BIND").is_some() {
+                return Err(
+                    "RSTORRENT_GATEWAY_BIND is not accepted in unauthenticated development mode"
+                        .into(),
+                );
+            }
+            (
+                SocketAddr::from(([127, 0, 0, 1], 0)),
+                GatewayAuthentication::UnauthenticatedLoopbackDevelopment,
+            )
+        }
+        value => {
+            return Err(format!(
+                "RSTORRENT_GATEWAY_AUTH must be bearer or unauthenticated_loopback_development; got {value}"
+            )
+            .into());
+        }
+    };
     let network_policy = match env::var("RSTORRENT_NETWORK_POLICY")
         .unwrap_or_else(|_| "loopback_only".to_owned())
         .as_str()
@@ -52,7 +77,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let server = bind(
         GatewayConfig {
             bind: bind_addr,
-            token,
+            authentication,
             allowed_origin: origin,
             max_connections: rstorrent_gateway::MAX_CONNECTIONS,
         },

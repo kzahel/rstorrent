@@ -15,7 +15,8 @@
   background: var(--success);
 }
 
-.state[data-state="connecting"] > span {
+.state[data-state="connecting"] > span,
+.state[data-state="handshaking"] > span {
   background: var(--accent);
 }
 
@@ -24,7 +25,7 @@
 }
 
 .state[data-state="stalled"] > span,
-.state[data-state="disconnected"] > span {
+.state[data-state="disconnecting"] > span {
   background: var(--danger);
 }
 

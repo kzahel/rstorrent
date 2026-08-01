@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useInspectionDispatch, useInspectionStore } from "../context";
 import { formatRate } from "../format";
@@ -10,6 +10,7 @@ import styles from "./App.module.css";
 
 export function App() {
   const session = useInspectionStore((state) => state.session);
+  const demo = useInspectionStore((state) => state.demo);
   const selected = useInspectionStore((state) =>
     state.presentation.selectedTorrentId === null
       ? undefined
@@ -23,8 +24,24 @@ export function App() {
   );
   const toggleSidebar = useInspectionStore((state) => state.toggleSidebar);
   const closeSidebar = useInspectionStore((state) => state.closeSidebar);
+  const setLayout = useInspectionStore((state) => state.setLayout);
   const dispatch = useInspectionDispatch();
   const [status, setStatus] = useState("");
+
+  useEffect(() => {
+    const update = () => {
+      setLayout(
+        window.innerWidth < 680
+          ? "phone"
+          : window.innerWidth < 1_100
+            ? "compact"
+            : "wide",
+      );
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [setLayout]);
 
   const send = async (command: Parameters<typeof dispatch>[0]) => {
     try {
@@ -58,7 +75,11 @@ export function App() {
         <div className={styles.sessionStats} aria-label="Session transfer rates">
           <span><b aria-hidden="true">↓</b> {formatRate(session.downloadRate)}</span>
           <span><b aria-hidden="true">↑</b> {formatRate(session.uploadRate)}</span>
-          <span className={styles.peerTotal}>{session.knownPeers.toLocaleString()} peers</span>
+          <span className={styles.peerTotal}>
+            {session.knownPeers === null
+              ? "Peers unavailable"
+              : `${session.knownPeers.toLocaleString()} peers`}
+          </span>
         </div>
         <div className={styles.connection} data-state={session.connection}>
           <span aria-hidden="true" />
@@ -79,10 +100,14 @@ export function App() {
         <main className={styles.main}>
           <section className={styles.collection} aria-label="Torrent collection">
             <div className={styles.toolbar}>
-              <button type="button" className={styles.primaryAction} onClick={() => void send({ type: "add_demo_torrent" })}>
-                <span aria-hidden="true">＋</span> Add demo
-              </button>
-              <span className={styles.divider} aria-hidden="true" />
+              {demo === null ? null : (
+                <>
+                  <button type="button" className={styles.primaryAction} onClick={() => void send({ type: "add_demo_torrent" })}>
+                    <span aria-hidden="true">＋</span> Add demo
+                  </button>
+                  <span className={styles.divider} aria-hidden="true" />
+                </>
+              )}
               <button
                 type="button"
                 disabled={selected === undefined || selected.status === "downloading" || selected.status === "metadata"}
@@ -97,20 +122,22 @@ export function App() {
               >
                 <span aria-hidden="true">Ⅱ</span> Pause
               </button>
-              <button
-                type="button"
-                disabled={selected === undefined}
-                onClick={() =>
-                  selected === undefined
-                    ? undefined
-                    : void send({
-                        type: selected.archived ? "unarchive" : "archive",
-                        torrentId: selected.id,
-                      })
-                }
-              >
-                <span aria-hidden="true">□</span> {selected?.archived ? "Restore" : "Archive"}
-              </button>
+              {demo === null ? null : (
+                <button
+                  type="button"
+                  disabled={selected === undefined || selected.archived === null}
+                  onClick={() =>
+                    selected === undefined || selected.archived === null
+                      ? undefined
+                      : void send({
+                          type: selected.archived ? "unarchive" : "archive",
+                          torrentId: selected.id,
+                        })
+                  }
+                >
+                  <span aria-hidden="true">□</span> {selected?.archived ? "Restore" : "Archive"}
+                </button>
+              )}
               <output className={styles.commandStatus} aria-live="polite">{status}</output>
             </div>
             <div className={styles.tableWrap}>

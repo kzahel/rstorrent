@@ -102,5 +102,11 @@ function snapshot(rows: readonly TorrentRow[]): InspectionSnapshot {
     peersByTorrent: {},
     logs: [],
     droppedLogs: 0,
+    viewStatus: {
+      library: { status: "ready" },
+      torrentSummary: { status: "not_requested" },
+      peers: { status: "not_requested" },
+      logs: { status: "not_requested" },
+    },
   };
 }

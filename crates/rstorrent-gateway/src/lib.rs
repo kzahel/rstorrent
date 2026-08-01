@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! Bounded loopback WebSocket adapter for the application contract.
+//! Bounded loopback HTTP and WebSocket adapter for the application contract.
 
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use axum::extract::rejection::{JsonRejection, QueryRejection};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, Path, Query, State};
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -28,6 +28,7 @@ use tokio::net::TcpListener;
 use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore, mpsc};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use tower_http::cors::CorsLayer;
 use ts_rs::TS;
 
 pub const GATEWAY_CONTRACT_VERSION: u16 = 1;
@@ -38,15 +39,33 @@ pub const MAX_CONNECTIONS: usize = 8;
 pub const MAX_SUBSCRIPTIONS_PER_CONNECTION: usize = 8;
 pub const MAX_TOKEN_BYTES: usize = 128;
 pub const MAX_ORIGIN_BYTES: usize = 512;
+pub const HTTP_OWNER_HEX_BYTES: usize = 32;
 
 static NEXT_HTTP_OWNER: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone)]
 pub struct GatewayConfig {
     pub bind: SocketAddr,
-    pub token: String,
+    pub authentication: GatewayAuthentication,
     pub allowed_origin: String,
     pub max_connections: usize,
+}
+
+#[derive(Clone)]
+pub enum GatewayAuthentication {
+    Bearer { token: String },
+    UnauthenticatedLoopbackDevelopment,
+}
+
+impl fmt::Debug for GatewayAuthentication {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Bearer { .. } => formatter.write_str("Bearer { token: [redacted] }"),
+            Self::UnauthenticatedLoopbackDevelopment => {
+                formatter.write_str("UnauthenticatedLoopbackDevelopment")
+            }
+        }
+    }
 }
 
 impl fmt::Debug for GatewayConfig {
@@ -54,7 +73,7 @@ impl fmt::Debug for GatewayConfig {
         formatter
             .debug_struct("GatewayConfig")
             .field("bind", &self.bind)
-            .field("token", &"[redacted]")
+            .field("authentication", &self.authentication)
             .field("allowed_origin", &self.allowed_origin)
             .field("max_connections", &self.max_connections)
             .finish()
@@ -65,7 +84,16 @@ impl GatewayConfig {
     pub fn loopback(token: String, allowed_origin: String) -> Self {
         Self {
             bind: SocketAddr::from(([127, 0, 0, 1], 3030)),
-            token,
+            authentication: GatewayAuthentication::Bearer { token },
+            allowed_origin,
+            max_connections: MAX_CONNECTIONS,
+        }
+    }
+
+    pub fn unauthenticated_loopback_development(allowed_origin: String) -> Self {
+        Self {
+            bind: SocketAddr::from(([127, 0, 0, 1], 0)),
+            authentication: GatewayAuthentication::UnauthenticatedLoopbackDevelopment,
             allowed_origin,
             max_connections: MAX_CONNECTIONS,
         }
@@ -77,15 +105,40 @@ impl GatewayConfig {
                 "the proof gateway only binds a loopback address".to_owned(),
             ));
         }
-        if self.token.is_empty() || self.token.len() > MAX_TOKEN_BYTES {
-            return Err(GatewayError::Configuration(format!(
-                "gateway token must be 1..={MAX_TOKEN_BYTES} bytes"
-            )));
+        match &self.authentication {
+            GatewayAuthentication::Bearer { token }
+                if token.is_empty() || token.len() > MAX_TOKEN_BYTES =>
+            {
+                return Err(GatewayError::Configuration(format!(
+                    "gateway token must be 1..={MAX_TOKEN_BYTES} bytes"
+                )));
+            }
+            GatewayAuthentication::UnauthenticatedLoopbackDevelopment if self.bind.port() != 0 => {
+                return Err(GatewayError::Configuration(
+                    "unauthenticated development mode requires an OS-assigned port".to_owned(),
+                ));
+            }
+            _ => {}
         }
         if self.allowed_origin.is_empty() || self.allowed_origin.len() > MAX_ORIGIN_BYTES {
             return Err(GatewayError::Configuration(format!(
                 "allowed origin must be 1..={MAX_ORIGIN_BYTES} bytes"
             )));
+        }
+        if HeaderValue::from_str(&self.allowed_origin).is_err() {
+            return Err(GatewayError::Configuration(
+                "allowed origin is not a valid HTTP header value".to_owned(),
+            ));
+        }
+        if matches!(
+            self.authentication,
+            GatewayAuthentication::UnauthenticatedLoopbackDevelopment
+        ) && !is_loopback_http_origin(&self.allowed_origin)
+        {
+            return Err(GatewayError::Configuration(
+                "unauthenticated development mode requires an exact HTTP loopback origin with a port"
+                    .to_owned(),
+            ));
         }
         if self.max_connections == 0 || self.max_connections > MAX_CONNECTIONS {
             return Err(GatewayError::Configuration(format!(
@@ -212,18 +265,18 @@ impl Error for GatewayError {
 
 #[derive(Clone)]
 struct GatewayState {
-    token: Arc<str>,
+    authentication: Arc<GatewayAuthentication>,
     allowed_origin: Arc<str>,
     service: Arc<Mutex<ApplicationService>>,
     connections: Arc<Semaphore>,
-    http_owner: ViewSetOwner,
+    http_owner_namespace: u64,
 }
 
 impl fmt::Debug for GatewayState {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("GatewayState")
-            .field("token", &"[redacted]")
+            .field("authentication", &self.authentication)
             .field("allowed_origin", &self.allowed_origin)
             .field(
                 "available_connections",
@@ -243,14 +296,11 @@ pub async fn bind(
         .map_err(GatewayError::Bind)?;
     let local_addr = listener.local_addr().map_err(GatewayError::Bind)?;
     let state = GatewayState {
-        token: Arc::from(config.token),
+        authentication: Arc::new(config.authentication),
         allowed_origin: Arc::from(config.allowed_origin),
         service,
         connections: Arc::new(Semaphore::new(config.max_connections)),
-        http_owner: ViewSetOwner::trusted(format!(
-            "gateway-http-{}",
-            NEXT_HTTP_OWNER.fetch_add(1, Ordering::Relaxed)
-        )),
+        http_owner_namespace: NEXT_HTTP_OWNER.fetch_add(1, Ordering::Relaxed),
     };
     Ok(GatewayServer {
         listener,
@@ -281,6 +331,17 @@ impl GatewayServer {
 
     pub async fn serve(self, shutdown: CancellationToken) -> Result<(), GatewayError> {
         let service = self.state.service.clone();
+        let allowed_origin =
+            HeaderValue::from_str(&self.state.allowed_origin).expect("validated allowed origin");
+        let cors = CorsLayer::new()
+            .allow_origin(allowed_origin)
+            .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+            .allow_headers([
+                header::ACCEPT,
+                header::AUTHORIZATION,
+                header::CONTENT_TYPE,
+                HeaderName::from_static("x-rstorrent-owner"),
+            ]);
         let router = Router::new()
             .route("/control", get(upgrade))
             .route("/api/v1/hello", get(api_hello))
@@ -298,6 +359,7 @@ impl GatewayServer {
             .layer(axum::extract::DefaultBodyLimit::max(
                 MAX_INCOMING_MESSAGE_BYTES,
             ))
+            .layer(cors)
             .with_state(self.state);
         axum::serve(
             self.listener,
@@ -310,6 +372,24 @@ impl GatewayServer {
         .await
         .map_err(GatewayError::Serve)
     }
+}
+
+fn is_loopback_http_origin(origin: &str) -> bool {
+    let Ok(uri) = origin.parse::<Uri>() else {
+        return false;
+    };
+    if uri.scheme_str() != Some("http") {
+        return false;
+    }
+    let Some(authority) = uri.authority() else {
+        return false;
+    };
+    if authority.port_u16().is_none() || !matches!(authority.host(), "127.0.0.1" | "[::1]" | "::1")
+    {
+        return false;
+    }
+    uri.path_and_query()
+        .is_none_or(|path| path.as_str().is_empty() || path.as_str() == "/")
 }
 
 #[derive(Debug, Deserialize)]
@@ -354,18 +434,15 @@ async fn open_view_set(
     headers: HeaderMap,
     request: Result<Json<OpenViewSetRequest>, JsonRejection>,
 ) -> Response {
-    if let Err(error) = authenticate_http(&state, &headers) {
-        return error.into_response();
-    }
+    let owner = match authenticate_http(&state, &headers) {
+        Ok(owner) => owner,
+        Err(error) => return error.into_response(),
+    };
     let Json(request) = match request {
         Ok(request) => request,
         Err(error) => return invalid_request(error.body_text()),
     };
-    let result = state
-        .service
-        .lock()
-        .await
-        .open_view_set(state.http_owner.clone(), request);
+    let result = state.service.lock().await.open_view_set(owner, request);
     match result {
         Ok(response) => json_response(StatusCode::CREATED, &response),
         Err(error) => view_set_error(error),
@@ -378,9 +455,10 @@ async fn update_view_set(
     Path(id): Path<String>,
     request: Result<Json<UpdateViewSetRequest>, JsonRejection>,
 ) -> Response {
-    if let Err(error) = authenticate_http(&state, &headers) {
-        return error.into_response();
-    }
+    let owner = match authenticate_http(&state, &headers) {
+        Ok(owner) => owner,
+        Err(error) => return error.into_response(),
+    };
     if !valid_view_set_id(&id) {
         return invalid_request("view-set ID is invalid");
     }
@@ -392,7 +470,7 @@ async fn update_view_set(
         .service
         .lock()
         .await
-        .update_view_set(&state.http_owner, &id, request);
+        .update_view_set(&owner, &id, request);
     match result {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => view_set_error(error),
@@ -405,9 +483,10 @@ async fn view_set_updates(
     Path(id): Path<String>,
     query: Result<Query<UpdatesQuery>, QueryRejection>,
 ) -> Response {
-    if let Err(error) = authenticate_http(&state, &headers) {
-        return error.into_response();
-    }
+    let owner = match authenticate_http(&state, &headers) {
+        Ok(owner) => owner,
+        Err(error) => return error.into_response(),
+    };
     if !valid_view_set_id(&id) {
         return invalid_request("view-set ID is invalid");
     }
@@ -420,7 +499,7 @@ async fn view_set_updates(
     }
     let view_set = {
         let service = state.service.lock().await;
-        service.view_set(&state.http_owner, &id)
+        service.view_set(&owner, &id)
     };
     let view_set = match view_set {
         Ok(view_set) => view_set,
@@ -437,18 +516,14 @@ async fn close_view_set(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
-    if let Err(error) = authenticate_http(&state, &headers) {
-        return error.into_response();
-    }
+    let owner = match authenticate_http(&state, &headers) {
+        Ok(owner) => owner,
+        Err(error) => return error.into_response(),
+    };
     if !valid_view_set_id(&id) {
         return invalid_request("view-set ID is invalid");
     }
-    match state
-        .service
-        .lock()
-        .await
-        .close_view_set(&state.http_owner, &id)
-    {
+    match state.service.lock().await.close_view_set(&owner, &id) {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => view_set_error(error),
     }
@@ -458,13 +533,14 @@ async fn close_view_set(
 enum HttpAuthError {
     Origin,
     Credential,
+    Owner,
 }
 
 impl HttpAuthError {
     fn into_response(self) -> Response {
         let status = match self {
             Self::Origin => StatusCode::FORBIDDEN,
-            Self::Credential => StatusCode::UNAUTHORIZED,
+            Self::Credential | Self::Owner => StatusCode::UNAUTHORIZED,
         };
         api_error(
             status,
@@ -474,7 +550,10 @@ impl HttpAuthError {
     }
 }
 
-fn authenticate_http(state: &GatewayState, headers: &HeaderMap) -> Result<(), HttpAuthError> {
+fn authenticate_http(
+    state: &GatewayState,
+    headers: &HeaderMap,
+) -> Result<ViewSetOwner, HttpAuthError> {
     if headers
         .get(header::ORIGIN)
         .and_then(|value| value.to_str().ok())
@@ -482,17 +561,32 @@ fn authenticate_http(state: &GatewayState, headers: &HeaderMap) -> Result<(), Ht
     {
         return Err(HttpAuthError::Origin);
     }
-    let credential = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "));
-    if credential.is_none_or(|credential| {
-        credential.len() > MAX_TOKEN_BYTES
-            || !constant_time_equal(credential.as_bytes(), state.token.as_bytes())
-    }) {
-        return Err(HttpAuthError::Credential);
+    if let GatewayAuthentication::Bearer { token } = state.authentication.as_ref() {
+        let credential = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.strip_prefix("Bearer "));
+        if credential.is_none_or(|credential| {
+            credential.len() > MAX_TOKEN_BYTES
+                || !constant_time_equal(credential.as_bytes(), token.as_bytes())
+        }) {
+            return Err(HttpAuthError::Credential);
+        }
     }
-    Ok(())
+    let owner = headers
+        .get("x-rstorrent-owner")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| {
+            value.len() == HTTP_OWNER_HEX_BYTES
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+        })
+        .ok_or(HttpAuthError::Owner)?;
+    Ok(ViewSetOwner::trusted(format!(
+        "gateway-http-{}-{owner}",
+        state.http_owner_namespace
+    )))
 }
 
 fn view_set_error(error: ViewSetError) -> Response {
@@ -681,7 +775,7 @@ async fn serve_connection(socket: WebSocket, state: GatewayState, _permit: Owned
                     break;
                 }
                 GatewayClientMessage::Authenticate { token, .. }
-                    if constant_time_equal(token.as_bytes(), state.token.as_bytes()) =>
+                    if bearer_token_matches(&state.authentication, &token) =>
                 {
                     authenticated = true;
                     if outgoing
@@ -859,6 +953,15 @@ async fn serve_connection(socket: WebSocket, state: GatewayState, _permit: Owned
     let _ = writer.await;
 }
 
+fn bearer_token_matches(authentication: &GatewayAuthentication, candidate: &str) -> bool {
+    match authentication {
+        GatewayAuthentication::Bearer { token } => {
+            constant_time_equal(candidate.as_bytes(), token.as_bytes())
+        }
+        GatewayAuthentication::UnauthenticatedLoopbackDevelopment => false,
+    }
+}
+
 fn spawn_forwarder(
     subscription: ViewSubscription,
     outgoing: mpsc::Sender<GatewayServerMessage>,
@@ -949,8 +1052,8 @@ mod tests {
     use tokio_util::sync::CancellationToken;
 
     use super::{
-        GATEWAY_CONTRACT_VERSION, GatewayClientMessage, GatewayConfig, GatewayErrorCode,
-        GatewayServerMessage, bind, constant_time_equal,
+        GATEWAY_CONTRACT_VERSION, GatewayAuthentication, GatewayClientMessage, GatewayConfig,
+        GatewayErrorCode, GatewayServerMessage, bind, constant_time_equal,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -1007,10 +1110,32 @@ mod tests {
         origin: Option<&str>,
         body: Option<String>,
     ) -> (u16, Vec<u8>) {
+        http_request_as(
+            address,
+            method,
+            path,
+            token,
+            origin,
+            Some("00000000000000000000000000000001"),
+            body,
+        )
+        .await
+    }
+
+    async fn http_request_as(
+        address: SocketAddr,
+        method: &str,
+        path: &str,
+        token: Option<&str>,
+        origin: Option<&str>,
+        owner: Option<&str>,
+        body: Option<String>,
+    ) -> (u16, Vec<u8>) {
         let method = method.to_owned();
         let path = path.to_owned();
         let token = token.map(str::to_owned);
         let origin = origin.map(str::to_owned);
+        let owner = owner.map(str::to_owned);
         tokio::task::spawn_blocking(move || {
             let body = body.unwrap_or_default();
             let mut request = format!(
@@ -1022,6 +1147,9 @@ mod tests {
             }
             if let Some(origin) = origin {
                 request.push_str(&format!("Origin: {origin}\r\n"));
+            }
+            if let Some(owner) = owner {
+                request.push_str(&format!("X-RSTorrent-Owner: {owner}\r\n"));
             }
             if !body.is_empty() {
                 request.push_str("Content-Type: application/json\r\n");
@@ -1070,7 +1198,9 @@ mod tests {
         let server = bind(
             GatewayConfig {
                 bind: "127.0.0.1:0".parse().expect("address"),
-                token: "correct-token".to_owned(),
+                authentication: GatewayAuthentication::Bearer {
+                    token: "correct-token".to_owned(),
+                },
                 allowed_origin: "http://127.0.0.1:5173".to_owned(),
                 max_connections: 2,
             },
@@ -1234,7 +1364,9 @@ mod tests {
         let server = bind(
             GatewayConfig {
                 bind: "127.0.0.1:0".parse().expect("address"),
-                token: "correct-token".to_owned(),
+                authentication: GatewayAuthentication::Bearer {
+                    token: "correct-token".to_owned(),
+                },
                 allowed_origin: "http://127.0.0.1:5173".to_owned(),
                 max_connections: 2,
             },
@@ -1291,6 +1423,20 @@ mod tests {
             .0,
             200
         );
+        assert_eq!(
+            http_request_as(
+                address,
+                "GET",
+                "/api/v1/hello",
+                Some("correct-token"),
+                Some("http://127.0.0.1:5173"),
+                None,
+                None,
+            )
+            .await
+            .0,
+            401
+        );
 
         let open_body = serde_json::json!({
             "views": [{
@@ -1316,6 +1462,21 @@ mod tests {
         let replay_path = format!(
             "/api/v1/view-sets/{}/updates?after=0&wait_ms=0",
             opened.view_set_id
+        );
+        assert_eq!(
+            http_request_as(
+                address,
+                "GET",
+                &replay_path,
+                Some("correct-token"),
+                Some("http://127.0.0.1:5173"),
+                Some("00000000000000000000000000000002"),
+                None,
+            )
+            .await
+            .0,
+            404,
+            "another browser owner must not acquire a view set by ID"
         );
         let (status, body) = http_request(
             address,
@@ -1393,13 +1554,72 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn unauthenticated_development_mode_is_ephemeral_and_origin_bounded() {
+        let root = test_root("http-development");
+        let service = test_service(&root).await;
+        let origin = "http://127.0.0.1:4177";
+        let server = bind(
+            GatewayConfig::unauthenticated_loopback_development(origin.to_owned()),
+            service.clone(),
+        )
+        .await
+        .expect("bind development gateway");
+        assert_ne!(server.local_addr().port(), 0);
+        let address = server.local_addr();
+        let shutdown = CancellationToken::new();
+        let task = tokio::spawn(server.serve(shutdown.clone()));
+
+        assert_eq!(
+            http_request(address, "GET", "/api/v1/hello", None, Some(origin), None)
+                .await
+                .0,
+            200
+        );
+        assert_eq!(
+            http_request(
+                address,
+                "GET",
+                "/api/v1/hello",
+                None,
+                Some("http://127.0.0.1:4178"),
+                None,
+            )
+            .await
+            .0,
+            403
+        );
+
+        shutdown.cancel();
+        task.await
+            .expect("server join")
+            .expect("server termination");
+        service.lock().await.shutdown().await.expect("shutdown");
+        drop(service);
+        std::fs::remove_dir_all(root).expect("remove root");
+    }
+
+    #[test]
+    fn unauthenticated_development_configuration_rejects_fixed_or_remote_scope() {
+        let mut fixed =
+            GatewayConfig::unauthenticated_loopback_development("http://127.0.0.1:4177".to_owned());
+        fixed.bind.set_port(3030);
+        assert!(fixed.validate().is_err());
+        let remote_origin = GatewayConfig::unauthenticated_loopback_development(
+            "https://example.invalid".to_owned(),
+        );
+        assert!(remote_origin.validate().is_err());
+    }
+
+    #[tokio::test]
     async fn http_view_sets_are_isolated_between_gateway_owners() {
         let root = test_root("http-owner");
         let service = test_service(&root).await;
         let first = bind(
             GatewayConfig {
                 bind: "127.0.0.1:0".parse().expect("address"),
-                token: "first-token".to_owned(),
+                authentication: GatewayAuthentication::Bearer {
+                    token: "first-token".to_owned(),
+                },
                 allowed_origin: "http://first.invalid".to_owned(),
                 max_connections: 1,
             },
@@ -1410,7 +1630,9 @@ mod tests {
         let second = bind(
             GatewayConfig {
                 bind: "127.0.0.1:0".parse().expect("address"),
-                token: "second-token".to_owned(),
+                authentication: GatewayAuthentication::Bearer {
+                    token: "second-token".to_owned(),
+                },
                 allowed_origin: "http://second.invalid".to_owned(),
                 max_connections: 1,
             },

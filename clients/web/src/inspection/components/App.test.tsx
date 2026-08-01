@@ -36,7 +36,7 @@ describe("inspection application", () => {
     renderScenario("healthy-download", 42_000);
     expect(screen.getByRole("navigation", { name: "Torrent library" })).toBeVisible();
     expect(screen.getByRole("grid", { name: "Torrent library" })).toHaveAttribute("aria-rowcount", "4");
-    expect(screen.getByRole("grid", { name: "Connected and candidate peers" })).toBeVisible();
+    expect(screen.getByRole("grid", { name: "Active peer connections" })).toBeVisible();
 
     await user.click(screen.getByRole("tab", { name: "General" }));
     expect(screen.getByText("Selected transfer")).toBeVisible();
@@ -60,7 +60,7 @@ describe("inspection application", () => {
   it("keeps rendered rows bounded for large logical collections", () => {
     renderScenario("large-swarm", 0);
     const torrentGrid = screen.getByRole("grid", { name: "Torrent library" });
-    const peerGrid = screen.getByRole("grid", { name: "Connected and candidate peers" });
+    const peerGrid = screen.getByRole("grid", { name: "Active peer connections" });
     expect(torrentGrid).toHaveAttribute("aria-rowcount", "2001");
     expect(peerGrid).toHaveAttribute("aria-rowcount", "10001");
     expect(within(torrentGrid).getAllByRole("row").length).toBeLessThanOrEqual(100);
