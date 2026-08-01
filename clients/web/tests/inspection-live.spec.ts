@@ -46,6 +46,17 @@ test("live peer inspection follows a controlled verified transfer", async ({
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`/?live=${encodeURIComponent(gateway!)}&poll_ms=100`);
   await expect(page.getByText("Live engine", { exact: true })).toBeVisible();
+  await expect
+    .poll(async () => {
+      const mainBottom = await page
+        .locator("#app main")
+        .evaluate((element) => Math.round(element.getBoundingClientRect().bottom));
+      const detailBottom = await page
+        .locator('section[aria-label="Torrent details"]')
+        .evaluate((element) => Math.round(element.getBoundingClientRect().bottom));
+      return { mainBottom, detailBottom };
+    })
+    .toEqual({ mainBottom: 900, detailBottom: 900 });
 
   const response = await page.evaluate(
     async ({ gatewayUrl, magnetUri }) => {
