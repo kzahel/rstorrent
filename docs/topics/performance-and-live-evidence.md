@@ -326,6 +326,14 @@ the full attempts. The headless snapshot therefore gains bounded endpoint-free
 per-peer queue, utility, rate, phase, and age rows before another policy
 change.
 
+The first clean row-bearing run timed out at 24 pieces, but selected a local
+deterministic owner. The final retained table was only one to two seconds old:
+a fast peer had delivered 6.24 MiB, grown to a 385-request target, and held
+383 requests, after which no newer swarm observation appeared during the
+180-second wall clock. The 16-command supervisor channel and 64-event peer
+channel can fill in opposite directions. Tactical `022` owns restoring duplex
+progress before any rate, queue-target, or picker experiment.
+
 ## Result Classification
 
 Classify each paired attempt before interpreting speed:

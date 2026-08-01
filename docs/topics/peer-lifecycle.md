@@ -5,12 +5,12 @@ Topic: `peer-lifecycle`
 Status: Tactical `017` completed bounded simultaneous dialing, metadata
 acquisition, live content connections, torrent-owned requests, expiry,
 replacement, and failover. Tactical `020` completed bounded per-connection
-useful-payload feedback and sampled inactivity. Tactical `021` now owns the
-initial tracker/peer working-set boundary and has installed bounded tracker
-fan-out plus a source-derived 30-peer live set. Tracker and DHT observations
-remain live while content runs. Endgame duplicates, integrity reputation,
-measured picker policy, incoming connections, and persistent peer records
-remain later work.
+useful-payload feedback and sampled inactivity. Tactical `021` installed
+bounded tracker fan-out plus a source-derived 30-peer live set. Tactical `022`
+now owns the classified duplex command/event backpressure deadlock. Tracker
+and DHT observations remain live while content runs. Endgame duplicates,
+integrity reputation, measured picker policy, incoming connections, and
+persistent peer records remain later work.
 
 ## Scope
 
@@ -400,6 +400,14 @@ shape, the engine snapshot now retains one endpoint-free row per bounded live
 connection with choke, availability, request queue, target, payload, rate,
 phase, age, and timeout facts. This observability is separate from policy and
 will select the next deterministic owner.
+
+The first clean row-bearing sample did so: the table stopped refreshing after
+a one-to-two-second-old state in which one peer had delivered 6.24 MiB and
+held 383 requests. The supervisor awaits all commands through a 16-entry
+channel before consuming the 64-entry event channel, while the peer task
+awaits event delivery before draining more commands. Tactical `022` owns this
+duplex cycle; request-window policy is unchanged until transport progress is
+restored.
 
 Incoming listener ownership and advertised-port updates, measured performance
 selection, peer-ID duplicate resolution, endgame, integrity reputation, PEX,

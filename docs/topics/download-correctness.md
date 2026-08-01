@@ -7,11 +7,11 @@ a bounded multi-peer request owner across ordinary single-file and selective
 multi-file profiles. Tactical `017` closes the recorded one-peer liveness
 mechanisms with request expiry, failover, late discovery, and replacement.
 Tactical `020` adds useful-payload request windows and sampled connection
-inactivity; Tactical `021` owns the classified initial peer working-set gap.
-It has installed tracker fan-out and a bounded 30-peer admission set, with
-clean live confirmation still pending. Endgame and hash-failure recovery
-remain sufficient causes of an ordinary near-completion stall, so broad
-public-swarm reliability is not yet claimed.
+inactivity. Tactical `021` installed tracker fan-out and a bounded 30-peer
+admission set, then classified a bounded command/event channel deadlock now
+owned by Tactical `022`. Endgame and hash-failure recovery remain sufficient
+causes of an ordinary near-completion stall, so broad public-swarm reliability
+is not yet claimed.
 
 ## Scope
 

@@ -311,6 +311,7 @@ struct Diagnostics {
     content_dialing_candidates: Option<usize>,
     content_backed_off_candidates: Option<usize>,
     content_failure_limited_candidates: Option<usize>,
+    content_peers_captured_at_seconds: Option<f64>,
     content_peers: Vec<ContentPeerDiagnostics>,
     connected_peers: Option<usize>,
     unchoked_peers: Option<usize>,
@@ -678,6 +679,9 @@ fn diagnostic_result(
         content_dialing_candidates: content_registry.map(|value| value.dialing),
         content_backed_off_candidates: content_registry.map(|value| value.backed_off),
         content_failure_limited_candidates: content_registry.map(|value| value.failure_limited),
+        content_peers_captured_at_seconds: snapshot
+            .content_peers_captured_at
+            .map(|value| value.as_secs_f64()),
         content_peers: snapshot
             .content_peers
             .iter()

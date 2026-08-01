@@ -547,20 +547,39 @@ async fn run_peer_task(
     events: mpsc::Sender<PeerTaskEvent>,
     cancellation: &CancellationToken,
 ) -> Result<(), PeerSocketError> {
-    while let Some(message) = peer.queued_messages.pop_front() {
-        send_event(
-            &events,
-            PeerTaskEvent::Message {
-                attempt: peer.attempt,
-                message,
-            },
-            cancellation,
-        )
-        .await?;
-    }
+    let mut pending_messages = std::mem::take(&mut peer.queued_messages);
     let mut read_deadline = Instant::now() + peer.io_timeout;
     let mut network_buffer = [0_u8; NETWORK_READ_LENGTH];
     loop {
+        if !pending_messages.is_empty() {
+            tokio::select! {
+                biased;
+                _ = cancellation.cancelled() => return Ok(()),
+                permit = events.reserve() => {
+                    let permit = permit.map_err(|_| PeerSocketError::Io {
+                        operation: "deliver peer event",
+                        source: io::Error::new(
+                            io::ErrorKind::BrokenPipe,
+                            "torrent supervisor stopped",
+                        ),
+                    })?;
+                    let message = pending_messages
+                        .pop_front()
+                        .expect("pending peer message queue is nonempty");
+                    permit.send(PeerTaskEvent::Message {
+                        attempt: peer.attempt,
+                        message,
+                    });
+                }
+                command = commands.recv() => match command {
+                    Some(PeerTaskCommand::Send(message)) => {
+                        send_message(&mut peer, &message).await?;
+                    }
+                    None => return Ok(()),
+                },
+            }
+            continue;
+        }
         tokio::select! {
             biased;
             _ = cancellation.cancelled() => return Ok(()),
@@ -587,34 +606,9 @@ async fn run_peer_task(
                 if !messages.is_empty() {
                     read_deadline = Instant::now() + peer.io_timeout;
                 }
-                for message in messages {
-                    send_event(
-                        &events,
-                        PeerTaskEvent::Message {
-                            attempt: peer.attempt,
-                            message,
-                        },
-                        cancellation,
-                    )
-                    .await?;
-                }
+                pending_messages.extend(messages);
             }
         }
-    }
-}
-
-async fn send_event(
-    events: &mpsc::Sender<PeerTaskEvent>,
-    event: PeerTaskEvent,
-    cancellation: &CancellationToken,
-) -> Result<(), PeerSocketError> {
-    tokio::select! {
-        biased;
-        _ = cancellation.cancelled() => Ok(()),
-        result = events.send(event) => result.map_err(|_| PeerSocketError::Io {
-            operation: "deliver peer event",
-            source: io::Error::new(io::ErrorKind::BrokenPipe, "torrent supervisor stopped"),
-        }),
     }
 }
 
@@ -628,7 +622,9 @@ mod tests {
     use tokio::sync::mpsc;
     use tokio::time::timeout;
 
-    use super::{PeerConnection, PeerSocketError, PeerSocketTask, PeerTaskEvent};
+    use super::{
+        PEER_COMMAND_QUEUE, PeerConnection, PeerSocketError, PeerSocketTask, PeerTaskEvent,
+    };
     use crate::peer::{
         DialAttempt, PeerEndpoint, PeerObservation, PeerRegistry, PeerRegistryConfig,
         PeerSelectionContext, PeerSelector, PeerSource,
@@ -710,6 +706,68 @@ mod tests {
             .await
             .expect("bounded shutdown")
             .expect("join task");
+    }
+
+    #[tokio::test]
+    async fn outbound_commands_drain_while_inbound_event_delivery_is_backpressured() {
+        let (connection, mut server) = connected_pair(Duration::from_secs(1)).await;
+        let (event_tx, mut events) = mpsc::channel(1);
+        let task = PeerSocketTask::spawn(connection, event_tx);
+        let keepalive = encode_message(&PeerMessage::KeepAlive).expect("keepalive");
+        let mut inbound = Vec::new();
+        for _ in 0..3 {
+            inbound.extend_from_slice(&keepalive);
+        }
+        server
+            .write_all(&inbound)
+            .await
+            .expect("saturate inbound event delivery");
+        assert!(matches!(
+            timeout(Duration::from_millis(200), events.recv())
+                .await
+                .expect("first inbound event")
+                .expect("event channel"),
+            PeerTaskEvent::Message {
+                message: PeerMessage::KeepAlive,
+                ..
+            }
+        ));
+        tokio::task::yield_now().await;
+
+        timeout(Duration::from_millis(200), async {
+            for _ in 0..=PEER_COMMAND_QUEUE {
+                task.send(PeerMessage::Interested)
+                    .await
+                    .expect("bounded outbound command");
+            }
+        })
+        .await
+        .expect("event backpressure must not block outbound commands");
+
+        let interested = encode_message(&PeerMessage::Interested).expect("interested");
+        let mut outbound = vec![0; interested.len() * (PEER_COMMAND_QUEUE + 1)];
+        timeout(Duration::from_millis(200), server.read_exact(&mut outbound))
+            .await
+            .expect("outbound commands reached socket")
+            .expect("read outbound commands");
+        assert!(
+            outbound
+                .chunks_exact(interested.len())
+                .all(|frame| frame == interested)
+        );
+        for _ in 0..2 {
+            assert!(matches!(
+                timeout(Duration::from_millis(200), events.recv())
+                    .await
+                    .expect("pending inbound event")
+                    .expect("event channel"),
+                PeerTaskEvent::Message {
+                    message: PeerMessage::KeepAlive,
+                    ..
+                }
+            ));
+        }
+        task.shutdown().await.expect("join task");
     }
 
     #[tokio::test]

@@ -1,6 +1,6 @@
 # Tactical 021: Initial Peer Working Set
 
-Status: Active
+Status: Completed; duplex peer-task liveness continues in Tactical `022`.
 
 Topics: `tracker-discovery`, `peer-lifecycle`,
 `performance-and-live-evidence`, `oracle-driven-engine-campaign`
@@ -229,6 +229,26 @@ useful and irrelevant connection. The controlled paired publication remains
 pending queue, and no retained endpoint. A single classified live sample is
 next; another policy change is not justified from the aggregate alone.
 
+The clean one-run classification at commit `9bdb8a9` timed out at 24 pieces
+after 180 seconds, with metadata at 4.00 seconds and the first piece at 4.31.
+Three tracker batches reported 168 raw peer entries; 14 unique current
+candidates were exhausted across five established, six dialing, and three
+backed-off records. The decisive peer rows were internally consistent but
+far too young for the terminal wall clock: all five showed only one or two
+seconds of connection age. One unchoked slow-start peer had just delivered
+6.24 MiB, grown to a 385-request target, and retained 383 requests; the table
+then stopped refreshing while the process remained cancellable for the rest
+of the deadline.
+
+The implementation explains the frozen observation. The content supervisor
+awaits every send into a 16-command per-peer channel before it can consume the
+shared 64-event channel. A peer task that decodes a burst awaits delivery into
+that event channel and stops draining commands. A sufficiently large adaptive
+window can therefore fill both bounded queues in opposite directions. This is
+a deterministic duplex task/channel deadlock, not peer slowness, tracker
+breadth, or request-target policy. Tactical `022` owns the narrow fix and an
+adversarial reproduction.
+
 ## Non-Goals
 
 - HTTP, HTTPS, WebSocket trackers, BEP 12 metainfo tiers, announce-all user
@@ -247,8 +267,9 @@ warning-denying workspace clippy, and workspace tests. All live work remains
 headless and cleans temporary payloads and reports after aggregate evidence is
 recorded.
 
-This tactical is complete when bounded initial tracker breadth and exact task
-cleanup pass the adversarial gates, the 2/3 live screen passes or retains a new
-classified boundary not owned here, living topics record actual evidence, and
-the next narrow owner is decision-complete. No human decision is currently
+This tactical is complete through the explicitly permitted classified
+boundary. Bounded initial tracker breadth, separate half-open/live capacity,
+endpoint-free peer diagnostics, exact cleanup, deterministic gates, and
+controlled interoperability pass. The live screen retained a reproducible
+duplex peer-task deadlock owned by Tactical `022`; no human decision is
 required.

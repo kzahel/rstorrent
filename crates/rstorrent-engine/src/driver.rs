@@ -340,6 +340,7 @@ pub struct MetadataAcquisitionSnapshot {
 pub struct DownloadDiagnosticSnapshot {
     pub progress: DownloadProgress,
     pub swarm: Option<SwarmActivitySnapshot>,
+    pub content_peers_captured_at: Option<Duration>,
     pub content_peers: Vec<ContentPeerActivitySnapshot>,
     pub content_registry: Option<PeerRegistryCounts>,
     pub metadata: MetadataAcquisitionSnapshot,
@@ -471,13 +472,14 @@ impl DownloadControl {
             .last_content_registry
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let content_peers = self
-            .inner
-            .last_content_peers
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .1
-            .clone();
+        let (content_peers_captured_at, content_peers) = {
+            let state = self
+                .inner
+                .last_content_peers
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            (state.0, state.1.clone())
+        };
         let captured_at = self.diagnostic_elapsed();
         let metadata = {
             let state = self
@@ -506,6 +508,7 @@ impl DownloadControl {
         DownloadDiagnosticSnapshot {
             progress,
             swarm,
+            content_peers_captured_at,
             content_peers,
             content_registry,
             metadata,

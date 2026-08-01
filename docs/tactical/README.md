@@ -165,10 +165,13 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; replaced the static four-request/four-piece transfer ceiling with
   a bounded source-derived per-connection feedback window and classified
   initial peer-source breadth as the remaining 50% boundary.
-- [`021-initial-peer-working-set.md`](021-initial-peer-working-set.md): active;
+- [`021-initial-peer-working-set.md`](021-initial-peer-working-set.md): complete;
   adds bounded initial tracker-operation breadth, separates half-open and live
-  peer capacity, and verifies that discovered endpoints become a useful,
-  cleanly owned content-peer working set.
+  peer capacity, adds per-peer diagnostics, and classifies a duplex peer-task
+  deadlock as the next boundary.
+- [`022-duplex-peer-task-liveness.md`](022-duplex-peer-task-liveness.md): active;
+  breaks command/event backpressure cycles without dropping or unbounding
+  peer messages, then repeats the controlled and live transfer gates.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

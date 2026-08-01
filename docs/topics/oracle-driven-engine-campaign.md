@@ -314,14 +314,14 @@ reason to stop.
 Campaign state: **active**.
 
 Active tactical:
-[`021-initial-peer-working-set.md`](../tactical/021-initial-peer-working-set.md).
+[`022-duplex-peer-task-liveness.md`](../tactical/022-duplex-peer-task-liveness.md).
 Tactical
-[`020-sustained-transfer-parity.md`](../tactical/020-sustained-transfer-parity.md)
+[`021-initial-peer-working-set.md`](../tactical/021-initial-peer-working-set.md)
 is complete.
 
-Current milestone: broaden the bounded initial tracker and peer working set so
-the now-competitive healthy-peer transfer path reaches 50% reliably before
-returning to publication.
+Current milestone: remove the bounded command/event backpressure cycle that
+freezes the content supervisor under a large healthy-peer request window, then
+return to the 50% gate.
 
 Last completed evidence:
 
@@ -403,14 +403,18 @@ Last completed evidence:
   exhausted all 14--15 candidates across established, dialing, and backed-off
   states, while aggregate request targets and rates could not identify which
   live peer owned hundreds of outstanding requests. A bounded endpoint-free
-  peer queue and utility table is now the narrow diagnostic owner.
+  peer queue and utility table became the narrow diagnostic owner; and
+- commit `9bdb8a9` added that table. Its clean classification run froze after
+  a one-to-two-second-old peer snapshot in which a fast peer had delivered
+  6.24 MiB and accumulated 383 requests. The 16-command producer and 64-event
+  consumer can block each other exactly at that boundary, selecting Tactical
+  `022`'s duplex task liveness owner.
 
 Next executable action:
 
-1. commit the endpoint-free per-peer queue and utility diagnostics;
-2. run one clean owner-only 50% classification sample;
-3. use pinned queue, snubbing, or peer-lifecycle source to implement only the
-   owner demonstrated by that table; and
-4. require 2/3 success before an alternating paired screen.
+1. add the deterministic saturated-event/full-command reproduction;
+2. make one peer task drain outbound commands while inbound delivery waits;
+3. pass workspace and controlled interoperability gates; and
+4. require 2/3 clean owner-only 50% success before a paired screen.
 
 Human blocker: **none**.
