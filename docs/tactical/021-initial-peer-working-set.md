@@ -128,8 +128,12 @@ reachability or usefulness.
 ## Live And Comparator Gates
 
 Record tracker response-batch count, total reported peers, peer-dial attempts,
-and the current content-registry classification in the headless probe. Do not
-retain tracker or peer addresses.
+the current content-registry classification, and a bounded endpoint-free row
+for each established peer in the headless probe. Mirror the useful libtorrent
+peer-table fields: choke and wanted-piece state, queue length and bytes,
+target, window phase, useful bytes, current sampled rate, connection and
+payload ages, adaptive timeout, and oldest request age. Do not retain tracker
+or peer addresses.
 
 After deterministic gates:
 
@@ -178,8 +182,8 @@ of the obsolete port-zero behavior; its three complete metadata/content runs
 then passed.
 
 At this checkpoint, workspace formatting and warning-denying clippy pass. The
-workspace has 224 passing tests, three changing public-network tests ignored,
-and no failures; the engine library contributes 113 of those passes. The
+workspace has 225 passing tests, three changing public-network tests ignored,
+and no failures; the engine library contributes 114 of those passes. The
 three-run UDP tracker interop, mixed-peer liveness scenario, controlled paired
 publication, and all seven comparator unit tests also pass.
 
@@ -201,6 +205,29 @@ of 30 established peers plus eight half-open attempts. A deterministic truth
 table proves an in-flight handshake cannot consume a live slot, the pending
 ceiling is exact, and replacement probing at a full live set remains limited
 to one attempt.
+
+The clean post-admission screen at commit `5bc4719` still completed 0/3 at 50%
+within 180 seconds, with exact cleanup. It verified 25, 55, and 96 pieces.
+Every run again received two tracker batches and retained 14--15 content
+candidates, but the artificial combined ceiling was gone: five or six peers
+were established, six to eight were dialing, zero remained eligible, and up
+to three were backed off. Four or five established peers were unchoked.
+Terminal request targets totaled 592--715, with one peer reaching 360 or 500;
+7.6--26.2 MiB had been useful while 479--710 requests remained outstanding.
+
+This disproves larger admission as a sufficient fix and exhausts the current
+tracker candidate population. The aggregate 3.0--4.1 MiB/s sampled rate is not
+consistent with the cohort's 40--140 KiB/s wall-clock average, so it cannot
+identify whether one recently fast peer hoards the queue, useful peers arrive
+late, or multiple slow-start rows dominate. Pinned libtorrent exposes queue
+length, target queue length, current payload rate, queue time, snubbed state,
+and request timeout per peer. RSTorrent now captures the endpoint-free bounded
+equivalent for at most 30 established peers. A pure test proves wanted-piece,
+choke, queue, target, payload, phase, age, and timeout accounting for both a
+useful and irrelevant connection. The controlled paired publication remains
+`both_reached`; its completed peer row reports exact 79,000 useful bytes, no
+pending queue, and no retained endpoint. A single classified live sample is
+next; another policy change is not justified from the aggregate alone.
 
 ## Non-Goals
 

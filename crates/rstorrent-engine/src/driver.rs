@@ -53,8 +53,8 @@ use crate::storage::{
     StagingFile, StorageError, VERIFICATION_CHUNK_LENGTH, remove_staging_if_present, staging_path,
 };
 use crate::swarm::{
-    BlockKey, ConnectionId, ConnectionRemoval, NoRequestReason, PendingDialId, PiecePlan,
-    ReceiveDisposition, SwarmConfig, SwarmError, SwarmState,
+    BlockKey, ConnectionId, ConnectionRemoval, ConnectionWindowPhaseSnapshot, NoRequestReason,
+    PendingDialId, PiecePlan, ReceiveDisposition, SwarmConfig, SwarmError, SwarmState,
 };
 use crate::tracker::{TrackerAction, TrackerId, TrackerSchedule, TrackerWaitKind};
 
@@ -76,6 +76,7 @@ const SAFE_CANCEL_CRITICAL_MASK: usize = SAFE_CANCEL_REQUESTED - 1;
 const DHT_RETRY_INITIAL_DELAY: Duration = Duration::from_secs(15);
 const DHT_RETRY_MAX_DELAY: Duration = Duration::from_secs(5 * 60);
 const DHT_SUCCESS_REQUERY_DELAY: Duration = Duration::from_secs(60);
+const CONTENT_PEER_DIAGNOSTIC_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_METADATA_PEERS: usize = 8;
 const METADATA_SCHEDULER_TICK: Duration = Duration::from_millis(100);
 const MAX_RECENT_METADATA_ATTEMPTS: usize = 64;
@@ -238,6 +239,41 @@ pub struct SwarmActivitySnapshot {
     pub no_request_reason: Option<NoRequestReason>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ContentRequestWindowPhase {
+    SlowStart,
+    Steady,
+    Stalled,
+}
+
+impl ContentRequestWindowPhase {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SlowStart => "slow_start",
+            Self::Steady => "steady",
+            Self::Stalled => "stalled",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ContentPeerActivitySnapshot {
+    pub connection_id: u64,
+    pub choking: bool,
+    pub wanted_piece_count: usize,
+    pub pending_requests: usize,
+    pub target_requests: usize,
+    pub queued_payload_bytes: usize,
+    pub window_phase: ContentRequestWindowPhase,
+    pub useful_payload_bytes: usize,
+    pub observed_payload_rate: usize,
+    pub connected_age_seconds: u64,
+    pub last_useful_age_seconds: Option<u64>,
+    pub last_payload_age_seconds: Option<u64>,
+    pub request_timeout_seconds: u64,
+    pub oldest_request_age_seconds: Option<u64>,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum MetadataAcquisitionPhase {
     #[default]
@@ -304,6 +340,7 @@ pub struct MetadataAcquisitionSnapshot {
 pub struct DownloadDiagnosticSnapshot {
     pub progress: DownloadProgress,
     pub swarm: Option<SwarmActivitySnapshot>,
+    pub content_peers: Vec<ContentPeerActivitySnapshot>,
     pub content_registry: Option<PeerRegistryCounts>,
     pub metadata: MetadataAcquisitionSnapshot,
 }
@@ -334,6 +371,7 @@ struct DownloadControlInner {
     storage_write_delay_millis: AtomicU64,
     activity_sink: Mutex<Option<Arc<dyn DownloadActivitySink>>>,
     last_swarm_activity: Mutex<Option<SwarmActivitySnapshot>>,
+    last_content_peers: Mutex<(Option<Duration>, Vec<ContentPeerActivitySnapshot>)>,
     last_content_registry: Mutex<Option<PeerRegistryCounts>>,
     metadata_diagnostics: Mutex<MetadataDiagnosticState>,
     safe_cancel_state: AtomicUsize,
@@ -385,6 +423,7 @@ impl DownloadControl {
                 storage_write_delay_millis: AtomicU64::new(0),
                 activity_sink: Mutex::new(None),
                 last_swarm_activity: Mutex::new(None),
+                last_content_peers: Mutex::new((None, Vec::new())),
                 last_content_registry: Mutex::new(None),
                 metadata_diagnostics: Mutex::new(MetadataDiagnosticState::default()),
                 safe_cancel_state: AtomicUsize::new(0),
@@ -432,6 +471,13 @@ impl DownloadControl {
             .last_content_registry
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let content_peers = self
+            .inner
+            .last_content_peers
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .1
+            .clone();
         let captured_at = self.diagnostic_elapsed();
         let metadata = {
             let state = self
@@ -460,6 +506,7 @@ impl DownloadControl {
         DownloadDiagnosticSnapshot {
             progress,
             swarm,
+            content_peers,
             content_registry,
             metadata,
         }
@@ -803,6 +850,53 @@ impl DownloadControl {
 
     fn observe_swarm(&self, swarm: &SwarmState, now: Duration) {
         let snapshot = swarm.snapshot(now);
+        {
+            let mut state = self
+                .inner
+                .last_content_peers
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let due = state.0.is_none_or(|captured| {
+                now.saturating_sub(captured) >= CONTENT_PEER_DIAGNOSTIC_INTERVAL
+            });
+            if due || snapshot.no_request_reason == Some(NoRequestReason::Complete) {
+                state.0 = Some(now);
+                state.1 = swarm
+                    .connection_activity(now)
+                    .into_iter()
+                    .map(|peer| ContentPeerActivitySnapshot {
+                        connection_id: peer.id.get(),
+                        choking: peer.choking,
+                        wanted_piece_count: peer.wanted_piece_count,
+                        pending_requests: peer.pending_requests,
+                        target_requests: peer.target_requests,
+                        queued_payload_bytes: peer.queued_payload_bytes,
+                        window_phase: match peer.window_phase {
+                            ConnectionWindowPhaseSnapshot::SlowStart => {
+                                ContentRequestWindowPhase::SlowStart
+                            }
+                            ConnectionWindowPhaseSnapshot::Steady => {
+                                ContentRequestWindowPhase::Steady
+                            }
+                            ConnectionWindowPhaseSnapshot::Stalled => {
+                                ContentRequestWindowPhase::Stalled
+                            }
+                        },
+                        useful_payload_bytes: peer.useful_payload_bytes,
+                        observed_payload_rate: peer.observed_payload_rate,
+                        connected_age_seconds: peer.connected_age.as_secs(),
+                        last_useful_age_seconds: peer.last_useful_age.map(|value| value.as_secs()),
+                        last_payload_age_seconds: peer
+                            .last_payload_age
+                            .map(|value| value.as_secs()),
+                        request_timeout_seconds: peer.request_timeout.as_secs(),
+                        oldest_request_age_seconds: peer
+                            .oldest_request_age
+                            .map(|value| value.as_secs()),
+                    })
+                    .collect();
+            }
+        }
         self.inner
             .buffered_payload_bytes
             .store(snapshot.payload_reserved, Ordering::Release);

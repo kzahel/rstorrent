@@ -396,15 +396,21 @@ Last completed evidence:
   tracker batches, 14--15 candidates, 17--19 dials, and five or six live
   peers. Established plus pending counts exactly filled the old combined
   eight-slot check while eligible candidates remained, selecting content-peer
-  admission rather than tracker breadth.
+  admission rather than tracker breadth;
+- commit `5bc4719` separated eight half-open attempts from a source-derived
+  30-peer live bound; and
+- its clean 50% screen also completed 0/3, at 25, 55, and 96 pieces. It
+  exhausted all 14--15 candidates across established, dialing, and backed-off
+  states, while aggregate request targets and rates could not identify which
+  live peer owned hundreds of outstanding requests. A bounded endpoint-free
+  peer queue and utility table is now the narrow diagnostic owner.
 
 Next executable action:
 
-1. commit the source-derived 30-established/eight-pending admission checkpoint;
-2. rerun the clean owner-only 50% screen with connection and request-state
-   diagnostics;
-3. require 2/3 success before an alternating paired screen; and
-4. retain or adjust only the next source-derived owner before confirmation
-   cohorts.
+1. commit the endpoint-free per-peer queue and utility diagnostics;
+2. run one clean owner-only 50% classification sample;
+3. use pinned queue, snubbing, or peer-lifecycle source to implement only the
+   owner demonstrated by that table; and
+4. require 2/3 success before an alternating paired screen.
 
 Human blocker: **none**.

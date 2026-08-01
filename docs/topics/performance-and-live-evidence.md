@@ -316,6 +316,16 @@ eligible. All terminal samples were receiving roughly 3.2--4.0 MiB/s. This is
 evidence to separate half-open and established capacity and adopt a bounded
 30-peer working set before changing transfer scheduling again.
 
+The clean post-admission screen remained 0/3, at 25, 55, and 96 pieces after
+180 seconds. It consumed all 14--15 candidates across five or six established,
+six to eight dialing, and up to three backed-off records; none was eligible.
+Four or five established peers were unchoked, but 479--710 requests remained
+outstanding and the largest peer target reached 360 or 500. Aggregate sampled
+rates of 3.0--4.1 MiB/s conflict with only 7.6--26.2 MiB of useful payload over
+the full attempts. The headless snapshot therefore gains bounded endpoint-free
+per-peer queue, utility, rate, phase, and age rows before another policy
+change.
+
 ## Result Classification
 
 Classify each paired attempt before interpreting speed:

@@ -391,6 +391,16 @@ half-open attempts and 30 established peers; a pending handshake no longer
 occupies a live slot, and late successes at the live ceiling still require a
 classified replacement.
 
+The next clean screen remained 0/3 and exhausted every current candidate, so
+the larger cap is not sufficient. Four or five of the five or six established
+peers were unchoked, yet one peer target reached 360 or 500 and hundreds of
+requests remained outstanding. The aggregate sampled rate was incompatible
+with wall-clock useful bytes. Following libtorrent's `peer_info` diagnostic
+shape, the engine snapshot now retains one endpoint-free row per bounded live
+connection with choke, availability, request queue, target, payload, rate,
+phase, age, and timeout facts. This observability is separate from policy and
+will select the next deterministic owner.
+
 Incoming listener ownership and advertised-port updates, measured performance
 selection, peer-ID duplicate resolution, endgame, integrity reputation, PEX,
 and persisted peer caches remain later work.

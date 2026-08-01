@@ -15,8 +15,9 @@ pub mod swarm;
 mod tracker;
 
 pub use driver::{
-    DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink, DownloadConfig,
-    DownloadControl, DownloadDiagnosticSnapshot, DownloadError, DownloadProgress, DownloadReport,
+    ContentPeerActivitySnapshot, ContentRequestWindowPhase, DownloadActivityEvent,
+    DownloadActivitySink, DownloadCheckpointSink, DownloadConfig, DownloadControl,
+    DownloadDiagnosticSnapshot, DownloadError, DownloadProgress, DownloadReport,
     MagnetDownloadConfig, MetadataAcquisitionPhase, MetadataAcquisitionSnapshot,
     MetadataPeerSnapshot, MetadataPeerStage, ResumableMagnetDownloadConfig, SwarmActivitySnapshot,
     download_magnet, download_magnet_metadata_with_control, download_magnet_metadata_with_dht,

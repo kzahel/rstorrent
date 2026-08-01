@@ -312,6 +312,31 @@ pub struct SwarmSnapshot {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ConnectionWindowPhaseSnapshot {
+    SlowStart,
+    Steady,
+    Stalled,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ConnectionActivitySnapshot {
+    pub id: ConnectionId,
+    pub choking: bool,
+    pub wanted_piece_count: usize,
+    pub pending_requests: usize,
+    pub target_requests: usize,
+    pub queued_payload_bytes: usize,
+    pub window_phase: ConnectionWindowPhaseSnapshot,
+    pub useful_payload_bytes: usize,
+    pub observed_payload_rate: usize,
+    pub connected_age: Duration,
+    pub last_useful_age: Option<Duration>,
+    pub last_payload_age: Option<Duration>,
+    pub request_timeout: Duration,
+    pub oldest_request_age: Option<Duration>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectionRemoval {
     Disconnected,
     Replaced,
@@ -1146,6 +1171,75 @@ impl SwarmState {
         }
     }
 
+    pub(crate) fn connection_activity(&self, now: Duration) -> Vec<ConnectionActivitySnapshot> {
+        let wanted = self.incomplete_piece_indices();
+        let mut requests = BTreeMap::<ConnectionId, (usize, usize, Option<Duration>)>::new();
+        for (key, state) in &self.blocks {
+            let BlockPhase::Requested(attempt_id) = state.phase else {
+                continue;
+            };
+            let Some(attempt) = state
+                .attempts
+                .iter()
+                .find(|attempt| attempt.id == attempt_id)
+            else {
+                continue;
+            };
+            let entry = requests.entry(attempt.connection).or_default();
+            entry.0 = entry.0.saturating_add(1);
+            entry.1 = entry.1.saturating_add(key.length as usize);
+            entry.2 = Some(
+                entry
+                    .2
+                    .map_or(attempt.issued_at, |oldest| oldest.min(attempt.issued_at)),
+            );
+        }
+        self.connections
+            .iter()
+            .map(|(id, connection)| {
+                let (pending_requests, queued_payload_bytes, oldest_request_age) = requests
+                    .get(id)
+                    .map(|(count, bytes, oldest)| {
+                        (
+                            *count,
+                            *bytes,
+                            oldest.map(|value| now.saturating_sub(value)),
+                        )
+                    })
+                    .unwrap_or_default();
+                let window_phase = match connection.request_window.phase {
+                    RequestWindowPhase::SlowStart => ConnectionWindowPhaseSnapshot::SlowStart,
+                    RequestWindowPhase::Steady => ConnectionWindowPhaseSnapshot::Steady,
+                    RequestWindowPhase::Stalled => ConnectionWindowPhaseSnapshot::Stalled,
+                };
+                ConnectionActivitySnapshot {
+                    id: *id,
+                    choking: connection.choking,
+                    wanted_piece_count: wanted
+                        .iter()
+                        .filter(|piece| connection.availability[**piece])
+                        .count(),
+                    pending_requests,
+                    target_requests: connection.request_window.target,
+                    queued_payload_bytes,
+                    window_phase,
+                    useful_payload_bytes: connection.request_window.useful_payload_bytes,
+                    observed_payload_rate: connection.request_window.observed_payload_rate,
+                    connected_age: now.saturating_sub(connection.connected_at),
+                    last_useful_age: connection
+                        .last_useful_at
+                        .map(|value| now.saturating_sub(value)),
+                    last_payload_age: connection
+                        .request_window
+                        .last_payload_at
+                        .map(|value| now.saturating_sub(value)),
+                    request_timeout: connection.request_window.request_timeout(self.config),
+                    oldest_request_age,
+                }
+            })
+            .collect()
+    }
+
     fn next_replacement_at(&self) -> Option<Duration> {
         if self.connections.len() < self.config.max_established_connections {
             return None;
@@ -1624,6 +1718,54 @@ mod tests {
         );
         state.finish_dial(dial(1)).expect("finish dial");
         state.begin_dial(dial(10)).expect("reused dial slot");
+    }
+
+    #[test]
+    fn connection_activity_exposes_bounded_queue_and_utility_state() {
+        let mut state = state(1, vec![plan(0, 2)], 2);
+        add_peer(&mut state, connection(1), &[0], false);
+        add_peer(&mut state, connection(2), &[], true);
+        let assignments = state.schedule(Duration::ZERO).expect("schedule");
+        assert_eq!(assignments.len(), 2);
+        assert!(matches!(
+            state
+                .receive_block(
+                    assignments[0].connection,
+                    assignments[0].block,
+                    Duration::from_millis(100),
+                )
+                .expect("payload"),
+            ReceiveDisposition::Accept { .. }
+        ));
+        state
+            .finish_write(assignments[0].block, true, Duration::from_millis(100))
+            .expect("write");
+
+        let activity = state.connection_activity(Duration::from_secs(1));
+        assert_eq!(activity.len(), 2);
+        assert_eq!(activity[0].id, connection(1));
+        assert!(!activity[0].choking);
+        assert_eq!(activity[0].wanted_piece_count, 1);
+        assert_eq!(activity[0].pending_requests, 1);
+        assert_eq!(activity[0].target_requests, 5);
+        assert_eq!(activity[0].queued_payload_bytes, BLOCK as usize);
+        assert_eq!(
+            activity[0].window_phase,
+            ConnectionWindowPhaseSnapshot::SlowStart
+        );
+        assert_eq!(activity[0].useful_payload_bytes, BLOCK as usize);
+        assert_eq!(
+            activity[0].last_useful_age,
+            Some(Duration::from_millis(900))
+        );
+        assert_eq!(
+            activity[0].last_payload_age,
+            Some(Duration::from_millis(900))
+        );
+        assert_eq!(activity[0].request_timeout, Duration::from_secs(2));
+        assert_eq!(activity[0].oldest_request_age, Some(Duration::from_secs(1)));
+        assert_eq!(activity[1].wanted_piece_count, 0);
+        assert_eq!(activity[1].pending_requests, 0);
     }
 
     #[test]

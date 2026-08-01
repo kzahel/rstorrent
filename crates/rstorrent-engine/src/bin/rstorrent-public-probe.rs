@@ -311,6 +311,7 @@ struct Diagnostics {
     content_dialing_candidates: Option<usize>,
     content_backed_off_candidates: Option<usize>,
     content_failure_limited_candidates: Option<usize>,
+    content_peers: Vec<ContentPeerDiagnostics>,
     connected_peers: Option<usize>,
     unchoked_peers: Option<usize>,
     missing_blocks: Option<usize>,
@@ -348,6 +349,24 @@ struct MetadataAttemptDiagnostics {
     messages_received: usize,
     rejects_received: usize,
     terminal_detail: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ContentPeerDiagnostics {
+    connection_id: u64,
+    choking: bool,
+    wanted_piece_count: usize,
+    pending_requests: usize,
+    target_requests: usize,
+    queued_payload_bytes: usize,
+    window_phase: String,
+    useful_payload_bytes: usize,
+    observed_payload_rate: usize,
+    connected_age_seconds: u64,
+    last_useful_age_seconds: Option<u64>,
+    last_payload_age_seconds: Option<u64>,
+    request_timeout_seconds: u64,
+    oldest_request_age_seconds: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -659,6 +678,26 @@ fn diagnostic_result(
         content_dialing_candidates: content_registry.map(|value| value.dialing),
         content_backed_off_candidates: content_registry.map(|value| value.backed_off),
         content_failure_limited_candidates: content_registry.map(|value| value.failure_limited),
+        content_peers: snapshot
+            .content_peers
+            .iter()
+            .map(|peer| ContentPeerDiagnostics {
+                connection_id: peer.connection_id,
+                choking: peer.choking,
+                wanted_piece_count: peer.wanted_piece_count,
+                pending_requests: peer.pending_requests,
+                target_requests: peer.target_requests,
+                queued_payload_bytes: peer.queued_payload_bytes,
+                window_phase: peer.window_phase.as_str().to_owned(),
+                useful_payload_bytes: peer.useful_payload_bytes,
+                observed_payload_rate: peer.observed_payload_rate,
+                connected_age_seconds: peer.connected_age_seconds,
+                last_useful_age_seconds: peer.last_useful_age_seconds,
+                last_payload_age_seconds: peer.last_payload_age_seconds,
+                request_timeout_seconds: peer.request_timeout_seconds,
+                oldest_request_age_seconds: peer.oldest_request_age_seconds,
+            })
+            .collect(),
         connected_peers: swarm.map(|value| value.connected_peers),
         unchoked_peers: swarm.map(|value| value.unchoked_peers),
         missing_blocks: swarm.map(|value| value.missing_blocks),
