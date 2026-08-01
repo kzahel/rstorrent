@@ -5,7 +5,9 @@ Topic: `tracker-discovery`
 Status: Tactical `014` replaced the first one-shot operation with a supervised
 scheduled UDP tracker lifecycle. Tactical `021` added bounded concurrent
 startup operations and classified the remaining live failure at content-peer
-admission rather than tracker intake. Other transports and metainfo tracker
+admission rather than tracker intake. Tactical `043` makes the deterministic
+schedule's retained lifecycle the authoritative inspectable state and proves
+it through the live browser surface. Other transports and metainfo tracker
 tiers remain unimplemented.
 
 ## Scope
@@ -203,6 +205,25 @@ batches and retained 14--15 candidates in every run, versus four to nine
 before fan-out. Its 0/3 50% result stopped at the downstream combined
 live-plus-pending connection ceiling; tracker startup is no longer the
 classified owner.
+
+Tactical `043` extends those same pure tracker records instead of creating a
+UI-side tracker authority. Immutable snapshots expose announcing, retry,
+reannounce, and inactive lifecycle plus attempts, consecutive failures,
+accepted interval and swarm counts, monotonic outcome ages, the next scheduled
+action, and bounded error context. The runtime publishes typed snapshots after
+every schedule transition and only publishes terminal inactive state after
+its UDP operations have been aborted and joined. Diagnostics remain an
+independent ordered observation stream.
+
+The leased application view retains at most the schedule's existing 32
+tracker records. A durable magnet can reconstruct inactive configured rows
+after restart, but volatile response and deadline history is deliberately not
+persisted. A controlled delayed loopback announce let the live browser observe
+the pre-response `announcing` state and then exact response values of one peer,
+37 seeds, 11 leeches, and a 30-minute reannounce interval while libtorrent
+seeded hash-verified content. This is tracker state and interoperability
+evidence, not a claim that a response peer count is a cumulative unique-peer
+count or that any returned endpoint is reachable.
 
 ## Current Limits And Next Work
 

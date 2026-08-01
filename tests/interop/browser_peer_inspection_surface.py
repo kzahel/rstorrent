@@ -27,7 +27,8 @@ from first_verified_piece import (
     wait_for_listener,
 )
 from gateway_reactive_surface import build_gateway, verify_payload
-from magnet_metadata import ROOT_NAME, create_fixture, magnet_uri
+from magnet_metadata import ROOT_NAME, create_fixture
+from udp_tracker_magnet import OneShotUdpTracker, tracker_magnet
 
 
 BROWSER_PREFIX_SIZE = 7_000
@@ -124,6 +125,7 @@ def run_playwright(
     magnet: str,
     torrent_id: str,
     file_count: int,
+    tracker_url: str,
     screenshot_directory: Path | None,
 ) -> str:
     environment = os.environ.copy()
@@ -135,6 +137,7 @@ def run_playwright(
             "RSTORRENT_LIVE_TORRENT_ID": torrent_id,
             "RSTORRENT_LIVE_TORRENT_NAME": ROOT_NAME,
             "RSTORRENT_LIVE_FILE_COUNT": str(file_count),
+            "RSTORRENT_LIVE_TRACKER_URL": tracker_url,
         }
     )
     if screenshot_directory is not None:
@@ -231,6 +234,7 @@ def run(screenshot_directory: Path | None) -> None:
     run_path = Path(tempfile.mkdtemp(prefix="rstorrent-browser-peer-inspection-"))
     session: lt.session | None = None
     handle: lt.torrent_handle | None = None
+    tracker: OneShotUdpTracker | None = None
     gateway: subprocess.Popen[str] | None = None
     vite: subprocess.Popen[str] | None = None
     diagnostics: list[str] = []
@@ -247,6 +251,14 @@ def run(screenshot_directory: Path | None) -> None:
             diagnostics,
         )
         handle.set_upload_limit(4 * 1024)
+        tracker = OneShotUdpTracker(
+            fixture.info_hash,
+            port,
+            response_delay_seconds=3,
+            seeders=37,
+            leechers=11,
+        )
+        tracker.start()
         vite_port = reserve_loopback_port()
         origin = f"http://127.0.0.1:{vite_port}"
         storage = run_path / "downloads"
@@ -261,11 +273,13 @@ def run(screenshot_directory: Path | None) -> None:
             repository,
             origin,
             address,
-            magnet_uri(fixture.info_hash, f"127.0.0.1:{port}"),
+            tracker_magnet(fixture.info_hash, tracker.port),
             fixture.info_hash,
             len(fixture.files),
+            f"udp://127.0.0.1:{tracker.port}",
             screenshot_directory,
         )
+        tracker.join()
         verify_payload(storage, fixture.info_hash, fixture.payload_hash)
         compare_payloads(
             fixture.seed_directory / ROOT_NAME / BROWSER_PREFIX_PATH,
@@ -279,6 +293,7 @@ def run(screenshot_directory: Path | None) -> None:
             f"{result} info_hash={fixture.info_hash} metadata_size={len(fixture.info_bytes)} "
             f"pieces=3 files={len(fixture.files)} boundary_file_bytes={BROWSER_PREFIX_SIZE} "
             f"payload_sha1={fixture.payload_hash} responsive=wide,compact,phone "
+            "tracker_counts=peers:1,seeds:37,leeches:11 tracker_requests=2 "
             "peer_removal=ok gateway_shutdown=joined cleanup=ok"
         )
     except BaseException as error:
@@ -299,6 +314,8 @@ def run(screenshot_directory: Path | None) -> None:
                 if failure is None:
                     raise
                 print(f"gateway cleanup failed: {cleanup_error}", file=sys.stderr)
+        if tracker is not None:
+            tracker.close()
         if session is not None:
             if handle is not None:
                 try:

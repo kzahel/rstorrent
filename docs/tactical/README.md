@@ -245,9 +245,10 @@ that scope and its cleanup or compatibility rules explicitly.
 - [`042-metadata-display-name.md`](042-metadata-display-name.md): complete;
   replaces the live info-hash label with the verified durable metainfo name in
   library and General summaries while preserving the pre-metadata fallback.
-- [`043-live-tracker-inspection.md`](043-live-tracker-inspection.md): in
-  progress; establishes one bounded authoritative tracker runtime projection
-  and connects it to the leased API and responsive Trackers table.
+- [`043-live-tracker-inspection.md`](043-live-tracker-inspection.md): complete;
+  establishes one bounded authoritative tracker runtime projection, connects
+  it to the leased API and responsive Trackers table, and proves the path with
+  an isolated tracker-only browser transfer.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

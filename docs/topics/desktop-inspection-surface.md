@@ -16,7 +16,9 @@ adding bounded adjacent magnet input and Add controls through the application
 boundary. Tactical `038` adds responsive curated test-torrent shortcuts under
 More for the interactive inspection loop. Tactical `041` adds complete live
 file geometry and stored/verified progress through the same headless browser
-surface. The Tauri entry has not changed.
+surface. Tactical `043` adds authoritative live tracker lifecycle, response
+counts, retry/reannounce timing, and failure context through that surface. The
+Tauri entry has not changed.
 
 Tactical `042` makes a magnet's verified metainfo name appear in both the live
 library row and General heading as soon as metadata arrives. The hash-prefix
@@ -171,9 +173,17 @@ and removes the connection row after joined cleanup without launching Tauri or
 a visible browser. Tactical `037` drives the same proof from the toolbar rather
 than a raw HTTP command, including responsive and accessible intake behavior.
 
-The surface is therefore useful for live peer and file observation, but it is
-not yet a complete debugging console. The existing categorized diagnostics
-feed is the broadest next view candidate; a registry-backed Swarm table is the
-deeper peer-lifecycle candidate. Pieces and Disk remain separate design
-subjects. Selection remains an explicit next tactical based on real
+Tactical `043` makes the Trackers tab a live product and debugging surface
+without scraping tracker log messages. A delayed controlled announce proves
+that an in-flight operation is visible before its response, then shows the
+accepted swarm counts and next deadline while the torrent completes. Table
+columns and widths share the existing versioned preferences, exact sorting,
+and optional live re-sorting behavior. The phone detail keeps the URL and
+status useful while fully hiding the inactive library pane.
+
+The surface is therefore useful for live peer, file, and tracker observation,
+but it is not yet a complete debugging console. The existing categorized
+diagnostics feed is the broadest next view candidate; a registry-backed Swarm
+table is the deeper peer-lifecycle candidate. Pieces and Disk remain separate
+design subjects. Selection remains an explicit next tactical based on real
 inspection use.

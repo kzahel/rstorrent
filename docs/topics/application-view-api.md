@@ -12,8 +12,10 @@ Rust torrent and active-peer projections, semantic responsive view selection,
 independently reaped leases, and browser-suspension recovery through the live
 React adapter. Tactical `041` adds the complete selected-torrent file catalog,
 distinct stored and verified progress, and a separately bounded large-snapshot
-path. The existing Tactical `008` subscriptions remain compatible adapters.
-No stable public remote wire compatibility is claimed yet.
+path. Tactical `043` adds the selected torrent's authoritative tracker
+lifecycle as bounded keyed rows. The existing Tactical `008` subscriptions
+remain compatible adapters. No stable public remote wire compatibility is
+claimed yet.
 
 ## Purpose And Scope
 
@@ -514,9 +516,9 @@ The first useful contract progression is:
 4. selected-torrent peers; and
 5. bounded diagnostics.
 
-Trackers, pieces, disk activity, speed history, swarm state, and DHT follow
-through named views according to inspection value. Files is implemented by
-Tactical `041`. Unsupported views
+Pieces, disk activity, speed history, swarm state, and DHT follow through
+named views according to inspection value. Files is implemented by Tactical
+`041` and trackers by Tactical `043`. Unsupported views
 must report unsupported or unavailable explicitly rather than fabricate empty
 data.
 
@@ -555,7 +557,7 @@ migration, and stable public compatibility remain later layers. The
 transport-independent Zustand/React presentation foundation and demo adapter
 are complete in Tactical `034`; stable peer rows and the Rust-to-React polling
 adapter are complete in Tactical `035`; live Files is complete in Tactical
-`041`.
+`041`; and live Trackers is complete in Tactical `043`.
 
 ## Live Peer Extension
 
@@ -621,6 +623,28 @@ retain the library. Browser suspension follows the existing stale/reopen
 contract: the controlled 500 ms lease proof replaced the expired set and
 restored all 122 rows from a fresh epoch while the engine continued.
 
+## Live Trackers Extension
+
+Tactical `043` implements `torrent_trackers` as complete keyed rows derived
+from the deterministic engine schedule. The projection carries configured
+identity, source and transport, active/inactive lifecycle, current and next
+action, attempt and failure counts, accepted response statistics and interval,
+monotonic outcome ages and deadline, and bounded failure context. It does not
+derive state from diagnostics or retain a second tracker state machine.
+
+Same-catalog durable updates preserve live tracker state. Restart reconstructs
+configured inactive rows from the magnet without pretending volatile response
+history survived. The selected Trackers tab alone requests the view at a
+250 ms minimum delivery interval; leaving the tab evicts it. The adapter maps
+the delivered deadline to a local wall-clock target once, and the React table
+updates countdown text without backend timer patches.
+
+The controlled browser proof observed an intentionally delayed announce in
+flight, accepted exact peer/seeder/leecher counts and a reannounce deadline,
+completed verified content, removed the active peer row, and joined the
+gateway, tracker, and libtorrent seed. Generated Kotlin and UniFFI consumers
+compile while Android explicitly ignores this desktop-only presentation view.
+
 ## Validation And Evidence
 
 The completed foundation evidence proves:
@@ -667,6 +691,12 @@ list and selected-summary views already carry complete `TorrentView` rows,
 name arrival is an ordinary keyed upsert in both surfaces rather than a new
 view or event. The client validates the metainfo component's 255-byte bound
 and retains its info-hash fallback when the field is absent.
+
+Tactical `043` adds deterministic tracker snapshot, keyed-patch, catalog
+replacement, removal, reset, and lease-recovery coverage. Its controlled
+tracker-only browser run observed `announcing` before a delayed response, then
+one accepted peer, 37 seeds, 11 leeches, and a 30-minute reannounce deadline
+while the same run completed and verified the seeded payload.
 
 Public swarms and visible Tauri launch are unnecessary for this foundation.
 The browser gateway, temporary profiles, controlled libtorrent peer, and pure

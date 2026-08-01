@@ -19,7 +19,9 @@ an accessible removal dialog whose managed-data option is unchecked by
 default. The docked detail inspector is now bounded and resizable by pointer,
 touch, or keyboard. Tactical `041` adds the first live Files surface, exact
 sorting, persistent table columns and widths, and a 4,096-row named scenario.
-The Tauri entry remains legacy.
+Tactical `043` adds the responsive live Trackers table, local deadline
+countdowns, and a permanent tracker-recovery scenario. The Tauri entry remains
+legacy.
 
 ## Purpose
 
@@ -344,10 +346,11 @@ changes during that transition.
 3. Tactical `035` defines stable Rust torrent and active-peer inspection
    projections, self-expiring leases, semantic view selection, suspension
    recovery, and the live frontend adapter. This step is complete.
-4. Files is complete in Tactical `041`. Integrate the existing categorized
-   logger into the global diagnostics area or add the registry-backed Swarm
-   view according to immediate debugging value; Peers and Files are the first
-   detailed live engine views.
+4. Files is complete in Tactical `041`, and the schedule-backed Trackers view
+   is complete in Tactical `043`. Integrate the existing categorized logger
+   into the global diagnostics area or add the registry-backed Swarm view
+   according to immediate debugging value; Peers, Files, and Trackers are the
+   first detailed live engine views.
 5. Connect remaining detail views according to debugging and product value,
    keeping unsupported scaffolds truthful.
 6. Measure before adding frame-speed streaming, binary encoding, or more

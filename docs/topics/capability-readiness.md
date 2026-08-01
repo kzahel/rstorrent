@@ -35,6 +35,10 @@ product's inherited two-block pipeline: desktop and Android now use explicit,
 generous, independently bounded request, received-payload, and active-piece
 profiles. Tactical `040` adds durable archive and restartable torrent removal
 across path and Android SAF storage, plus the guarded web confirmation flow.
+Tactical `041` adds complete live file geometry and progress, Tactical `042`
+publishes the verified metainfo name, and Tactical `043` adds an authoritative
+schedule-backed tracker lifecycle through the responsive web surface and a
+controlled tracker-only browser proof.
 
 ## Purpose And Ownership
 
@@ -114,7 +118,8 @@ is usable through `./scripts/webui`, and Tactical
 [`037`](../tactical/037-live-magnet-toolbar-intake.md) gives it bounded magnet
 intake in addition to live inspection and torrent control. Tactical
 [`038`](../tactical/038-curated-test-torrent-menu.md) adds exact shortcuts for
-the retained WebTorrent public catalog without a privileged command path. Add
+the retained WebTorrent public catalog without a privileged command path.
+Files and tracker lifecycle are now live inspection feeds. Add
 an in-process view-set adapter and make `./scripts/desktop` select the new React
 surface without turning the loopback gateway into a desktop dependency.
 
@@ -207,8 +212,8 @@ does not.
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
 | Durable semantic application control | Implemented | deterministic, runtime, web, AVD, physical | Archive and fenced keep/delete removal are implemented; stable public compatibility and general multi-torrent scheduling remain absent. | [`application-control`](application-control.md) |
-| Leased application view sets and polling client | Implemented | deterministic, runtime, interop, web | Named summary, piece, diagnostic, and active-peer views have bounded replay/reset, independent lease expiry, and fresh-snapshot recovery; file/tracker/swarm views, streaming, Tauri migration, and stable public compatibility remain absent. | [`application-view-api`](application-view-api.md) |
-| Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive web surface adds magnets, archives, and guarded removal while consuming live torrent and active-peer views headlessly; production desktop integration, `.torrent` file intake, and remaining detail feeds are incomplete. | [`client-surfaces`](client-surfaces.md) |
+| Leased application view sets and polling client | Implemented | deterministic, runtime, interop, web | Named summary, piece, diagnostic, active-peer, complete-file, and tracker-lifecycle views have bounded replay/reset, independent lease expiry, and fresh-snapshot recovery; swarm views, streaming, Tauri migration, and stable public compatibility remain absent. | [`application-view-api`](application-view-api.md) |
+| Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive web surface adds magnets, archives, guarded removal, and live peer/file/tracker inspection; production desktop integration, `.torrent` file intake, and remaining detail feeds are incomplete. | [`client-surfaces`](client-surfaces.md) |
 | Android Compose foreground client | Partial | runtime, AVD, physical | General settings, connectivity policy, and complete torrent controls remain incomplete. | [`client-surfaces`](client-surfaces.md) |
 | Derived progress and bounded diagnostics | Implemented | deterministic, runtime, web, AVD | Scheduler and per-peer facts must grow with the corresponding owners. | [`application-control`](application-control.md) |
 | Offline, loopback-only, and online egress policy | Implemented | deterministic, runtime, web, AVD | Policy is fixed for one service lifetime; Android VPN and metered-network controls are absent. | [`application-control`](application-control.md) |

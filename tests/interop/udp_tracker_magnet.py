@@ -64,9 +64,20 @@ class RunResult:
 
 
 class OneShotUdpTracker:
-    def __init__(self, info_hash: str, peer_port: int) -> None:
+    def __init__(
+        self,
+        info_hash: str,
+        peer_port: int,
+        *,
+        response_delay_seconds: float = 0,
+        seeders: int = 1,
+        leechers: int = 1,
+    ) -> None:
         self.info_hash = bytes.fromhex(info_hash)
         self.peer_port = peer_port
+        self.response_delay_seconds = response_delay_seconds
+        self.seeders = seeders
+        self.leechers = leechers
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.socket.bind(("127.0.0.1", 0))
         self.socket.settimeout(10)
@@ -168,13 +179,15 @@ class OneShotUdpTracker:
             if key == 0 or num_want != NUM_WANT or listen_port != ANNOUNCED_PORT:
                 raise ScenarioFailure("UDP announce has the wrong key, peer limit, or port")
 
+            if self.response_delay_seconds > 0:
+                time.sleep(self.response_delay_seconds)
             response = struct.pack(
                 "!IIIII4sH",
                 ANNOUNCE_ACTION,
                 announce_transaction,
                 1800,
-                1,
-                1,
+                self.leechers,
+                self.seeders,
                 socket.inet_aton("127.0.0.1"),
                 self.peer_port,
             )

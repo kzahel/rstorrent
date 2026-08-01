@@ -1,6 +1,6 @@
 # Live Tracker Inspection
 
-Status: In progress.
+Status: Complete.
 
 Topics: `tracker-discovery`, `application-view-api`, `web-ui-design`,
 `desktop-inspection-surface`, `performance-and-live-evidence`
@@ -320,3 +320,61 @@ migration, public remote authentication policy, command/action semantics,
 public-swarm traffic, a new dependency with material tradeoffs, visible app or
 physical-device interaction, or a tracker architecture that materially moves
 authority away from the accepted deterministic schedule.
+
+## Outcome And Evidence
+
+Completed on 2026-08-01. `TrackerSchedule` remains the only mutable owner of
+configured tracker lifecycle. Its bounded immutable snapshots now retain the
+canonical tracker identity, source and transport, current action, attempt and
+failure counts, last accepted response values, monotonic ages and deadline,
+and bounded failure text. The runtime publishes announcing, success, failure,
+retry, reannounce, and terminal inactive transitions through a typed activity
+sink; it aborts and joins operations before publishing the terminal state.
+Diagnostics remain observations and are not parsed into application state.
+
+The application projects those facts as `torrent_trackers` snapshots and
+complete-row keyed patches. Same-catalog durable refresh preserves live
+runtime state, restart reconstructs truthful inactive rows from the durable
+magnet, view removal evicts the projection, and lease recovery obtains a new
+coherent snapshot. Generated Rust, TypeScript, JSON Schema, Kotlin, and UniFFI
+consumers remain exhaustive. Android intentionally ignores the new view until
+it has a product-specific tracker screen.
+
+The responsive React surface now has a virtual Trackers table in both live and
+named-demo modes. The default columns are URL, status, tier, peers, seeds,
+leeches, next announce, and error; optional columns expose transport, source,
+event, attempts, failures, interval, and last outcome ages. Countdown text is
+derived locally from one delivered deadline, so the backend does not emit
+timer-only patches. The existing exact full-row sort and optional live
+re-sorting behavior are retained. It is not JSTorrent's limited incremental
+sorting implementation.
+
+Deterministic engine tests cover untouched, announcing, failed, retry,
+successful, reannounce, recovery, and inactive snapshots, including bounded
+errors and manager cancellation. Session tests cover mapping, keyed patches,
+catalog preservation, removal, view eviction, overflow/reset, and lease
+recovery. Frontend tests cover strict validation, sorting, reduction, local
+countdown, named transitions, responsive layout, keyboard interaction,
+virtualization, and accessibility.
+
+The isolated headless interoperability proof used a tracker-only magnet, an
+owned delayed loopback UDP tracker, and libtorrent `2.0.13.0` as the seed. The
+browser observed `announcing` before the reply, then `reannounce wait` with
+exact returned counts of one peer, 37 seeds, and 11 leeches plus the 30-minute
+deadline. It received 26,731 metadata bytes, displayed all 122 files, verified
+all three content pieces, matched the 40,000-byte payload SHA-1, observed peer
+cleanup, joined every child, and removed temporary state. Wide, compact, and
+phone layouts passed; the phone proof also prevents the inactive library
+drawer from leaking into the detail viewport.
+
+Focused validation passed 19 tracker engine tests, 66 session tests, six
+gateway tests, 55 frontend unit tests, six deterministic demo browser tests,
+the controlled live browser proof, and the Android x86_64/arm64-v8a shared
+contract build plus `assembleDebug testDebugUnitTest`. The final repository
+format, warning-denying Clippy, workspace test, generation-drift, frontend
+typecheck/test/build, and clean-tree gates close the slice.
+
+Deliberate deferrals remain as scoped: tracker commands, metainfo tracker
+tiers, other tracker transports, scrape, persistence of volatile response
+history, a provenance-preserving cumulative unique-peer count, streaming,
+binary encoding, Tauri migration, and an Android Trackers screen.

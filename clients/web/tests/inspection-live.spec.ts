@@ -9,6 +9,7 @@ const magnet = process.env.RSTORRENT_LIVE_MAGNET;
 const torrentId = process.env.RSTORRENT_LIVE_TORRENT_ID;
 const torrentName = process.env.RSTORRENT_LIVE_TORRENT_NAME;
 const fileCount = process.env.RSTORRENT_LIVE_FILE_COUNT;
+const trackerUrl = process.env.RSTORRENT_LIVE_TRACKER_URL;
 const screenshotDirectory = process.env.RSTORRENT_SCREENSHOT_DIR;
 
 test("live peer inspection follows a controlled verified transfer", async ({
@@ -20,7 +21,8 @@ test("live peer inspection follows a controlled verified transfer", async ({
       magnet === undefined ||
       torrentId === undefined ||
       torrentName === undefined ||
-      fileCount === undefined,
+      fileCount === undefined ||
+      trackerUrl === undefined,
     "controlled live gateway is opt-in",
   );
   const viewSetIds: string[] = [];
@@ -126,8 +128,38 @@ test("live peer inspection follows a controlled verified transfer", async ({
   const library = page.getByRole("grid", { name: "Torrent library" });
   const torrentRow = library.locator(`[data-row-id="${torrentId!}"]`);
   await expect(torrentRow).toBeVisible({ timeout: 10_000 });
+  await torrentRow.click();
+  await page.getByRole("tab", { name: "Trackers" }).click();
+  const trackers = page.getByRole("grid", { name: "Torrent trackers" });
+  const trackerRow = trackers.getByRole("row").filter({ hasText: trackerUrl! });
+  await expect(trackerRow).toBeVisible({ timeout: 10_000 });
+  await expect(trackerRow).toContainText("announcing");
+  await expect
+    .poll(async () => {
+      const cells = trackerRow.getByRole("gridcell");
+      return {
+        status: (await cells.nth(1).textContent())?.trim(),
+        peers: (await cells.nth(3).textContent())?.trim(),
+        seeds: (await cells.nth(4).textContent())?.trim(),
+        leeches: (await cells.nth(5).textContent())?.trim(),
+      };
+    }, { timeout: 10_000 })
+    .toEqual({
+      status: "reannounce wait",
+      peers: "1",
+      seeds: "37",
+      leeches: "11",
+    });
+  await expect(trackerRow).toContainText("Announce in");
+  await capture(page, "live-trackers-wide.png");
 
   await page.setViewportSize({ width: 390, height: 844 });
+  const backToLibrary = page.getByRole("button", {
+    name: "Torrents",
+    exact: true,
+  });
+  await expect(backToLibrary).toBeVisible();
+  await backToLibrary.click();
   const menuButton = page.getByRole("button", {
     name: "Toggle library navigation",
   });

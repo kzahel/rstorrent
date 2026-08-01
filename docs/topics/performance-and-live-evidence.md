@@ -620,6 +620,29 @@ Verified, both external content comparisons matched, and every child joined
 and cleaned up. The seed's 4 KiB/s upload limit makes these interoperability
 milestones diagnostic rather than product throughput measurements.
 
+### Tracker Projection Evidence: 2026-08-01
+
+Tactical `043` adds at most 32 small complete tracker rows at a 250 ms minimum
+selected-view cadence. One delivered monotonic deadline is mapped to a local
+wall-clock target, so the UI's one-second countdown does not create backend
+updates, queue traffic, or JSON encoding work. Same-catalog piece checkpoints
+preserve the tracker projection instead of rebuilding it from durable state.
+
+The deterministic tracker-recovery browser suite passed at wide, compact, and
+phone viewports. Its scale scenario retained 855 DOM elements, sampled about
+32.7 MiB of JavaScript heap, rendered initially in 258 ms, and applied its
+simulated update in 68 ms; one 50 ms long task was observed. These are
+single-machine smoke observations, not thresholds. The responsive proof also
+caught and closed a phone-width overflow that exposed a sliver of the inactive
+library pane.
+
+The controlled live browser proof delayed its owned UDP tracker response for
+three seconds so the UI could observe `announcing`, then displayed the exact
+response of one peer, 37 seeds, 11 leeches, and a 30-minute reannounce
+deadline. It completed and hash-verified the same 40,000-byte payload. This
+run validates state delivery and presentation; its seeded transfer timing is
+not a throughput comparison.
+
 ## Result Classification
 
 Classify each paired attempt before interpreting speed:
