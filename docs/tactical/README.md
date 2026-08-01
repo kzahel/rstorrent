@@ -200,6 +200,11 @@ that scope and its cleanup or compatibility rules explicitly.
 - [`031-storage-command-duration-evidence.md`](031-storage-command-duration-evidence.md):
   complete; separates bounded storage queue wait from per-kind write and hash
   service duration and attributes the live bottleneck to serialized writes.
+- [`032-bounded-coalesced-write-batches.md`](032-bounded-coalesced-write-batches.md):
+  complete; batches at most 16 already-admitted blocks and coalesces adjacent
+  piece ranges while retaining per-block integrity and cancellation ownership.
+  Physical writes fell by about 91%, but controlled wall time stayed neutral
+  and public serialized storage service remained above 93%.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

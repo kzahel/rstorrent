@@ -2,11 +2,12 @@
 
 Topic: `oracle-driven-engine-campaign`
 
-Status: Active. The paired headless comparator and bounded utility timeline
-now drive metadata, first-piece, sustained-transfer, endgame, and full
-publication parity from pinned libtorrent source and tests. The current slice
-expands the source-rich half-open cohort; high-impact BEP breadth follows the
-core common-denominator parity gate.
+Status: Paused after completed Tactical `032` by maintainer direction. The
+paired headless comparator and bounded utility timeline drive metadata,
+first-piece, sustained-transfer, endgame, and full publication parity from
+pinned libtorrent source and tests. Bounded write coalescing is complete;
+serialized storage execution remains the measured owner. High-impact BEP
+breadth still follows the core common-denominator parity gate.
 
 ## Purpose And Scope
 
@@ -312,18 +313,16 @@ reason to stop.
 
 ## Current Checkpoint
 
-Campaign state: **active**.
+Campaign state: **paused after a completed slice by maintainer direction**.
 
-Active tactical: **none while this completed slice is committed**.
+Active tactical: **none**.
 Tacticals `025` through
-[`031-storage-command-duration-evidence.md`](../tactical/031-storage-command-duration-evidence.md)
-are complete. The next implementation begins only after its bounded tactical
-records the source/test dossier and stopping condition.
+[`032-bounded-coalesced-write-batches.md`](../tactical/032-bounded-coalesced-write-batches.md)
+are complete.
 
-Current milestone: derive a bounded storage write-execution tactical from the
-pinned libtorrent implementation and tests plus JSTorrent's platform history,
-then reduce serialized 16 KiB service while preserving existing integrity and
-resource bounds.
+Current milestone: Tactical `032` closed bounded write coalescing without a
+speed claim. Review its neutral controlled result and retained public storage
+attribution before authorizing another implementation slice.
 
 Last completed evidence:
 
@@ -531,20 +530,25 @@ Last completed evidence:
   publication, and both Android target checks pass; and
 - three public 50% screens attributed 93.2--93.7% of wall time to serialized
   storage service. Writes consumed 87.7--88.2%, hashes 5.5--5.7%, and exact
-  integrity and cleanup held. This selects write execution rather than hashing,
-  peer ranking, or request policy.
+  integrity and cleanup held. This selected write execution rather than
+  hashing, peer ranking, or request policy; and
+- Tactical `032` now drains only already-admitted writes into 16-block/256 KiB
+  batches, coalesces exact adjacent same-piece ranges, preserves logical
+  completions and verification fences, and exposes physical versus logical
+  diagnostics. Its full 258-test workspace gate, controlled interop,
+  comparator, and both Android ABI checks pass;
+- the controlled 32 MiB profile reduced 2,048 logical blocks to 144--154
+  physical writes but produced a neutral 1.143-second median versus 1.196
+  before; and
+- three alternating product 50% pairs classified `reference_only`.
+  Libtorrent reached 50% in 27.26--29.94 seconds while RSTorrent timed out at
+  345--351 pieces. Batching reduced roughly 5,700 blocks to about 500 physical
+  operations, but combined write/hash service remained 93.0--94.2% of wall
+  time with zero hash failures and successful cleanup. This selects serialized
+  storage execution without opening its concurrency design.
 
-Next executable action:
+Next executable action: **none until explicit maintainer authorization**.
+The recorded candidate is a source-first study of bounded positional storage
+concurrency with per-piece verification fences, not an approved tactical.
 
-1. inspect exact pinned libtorrent write scheduling, buffering, coalescing, and
-   lifecycle tests, plus JSTorrent's platform write batching and failure
-   history;
-2. write the next bounded tactical with owner/task/cancellation map, memory and
-   payload limits, integrity ordering, intentional differences, and a paired
-   performance stopping condition;
-3. implement one coherent write operation-shape or bounded-concurrency change
-   with deterministic delayed/failing/cancellation tests; and
-4. run controlled publication and alternating public comparator cohorts before
-   considering peer/request policy or BEP breadth.
-
-Human blocker: **none**.
+Human blocker: **intentional maintainer review before more implementation**.

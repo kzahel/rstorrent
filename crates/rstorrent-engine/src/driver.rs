@@ -71,6 +71,9 @@ const TRACKER_RESULT_QUEUE: usize = 4;
 const CONTENT_DISCOVERY_QUEUE: usize = 8;
 const CONTENT_STORAGE_QUEUE: usize = 64;
 const CONTENT_STORAGE_PENDING_QUEUE: usize = 2;
+const CONTENT_STORAGE_JOB_LIMIT: usize = CONTENT_STORAGE_QUEUE + CONTENT_STORAGE_PENDING_QUEUE;
+const CONTENT_STORAGE_WRITE_BATCH_BLOCKS: usize = 16;
+const CONTENT_STORAGE_WRITE_BATCH_BYTES: usize = 256 * 1024;
 const MAX_RESOLVED_ADDRESSES: usize = 32;
 const UNKNOWN_MAGNET_LEFT: u64 = 16 * 1024;
 const UDP_TRACKER_RECEIVE_LENGTH: usize = MAX_ANNOUNCE_RESPONSE_LENGTH + 1;
@@ -394,6 +397,10 @@ struct DownloadControlInner {
     storage_hashes_started: AtomicUsize,
     storage_write_timing: StorageCommandTiming,
     storage_hash_timing: StorageCommandTiming,
+    storage_write_blocks_started: AtomicUsize,
+    storage_write_blocks_completed: AtomicUsize,
+    storage_write_batch_blocks_high_water: AtomicUsize,
+    storage_write_batch_bytes_high_water: AtomicUsize,
     storage_active_operation: AtomicUsize,
     storage_active_started_micros: AtomicU64,
     activity_sink: Mutex<Option<Arc<dyn DownloadActivitySink>>>,
@@ -461,6 +468,10 @@ pub struct DownloadProgress {
     pub storage_write_queue_wait_max_micros: u64,
     pub storage_write_service_micros: u64,
     pub storage_write_service_max_micros: u64,
+    pub storage_write_blocks_started: usize,
+    pub storage_write_blocks_completed: usize,
+    pub storage_write_batch_blocks_high_water: usize,
+    pub storage_write_batch_bytes_high_water: usize,
     pub storage_hash_operations_started: usize,
     pub storage_hash_operations_completed: usize,
     pub storage_hash_queue_wait_micros: u64,
@@ -491,6 +502,10 @@ impl DownloadControl {
                 storage_hashes_started: AtomicUsize::new(0),
                 storage_write_timing: StorageCommandTiming::default(),
                 storage_hash_timing: StorageCommandTiming::default(),
+                storage_write_blocks_started: AtomicUsize::new(0),
+                storage_write_blocks_completed: AtomicUsize::new(0),
+                storage_write_batch_blocks_high_water: AtomicUsize::new(0),
+                storage_write_batch_bytes_high_water: AtomicUsize::new(0),
                 storage_active_operation: AtomicUsize::new(0),
                 storage_active_started_micros: AtomicU64::new(0),
                 activity_sink: Mutex::new(None),
@@ -551,6 +566,22 @@ impl DownloadControl {
             storage_write_service_micros: write_timing.service_micros.load(Ordering::Acquire),
             storage_write_service_max_micros: write_timing
                 .service_max_micros
+                .load(Ordering::Acquire),
+            storage_write_blocks_started: self
+                .inner
+                .storage_write_blocks_started
+                .load(Ordering::Acquire),
+            storage_write_blocks_completed: self
+                .inner
+                .storage_write_blocks_completed
+                .load(Ordering::Acquire),
+            storage_write_batch_blocks_high_water: self
+                .inner
+                .storage_write_batch_blocks_high_water
+                .load(Ordering::Acquire),
+            storage_write_batch_bytes_high_water: self
+                .inner
+                .storage_write_batch_bytes_high_water
                 .load(Ordering::Acquire),
             storage_hash_operations_started: hash_timing.started.load(Ordering::Acquire),
             storage_hash_operations_completed: hash_timing.completed.load(Ordering::Acquire),
@@ -1105,6 +1136,10 @@ impl DownloadControl {
         debug_assert_ne!(previous, 0);
     }
 
+    fn storage_jobs_at_limit(&self) -> bool {
+        self.inner.storage_jobs_pending.load(Ordering::Acquire) >= CONTENT_STORAGE_JOB_LIMIT
+    }
+
     fn observe_storage_command_queue(&self, depth: usize) {
         self.inner
             .storage_command_queue_high_water
@@ -1165,6 +1200,33 @@ impl DownloadControl {
             .fetch_max(service_micros, Ordering::AcqRel);
         atomic_saturating_increment(&timing.completed);
         self.clear_storage_active_operation();
+    }
+
+    fn storage_write_batch_started(
+        &self,
+        enqueued_at: Instant,
+        started_at: Instant,
+        blocks: usize,
+        bytes: usize,
+    ) {
+        self.storage_command_started(StorageCommandKind::Write, enqueued_at, started_at);
+        atomic_saturating_add_usize(&self.inner.storage_write_blocks_started, blocks);
+        self.inner
+            .storage_write_batch_blocks_high_water
+            .fetch_max(blocks, Ordering::AcqRel);
+        self.inner
+            .storage_write_batch_bytes_high_water
+            .fetch_max(bytes, Ordering::AcqRel);
+    }
+
+    fn storage_write_batch_completed(
+        &self,
+        started_at: Instant,
+        completed_at: Instant,
+        blocks: usize,
+    ) {
+        atomic_saturating_add_usize(&self.inner.storage_write_blocks_completed, blocks);
+        self.storage_command_completed(StorageCommandKind::Write, started_at, completed_at);
     }
 
     fn storage_timing(&self, kind: StorageCommandKind) -> &StorageCommandTiming {
@@ -1257,8 +1319,12 @@ fn atomic_saturating_add(value: &AtomicU64, amount: u64) {
 }
 
 fn atomic_saturating_increment(value: &AtomicUsize) {
+    atomic_saturating_add_usize(value, 1);
+}
+
+fn atomic_saturating_add_usize(value: &AtomicUsize, amount: usize) {
     let _ = value.fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
-        Some(current.saturating_add(1))
+        Some(current.saturating_add(amount))
     });
 }
 
@@ -4063,11 +4129,38 @@ impl ContentStorageCommand {
             Self::Verify { .. } => StorageCommandKind::Hash,
         }
     }
+
+    fn write_bytes(&self) -> Option<usize> {
+        match self {
+            Self::Write { bytes, .. } => Some(bytes.len()),
+            Self::Verify { .. } => None,
+        }
+    }
 }
 
 struct QueuedContentStorageCommand {
     enqueued_at: Instant,
     command: ContentStorageCommand,
+}
+
+struct PreparedContentWrite {
+    block: BlockKey,
+    offset: u64,
+    bytes: Vec<u8>,
+    stats: ContentWriteStats,
+}
+
+struct ContentWriteMember {
+    block: BlockKey,
+    stats: ContentWriteStats,
+}
+
+struct CoalescedContentWrite {
+    piece: u32,
+    begin: u32,
+    offset: u64,
+    bytes: Vec<u8>,
+    members: Vec<ContentWriteMember>,
 }
 
 enum ContentStorageCompletion {
@@ -4185,7 +4278,7 @@ impl ContentStoragePipeline {
     }
 
     fn is_backpressured(&self) -> bool {
-        !self.pending_commands.is_empty()
+        !self.pending_commands.is_empty() || self.control.storage_jobs_at_limit()
     }
 
     async fn next_completion(&mut self) -> Result<ContentStorageCompletion, DownloadError> {
@@ -4219,73 +4312,262 @@ async fn run_content_storage_task(
     cancellation: CancellationToken,
     control: DownloadControl,
 ) -> ContentStorage {
-    loop {
-        let command = tokio::select! {
-            biased;
-            _ = cancellation.cancelled() => break,
-            command = commands.recv() => match command {
-                Some(command) => command,
-                None => break,
+    let mut deferred = None;
+    'storage: loop {
+        let command = match deferred.take() {
+            Some(command) => command,
+            None => tokio::select! {
+                biased;
+                _ = cancellation.cancelled() => break,
+                command = commands.recv() => match command {
+                    Some(command) => command,
+                    None => break,
+                },
             },
         };
-        let kind = command.command.kind();
-        let started_at = Instant::now();
-        control.storage_command_started(kind, command.enqueued_at, started_at);
-        let completion =
-            execute_content_storage_command(&mut storage, command.command, &control).await;
-        control.storage_command_completed(kind, started_at, Instant::now());
-        let projected_depth = CONTENT_STORAGE_QUEUE
-            .saturating_sub(completions.capacity())
-            .saturating_add(1)
-            .min(CONTENT_STORAGE_QUEUE);
-        control.observe_storage_completion_queue(projected_depth);
-        let sent = tokio::select! {
-            biased;
-            _ = cancellation.cancelled() => false,
-            result = completions.send(completion) => result.is_ok(),
+
+        let completions_to_send = if command.command.write_bytes().is_some() {
+            let batch = collect_content_write_batch(command, &mut commands, &mut deferred);
+            let blocks = batch.len();
+            let bytes = batch.iter().fold(0_usize, |total, command| {
+                total.saturating_add(command.command.write_bytes().unwrap_or(0))
+            });
+            let enqueued_at = batch[0].enqueued_at;
+            let started_at = Instant::now();
+            control.storage_write_batch_started(enqueued_at, started_at, blocks, bytes);
+            let completed = execute_content_storage_writes(&mut storage, batch, &control).await;
+            control.storage_write_batch_completed(started_at, Instant::now(), blocks);
+            completed
+        } else {
+            let kind = command.command.kind();
+            debug_assert_eq!(kind, StorageCommandKind::Hash);
+            let started_at = Instant::now();
+            control.storage_command_started(kind, command.enqueued_at, started_at);
+            let completion =
+                execute_content_storage_verification(&mut storage, command.command, &control).await;
+            control.storage_command_completed(kind, started_at, Instant::now());
+            vec![completion]
         };
-        if !sent {
-            break;
+
+        for completion in completions_to_send {
+            let projected_depth = CONTENT_STORAGE_QUEUE
+                .saturating_sub(completions.capacity())
+                .saturating_add(1)
+                .min(CONTENT_STORAGE_QUEUE);
+            control.observe_storage_completion_queue(projected_depth);
+            let sent = tokio::select! {
+                biased;
+                _ = cancellation.cancelled() => false,
+                result = completions.send(completion) => result.is_ok(),
+            };
+            if !sent {
+                break 'storage;
+            }
         }
     }
     storage
 }
 
-async fn execute_content_storage_command(
+fn collect_content_write_batch(
+    first: QueuedContentStorageCommand,
+    commands: &mut mpsc::Receiver<QueuedContentStorageCommand>,
+    deferred: &mut Option<QueuedContentStorageCommand>,
+) -> Vec<QueuedContentStorageCommand> {
+    debug_assert!(first.command.write_bytes().is_some());
+    let mut bytes = first.command.write_bytes().unwrap_or(0);
+    let mut batch = Vec::with_capacity(CONTENT_STORAGE_WRITE_BATCH_BLOCKS);
+    batch.push(first);
+
+    while batch.len() < CONTENT_STORAGE_WRITE_BATCH_BLOCKS {
+        let next = match commands.try_recv() {
+            Ok(command) => command,
+            Err(mpsc::error::TryRecvError::Empty | mpsc::error::TryRecvError::Disconnected) => {
+                break;
+            }
+        };
+        let Some(next_bytes) = next.command.write_bytes() else {
+            *deferred = Some(next);
+            break;
+        };
+        let Some(projected) = bytes.checked_add(next_bytes) else {
+            *deferred = Some(next);
+            break;
+        };
+        if projected > CONTENT_STORAGE_WRITE_BATCH_BYTES {
+            *deferred = Some(next);
+            break;
+        }
+        bytes = projected;
+        batch.push(next);
+    }
+    batch
+}
+
+async fn execute_content_storage_writes(
+    storage: &mut ContentStorage,
+    commands: Vec<QueuedContentStorageCommand>,
+    control: &DownloadControl,
+) -> Vec<ContentStorageCompletion> {
+    control.wait_before_storage().await;
+    let mut prepared = Vec::with_capacity(commands.len());
+    for command in commands {
+        let ContentStorageCommand::Write {
+            block,
+            offset,
+            bytes,
+        } = command.command
+        else {
+            unreachable!("write batches contain only write commands");
+        };
+        let stats = match storage {
+            ContentStorage::Single(_) => Ok(ContentWriteStats {
+                selected_bytes: bytes.len(),
+                part_bytes: 0,
+            }),
+            ContentStorage::Selective(storage) => storage
+                .write_stats(block.piece, block.begin, bytes.len())
+                .map(|stats| ContentWriteStats {
+                    selected_bytes: stats.wanted_bytes,
+                    part_bytes: stats.skipped_bytes,
+                })
+                .map_err(DownloadError::SelectiveStorage),
+        };
+        let stats = match stats {
+            Ok(stats) => stats,
+            Err(error) => {
+                return failed_content_write_batch(block, error, prepared.into_iter());
+            }
+        };
+        prepared.push(PreparedContentWrite {
+            block,
+            offset,
+            bytes,
+            stats,
+        });
+    }
+
+    let writes = match coalesce_content_writes(prepared) {
+        Ok(writes) => writes,
+        Err((block, error)) => {
+            return vec![ContentStorageCompletion::Write {
+                block,
+                result: Err(error),
+            }];
+        }
+    };
+    let mut completed = Vec::new();
+    for write in writes {
+        let result = match storage {
+            ContentStorage::Single(storage) => storage
+                .write_block(write.offset, write.bytes)
+                .await
+                .map_err(DownloadError::Storage),
+            ContentStorage::Selective(storage) => storage
+                .write_block(write.piece, write.begin, write.bytes)
+                .await
+                .map(|_| ())
+                .map_err(DownloadError::SelectiveStorage),
+        };
+        if let Err(error) = result {
+            let mut members = write.members.into_iter();
+            let first = members
+                .next()
+                .expect("coalesced write retains at least one logical member");
+            completed.push(ContentStorageCompletion::Write {
+                block: first.block,
+                result: Err(error),
+            });
+            completed.extend(members.map(|member| ContentStorageCompletion::Write {
+                block: member.block,
+                result: Err(DownloadError::StorageTask(
+                    "coalesced physical write failed".to_owned(),
+                )),
+            }));
+            return completed;
+        }
+        completed.extend(
+            write
+                .members
+                .into_iter()
+                .map(|member| ContentStorageCompletion::Write {
+                    block: member.block,
+                    result: Ok(member.stats),
+                }),
+        );
+    }
+    completed
+}
+
+fn failed_content_write_batch(
+    failed_block: BlockKey,
+    error: DownloadError,
+    prepared: impl Iterator<Item = PreparedContentWrite>,
+) -> Vec<ContentStorageCompletion> {
+    let mut completions = vec![ContentStorageCompletion::Write {
+        block: failed_block,
+        result: Err(error),
+    }];
+    completions.extend(prepared.map(|write| ContentStorageCompletion::Write {
+        block: write.block,
+        result: Err(DownloadError::StorageTask(
+            "coalesced write batch validation failed".to_owned(),
+        )),
+    }));
+    completions
+}
+
+fn coalesce_content_writes(
+    mut writes: Vec<PreparedContentWrite>,
+) -> Result<Vec<CoalescedContentWrite>, (BlockKey, DownloadError)> {
+    writes.sort_unstable_by_key(|write| (write.block.piece, write.block.begin));
+    let mut coalesced: Vec<CoalescedContentWrite> = Vec::with_capacity(writes.len());
+    for write in writes {
+        if let Some(previous) = coalesced.last_mut()
+            && previous.piece == write.block.piece
+        {
+            let previous_piece_end = previous
+                .begin
+                .checked_add(u32::try_from(previous.bytes.len()).unwrap_or(u32::MAX));
+            if previous_piece_end.is_some_and(|end| write.block.begin < end) {
+                return Err((
+                    write.block,
+                    DownloadError::StorageTask(
+                        "overlapping logical writes entered one storage batch".to_owned(),
+                    ),
+                ));
+            }
+            let previous_file_end = previous.offset.checked_add(previous.bytes.len() as u64);
+            if previous_piece_end == Some(write.block.begin)
+                && previous_file_end == Some(write.offset)
+            {
+                previous.bytes.extend_from_slice(&write.bytes);
+                previous.members.push(ContentWriteMember {
+                    block: write.block,
+                    stats: write.stats,
+                });
+                continue;
+            }
+        }
+        coalesced.push(CoalescedContentWrite {
+            piece: write.block.piece,
+            begin: write.block.begin,
+            offset: write.offset,
+            bytes: write.bytes,
+            members: vec![ContentWriteMember {
+                block: write.block,
+                stats: write.stats,
+            }],
+        });
+    }
+    Ok(coalesced)
+}
+
+async fn execute_content_storage_verification(
     storage: &mut ContentStorage,
     command: ContentStorageCommand,
     control: &DownloadControl,
 ) -> ContentStorageCompletion {
     match command {
-        ContentStorageCommand::Write {
-            block,
-            offset,
-            bytes,
-        } => {
-            control.wait_before_storage().await;
-            let result = match storage {
-                ContentStorage::Single(storage) => {
-                    let selected_bytes = bytes.len();
-                    storage
-                        .write_block(offset, bytes)
-                        .await
-                        .map(|()| ContentWriteStats {
-                            selected_bytes,
-                            part_bytes: 0,
-                        })
-                        .map_err(DownloadError::Storage)
-                }
-                ContentStorage::Selective(storage) => storage
-                    .write_block(block.piece, block.begin, bytes)
-                    .await
-                    .map(|stats| ContentWriteStats {
-                        selected_bytes: stats.wanted_bytes,
-                        part_bytes: stats.skipped_bytes,
-                    })
-                    .map_err(DownloadError::SelectiveStorage),
-            };
-            ContentStorageCompletion::Write { block, result }
-        }
         ContentStorageCommand::Verify {
             piece,
             offset,
@@ -4329,6 +4611,9 @@ async fn execute_content_storage_command(
                 length,
                 result,
             }
+        }
+        ContentStorageCommand::Write { .. } => {
+            unreachable!("write commands execute through the bounded batch path")
         }
     }
 }
@@ -5751,22 +6036,25 @@ mod tests {
     use sha1::{Digest, Sha1};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream, UdpSocket};
-    use tokio::sync::{Barrier, Notify, Semaphore};
+    use tokio::sync::{Barrier, Notify, Semaphore, mpsc};
     use tokio::time::{sleep, timeout};
 
     use super::{
-        CLIENT_PEER_ID, CONTENT_STORAGE_QUEUE, ContentDownloadConfig, ContentSupervisorOwner,
-        DEFAULT_ADVERTISED_PEER_PORT, DhtRetryTiming, DownloadActivityEvent, DownloadActivitySink,
-        DownloadConfig, DownloadControl, DownloadError, MAX_DIAGNOSTIC_ERROR_LENGTH,
-        MAX_METADATA_PEERS, MAX_RECENT_METADATA_ATTEMPTS, MagnetDownloadConfig,
-        MetadataAcquisitionPhase, MetadataPeerStage, PeerConnection, PeerSession, SwarmConfig,
+        CLIENT_PEER_ID, CONTENT_STORAGE_QUEUE, CONTENT_STORAGE_WRITE_BATCH_BLOCKS,
+        CONTENT_STORAGE_WRITE_BATCH_BYTES, CoalescedContentWrite, ContentDownloadConfig,
+        ContentStorage, ContentStorageCommand, ContentStorageCompletion, ContentSupervisorOwner,
+        ContentWriteStats, DEFAULT_ADVERTISED_PEER_PORT, DhtRetryTiming, DownloadActivityEvent,
+        DownloadActivitySink, DownloadConfig, DownloadControl, DownloadError,
+        MAX_DIAGNOSTIC_ERROR_LENGTH, MAX_METADATA_PEERS, MAX_RECENT_METADATA_ATTEMPTS,
+        MagnetDownloadConfig, MetadataAcquisitionPhase, MetadataPeerStage, PeerConnection,
+        PeerSession, PreparedContentWrite, QueuedContentStorageCommand, SwarmConfig,
         TrackerManager, UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming,
         UdpTrackerTokenCache, announce_udp_tracker_address, atomic_saturating_add,
-        atomic_saturating_increment, content_dial_slot_available, download_magnet,
-        download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
-        download_magnet_with_control, download_verified_piece,
-        download_verified_piece_with_control, next_peer_message, retrying_dht_lookup,
-        run_content_download, run_magnet_download_with_peers, send_message,
+        atomic_saturating_increment, coalesce_content_writes, collect_content_write_batch,
+        content_dial_slot_available, download_magnet, download_magnet_metadata_with_control,
+        download_magnet_metadata_with_dht, download_magnet_with_control, download_verified_piece,
+        download_verified_piece_with_control, execute_content_storage_writes, next_peer_message,
+        retrying_dht_lookup, run_content_download, run_magnet_download_with_peers, send_message,
     };
     use crate::dht::{BootstrapNode, DhtConfig, DhtService};
     use crate::network::{NetworkConfig, NetworkPolicy};
@@ -5777,8 +6065,10 @@ mod tests {
     use crate::selective_storage::{
         SelectiveStorageError, selective_part_path, selective_staging_path,
     };
-    use crate::storage::staging_path;
-    use crate::swarm::{DEFAULT_INITIAL_REQUESTS_PER_CONNECTION, DEFAULT_MAX_PENDING_DIALS};
+    use crate::storage::{StagingFile, StorageError, staging_path};
+    use crate::swarm::{
+        BlockKey, DEFAULT_INITIAL_REQUESTS_PER_CONNECTION, DEFAULT_MAX_PENDING_DIALS,
+    };
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -5793,6 +6083,126 @@ mod tests {
         let count = AtomicUsize::new(usize::MAX);
         atomic_saturating_increment(&count);
         assert_eq!(count.load(Ordering::Acquire), usize::MAX);
+    }
+
+    fn prepared_write(piece: u32, begin: u32, bytes: &[u8]) -> PreparedContentWrite {
+        PreparedContentWrite {
+            block: BlockKey::new(piece, begin, bytes.len() as u32).expect("test block"),
+            offset: u64::from(piece) * 1024 + u64::from(begin),
+            bytes: bytes.to_vec(),
+            stats: ContentWriteStats {
+                selected_bytes: bytes.len(),
+                part_bytes: 0,
+            },
+        }
+    }
+
+    fn queued_write(piece: u32, begin: u32, length: usize) -> QueuedContentStorageCommand {
+        QueuedContentStorageCommand {
+            enqueued_at: Instant::now(),
+            command: ContentStorageCommand::Write {
+                block: BlockKey::new(piece, begin, length as u32).expect("test block"),
+                offset: u64::from(piece) * 1024 * 1024 + u64::from(begin),
+                bytes: vec![piece as u8; length],
+            },
+        }
+    }
+
+    #[test]
+    fn storage_write_batch_coalesces_only_exact_piece_ranges() {
+        let writes = vec![
+            prepared_write(0, 4, b"efgh"),
+            prepared_write(1, 0, b"WXYZ"),
+            prepared_write(0, 0, b"abcd"),
+            prepared_write(0, 12, b"mnop"),
+            prepared_write(0, 8, b"ijkl"),
+        ];
+        let coalesced = coalesce_content_writes(writes).expect("coalesce exact ranges");
+        assert_eq!(coalesced.len(), 2);
+        let CoalescedContentWrite {
+            piece,
+            begin,
+            bytes,
+            members,
+            ..
+        } = &coalesced[0];
+        assert_eq!((*piece, *begin), (0, 0));
+        assert_eq!(bytes, b"abcdefghijklmnop");
+        assert_eq!(members.len(), 4);
+        assert_eq!(coalesced[1].piece, 1);
+        assert_eq!(coalesced[1].members.len(), 1);
+    }
+
+    #[test]
+    fn storage_write_batch_rejects_overlap_and_keeps_gaps() {
+        let gapped = coalesce_content_writes(vec![
+            prepared_write(0, 0, b"abcd"),
+            prepared_write(0, 8, b"ijkl"),
+        ])
+        .expect("gapped writes remain separate");
+        assert_eq!(gapped.len(), 2);
+
+        let overlap = coalesce_content_writes(vec![
+            prepared_write(0, 0, b"abcdefgh"),
+            prepared_write(0, 4, b"efgh"),
+        ]);
+        assert!(matches!(overlap, Err((_, DownloadError::StorageTask(_)))));
+    }
+
+    #[test]
+    fn storage_write_batch_respects_exact_count_and_byte_caps() {
+        let (sender, mut receiver) = mpsc::channel(CONTENT_STORAGE_QUEUE);
+        for piece in 1..=CONTENT_STORAGE_WRITE_BATCH_BLOCKS {
+            sender
+                .try_send(queued_write(piece as u32, 0, MIN_PAYLOAD_ALLOWANCE))
+                .expect("queue test write");
+        }
+        let mut deferred = None;
+        let batch = collect_content_write_batch(
+            queued_write(0, 0, MIN_PAYLOAD_ALLOWANCE),
+            &mut receiver,
+            &mut deferred,
+        );
+        assert_eq!(batch.len(), CONTENT_STORAGE_WRITE_BATCH_BLOCKS);
+        assert_eq!(
+            batch
+                .iter()
+                .map(|queued| queued.command.write_bytes().expect("write bytes"))
+                .sum::<usize>(),
+            CONTENT_STORAGE_WRITE_BATCH_BYTES
+        );
+        assert!(deferred.is_none());
+        assert_eq!(receiver.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn failed_coalesced_write_mutates_no_valid_prefix() {
+        let output = test_path("coalesced-write-failure.bin");
+        let staged = staging_path(&output).expect("staging path");
+        let mut storage = ContentStorage::Single(
+            StagingFile::create(output.clone(), 4)
+                .await
+                .expect("create staging file"),
+        );
+        let commands = vec![queued_write(0, 0, 4), queued_write(0, 4, 4)];
+
+        let completions =
+            execute_content_storage_writes(&mut storage, commands, &DownloadControl::new()).await;
+
+        assert_eq!(completions.len(), 2);
+        assert!(matches!(
+            &completions[0],
+            ContentStorageCompletion::Write {
+                result: Err(DownloadError::Storage(StorageError::BlockOutOfRange { .. })),
+                ..
+            }
+        ));
+        assert_eq!(
+            tokio::fs::read(&staged).await.expect("read staged file"),
+            vec![0; 4]
+        );
+        drop(storage);
+        let _ = tokio::fs::remove_file(staged).await;
     }
 
     fn loopback_network(timeout: Duration) -> NetworkConfig {
@@ -7196,12 +7606,23 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         assert!(progress.storage_jobs_high_water >= 2);
         assert!(progress.storage_command_queue_high_water <= CONTENT_STORAGE_QUEUE);
         assert!(progress.storage_completion_queue_high_water <= CONTENT_STORAGE_QUEUE);
-        assert_eq!(progress.storage_write_operations_started, 2);
-        assert_eq!(progress.storage_write_operations_completed, 2);
-        assert!(progress.storage_write_service_micros >= 400_000);
+        assert!((1..=2).contains(&progress.storage_write_operations_started));
+        assert_eq!(
+            progress.storage_write_operations_started,
+            progress.storage_write_operations_completed
+        );
+        assert_eq!(progress.storage_write_blocks_started, 2);
+        assert_eq!(progress.storage_write_blocks_completed, 2);
+        assert!((1..=2).contains(&progress.storage_write_batch_blocks_high_water));
+        assert!(
+            (MIN_PAYLOAD_ALLOWANCE..=2 * MIN_PAYLOAD_ALLOWANCE)
+                .contains(&progress.storage_write_batch_bytes_high_water)
+        );
+        assert!(
+            progress.storage_write_service_micros
+                >= progress.storage_write_operations_started as u64 * 200_000
+        );
         assert!(progress.storage_write_service_max_micros >= 200_000);
-        assert!(progress.storage_write_queue_wait_micros >= 200_000);
-        assert!(progress.storage_write_queue_wait_max_micros >= 200_000);
         assert_eq!(progress.storage_hash_operations_started, 2);
         assert_eq!(progress.storage_hash_operations_completed, 2);
         assert_eq!(progress.storage_active_write_micros, None);
@@ -7290,6 +7711,8 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         assert_eq!(progress.storage_jobs_pending, 0);
         assert_eq!(progress.storage_write_operations_started, 1);
         assert_eq!(progress.storage_write_operations_completed, 1);
+        assert_eq!(progress.storage_write_blocks_started, 1);
+        assert_eq!(progress.storage_write_blocks_completed, 1);
         assert!(progress.storage_write_service_micros >= 200_000);
         assert_eq!(progress.storage_hash_operations_started, 0);
         assert_eq!(progress.storage_active_write_micros, None);
@@ -7437,11 +7860,21 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let progress = control.snapshot();
         assert_eq!(progress.storage_jobs_pending, 0);
         assert!(progress.storage_jobs_high_water > CONTENT_STORAGE_QUEUE);
-        assert_eq!(
-            progress.storage_command_queue_high_water,
-            CONTENT_STORAGE_QUEUE
-        );
+        assert!(progress.storage_command_queue_high_water <= CONTENT_STORAGE_QUEUE);
+        assert!(progress.storage_command_queue_high_water > 0);
         assert!(progress.storage_completion_queue_high_water <= CONTENT_STORAGE_QUEUE);
+        assert_eq!(progress.storage_write_blocks_started, 80);
+        assert_eq!(progress.storage_write_blocks_completed, 80);
+        assert!(progress.storage_write_operations_started < 80);
+        assert_eq!(
+            progress.storage_write_operations_started,
+            progress.storage_write_operations_completed
+        );
+        assert!(progress.storage_write_batch_blocks_high_water > 1);
+        assert!(
+            progress.storage_write_batch_blocks_high_water <= CONTENT_STORAGE_WRITE_BATCH_BLOCKS
+        );
+        assert!(progress.storage_write_batch_bytes_high_water <= CONTENT_STORAGE_WRITE_BATCH_BYTES);
         timeout(Duration::from_secs(1), peer_task)
             .await
             .expect("storage-pressure peer joined")
@@ -7567,10 +8000,8 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let progress = control.snapshot();
         assert_eq!(progress.storage_jobs_pending, 0);
         assert_eq!(progress.storage_jobs_high_water, CONTENT_STORAGE_QUEUE + 2);
-        assert_eq!(
-            progress.storage_command_queue_high_water,
-            CONTENT_STORAGE_QUEUE
-        );
+        assert!(progress.storage_command_queue_high_water <= CONTENT_STORAGE_QUEUE);
+        assert!(progress.storage_command_queue_high_water > 0);
         let discovered = peers
             .registry
             .find_endpoint(PeerEndpoint::new(discovered_address).expect("DHT endpoint"))

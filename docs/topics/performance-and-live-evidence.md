@@ -601,6 +601,29 @@ metadata run, and the first bounded public full pair now pass or produce an
 honest classified result. The comparator does not add product UI, establish a
 CI speed gate, or change DHT scheduling itself.
 
+## Bounded Write-Batch Evidence: 2026-08-01
+
+Tactical `032` separates logical accepted blocks from physical write batches.
+It drains no more than 16 already-admitted blocks or 256 KiB without waiting,
+coalesces exact adjacent same-piece ranges, and retains per-block completions
+and verification fences.
+
+Three controlled 32 MiB selective-hash runs published exact content and
+cleaned up at 1.354, 1.143, and 1.124 seconds. Their 1.143-second median is a
+neutral 4.4% improvement over the preceding 1.196-second measurement, below
+the predeclared 20% claim threshold. The shape did change materially: every
+run reduced 2,048 logical blocks to 144--154 physical writes, reached the
+16-block/256 KiB caps, and spent 0.232--0.331 seconds in write service.
+
+The retained three-pair product tracker+DHT Big Buck Bunny cohort used a newly
+built probe and 300-second owner limits. All reference owners reached 50% in
+27.26--29.94 seconds. All RSTorrent owners timed out at 345--351 of 1,055
+pieces with zero piece-hash failures and successful cleanup. Each reduced
+5,648--5,740 logical blocks to 500--509 physical writes. Write service consumed
+51.4--54.9% and hash service 39.1--41.6% of wall time, leaving combined
+serialized storage service at 93.0--94.2%. This is a structural batching claim,
+not a latency, functional-parity, or protocol claim.
+
 ## Maintenance Contract
 
 Feature tacticals add measurements only when their owner can report them

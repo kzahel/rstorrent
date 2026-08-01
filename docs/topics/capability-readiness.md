@@ -18,10 +18,12 @@ that cohort during storage pressure. Coalesced selective hashing now removes
 redundant seeks, but a controlled profile remained neutral and public storage
 occupancy stayed saturated. The complete common piece hash now runs behind one
 bounded blocking positional-I/O boundary, but controlled and public timing
-again stayed neutral. The duration slice now attributes 93--94% of public wall
-time to serialized storage service, including about 88% to 16 KiB writes and
-5--6% to piece hashing. The next source-first slice owns write execution shape
-or bounded concurrency.
+again stayed neutral. The duration slice attributed 93--94% of public wall
+time to serialized storage service. Bounded coalesced batches now reduce
+roughly 5,700 logical blocks to about 500 physical writes, but controlled wall
+time stayed neutral and public write plus hash service still consumed 93--94%.
+The campaign is paused for maintainer review before any bounded
+storage-concurrency tactical.
 
 ## Purpose And Ownership
 
@@ -96,16 +98,17 @@ evidence.
 
 ### Now
 
-**Source-first storage write execution.** Inspect pinned libtorrent write
-execution and tests plus JSTorrent's platform write batching, then define one
-bounded tactical that reduces serialized 16 KiB write service without weakening
-integrity, cancellation, payload, memory, or publication bounds.
+**Bounded positional storage concurrency (paused).** Tactical `032` proved
+bounded coalescing and selected serialized storage execution as the remaining
+owner. Do not open the concurrency tactical until the maintainer authorizes
+work after reviewing the campaign direction.
 
 ### Next
 
-1. **Paired completion parity.** Re-run controlled and public comparator
-   cohorts after the write-owner change, then use the retained timeline to
-   select the next measured owner without changing several policies together.
+1. **Paired completion parity.** After any authorized storage-owner change,
+   re-run controlled and public comparator cohorts and use the retained
+   timeline to select the next measured owner without changing several
+   policies together.
 2. **Measured BEP breadth.** Use the protocol matrix and full-reference gaps
    to choose the next discovery or transport BEP after core completion parity.
 3. **Durable single-file resume.** Extend the existing selective-storage
@@ -164,7 +167,7 @@ does not.
 
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
-| Bounded 16 KiB block pipeline | Implemented | deterministic, runtime, interop, live | Per-connection depth adapts under one torrent allowance, and one bounded async storage owner preserves peer-event progress; serialized write execution is the measured public performance gap. | [`download-correctness`](download-correctness.md) |
+| Bounded 16 KiB block pipeline | Implemented | deterministic, runtime, interop, live | Per-connection depth adapts under one torrent allowance; already-admitted blocks coalesce into bounded physical writes, but serialized write/hash execution remains the measured public performance gap. | [`download-correctness`](download-correctness.md) |
 | Sequential multi-piece download | Implemented | runtime, interop | Ordinary single-file and selective multi-file complete; single-file durable resume is absent. | [`download-correctness`](download-correctness.md) |
 | Availability-aware piece selection | Partial | deterministic, runtime, interop | Swarm-wide availability, partial-first work, fairness, and unique-piece retention exist; rarest-first and measured scoring are absent. | [`download-correctness`](download-correctness.md) |
 | Choke recovery | Implemented | deterministic, runtime, interop | Requests move to another peer and full choked sets are replaceable; mature choking/reputation policy is absent. | [`download-correctness`](download-correctness.md) |

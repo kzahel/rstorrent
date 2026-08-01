@@ -47,6 +47,11 @@ class ProfileResult:
     transfer_seconds: float
     info_hash: str
     payload_high_water: int
+    storage_write_operations: int
+    storage_write_blocks: int
+    storage_write_batch_blocks_high_water: int
+    storage_write_batch_bytes_high_water: int
+    storage_write_service_micros: int
     file_hashes: dict[str, str]
     cleanup_succeeded: bool = False
 
@@ -134,7 +139,18 @@ def parse_diagnostic(output: str) -> dict[str, str]:
         "part_slots_after": "0",
         "part_reopened": "true",
     }
-    required = {*expected, "sha1", "info_hash", "payload_high_water", "part_path"}
+    required = {
+        *expected,
+        "sha1",
+        "info_hash",
+        "payload_high_water",
+        "part_path",
+        "storage_write_operations",
+        "storage_write_blocks",
+        "storage_write_batch_blocks_high_water",
+        "storage_write_batch_bytes_high_water",
+        "storage_write_service_micros",
+    }
     missing = required - values.keys()
     if missing:
         raise ScenarioFailure(f"profile diagnostic is missing fields: {sorted(missing)}")
@@ -242,6 +258,17 @@ def run_once(binary: Path, ordinal: int) -> ProfileResult:
             transfer_seconds=transfer_seconds,
             info_hash=info_hash,
             payload_high_water=int(diagnostic["payload_high_water"]),
+            storage_write_operations=int(diagnostic["storage_write_operations"]),
+            storage_write_blocks=int(diagnostic["storage_write_blocks"]),
+            storage_write_batch_blocks_high_water=int(
+                diagnostic["storage_write_batch_blocks_high_water"]
+            ),
+            storage_write_batch_bytes_high_water=int(
+                diagnostic["storage_write_batch_bytes_high_water"]
+            ),
+            storage_write_service_micros=int(
+                diagnostic["storage_write_service_micros"]
+            ),
             file_hashes=actual_hashes,
         )
     except BaseException as error:
@@ -324,6 +351,11 @@ def main() -> int:
         print(
             f"run={result.ordinal} transfer_seconds={result.transfer_seconds:.3f} "
             f"info_hash={result.info_hash} payload_high_water={result.payload_high_water} "
+            f"write_operations={result.storage_write_operations} "
+            f"write_blocks={result.storage_write_blocks} "
+            f"batch_blocks_high_water={result.storage_write_batch_blocks_high_water} "
+            f"batch_bytes_high_water={result.storage_write_batch_bytes_high_water} "
+            f"write_service_seconds={result.storage_write_service_micros / 1_000_000:.3f} "
             f"file_hashes={hashes} cleanup=ok"
         )
     ordered = sorted(result.transfer_seconds for result in results)

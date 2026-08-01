@@ -141,6 +141,9 @@ struct UtilitySample {
     storage_queue_wait_micros: Option<u64>,
     storage_write_service_micros: Option<u64>,
     storage_hash_service_micros: Option<u64>,
+    storage_write_blocks_completed: Option<usize>,
+    storage_write_batch_blocks_high_water: Option<usize>,
+    storage_write_batch_bytes_high_water: Option<usize>,
     storage_active_kind: Option<&'static str>,
     storage_active_age_micros: Option<u64>,
     pending_disk_bytes: Option<usize>,
@@ -231,6 +234,13 @@ impl UtilityTimeline {
             ),
             storage_write_service_micros: Some(snapshot.progress.storage_write_service_micros),
             storage_hash_service_micros: Some(snapshot.progress.storage_hash_service_micros),
+            storage_write_blocks_completed: Some(snapshot.progress.storage_write_blocks_completed),
+            storage_write_batch_blocks_high_water: Some(
+                snapshot.progress.storage_write_batch_blocks_high_water,
+            ),
+            storage_write_batch_bytes_high_water: Some(
+                snapshot.progress.storage_write_batch_bytes_high_water,
+            ),
             storage_active_kind: if snapshot.progress.storage_active_write_micros.is_some() {
                 Some("write")
             } else if snapshot.progress.storage_active_hash_micros.is_some() {
@@ -552,6 +562,10 @@ struct Diagnostics {
     storage_write_queue_wait_max_micros: u64,
     storage_write_service_micros: u64,
     storage_write_service_max_micros: u64,
+    storage_write_blocks_started: usize,
+    storage_write_blocks_completed: usize,
+    storage_write_batch_blocks_high_water: usize,
+    storage_write_batch_bytes_high_water: usize,
     storage_hash_operations_started: usize,
     storage_hash_operations_completed: usize,
     storage_hash_queue_wait_micros: u64,
@@ -992,6 +1006,14 @@ fn diagnostic_result(
         storage_write_queue_wait_max_micros: snapshot.progress.storage_write_queue_wait_max_micros,
         storage_write_service_micros: snapshot.progress.storage_write_service_micros,
         storage_write_service_max_micros: snapshot.progress.storage_write_service_max_micros,
+        storage_write_blocks_started: snapshot.progress.storage_write_blocks_started,
+        storage_write_blocks_completed: snapshot.progress.storage_write_blocks_completed,
+        storage_write_batch_blocks_high_water: snapshot
+            .progress
+            .storage_write_batch_blocks_high_water,
+        storage_write_batch_bytes_high_water: snapshot
+            .progress
+            .storage_write_batch_bytes_high_water,
         storage_hash_operations_started: snapshot.progress.storage_hash_operations_started,
         storage_hash_operations_completed: snapshot.progress.storage_hash_operations_completed,
         storage_hash_queue_wait_micros: snapshot.progress.storage_hash_queue_wait_micros,
@@ -1157,6 +1179,9 @@ mod tests {
                 storage_hash_queue_wait_micros: 11,
                 storage_write_service_micros: 13,
                 storage_hash_service_micros: 17,
+                storage_write_blocks_completed: 23,
+                storage_write_batch_blocks_high_water: 5,
+                storage_write_batch_bytes_high_water: 65_536,
                 storage_active_hash_micros: Some(19),
                 ..DownloadProgress::default()
             },
@@ -1170,6 +1195,15 @@ mod tests {
         assert_eq!(timeline.samples[0].storage_queue_wait_micros, Some(18));
         assert_eq!(timeline.samples[0].storage_write_service_micros, Some(13));
         assert_eq!(timeline.samples[0].storage_hash_service_micros, Some(17));
+        assert_eq!(timeline.samples[0].storage_write_blocks_completed, Some(23));
+        assert_eq!(
+            timeline.samples[0].storage_write_batch_blocks_high_water,
+            Some(5)
+        );
+        assert_eq!(
+            timeline.samples[0].storage_write_batch_bytes_high_water,
+            Some(65_536)
+        );
         assert_eq!(timeline.samples[0].storage_active_kind, Some("hash"));
         assert_eq!(timeline.samples[0].storage_active_age_micros, Some(19));
         timeline.record(
@@ -1244,6 +1278,9 @@ mod tests {
             storage_queue_wait_micros: None,
             storage_write_service_micros: None,
             storage_hash_service_micros: None,
+            storage_write_blocks_completed: None,
+            storage_write_batch_blocks_high_water: None,
+            storage_write_batch_bytes_high_water: None,
             storage_active_kind: None,
             storage_active_age_micros: None,
             pending_disk_bytes: None,

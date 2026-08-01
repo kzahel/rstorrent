@@ -274,11 +274,21 @@ saturation. One public screen reached 50% in 82.48 seconds and two timed out at
 time, hash service consumed 5.5--5.7%, all runs retained exact integrity and
 cleanup, and no operation remained active at termination.
 
-The next stopping condition is a source-derived write-execution owner that
-reduces serialized 16 KiB service while preserving storage ordering, payload
-charging, hash-before-verification, cancellation, memory bounds, and exact
-publication. Peer selection and request policy remain unchanged until the
-paired comparator measures that owner.
+Tactical `032` now drains only already-admitted writes into bounded
+16-block/256 KiB batches and coalesces exact adjacent same-piece ranges while
+retaining per-block completion, payload, cancellation, selective-file, and
+verification ownership. Its controlled profile reduced 2,048 logical blocks
+to 144--154 physical writes, but the 1.143-second median was neutral against
+1.196 seconds before. Three public 50% screens timed out at 345--351 pieces;
+roughly 5,700 logical blocks became about 500 writes, yet combined serialized
+write/hash service still consumed 93.0--94.2% of wall time. Zero hash failures
+and successful cleanup held.
+
+No next stopping condition is active while the campaign is paused for
+maintainer review. The retained candidate is source-derived bounded positional
+storage concurrency with per-piece verification fences. Peer selection and
+request policy remain unchanged unless a future authorized tactical records a
+different evidence-backed owner.
 
 Routine engine validation remains headless; no additional product UI is
 required by that slice.

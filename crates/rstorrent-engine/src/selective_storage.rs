@@ -885,12 +885,7 @@ impl SelectiveStorage {
         begin: u32,
         bytes: Vec<u8>,
     ) -> Result<SelectiveWriteStats, SelectiveStorageError> {
-        let length = u32::try_from(bytes.len())
-            .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
-        let segments = self
-            .layout
-            .segments(piece_index, begin, length, &self.selection)?;
-        let mut stats = SelectiveWriteStats::default();
+        let (segments, stats) = self.plan_write(piece_index, begin, bytes.len())?;
         for segment in segments {
             let segment_bytes = &bytes[segment.block_offset..segment.block_offset + segment.length];
             match segment.target {
@@ -913,7 +908,6 @@ impl SelectiveStorage {
                             source,
                         }
                     })?;
-                    stats.wanted_bytes += segment.length;
                 }
                 SegmentTarget::SkippedFile { .. } => {
                     self.part_file_mut()?
@@ -925,14 +919,51 @@ impl SelectiveStorage {
                             segment_bytes,
                         )
                         .await?;
-                    stats.skipped_bytes += segment.length;
+                }
+                SegmentTarget::Padding => {
+                    unreachable!("padding was rejected while planning the write");
+                }
+            }
+        }
+        Ok(stats)
+    }
+
+    pub(crate) fn write_stats(
+        &self,
+        piece_index: u32,
+        begin: u32,
+        length: usize,
+    ) -> Result<SelectiveWriteStats, SelectiveStorageError> {
+        self.plan_write(piece_index, begin, length)
+            .map(|(_, stats)| stats)
+    }
+
+    fn plan_write(
+        &self,
+        piece_index: u32,
+        begin: u32,
+        length: usize,
+    ) -> Result<(Vec<LayoutSegment>, SelectiveWriteStats), SelectiveStorageError> {
+        let length = u32::try_from(length)
+            .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
+        let segments = self
+            .layout
+            .segments(piece_index, begin, length, &self.selection)?;
+        let mut stats = SelectiveWriteStats::default();
+        for segment in &segments {
+            match segment.target {
+                SegmentTarget::WantedFile { .. } => {
+                    stats.wanted_bytes = stats.wanted_bytes.saturating_add(segment.length);
+                }
+                SegmentTarget::SkippedFile { .. } => {
+                    stats.skipped_bytes = stats.skipped_bytes.saturating_add(segment.length);
                 }
                 SegmentTarget::Padding => {
                     return Err(SelectiveStorageError::PaddingInPeerBlock);
                 }
             }
         }
-        Ok(stats)
+        Ok((segments, stats))
     }
 
     pub async fn hash_piece(
@@ -2091,6 +2122,35 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    #[tokio::test]
+    async fn coalesced_write_preserves_wanted_and_part_accounting() {
+        let output = test_path("coalesced-write-accounting");
+        clean(&output).await;
+        let metainfo = fixture();
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[1]).expect("selection");
+        let bytes = torrent_bytes(&metainfo);
+        let mut storage = SelectiveStorage::create(output.clone(), &metainfo, layout, selection)
+            .await
+            .expect("create selected storage");
+
+        let planned = storage
+            .write_stats(0, 0, metainfo.piece_length as usize)
+            .expect("plan coalesced write");
+        assert_eq!(planned.wanted_bytes, 20_000);
+        assert_eq!(planned.skipped_bytes, 12_768);
+        let actual = storage
+            .write_block(0, 0, bytes[..metainfo.piece_length as usize].to_vec())
+            .await
+            .expect("write coalesced piece range");
+        assert_eq!(actual, planned);
+        assert_eq!(
+            storage.hash_piece(0).await.expect("hash coalesced piece"),
+            <[u8; 20]>::from(Sha1::digest(&bytes[..metainfo.piece_length as usize]))
+        );
+        clean(&output).await;
     }
 
     #[tokio::test]

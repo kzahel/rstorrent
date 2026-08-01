@@ -6,8 +6,9 @@ use std::time::Duration;
 
 use rstorrent_engine::dht::{BootstrapNode, DhtConfig, DhtService};
 use rstorrent_engine::{
-    DownloadConfig, DownloadError, MagnetDownloadConfig, NetworkConfig, NetworkPolicy,
-    download_magnet, download_verified_piece,
+    DownloadConfig, DownloadControl, DownloadError, DownloadProgress, MagnetDownloadConfig,
+    NetworkConfig, NetworkPolicy, download_magnet_with_control,
+    download_verified_piece_with_control,
 };
 use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
 
@@ -54,8 +55,11 @@ async fn main() -> ExitCode {
         }
     };
 
+    let control = DownloadControl::new();
     let result = match config {
-        DownloadCommand::Metainfo(config) => download_verified_piece(config).await,
+        DownloadCommand::Metainfo(config) => {
+            download_verified_piece_with_control(config, control.clone()).await
+        }
         DownloadCommand::Magnet {
             mut config,
             dht_bootstrap,
@@ -65,35 +69,42 @@ async fn main() -> ExitCode {
                 dht_config.bootstrap_nodes = vec![BootstrapNode::Address(bootstrap)];
                 match DhtService::start(dht_config).await {
                     Ok(service) => Some(service),
-                    Err(error) => return report_result(Err(DownloadError::Dht(error))),
+                    Err(error) => {
+                        return report_result(Err(DownloadError::Dht(error)), control.snapshot());
+                    }
                 }
             } else {
                 None
             };
             config.dht = dht.as_ref().map(DhtService::handle);
-            let result = download_magnet(config).await;
+            let result = download_magnet_with_control(config, control.clone()).await;
             if let Some(dht) = dht {
                 let shutdown = dht.shutdown().await.map_err(DownloadError::Dht);
                 if result.is_ok()
                     && let Err(error) = shutdown
                 {
-                    return report_result(Err(error));
+                    return report_result(Err(error), control.snapshot());
                 }
             }
             result
         }
     };
-    report_result(result)
+    report_result(result, control.snapshot())
 }
 
-fn report_result(result: Result<rstorrent_engine::DownloadReport, DownloadError>) -> ExitCode {
+fn report_result(
+    result: Result<rstorrent_engine::DownloadReport, DownloadError>,
+    progress: DownloadProgress,
+) -> ExitCode {
     match result {
         Ok(report) => {
             println!(
                 "verified pieces={}/{} skipped_pieces={} bytes={} sha1={} info_hash={} blocks={} \
 payload_limit={} payload_high_water={} verification_buffer={} selected_file_bytes={} \
 skipped_file_bytes={} padding_bytes={} selected_written_bytes={} part_written_bytes={} \
-materialized_bytes={} part_slots_before={} part_slots_after={} part_reopened={} part_path={}",
+materialized_bytes={} part_slots_before={} part_slots_after={} part_reopened={} part_path={} \
+storage_write_operations={} storage_write_blocks={} storage_write_batch_blocks_high_water={} \
+storage_write_batch_bytes_high_water={} storage_write_service_micros={}",
                 report.verified_piece_count,
                 report.piece_count,
                 report.skipped_piece_count,
@@ -116,7 +127,12 @@ materialized_bytes={} part_slots_before={} part_slots_after={} part_reopened={} 
                 report
                     .part_path
                     .as_ref()
-                    .map_or_else(|| "-".to_owned(), |path| path.display().to_string())
+                    .map_or_else(|| "-".to_owned(), |path| path.display().to_string()),
+                progress.storage_write_operations_completed,
+                progress.storage_write_blocks_completed,
+                progress.storage_write_batch_blocks_high_water,
+                progress.storage_write_batch_bytes_high_water,
+                progress.storage_write_service_micros,
             );
             ExitCode::SUCCESS
         }
