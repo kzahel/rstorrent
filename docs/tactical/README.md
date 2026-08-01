@@ -169,9 +169,12 @@ that scope and its cleanup or compatibility rules explicitly.
   adds bounded initial tracker-operation breadth, separates half-open and live
   peer capacity, adds per-peer diagnostics, and classifies a duplex peer-task
   deadlock as the next boundary.
-- [`022-duplex-peer-task-liveness.md`](022-duplex-peer-task-liveness.md): active;
+- [`022-duplex-peer-task-liveness.md`](022-duplex-peer-task-liveness.md): complete;
   breaks command/event backpressure cycles without dropping or unbounding
-  peer messages, then repeats the controlled and live transfer gates.
+  peer messages and passes 3/3 owner-only plus 3/3 paired 50% screens.
+- [`023-strict-endgame-ownership.md`](023-strict-endgame-ownership.md): active;
+  adds strict bounded duplicate requests, first-response cancellation, and
+  harmless late losing payload before the verified-publication gate.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

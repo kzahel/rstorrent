@@ -334,6 +334,14 @@ a fast peer had delivered 6.24 MiB, grown to a 385-request target, and held
 channel can fill in opposite directions. Tactical `022` owns restoring duplex
 progress before any rate, queue-target, or picker experiment.
 
+Tactical `022` removed that cycle. Its clean owner-only 50% screen completed
+3/3 at 34.70--55.37 seconds with current terminal peer tables and exact
+cleanup. The alternating screen also completed 3/3 for both owners: RSTorrent
+took 30.74, 34.14, and 45.82 seconds versus libtorrent's 24.00, 25.80, and
+24.82, producing 1.28x--1.85x paired ratios. This passes the bounded tactical
+screen but is not yet the campaign's two-cohort comparable confirmation.
+Verified publication and strict endgame behavior are next.
+
 ## Result Classification
 
 Classify each paired attempt before interpreting speed:

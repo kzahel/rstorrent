@@ -8,10 +8,11 @@ multi-file profiles. Tactical `017` closes the recorded one-peer liveness
 mechanisms with request expiry, failover, late discovery, and replacement.
 Tactical `020` adds useful-payload request windows and sampled connection
 inactivity. Tactical `021` installed tracker fan-out and a bounded 30-peer
-admission set, then classified a bounded command/event channel deadlock now
-owned by Tactical `022`. Endgame and hash-failure recovery remain sufficient
-causes of an ordinary near-completion stall, so broad public-swarm reliability
-is not yet claimed.
+admission set, and Tactical `022` removed the resulting duplex channel
+deadlock with 3/3 owner-only and paired 50% evidence. Tactical `023` now owns
+strict endgame duplicates and core cancellation. Hash-failure recovery remains
+a sufficient cause of an ordinary near-completion failure, so broad
+public-swarm reliability is not yet claimed.
 
 ## Scope
 
@@ -222,11 +223,11 @@ downloads, captures, browser state, AVD state, and subprocesses they own.
 
 ## Next Stopping Condition
 
-The next transfer-correctness slice owns DL-C07 through DL-C09: bounded
-endgame duplicates, core cancel messages, harmless losing responses, whole-
-piece reset after hash failure, and bounded contributor attribution. It must
-preserve Tactical `017`'s request/payload accounting and all controlled
-storage, resume, tracker, DHT, and mixed-peer evidence.
+Tactical `023` owns DL-C07 and DL-C08: bounded strict endgame duplicates, core
+cancel messages, and harmless losing responses. The following integrity slice
+owns DL-C09 whole-piece reset after hash failure and bounded contributor
+attribution. Both preserve Tactical `017`'s request/payload accounting and all
+controlled storage, resume, tracker, DHT, and mixed-peer evidence.
 
 Routine engine validation remains headless; no additional product UI is
 required by that slice.

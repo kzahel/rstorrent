@@ -7,10 +7,12 @@ acquisition, live content connections, torrent-owned requests, expiry,
 replacement, and failover. Tactical `020` completed bounded per-connection
 useful-payload feedback and sampled inactivity. Tactical `021` installed
 bounded tracker fan-out plus a source-derived 30-peer live set. Tactical `022`
-now owns the classified duplex command/event backpressure deadlock. Tracker
-and DHT observations remain live while content runs. Endgame duplicates,
-integrity reputation, measured picker policy, incoming connections, and
-persistent peer records remain later work.
+removed the classified duplex command/event backpressure deadlock and passed
+3/3 owner-only plus 3/3 paired 50% screens. Tactical `023` now owns strict
+endgame duplicate-attempt lifecycle and cancellation. Tracker and DHT
+observations remain live while content runs. Integrity reputation, measured
+picker policy, incoming connections, and persistent peer records remain later
+work.
 
 ## Scope
 

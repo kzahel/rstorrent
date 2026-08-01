@@ -314,14 +314,14 @@ reason to stop.
 Campaign state: **active**.
 
 Active tactical:
-[`022-duplex-peer-task-liveness.md`](../tactical/022-duplex-peer-task-liveness.md).
+[`023-strict-endgame-ownership.md`](../tactical/023-strict-endgame-ownership.md).
 Tactical
-[`021-initial-peer-working-set.md`](../tactical/021-initial-peer-working-set.md)
+[`022-duplex-peer-task-liveness.md`](../tactical/022-duplex-peer-task-liveness.md)
 is complete.
 
-Current milestone: remove the bounded command/event backpressure cycle that
-freezes the content supervisor under a large healthy-peer request window, then
-return to the 50% gate.
+Current milestone: install strict bounded endgame duplicate ownership and core
+cancellation, then advance from the passing 50% screen to verified
+publication.
 
 Last completed evidence:
 
@@ -408,13 +408,20 @@ Last completed evidence:
   a one-to-two-second-old peer snapshot in which a fast peer had delivered
   6.24 MiB and accumulated 383 requests. The 16-command producer and 64-event
   consumer can block each other exactly at that boundary, selecting Tactical
-  `022`'s duplex task liveness owner.
+  `022`'s duplex task liveness owner; and
+- commit `b91109d` made peer tasks drain bounded commands while inbound event
+  delivery waits. The clean owner-only screen reached 50% in 3/3 runs at
+  34.70--55.37 seconds, and the alternating screen classified `both_reached`
+  in 3/3 at 30.74--45.82 seconds for RSTorrent versus 24.00--25.80 for
+  libtorrent. All runs cleaned up exactly, selecting strict endgame and
+  verified publication rather than another transport-liveness change.
 
 Next executable action:
 
-1. add the deterministic saturated-event/full-command reproduction;
-2. make one peer task drain outbound commands while inbound delivery waits;
-3. pass workspace and controlled interoperability gates; and
-4. require 2/3 clean owner-only 50% success before a paired screen.
+1. represent multiple bounded active attempts without weakening payload
+   ownership;
+2. add core cancel codec and first-response loser cancellation;
+3. pass pure, scripted, workspace, and controlled interoperability gates; and
+4. run the clean owner-only then alternating verified-publication screen.
 
 Human blocker: **none**.

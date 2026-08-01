@@ -1,6 +1,6 @@
 # Tactical 022: Duplex Peer Task Liveness
 
-Status: Active
+Status: Completed; strict endgame ownership continues in Tactical `023`.
 
 Topics: `peer-lifecycle`, `performance-and-live-evidence`,
 `oracle-driven-engine-campaign`
@@ -126,7 +126,18 @@ not a public performance claim. Formatting and warning-denying workspace
 clippy pass; the workspace test gate passes 226 tests with three explicitly
 ignored public-network tests.
 
-The public live gate remains outstanding and the tactical remains active.
+The clean owner-only public gate reached 50% in 3/3 Big Buck Bunny runs at
+34.70, 36.39, and 55.37 seconds. Every run verified 528 pieces, cleaned up
+exactly, and retained a current peer table captured less than one second from
+the terminal milestone. Terminal sampled payload rates were 2.97--3.83 MiB/s;
+the former multi-minute supervisor freeze did not recur.
+
+The alternating three-pair screen classified `both_reached` in 3/3 runs.
+RSTorrent reached 50% in 30.74, 34.14, and 45.82 seconds versus libtorrent in
+24.00, 25.80, and 24.82 seconds, for paired ratios of 1.28x, 1.32x, and 1.85x.
+Both owners cleaned up exactly. RSTorrent's 34.14-second median is within the
+campaign's provisional 2x screen threshold, but this three-pair screen is not
+the two-cohort comparable confirmation.
 
 ## Non-Goals
 
@@ -138,8 +149,7 @@ The public live gate remains outstanding and the tactical remains active.
 
 ## Validation And Stopping Condition
 
-Run focused peer-task and adaptive-window tests, the warning-denying workspace
-gates, controlled mixed-peer and paired publication interoperability, then the
-live screen. This tactical completes when duplex progress and exact cleanup
-pass adversarial gates and the live screen reaches 2/3 or retains a new
-classified boundary not owned here. No human decision is currently required.
+The stopping condition is met. Duplex progress, wire order, bounds, exact
+cleanup, workspace gates, controlled interoperability, the 3/3 owner-only
+gate, and the 3/3 paired screen pass. Tactical `023` now owns strict endgame
+duplicates and verified publication; no human decision is required.
