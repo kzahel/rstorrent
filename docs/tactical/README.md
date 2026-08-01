@@ -189,8 +189,11 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; expands the source-rich startup dial cohort from eight to 30 while
   preserving the separate 30-live-peer and fixed payload bounds.
 - [`028-fair-content-supervisor-intake.md`](028-fair-content-supervisor-intake.md):
-  active; prevents continuous accepted-block storage from starving bounded
+  complete; prevents continuous accepted-block storage from starving bounded
   discovery admission, dial refill, and safe peer-event service.
+- [`029-coalesced-selective-piece-hashing.md`](029-coalesced-selective-piece-hashing.md):
+  active; removes redundant per-chunk async seeks from bounded multi-file piece
+  verification and measures the representative storage profile.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

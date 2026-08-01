@@ -13,8 +13,10 @@ Bounded storage now remains live independently from peer events, but its
 corrected localhost benchmark did not improve. Paired peer-utility timelines
 then isolated a source-rich product-path run which retained 119 eligible peers
 behind an eight-attempt half-open ceiling. That cohort is now 30 with exact
-adversarial evidence. The active slice prevents saturated storage service from
-deferring bounded discovery intake until transfer completion.
+adversarial evidence. Fair supervisor intake now admits DHT results and fills
+that cohort during storage pressure. The active slice removes redundant async
+seeks from selective multi-file piece hashing, the newly isolated saturated
+owner.
 
 ## Purpose And Ownership
 
@@ -89,15 +91,17 @@ evidence.
 
 ### Now
 
-**Fair content-supervisor intake.** Admit bounded tracker/DHT batches and start
-eligible dials during storage pressure, then rotate safe ready storage, peer,
-and discovery owners without increasing any queue or payload bound.
+**Coalesced selective piece hashing.** Seek once across contiguous wanted-file
+piece ranges while retaining the 16 KiB hash buffer, cross-file correctness,
+storage queue bounds, and exact cancellation. Compare a representative
+controlled multi-file profile before and after.
 
 ### Next
 
-1. **Source-derived service owner.** Use the paired timeline after fair intake
-   to select storage, request service, peer ranking, or confirmation breadth
-   without changing several policies together.
+1. **Source-derived service owner.** Use the paired timeline after selective
+   hash coalescing to select the complete hash-job boundary, request service,
+   peer ranking, or confirmation breadth without changing several policies
+   together.
 2. **Measured BEP breadth.** Use the protocol matrix and full-reference gaps
    to choose the next discovery or transport BEP after core completion parity.
 3. **Durable single-file resume.** Extend the existing selective-storage

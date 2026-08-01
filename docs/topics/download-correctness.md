@@ -19,7 +19,9 @@ the paired live peer-utility timeline and selected the continuously occupied
 eight-attempt half-open cohort. Tactical `027` expanded that cohort to 30
 under the existing live-peer and payload bounds. Its public timeline exposed
 discovery events queued behind continuously ready storage; Tactical `028` now
-owns fair supervisor intake before selection or request policy changes.
+completed fair supervisor intake. Prompt source-rich runs now expose saturated
+multi-file verification storage; Tactical `029` owns redundant selective hash
+seeks before selection or request policy changes.
 
 ## Scope
 
@@ -243,10 +245,12 @@ cancellation of 30 silent attempts. Its complete public screen found DHT peer
 batches reported at content seconds 30 and 120 but not reflected in the
 content registry until termination while storage stayed saturated.
 
-The next stopping condition is prompt bounded discovery admission and dial
-refill under storage pressure, explicit safe event-owner rotation, and exact
-publication and cleanup without increasing storage, peer-event, pending-dial,
-established-peer, request, or payload bounds.
+Tactical `028` now proves prompt DHT intake and dial refill while all 66 storage
+jobs are occupied. Live DHT reports and registry growth occur in the same
+sample, closing the intake defect. The next stopping condition is one seek per
+contiguous wanted-file piece span, exact cross-file/skipped/padding hashes, and
+representative before/after evidence without increasing the 16 KiB hash buffer
+or any storage, request, or payload queue.
 
 Routine engine validation remains headless; no additional product UI is
 required by that slice.

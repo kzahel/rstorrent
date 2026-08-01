@@ -1,6 +1,6 @@
 # Tactical 028: Fair Content Supervisor Intake
 
-Status: Active
+Status: Complete
 
 Topics: `peer-lifecycle`, `download-correctness`,
 `performance-and-live-evidence`, `oracle-driven-engine-campaign`
@@ -118,6 +118,46 @@ form a weak cohort, the next owner is bounded libtorrent-derived ranking.
 - adding queues, tasks, a session-wide scheduler, incoming connections,
   seeding, PEX, uTP, WebSeeds, IPv6, or NAT traversal
 - UI, Tauri, browser, AVD, physical-device, or application-contract work
+
+## Implementation And Evidence
+
+The content supervisor now carries one three-state owner cursor. After serving
+storage it prefers a ready peer, after a peer it prefers discovery, and after
+discovery it returns to storage. Cancellation and an already-due request or
+replacement deadline remain prior checks. While the two local storage slots
+are occupied, peer payload remains unread, but storage and discovery alternate
+when both are ready. Candidate dialing no longer depends on storage-command
+readiness; its independent 30-task and 64-event bounds remain authoritative.
+
+The pure rotation test covers two complete cycles. A scripted 80-block case
+fills the 64-command storage channel and both local commands, then releases a
+DHT result. The new peer enters the registry and dial cohort within 300 ms
+while storage still has pending jobs. The transfer publishes exact bytes,
+reaches exactly 66 storage jobs, drains all jobs, retains DHT source identity,
+and joins the initial peer, discovered peer, DHT owner, and storage owner.
+
+Formatting, warning-denying workspace clippy, and 248 listed workspace tests
+pass; 245 pass and three changing-public-network probes remain intentionally
+ignored. The controlled 1 MiB mixed swarm, nine comparator tests, and paired
+controlled publication pass with exact integrity and cleanup.
+
+Three product tracker+DHT 50% screens all completed with exact integrity and
+cleanup. The two ordinary samples took 69.15 and 69.29 seconds; a source-rich
+sample took 282.74 seconds. Most importantly, each first DHT batch and content
+registry growth appeared in the same one-second sample: 149 DHT reports became
+302 known peers, while 145 and 148 reports became 157 and 161 known peers.
+All three immediately filled the 30-attempt cohort. The delayed-terminal-intake
+defect is closed.
+
+One 300-second complete screen timed out cleanly at 399 of 1,055 pieces and
+104,595,456 verified bytes. It retained 311 candidates, 30 connected peers, 91
+active requests, 65 writing blocks, and all 66 storage jobs, with zero hash
+failures. The source-rich 50% outlier showed the same downstream shape: the
+storage queue stayed full while median peer rates fell near one 16 KiB block
+per second. `SelectiveStorage::hash_piece` performs a fresh async seek for
+every 16 KiB verification chunk, unlike the single-file owner which seeks once
+and reads sequentially. Tactical `029` owns that concrete multi-file storage
+operation boundary before peer ranking or request tuning.
 
 ## Stopping And Escalation
 

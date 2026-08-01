@@ -443,6 +443,27 @@ ordinary biased selection also places storage before peer and discovery
 events. Tactical `028` therefore owns prompt bounded discovery admission and
 explicit safe event-owner fairness before further storage or request tuning.
 
+### Fair Intake Result: 2026-08-01
+
+Tactical `028` rotates safe ready storage, peer, and discovery owners and
+starts bounded dials independently from storage-command readiness. A scripted
+case admits and dials a delayed DHT peer while all 66 storage jobs remain
+occupied, then publishes exact content and drains every queue.
+
+Three live 50% screens put each first DHT result and registry increase in the
+same sample. A 149-peer DHT result produced 302 known peers; 145 and 148-peer
+results produced 157 and 161. All immediately reached 30 pending attempts, so
+the delayed-intake defect is closed. Two screens reached 50% in 69.15 and
+69.29 seconds; a source-rich screen took 282.74 seconds. One full screen timed
+out at 300 seconds with 399 pieces and 104,595,456 verified bytes, zero hash
+failures, 30 connections, 91 requests, 65 writes, and 66 storage jobs.
+
+The remaining shape selects selective verification: common 256 KiB
+multi-file pieces currently issue one async seek for each 16 KiB hash chunk,
+while the single-file owner seeks once and reads sequentially. Tactical `029`
+adds a representative controlled baseline and coalesces those seek operations
+before attributing the low-rate tail to peer policy.
+
 ## Result Classification
 
 Classify each paired attempt before interpreting speed:

@@ -4676,6 +4676,34 @@ enum ContentSupervisorEvent {
     Deadline,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ContentSupervisorOwner {
+    Storage,
+    Peer,
+    Discovery,
+}
+
+impl ContentSupervisorOwner {
+    const fn next(self) -> Self {
+        match self {
+            Self::Storage => Self::Peer,
+            Self::Peer => Self::Discovery,
+            Self::Discovery => Self::Storage,
+        }
+    }
+}
+
+impl ContentSupervisorEvent {
+    const fn owner(&self) -> Option<ContentSupervisorOwner> {
+        match self {
+            Self::Peer(_) => Some(ContentSupervisorOwner::Peer),
+            Self::Discovery(_) => Some(ContentSupervisorOwner::Discovery),
+            Self::Storage(_) => Some(ContentSupervisorOwner::Storage),
+            Self::Deadline => None,
+        }
+    }
+}
+
 async fn next_content_supervisor_event(
     sockets: &mut PeerSocketSet,
     discovery: &mut ContentDiscovery,
@@ -4683,33 +4711,38 @@ async fn next_content_supervisor_event(
     storage_backpressured: bool,
     until_expiry: Option<Duration>,
     cancellation: &CancellationToken,
+    priority: ContentSupervisorOwner,
 ) -> Result<ContentSupervisorEvent, DownloadError> {
+    if until_expiry.is_some_and(|wait| wait.is_zero()) {
+        return Ok(ContentSupervisorEvent::Deadline);
+    }
     if storage_backpressured {
-        return tokio::select! {
-            biased;
-            _ = cancellation.cancelled() => Err(DownloadError::Cancelled),
-            completion = storage.next_completion() => {
-                completion.map(ContentSupervisorEvent::Storage)
-            }
+        return match priority {
+            ContentSupervisorOwner::Storage => tokio::select! {
+                biased;
+                _ = cancellation.cancelled() => Err(DownloadError::Cancelled),
+                completion = storage.next_completion() => {
+                    completion.map(ContentSupervisorEvent::Storage)
+                }
+                event = discovery.next_event(), if discovery.is_active() => {
+                    Ok(ContentSupervisorEvent::Discovery(event))
+                }
+            },
+            ContentSupervisorOwner::Peer | ContentSupervisorOwner::Discovery => tokio::select! {
+                biased;
+                _ = cancellation.cancelled() => Err(DownloadError::Cancelled),
+                event = discovery.next_event(), if discovery.is_active() => {
+                    Ok(ContentSupervisorEvent::Discovery(event))
+                }
+                completion = storage.next_completion() => {
+                    completion.map(ContentSupervisorEvent::Storage)
+                }
+            },
         };
     }
-    if let Some(wait) = until_expiry {
-        tokio::select! {
-            biased;
-            _ = cancellation.cancelled() => Err(DownloadError::Cancelled),
-            completion = storage.next_completion() => {
-                completion.map(ContentSupervisorEvent::Storage)
-            }
-            _ = tokio::time::sleep(wait) => Ok(ContentSupervisorEvent::Deadline),
-            event = sockets.next_event() => event
-                .map(ContentSupervisorEvent::Peer)
-                .map_err(download_peer_set_error),
-            event = discovery.next_event(), if discovery.is_active() => {
-                Ok(ContentSupervisorEvent::Discovery(event))
-            }
-        }
-    } else {
-        tokio::select! {
+    let wait = until_expiry.unwrap_or(Duration::ZERO);
+    match priority {
+        ContentSupervisorOwner::Storage => tokio::select! {
             biased;
             _ = cancellation.cancelled() => Err(DownloadError::Cancelled),
             completion = storage.next_completion() => {
@@ -4721,7 +4754,42 @@ async fn next_content_supervisor_event(
             event = discovery.next_event(), if discovery.is_active() => {
                 Ok(ContentSupervisorEvent::Discovery(event))
             }
-        }
+            _ = tokio::time::sleep(wait), if until_expiry.is_some() => {
+                Ok(ContentSupervisorEvent::Deadline)
+            }
+        },
+        ContentSupervisorOwner::Peer => tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => Err(DownloadError::Cancelled),
+            event = sockets.next_event() => event
+                .map(ContentSupervisorEvent::Peer)
+                .map_err(download_peer_set_error),
+            event = discovery.next_event(), if discovery.is_active() => {
+                Ok(ContentSupervisorEvent::Discovery(event))
+            }
+            completion = storage.next_completion() => {
+                completion.map(ContentSupervisorEvent::Storage)
+            }
+            _ = tokio::time::sleep(wait), if until_expiry.is_some() => {
+                Ok(ContentSupervisorEvent::Deadline)
+            }
+        },
+        ContentSupervisorOwner::Discovery => tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => Err(DownloadError::Cancelled),
+            event = discovery.next_event(), if discovery.is_active() => {
+                Ok(ContentSupervisorEvent::Discovery(event))
+            }
+            completion = storage.next_completion() => {
+                completion.map(ContentSupervisorEvent::Storage)
+            }
+            event = sockets.next_event() => event
+                .map(ContentSupervisorEvent::Peer)
+                .map_err(download_peer_set_error),
+            _ = tokio::time::sleep(wait), if until_expiry.is_some() => {
+                Ok(ContentSupervisorEvent::Deadline)
+            }
+        },
     }
 }
 
@@ -4731,6 +4799,7 @@ async fn run_selective_swarm_loop(
     discovery: &mut ContentDiscovery,
     download: &mut ContentSwarmDownload<'_>,
 ) -> Result<(), DownloadError> {
+    let mut next_owner = ContentSupervisorOwner::Storage;
     if let Some(connection) = peers.connection.take() {
         let attempt = connection.attempt();
         let id = sockets
@@ -4815,14 +4884,12 @@ async fn run_selective_swarm_loop(
             return Ok(());
         }
 
-        if storage_ready {
-            fill_content_dials(
-                peers,
-                sockets,
-                &mut download.state,
-                download.metainfo.info_hash,
-            )?;
-        }
+        fill_content_dials(
+            peers,
+            sockets,
+            &mut download.state,
+            download.metainfo.info_hash,
+        )?;
         if sockets.established_len() == 0
             && sockets.pending_len() == 0
             && !discovery.is_active()
@@ -4860,9 +4927,13 @@ async fn run_selective_swarm_loop(
                 storage_backpressured,
                 until_expiry,
                 &cancellation,
+                next_owner,
             )
             .await?
         };
+        if let Some(owner) = event.owner() {
+            next_owner = owner.next();
+        }
 
         match event {
             ContentSupervisorEvent::Deadline => continue,
@@ -5492,18 +5563,18 @@ mod tests {
     use sha1::{Digest, Sha1};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream, UdpSocket};
-    use tokio::sync::{Barrier, Semaphore};
+    use tokio::sync::{Barrier, Notify, Semaphore};
     use tokio::time::{sleep, timeout};
 
     use super::{
-        CLIENT_PEER_ID, CONTENT_STORAGE_QUEUE, ContentDownloadConfig, DEFAULT_ADVERTISED_PEER_PORT,
-        DhtRetryTiming, DownloadActivityEvent, DownloadActivitySink, DownloadConfig,
-        DownloadControl, DownloadError, MAX_DIAGNOSTIC_ERROR_LENGTH, MAX_METADATA_PEERS,
-        MAX_RECENT_METADATA_ATTEMPTS, MagnetDownloadConfig, MetadataAcquisitionPhase,
-        MetadataPeerStage, PeerConnection, PeerSession, SwarmConfig, TrackerManager,
-        UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache,
-        announce_udp_tracker_address, content_dial_slot_available, download_magnet,
-        download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
+        CLIENT_PEER_ID, CONTENT_STORAGE_QUEUE, ContentDownloadConfig, ContentSupervisorOwner,
+        DEFAULT_ADVERTISED_PEER_PORT, DhtRetryTiming, DownloadActivityEvent, DownloadActivitySink,
+        DownloadConfig, DownloadControl, DownloadError, MAX_DIAGNOSTIC_ERROR_LENGTH,
+        MAX_METADATA_PEERS, MAX_RECENT_METADATA_ATTEMPTS, MagnetDownloadConfig,
+        MetadataAcquisitionPhase, MetadataPeerStage, PeerConnection, PeerSession, SwarmConfig,
+        TrackerManager, UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming,
+        UdpTrackerTokenCache, announce_udp_tracker_address, content_dial_slot_available,
+        download_magnet, download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
         download_magnet_with_control, download_verified_piece,
         download_verified_piece_with_control, next_peer_message, retrying_dht_lookup,
         run_content_download, run_magnet_download_with_peers, send_message,
@@ -5567,6 +5638,27 @@ mod tests {
         assert!(!content_dial_slot_available(2, 0, config, false));
         assert!(content_dial_slot_available(2, 0, config, true));
         assert!(!content_dial_slot_available(2, 1, config, true));
+    }
+
+    #[test]
+    fn content_supervisor_owner_rotation_is_complete_and_stable() {
+        let mut owner = ContentSupervisorOwner::Storage;
+        let mut observed = Vec::new();
+        for _ in 0..6 {
+            observed.push(owner);
+            owner = owner.next();
+        }
+        assert_eq!(
+            observed,
+            [
+                ContentSupervisorOwner::Storage,
+                ContentSupervisorOwner::Peer,
+                ContentSupervisorOwner::Discovery,
+                ContentSupervisorOwner::Storage,
+                ContentSupervisorOwner::Peer,
+                ContentSupervisorOwner::Discovery,
+            ]
+        );
     }
 
     #[test]
@@ -7120,6 +7212,144 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
     }
 
     #[tokio::test]
+    async fn storage_pressure_cannot_starve_dht_intake_or_dial_refill() {
+        let payload = (0..(80 * MIN_PAYLOAD_ALLOWANCE))
+            .map(|index| ((index * 31 + index / 37) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let metainfo =
+            Metainfo::from_info_bytes(&single_file_info_with_piece_length(&payload, payload.len()))
+                .expect("storage-pressure metainfo");
+        let info_hash = metainfo.info_hash;
+        let initial_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind initial peer");
+        let initial_address = initial_listener.local_addr().expect("initial address");
+        let initial_task = tokio::spawn(serve_content_peer(
+            initial_listener,
+            info_hash,
+            Arc::new(vec![payload.clone()]),
+            vec![true],
+        ));
+        let discovered_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind discovered peer");
+        let discovered_address = discovered_listener
+            .local_addr()
+            .expect("discovered address");
+        let discovered_task = tokio::spawn(serve_permanently_choked_peer(
+            discovered_listener,
+            info_hash,
+            vec![0x80],
+        ));
+        let dht_socket = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind scripted DHT");
+        let dht_address = dht_socket.local_addr().expect("DHT address");
+        let release_dht = Arc::new(Notify::new());
+        let dht_task = tokio::spawn(serve_dht_peer_after_signal(
+            dht_socket,
+            info_hash,
+            discovered_address,
+            release_dht.clone(),
+        ));
+        let dht = DhtService::start(dht_config(dht_address))
+            .await
+            .expect("start DHT client");
+        let mut peers = PeerSession::from_endpoint(
+            initial_address,
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(2)),
+        )
+        .expect("peer session");
+        peers.dht = Some(dht.handle());
+        let control = DownloadControl::new();
+        control.set_storage_write_delay(Duration::from_millis(5));
+        let task_control = control.clone();
+        let payload_limit = payload.len();
+        let output = test_path("storage-pressure-dht-intake.bin");
+        let task_output = output.clone();
+        let download = tokio::spawn(async move {
+            let result = run_content_download(
+                ContentDownloadConfig {
+                    output_path: task_output,
+                    max_buffered_payload_bytes: payload_limit,
+                    swarm_config: SwarmConfig::for_payload_limit(payload_limit),
+                    skip_files: Vec::new(),
+                    materialize_files: Vec::new(),
+                },
+                metainfo,
+                task_control,
+                None,
+                &mut peers,
+                None,
+            )
+            .await;
+            (result, peers)
+        });
+
+        timeout(Duration::from_secs(2), async {
+            loop {
+                let progress = control.snapshot();
+                if progress.storage_jobs_high_water > CONTENT_STORAGE_QUEUE
+                    && progress.storage_jobs_pending > CONTENT_STORAGE_QUEUE
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("storage queue saturated");
+        release_dht.notify_one();
+        let intake_progress = timeout(Duration::from_millis(300), async {
+            loop {
+                let diagnostics = control.diagnostic_snapshot();
+                if diagnostics.content_registry.is_some_and(|registry| {
+                    registry.total >= 2 && registry.dialing + registry.connected >= 2
+                }) {
+                    break diagnostics.progress;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("DHT peer entered registry and dial cohort during storage pressure");
+        assert!(intake_progress.storage_jobs_pending > 0);
+
+        let (result, peers) = timeout(Duration::from_secs(5), download)
+            .await
+            .expect("storage-pressure download joined")
+            .expect("download task");
+        let report = result.expect("storage-pressure download");
+        assert_eq!(report.verified_piece_count, 1);
+        assert_eq!(
+            tokio::fs::read(&output).await.expect("published output"),
+            payload
+        );
+        let progress = control.snapshot();
+        assert_eq!(progress.storage_jobs_pending, 0);
+        assert_eq!(progress.storage_jobs_high_water, CONTENT_STORAGE_QUEUE + 2);
+        assert_eq!(
+            progress.storage_command_queue_high_water,
+            CONTENT_STORAGE_QUEUE
+        );
+        let discovered = peers
+            .registry
+            .find_endpoint(PeerEndpoint::new(discovered_address).expect("DHT endpoint"))
+            .expect("DHT peer retained");
+        assert!(discovered.sources().contains(PeerSource::Dht));
+        assert!(discovered.history().dial_attempts >= 1);
+        for task in [initial_task, discovered_task, dht_task] {
+            timeout(Duration::from_secs(1), task)
+                .await
+                .expect("scripted owner joined")
+                .expect("scripted task");
+        }
+        dht.shutdown().await.expect("DHT shutdown");
+        let _ = tokio::fs::remove_file(output).await;
+    }
+
+    #[tokio::test]
     async fn endgame_cancel_reaches_loser_before_slow_storage_completes() {
         let payload = vec![0x7d; MIN_PAYLOAD_ALLOWANCE];
         let metainfo =
@@ -8054,6 +8284,52 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 } => {
                     assert_eq!(target, NodeId(info_hash));
                     assert!(want.is_empty() || want.contains(&Want::Ipv4));
+                    vec![test_dht_endpoint(peer)]
+                }
+                _ => Vec::new(),
+            };
+            let done = !peers.is_empty();
+            let response = encode_dht_response(
+                &query.transaction,
+                NodeId([6; 20]),
+                &[],
+                &peers,
+                Some(b"fixture"),
+                test_dht_endpoint(client),
+            )
+            .expect("encode DHT response");
+            socket
+                .send_to(&response, client)
+                .await
+                .expect("send DHT response");
+            if done {
+                break;
+            }
+        }
+    }
+
+    async fn serve_dht_peer_after_signal(
+        socket: UdpSocket,
+        info_hash: [u8; 20],
+        peer: SocketAddr,
+        release: Arc<Notify>,
+    ) {
+        let mut packet = [0_u8; 1024];
+        loop {
+            let (length, client) = socket.recv_from(&mut packet).await.expect("DHT query");
+            let DhtMessage::Query(query) = decode_dht(&packet[..length]).expect("decode DHT query")
+            else {
+                continue;
+            };
+            let peers = match query.query {
+                DhtQuery::FindNode { .. } => Vec::new(),
+                DhtQuery::GetPeers {
+                    info_hash: target,
+                    want,
+                } => {
+                    assert_eq!(target, NodeId(info_hash));
+                    assert!(want.is_empty() || want.contains(&Want::Ipv4));
+                    release.notified().await;
                     vec![test_dht_endpoint(peer)]
                 }
                 _ => Vec::new(),

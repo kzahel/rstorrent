@@ -315,15 +315,15 @@ reason to stop.
 Campaign state: **active**.
 
 Active tactical:
-[`028-fair-content-supervisor-intake.md`](../tactical/028-fair-content-supervisor-intake.md).
+[`029-coalesced-selective-piece-hashing.md`](../tactical/029-coalesced-selective-piece-hashing.md).
 Tacticals `025` through
-[`027-expanded-half-open-working-set.md`](../tactical/027-expanded-half-open-working-set.md)
+[`028-fair-content-supervisor-intake.md`](../tactical/028-fair-content-supervisor-intake.md)
 are complete.
 
-Current milestone: admit bounded discovery and begin eligible dials during
-storage pressure, then rotate safe ready storage, peer, and discovery owners
-without increasing any queue or payload bound. Product timelines must no
-longer defer supplied peers until terminal state.
+Current milestone: measure a representative 256 KiB-piece multi-file profile,
+then remove redundant per-chunk seeks from selective piece verification while
+retaining its 16 KiB buffer and every storage, payload, integrity, and
+cancellation bound.
 
 Last completed evidence:
 
@@ -485,18 +485,31 @@ Last completed evidence:
   and 340 around second 120 while the content registry remained at 12 known
   peers until termination. The storage-backpressured supervisor branch awaits
   storage alone and the ordinary biased branch ranks storage before discovery,
-  selecting Tactical `028`'s fair intake owner.
+  selecting Tactical `028`'s fair intake owner;
+- Tactical `028` installed deterministic three-owner rotation and starts dials
+  independently from storage-command readiness. Its saturated 80-block test
+  admits and dials delayed DHT discovery while exactly 66 storage jobs remain
+  occupied, then publishes and joins every owner;
+- three live 50% screens put each first DHT report and registry increase in the
+  same sample and immediately filled 30 dials. Two took 69.15 and 69.29
+  seconds; one source-rich run took 282.74 seconds;
+- a 300-second full screen timed out at 399 pieces and 104,595,456 verified
+  bytes with zero hash failures, 30 connections, 91 requests, 65 writes, and
+  66 storage jobs; and
+- the persistent storage saturation plus `SelectiveStorage`'s 16 seeks per
+  common 256 KiB hash, versus one seek in the single-file owner, selects
+  Tactical `029` before peer ranking or request tuning.
 
 Next executable action:
 
-1. add deterministic rotating-owner state and bounded discovery polling under
-   storage backpressure;
-2. start eligible half-open dials independently from storage-command readiness
-   while leaving request scheduling gated by write capacity;
-3. prove late tracker/DHT intake, storage progress, payload bounds, saturated
-   cancellation, and exact publication with scripted queues;
-4. pass workspace, mixed-peer, Python, and controlled paired gates; and
-5. run product timeline screens and classify request service, storage,
-   ranking, or confirmation breadth from prompt registry-growth evidence.
+1. add a representative controlled multi-file hash profile and retain three
+   clean pre-change transfer-only timings;
+2. extract a deterministic contiguous-file cursor and remove redundant async
+   seeks while retaining the fixed 16 KiB hash buffer;
+3. prove wanted, cross-file, skipped, padding, final-short, maximum-piece,
+   resume, cancellation, and exact publication behavior;
+4. pass workspace, selective/mixed, Python, and controlled paired gates; and
+5. run product timeline screens and classify the complete hash-job boundary,
+   request service, or peer ranking from storage-occupancy evidence.
 
 Human blocker: **none**.
