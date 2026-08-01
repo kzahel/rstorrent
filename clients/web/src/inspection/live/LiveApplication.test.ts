@@ -134,6 +134,28 @@ describe("LiveApplication", () => {
     await application.close();
   });
 
+  it("uses a unique bounded request namespace for each application instance", async () => {
+    const firstClient = new FakeLiveClient();
+    const secondClient = new FakeLiveClient();
+    const first = await LiveApplication.open(firstClient);
+    const second = await LiveApplication.open(secondClient);
+
+    await first.dispatch({ type: "archive", torrentId: TORRENT_ID });
+    await first.dispatch({ type: "unarchive", torrentId: TORRENT_ID });
+    await second.dispatch({ type: "archive", torrentId: TORRENT_ID });
+
+    const firstIds = firstClient.requests.map((request) => request.request_id);
+    const secondId = secondClient.requests[0]?.request_id;
+    expect(firstIds[0]).toMatch(/^web-[0-9a-f]{32}-1$/);
+    expect(firstIds[1]).toMatch(/^web-[0-9a-f]{32}-2$/);
+    expect(secondId).toMatch(/^web-[0-9a-f]{32}-1$/);
+    expect(secondId).not.toBe(firstIds[0]);
+    expect(firstIds.every((requestId) => requestId.length <= 128)).toBe(true);
+
+    await first.close();
+    await second.close();
+  });
+
   it("maps archive and explicit retention removal commands", async () => {
     const client = new FakeLiveClient();
     const application = await LiveApplication.open(client);

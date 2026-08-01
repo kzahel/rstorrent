@@ -331,6 +331,11 @@ derives the final, staging, and part document names from verified metadata;
 Kotlin owns the persisted grant and provider calls, while Rust validates the
 operation generation before deleting the catalog row.
 
+Request receipts remain durable across schema evolution. Torrent snapshots
+stored before retention support replay with conservative defaults for absent
+archive and managed-deletion capability fields rather than making an old
+successful mutation unreadable after upgrade.
+
 ## Cross-Platform Invariants
 
 - The database file format is portable; absolute paths and capabilities are

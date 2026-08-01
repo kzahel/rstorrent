@@ -13,8 +13,9 @@ implemented the leased application-view owner, generated v1 JSON contract,
 authenticated loopback polling adapter, and headless lifecycle client recorded
 in [`application-view-api.md`](application-view-api.md). Tactical `040` adds
 durable archive/restore and fenced removal with explicit keep-data or
-delete-managed policy. No stable public
-remote wire format is accepted yet.
+delete-managed policy. The live web adapter now gives each application instance
+a random request-ID namespace so durable receipts do not conflict across
+reloads or tabs. No stable public remote wire format is accepted yet.
 
 ## Scope
 
@@ -163,6 +164,11 @@ deletes exact path-backed managed artifacts, or waits for a trusted platform
 adapter. Failed cleanup stays visible and can be retried with either retention
 policy. Android SAF plans and confirmations are in-process operations keyed by
 the matching generation; browser commands never carry paths or document URIs.
+
+The live web adapter gives every application instance a random 128-bit request
+namespace followed by a monotonic sequence. This preserves durable retry and
+correlation semantics without reusing `web-1` for an unrelated command after a
+reload or in another tab.
 
 Later work must define multi-torrent scheduling, stable product error
 taxonomy, capability installation, production remote

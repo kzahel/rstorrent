@@ -213,9 +213,11 @@ pub struct TorrentSnapshot {
     pub piece_count: u32,
     pub verified_piece_count: u32,
     pub skip_files: Vec<u32>,
+    #[serde(default)]
     pub archived: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub removal_state: Option<RemovalState>,
+    #[serde(default)]
     pub delete_managed_data_supported: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,

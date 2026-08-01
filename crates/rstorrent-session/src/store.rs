@@ -2384,6 +2384,59 @@ mod tests {
     }
 
     #[test]
+    fn replays_pre_retention_request_receipts_with_safe_defaults() {
+        let root = test_root("legacy-receipt");
+        let configured = configured_root(&root);
+        let request = add_request("legacy-add");
+        let mut store = SessionStore::open(&root, "default", std::slice::from_ref(&configured))
+            .expect("open session store");
+        store.handle_durable(&request).expect("add torrent");
+        let database_path = store.database_path().to_owned();
+        drop(store);
+
+        let connection = Connection::open(&database_path).expect("open receipt database");
+        let stored_response: String = connection
+            .query_row(
+                "SELECT response_json FROM request_receipts WHERE request_id = ?1",
+                [&request.request_id],
+                |row| row.get(0),
+            )
+            .expect("read stored response");
+        let mut legacy_response: serde_json::Value =
+            serde_json::from_str(&stored_response).expect("decode stored response fixture");
+        let torrent = legacy_response
+            .pointer_mut("/snapshot/torrents/0")
+            .and_then(serde_json::Value::as_object_mut)
+            .expect("stored response torrent");
+        assert!(torrent.remove("archived").is_some());
+        assert!(torrent.remove("delete_managed_data_supported").is_some());
+        connection
+            .execute(
+                "UPDATE request_receipts SET response_json = ?1 WHERE request_id = ?2",
+                rusqlite::params![
+                    serde_json::to_string(&legacy_response).expect("encode legacy response"),
+                    &request.request_id
+                ],
+            )
+            .expect("install legacy response fixture");
+        drop(connection);
+
+        let mut reopened = SessionStore::open(&root, "default", &[configured]).expect("reopen");
+        let replay = reopened
+            .handle_durable(&request)
+            .expect("replay legacy receipt");
+        let ResponseOutcome::Success { snapshot } = replay.outcome else {
+            panic!("legacy receipt must remain a successful response");
+        };
+        let replayed_torrent = snapshot.torrents.first().expect("replayed torrent");
+        assert!(!replayed_torrent.archived);
+        assert_eq!(replayed_torrent.removal_state, None);
+        assert!(!replayed_torrent.delete_managed_data_supported);
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
     fn archive_and_removal_generations_are_durable_and_idempotent() {
         let root = test_root("retention");
         let configured = configured_root(&root);

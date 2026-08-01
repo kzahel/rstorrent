@@ -1272,9 +1272,11 @@
     "TorrentSnapshot": {
       "properties": {
         "archived": {
+          "default": false,
           "type": "boolean"
         },
         "delete_managed_data_supported": {
+          "default": false,
           "type": "boolean"
         },
         "error": {
@@ -1335,9 +1337,7 @@
         "metadata_available",
         "piece_count",
         "verified_piece_count",
-        "skip_files",
-        "archived",
-        "delete_managed_data_supported"
+        "skip_files"
       ],
       "type": "object"
     },

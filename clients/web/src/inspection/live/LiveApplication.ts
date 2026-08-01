@@ -45,6 +45,7 @@ export class LiveApplication implements InspectionApplication {
   private snapshot: InspectionSnapshot;
   private hello: ApiHello | null = null;
   private closed = false;
+  private readonly requestInstanceId = generateRequestInstanceId();
   private requestSequence = 1;
   private removeWakeHints: (() => void) | null = null;
 
@@ -121,7 +122,7 @@ export class LiveApplication implements InspectionApplication {
     }
     const request: RequestEnvelope = {
       version: 1,
-      request_id: `web-${this.requestSequence++}`,
+      request_id: `web-${this.requestInstanceId}-${this.requestSequence++}`,
       command:
         command.type === "add_magnet"
           ? {
@@ -489,6 +490,12 @@ function mapTorrentState(state: TorrentState): TorrentRow["status"] {
     case "awaiting_publication":
       return "downloading";
   }
+}
+
+function generateRequestInstanceId(): string {
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function mapPeers(peers: readonly PeerView[]): PeerSet {

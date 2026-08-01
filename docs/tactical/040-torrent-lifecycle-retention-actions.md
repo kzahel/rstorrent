@@ -221,3 +221,26 @@ Validation completed with:
 - Playwright: five passed, one opt-in live test skipped, with no serious or
   critical axe findings; and
 - the full Android two-ABI build plus `testDebugUnitTest`.
+
+### Post-completion compatibility correction
+
+The first persistent-profile use after this tactical exposed two upgrade and
+reload defects. Pre-retention request receipts could not deserialize because
+their embedded torrent snapshots lacked the new `archived` and managed-data
+capability fields. Those fields now use conservative receipt defaults: not
+archived and managed deletion unavailable. A focused database regression
+removes both fields from a real stored response and proves replay after reopen.
+
+The React live adapter also restarted its durable request IDs at `web-1` for
+every application instance. Reloading the UI could therefore reuse an old
+receipt ID for a different menu or toolbar command and correctly trigger a
+request conflict. Each live application now owns a random 128-bit request
+namespace plus its monotonic sequence. TypeScript tests prove bounded,
+sequential IDs within one instance and distinct IDs across instances.
+
+Post-correction validation passed formatting, warning-denying workspace
+Clippy, all workspace tests, regenerated web contract/schema output, the full
+44-test Vitest suite with two opt-in cases skipped, TypeScript checking, and
+the production web build. The first workspace run shared the machine with the
+web gates and one unrelated storage-pressure timing test missed its deadline;
+that case passed three isolated reruns and the complete serial workspace rerun.
