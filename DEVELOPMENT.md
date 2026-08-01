@@ -178,10 +178,11 @@ with `RSTORRENT_WEBUI_DATA_ROOT` or the preview port with
 without disturbing the visible browser and is the automation/debug form.
 
 The launcher selects online torrent networking by default. The current live
-React surface supports inspection plus pause/resume; it does not yet contain
-an add-magnet control. Switching Tauri to this surface and deciding how to
-migrate or redesign the categorized Logs view are deliberately gated on the
-maintainer's manual confirmation of this launcher.
+React surface supports magnet intake, inspection, pause, and resume. Paste a
+magnet into the toolbar and use Add or Enter; unsupported remote `.torrent`
+URLs are rejected without clearing the input. Local `.torrent` file selection
+is reserved for a later slice. Switching Tauri to this surface and deciding
+how to migrate or redesign the categorized Logs view remain separate work.
 
 ## Exercising The Frontend Headlessly
 

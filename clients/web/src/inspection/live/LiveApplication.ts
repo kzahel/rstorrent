@@ -106,7 +106,11 @@ export class LiveApplication implements InspectionApplication {
 
   async dispatch(command: InspectionCommand): Promise<CommandResult> {
     this.ensureOpen();
-    if (command.type !== "pause" && command.type !== "resume") {
+    if (
+      command.type !== "add_magnet" &&
+      command.type !== "pause" &&
+      command.type !== "resume"
+    ) {
       return {
         accepted: false,
         message: "This command is available only in named demo scenarios",
@@ -115,10 +119,18 @@ export class LiveApplication implements InspectionApplication {
     const request: RequestEnvelope = {
       version: 1,
       request_id: `web-${this.requestSequence++}`,
-      command: {
-        type: command.type,
-        torrent_id: command.torrentId,
-      },
+      command:
+        command.type === "add_magnet"
+          ? {
+              type: "add_magnet",
+              magnet: command.magnet,
+              storage_root: "downloads",
+              skip_files: [],
+            }
+          : {
+              type: command.type,
+              torrent_id: command.torrentId,
+            },
     };
     const response = await this.controller?.dispatch(request);
     if (response === undefined) {
@@ -129,7 +141,12 @@ export class LiveApplication implements InspectionApplication {
     }
     return {
       accepted: true,
-      message: command.type === "pause" ? "Torrent paused" : "Torrent resumed",
+      message:
+        command.type === "add_magnet"
+          ? "Torrent added"
+          : command.type === "pause"
+            ? "Torrent paused"
+            : "Torrent resumed",
     };
   }
 

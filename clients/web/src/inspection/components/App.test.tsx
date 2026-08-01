@@ -35,6 +35,10 @@ describe("inspection application", () => {
     const user = userEvent.setup();
     renderScenario("healthy-download", 42_000);
     expect(screen.getByRole("navigation", { name: "Torrent library" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Add demo" })).toBeVisible();
+    expect(
+      screen.queryByRole("textbox", { name: "Magnet link or torrent URL" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("grid", { name: "Torrent library" })).toHaveAttribute("aria-rowcount", "4");
     expect(screen.getByRole("grid", { name: "Active peer connections" })).toBeVisible();
 

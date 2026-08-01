@@ -21,6 +21,7 @@ test("live peer inspection follows a controlled verified transfer", async ({
   let suspendUpdates = false;
   let releaseUpdates = () => {};
   let updatesReleased = Promise.resolve();
+  let delayNextCommand = true;
   await page.route(`${gateway!}/api/v1/view-sets`, async (route) => {
     if (route.request().method() === "POST") {
       openAttempts += 1;
@@ -30,6 +31,13 @@ test("live peer inspection follows a controlled verified transfer", async ({
   });
   await page.route("**/api/v1/view-sets/*/updates?**", async (route) => {
     if (suspendUpdates) await updatesReleased;
+    await route.continue();
+  });
+  await page.route(`${gateway!}/api/v1/commands`, async (route) => {
+    if (delayNextCommand) {
+      delayNextCommand = false;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
     await route.continue();
   });
   page.on("response", (response) => {
@@ -58,36 +66,58 @@ test("live peer inspection follows a controlled verified transfer", async ({
     })
     .toEqual({ mainBottom: 900, detailBottom: 900 });
 
-  const response = await page.evaluate(
-    async ({ gatewayUrl, magnetUri }) => {
-      const result = await fetch(new URL("/api/v1/commands", gatewayUrl), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-RSTorrent-Owner": "11111111111111111111111111111111",
-        },
-        body: JSON.stringify({
-          version: 1,
-          request_id: "playwright-add",
-          command: {
-            type: "add_magnet",
-            magnet: magnetUri,
-            storage_root: "downloads",
-            skip_files: [],
-          },
-        }),
-      });
-      return { status: result.status, body: await result.text() };
-    },
-    { gatewayUrl: gateway!, magnetUri: magnet! },
+  const addForm = page.getByRole("form", { name: "Add torrent" });
+  const torrentInput = addForm.getByRole("textbox", {
+    name: "Magnet link or torrent URL",
+  });
+  const addButton = addForm.getByRole("button");
+  await torrentInput.fill("https://example.test/file.torrent");
+  await addButton.click();
+  await expect(torrentInput).toHaveAttribute("aria-invalid", "true");
+  await expect(torrentInput).toHaveValue(
+    "https://example.test/file.torrent",
   );
-  expect(response.status, response.body).toBe(200);
+  await expect(
+    page.getByText(
+      "Remote .torrent URLs are not supported yet. Paste a magnet link instead.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+
+  await torrentInput.fill(magnet!);
+  await torrentInput.press("Enter");
+  await expect(addButton).toBeDisabled();
+  await expect(page.getByText("Torrent added", { exact: true })).toBeVisible();
+  await expect(torrentInput).toHaveValue("");
 
   const library = page.getByRole("grid", { name: "Torrent library" });
   const torrentRow = library
     .getByRole("row")
     .filter({ hasText: torrentId!.slice(0, 12) });
   await expect(torrentRow).toBeVisible({ timeout: 10_000 });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const menuButton = page.getByRole("button", {
+    name: "Toggle library navigation",
+  });
+  await expect(menuButton).toBeVisible();
+  if ((await menuButton.getAttribute("aria-expanded")) === "true") {
+    await menuButton.click();
+    await page.waitForTimeout(250);
+  }
+  await expect(menuButton).toHaveAttribute("aria-expanded", "false");
+  await expect
+    .poll(async () =>
+      page
+        .getByRole("navigation", { name: "Torrent library" })
+        .evaluate((element) => Math.round(element.getBoundingClientRect().right)),
+    )
+    .toBeLessThanOrEqual(0);
+  await expect(torrentInput).toBeVisible();
+  await expect(addButton).toBeVisible();
+  await capture(page, "live-magnet-phone-library.png");
+
+  await page.setViewportSize({ width: 1440, height: 900 });
   await torrentRow.click();
 
   const peers = page.getByRole("grid", { name: "Active peer connections" });

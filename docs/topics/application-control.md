@@ -147,6 +147,13 @@ gateway. Generated TypeScript and Kotlin values, independent reactive
 subscriptions, explicit resynchronization, and controlled real downloads now
 provide cross-client executable evidence.
 
+Tactical `037` routes the new React toolbar's bounded magnet intent through
+that generated `add_magnet` contract. Input convenience checks improve local
+feedback, but the application service remains authoritative for syntax,
+resource bounds, durable duplicate handling, storage policy, and busy state.
+Remote `.torrent` URL fetching and file-byte intake remain absent rather than
+being represented as successful magnet adds.
+
 Later work must define multi-torrent scheduling, stable product error
 taxonomy, capability installation, removals and deletion, production remote
 authentication and relay semantics, and compatibility rules for any

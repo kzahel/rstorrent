@@ -11,7 +11,9 @@ truthful torrent summaries and active peers flow from one coherent engine
 observation through leased semantic views into the responsive React surface,
 with headless recovery and controlled libtorrent evidence. Tactical `036`
 adds the one-command production browser launcher needed for maintainer visual
-confirmation before the Tauri entry changes.
+confirmation. Tactical `037` makes that live surface independently useful by
+adding bounded adjacent magnet input and Add controls through the application
+boundary. The Tauri entry has not changed.
 
 ## Purpose
 
@@ -159,7 +161,8 @@ Tactical `035` now completes that connection. The production React build is
 driven headlessly against a controlled peer, displays active request state,
 recovers after its old server view expires, verifies the downloaded payload,
 and removes the connection row after joined cleanup without launching Tauri or
-a visible browser.
+a visible browser. Tactical `037` drives the same proof from the toolbar rather
+than a raw HTTP command, including responsive and accessible intake behavior.
 
 The surface is therefore useful for live peer observation, but it is not yet a
 complete debugging console. The existing categorized diagnostics feed is the

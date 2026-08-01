@@ -168,6 +168,7 @@ export type InspectionUpdate =
     };
 
 export type InspectionCommand =
+  | { readonly type: "add_magnet"; readonly magnet: string }
   | { readonly type: "pause"; readonly torrentId: string }
   | { readonly type: "resume"; readonly torrentId: string }
   | { readonly type: "archive"; readonly torrentId: string }

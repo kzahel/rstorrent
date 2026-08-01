@@ -10,8 +10,9 @@ tables, and permanent named demo adapter. Tactical `035` connects stable Rust
 torrent and active-peer projections through semantic responsive view
 selection while retaining the demo adapter and recovering cleanly after
 browser suspension. Tactical `036` adds the production-built manual live
-browser launcher; the Tauri entry remains legacy until that path receives
-maintainer confirmation.
+browser launcher. Tactical `037` adds accessible, responsive magnet intake to
+the live toolbar and routes it through the semantic application command while
+retaining the permanent demo adapter. The Tauri entry remains legacy.
 
 ## Purpose
 

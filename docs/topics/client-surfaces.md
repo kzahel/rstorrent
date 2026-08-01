@@ -34,7 +34,9 @@ Tactical `036` packages that same production-built live browser path behind
 `./scripts/webui`, with isolated persistent state, default online networking,
 normal-browser opening, and joined terminal-owned shutdown. Tauri still
 selects the legacy entry pending maintainer confirmation of the browser
-launcher.
+launcher. Tactical `037` adds the first live mutation to the new surface:
+bounded magnet intake through the semantic command boundary. Android remains
+intentionally unchanged.
 
 ## Scope
 
@@ -147,8 +149,9 @@ The manual launcher serves the production bundle rather than the Vite
 development entry and stores its profile beneath ignored `.local/webui` by
 default. It is a maintainer-facing local bridge, not a change to the accepted
 in-process Tauri product architecture. The live React adapter currently
-supports inspection and pause/resume but not add-magnet or the full legacy
-command set.
+supports inspection, magnet add, pause, and resume, but not `.torrent` file
+intake or the full legacy command set. React emits a transport-neutral magnet
+intent; only the live adapter constructs the generated application request.
 
 ## Reactive Views
 

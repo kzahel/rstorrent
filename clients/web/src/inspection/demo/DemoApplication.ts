@@ -130,6 +130,8 @@ export class DemoApplication implements InspectionApplication {
         this.addCommandLog("lifecycle", "Generated demo transfer added", null);
         this.advance(0);
         return accepted("Generated demo transfer added");
+      case "add_magnet":
+        return rejected("Live magnet add is unavailable in demo scenarios");
     }
   }
 

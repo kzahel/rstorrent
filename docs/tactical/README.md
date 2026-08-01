@@ -224,6 +224,10 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; adds one production-built live browser launcher with persistent
   isolated state, an exact loopback boundary, normal-browser opening, and
   joined `Ctrl+C` shutdown. Tauri migration awaits maintainer confirmation.
+- [`037-live-magnet-toolbar-intake.md`](037-live-magnet-toolbar-intake.md):
+  complete; adds JSTorrent-style adjacent magnet input and Add controls to the
+  live React toolbar and moves the controlled transfer proof through that
+  visible command path while reserving later `.torrent` file selection.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

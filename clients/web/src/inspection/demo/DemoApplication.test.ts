@@ -77,6 +77,13 @@ describe("DemoApplication", () => {
     expect(controller.store.getState().torrents[torrentId]?.archived).toBe(true);
     await controller.dispatch({ type: "add_demo_torrent" });
     expect(controller.store.getState().torrentOrder).toHaveLength(4);
+    await expect(
+      controller.dispatch({
+        type: "add_magnet",
+        magnet:
+          "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213",
+      }),
+    ).rejects.toThrow("unavailable in demo scenarios");
     await controller.dispatch({ type: "reset_demo" });
     expect(controller.store.getState().torrentOrder).toHaveLength(3);
     expect(controller.store.getState().demo?.elapsedMs).toBe(0);

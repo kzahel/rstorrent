@@ -174,6 +174,52 @@
   cursor: default;
 }
 
+.addForm {
+  display: flex;
+  min-width: 10rem;
+  max-width: 30rem;
+  flex: 1 1 24rem;
+  align-items: center;
+  gap: 0.32rem;
+}
+
+.addInput {
+  min-width: 7rem;
+  height: 1.85rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.38rem;
+  padding: 0 0.58rem;
+  flex: 1 1 auto;
+  color: var(--text-primary);
+  background: var(--surface-secondary);
+  font: inherit;
+  font-size: 0.72rem;
+}
+
+.addInput::placeholder {
+  color: var(--text-muted);
+}
+
+.addInput:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--focus) 42%, transparent);
+  outline-offset: 0;
+}
+
+.addInput[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.toolbar .addButton {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  background: var(--surface-secondary);
+}
+
+.toolbar .addButton:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
 .toolbar .primaryAction {
   color: #fff;
   background: var(--accent);
@@ -302,12 +348,24 @@
     grid-row: 1;
   }
 
+  .collection {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
   .toolbar {
-    overflow-x: auto;
+    flex-wrap: wrap;
+    padding-block: 0.3rem;
+  }
+
+  .addForm {
+    max-width: none;
+    flex-basis: 100%;
   }
 
   .commandStatus {
-    display: none;
+    min-height: 1rem;
+    margin-left: 0;
+    flex-basis: 100%;
   }
 }
 

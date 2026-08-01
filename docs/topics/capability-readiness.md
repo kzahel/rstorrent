@@ -105,22 +105,19 @@ evidence.
 
 ### Now
 
-**Confirm the manual live browser surface.** Tactical
-[`036`](../tactical/036-manual-live-webui-launcher.md) packages the production
-React application, online gateway, isolated persistent state, browser opening,
-and joined shutdown behind `./scripts/webui`. Automated no-open lifecycle
-evidence passes. Await maintainer confirmation in the normal browser before
-changing the Tauri entry.
+**Migrate Tauri to the inspection application.** The production browser path
+is usable through `./scripts/webui`, and Tactical
+[`037`](../tactical/037-live-magnet-toolbar-intake.md) gives it bounded magnet
+intake in addition to live inspection and torrent control. Add an in-process
+view-set adapter and make `./scripts/desktop` select the new React surface
+without turning the loopback gateway into a desktop dependency.
 
 ### Next
 
-1. **Migrate Tauri to the inspection application.** Add an in-process view-set
-   adapter and make `./scripts/desktop` select the new React surface without
-   turning the loopback gateway into a desktop dependency.
-2. **Design and connect categorized Logs.** Use JSTorrent's Logs tab and the
+1. **Design and connect categorized Logs.** Use JSTorrent's Logs tab and the
    current legacy logger as product references, preserving structured category
    and severity semantics rather than transplanting the legacy UI.
-3. **Resume oracle-driven engine work.** Use the connected inspection evidence
+2. **Resume oracle-driven engine work.** Use the connected inspection evidence
    to decide whether serialized storage execution, another correctness owner,
    or measured BEP breadth becomes the next engine tactical.
 
@@ -205,7 +202,7 @@ does not.
 | --- | --- | --- | --- | --- |
 | Durable semantic application control | Implemented | deterministic, runtime, web, AVD, physical | Removal, deletion, stable public compatibility, and general multi-torrent scheduling are absent. | [`application-control`](application-control.md) |
 | Leased application view sets and polling client | Implemented | deterministic, runtime, interop, web | Named summary, piece, diagnostic, and active-peer views have bounded replay/reset, independent lease expiry, and fresh-snapshot recovery; file/tracker/swarm views, streaming, Tauri migration, and stable public compatibility remain absent. | [`application-view-api`](application-view-api.md) |
-| Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive web surface now consumes live torrent and active-peer views headlessly; production desktop integration, remaining detail feeds, and complete torrent controls do not. | [`client-surfaces`](client-surfaces.md) |
+| Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive web surface now adds magnets and consumes live torrent and active-peer views headlessly; production desktop integration, `.torrent` file intake, remaining detail feeds, and complete torrent controls do not. | [`client-surfaces`](client-surfaces.md) |
 | Android Compose foreground client | Partial | runtime, AVD, physical | General settings, connectivity policy, and complete torrent controls remain incomplete. | [`client-surfaces`](client-surfaces.md) |
 | Derived progress and bounded diagnostics | Implemented | deterministic, runtime, web, AVD | Scheduler and per-peer facts must grow with the corresponding owners. | [`application-control`](application-control.md) |
 | Offline, loopback-only, and online egress policy | Implemented | deterministic, runtime, web, AVD | Policy is fixed for one service lifetime; Android VPN and metered-network controls are absent. | [`application-control`](application-control.md) |

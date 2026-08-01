@@ -22,6 +22,7 @@ const TORRENT_ID = "000102030405060708090a0b0c0d0e0f10111213";
 
 class FakeLiveClient implements ApplicationViewClient {
   readonly updates: UpdateViewSetRequest[] = [];
+  readonly requests: RequestEnvelope[] = [];
   openCount = 0;
   private rejectPoll: ((error: Error) => void) | null = null;
 
@@ -50,6 +51,7 @@ class FakeLiveClient implements ApplicationViewClient {
   }
 
   async dispatch(request: RequestEnvelope): Promise<ResponseEnvelope> {
+    this.requests.push(request);
     return {
       version: 1,
       request_id: request.request_id,
@@ -113,6 +115,25 @@ class FakeLiveClient implements ApplicationViewClient {
 }
 
 describe("LiveApplication", () => {
+  it("maps semantic magnet intake to the bounded application command", async () => {
+    const client = new FakeLiveClient();
+    const application = await LiveApplication.open(client);
+    const magnet =
+      "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213";
+
+    await expect(
+      application.dispatch({ type: "add_magnet", magnet }),
+    ).resolves.toEqual({ accepted: true, message: "Torrent added" });
+    expect(client.requests).toHaveLength(1);
+    expect(client.requests[0]?.command).toEqual({
+      type: "add_magnet",
+      magnet,
+      storage_root: "downloads",
+      skip_files: [],
+    });
+    await application.close();
+  });
+
   it("maps active peer state and evicts obsolete responsive views", async () => {
     const client = new FakeLiveClient();
     const application = await LiveApplication.open(client, {
