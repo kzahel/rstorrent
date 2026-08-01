@@ -133,7 +133,7 @@ can decide whether to resume the recorded storage-execution candidate, select
 a different engine owner from interactive evidence, or fill another detail
 view first.
 
-No implementation tactical is active. The next step is the bounded view-set
-contract and headless client foundation described in
-[`application-view-api.md`](application-view-api.md), followed by the stable
-peer projection and its table.
+Tactical `033` is active for the bounded view-set contract and headless client
+foundation described in
+[`application-view-api.md`](application-view-api.md). The stable peer
+projection and its table follow it.

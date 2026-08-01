@@ -276,7 +276,6 @@ all stages as one slice.
 - the thresholds and transport shape that would justify low-latency streaming
   or a binary codec.
 
-No implementation tactical is active. The next design work should classify
-the exact initial torrent-list and peer-view fields, privacy posture, and
-resource limits while the next numbered tactical establishes the transport-
-independent view-set foundation.
+Tactical `033` is active for the headless transport-independent view-set
+foundation. No visible React tactical is active. Exact peer-view fields,
+privacy posture, and resource limits remain the next design work.

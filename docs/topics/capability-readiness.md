@@ -102,10 +102,11 @@ evidence.
 Tactical `032`. The recoverable view-set, polling-to-streaming, generated
 TypeScript/schema, and Zustand controller/store architecture is accepted in
 [`application-view-api.md`](application-view-api.md) and
-[`web-ui-design.md`](web-ui-design.md). Open one bounded tactical for the Rust
-view-set owner, deterministic recovery tests, polling adapter, pure TypeScript
-reducer/CLI, and controlled headless interoperability evidence. Android UI
-parity is not part of this phase.
+[`web-ui-design.md`](web-ui-design.md).
+[`Tactical 033`](../tactical/033-headless-view-set-foundation.md) is active for
+the Rust view-set owner, deterministic recovery tests, polling adapter, pure
+TypeScript reducer/CLI, and controlled headless interoperability evidence.
+Android UI parity is not part of this phase.
 
 ### Next
 

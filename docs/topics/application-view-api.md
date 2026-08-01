@@ -3,8 +3,9 @@
 Topic: `application-view-api`
 
 Status: Semantic direction accepted. The existing per-projection subscriptions
-from Tactical `008` remain the implemented proof; a bounded view-set tactical
-is the next product implementation slice. No stable public remote wire
+from Tactical `008` remain the implemented proof;
+[`033-headless-view-set-foundation.md`](../tactical/033-headless-view-set-foundation.md)
+is implementing the bounded successor. No stable public remote wire
 compatibility is claimed yet.
 
 ## Purpose And Scope
@@ -525,7 +526,7 @@ interactive machine.
 5. Measure update volume, decode/reduce cost, rendering, and memory before
    selecting binary encoding or finer-grained row patches.
 
-No implementation tactical is active yet.
+Tactical `033` is active for the first step only.
 
 ## References And Deliberate Differences
 
