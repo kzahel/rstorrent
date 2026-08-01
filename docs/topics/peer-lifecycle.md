@@ -22,7 +22,9 @@ storage service and has closed that defect. Tactical `029` removed redundant
 selective hash seeks but retained saturated storage occupancy. Tactical `030`
 then installed one complete piece-hash operation boundary without changing
 performance. Tactical `031` measures storage service before returning to peer
-policy. Full parole selection, persistent
+policy and attributes 93--94% of wall time to serialized storage, dominated by
+small writes. Write execution therefore precedes another peer-policy change.
+Full parole selection, persistent
 integrity reputation,
 measured picker policy, incoming connections, and persistent peer records
 remain later work.
@@ -463,7 +465,9 @@ Tactical `029` removed redundant selective-hash seeks without changing that
 occupancy. Tactical `030` moved the complete common piece hash behind one
 blocking boundary, but controlled timing stayed neutral and the public queue
 remained full. Tactical `031` measures queue wait and per-kind service before
-connection policy. Incoming listener ownership and advertised-port updates,
+connection policy and attributes about 88% of public wall time to 16 KiB write
+service. The source-first write owner now precedes another lifecycle change.
+Incoming listener ownership and advertised-port updates,
 measured
 performance selection, peer-ID duplicate resolution, full parole selection,
 PEX, and persisted peer caches remain later work.

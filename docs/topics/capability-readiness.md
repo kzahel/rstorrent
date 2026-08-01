@@ -18,8 +18,10 @@ that cohort during storage pressure. Coalesced selective hashing now removes
 redundant seeks, but a controlled profile remained neutral and public storage
 occupancy stayed saturated. The complete common piece hash now runs behind one
 bounded blocking positional-I/O boundary, but controlled and public timing
-again stayed neutral. The active slice separates storage queue wait from write
-and hash service time before another behavior change.
+again stayed neutral. The duration slice now attributes 93--94% of public wall
+time to serialized storage service, including about 88% to 16 KiB writes and
+5--6% to piece hashing. The next source-first slice owns write execution shape
+or bounded concurrency.
 
 ## Purpose And Ownership
 
@@ -94,15 +96,16 @@ evidence.
 
 ### Now
 
-**Storage command duration evidence.** Attribute the full storage queue to
-queue wait, write service, and hash service with fixed bounded diagnostics,
-controlled delays, and retained public timeline evidence.
+**Source-first storage write execution.** Inspect pinned libtorrent write
+execution and tests plus JSTorrent's platform write batching, then define one
+bounded tactical that reduces serialized 16 KiB write service without weakening
+integrity, cancellation, payload, memory, or publication bounds.
 
 ### Next
 
-1. **Source-derived service owner.** Use storage-duration and paired timelines
-   to select write ownership, request service, peer ranking, or confirmation
-   breadth without changing several policies together.
+1. **Paired completion parity.** Re-run controlled and public comparator
+   cohorts after the write-owner change, then use the retained timeline to
+   select the next measured owner without changing several policies together.
 2. **Measured BEP breadth.** Use the protocol matrix and full-reference gaps
    to choose the next discovery or transport BEP after core completion parity.
 3. **Durable single-file resume.** Extend the existing selective-storage
@@ -179,7 +182,7 @@ does not.
 | Multi-file mapping and selective files | Implemented | deterministic, runtime, interop | General product selection changes and priority scheduling are absent. | [`client-persistence`](client-persistence.md) |
 | Cross-file, skipped-file, and padding storage | Implemented | deterministic, runtime, interop | BEP 47 symlinks are deliberately rejected. | [`client-persistence`](client-persistence.md) |
 | Path-backed staging and publication | Implemented | runtime, interop | Disk-space policy, relocation, and broad filesystem failure profiles remain incomplete. | [`client-persistence`](client-persistence.md) |
-| Bounded asynchronous content storage | Implemented | deterministic, runtime, interop, live | One torrent-local owner serializes writes and hashes with exact join; it preserves peer-event liveness but adds measured localhost overhead and is not a session-wide disk scheduler. | [`download-correctness`](download-correctness.md) |
+| Bounded asynchronous content storage | Implemented | deterministic, runtime, interop, live | One torrent-local owner serializes writes and hashes with exact join; live duration evidence attributes about 88% of wall time to 16 KiB writes, so write execution is the active performance gap and this is not a session-wide disk scheduler. | [`download-correctness`](download-correctness.md) |
 | Android SAF storage and publication | Implemented | runtime, AVD, physical | General root management, removable-media policy, and migration remain absent. | [`client-persistence`](client-persistence.md) |
 | Durable have state and conservative recheck | Implemented | deterministic, runtime, interop, AVD, physical | It rehashes claimed pieces rather than providing optimized fast resume. | [`client-persistence`](client-persistence.md) |
 | Recovery after content hash failure | Implemented | deterministic, runtime | Sole corrupt and ambiguous multi-source generations retry cleanly with bounded exact-generation attribution. | [`download-correctness`](download-correctness.md) |

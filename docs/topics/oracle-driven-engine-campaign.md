@@ -314,15 +314,16 @@ reason to stop.
 
 Campaign state: **active**.
 
-Active tactical:
-[`031-storage-command-duration-evidence.md`](../tactical/031-storage-command-duration-evidence.md).
+Active tactical: **none while this completed slice is committed**.
 Tacticals `025` through
-[`030-single-boundary-selective-hash-job.md`](../tactical/030-single-boundary-selective-hash-job.md)
-are complete.
+[`031-storage-command-duration-evidence.md`](../tactical/031-storage-command-duration-evidence.md)
+are complete. The next implementation begins only after its bounded tactical
+records the source/test dossier and stopping condition.
 
-Current milestone: measure bounded storage command queue wait and separate
-write/hash service duration, including the current operation age, then use
-controlled delays and public evidence to select the actual retained owner.
+Current milestone: derive a bounded storage write-execution tactical from the
+pinned libtorrent implementation and tests plus JSTorrent's platform history,
+then reduce serialized 16 KiB service while preserving existing integrity and
+resource bounds.
 
 Last completed evidence:
 
@@ -520,18 +521,30 @@ Last completed evidence:
 - a complete screen timed out at 375 pieces and 98,304,000 verified bytes with
   zero hash failures, 30 peers, 86 requests, 66 writes, and 66 storage jobs.
   Repeated full queues without controlled hash improvement select Tactical
-  `031`'s per-command duration evidence.
+  `031`'s per-command duration evidence;
+- Tactical `031` now publishes fixed saturating per-kind starts, completions,
+  cumulative/max queue wait, cumulative/max service duration, and active
+  operation age with exact controlled lifecycle and nullable reference schema
+  evidence;
+- its formatting, warning-denying clippy, 253-test workspace gate, selective
+  and mixed-source interop, nine comparator tests, paired controlled
+  publication, and both Android target checks pass; and
+- three public 50% screens attributed 93.2--93.7% of wall time to serialized
+  storage service. Writes consumed 87.7--88.2%, hashes 5.5--5.7%, and exact
+  integrity and cleanup held. This selects write execution rather than hashing,
+  peer ranking, or request policy.
 
 Next executable action:
 
-1. timestamp bounded storage command admission, service start, and completion;
-2. publish fixed per-kind counts, cumulative/max queue and service times, and
-   current operation kind/age through existing diagnostics;
-3. prove exact attribution and lifecycle with controlled write/hash delays,
-   queued commands, failures, and cancellation;
-4. pass workspace, selective/hash/mixed, Python, and paired controlled gates;
-   and
-5. run product timeline screens and classify write service, hash service,
-   request service, or peer utility from retained evidence.
+1. inspect exact pinned libtorrent write scheduling, buffering, coalescing, and
+   lifecycle tests, plus JSTorrent's platform write batching and failure
+   history;
+2. write the next bounded tactical with owner/task/cancellation map, memory and
+   payload limits, integrity ordering, intentional differences, and a paired
+   performance stopping condition;
+3. implement one coherent write operation-shape or bounded-concurrency change
+   with deterministic delayed/failing/cancellation tests; and
+4. run controlled publication and alternating public comparator cohorts before
+   considering peer/request policy or BEP breadth.
 
 Human blocker: **none**.

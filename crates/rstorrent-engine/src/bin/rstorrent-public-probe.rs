@@ -138,6 +138,11 @@ struct UtilitySample {
     request_target: Option<usize>,
     writing_blocks: Option<usize>,
     storage_jobs: Option<usize>,
+    storage_queue_wait_micros: Option<u64>,
+    storage_write_service_micros: Option<u64>,
+    storage_hash_service_micros: Option<u64>,
+    storage_active_kind: Option<&'static str>,
+    storage_active_age_micros: Option<u64>,
     pending_disk_bytes: Option<usize>,
     payload_rate: Option<usize>,
     peer_payload_rates: IntegerDistribution,
@@ -218,6 +223,25 @@ impl UtilityTimeline {
             request_target: swarm.map(|value| value.request_target_total),
             writing_blocks: swarm.map(|value| value.writing_blocks),
             storage_jobs: Some(snapshot.progress.storage_jobs_pending),
+            storage_queue_wait_micros: Some(
+                snapshot
+                    .progress
+                    .storage_write_queue_wait_micros
+                    .saturating_add(snapshot.progress.storage_hash_queue_wait_micros),
+            ),
+            storage_write_service_micros: Some(snapshot.progress.storage_write_service_micros),
+            storage_hash_service_micros: Some(snapshot.progress.storage_hash_service_micros),
+            storage_active_kind: if snapshot.progress.storage_active_write_micros.is_some() {
+                Some("write")
+            } else if snapshot.progress.storage_active_hash_micros.is_some() {
+                Some("hash")
+            } else {
+                None
+            },
+            storage_active_age_micros: snapshot
+                .progress
+                .storage_active_write_micros
+                .or(snapshot.progress.storage_active_hash_micros),
             pending_disk_bytes: None,
             payload_rate: swarm.map(|value| value.observed_payload_rate),
             peer_payload_rates: integer_distribution(
@@ -522,6 +546,20 @@ struct Diagnostics {
     storage_command_queue_high_water: usize,
     storage_completion_queue_high_water: usize,
     storage_hashes_started: usize,
+    storage_write_operations_started: usize,
+    storage_write_operations_completed: usize,
+    storage_write_queue_wait_micros: u64,
+    storage_write_queue_wait_max_micros: u64,
+    storage_write_service_micros: u64,
+    storage_write_service_max_micros: u64,
+    storage_hash_operations_started: usize,
+    storage_hash_operations_completed: usize,
+    storage_hash_queue_wait_micros: u64,
+    storage_hash_queue_wait_max_micros: u64,
+    storage_hash_service_micros: u64,
+    storage_hash_service_max_micros: u64,
+    storage_active_kind: Option<&'static str>,
+    storage_active_age_micros: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -948,6 +986,29 @@ fn diagnostic_result(
         storage_command_queue_high_water: snapshot.progress.storage_command_queue_high_water,
         storage_completion_queue_high_water: snapshot.progress.storage_completion_queue_high_water,
         storage_hashes_started: snapshot.progress.storage_hashes_started,
+        storage_write_operations_started: snapshot.progress.storage_write_operations_started,
+        storage_write_operations_completed: snapshot.progress.storage_write_operations_completed,
+        storage_write_queue_wait_micros: snapshot.progress.storage_write_queue_wait_micros,
+        storage_write_queue_wait_max_micros: snapshot.progress.storage_write_queue_wait_max_micros,
+        storage_write_service_micros: snapshot.progress.storage_write_service_micros,
+        storage_write_service_max_micros: snapshot.progress.storage_write_service_max_micros,
+        storage_hash_operations_started: snapshot.progress.storage_hash_operations_started,
+        storage_hash_operations_completed: snapshot.progress.storage_hash_operations_completed,
+        storage_hash_queue_wait_micros: snapshot.progress.storage_hash_queue_wait_micros,
+        storage_hash_queue_wait_max_micros: snapshot.progress.storage_hash_queue_wait_max_micros,
+        storage_hash_service_micros: snapshot.progress.storage_hash_service_micros,
+        storage_hash_service_max_micros: snapshot.progress.storage_hash_service_max_micros,
+        storage_active_kind: if snapshot.progress.storage_active_write_micros.is_some() {
+            Some("write")
+        } else if snapshot.progress.storage_active_hash_micros.is_some() {
+            Some("hash")
+        } else {
+            None
+        },
+        storage_active_age_micros: snapshot
+            .progress
+            .storage_active_write_micros
+            .or(snapshot.progress.storage_active_hash_micros),
     }
 }
 
@@ -1091,7 +1152,14 @@ mod tests {
     fn utility_timeline_rates_and_coalescing_are_bounded() {
         let mut timeline = UtilityTimeline::default();
         let diagnostics = DownloadDiagnosticSnapshot {
-            progress: DownloadProgress::default(),
+            progress: DownloadProgress {
+                storage_write_queue_wait_micros: 7,
+                storage_hash_queue_wait_micros: 11,
+                storage_write_service_micros: 13,
+                storage_hash_service_micros: 17,
+                storage_active_hash_micros: Some(19),
+                ..DownloadProgress::default()
+            },
             swarm: None,
             content_peers_captured_at: None,
             content_peers: Vec::new(),
@@ -1099,6 +1167,11 @@ mod tests {
             metadata: MetadataAcquisitionSnapshot::default(),
         };
         timeline.record(Duration::ZERO, &observation_snapshot(0, 0), &diagnostics);
+        assert_eq!(timeline.samples[0].storage_queue_wait_micros, Some(18));
+        assert_eq!(timeline.samples[0].storage_write_service_micros, Some(13));
+        assert_eq!(timeline.samples[0].storage_hash_service_micros, Some(17));
+        assert_eq!(timeline.samples[0].storage_active_kind, Some("hash"));
+        assert_eq!(timeline.samples[0].storage_active_age_micros, Some(19));
         timeline.record(
             Duration::from_secs(2),
             &observation_snapshot(1, 200),
@@ -1168,6 +1241,11 @@ mod tests {
             request_target: None,
             writing_blocks: None,
             storage_jobs: None,
+            storage_queue_wait_micros: None,
+            storage_write_service_micros: None,
+            storage_hash_service_micros: None,
+            storage_active_kind: None,
+            storage_active_age_micros: None,
             pending_disk_bytes: None,
             payload_rate: None,
             peer_payload_rates: IntegerDistribution::default(),

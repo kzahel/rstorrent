@@ -392,12 +392,32 @@ struct DownloadControlInner {
     storage_write_delay_millis: AtomicU64,
     storage_hash_delay_millis: AtomicU64,
     storage_hashes_started: AtomicUsize,
+    storage_write_timing: StorageCommandTiming,
+    storage_hash_timing: StorageCommandTiming,
+    storage_active_operation: AtomicUsize,
+    storage_active_started_micros: AtomicU64,
     activity_sink: Mutex<Option<Arc<dyn DownloadActivitySink>>>,
     last_swarm_activity: Mutex<Option<SwarmActivitySnapshot>>,
     last_content_peers: Mutex<(Option<Duration>, Vec<ContentPeerActivitySnapshot>)>,
     last_content_registry: Mutex<Option<PeerRegistryCounts>>,
     metadata_diagnostics: Mutex<MetadataDiagnosticState>,
     safe_cancel_state: AtomicUsize,
+}
+
+#[derive(Debug, Default)]
+struct StorageCommandTiming {
+    started: AtomicUsize,
+    completed: AtomicUsize,
+    queue_wait_micros: AtomicU64,
+    queue_wait_max_micros: AtomicU64,
+    service_micros: AtomicU64,
+    service_max_micros: AtomicU64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StorageCommandKind {
+    Write = 1,
+    Hash = 2,
 }
 
 #[derive(Debug, Default)]
@@ -435,6 +455,20 @@ pub struct DownloadProgress {
     pub storage_command_queue_high_water: usize,
     pub storage_completion_queue_high_water: usize,
     pub storage_hashes_started: usize,
+    pub storage_write_operations_started: usize,
+    pub storage_write_operations_completed: usize,
+    pub storage_write_queue_wait_micros: u64,
+    pub storage_write_queue_wait_max_micros: u64,
+    pub storage_write_service_micros: u64,
+    pub storage_write_service_max_micros: u64,
+    pub storage_hash_operations_started: usize,
+    pub storage_hash_operations_completed: usize,
+    pub storage_hash_queue_wait_micros: u64,
+    pub storage_hash_queue_wait_max_micros: u64,
+    pub storage_hash_service_micros: u64,
+    pub storage_hash_service_max_micros: u64,
+    pub storage_active_write_micros: Option<u64>,
+    pub storage_active_hash_micros: Option<u64>,
 }
 
 impl DownloadControl {
@@ -455,6 +489,10 @@ impl DownloadControl {
                 storage_write_delay_millis: AtomicU64::new(0),
                 storage_hash_delay_millis: AtomicU64::new(0),
                 storage_hashes_started: AtomicUsize::new(0),
+                storage_write_timing: StorageCommandTiming::default(),
+                storage_hash_timing: StorageCommandTiming::default(),
+                storage_active_operation: AtomicUsize::new(0),
+                storage_active_started_micros: AtomicU64::new(0),
                 activity_sink: Mutex::new(None),
                 last_swarm_activity: Mutex::new(None),
                 last_content_peers: Mutex::new((None, Vec::new())),
@@ -484,6 +522,9 @@ impl DownloadControl {
     }
 
     pub fn snapshot(&self) -> DownloadProgress {
+        let write_timing = &self.inner.storage_write_timing;
+        let hash_timing = &self.inner.storage_hash_timing;
+        let (storage_active_write_micros, storage_active_hash_micros) = self.storage_active_ages();
         DownloadProgress {
             buffered_payload_bytes: self.inner.buffered_payload_bytes.load(Ordering::Acquire),
             payload_high_water: self.inner.payload_high_water.load(Ordering::Acquire),
@@ -501,6 +542,26 @@ impl DownloadControl {
                 .storage_completion_queue_high_water
                 .load(Ordering::Acquire),
             storage_hashes_started: self.inner.storage_hashes_started.load(Ordering::Acquire),
+            storage_write_operations_started: write_timing.started.load(Ordering::Acquire),
+            storage_write_operations_completed: write_timing.completed.load(Ordering::Acquire),
+            storage_write_queue_wait_micros: write_timing.queue_wait_micros.load(Ordering::Acquire),
+            storage_write_queue_wait_max_micros: write_timing
+                .queue_wait_max_micros
+                .load(Ordering::Acquire),
+            storage_write_service_micros: write_timing.service_micros.load(Ordering::Acquire),
+            storage_write_service_max_micros: write_timing
+                .service_max_micros
+                .load(Ordering::Acquire),
+            storage_hash_operations_started: hash_timing.started.load(Ordering::Acquire),
+            storage_hash_operations_completed: hash_timing.completed.load(Ordering::Acquire),
+            storage_hash_queue_wait_micros: hash_timing.queue_wait_micros.load(Ordering::Acquire),
+            storage_hash_queue_wait_max_micros: hash_timing
+                .queue_wait_max_micros
+                .load(Ordering::Acquire),
+            storage_hash_service_micros: hash_timing.service_micros.load(Ordering::Acquire),
+            storage_hash_service_max_micros: hash_timing.service_max_micros.load(Ordering::Acquire),
+            storage_active_write_micros,
+            storage_active_hash_micros,
         }
     }
 
@@ -1056,8 +1117,96 @@ impl DownloadControl {
             .fetch_max(depth, Ordering::AcqRel);
     }
 
+    fn storage_command_started(
+        &self,
+        kind: StorageCommandKind,
+        enqueued_at: Instant,
+        started_at: Instant,
+    ) {
+        let timing = self.storage_timing(kind);
+        let queue_wait_micros = duration_micros(
+            started_at
+                .checked_duration_since(enqueued_at)
+                .unwrap_or_default(),
+        );
+        atomic_saturating_increment(&timing.started);
+        atomic_saturating_add(&timing.queue_wait_micros, queue_wait_micros);
+        timing
+            .queue_wait_max_micros
+            .fetch_max(queue_wait_micros, Ordering::AcqRel);
+        self.inner.storage_active_started_micros.store(
+            duration_micros(
+                started_at
+                    .checked_duration_since(self.inner.started_at)
+                    .unwrap_or_default(),
+            ),
+            Ordering::Release,
+        );
+        self.inner
+            .storage_active_operation
+            .store(kind as usize, Ordering::Release);
+    }
+
+    fn storage_command_completed(
+        &self,
+        kind: StorageCommandKind,
+        started_at: Instant,
+        completed_at: Instant,
+    ) {
+        let timing = self.storage_timing(kind);
+        let service_micros = duration_micros(
+            completed_at
+                .checked_duration_since(started_at)
+                .unwrap_or_default(),
+        );
+        atomic_saturating_add(&timing.service_micros, service_micros);
+        timing
+            .service_max_micros
+            .fetch_max(service_micros, Ordering::AcqRel);
+        atomic_saturating_increment(&timing.completed);
+        self.clear_storage_active_operation();
+    }
+
+    fn storage_timing(&self, kind: StorageCommandKind) -> &StorageCommandTiming {
+        match kind {
+            StorageCommandKind::Write => &self.inner.storage_write_timing,
+            StorageCommandKind::Hash => &self.inner.storage_hash_timing,
+        }
+    }
+
+    fn storage_active_ages(&self) -> (Option<u64>, Option<u64>) {
+        let first_kind = self.inner.storage_active_operation.load(Ordering::Acquire);
+        if first_kind == 0 {
+            return (None, None);
+        }
+        let started_micros = self
+            .inner
+            .storage_active_started_micros
+            .load(Ordering::Acquire);
+        let second_kind = self.inner.storage_active_operation.load(Ordering::Acquire);
+        if first_kind != second_kind {
+            return (None, None);
+        }
+        let age = duration_micros(self.inner.started_at.elapsed()).saturating_sub(started_micros);
+        match first_kind {
+            value if value == StorageCommandKind::Write as usize => (Some(age), None),
+            value if value == StorageCommandKind::Hash as usize => (None, Some(age)),
+            _ => (None, None),
+        }
+    }
+
+    fn clear_storage_active_operation(&self) {
+        self.inner
+            .storage_active_operation
+            .store(0, Ordering::Release);
+        self.inner
+            .storage_active_started_micros
+            .store(0, Ordering::Release);
+    }
+
     fn clear_storage_jobs(&self) {
         self.inner.storage_jobs_pending.store(0, Ordering::Release);
+        self.clear_storage_active_operation();
     }
 
     fn record_requested(&self, bytes: usize) {
@@ -1095,6 +1244,22 @@ impl DownloadControl {
             tokio::time::sleep(Duration::from_millis(millis)).await;
         }
     }
+}
+
+fn duration_micros(duration: Duration) -> u64 {
+    duration.as_micros().try_into().unwrap_or(u64::MAX)
+}
+
+fn atomic_saturating_add(value: &AtomicU64, amount: u64) {
+    let _ = value.fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+        Some(current.saturating_add(amount))
+    });
+}
+
+fn atomic_saturating_increment(value: &AtomicUsize) {
+    let _ = value.fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+        Some(current.saturating_add(1))
+    });
 }
 
 impl Drop for SafeCancelGuard {
@@ -3891,6 +4056,20 @@ enum ContentStorageCommand {
     },
 }
 
+impl ContentStorageCommand {
+    fn kind(&self) -> StorageCommandKind {
+        match self {
+            Self::Write { .. } => StorageCommandKind::Write,
+            Self::Verify { .. } => StorageCommandKind::Hash,
+        }
+    }
+}
+
+struct QueuedContentStorageCommand {
+    enqueued_at: Instant,
+    command: ContentStorageCommand,
+}
+
 enum ContentStorageCompletion {
     Write {
         block: BlockKey,
@@ -3904,11 +4083,11 @@ enum ContentStorageCompletion {
 }
 
 struct ContentStoragePipeline {
-    commands: Option<mpsc::Sender<ContentStorageCommand>>,
+    commands: Option<mpsc::Sender<QueuedContentStorageCommand>>,
     completions: mpsc::Receiver<ContentStorageCompletion>,
     cancellation: CancellationToken,
     task: JoinHandle<ContentStorage>,
-    pending_commands: VecDeque<ContentStorageCommand>,
+    pending_commands: VecDeque<QueuedContentStorageCommand>,
     control: DownloadControl,
 }
 
@@ -3935,6 +4114,10 @@ impl ContentStoragePipeline {
     }
 
     fn enqueue(&mut self, command: ContentStorageCommand) -> Result<(), DownloadError> {
+        let command = QueuedContentStorageCommand {
+            enqueued_at: Instant::now(),
+            command,
+        };
         if !self.pending_commands.is_empty() {
             if self.pending_commands.len() >= CONTENT_STORAGE_PENDING_QUEUE {
                 return Err(DownloadError::Swarm(SwarmError::Invariant(
@@ -4031,7 +4214,7 @@ impl ContentStoragePipeline {
 
 async fn run_content_storage_task(
     mut storage: ContentStorage,
-    mut commands: mpsc::Receiver<ContentStorageCommand>,
+    mut commands: mpsc::Receiver<QueuedContentStorageCommand>,
     completions: mpsc::Sender<ContentStorageCompletion>,
     cancellation: CancellationToken,
     control: DownloadControl,
@@ -4045,7 +4228,12 @@ async fn run_content_storage_task(
                 None => break,
             },
         };
-        let completion = execute_content_storage_command(&mut storage, command, &control).await;
+        let kind = command.command.kind();
+        let started_at = Instant::now();
+        control.storage_command_started(kind, command.enqueued_at, started_at);
+        let completion =
+            execute_content_storage_command(&mut storage, command.command, &control).await;
+        control.storage_command_completed(kind, started_at, Instant::now());
         let projected_depth = CONTENT_STORAGE_QUEUE
             .saturating_sub(completions.capacity())
             .saturating_add(1)
@@ -5573,8 +5761,9 @@ mod tests {
         MAX_METADATA_PEERS, MAX_RECENT_METADATA_ATTEMPTS, MagnetDownloadConfig,
         MetadataAcquisitionPhase, MetadataPeerStage, PeerConnection, PeerSession, SwarmConfig,
         TrackerManager, UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming,
-        UdpTrackerTokenCache, announce_udp_tracker_address, content_dial_slot_available,
-        download_magnet, download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
+        UdpTrackerTokenCache, announce_udp_tracker_address, atomic_saturating_add,
+        atomic_saturating_increment, content_dial_slot_available, download_magnet,
+        download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
         download_magnet_with_control, download_verified_piece,
         download_verified_piece_with_control, next_peer_message, retrying_dht_lookup,
         run_content_download, run_magnet_download_with_peers, send_message,
@@ -5592,6 +5781,19 @@ mod tests {
     use crate::swarm::{DEFAULT_INITIAL_REQUESTS_PER_CONNECTION, DEFAULT_MAX_PENDING_DIALS};
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn storage_duration_counter_saturates() {
+        let value = AtomicU64::new(u64::MAX - 2);
+        atomic_saturating_add(&value, 3);
+        assert_eq!(value.load(Ordering::Acquire), u64::MAX);
+        atomic_saturating_add(&value, 1);
+        assert_eq!(value.load(Ordering::Acquire), u64::MAX);
+
+        let count = AtomicUsize::new(usize::MAX);
+        atomic_saturating_increment(&count);
+        assert_eq!(count.load(Ordering::Acquire), usize::MAX);
+    }
 
     fn loopback_network(timeout: Duration) -> NetworkConfig {
         NetworkConfig::new(NetworkPolicy::LoopbackOnly, timeout, timeout)
@@ -6975,6 +7177,11 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         })
         .await
         .expect("second peer progressed while the first storage write was delayed");
+        let active = control.snapshot();
+        assert!(active.storage_active_write_micros.is_some());
+        assert_eq!(active.storage_active_hash_micros, None);
+        assert_eq!(active.storage_write_operations_started, 1);
+        assert_eq!(active.storage_write_operations_completed, 0);
 
         let report = timeout(Duration::from_secs(3), &mut download)
             .await
@@ -6989,6 +7196,16 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         assert!(progress.storage_jobs_high_water >= 2);
         assert!(progress.storage_command_queue_high_water <= CONTENT_STORAGE_QUEUE);
         assert!(progress.storage_completion_queue_high_water <= CONTENT_STORAGE_QUEUE);
+        assert_eq!(progress.storage_write_operations_started, 2);
+        assert_eq!(progress.storage_write_operations_completed, 2);
+        assert!(progress.storage_write_service_micros >= 400_000);
+        assert!(progress.storage_write_service_max_micros >= 200_000);
+        assert!(progress.storage_write_queue_wait_micros >= 200_000);
+        assert!(progress.storage_write_queue_wait_max_micros >= 200_000);
+        assert_eq!(progress.storage_hash_operations_started, 2);
+        assert_eq!(progress.storage_hash_operations_completed, 2);
+        assert_eq!(progress.storage_active_write_micros, None);
+        assert_eq!(progress.storage_active_hash_micros, None);
         for task in tasks {
             timeout(Duration::from_secs(1), task)
                 .await
@@ -7057,6 +7274,11 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         })
         .await
         .expect("two writes entered bounded storage ownership");
+        let active = control.snapshot();
+        assert!(active.storage_active_write_micros.is_some());
+        assert_eq!(active.storage_active_hash_micros, None);
+        assert_eq!(active.storage_write_operations_started, 1);
+        assert_eq!(active.storage_write_operations_completed, 0);
         control.cancel();
         let result = timeout(Duration::from_secs(1), &mut download)
             .await
@@ -7066,6 +7288,12 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let progress = control.snapshot();
         assert_eq!(progress.buffered_payload_bytes, 0);
         assert_eq!(progress.storage_jobs_pending, 0);
+        assert_eq!(progress.storage_write_operations_started, 1);
+        assert_eq!(progress.storage_write_operations_completed, 1);
+        assert!(progress.storage_write_service_micros >= 200_000);
+        assert_eq!(progress.storage_hash_operations_started, 0);
+        assert_eq!(progress.storage_active_write_micros, None);
+        assert_eq!(progress.storage_active_hash_micros, None);
         assert!(!output.exists());
         timeout(Duration::from_secs(1), peer_task)
             .await
@@ -7128,6 +7356,11 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         })
         .await
         .expect("piece hash entered storage owner");
+        let active = control.snapshot();
+        assert_eq!(active.storage_active_write_micros, None);
+        assert!(active.storage_active_hash_micros.is_some());
+        assert_eq!(active.storage_hash_operations_started, 1);
+        assert_eq!(active.storage_hash_operations_completed, 0);
         control.cancel();
         let result = timeout(Duration::from_secs(1), &mut download)
             .await
@@ -7137,6 +7370,11 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let progress = control.snapshot();
         assert_eq!(progress.buffered_payload_bytes, 0);
         assert_eq!(progress.storage_jobs_pending, 0);
+        assert_eq!(progress.storage_hash_operations_started, 1);
+        assert_eq!(progress.storage_hash_operations_completed, 1);
+        assert!(progress.storage_hash_service_micros >= 200_000);
+        assert_eq!(progress.storage_active_write_micros, None);
+        assert_eq!(progress.storage_active_hash_micros, None);
         assert!(!output.exists());
         timeout(Duration::from_secs(1), peer_task)
             .await

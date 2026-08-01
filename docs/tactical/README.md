@@ -198,8 +198,8 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; moves each common all-wanted piece hash behind one bounded blocking
   positional-I/O boundary and records neutral controlled/public results.
 - [`031-storage-command-duration-evidence.md`](031-storage-command-duration-evidence.md):
-  active; separates bounded storage queue wait from per-kind write and hash
-  service duration before another behavioral change.
+  complete; separates bounded storage queue wait from per-kind write and hash
+  service duration and attributes the live bottleneck to serialized writes.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

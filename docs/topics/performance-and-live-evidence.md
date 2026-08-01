@@ -475,9 +475,31 @@ timed out at 375 pieces and 98,304,000 verified bytes. All terminal snapshots
 retained 66 storage jobs, all had zero hash failures, and cleanup was exact.
 
 Full queue occupancy has now survived two hash operation-shape changes without
-a controlled speed improvement. It is not sufficient attribution. Tactical
-`031` records command queue wait, complete write service, complete hash service,
-and the active operation age before any storage, peer, or request-policy change.
+a controlled speed improvement. It was not sufficient attribution. Tactical
+`031` now records command queue wait, complete write service, complete hash
+service, and the active operation age without changing scheduling.
+
+### Storage Duration Attribution: 2026-08-01
+
+Controlled write/hash delays, queued cancellation, saturation, nullable
+libtorrent schema fields, and exact active-operation cleanup all pass. The
+paired controlled publication remained exact. Both Android targets also pass
+compilation checks through the shared engine path.
+
+Three tracker+DHT Big Buck Bunny screens targeted 50% with a 300-second limit.
+One reached 528 of 1,055 pieces in 82.48 seconds; two ended at 425 and 458
+pieces. All retained zero hash failures, exact cleanup, and no active storage
+operation at termination. Write service consumed 87.7%, 88.2%, and 87.7% of
+wall time. Hash service consumed 5.5%, 5.5%, and 5.7%, making combined
+serialized service 93.2%, 93.7%, and 93.3%.
+
+Average 16 KiB writes took 8.5, 38.3, and 35.1 ms, with maxima of 272.5,
+842.0, and 697.4 ms. The queue reached its 66-job bound and individual waits
+reached 0.95--8.16 seconds. Summed wait is overlapping backlog evidence and is
+not compared directly with wall time. Serialized service time is comparable
+and selects write execution shape or bounded concurrency as the next owner;
+hashing, peer ranking, and request policy remain unchanged until that owner is
+measured.
 
 ## Result Classification
 

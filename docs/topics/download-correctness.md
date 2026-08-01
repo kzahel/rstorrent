@@ -24,8 +24,10 @@ hash seeks with exact integrity, but controlled timing stayed neutral and live
 storage occupancy remained saturated. Tactical `030` moved the complete
 all-wanted piece hash behind one bounded blocking job with exact shared-engine
 and Android-target evidence, but performance remained neutral. Tactical `031`
-now measures queue wait and per-kind storage service before selection or
-request policy changes.
+now measures queue wait and per-kind storage service. Three public screens
+attribute 93--94% of wall time to serialized storage service, dominated by
+16 KiB writes at about 88%; the next slice owns write execution rather than
+selection or request policy.
 
 ## Scope
 
@@ -265,10 +267,18 @@ before. Two public 50% samples took 79.47 and 223.85 seconds, one timed out at
 359 pieces, and a complete screen timed out at 375 pieces. Every terminal
 snapshot still held 66 storage jobs with zero hash failures.
 
-The next stopping condition is exact bounded attribution of storage queue wait,
-write service, and hash service through controlled delays and public timeline
-evidence. No storage, request, or peer policy changes until those durations
-identify the owner.
+Tactical `031` now proves exact bounded timing lifecycle through controlled
+write/hash delays, queued cancellation, active-operation snapshots, and
+saturation. One public screen reached 50% in 82.48 seconds and two timed out at
+425 and 458 pieces. Serialized write service consumed 87.7--88.2% of wall
+time, hash service consumed 5.5--5.7%, all runs retained exact integrity and
+cleanup, and no operation remained active at termination.
+
+The next stopping condition is a source-derived write-execution owner that
+reduces serialized 16 KiB service while preserving storage ordering, payload
+charging, hash-before-verification, cancellation, memory bounds, and exact
+publication. Peer selection and request policy remain unchanged until the
+paired comparator measures that owner.
 
 Routine engine validation remains headless; no additional product UI is
 required by that slice.

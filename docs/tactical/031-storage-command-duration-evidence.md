@@ -1,6 +1,6 @@
 # Tactical 031: Storage Command Duration Evidence
 
-Status: Active
+Status: Complete
 
 Topics: `performance-and-live-evidence`, `download-correctness`,
 `oracle-driven-engine-campaign`
@@ -37,10 +37,26 @@ source or fixture is copied.
 - `performance_counters.hpp` defines `disk_write_time`, `disk_hash_time`,
   `disk_job_time`, `queued_disk_jobs`, `num_running_disk_jobs`, and per-kind
   job counters. These are attribution evidence, not scheduling policy.
+- `test/test_session.cpp::session_stats` checks the contiguous metric index
+  contract and name lookup used to publish those counters.
+- `simulation/test_swarm.cpp::session_stats` obtains counters from a bounded
+  `session_stats_alert`, and `test/setup_transfer.cpp::get_counters` maps the
+  published names back to their metric indexes. These cases require runtime
+  observability without making counter publication part of transfer control.
 
 RSTorrent adopts the separation of operation counts, service time, and queue
 state. It does not adopt libtorrent's cache, disk pool, thread count, counter
 registry, or alerts architecture.
+
+The product-history reference was JSTorrent's
+`packages/engine/src/core/disk-queue.ts`,
+`packages/engine/src/core/torrent-tick-loop.ts::logBackpressureStats`, and
+`docs/archive/performance/download-bottleneck-analysis.md`. Its disk jobs keep
+enqueue/start times and bounded pending/running snapshots, while its diagnostic
+loop compares disk occupancy with payload rate and other pipeline owners. A
+Pixel 7a investigation used that combination to exonerate disk despite 18
+running jobs. RSTorrent therefore does not treat queue occupancy alone as a
+bottleneck; the live screen must compare service duration with wall time.
 
 ## Ownership And Bounds
 
@@ -105,6 +121,56 @@ owns write operation shape or concurrency. If hash service does, it owns
 handle reuse or bounded hash concurrency. If both are small while queues stay
 full, storage is exonerated and the paired peer/request timeline chooses
 request service, piece selection, or useful-peer turnover.
+
+## Implementation And Evidence
+
+`DownloadControl` now owns fixed saturating atomics for per-kind starts,
+completions, cumulative/max queue wait, cumulative/max service duration, and
+one active operation kind/start time. `ContentStoragePipeline` timestamps
+admission, start, and completion around its existing execution path. The
+public probe publishes these values in endpoint-free timeline samples and
+terminal diagnostics; the libtorrent adapter emits explicit `null` values for
+fields its locked Python binding cannot expose. No scheduling or storage
+behavior changed.
+
+Controlled delayed-write tests prove the active-write snapshot, exact two-write
+and two-hash lifecycle, at least 200 ms of queued wait behind the first write,
+and at least 400 ms of cumulative write service. Queued-write and active-hash
+cancellation cases prove exact completion, joined ownership, and cleared active
+state. Saturation, the public-probe timeline schema, and nullable libtorrent
+fields also have direct tests.
+
+The validation gate passed formatting, warning-denying workspace clippy, and
+all 253 listed workspace tests: 250 passed and the three opt-in public tests
+remained ignored. Selective-hash and mixed-source controlled interop each
+published exact content, the nine comparator tests passed, and Android target
+checks passed for both `aarch64-linux-android` and `x86_64-linux-android`.
+The paired controlled publication completed exactly for both owners. RSTorrent
+reported five completed writes and three completed hashes with cleared active
+state; libtorrent reported the new owner-specific fields as unavailable rather
+than zero.
+
+Three product tracker+DHT Big Buck Bunny screens targeted 50% with a 300-second
+limit. One reached 528 of 1,055 pieces in 82.48 seconds; two ended at 425 and
+458 pieces. Cleanup and integrity were exact and all terminal active-operation
+state was clear. Across the runs:
+
+- write service consumed 87.7%, 88.2%, and 87.7% of wall time;
+- hash service consumed 5.5%, 5.5%, and 5.7% of wall time;
+- combined serialized service consumed 93.2%, 93.7%, and 93.3%;
+- average writes took 8.5, 38.3, and 35.1 ms, while maxima reached 272.5,
+  842.0, and 697.4 ms; and
+- all runs reached the 66-job bound and accumulated overlapping per-command
+  queue wait, with maxima from 0.95 to 8.16 seconds.
+
+Summed queue wait is not compared to wall time because commands wait
+concurrently. It proves persistent backlog. Serialized service duration is
+comparable to wall time and attributes the retained bottleneck: small writes
+are the dominant owner, while hashing is secondary. The stopping condition is
+met. The next tactical must inspect the pinned libtorrent write execution and
+tests plus JSTorrent's platform write batching, then own write operation shape
+or bounded concurrency without weakening integrity, cancellation, payload, or
+memory bounds.
 
 ## Non-Goals
 
