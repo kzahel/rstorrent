@@ -47,6 +47,8 @@ pub struct ApplicationConfig {
     pub network: NetworkConfig,
     pub max_buffered_payload_bytes: usize,
     pub dht: DhtConfig,
+    pub view_set_lease: Duration,
+    pub view_set_reaper_interval: Duration,
 }
 
 impl ApplicationConfig {
@@ -64,6 +66,8 @@ impl ApplicationConfig {
             network,
             max_buffered_payload_bytes: DEFAULT_PAYLOAD_ALLOWANCE,
             dht,
+            view_set_lease: Duration::from_millis(crate::view_sets::VIEW_SET_LEASE_MILLIS),
+            view_set_reaper_interval: Duration::from_millis(VIEW_SET_REAPER_INTERVAL_MILLIS),
         }
     }
 }
@@ -105,6 +109,15 @@ impl ApplicationService {
                 "peer I/O timeout must be nonzero".to_owned(),
             ));
         }
+        if config.view_set_lease.is_zero()
+            || config.view_set_reaper_interval.is_zero()
+            || config.view_set_reaper_interval > config.view_set_lease
+        {
+            return Err(ApplicationError::Configuration(
+                "view-set lease timing must be nonzero and the reaper interval cannot exceed the lease"
+                    .to_owned(),
+            ));
+        }
         let mut storage_roots = BTreeMap::new();
         for root in &config.storage_roots {
             if storage_roots
@@ -137,11 +150,9 @@ impl ApplicationService {
         dht_config.initial_snapshot = initial_dht_snapshot;
         let dht = DhtService::start(dht_config).await?;
         let snapshot = store.snapshot()?;
-        let views = ViewHub::new(&snapshot)?;
-        let view_set_reaper = ViewSetLeaseReaper::start(
-            views.clone(),
-            Duration::from_millis(VIEW_SET_REAPER_INTERVAL_MILLIS),
-        );
+        let views = ViewHub::new_with_view_set_lease(&snapshot, config.view_set_lease)?;
+        let view_set_reaper =
+            ViewSetLeaseReaper::start(views.clone(), config.view_set_reaper_interval);
         let mut service = Self {
             store: Arc::new(Mutex::new(store)),
             storage_roots,
@@ -262,6 +273,12 @@ impl ApplicationService {
 
     pub fn revision(&self) -> Result<u64, ApplicationError> {
         Ok(self.store_mut()?.revision()?)
+    }
+
+    pub fn api_hello(&self) -> crate::ApiHello {
+        let mut hello = crate::ApiHello::default();
+        hello.limits.lease_millis = self.views.view_set_lease().as_millis().to_string();
+        hello
     }
 
     pub fn subscribe(&self, spec: SubscriptionSpec) -> Result<ViewSubscription, ApplicationError> {

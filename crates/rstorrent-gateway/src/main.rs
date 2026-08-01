@@ -47,6 +47,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .into());
         }
     };
+    let test_view_set_lease = env::var("RSTORRENT_TEST_VIEW_SET_LEASE_MILLIS")
+        .ok()
+        .map(|value| value.parse::<u64>())
+        .transpose()?;
+    if test_view_set_lease.is_some()
+        && !matches!(
+            authentication,
+            GatewayAuthentication::UnauthenticatedLoopbackDevelopment
+        )
+    {
+        return Err(
+            "RSTORRENT_TEST_VIEW_SET_LEASE_MILLIS is accepted only in unauthenticated development mode"
+                .into(),
+        );
+    }
+    if test_view_set_lease.is_some_and(|millis| !(250..=60_000).contains(&millis)) {
+        return Err("test view-set lease must be within 250..=60000 milliseconds".into());
+    }
     let network_policy = match env::var("RSTORRENT_NETWORK_POLICY")
         .unwrap_or_else(|_| "loopback_only".to_owned())
         .as_str()
@@ -62,7 +80,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let application = ApplicationService::open(ApplicationConfig::new(
+    let mut application_config = ApplicationConfig::new(
         profile_root,
         "default".to_owned(),
         vec![ConfiguredStorageRoot::path("downloads", storage_root)],
@@ -71,8 +89,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
             Duration::from_secs(15),
             Duration::from_secs(60),
         ),
-    ))
-    .await?;
+    );
+    if let Some(lease_millis) = test_view_set_lease {
+        application_config.view_set_lease = Duration::from_millis(lease_millis);
+        application_config.view_set_reaper_interval =
+            Duration::from_millis((lease_millis / 5).clamp(10, 100));
+    }
+    let application = ApplicationService::open(application_config).await?;
     let application = Arc::new(Mutex::new(application));
     let server = bind(
         GatewayConfig {

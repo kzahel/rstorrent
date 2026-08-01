@@ -910,6 +910,13 @@ impl ViewHub {
         })
     }
 
+    pub(crate) fn view_set_lease(&self) -> Duration {
+        self.inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .view_set_lease
+    }
+
     pub fn subscribe(&self, spec: SubscriptionSpec) -> Result<ViewSubscription, SubscriptionError> {
         validate_spec(&spec)?;
         let mut hub = self

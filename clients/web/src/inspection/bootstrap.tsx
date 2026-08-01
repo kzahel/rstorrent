@@ -37,7 +37,10 @@ export async function startLiveInspection(
     token,
     window.location.origin,
   );
-  const application = await LiveApplication.open(client);
+  const waitMillis = parsePollMillis(parameters.get("poll_ms"));
+  const application = await LiveApplication.open(client, {
+    ...(waitMillis === undefined ? {} : { waitMillis }),
+  });
   application.installBrowserWakeHints(window, document);
   renderInspection(new InspectionController(application));
 }
@@ -76,4 +79,11 @@ function parseElapsed(value: string | null): number {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 0;
   return Math.max(0, Math.min(86_400_000, Math.trunc(numeric)));
+}
+
+function parsePollMillis(value: string | null): number | undefined {
+  if (value === null || value.trim() === "") return undefined;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return undefined;
+  return Math.max(50, Math.min(20_000, Math.trunc(numeric)));
 }

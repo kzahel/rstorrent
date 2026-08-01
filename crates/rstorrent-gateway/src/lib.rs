@@ -18,9 +18,9 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
 use rstorrent_session::{
-    ApiHello, ApplicationService, OpenViewSetRequest, RequestEnvelope, ResponseEnvelope,
-    SubscriptionSpec, UpdateViewSetRequest, ViewSetError, ViewSetOwner, ViewSubscription,
-    ViewUpdate, application_error_response,
+    ApplicationService, OpenViewSetRequest, RequestEnvelope, ResponseEnvelope, SubscriptionSpec,
+    UpdateViewSetRequest, ViewSetError, ViewSetOwner, ViewSubscription, ViewUpdate,
+    application_error_response,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -403,7 +403,7 @@ async fn api_hello(State(state): State<GatewayState>, headers: HeaderMap) -> Res
     if let Err(error) = authenticate_http(&state, &headers) {
         return error.into_response();
     }
-    json_response(StatusCode::OK, &ApiHello::default())
+    json_response(StatusCode::OK, &state.service.lock().await.api_hello())
 }
 
 async fn api_command(
