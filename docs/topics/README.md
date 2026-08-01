@@ -58,6 +58,9 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`application-control.md`](application-control.md): shared semantic commands,
   responses, snapshots, revisions, and the boundary between in-process
   application control and future transports.
+- [`application-view-api.md`](application-view-api.md): leased view sets,
+  named snapshots and diffs, cursor recovery, polling and streaming delivery,
+  generated TypeScript/schema, and provisional remote routes.
 - [`client-surfaces.md`](client-surfaces.md): shared browser/Tauri web
   presentation, Android Compose adaptation, generated client types, reactive
   view delivery, and platform lifecycle boundaries.
@@ -67,8 +70,8 @@ Topics own the current truth for a continuing concern. Tactical docs under
   that remain open before implementation.
 - [`web-ui-design.md`](web-ui-design.md): fresh React and CSS Modules web
   presentation, JSTorrent-inspired information hierarchy, category layer,
-  adaptive master/detail navigation, accessibility, and virtualized scale
-  direction.
+  Zustand state ownership, adaptive master/detail navigation, accessibility,
+  and virtualized scale direction.
 - [`peer-lifecycle.md`](peer-lifecycle.md): peer observations, bounded records,
   derived dial eligibility, connection attempts, adversarial multi-peer
   ownership, slot replacement, and the discovery-to-swarm boundary.

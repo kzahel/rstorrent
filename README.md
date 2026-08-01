@@ -124,10 +124,13 @@ provenance policy.
   durable decisions, open questions, and bring-up sequence.
 - [Desktop inspection surface](docs/topics/desktop-inspection-surface.md)
   records the accepted JSTorrent-derived desktop/web direction, Android
-  presentation split, and deliberately open application-view design.
+  presentation split, and the remaining inspection-design questions.
+- [Application view API](docs/topics/application-view-api.md) records leased
+  view sets, typed snapshot/diff recovery, polling and streaming delivery,
+  generated TypeScript/schema, and provisional remote routes.
 - [Web UI design](docs/topics/web-ui-design.md) records the fresh React and CSS
-  Modules frontend, responsive information hierarchy, accessibility baseline,
-  and virtualized rendering direction.
+  Modules frontend, Zustand store, responsive information hierarchy,
+  accessibility baseline, and virtualized rendering direction.
 - [Capability readiness](docs/topics/capability-readiness.md) is the current
   engine and product scoreboard and owns the prioritized work queue.
 - [Download correctness](docs/topics/download-correctness.md) tracks completion,

@@ -2,9 +2,9 @@
 
 Topic: `web-ui-design`
 
-Status: Product and presentation direction accepted. The application-view API,
-exact library inventory, and first implementation tactical remain pending
-maintainer discussion.
+Status: Product, presentation, application-view, and client-store direction
+accepted. The exact remaining library inventory and first implementation
+tactical remain pending.
 
 ## Purpose
 
@@ -17,8 +17,10 @@ phone-sized browser viewports.
 This topic owns the web presentation technology, information hierarchy,
 adaptive navigation, styling, accessibility, and performance direction. The
 broader reason for prioritizing the surface remains in
-[`desktop-inspection-surface.md`](desktop-inspection-surface.md). The semantic
-application-view and transport contract remains deliberately open.
+[`desktop-inspection-surface.md`](desktop-inspection-surface.md). The accepted
+semantic application-view, view-set, polling, streaming, codec, and generated
+contract direction lives in
+[`application-view-api.md`](application-view-api.md).
 
 ## Fresh Frontend
 
@@ -42,9 +44,12 @@ application-wide rules. Layout and component states belong in colocated
 geometry such as virtual-row transforms and column widths, preferably through
 CSS custom properties.
 
-No general state, routing, design-system, or data-grid library is selected by
-this topic. Each dependency must solve a concrete need and preserve strict
-typing, headless testability, accessibility, and bounded rendering.
+Use the stable Zustand v5 release available when the implementation tactical
+opens and pin the exact version in the lockfile. Use its vanilla store as the
+application-state owner and its React bindings for narrow selectors. No
+routing, design-system, or data-grid library is selected by this topic. Each
+dependency must solve a concrete need and preserve strict typing, headless
+testability, accessibility, and bounded rendering.
 
 ## Information Hierarchy
 
@@ -144,16 +149,73 @@ should prevent unrelated application changes from rerendering every logical
 row. Sorting, filtering, formatting, and selection must remain measurable and
 bounded for thousands of torrents and much larger file collections.
 
-The first useful application-view delivery may use bounded periodic JSON
-snapshots and keyed diffs. The UI architecture must not depend on full-state
-replacement or broad React context updates. A later low-latency latest-state
-stream may coalesce changes and paint them on animation frames without
-changing view semantics. Binary encoding is a separable measured codec
+The first application-view delivery uses bounded periodic JSON snapshots and
+keyed diffs through one leased view set. The UI architecture must not depend on
+full-state replacement or broad React context updates. A later low-latency
+latest-state stream may coalesce changes and paint them on animation frames
+without changing view semantics. Binary encoding is a separable measured codec
 optimization, not automatically a new application API.
 
 Ordered events, diagnostics, command results, and errors must not silently use
-latest-value conflation intended for current state. The API discussion owns
-their exact delivery and recovery rules.
+latest-value conflation intended for current state. The exact delivery and
+recovery rules live in
+[`application-view-api.md`](application-view-api.md).
+
+## Zustand Store And Controller
+
+Create one Zustand vanilla store per web application instance and provide it
+to React through context plus typed `useStore` selectors. Do not use a module
+global hook as the application authority. Per-instance construction supports
+isolated tests, more than one client in a process, and explicit installation of
+the transport and platform adapters.
+
+The store is a materialized local copy of the named Rust views currently of
+interest, not a complete engine mirror. Keep projection state keyed by the
+client's stable `view_id`; normalize large collection views into ordered IDs
+and rows keyed by stable identity. Do not force partial torrent-list,
+torrent-detail, peer, and other projections into one universal entity whose
+field presence becomes ambiguous.
+
+Keep the layers explicit:
+
+```text
+ApplicationClient
+        |
+ViewController
+  view-set ID, cursor, polling/stream task, retry and cancellation
+        |
+validated UpdateBatch
+        |
+pure applyUpdateBatch reducer
+        |
+Zustand vanilla store
+        |
+React selectors and virtualized components
+```
+
+Sockets, Tauri Channels, promises, polling loops, abort controllers, and task
+handles do not live in Zustand. One `ViewController` owns those lifecycles and
+applies each valid update batch as one atomic store operation. Snapshot and
+patch reduction remains pure TypeScript so it can be tested without React or
+Zustand and reused by a headless CLI.
+
+Reducers preserve references for unchanged view containers and rows. A
+virtualized table selects ordered row IDs while each visible row selects its
+own value, preventing an unrelated row update from rerendering every visible
+row. Compound selectors use shallow equality only where needed; broad whole-
+store subscriptions are not the default.
+
+Do not persist the materialized engine replica. A reload recovers from fresh
+Rust snapshots. Persist only explicit presentation preferences such as theme,
+density, columns, and layout. Avoid Immer initially so patch behavior and
+structural sharing remain visible. Development tooling may expose one named
+action per update batch, but high-frequency row changes must not flood a
+production store or an unbounded devtools history.
+
+Zustand and immutable keyed containers are the initial simplicity choice, not
+a performance claim. Synthetic scale tests measure cloning, reduction,
+selector notification, rendering, and memory before introducing entity
+sharding, mutable versioned containers, or another store abstraction.
 
 ## State Ownership
 
@@ -183,12 +245,12 @@ deterministic presentation evidence passes.
 
 ## Likely Sequencing
 
-1. Inventory the JSTorrent views and classify their data as current state,
-   durable application state, history, ordered events, diagnostics, or
-   commands. Agree on the initial application-view API.
+1. Implement and headlessly validate the accepted view-set contract, generated
+   TypeScript/schema, polling client, and pure reducer described in
+   [`application-view-api.md`](application-view-api.md).
 2. Establish the React/CSS Modules shell, adaptive navigation, fixture-backed
    category/list/detail hierarchy, and accessibility baseline.
-3. Establish the virtualized table and client-store foundation under
+3. Establish the Zustand and virtualized-table foundation under
    synthetic large collections, then connect the torrent list.
 4. Make peers the first detailed live engine view and integrate the existing
    categorized logger into the global diagnostics area.
@@ -202,13 +264,10 @@ all stages as one slice.
 
 ## Deliberately Open Decisions
 
-- the initial snapshot, diff, polling, subscription, and resynchronization
-  contract;
 - the default wide-screen detail position and user-selectable layout modes;
 - archive, inbox, category, label, pause, queue, and content-retention
   semantics;
-- the router, normalized-store, virtualization, accessibility-test, and icon
-  dependencies;
+- the router, virtualization, accessibility-test, and icon dependencies;
 - exact columns, row-detail interactions, table customization, and density
   presets;
 - how session-scoped diagnostics coexist visually with torrent-scoped tabs;
@@ -217,7 +276,7 @@ all stages as one slice.
 - the thresholds and transport shape that would justify low-latency streaming
   or a binary codec.
 
-No implementation tactical is active. The next design discussion should
-classify the initial torrent-list and peer-view data and choose the minimum
-recoverable application-view contract that can serve both periodic delivery
-and a later low-latency stream.
+No implementation tactical is active. The next design work should classify
+the exact initial torrent-list and peer-view fields, privacy posture, and
+resource limits while the next numbered tactical establishes the transport-
+independent view-set foundation.

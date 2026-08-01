@@ -98,23 +98,26 @@ evidence.
 
 ### Now
 
-**Desktop application-view API discussion.** Engine parity is paused after
-Tactical `032`. The fresh responsive web presentation direction is recorded
-in [`web-ui-design.md`](web-ui-design.md). Agree on the recoverable
-application-view boundary before opening an inspection implementation
-tactical. Android UI parity is not part of this phase.
+**View-set application API foundation.** Engine parity is paused after
+Tactical `032`. The recoverable view-set, polling-to-streaming, generated
+TypeScript/schema, and Zustand controller/store architecture is accepted in
+[`application-view-api.md`](application-view-api.md) and
+[`web-ui-design.md`](web-ui-design.md). Open one bounded tactical for the Rust
+view-set owner, deterministic recovery tests, polling adapter, pure TypeScript
+reducer/CLI, and controlled headless interoperability evidence. Android UI
+parity is not part of this phase.
 
 ### Next
 
-1. **Responsive web inspection foundation.** After its application-view design
-   is agreed, establish the React/CSS Modules adaptive shell and virtualized
-   table foundation, then make peer activity the first detailed live focus
-   without implying an Android mirror.
-2. **Measured BEP breadth.** Use the protocol matrix and full-reference gaps
-   to choose the next discovery or transport BEP after core completion parity.
-3. **Durable single-file resume.** Extend the existing selective-storage
-   checkpoint discipline to the ordinary output path after transfer ownership
-   and integrity recovery are mature.
+1. **Stable peer inspection projection.** Define bounded connection-lifetime
+   peer identities and rows, hostile/scale fixtures, and application-view
+   projection from the existing peer owners.
+2. **Responsive web inspection foundation.** Establish the React, Zustand,
+   CSS Modules, adaptive shell, and virtualized table foundation; connect the
+   torrent list and peer activity without implying an Android mirror.
+3. **Resume oracle-driven engine work.** Use the new inspection evidence to
+   decide whether serialized storage execution, another correctness owner, or
+   measured BEP breadth becomes the next engine tactical.
 
 ### Later
 

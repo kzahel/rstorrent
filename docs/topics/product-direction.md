@@ -121,6 +121,14 @@ responsive information architecture, React and CSS Modules baseline, category
 layer, touch posture, and accessibility requirements live in
 [`web-ui-design.md`](web-ui-design.md).
 
+Its application boundary groups named projections into short-lived leased
+view sets with coherent snapshots, typed keyed diffs, recoverable cursors,
+periodic polling, and later interchangeable streaming. Rust remains the
+semantic source for generated TypeScript and runtime schema. A TypeScript
+controller materializes those views through pure reducers into a Zustand
+store. The accepted contract lives in
+[`application-view-api.md`](application-view-api.md).
+
 Android remains a first-party product but no longer has a default obligation
 to mirror desktop tabs or diagnostic density. Engine and application
 semantics remain shared; presentation parity is decided per feature. The
@@ -321,7 +329,6 @@ testing evidence justifies it.
 - The evidence, compatibility work, and release process required for that
   graduation.
 - The public license.
-- The first desktop UI approach.
 - The exact minimum useful BitTorrent feature set.
 - Which JSTorrent fixtures can be reused directly and which should be
   independently recreated.
@@ -421,11 +428,12 @@ The paired headless RSTorrent/libtorrent public-smoke comparator remains an
 active evidence tactical, not a separate product surface.
 
 Bounded multi-peer request ownership now lets newly discovered and late-
-arriving peers improve active transfers. Endgame, integrity recovery, and
-then measured picker/throughput work are the next engine sequence on that
-combined discovery and ownership foundation. No new product UI is planned
-during this engine campaign; typed headless diagnostics grow only with the
-engine owners that can report them accurately.
+arriving peers improve active transfers. The engine campaign's retained
+storage-execution checkpoint remains valid, but implementation is paused while
+the view-set application boundary and detailed desktop inspection surface are
+established. The first product slice is headless contract infrastructure, not
+a visible UI: it proves view-set recovery, generated client/schema drift,
+polling, and a pure TypeScript client before React depends on it.
 
 Product growth should continue through the established application service,
 generated contracts, and platform capability seams rather than creating

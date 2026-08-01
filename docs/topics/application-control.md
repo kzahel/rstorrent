@@ -8,8 +8,10 @@ recoverable reactive views and browser, Tauri, and Android adapters. Tactical
 `012` added bounded typed diagnostics, derived progress assessment, and prompt
 task-terminal supervision with isolated headless presentation evidence.
 Tactical `013` added explicit application network configuration and a blocked
-offline prerequisite without changing durable torrent intent. No stable
-public wire format is accepted yet.
+offline prerequisite without changing durable torrent intent. The next
+application-view architecture is accepted in
+[`application-view-api.md`](application-view-api.md); no stable public remote
+wire format is accepted yet.
 
 ## Scope
 
@@ -69,6 +71,13 @@ subscriber begins from bounded recent history, filters before its transport
 queue, detects overflow or sequence loss, and can resynchronize independently
 from product-state views.
 
+Detailed clients aggregate their currently relevant named projections into a
+leased view set. One view set owns an epoch, opaque cursor, bounded diff
+accumulator, and independent recovery state. Periodic pull and later streaming
+drain the same semantic update batches; transport authentication and wire
+encoding remain adapters. View-set identifiers are resource locators, not
+authentication credentials or durable application state.
+
 Storage roots and platform capabilities are installed when an application
 service instance is constructed or through a later platform-specific
 capability operation. A remotely meaningful command selects an established
@@ -87,9 +96,19 @@ and repository diagnostic. Serialization used by tests is a versioned
 diagnostic encoding, not yet a public compatibility promise.
 
 A future remote protocol should adapt to the semantic dispatcher rather than
-becoming the owner of torrent state. Its wire versioning, authentication,
-discovery, wake-up relay, event cursors, and exposure policy require a
-separate tactical and threat model.
+becoming the owner of torrent state. The initial internal v1 shape, generated
+TypeScript and JSON Schema, additive compatibility rules, and polling-to-stream
+delivery model are recorded in
+[`application-view-api.md`](application-view-api.md). Production
+authentication, discovery, wake-up relay, and exposure policy still require a
+separate threat model.
+
+Successful commands should evolve toward command-specific results plus the
+resulting durable revision rather than returning a complete service snapshot
+after every mutation. Views remain the authoritative state-recovery path.
+This change is internal while no stable public wire promise exists and must be
+made with reducer and retry evidence rather than as an incidental transport
+optimization.
 
 ## Invariants
 
@@ -159,3 +178,5 @@ The implemented subscription and client direction is recorded in
 Coherent snapshots remain recovery authority above typed patches and
 independent bounded subscriber state. The WebSocket adapter is not the
 application authority, and local Tauri control does not use networking.
+The accepted successor aggregates those subscriptions behind one leased view
+set and preserves the same recovery invariant through polling and streaming.

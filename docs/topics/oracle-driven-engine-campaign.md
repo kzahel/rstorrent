@@ -8,8 +8,11 @@ first-piece, sustained-transfer, endgame, and full publication parity from
 pinned libtorrent source and tests. Bounded write coalescing is complete;
 serialized storage execution remains the measured owner. Product direction
 has moved temporarily to the detailed desktop inspection surface recorded in
-[`desktop-inspection-surface.md`](desktop-inspection-surface.md). High-impact
-BEP breadth still follows the core common-denominator parity gate.
+[`desktop-inspection-surface.md`](desktop-inspection-surface.md). Its view-set
+application boundary is accepted in
+[`application-view-api.md`](application-view-api.md), and product work now
+owns that headless contract foundation. High-impact BEP breadth still follows
+the core common-denominator parity gate.
 
 ## Purpose And Scope
 
@@ -550,9 +553,9 @@ Last completed evidence:
   storage execution without opening its concurrency design.
 
 Next executable action: **none in this campaign until explicit maintainer
-authorization**. Product discussion now owns the desktop inspection
-application-view boundary. The recorded engine candidate remains a
-source-first study of bounded positional storage concurrency with per-piece
-verification fences, not an approved tactical.
+authorization**. The product queue now owns the accepted desktop view-set
+contract foundation. The recorded engine candidate remains a source-first
+study of bounded positional storage concurrency with per-piece verification
+fences, not an approved tactical.
 
 Human blocker: **intentional maintainer review before more implementation**.

@@ -160,6 +160,35 @@ model so application-contract types originate in `rstorrent-session` while
 the exported client object remains in `rstorrent-android`. These are SDK/API
 references; no documentation sample source was imported.
 
+## Application View And Web Client References
+
+The accepted application-view direction in
+[`topics/application-view-api.md`](topics/application-view-api.md) uses these
+official references as design evidence:
+
+- [qBittorrent WebUI API](https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-%28qBittorrent-5.0%29):
+  its `sync/maindata` resource demonstrates a practical cursor, full reset,
+  keyed upsert, and removed-ID polling model. RSTorrent does not adopt its
+  complete endpoint or payload shape.
+- [Transmission RPC specification](https://github.com/transmission/transmission/blob/main/docs/rpc-spec.md):
+  requested fields, object results, and explicit recently removed IDs inform
+  projection and collection-diff choices. RSTorrent does not adopt its
+  positional table encoding or arbitrary field query as the initial contract.
+- [`ts-rs` documentation](https://docs.rs/ts-rs/latest/ts_rs/): Serde-compatible
+  TypeScript generation remains the initial declaration mechanism.
+- [`schemars` documentation](https://docs.rs/schemars/latest/schemars/): JSON
+  Schema generation from the same Rust DTOs removes duplicated handwritten
+  structural type lists while separate validators retain semantic bounds.
+- [Zustand documentation](https://github.com/pmndrs/zustand): its vanilla
+  store, React selector, shallow-selection, and direct subscription APIs fit a
+  per-application materialized view store without making React own transport
+  tasks.
+
+These are API and architectural references. No source, fixtures, or assets are
+imported by the design documentation. Binary WebSocket frames and Tauri raw
+responses or Channels remain codec and delivery capabilities, not a reason to
+make a second semantic API.
+
 ## libtorrent
 
 Project: [libtorrent](https://libtorrent.org/)

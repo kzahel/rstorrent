@@ -2,9 +2,11 @@
 
 Topic: `desktop-inspection-surface`
 
-Status: Strategic direction accepted. The fresh responsive frontend direction
-is recorded in [`web-ui-design.md`](web-ui-design.md); implementation and the
-application-view API remain pending maintainer discussion.
+Status: Strategic direction and application-view architecture accepted. The
+fresh responsive frontend direction is recorded in
+[`web-ui-design.md`](web-ui-design.md), and the view-set contract is recorded
+in [`application-view-api.md`](application-view-api.md). Implementation remains
+pending a bounded tactical.
 
 ## Purpose
 
@@ -20,8 +22,9 @@ users expect peer, tracker, piece, file, and transfer details, and those views
 also form the primary debugging surface for maintainers. The desktop product
 should embrace that dual role.
 
-This topic owns that strategic direction. It does not yet own a view API,
-schema, sampling policy, table definition, or implementation tactical.
+This topic owns that strategic direction. The API and client-state owners are
+linked above; this topic does not duplicate their schema, sampling policy,
+table definition, or implementation tactical.
 
 ## Direction
 
@@ -102,14 +105,14 @@ surface, not the RSTorrent application-view architecture.
 
 ## Deliberately Open Design
 
-The application-view API needs further discussion before an implementation
-tactical. In particular, this topic does not decide:
+The view-set, snapshot/diff, polling-to-streaming, generated-type, and Zustand
+architecture is accepted. The remaining inspection design includes:
 
 - the division between torrent summary, peer, swarm, piece, tracker, file,
   storage, protocol-message, and history views;
-- snapshot, patch, query, subscription, sampling, and resynchronization shape;
-- stable identity, sorting, filtering, selection, and row-detail semantics;
-- update cadence, history retention, overflow behavior, and memory budgets;
+- exact stable peer and torrent fields, sorting, filtering, selection, and
+  row-detail semantics;
+- concrete update cadence, history retention, overflow, and memory bounds;
 - which endpoint, peer-client, protocol, and failure details are appropriate
   for local display or exported diagnostics;
 - the exact JSTorrent revision, components, tab inventory, columns, actions,
@@ -130,6 +133,7 @@ can decide whether to resume the recorded storage-execution candidate, select
 a different engine owner from interactive evidence, or fill another detail
 view first.
 
-No implementation tactical is active. The next step is design discussion,
-especially around the application-view API and the boundary between current
-state, recent history, events, and logs.
+No implementation tactical is active. The next step is the bounded view-set
+contract and headless client foundation described in
+[`application-view-api.md`](application-view-api.md), followed by the stable
+peer projection and its table.

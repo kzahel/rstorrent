@@ -52,9 +52,10 @@ The Tauri and browser builds share components, reducers, generated TypeScript
 contract types, and one transport-neutral `ApplicationClient` interface.
 Their transports differ:
 
-- Tauri uses native commands for request/response and ordered channels for
-  subscription updates by default.
-- The browser uses an authenticated WebSocket gateway.
+- Tauri uses native commands for request/response and may use ordered Channels
+  for low-latency view updates.
+- The browser initially uses bounded authenticated HTTP polling and may attach
+  an authenticated WebSocket to the same retained view set and cursor.
 
 Transport reuse is not an end in itself. A local desktop product does not open
 a listener, allocate a port, serialize through a socket, or acquire network
@@ -99,7 +100,7 @@ shared components and reducers
              |
      ApplicationClient
        /           \
-Tauri transport   WebSocket transport
+Tauri adapter     Remote adapter
 ```
 
 Platform-specific capabilities such as folder selection, tray state, external
@@ -122,20 +123,23 @@ tacticals.
 ## Reactive Views
 
 Presentation consumes named, versioned application views rather than arbitrary
-field queries or engine structs. Each subscription selects:
+field queries or engine structs. The accepted successor contract in
+[`application-view-api.md`](application-view-api.md) groups one client's
+currently relevant projections into a leased view set with one epoch, cursor,
+and bounded update accumulator. Each named view selects:
 
 - an application object or collection;
 - a named projection such as summary or piece activity; and
 - a bounded delivery policy.
 
-Every stream begins with a coherent snapshot. Typed patches carry a stream
-epoch, sequence, base view revision, and resulting view revision. Sequence
-gaps, incompatible epochs, invalid patches, or bounded-queue overflow require
-resynchronization from a snapshot; events are never the only recovery
-authority.
+Every view begins with a coherent snapshot. Typed update batches carry a
+view-set epoch, base cursor, resulting cursor, durable revision, and per-view
+snapshot, patch, or reset values. Cursor gaps, incompatible epochs, invalid
+patches, expiry, or bounded-queue overflow require resynchronization from a
+snapshot; events are never the only recovery authority.
 
-Engine edges feed per-subscriber accumulators. Delivery may coalesce without
-losing the final state:
+Engine edges feed independent per-view accumulators within each view set.
+Delivery may coalesce without losing the final state:
 
 - torrent summaries use keyed latest-value upserts and explicit removal;
 - verified piece changes union ranges while recheck can explicitly clear
@@ -145,7 +149,7 @@ losing the final state:
 - a slow subscriber cannot consume, clear, or delay another subscriber's
   updates.
 
-Durable application revision and volatile stream sequence are separate.
+Durable application revision and volatile view-set cursor are separate.
 High-frequency block activity neither writes SQLite nor advances the durable
 command revision.
 
@@ -158,9 +162,11 @@ variants.
 
 - serde defines the diagnostic and initial network representation;
 - generated TypeScript exposes discriminated unions and client inputs;
+- generated JSON Schema validates the structural network representation while
+  handwritten checks retain semantic and resource bounds;
 - UniFFI generates Kotlin values for the in-process Android boundary; and
-- generated or fixture-backed validators reject untrusted network values at
-  runtime.
+- handwritten semantic validators reject invalid bounds and cross-field
+  relationships at runtime.
 
 JavaScript cannot represent every Rust `u64` exactly. Portable revisions,
 sequences, and unbounded counters use an explicit decimal representation or a
@@ -169,11 +175,17 @@ proved safe bound rather than silently rounding JSON numbers.
 Generated artifacts are deterministic and checked for drift. Rust, TypeScript,
 and Kotlin reducer fixtures must converge on the same state.
 
+The web application materializes validated view batches through a pure reducer
+into one per-application Zustand vanilla store. A separate `ViewController`
+owns the view-set identifier, cursor, polling or streaming task, retries,
+cancellation, and connection status. React components use narrow selectors;
+transport tasks and handles do not live in the store.
+
 ## Lifecycle
 
 View clients are detachable. Closing a browser tab, Tauri window, or Android
-activity closes its subscriptions without stopping the application service or
-active download.
+activity closes its view set or subscriptions without stopping the application
+service or active download.
 
 - Tauri owns the application service independently of its webview window and
   may remain alive in the tray.
