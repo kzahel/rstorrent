@@ -8,15 +8,27 @@
     "dev": "vite",
     "generate": "cargo run -p rstorrent-gateway --bin export_types -- src/api/generated/v1.ts src/api/generated/v1.schema.json src/fixtures/reactive-trace.json src/fixtures/view-set-trace.json",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",
-    "ajv": "8.20.0"
+    "ajv": "8.20.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zustand": "5.0.14"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.12.1",
+    "@playwright/test": "1.62.1",
     "@tauri-apps/cli": "2.11.4",
+    "@testing-library/jest-dom": "7.0.0",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
     "@types/ws": "8.18.1",
+    "jsdom": "29.1.1",
     "typescript": "7.0.2",
     "vite": "8.1.5",
     "vitest": "4.1.10",

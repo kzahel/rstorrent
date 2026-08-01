@@ -1,0 +1,262 @@
+import { useMemo } from "react";
+
+import { useInspectionStore } from "../context";
+import {
+  formatBytes,
+  formatProgress,
+  formatRate,
+  formatTime,
+} from "../format";
+import type { DetailTab, LogRow } from "../model";
+import { visibleLogs } from "../state";
+import { PeerTable } from "./PeerTable";
+import { VirtualTable, type VirtualColumn } from "./VirtualTable";
+import styles from "./DetailPane.module.css";
+
+const TABS: readonly { readonly id: DetailTab; readonly label: string }[] = [
+  { id: "general", label: "General" },
+  { id: "trackers", label: "Trackers" },
+  { id: "peers", label: "Peers" },
+  { id: "swarm", label: "Swarm" },
+  { id: "files", label: "Files" },
+  { id: "pieces", label: "Pieces" },
+  { id: "disk", label: "Disk" },
+  { id: "logs", label: "Logs" },
+  { id: "speed", label: "Speed" },
+  { id: "dht", label: "DHT" },
+];
+
+const LOG_COLUMNS: readonly VirtualColumn<LogRow>[] = [
+  {
+    id: "time",
+    label: "Time",
+    width: 86,
+    sortable: true,
+    sortValue: (row) => row.timestampMs,
+    render: (row) => <time>{formatTime(row.timestampMs)}</time>,
+  },
+  {
+    id: "severity",
+    label: "Level",
+    width: 82,
+    sortable: true,
+    sortValue: (row) => row.severity,
+    render: (row) => (
+      <span className={styles.logSeverity} data-severity={row.severity}>
+        {row.severity}
+      </span>
+    ),
+  },
+  {
+    id: "category",
+    label: "Category",
+    width: 104,
+    minimumViewport: 520,
+    sortable: true,
+    sortValue: (row) => row.category,
+    render: (row) => <code>{row.category}</code>,
+  },
+  {
+    id: "summary",
+    label: "Message",
+    width: 680,
+    sortable: true,
+    sortValue: (row) => row.summary,
+    render: (row) => <span title={row.summary}>{row.summary}</span>,
+  },
+];
+
+export function DetailPane() {
+  const selectedId = useInspectionStore(
+    (state) => state.presentation.selectedTorrentId,
+  );
+  const torrent = useInspectionStore((state) =>
+    state.presentation.selectedTorrentId === null
+      ? undefined
+      : state.torrents[state.presentation.selectedTorrentId],
+  );
+  const peerCount = useInspectionStore((state) =>
+    state.presentation.selectedTorrentId === null
+      ? 0
+      : (state.peersByTorrent[state.presentation.selectedTorrentId]?.order.length ?? 0),
+  );
+  const activeTab = useInspectionStore((state) => state.presentation.activeTab);
+  const selectTab = useInspectionStore((state) => state.selectTab);
+  const closeDetail = useInspectionStore((state) => state.closeDetail);
+  const logs = useInspectionStore((state) => state.logs);
+  const droppedLogs = useInspectionStore((state) => state.droppedLogs);
+  const selectedLogs = useMemo(
+    () => visibleLogs(logs, selectedId),
+    [logs, selectedId],
+  );
+
+  const selectAdjacentTab = (tab: DetailTab, direction: -1 | 1) => {
+    const index = TABS.findIndex((candidate) => candidate.id === tab);
+    const next = TABS[(index + direction + TABS.length) % TABS.length];
+    if (next === undefined) return;
+    selectTab(next.id);
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(`[data-tab-id="${next.id}"]`)?.focus();
+    });
+  };
+
+  return (
+    <section className={styles.detail} aria-label="Torrent details">
+      <div className={styles.mobileHeading}>
+        <button type="button" onClick={closeDetail}>
+          <span aria-hidden="true">←</span> Torrents
+        </button>
+        <strong>{torrent?.name ?? "Torrent details"}</strong>
+      </div>
+      <div className={styles.tabs} role="tablist" aria-label="Torrent detail views">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            id={`tab-${tab.id}`}
+            data-tab-id={tab.id}
+            aria-selected={activeTab === tab.id}
+            aria-controls={`panel-${tab.id}`}
+            tabIndex={activeTab === tab.id ? 0 : -1}
+            onClick={() => selectTab(tab.id)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowLeft") {
+                event.preventDefault();
+                selectAdjacentTab(tab.id, -1);
+              } else if (event.key === "ArrowRight") {
+                event.preventDefault();
+                selectAdjacentTab(tab.id, 1);
+              }
+            }}
+          >
+            {tab.label}
+            {tab.id === "peers" && peerCount > 0 ? (
+              <span>{peerCount.toLocaleString()}</span>
+            ) : null}
+          </button>
+        ))}
+      </div>
+      <div
+        className={styles.panel}
+        id={`panel-${activeTab}`}
+        role="tabpanel"
+        aria-labelledby={`tab-${activeTab}`}
+      >
+        {torrent === undefined && activeTab !== "logs" ? (
+          <EmptyDetail />
+        ) : activeTab === "peers" && selectedId !== null ? (
+          <PeerTable torrentId={selectedId} />
+        ) : activeTab === "general" && torrent !== undefined ? (
+          <GeneralDetail torrent={torrent} />
+        ) : activeTab === "logs" ? (
+          <div className={styles.logPanel}>
+            <div className={styles.logSummary}>
+              <span>{selectedLogs.length.toLocaleString()} shown</span>
+              <span>{droppedLogs.toLocaleString()} dropped</span>
+              <span>Selected torrent + session</span>
+            </div>
+            <VirtualTable
+              label="Diagnostic log"
+              rows={selectedLogs}
+              getRowId={(row) => row.id}
+              columns={LOG_COLUMNS}
+              emptyMessage="No diagnostic events are available at this demo time."
+              initialSort={{ columnId: "time", direction: "asc" }}
+            />
+          </div>
+        ) : (
+          <UnavailableDetail tab={activeTab} />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function GeneralDetail({
+  torrent,
+}: {
+  readonly torrent: NonNullable<ReturnType<typeof useSelectedTorrent>>;
+}) {
+  return (
+    <div className={styles.general}>
+      <section className={styles.summaryCard}>
+        <div>
+          <p className={styles.eyebrow}>Selected transfer</p>
+          <h2>{torrent.name}</h2>
+          <p>{torrent.progressReason}</p>
+        </div>
+        <div className={styles.largeProgress}>
+          <strong>{formatProgress(torrent.progress)}</strong>
+          <span aria-hidden="true">
+            <span style={{ width: `${Math.round((torrent.progress ?? 0) * 100)}%` }} />
+          </span>
+        </div>
+      </section>
+      <dl className={styles.metrics}>
+        <Metric label="Status" value={torrent.status} />
+        <Metric label="Size" value={formatBytes(torrent.sizeBytes)} />
+        <Metric label="Downloaded" value={formatBytes(torrent.downloadedBytes)} />
+        <Metric label="Uploaded" value={formatBytes(torrent.uploadedBytes)} />
+        <Metric label="Download speed" value={formatRate(torrent.downloadRate)} />
+        <Metric label="Upload speed" value={formatRate(torrent.uploadRate)} />
+        <Metric label="Connected peers" value={torrent.peersConnected.toLocaleString()} />
+        <Metric label="Known peers" value={torrent.peersKnown.toLocaleString()} />
+      </dl>
+      <div className={styles.identity}>
+        <span>Info hash</span>
+        <code>{torrent.infoHash}</code>
+      </div>
+      {torrent.error === null ? null : (
+        <div className={styles.error} role="alert">
+          <strong>Storage needs attention</strong>
+          <span>{torrent.error}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function useSelectedTorrent() {
+  return useInspectionStore((state) =>
+    state.presentation.selectedTorrentId === null
+      ? undefined
+      : state.torrents[state.presentation.selectedTorrentId],
+  );
+}
+
+function Metric({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}
+
+function EmptyDetail() {
+  return (
+    <div className={styles.empty}>
+      <span className={styles.emptyMark} aria-hidden="true">↙</span>
+      <strong>Select a torrent to inspect it</strong>
+      <p>The detail surface preserves its tab and navigation context.</p>
+    </div>
+  );
+}
+
+function UnavailableDetail({ tab }: { readonly tab: DetailTab }) {
+  return (
+    <div className={styles.empty}>
+      <span className={styles.emptyMark} aria-hidden="true">◇</span>
+      <strong>{titleCase(tab)} view scaffold</strong>
+      <p>
+        This named projection is not connected in Tactical 034. The empty state
+        is intentional and does not claim that the engine has no {tab} data.
+      </p>
+    </div>
+  );
+}
+
+function titleCase(value: string): string {
+  return value.slice(0, 1).toUpperCase() + value.slice(1);
+}

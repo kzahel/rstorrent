@@ -1,0 +1,95 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --font-mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --surface-primary: #ffffff;
+  --surface-secondary: #f5f7fa;
+  --surface-tertiary: #edf1f5;
+  --surface-hover: #f0f5fb;
+  --text-primary: #172333;
+  --text-secondary: #536274;
+  --text-muted: #596674;
+  --border-strong: #cfd7df;
+  --border-soft: #e5e9ee;
+  --accent: #2477d1;
+  --accent-strong: #145da8;
+  --focus: #087dcc;
+  --selection: #e4f1ff;
+  --progress-track: #dbe3eb;
+  --success: #2c9b69;
+  --success-strong: #1d7e53;
+  --warning: #d3982e;
+  --warning-strong: #946511;
+  --danger: #d84d4d;
+  --danger-strong: #ad3030;
+  --danger-soft: #fff2f2;
+  --demo: #f3c46e;
+  --demo-soft: #fff7e7;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  min-width: 320px;
+  overflow: hidden;
+  background: var(--surface-primary);
+}
+
+button,
+select,
+input {
+  font: inherit;
+}
+
+button,
+select {
+  touch-action: manipulation;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --surface-primary: #151b22;
+    --surface-secondary: #1b222b;
+    --surface-tertiary: #222b35;
+    --surface-hover: #222d39;
+    --text-primary: #e5ebf2;
+    --text-secondary: #aeb9c5;
+    --text-muted: #7e8b98;
+    --border-strong: #36414d;
+    --border-soft: #28323c;
+    --accent: #3d91e8;
+    --accent-strong: #70b3f4;
+    --focus: #6db7ff;
+    --selection: #183d61;
+    --progress-track: #34404c;
+    --success: #55bd8b;
+    --success-strong: #72cba0;
+    --warning: #d9a64b;
+    --warning-strong: #f0bf67;
+    --danger: #e16a6a;
+    --danger-strong: #ff8d8d;
+    --danger-soft: #3a2427;
+    --demo: #d2a348;
+    --demo-soft: #332b1c;
+  }
+}

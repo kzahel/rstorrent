@@ -1,0 +1,110 @@
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--border-strong);
+  background: var(--surface-secondary);
+}
+
+.heading {
+  margin: 1rem 0.85rem 0.45rem;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.sidebar ul {
+  display: grid;
+  gap: 0.12rem;
+  margin: 0;
+  padding: 0 0.5rem;
+  list-style: none;
+}
+
+.sidebar button {
+  display: grid;
+  grid-template-columns: 1.45rem 1fr auto;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  border: 0;
+  border-radius: 0.42rem;
+  padding: 0.56rem 0.55rem;
+  color: var(--text-secondary);
+  background: transparent;
+  font: inherit;
+  font-size: 0.79rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar button:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.sidebar button[aria-current="page"] {
+  color: var(--accent-strong);
+  background: var(--selection);
+  font-weight: 700;
+}
+
+.sidebar button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.symbol {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.count {
+  min-width: 1.7rem;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: auto;
+  border-top: 1px solid var(--border-soft);
+  padding: 0.85rem;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}
+
+.footer span:last-child {
+  display: grid;
+  gap: 0.08rem;
+}
+
+.footer strong {
+  color: var(--text-primary);
+  font-size: 0.72rem;
+}
+
+.footer small {
+  color: var(--text-muted);
+  font-size: 0.64rem;
+}
+
+.demoMark {
+  display: grid;
+  flex: 0 0 auto;
+  width: 1.65rem;
+  height: 1.65rem;
+  place-items: center;
+  border-radius: 0.42rem;
+  color: #694410;
+  background: var(--demo);
+  font-weight: 800;
+}

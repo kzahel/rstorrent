@@ -1,0 +1,35 @@
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+}
+
+.state > span {
+  flex: 0 0 auto;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.state[data-state="connecting"] > span {
+  background: var(--accent);
+}
+
+.state[data-state="choked"] > span {
+  background: var(--warning);
+}
+
+.state[data-state="stalled"] > span,
+.state[data-state="disconnected"] > span {
+  background: var(--danger);
+}
+
+.flags {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+}

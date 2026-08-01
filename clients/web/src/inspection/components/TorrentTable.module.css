@@ -1,0 +1,76 @@
+.name {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  overflow: hidden;
+}
+
+.name > :last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stateDot {
+  flex: 0 0 auto;
+  width: 0.48rem;
+  height: 0.48rem;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.stateDot[data-status="downloading"],
+.stateDot[data-status="metadata"] {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+
+.stateDot[data-status="complete"] {
+  background: var(--success);
+}
+
+.stateDot[data-status="error"] {
+  background: var(--danger);
+}
+
+.progressCell {
+  display: grid;
+  grid-template-columns: 3.25rem 1fr;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+}
+
+.progressLabel {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.progressTrack {
+  overflow: hidden;
+  height: 0.28rem;
+  border-radius: 999px;
+  background: var(--progress-track);
+}
+
+.progressTrack > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.status {
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+}
+
+.status[data-status="error"] {
+  color: var(--danger);
+  font-weight: 650;
+}
+
+.status[data-status="complete"] {
+  color: var(--success-strong);
+}
