@@ -48,6 +48,61 @@ describe("peer view validation", () => {
   });
 });
 
+describe("torrent display-name validation", () => {
+  it("accepts a bounded verified name and rejects oversized input", () => {
+    const batch = torrentBatch("Verified torrent");
+    expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
+    batch.updates[0]!.snapshot.torrents[0]!.display_name = "x".repeat(256);
+    expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
+      /display name exceeds 255 bytes/,
+    );
+  });
+});
+
+function torrentBatch(displayName: string) {
+  return {
+    api_version: 1,
+    view_set_id: "vs_000102030405060708090a0b0c0d0e0f",
+    epoch: "1",
+    base_cursor: "0",
+    cursor: "1",
+    durable_revision: "1",
+    updates: [
+      {
+        type: "snapshot" as const,
+        view_id: "library",
+        snapshot: {
+          type: "torrent_list" as const,
+          torrents: [
+            {
+              torrent_id: "0".repeat(40),
+              display_name: displayName,
+              state: "downloading",
+              storage_state: "staging",
+              metadata_available: true,
+              piece_count: 1,
+              verified_piece_count: 0,
+              requested_bytes: "0",
+              received_bytes: "0",
+              stored_bytes: "0",
+              active_peer_connections: 0,
+              payload_download_rate_bytes: "0",
+              progress: {
+                disposition: "active",
+                phase: "transfer",
+                reason: "transferring_pieces",
+                actions: [],
+              },
+              archived: false,
+              delete_managed_data_supported: true,
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
+
 function peerBatch(torrentId: string) {
   return {
     api_version: 1,

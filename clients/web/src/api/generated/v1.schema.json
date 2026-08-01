@@ -1459,6 +1459,12 @@
         "delete_managed_data_supported": {
           "type": "boolean"
         },
+        "display_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "error": {
           "type": [
             "string",

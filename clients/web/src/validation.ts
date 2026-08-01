@@ -396,6 +396,7 @@ function validateViewPatch(value: unknown): void {
 function validateTorrentView(value: unknown): asserts value is TorrentView {
   const torrent = asRecord(value, "torrent view");
   torrentId(torrent.torrent_id);
+  optionalString(torrent.display_name, "torrent display name", 255);
   boolean(torrent.metadata_available, "metadata available");
   boundedInteger(torrent.piece_count, "piece count", 0, MAX_U32);
   boundedInteger(

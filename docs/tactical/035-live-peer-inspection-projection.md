@@ -809,8 +809,9 @@ browser, Android surface, or public swarm was used.
 
 ### Known gaps and deliberate deferrals
 
-- The live torrent row uses its info-hash prefix as a display label until the
-  session projection owns a stable metadata display name.
+- Resolved by Tactical `042`: the live torrent row uses the verified durable
+  metainfo name when available and retains the info-hash prefix only while
+  metadata is absent.
 - Known registry-peer count, upload rate, and some detailed peer fields remain
   honestly unavailable; short samples may display a blank rate even when
   request counters prove useful work.

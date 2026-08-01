@@ -1327,6 +1327,7 @@ mod tests {
     fn torrent_view(id: &str, verified: u32) -> TorrentView {
         TorrentView {
             torrent_id: id.to_owned(),
+            display_name: Some("Fixture torrent".to_owned()),
             state: TorrentState::Downloading,
             storage_state: StorageState::Staging,
             metadata_available: true,

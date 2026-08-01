@@ -384,6 +384,8 @@ pub struct ActivePiece {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct TorrentView {
     pub torrent_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
     pub state: TorrentState,
     pub storage_state: StorageState,
     pub metadata_available: bool,
@@ -804,6 +806,7 @@ struct TorrentModel {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct DurableTorrentViewState {
+    pub(crate) display_name: Option<String>,
     pub(crate) verified: Vec<IndexRange>,
     pub(crate) files: Option<FileProgressModel>,
 }
@@ -993,9 +996,11 @@ impl ViewHub {
         for torrent in &snapshot.torrents {
             let mut model = TorrentModel::from_snapshot(torrent);
             if let Some(state) = durable.get(&torrent.torrent_id) {
+                model.view.display_name = state.display_name.clone();
                 model.verified = state.verified.clone();
                 model.files = state.files.clone();
             } else if let Some(old) = previous.get(&torrent.torrent_id) {
+                model.view.display_name = old.view.display_name.clone();
                 model.verified = old.verified.clone();
                 model.files = old.files.clone();
             }
@@ -1557,6 +1562,7 @@ impl TorrentModel {
         Self {
             view: TorrentView {
                 torrent_id: snapshot.torrent_id.clone(),
+                display_name: None,
                 state: snapshot.state,
                 storage_state: snapshot.storage_state,
                 metadata_available: snapshot.metadata_available,
@@ -2759,6 +2765,7 @@ mod tests {
             &BTreeMap::from([(
                 "000102030405060708090a0b0c0d0e0f10111213".to_owned(),
                 DurableTorrentViewState {
+                    display_name: Some("Verified fixture".to_owned()),
                     verified: vec![IndexRange {
                         start: 1,
                         end_exclusive: 3,
@@ -2768,6 +2775,71 @@ mod tests {
             )]),
         )
         .expect("replace");
+    }
+
+    #[tokio::test]
+    async fn verified_metadata_name_patches_list_and_selected_summary() {
+        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
+        let list = hub
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::TorrentList,
+                projection: ViewProjection::Summary,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 4096,
+                },
+                diagnostics: None,
+            })
+            .expect("list subscription");
+        let summary = hub
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::Torrent {
+                    torrent_id: torrent_id.to_owned(),
+                },
+                projection: ViewProjection::Summary,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 4096,
+                },
+                diagnostics: None,
+            })
+            .expect("summary subscription");
+        list.next_update().await.expect("list snapshot");
+        summary.next_update().await.expect("summary snapshot");
+
+        hub.replace_durable(
+            &snapshot(1, 4),
+            &BTreeMap::from([(
+                torrent_id.to_owned(),
+                DurableTorrentViewState {
+                    display_name: Some("Verified fixture".to_owned()),
+                    verified: Vec::new(),
+                    files: None,
+                },
+            )]),
+        )
+        .expect("replace");
+
+        let list_update = list.next_update().await.expect("list patch");
+        let ViewUpdatePayload::Patch {
+            patch: ViewPatch::TorrentList { upsert, .. },
+        } = list_update.payload
+        else {
+            panic!("expected torrent-list patch");
+        };
+        assert_eq!(upsert[0].display_name.as_deref(), Some("Verified fixture"));
+
+        let summary_update = summary.next_update().await.expect("summary patch");
+        let ViewUpdatePayload::Patch {
+            patch: ViewPatch::Torrent {
+                torrent: Some(torrent),
+            },
+        } = summary_update.payload
+        else {
+            panic!("expected selected-summary patch");
+        };
+        assert_eq!(torrent.display_name.as_deref(), Some("Verified fixture"));
     }
 
     #[test]

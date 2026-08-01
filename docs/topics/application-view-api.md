@@ -660,6 +660,14 @@ displayed 39.0 KiB Done and Verified for the payload at completion. The
 harness independently compared both nonempty files, joined the gateway and
 seed, and removed its temporary profile and download tree.
 
+Tactical `042` completes the torrent identity row with an optional
+`display_name` derived only from successfully parsed, verified durable
+metainfo. Metadata arrival and profile reopen use the same derivation. Since
+list and selected-summary views already carry complete `TorrentView` rows,
+name arrival is an ordinary keyed upsert in both surfaces rather than a new
+view or event. The client validates the metainfo component's 255-byte bound
+and retains its info-hash fallback when the field is absent.
+
 Public swarms and visible Tauri launch are unnecessary for this foundation.
 The browser gateway, temporary profiles, controlled libtorrent peer, and pure
 fixtures provide higher-signal headless evidence without disturbing the

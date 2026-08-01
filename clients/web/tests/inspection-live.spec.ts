@@ -7,6 +7,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 const gateway = process.env.RSTORRENT_LIVE_GATEWAY_URL;
 const magnet = process.env.RSTORRENT_LIVE_MAGNET;
 const torrentId = process.env.RSTORRENT_LIVE_TORRENT_ID;
+const torrentName = process.env.RSTORRENT_LIVE_TORRENT_NAME;
 const fileCount = process.env.RSTORRENT_LIVE_FILE_COUNT;
 const screenshotDirectory = process.env.RSTORRENT_SCREENSHOT_DIR;
 
@@ -18,6 +19,7 @@ test("live peer inspection follows a controlled verified transfer", async ({
     gateway === undefined ||
       magnet === undefined ||
       torrentId === undefined ||
+      torrentName === undefined ||
       fileCount === undefined,
     "controlled live gateway is opt-in",
   );
@@ -122,9 +124,7 @@ test("live peer inspection follows a controlled verified transfer", async ({
   await expect(torrentInput).toHaveValue("");
 
   const library = page.getByRole("grid", { name: "Torrent library" });
-  const torrentRow = library
-    .getByRole("row")
-    .filter({ hasText: torrentId!.slice(0, 12) });
+  const torrentRow = library.locator(`[data-row-id="${torrentId!}"]`);
   await expect(torrentRow).toBeVisible({ timeout: 10_000 });
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -155,7 +155,12 @@ test("live peer inspection follows a controlled verified transfer", async ({
   await page.keyboard.press("Escape");
 
   await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(torrentRow).toContainText(torrentName!, { timeout: 20_000 });
   await torrentRow.click();
+  await page.getByRole("tab", { name: "General" }).click();
+  await expect(
+    page.getByRole("tabpanel").getByRole("heading", { name: torrentName! }),
+  ).toBeVisible();
 
   const transferStartedAt = performance.now();
   await page.getByRole("tab", { name: "Files" }).click();

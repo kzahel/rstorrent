@@ -133,6 +133,7 @@ def run_playwright(
             "RSTORRENT_LIVE_GATEWAY_URL": f"http://{gateway_address}",
             "RSTORRENT_LIVE_MAGNET": magnet,
             "RSTORRENT_LIVE_TORRENT_ID": torrent_id,
+            "RSTORRENT_LIVE_TORRENT_NAME": ROOT_NAME,
             "RSTORRENT_LIVE_FILE_COUNT": str(file_count),
         }
     )

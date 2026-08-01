@@ -236,6 +236,7 @@ class ProductStateReducerTest {
     ): TorrentView =
         TorrentView(
             id,
+            "Verified torrent",
             state,
             StorageState.STAGING,
             true,

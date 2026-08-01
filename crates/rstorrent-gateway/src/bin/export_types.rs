@@ -337,6 +337,7 @@ fn write_view_set_fixture(output: PathBuf) -> Result<(), Box<dyn Error>> {
 fn fixture_torrent(torrent_id: &str, verified: u32) -> TorrentView {
     TorrentView {
         torrent_id: torrent_id.to_owned(),
+        display_name: Some("Fixture torrent".to_owned()),
         state: if verified == 3 {
             TorrentState::Complete
         } else {

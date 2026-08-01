@@ -28,6 +28,7 @@
             "torrents": [
               {
                 "torrent_id": "000102030405060708090a0b0c0d0e0f10111213",
+                "display_name": "Fixture torrent",
                 "state": "downloading",
                 "storage_state": "staging",
                 "metadata_available": true,
@@ -70,6 +71,7 @@
             "upsert": [
               {
                 "torrent_id": "000102030405060708090a0b0c0d0e0f10111213",
+                "display_name": "Fixture torrent",
                 "state": "downloading",
                 "storage_state": "staging",
                 "metadata_available": true,
@@ -115,6 +117,7 @@
             "torrents": [
               {
                 "torrent_id": "000102030405060708090a0b0c0d0e0f10111213",
+                "display_name": "Fixture torrent",
                 "state": "complete",
                 "storage_state": "published",
                 "metadata_available": true,

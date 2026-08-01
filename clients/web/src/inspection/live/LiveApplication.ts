@@ -505,7 +505,7 @@ function mapTorrent(torrent: TorrentView): TorrentRow {
   const pieceCount = torrent.piece_count;
   return {
     id: torrent.torrent_id,
-    name: `Torrent ${torrent.torrent_id.slice(0, 12)}`,
+    name: torrent.display_name ?? `Torrent ${torrent.torrent_id.slice(0, 12)}`,
     status: mapTorrentState(torrent.state),
     sizeBytes: null,
     progress:

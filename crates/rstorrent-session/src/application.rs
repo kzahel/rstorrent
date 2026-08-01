@@ -1881,6 +1881,7 @@ fn durable_view_state(
             durable.insert(
                 torrent.torrent_id.clone(),
                 DurableTorrentViewState {
+                    display_name: None,
                     verified: Vec::new(),
                     files: None,
                 },
@@ -1895,15 +1896,18 @@ fn durable_view_state(
             .map(|(index, _)| u32::try_from(index))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| ApplicationError::Configuration("piece index overflows u32".to_owned()))?;
-        let files = if let Some(raw_info) = resume.raw_info.as_deref()
-            && let Ok(metainfo) = Metainfo::from_info_bytes(raw_info)
-        {
+        let metainfo = resume
+            .raw_info
+            .as_deref()
+            .and_then(|raw_info| Metainfo::from_info_bytes(raw_info).ok());
+        let display_name = metainfo.as_ref().map(|metainfo| metainfo.name.clone());
+        let files = if let Some(metainfo) = metainfo.as_ref() {
             let filesystem_content_base = filesystem_content_base(
                 storage_roots.get(&resume.storage_root),
                 &torrent.torrent_id,
             )?;
             FileProgressModel::new(
-                &metainfo,
+                metainfo,
                 &resume.skip_files,
                 &verified_indices,
                 filesystem_content_base,
@@ -1915,6 +1919,7 @@ fn durable_view_state(
         durable.insert(
             torrent.torrent_id.clone(),
             DurableTorrentViewState {
+                display_name,
                 verified: ranges_from_pieces(verified_pieces),
                 files,
             },
@@ -2896,6 +2901,57 @@ mod tests {
         service.shutdown().await.expect("shutdown");
         drop(service);
         fs::remove_dir_all(root).expect("remove offline test root");
+    }
+
+    #[tokio::test]
+    async fn startup_projects_verified_metadata_name() {
+        let root = test_root("metadata-name");
+        let configuration = config(&root);
+        let raw_info =
+            b"d6:lengthi4e4:name5:named12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
+        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let configured_root = configuration.storage_roots[0].clone();
+        let mut store = SessionStore::open(
+            &configuration.profile_root,
+            &configuration.profile_id,
+            &[configured_root],
+        )
+        .expect("open store");
+        store
+            .handle_durable(&add_request("add", &torrent_id))
+            .expect("add");
+        store
+            .record_metadata(&torrent_id, raw_info)
+            .expect("record metadata");
+        drop(store);
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open service");
+        let summary = service
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::TorrentList,
+                projection: ViewProjection::Summary,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 256 * 1024,
+                },
+                diagnostics: None,
+            })
+            .expect("summary");
+        let update = summary.next_update().await.expect("summary snapshot");
+        let ViewUpdatePayload::Snapshot {
+            snapshot: ViewSnapshot::TorrentList { torrents },
+        } = update.payload
+        else {
+            panic!("expected torrent-list snapshot");
+        };
+        assert_eq!(torrents[0].display_name.as_deref(), Some("named"));
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove metadata-name test root");
     }
 
     #[tokio::test]

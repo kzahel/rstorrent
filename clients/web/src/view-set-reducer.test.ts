@@ -51,6 +51,37 @@ function batch(
 }
 
 describe("view-set reducer", () => {
+  it("replaces the hash-only row when verified metadata supplies a name", () => {
+    let state = reduceUpdateBatch(
+      undefined,
+      batch("0", "1", [
+        {
+          type: "snapshot",
+          view_id: "library",
+          snapshot: { type: "torrent_list", torrents: [torrent(0)] },
+        },
+      ]),
+    );
+    state = reduceUpdateBatch(
+      state,
+      batch("1", "2", [
+        {
+          type: "patch",
+          view_id: "library",
+          patch: {
+            type: "torrent_list",
+            upsert: [{ ...torrent(0), display_name: "Verified torrent" }],
+            removed: [],
+          },
+        },
+      ]),
+    );
+    expect(state.views.library).toMatchObject({
+      type: "torrent_list",
+      torrents: [{ display_name: "Verified torrent" }],
+    });
+  });
+
   it("applies complete keyed file rows without losing catalog metadata", () => {
     const first = {
       file_id: "0",

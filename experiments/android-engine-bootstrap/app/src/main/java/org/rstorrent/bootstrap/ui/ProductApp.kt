@@ -305,9 +305,9 @@ private fun TorrentCard(
             )
             Spacer(Modifier.height(5.dp))
             Text(
-                torrent.torrentId,
+                torrent.displayName ?: torrent.torrentId,
                 maxLines = 1,
-                fontFamily = FontFamily.Monospace,
+                fontFamily = if (torrent.displayName == null) FontFamily.Monospace else null,
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(

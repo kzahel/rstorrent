@@ -193,6 +193,7 @@ describe("LiveApplication", () => {
     });
 
     const initial = snapshots.at(-1)!;
+    expect(initial.torrents[TORRENT_ID]?.name).toBe("movie.mkv");
     const peer = initial.peersByTorrent[TORRENT_ID]?.rows["connection-1"];
     expect(peer?.state).toBe("handshaking");
     expect(peer?.client).toBeNull();
@@ -348,6 +349,7 @@ function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
 function torrent(): TorrentView {
   return {
     torrent_id: TORRENT_ID,
+    display_name: "movie.mkv",
     state: "downloading",
     storage_state: "prepared",
     metadata_available: true,

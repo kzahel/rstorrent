@@ -326,6 +326,12 @@ regresses only unverified Done bytes while Verified remains monotonic, then
 recovers. These are bounded development observations, not browser-wide
 performance guarantees.
 
+Tactical `042` removes the live adapter's permanent hash-only label. Before
+metadata, the library and General view retain `Torrent <hash-prefix>`; after
+verified metainfo is durably recorded, the shared torrent row automatically
+uses its bounded name. No view selection, table identity, or local preference
+changes during that transition.
+
 ## Likely Sequencing
 
 1. The accepted view-set contract, generated TypeScript/schema, polling
