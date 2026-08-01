@@ -13,7 +13,8 @@ with headless recovery and controlled libtorrent evidence. Tactical `036`
 adds the one-command production browser launcher needed for maintainer visual
 confirmation. Tactical `037` makes that live surface independently useful by
 adding bounded adjacent magnet input and Add controls through the application
-boundary. The Tauri entry has not changed.
+boundary. Tactical `038` adds responsive curated test-torrent shortcuts under
+More for the interactive inspection loop. The Tauri entry has not changed.
 
 ## Purpose
 

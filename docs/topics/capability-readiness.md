@@ -108,9 +108,11 @@ evidence.
 **Migrate Tauri to the inspection application.** The production browser path
 is usable through `./scripts/webui`, and Tactical
 [`037`](../tactical/037-live-magnet-toolbar-intake.md) gives it bounded magnet
-intake in addition to live inspection and torrent control. Add an in-process
-view-set adapter and make `./scripts/desktop` select the new React surface
-without turning the loopback gateway into a desktop dependency.
+intake in addition to live inspection and torrent control. Tactical
+[`038`](../tactical/038-curated-test-torrent-menu.md) adds exact shortcuts for
+the retained WebTorrent public catalog without a privileged command path. Add
+an in-process view-set adapter and make `./scripts/desktop` select the new React
+surface without turning the loopback gateway into a desktop dependency.
 
 ### Next
 

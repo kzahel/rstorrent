@@ -51,6 +51,11 @@ useful for testing. The source page currently publishes five magnet links.
 The exact links below retain its UDP and WebSocket trackers, HTTP WebSeed base,
 and exact `.torrent` source.
 
+The live web inspection toolbar exposes these exact entries beneath More > Add
+test torrent. Its checked-in TypeScript projection has a byte-for-byte drift
+test against `tests/live/torrents.json`; the shortcut does not change the live
+evidence policy or imply that a changing public swarm will complete.
+
 ### Big Buck Bunny
 
 Info hash: `dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c`

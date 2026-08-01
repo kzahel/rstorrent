@@ -1,9 +1,11 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { useInspectionDispatch, useInspectionStore } from "../context";
 import { formatRate } from "../format";
+import type { TestTorrentShortcut } from "../testTorrents";
 import { validateTorrentInput } from "../torrentInput";
 import { DetailPane } from "./DetailPane";
+import { MoreActionsMenu } from "./MoreActionsMenu";
 import { ScenarioBar } from "./ScenarioBar";
 import { Sidebar } from "./Sidebar";
 import { TorrentTable } from "./TorrentTable";
@@ -31,6 +33,7 @@ export function App() {
   const [torrentInput, setTorrentInput] = useState("");
   const [inputInvalid, setInputInvalid] = useState(false);
   const [adding, setAdding] = useState(false);
+  const addingRef = useRef(false);
 
   useEffect(() => {
     const update = () => {
@@ -59,23 +62,40 @@ export function App() {
     }
   };
 
-  const addTorrent = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (adding) return;
-    const validated = validateTorrentInput(torrentInput);
+  const addMagnet = async (source: string, clearInputOnSuccess: boolean) => {
+    if (addingRef.current) return false;
+    const validated = validateTorrentInput(source);
     if (!validated.accepted) {
       setInputInvalid(true);
       setStatus(validated.message);
-      return;
+      return false;
     }
     setInputInvalid(false);
+    addingRef.current = true;
     setAdding(true);
     try {
-      if (await send({ type: "add_magnet", magnet: validated.magnet })) {
+      const accepted = await send({
+        type: "add_magnet",
+        magnet: validated.magnet,
+      });
+      if (accepted && clearInputOnSuccess) {
         setTorrentInput("");
       }
+      return accepted;
     } finally {
+      addingRef.current = false;
       setAdding(false);
+    }
+  };
+
+  const addTorrent = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await addMagnet(torrentInput, true);
+  };
+
+  const addTestTorrent = async (torrent: TestTorrentShortcut) => {
+    if (await addMagnet(torrent.magnet, false)) {
+      setStatus(`${torrent.menuLabel} added`);
     }
   };
 
@@ -179,6 +199,12 @@ export function App() {
               >
                 <span aria-hidden="true">Ⅱ</span> Pause
               </button>
+              {demo === null ? (
+                <MoreActionsMenu
+                  disabled={adding}
+                  onAddTestTorrent={addTestTorrent}
+                />
+              ) : null}
               {demo === null ? null : (
                 <button
                   type="button"

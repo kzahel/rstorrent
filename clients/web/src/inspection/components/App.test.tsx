@@ -2,13 +2,21 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
+import type { InspectionApplication } from "../application";
 import { InspectionProvider } from "../context";
 import { InspectionController } from "../controller";
 import { DemoApplication } from "../demo/DemoApplication";
+import type {
+  CommandResult,
+  DesiredInspectionViews,
+  InspectionCommand,
+  InspectionUpdate,
+} from "../model";
+import { WEBTORRENT_TEST_TORRENTS } from "../testTorrents";
 import { App } from "./App";
 
 beforeAll(() => {
@@ -76,15 +84,83 @@ describe("inspection application", () => {
     expect(screen.getByText(/No torrents yet/i)).toBeVisible();
     expect(screen.getByText(/Select a torrent to inspect it/i)).toBeVisible();
   });
+
+  it("dispatches an exact test magnet through the keyboard submenu", async () => {
+    const user = userEvent.setup();
+    const application = new RecordingLiveApplication();
+    renderApplication(application);
+    const draft = screen.getByRole("textbox", {
+      name: "Magnet link or torrent URL",
+    });
+    await user.type(draft, "unfinished draft");
+
+    const more = screen.getByRole("button", { name: "More" });
+    more.focus();
+    await user.keyboard("{ArrowDown}");
+    const addTestTorrent = screen.getByRole("menuitem", {
+      name: "Add test torrent",
+    });
+    expect(more).toHaveAttribute("aria-expanded", "true");
+    expect(addTestTorrent).toHaveFocus();
+
+    await user.keyboard("{ArrowRight}");
+    const submenu = screen.getByRole("menu", { name: "Add test torrent" });
+    const bunny = within(submenu).getByRole("menuitem", {
+      name: "Big Buck Bunny",
+    });
+    expect(bunny).toHaveFocus();
+    await user.keyboard("{End}");
+    const wired = within(submenu).getByRole("menuitem", { name: "WIRED CD" });
+    expect(wired).toHaveFocus();
+    await user.keyboard("{Enter}");
+
+    const wiredSource = WEBTORRENT_TEST_TORRENTS.at(-1)!;
+    await waitFor(() => {
+      expect(application.commands).toEqual([
+        { type: "add_magnet", magnet: wiredSource.magnet },
+      ]);
+    });
+    expect(draft).toHaveValue("unfinished draft");
+    expect(screen.getByText("WIRED CD added", { exact: true })).toBeVisible();
+    expect(screen.queryByRole("menu", { name: "More actions" })).not.toBeInTheDocument();
+    await waitFor(() => expect(more).toHaveFocus());
+
+    await user.click(more);
+    await user.click(
+      screen.getByRole("menuitem", { name: "Add test torrent" }),
+    );
+    expect(screen.getByRole("menu", { name: "Add test torrent" })).toBeVisible();
+    await user.keyboard("{Escape}");
+    expect(
+      screen.queryByRole("menu", { name: "Add test torrent" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: "Add test torrent" }),
+    ).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu", { name: "More actions" })).not.toBeInTheDocument();
+    expect(more).toHaveFocus();
+
+    await user.keyboard("{ArrowDown}");
+    expect(screen.getByRole("menu", { name: "More actions" })).toBeVisible();
+    await user.tab();
+    expect(
+      screen.queryByRole("menu", { name: "More actions" }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 function renderScenario(
   scenarioId: ConstructorParameters<typeof DemoApplication>[0]["scenarioId"],
   elapsedMs: number,
 ) {
-  const controller = new InspectionController(
+  return renderApplication(
     new DemoApplication({ scenarioId, elapsedMs, running: false }),
   );
+}
+
+function renderApplication(application: InspectionApplication) {
+  const controller = new InspectionController(application);
   controllers.push(controller);
   controller.start();
   return render(
@@ -92,4 +168,23 @@ function renderScenario(
       <App />
     </InspectionProvider>,
   );
+}
+
+class RecordingLiveApplication implements InspectionApplication {
+  readonly kind = "live" as const;
+  readonly scenarios = [];
+  readonly commands: InspectionCommand[] = [];
+
+  subscribe(_listener: (update: InspectionUpdate) => void): () => void {
+    return () => {};
+  }
+
+  async setViews(_views: DesiredInspectionViews): Promise<void> {}
+
+  async dispatch(command: InspectionCommand): Promise<CommandResult> {
+    this.commands.push(command);
+    return { accepted: true, message: "Torrent added" };
+  }
+
+  async close(): Promise<void> {}
 }

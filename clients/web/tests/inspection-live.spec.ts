@@ -66,6 +66,31 @@ test("live peer inspection follows a controlled verified transfer", async ({
     })
     .toEqual({ mainBottom: 900, detailBottom: 900 });
 
+  const moreButton = page.getByRole("button", { name: "More", exact: true });
+  await moreButton.focus();
+  await page.keyboard.press("ArrowDown");
+  const addTestTorrent = page.getByRole("menuitem", {
+    name: "Add test torrent",
+  });
+  await expect(addTestTorrent).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  const testTorrentMenu = page.getByRole("menu", {
+    name: "Add test torrent",
+  });
+  await expect(testTorrentMenu.getByRole("menuitem")).toHaveCount(5);
+  await expect(
+    testTorrentMenu.getByRole("menuitem", { name: "Big Buck Bunny" }),
+  ).toBeFocused();
+  await capture(page, "live-test-torrent-menu-wide.png");
+  const menuViolations = (await new AxeBuilder({ page }).analyze()).violations.filter(
+    (violation) => violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(menuViolations).toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(testTorrentMenu).not.toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(moreButton).toBeFocused();
+
   const addForm = page.getByRole("form", { name: "Add torrent" });
   const torrentInput = addForm.getByRole("textbox", {
     name: "Magnet link or torrent URL",
@@ -87,6 +112,7 @@ test("live peer inspection follows a controlled verified transfer", async ({
   await torrentInput.fill(magnet!);
   await torrentInput.press("Enter");
   await expect(addButton).toBeDisabled();
+  await expect(moreButton).toBeDisabled();
   await expect(page.getByText("Torrent added", { exact: true })).toBeVisible();
   await expect(torrentInput).toHaveValue("");
 
@@ -116,6 +142,12 @@ test("live peer inspection follows a controlled verified transfer", async ({
   await expect(torrentInput).toBeVisible();
   await expect(addButton).toBeVisible();
   await capture(page, "live-magnet-phone-library.png");
+  await moreButton.click();
+  await page.getByRole("menuitem", { name: "Add test torrent" }).click();
+  await expect(testTorrentMenu.getByRole("menuitem")).toHaveCount(5);
+  await capture(page, "live-test-torrent-menu-phone.png");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await torrentRow.click();

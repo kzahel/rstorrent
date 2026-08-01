@@ -1,0 +1,92 @@
+.container {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.trigger span {
+  color: var(--text-muted);
+  font-size: 0.58rem;
+}
+
+.menu,
+.submenu {
+  position: absolute;
+  z-index: 100;
+  min-width: 13rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.48rem;
+  padding: 0.28rem 0;
+  background: var(--surface-primary);
+  box-shadow: 0 10px 28px rgb(15 30 46 / 20%);
+}
+
+.menu {
+  top: calc(100% + 0.25rem);
+  right: 0;
+}
+
+.submenuOwner {
+  position: relative;
+}
+
+.submenu {
+  top: -0.29rem;
+  right: calc(100% + 0.22rem);
+  min-width: 14rem;
+}
+
+.menu button.menuItem {
+  display: flex;
+  width: 100%;
+  height: auto;
+  min-height: 2rem;
+  justify-content: flex-start;
+  border: 0;
+  border-radius: 0;
+  padding: 0.42rem 0.72rem;
+  color: var(--text-primary);
+  background: transparent;
+  font-size: 0.72rem;
+  font-weight: 520;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.menu button.menuItem:hover,
+.menu button.menuItem:focus-visible {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.menu button.menuItem:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.menuItem > span:first-child {
+  width: 1rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.submenuArrow {
+  margin-left: auto;
+  font-size: 1rem;
+}
+
+@media (max-width: 760px) {
+  .submenu {
+    position: static;
+    min-width: 0;
+    margin: 0.12rem 0.35rem 0.24rem;
+    border-width: 0 0 0 2px;
+    border-radius: 0;
+    padding: 0 0 0 0.28rem;
+    background: var(--surface-secondary);
+    box-shadow: none;
+  }
+
+  .submenuArrow {
+    transform: rotate(90deg);
+  }
+}

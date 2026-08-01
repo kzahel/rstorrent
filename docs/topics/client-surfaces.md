@@ -35,8 +35,10 @@ Tactical `036` packages that same production-built live browser path behind
 normal-browser opening, and joined terminal-owned shutdown. Tauri still
 selects the legacy entry pending maintainer confirmation of the browser
 launcher. Tactical `037` adds the first live mutation to the new surface:
-bounded magnet intake through the semantic command boundary. Android remains
-intentionally unchanged.
+bounded magnet intake through the semantic command boundary. Tactical `038`
+adds five curated public test-torrent shortcuts without adding a debug backend
+command or bypassing application policy. Android remains intentionally
+unchanged.
 
 ## Scope
 
@@ -152,6 +154,9 @@ in-process Tauri product architecture. The live React adapter currently
 supports inspection, magnet add, pause, and resume, but not `.torrent` file
 intake or the full legacy command set. React emits a transport-neutral magnet
 intent; only the live adapter constructs the generated application request.
+Typed and curated magnet intake share that path. A deterministic catalog test
+keeps the UI shortcuts identical to `tests/live/torrents.json`; public swarm
+availability remains variable evidence rather than a UI guarantee.
 
 ## Reactive Views
 

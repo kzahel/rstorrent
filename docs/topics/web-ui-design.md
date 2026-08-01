@@ -12,7 +12,9 @@ selection while retaining the demo adapter and recovering cleanly after
 browser suspension. Tactical `036` adds the production-built manual live
 browser launcher. Tactical `037` adds accessible, responsive magnet intake to
 the live toolbar and routes it through the semantic application command while
-retaining the permanent demo adapter. The Tauri entry remains legacy.
+retaining the permanent demo adapter. Tactical `038` adds a keyboard, pointer,
+touch, and phone-safe More > Add test torrent submenu backed by the recorded
+WebTorrent catalog and the same add path. The Tauri entry remains legacy.
 
 ## Purpose
 

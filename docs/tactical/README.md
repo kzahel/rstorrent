@@ -228,6 +228,9 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; adds JSTorrent-style adjacent magnet input and Add controls to the
   live React toolbar and moves the controlled transfer proof through that
   visible command path while reserving later `.torrent` file selection.
+- [`038-curated-test-torrent-menu.md`](038-curated-test-torrent-menu.md):
+  complete; adds an accessible More > Add test torrent submenu backed by the
+  five recorded WebTorrent magnets and the ordinary guarded add path.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
