@@ -282,6 +282,13 @@ pub struct SelectiveStorage {
     published: bool,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct SelectiveHashIoStats {
+    wanted_file_seeks: usize,
+    wanted_file_reads: usize,
+    part_file_reads: usize,
+}
+
 impl SelectiveStorage {
     pub async fn create(
         output_root: PathBuf,
@@ -794,63 +801,83 @@ impl SelectiveStorage {
         &mut self,
         piece_index: u32,
     ) -> Result<[u8; 20], SelectiveStorageError> {
+        self.hash_piece_with_stats(piece_index)
+            .await
+            .map(|(hash, _stats)| hash)
+    }
+
+    async fn hash_piece_with_stats(
+        &mut self,
+        piece_index: u32,
+    ) -> Result<([u8; 20], SelectiveHashIoStats), SelectiveStorageError> {
         let piece_length = self.layout.piece_length_at(piece_index)?;
         let mut hasher = Sha1::new();
         let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
-        let mut begin = 0_u32;
-        while begin < piece_length {
-            let length = u32::try_from(
-                usize::try_from(piece_length - begin)
-                    .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?
-                    .min(buffer.len()),
-            )
-            .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
-            buffer[..length as usize].fill(0);
-            let segments = self
-                .layout
-                .segments(piece_index, begin, length, &self.selection)?;
-            for segment in segments {
-                let destination =
-                    &mut buffer[segment.block_offset..segment.block_offset + segment.length];
-                match segment.target {
-                    SegmentTarget::WantedFile {
-                        file_index,
-                        file_offset,
-                    } => {
-                        let file = self.files[file_index]
-                            .as_mut()
-                            .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?;
-                        file.seek(SeekFrom::Start(file_offset))
+        let mut stats = SelectiveHashIoStats::default();
+        let segments = self
+            .layout
+            .segments(piece_index, 0, piece_length, &self.selection)?;
+        for segment in segments {
+            let mut consumed = 0_usize;
+            match segment.target {
+                SegmentTarget::WantedFile {
+                    file_index,
+                    file_offset,
+                } => {
+                    let file = self.files[file_index]
+                        .as_mut()
+                        .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?;
+                    file.seek(SeekFrom::Start(file_offset))
+                        .await
+                        .map_err(|source| SelectiveStorageError::Io {
+                            operation: "seek selected staging file for verification",
+                            source,
+                        })?;
+                    stats.wanted_file_seeks = stats.wanted_file_seeks.saturating_add(1);
+                    while consumed < segment.length {
+                        let length = (segment.length - consumed).min(buffer.len());
+                        file.read_exact(&mut buffer[..length])
                             .await
                             .map_err(|source| SelectiveStorageError::Io {
-                                operation: "seek selected staging file for verification",
-                                source,
-                            })?;
-                        file.read_exact(destination).await.map_err(|source| {
-                            SelectiveStorageError::Io {
                                 operation: "read selected staging range for verification",
                                 source,
-                            }
+                            })?;
+                        stats.wanted_file_reads = stats.wanted_file_reads.saturating_add(1);
+                        hasher.update(&buffer[..length]);
+                        consumed += length;
+                    }
+                }
+                SegmentTarget::SkippedFile { .. } => {
+                    let piece = usize::try_from(piece_index).map_err(|_| {
+                        SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow)
+                    })?;
+                    while consumed < segment.length {
+                        let length = (segment.length - consumed).min(buffer.len());
+                        let consumed_u32 = u32::try_from(consumed).map_err(|_| {
+                            SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow)
                         })?;
-                    }
-                    SegmentTarget::SkippedFile { .. } => {
+                        let begin = segment.piece_offset.checked_add(consumed_u32).ok_or(
+                            SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow),
+                        )?;
                         self.part_file_mut()?
-                            .read_piece_range(
-                                usize::try_from(piece_index).map_err(|_| {
-                                    SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow)
-                                })?,
-                                segment.piece_offset,
-                                destination,
-                            )
+                            .read_piece_range(piece, begin, &mut buffer[..length])
                             .await?;
+                        stats.part_file_reads = stats.part_file_reads.saturating_add(1);
+                        hasher.update(&buffer[..length]);
+                        consumed += length;
                     }
-                    SegmentTarget::Padding => {}
+                }
+                SegmentTarget::Padding => {
+                    buffer.fill(0);
+                    while consumed < segment.length {
+                        let length = (segment.length - consumed).min(buffer.len());
+                        hasher.update(&buffer[..length]);
+                        consumed += length;
+                    }
                 }
             }
-            hasher.update(&buffer[..length as usize]);
-            begin += length;
         }
-        Ok(hasher.finalize().into())
+        Ok((hasher.finalize().into(), stats))
     }
 
     pub fn record_verified(&mut self, piece_index: usize) -> Result<(), SelectiveStorageError> {
@@ -1551,9 +1578,10 @@ mod tests {
 
     use super::{
         DescriptorFile, DescriptorStorage, PreparedFileHash, ResumedStorage, SelectiveStorage,
-        SelectiveStorageError, collect_descriptors, materialization_path,
-        remove_selective_part_if_present, remove_selective_staging_if_present, selective_part_path,
-        selective_staging_path, verify_prepared_descriptors,
+        SelectiveStorageError, VERIFICATION_CHUNK_LENGTH, collect_descriptors,
+        materialization_path, remove_selective_part_if_present,
+        remove_selective_staging_if_present, selective_part_path, selective_staging_path,
+        verify_prepared_descriptors,
     };
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -1618,6 +1646,61 @@ mod tests {
         let _ = tokio::fs::remove_dir_all(output).await;
         let _ = remove_selective_staging_if_present(output).await;
         let _ = remove_selective_part_if_present(output).await;
+    }
+
+    #[tokio::test]
+    async fn contiguous_wanted_piece_hash_seeks_once_and_streams_fixed_chunks() {
+        let output = test_path("contiguous-hash");
+        clean(&output).await;
+        let piece_length = 256 * 1024_u32;
+        let bytes = (0..piece_length as usize)
+            .map(|offset| ((offset * 41 + offset / 23) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let expected: [u8; 20] = Sha1::digest(&bytes).into();
+        let metainfo = Metainfo {
+            info_hash: [7; 20],
+            piece_hashes: vec![expected],
+            piece_length,
+            total_length: u64::from(piece_length),
+            name: "contiguous".to_owned(),
+            private: false,
+            mode: MetainfoMode::MultiFile,
+            files: vec![MetainfoFile {
+                path: vec!["payload.bin".to_owned()],
+                length: u64::from(piece_length),
+                offset: 0,
+                padding: false,
+            }],
+        };
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[]).expect("selection");
+        let mut storage =
+            SelectiveStorage::create(output.clone(), &metainfo, layout.clone(), selection.clone())
+                .await
+                .expect("create storage");
+        for request in layout.request_ranges(0, &selection).expect("requests") {
+            let begin = request.begin as usize;
+            storage
+                .write_block(
+                    0,
+                    request.begin,
+                    bytes[begin..begin + request.length as usize].to_vec(),
+                )
+                .await
+                .expect("write block");
+        }
+        let (actual, stats) = storage
+            .hash_piece_with_stats(0)
+            .await
+            .expect("hash contiguous piece");
+        assert_eq!(actual, expected);
+        assert_eq!(stats.wanted_file_seeks, 1);
+        assert_eq!(
+            stats.wanted_file_reads,
+            bytes.len().div_ceil(VERIFICATION_CHUNK_LENGTH)
+        );
+        assert_eq!(stats.part_file_reads, 0);
+        clean(&output).await;
     }
 
     fn new_descriptor(path: &Path) -> std::fs::File {

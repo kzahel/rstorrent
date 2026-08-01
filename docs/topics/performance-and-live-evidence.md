@@ -458,11 +458,20 @@ the delayed-intake defect is closed. Two screens reached 50% in 69.15 and
 out at 300 seconds with 399 pieces and 104,595,456 verified bytes, zero hash
 failures, 30 connections, 91 requests, 65 writes, and 66 storage jobs.
 
-The remaining shape selects selective verification: common 256 KiB
-multi-file pieces currently issue one async seek for each 16 KiB hash chunk,
-while the single-file owner seeks once and reads sequentially. Tactical `029`
-adds a representative controlled baseline and coalesces those seek operations
-before attributing the low-rate tail to peer policy.
+Tactical `029` now maps each piece once and reduces a common 256 KiB
+multi-file hash from 16 seeks to one while retaining 16 fixed 16 KiB reads.
+Its representative 32 MiB controlled medians were 1.101 seconds before and
+1.121 seconds after, so no speed improvement is claimed. Three public 50%
+screens still reached 66 occupied storage jobs; two reached the milestone at
+77.76 and 77.89 seconds, while one timed out at 506 of 1,055 pieces. A full
+screen published all 276,445,467 exact bytes at 180.64 seconds with zero hash
+failures and drained queues.
+
+The remaining source-derived storage defect is the operation boundary: every
+fixed read still enters and leaves Tokio's blocking file machinery separately.
+Tactical `030` moves a complete common all-wanted piece hash behind one bounded
+blocking positional-I/O job, then reruns the same evidence before any peer or
+request policy change.
 
 ## Result Classification
 

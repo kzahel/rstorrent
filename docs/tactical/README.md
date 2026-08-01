@@ -192,8 +192,11 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; prevents continuous accepted-block storage from starving bounded
   discovery admission, dial refill, and safe peer-event service.
 - [`029-coalesced-selective-piece-hashing.md`](029-coalesced-selective-piece-hashing.md):
-  active; removes redundant per-chunk async seeks from bounded multi-file piece
-  verification and measures the representative storage profile.
+  complete; removes redundant per-chunk async seeks from bounded multi-file
+  piece verification and records a neutral controlled timing result.
+- [`030-single-boundary-selective-hash-job.md`](030-single-boundary-selective-hash-job.md):
+  active; moves each common all-wanted piece hash behind one bounded blocking
+  positional-I/O boundary.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

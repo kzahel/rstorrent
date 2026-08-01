@@ -14,9 +14,10 @@ corrected localhost benchmark did not improve. Paired peer-utility timelines
 then isolated a source-rich product-path run which retained 119 eligible peers
 behind an eight-attempt half-open ceiling. That cohort is now 30 with exact
 adversarial evidence. Fair supervisor intake now admits DHT results and fills
-that cohort during storage pressure. The active slice removes redundant async
-seeks from selective multi-file piece hashing, the newly isolated saturated
-owner.
+that cohort during storage pressure. Coalesced selective hashing now removes
+redundant seeks, but a controlled profile remained neutral and public storage
+occupancy stayed saturated. The active slice moves the complete common piece
+hash behind one bounded blocking positional-I/O boundary.
 
 ## Purpose And Ownership
 
@@ -91,17 +92,16 @@ evidence.
 
 ### Now
 
-**Coalesced selective piece hashing.** Seek once across contiguous wanted-file
-piece ranges while retaining the 16 KiB hash buffer, cross-file correctness,
-storage queue bounds, and exact cancellation. Compare a representative
-controlled multi-file profile before and after.
+**Single-boundary selective hash job.** Execute each common all-wanted piece
+hash as one bounded blocking positional-I/O job while retaining the 16 KiB
+buffer, cross-file correctness, storage queue bounds, and exact shutdown.
 
 ### Next
 
-1. **Source-derived service owner.** Use the paired timeline after selective
-   hash coalescing to select the complete hash-job boundary, request service,
-   peer ranking, or confirmation breadth without changing several policies
-   together.
+1. **Source-derived service owner.** Use task-duration and paired timelines
+   after the complete hash-job boundary to select write ownership, request
+   service, peer ranking, or confirmation breadth without changing several
+   policies together.
 2. **Measured BEP breadth.** Use the protocol matrix and full-reference gaps
    to choose the next discovery or transport BEP after core completion parity.
 3. **Durable single-file resume.** Extend the existing selective-storage

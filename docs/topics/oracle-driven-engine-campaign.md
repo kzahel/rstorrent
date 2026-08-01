@@ -315,15 +315,15 @@ reason to stop.
 Campaign state: **active**.
 
 Active tactical:
-[`029-coalesced-selective-piece-hashing.md`](../tactical/029-coalesced-selective-piece-hashing.md).
+[`030-single-boundary-selective-hash-job.md`](../tactical/030-single-boundary-selective-hash-job.md).
 Tacticals `025` through
-[`028-fair-content-supervisor-intake.md`](../tactical/028-fair-content-supervisor-intake.md)
+[`029-coalesced-selective-piece-hashing.md`](../tactical/029-coalesced-selective-piece-hashing.md)
 are complete.
 
-Current milestone: measure a representative 256 KiB-piece multi-file profile,
-then remove redundant per-chunk seeks from selective piece verification while
-retaining its 16 KiB buffer and every storage, payload, integrity, and
-cancellation bound.
+Current milestone: execute a complete common all-wanted piece hash behind one
+bounded blocking positional-I/O boundary while retaining the 16 KiB buffer,
+portable safe reads, bounded temporary handles, and every storage, payload,
+integrity, and cancellation bound.
 
 Last completed evidence:
 
@@ -498,18 +498,30 @@ Last completed evidence:
   66 storage jobs; and
 - the persistent storage saturation plus `SelectiveStorage`'s 16 seeks per
   common 256 KiB hash, versus one seek in the single-file owner, selects
-  Tactical `029` before peer ranking or request tuning.
+  Tactical `029` before peer ranking or request tuning;
+- Tactical `029` now maps each piece once and reduces that common hash to one
+  seek plus 16 fixed reads. A focused test proves the operation count, and all
+  controlled integrity, lifecycle, resume, publication, and cleanup gates pass;
+- the representative 32 MiB three-file profile moved from a 1.101-second
+  pre-change median to 1.121 seconds post-change. This neutral result rejects a
+  speed claim rather than being hidden;
+- three live 50% screens reached the 66-job storage high-water mark. Two
+  reached 50% at 77.76 and 77.89 seconds; one timed out at 506 of 1,055 pieces;
+  and
+- a complete screen verified all 276,445,467 bytes at 180.61 seconds and
+  published exact content at 180.64 seconds with zero hash failures and drained
+  queues. Persistent saturation selects Tactical `030`'s complete hash-job
+  boundary.
 
 Next executable action:
 
-1. add a representative controlled multi-file hash profile and retain three
-   clean pre-change transfer-only timings;
-2. extract a deterministic contiguous-file cursor and remove redundant async
-   seeks while retaining the fixed 16 KiB hash buffer;
-3. prove wanted, cross-file, skipped, padding, final-short, maximum-piece,
-   resume, cancellation, and exact publication behavior;
+1. add portable safe positional reads with exact short-read and error behavior;
+2. duplicate at most one handle per wanted file touched by a piece and hash the
+   complete all-wanted segment traversal in one bounded blocking job;
+3. prove single-file operation shape, cross-file/padding ordering, truncation,
+   task failure, cancellation, and exact owner joins;
 4. pass workspace, selective/mixed, Python, and controlled paired gates; and
-5. run product timeline screens and classify the complete hash-job boundary,
-   request service, or peer ranking from storage-occupancy evidence.
+5. rerun the controlled profile plus public timeline screens, then classify
+   storage writes, request service, or peer ranking from retained evidence.
 
 Human blocker: **none**.

@@ -157,6 +157,15 @@ uv run --project tests/interop --locked \
   python tests/interop/first_verified_piece.py --selective-files --runs 3
 ```
 
+The representative selective-hash profile downloads 32 MiB in 128 pieces
+across three unaligned wanted files. It checks exact publication and cleanup
+while retaining transfer-only timings for storage-operation changes:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/selective_hash_profile.py --runs 3
+```
+
 The controlled DHT profile obtains peers from an independent KRPC router,
 downloads metadata and content from libtorrent, and then probes RSTorrent's
 incoming query and token-authenticated announcement behavior:

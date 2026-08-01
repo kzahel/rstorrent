@@ -19,9 +19,11 @@ the paired live peer-utility timeline and selected the continuously occupied
 eight-attempt half-open cohort. Tactical `027` expanded that cohort to 30
 under the existing live-peer and payload bounds. Its public timeline exposed
 discovery events queued behind continuously ready storage; Tactical `028` now
-completed fair supervisor intake. Prompt source-rich runs now expose saturated
-multi-file verification storage; Tactical `029` owns redundant selective hash
-seeks before selection or request policy changes.
+completed fair supervisor intake. Tactical `029` removed redundant selective
+hash seeks with exact integrity, but controlled timing stayed neutral and live
+storage occupancy remained saturated. Tactical `030` now owns the complete
+all-wanted piece-hash operation boundary before selection or request policy
+changes.
 
 ## Scope
 
@@ -247,10 +249,16 @@ content registry until termination while storage stayed saturated.
 
 Tactical `028` now proves prompt DHT intake and dial refill while all 66 storage
 jobs are occupied. Live DHT reports and registry growth occur in the same
-sample, closing the intake defect. The next stopping condition is one seek per
-contiguous wanted-file piece span, exact cross-file/skipped/padding hashes, and
-representative before/after evidence without increasing the 16 KiB hash buffer
-or any storage, request, or payload queue.
+sample, closing the intake defect. Tactical `029` then reduced a common 256 KiB
+selective hash from 16 seeks to one while preserving 16 fixed-buffer reads.
+Its 32 MiB controlled median moved from 1.101 to 1.121 seconds, so it makes no
+speed claim; public screens continued to hit the 66-job storage high-water
+mark. Exact full publication completed at 180.64 seconds.
+
+The next stopping condition is one blocking boundary for a complete
+all-wanted piece hash, portable positional-read correctness, bounded temporary
+file handles, exact cancellation/join evidence, and representative
+before/after timing without changing any storage, request, or payload queue.
 
 Routine engine validation remains headless; no additional product UI is
 required by that slice.

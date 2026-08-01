@@ -18,8 +18,10 @@ eight half-open attempts while 119 candidates remained eligible. Tactical
 `027` expanded that separate pending cohort to 30. Its complete public
 timeline showed DHT results queued outside the registry while storage stayed
 saturated. Tactical `028` now owns fair bounded discovery, dial, peer, and
-storage service and has closed that defect. Tactical `029` returns to the
-isolated selective hash operation boundary. Full parole selection, persistent
+storage service and has closed that defect. Tactical `029` removed redundant
+selective hash seeks but retained saturated storage occupancy; Tactical `030`
+now owns one complete piece-hash operation boundary. Full parole selection,
+persistent
 integrity reputation,
 measured picker policy, incoming connections, and persistent peer records
 remain later work.
@@ -455,8 +457,10 @@ supervisor and is the new preceding lifecycle owner.
 Tactical `028` admits discovery and begins bounded dials during storage
 pressure, then gives safe ready owners explicit rotating service. Its live DHT
 counts and registry totals now grow in the same sample and immediately fill 30
-dials. Source-rich runs then retain full storage queues and low per-peer rates,
-selecting Tactical `029`'s multi-file verification boundary before connection
-policy. Incoming listener ownership and advertised-port updates, measured
+dials. Source-rich runs then retain full storage queues and low per-peer rates.
+Tactical `029` removed redundant selective-hash seeks without changing that
+occupancy; Tactical `030` therefore moves the complete common piece hash behind
+one blocking boundary before connection policy. Incoming listener ownership
+and advertised-port updates, measured
 performance selection, peer-ID duplicate resolution, full parole selection,
 PEX, and persisted peer caches remain later work.
