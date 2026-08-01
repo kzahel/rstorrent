@@ -2,8 +2,9 @@
 
 Topic: `desktop-inspection-surface`
 
-Status: Strategic direction accepted; implementation and application-view API
-design are deliberately pending maintainer discussion.
+Status: Strategic direction accepted. The fresh responsive frontend direction
+is recorded in [`web-ui-design.md`](web-ui-design.md); implementation and the
+application-view API remain pending maintainer discussion.
 
 ## Purpose
 
@@ -30,10 +31,12 @@ next engine tactical while the desktop inspection surface is being discussed
 and established.
 
 Use the existing JSTorrent desktop interface as the primary product and
-interaction reference. The intended starting point is its recognizable
-torrent-detail shell and collection of detailed tabs rather than a new minimal
-dashboard assembled one diagnostic at a time. Views may initially contain
-truthful unavailable states while their RSTorrent data feeds do not exist.
+interaction reference. The fresh React presentation described in
+[`web-ui-design.md`](web-ui-design.md) preserves its recognizable information
+hierarchy and detailed views while adding category navigation, adaptive
+master/detail presentation, touch usability, and an accessibility baseline.
+Views may initially contain truthful unavailable states while their RSTorrent
+data feeds do not exist.
 
 The existing categorized logger naturally belongs in the logging view. The
 peer view is the first new live inspection priority because it gives a direct
@@ -67,11 +70,12 @@ while that surface becomes useful for engine development.
 
 ## JSTorrent Reference Use
 
-JSTorrent is a first-party product-history and interface reference. Reuse may
-include its overall information architecture, layout, interaction patterns,
-styles, icons, and suitable presentation components. It should not silently
-import the old engine state model, controller topology, transport assumptions,
-or stringly typed runtime coupling.
+JSTorrent is a first-party product-history and interface reference. Reuse its
+overall information architecture, layout lessons, interaction patterns,
+visual language, and terminology through a fresh implementation. Do not
+transplant its mixed React/Solid component tree or silently import the old
+engine state model, controller topology, transport assumptions, or stringly
+typed runtime coupling.
 
 Any source or assets copied into this repository must still record the exact
 origin and revision, preserve applicable license and attribution coverage, and

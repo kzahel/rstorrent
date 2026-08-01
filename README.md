@@ -125,6 +125,9 @@ provenance policy.
 - [Desktop inspection surface](docs/topics/desktop-inspection-surface.md)
   records the accepted JSTorrent-derived desktop/web direction, Android
   presentation split, and deliberately open application-view design.
+- [Web UI design](docs/topics/web-ui-design.md) records the fresh React and CSS
+  Modules frontend, responsive information hierarchy, accessibility baseline,
+  and virtualized rendering direction.
 - [Capability readiness](docs/topics/capability-readiness.md) is the current
   engine and product scoreboard and owns the prioritized work queue.
 - [Download correctness](docs/topics/download-correctness.md) tracks completion,

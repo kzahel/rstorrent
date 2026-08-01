@@ -116,7 +116,10 @@ but an indirect interactive debugging loop, desktop/web becomes the detailed
 inspection surface as recorded in
 [`desktop-inspection-surface.md`](desktop-inspection-surface.md). Its product
 reference is the existing JSTorrent torrent-detail interface rather than a
-new minimal dashboard.
+new minimal dashboard. The frontend itself is a fresh implementation: its
+responsive information architecture, React and CSS Modules baseline, category
+layer, touch posture, and accessibility requirements live in
+[`web-ui-design.md`](web-ui-design.md).
 
 Android remains a first-party product but no longer has a default obligation
 to mirror desktop tabs or diagnostic density. Engine and application

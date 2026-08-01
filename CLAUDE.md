@@ -7,6 +7,8 @@
 Start with [`README.md`](README.md), then read [`docs/vision.md`](docs/vision.md),
 [`docs/engineering-principles.md`](docs/engineering-principles.md),
 [`docs/topics/product-direction.md`](docs/topics/product-direction.md), and
+[`docs/topics/desktop-inspection-surface.md`](docs/topics/desktop-inspection-surface.md),
+[`docs/topics/web-ui-design.md`](docs/topics/web-ui-design.md),
 [`docs/topics/capability-readiness.md`](docs/topics/capability-readiness.md),
 [`docs/topics/oracle-driven-engine-campaign.md`](docs/topics/oracle-driven-engine-campaign.md),
 then [`docs/references.md`](docs/references.md). Once an implementation
@@ -40,9 +42,9 @@ a living topic records an accepted replacement:
 - A future JSTorrent extension is expected to control and integrate with the
   native engine rather than carry peer or file hot paths. This vision does not
   authorize extension or IPC work in an unrelated tactical.
-- During the current engine-correctness campaign, do not add product UI unless
-  the user explicitly changes the campaign. Operate and diagnose feature work
-  through the headless application boundary.
+- The engine-correctness campaign is paused for the accepted detailed web UI
+  direction. Do not resume that campaign or begin product UI implementation
+  until the application-view discussion produces an authorized tactical.
 
 These are direction guardrails, not permission to invent a complete
 architecture before the relevant tactical.

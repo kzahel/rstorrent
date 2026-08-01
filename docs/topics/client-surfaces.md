@@ -18,7 +18,10 @@ loopback-only. The accepted
 [`desktop-inspection-surface`](desktop-inspection-surface.md) direction now
 allows desktop/web and Android presentation to diverge: desktop/web becomes a
 dense JSTorrent-derived inspection surface, while Android remains a separate
-platform-appropriate product without automatic tab or diagnostic parity.
+platform-appropriate product without automatic tab or diagnostic parity. The
+fresh React, CSS Modules, adaptive navigation, touch, and accessibility
+direction for that shared presentation lives in
+[`web-ui-design.md`](web-ui-design.md).
 
 ## Scope
 
@@ -102,6 +105,13 @@ Tauri transport   WebSocket transport
 Platform-specific capabilities such as folder selection, tray state, external
 URL opening, or updater presentation use a separate platform-capability
 adapter. They do not enter torrent commands or view patches.
+
+The next presentation replaces the provisional direct-DOM harness with a
+fresh strict-TypeScript React application using component-scoped CSS Modules.
+It preserves JSTorrent's information hierarchy without inheriting its source
+architecture and adapts one library/list/detail model from wide desktop to
+phone-sized browser layouts. The detailed direction and open choices live in
+[`web-ui-design.md`](web-ui-design.md).
 
 The initial browser surface may prove the network transport on loopback with
 explicit test credentials. That is not a claim of safe Internet exposure.

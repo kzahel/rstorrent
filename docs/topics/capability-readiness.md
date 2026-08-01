@@ -98,17 +98,18 @@ evidence.
 
 ### Now
 
-**Desktop inspection strategy and API discussion.** Engine parity is paused
-after Tactical `032`. Establish the JSTorrent-derived detailed desktop/web
-direction and agree on the application-view boundary before opening an
-inspection implementation tactical. Android UI parity is not part of this
-phase.
+**Desktop application-view API discussion.** Engine parity is paused after
+Tactical `032`. The fresh responsive web presentation direction is recorded
+in [`web-ui-design.md`](web-ui-design.md). Agree on the recoverable
+application-view boundary before opening an inspection implementation
+tactical. Android UI parity is not part of this phase.
 
 ### Next
 
-1. **Detailed desktop inspection surface.** After its application-view design
-   is agreed, introduce the JSTorrent-derived shell and make peer activity the
-   first live inspection focus without implying an Android mirror.
+1. **Responsive web inspection foundation.** After its application-view design
+   is agreed, establish the React/CSS Modules adaptive shell and virtualized
+   table foundation, then make peer activity the first detailed live focus
+   without implying an Android mirror.
 2. **Measured BEP breadth.** Use the protocol matrix and full-reference gaps
    to choose the next discovery or transport BEP after core completion parity.
 3. **Durable single-file resume.** Extend the existing selective-storage

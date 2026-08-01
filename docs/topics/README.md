@@ -65,6 +65,10 @@ Topics own the current truth for a continuing concern. Tactical docs under
   pivot to a JSTorrent-derived detailed desktop/web product and debugging
   surface, an intentional Android presentation split, and the API questions
   that remain open before implementation.
+- [`web-ui-design.md`](web-ui-design.md): fresh React and CSS Modules web
+  presentation, JSTorrent-inspired information hierarchy, category layer,
+  adaptive master/detail navigation, accessibility, and virtualized scale
+  direction.
 - [`peer-lifecycle.md`](peer-lifecycle.md): peer observations, bounded records,
   derived dial eligibility, connection attempts, adversarial multi-peer
   ownership, slot replacement, and the discovery-to-swarm boundary.
