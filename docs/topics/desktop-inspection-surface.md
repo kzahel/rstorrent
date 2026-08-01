@@ -7,7 +7,8 @@ headless view-set, polling client, generated contract, and pure reducer are
 implemented by Tactical `033`. Tactical `034` implements the fresh responsive
 frontend, virtual torrent and peer tables, and named deterministic demo
 application. Live peer inspection remains the following bounded connection
-slice.
+slice; Tactical `035` is ready and records its owner, lifecycle, privacy,
+resource, recovery, and headless-evidence contracts.
 
 ## Purpose
 
@@ -107,12 +108,14 @@ surface, not the RSTorrent application-view architecture.
 ## Deliberately Open Design
 
 The view-set, snapshot/diff, polling-to-streaming, generated-type, and Zustand
-architecture is accepted. The remaining inspection design includes:
+architecture is accepted. Tactical `035` now owns the first live torrent and
+active-peer field set, Peers-versus-Swarm membership, and local endpoint
+privacy posture. The remaining inspection design includes:
 
-- the division between torrent summary, peer, swarm, piece, tracker, file,
-  storage, protocol-message, and history views;
-- exact stable peer and torrent fields, sorting, filtering, selection, and
-  row-detail semantics;
+- the division between later swarm, piece, tracker, file, storage,
+  protocol-message, and history views;
+- sorting, filtering, selection, and row-detail semantics beyond the first
+  active-peer table;
 - concrete update cadence, history retention, overflow, and memory bounds;
 - which endpoint, peer-client, protocol, and failure details are appropriate
   for local display or exported diagnostics;

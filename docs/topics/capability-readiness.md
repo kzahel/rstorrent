@@ -106,7 +106,10 @@ evidence.
 peer identities, truthful bounded torrent and peer rows, privacy policy,
 source-owner projection, and adversarial fixtures. Then map the implemented
 view-set controller into Tactical `034`'s frontend inspection model while
-keeping named demo scenarios as permanent reproduction fixtures.
+keeping named demo scenarios as permanent reproduction fixtures. Tactical
+[`035`](../tactical/035-live-peer-inspection-projection.md) is the ready
+execution plan. It also makes view sets self-expire on client silence and
+requires fresh-snapshot frontend recovery after browser suspension.
 
 ### Next
 

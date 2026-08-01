@@ -7,8 +7,9 @@ generated TypeScript/schema contract, pure reducer, and lifecycle controller
 are implemented by
 [`033-headless-view-set-foundation.md`](../tactical/033-headless-view-set-foundation.md).
 Tactical `034` implements the per-application Zustand store and React
-inspection model against a deterministic adapter; stable Rust torrent and peer
-projections and their adapter mapping remain next.
+inspection model against a deterministic adapter. Tactical `035` is ready to
+add stable Rust torrent and active-peer projections, semantic responsive view
+selection, independently reaped leases, and browser-suspension recovery.
 The existing Tactical `008` subscriptions remain compatible adapters. No
 stable public remote wire compatibility is claimed yet.
 
@@ -103,6 +104,7 @@ public shape.
 | Owner | Responsibility | Lifetime and termination |
 | --- | --- | --- |
 | Application view hub | Current projection source state and fan-out into view sets | One application-service instance; closes all view sets during joined service shutdown |
+| View-set lease reaper | One timer that removes client-silent view sets independently from later requests | One application-service instance; cancellation and awaited join during service shutdown |
 | View set | Desired view specifications, per-view materialization, epoch, cursor, and bounded accumulated updates | Explicit close, idle-lease expiry, authenticated remote disconnect policy, or application shutdown |
 | Transport adapter | Authentication context, framing, request bounds, and delivery of semantic calls | Tauri webview, HTTP request, or WebSocket connection lifetime; never owns application truth |
 | TypeScript `ViewController` | Desired view set, current ID/epoch/cursor, one update consumer, reconnect/backoff, validation, and cancellation | One web application instance; closes or abandons its leased Rust view set |
@@ -142,15 +144,26 @@ filters, and delivery pressure cannot interfere.
 
 View sets live in process memory, not SQLite. Application restart invalidates
 them and recovery begins from fresh snapshots. Abandoned sets expire after a
-bounded idle lease. Exact lease time, grace period after a streaming
-disconnect, and global/per-principal limits belong to the implementation
-tactical and must be measured rather than embedded in this topic.
+five-minute idle lease. One application-owned reaper must remove a set no
+later than one bounded reaper interval after expiry, release its retained
+state, and wake waiters without requiring another client operation. Only an
+accepted client open, desired-view update, or new update request refreshes
+`last_client_activity`; engine publication, coalescing, queue wakeups, replay,
+and response generation never keep an abandoned set alive. Tactical `035`
+replaces the implemented foundation's current opportunistic pruning with this
+active owner.
 
 Updating the requested specifications changes the existing view set. Added or
 changed view snapshots enter its single ordered update feed; the configuration
 response is only an acknowledgement. It does not create a competing second
 state response. Removed views release producer state and produce an explicit
 `view_removed` update at the correct cursor boundary.
+
+The desired set follows the UI that is actually visible. A phone torrent
+detail can request one selected summary and one active detail without retaining
+the torrent list; a library surface can request the list without torrent
+details. Removing a view evicts its materialized application data after the
+ordered removal. Presentation navigation context is separate and may remain.
 
 Only one update consumer drains a view set. Poll mode permits one in-flight
 `next_updates` operation; streaming mode attaches one stream at the retained
@@ -321,6 +334,13 @@ field-level patches. Field masks are a later measured optimization. Stable row
 identity is mandatory. A peer row uses a connection-lifetime identity rather
 than only address and port so reconnects remain distinct.
 
+The `torrent_peers` collection contains every currently active connection
+generation, including transport connecting, protocol handshaking, connected,
+and disconnecting work. A row is removed after its task and owned engine state
+finish cleanup; disconnected history is not retained in this current-state
+view. The future `torrent_swarm` collection instead projects all retained peer
+records, including idle, backed-off, failed, and banned records.
+
 Projection rules are:
 
 | Data shape | Patch and coalescing rule |
@@ -344,6 +364,14 @@ The first remote delivery is bounded periodic JSON polling. An active visible
 UI may begin around 250--500 milliseconds, slow down while hidden, issue an
 immediate pull after a command or view change, and keep only one pull in
 flight. Exact cadence is client policy and should be measured.
+
+Browser suspension may outlive the Rust lease. An unknown, closed, or expired
+set marks retained requested views stale/reconnecting, opens one replacement
+set from the latest semantic desired views, and atomically replaces the stale
+materialization from its coherent initial snapshots. Patches from the new set
+are never applied over the old set or epoch. Visibility, page-show, and online
+events may wake polling early, but correctness does not depend on browser
+timers running while suspended.
 
 The same operation may later permit a bounded `max_wait_ms` for long polling.
 A WebSocket or Tauri Channel attaches to the same view set and cursor and emits
@@ -377,6 +405,12 @@ be adapted or retired; preserving its path is not a compatibility requirement.
 The local Tauri product maps these semantic calls to commands and later
 Channels. It does not bind a loopback port or serialize through HTTP merely to
 share the browser adapter's URLs.
+
+An explicit unauthenticated development mode may be used for initial browser
+bring-up when it is impossible to bind beyond loopback, retains exact Origin
+and resource checks, assigns opaque owners, and uses a temporary or explicitly
+selected profile. The view-set ID remains non-authorizing. This does not alter
+the authenticated adapter or establish production remote access.
 
 Browser navigation URLs such as `/library/:category` and
 `/torrents/:torrent_id/:tab` are presentation concerns and do not mirror the
@@ -510,6 +544,11 @@ tests additionally cover owner isolation, concurrent-consumer rejection,
 lost-response replay, failed-reduction non-acknowledgement, overflow recovery,
 delivery intervals, expiry, generated drift, and shutdown wakeup.
 
+The implemented expiry proof is opportunistic: a later view-set operation or
+test hook performs pruning. It does not yet destroy a silent set on its own.
+Tactical `035` owns the single joined reaper and the suspended-client recovery
+evidence rather than treating the existing test as full lifecycle closure.
+
 This is a local application boundary and automation seam, not a production
 remote-control security or compatibility claim. Per-view retained histories,
 per-view overflow reset, streaming delivery, a binary codec, Tauri Channel
@@ -557,14 +596,16 @@ interactive machine.
    in Tactical `033`.
 2. The Zustand store, React shell, frontend inspection model, named demo
    adapter, and virtualized scale fixtures are complete in Tactical `034`.
-3. Add stable torrent-list and peer projections with hostile and scale
-   fixtures, then map them through the controller into the inspection model.
+3. Tactical `035` adds stable torrent-list and active-peer projections with
+   hostile and scale fixtures, maps them through the controller into the
+   inspection model, and closes lease/suspension lifecycle gaps.
 4. Add streaming as an interchangeable delivery adapter only after polling
    behavior and reducer recovery are stable.
 5. Measure update volume, decode/reduce cost, rendering, and memory before
    selecting binary encoding or finer-grained row patches.
 
-Tacticals `033` and `034` completed the first two steps.
+Tacticals `033` and `034` completed the first two steps; Tactical `035` is
+ready for the third.
 
 ## References And Deliberate Differences
 
@@ -584,7 +625,6 @@ this design.
 
 ## Remaining Open Decisions
 
-- exact initial fields and privacy/redaction policy for torrent and peer rows;
 - whether measured use justifies raising the implemented resource limits or
   retaining more than one unacknowledged cursor batch;
 - whether category filtering is producer-side for the first list view or

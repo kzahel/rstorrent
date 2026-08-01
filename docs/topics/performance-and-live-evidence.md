@@ -501,6 +501,43 @@ and selects write execution shape or bounded concurrency as the next owner;
 hashing, peer ranking, and request policy remain unchanged until that owner is
 measured.
 
+## Application View Delivery Costs
+
+The live inspection direction adds a second performance surface: engine facts
+must become bounded application projections, cross the selected codec, reduce
+into a local store, and render without distorting the engine being observed.
+Tactical `034` measured deterministic frontend rendering only. Its 2,000
+torrent / 10,000 peer scenario did not measure Rust projection work, view-hub
+locking, JSON accounting/encoding, gateway delivery, or live reducer volume.
+
+Current source inspection records these costs as **observed in code but
+unmeasured**, not as proven bottlenecks:
+
+- individual activity and progress updates clone the complete `ViewHub`
+  torrent `BTreeMap` while holding its central mutex;
+- torrent models copy nested strings, verified ranges, and active-piece
+  vectors during broad comparisons;
+- both legacy subscriptions and view sets serialize values to JSON to account
+  queue bytes before the transport encodes a response;
+- exact replay intentionally retains and clones one emitted unacknowledged
+  batch under the declared bound;
+- the TypeScript view-set reducer clones its keyed view record per batch and
+  rebuilds torrent-list arrays; and
+- the inspection reducer clones the selected torrent's peer-row record when a
+  peer patch changes it.
+
+Tactical `035` removes the full torrent-map clone from targeted high-frequency
+publication before adding live peer cadence, while preserving coherent
+snapshots and legacy consumers. It measures projection time, view-hub lock
+hold, rows and encoded bytes per update, queue/replay high water, encoding
+cost, TypeScript validation/reduction/selector notification, render work,
+browser heap, DOM rows, and view/task counts before and after lease expiry.
+
+Replay retention remains a deliberate bounded correctness cost. Field masks,
+entity sharding, mutable versioned containers, streaming, animation-frame
+delivery, and binary codecs remain later measured responses rather than
+assumed fixes.
+
 ## Result Classification
 
 Classify each paired attempt before interpreting speed:

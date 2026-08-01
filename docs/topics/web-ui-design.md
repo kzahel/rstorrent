@@ -6,8 +6,10 @@ Status: Product, presentation, application-view, and client-store direction
 accepted. Tactical `033` implements the generated contract, polling client,
 lifecycle controller, and pure reducer. Tactical `034` implements the fresh
 React/Zustand/CSS Modules application, adaptive inspection hierarchy, virtual
-tables, and permanent named demo adapter. Stable Rust torrent and peer
-projections and the real adapter bridge remain the next bounded slice.
+tables, and permanent named demo adapter. Tactical `035` is ready to connect
+stable Rust torrent and active-peer projections through semantic responsive
+view selection while retaining the demo adapter and recovering cleanly after
+browser suspension.
 
 ## Purpose
 
@@ -179,6 +181,21 @@ and rows keyed by stable identity. Do not force partial torrent-list,
 torrent-detail, peer, and other projections into one universal entity whose
 field presence becomes ambiguous.
 
+`InspectionApplication` exposes semantic desired views rather than generated
+Rust `ViewSpec` values. The live adapter maps them to one leased Rust view set;
+the demo adapter obeys the same request and eviction behavior. Responsive
+navigation determines the set: a phone library retains the torrent list, a
+phone detail retains the selected summary and active detail only, and a wide
+split may retain list, summary, and peers together. The torrent list is not a
+mandatory global replica.
+
+Each materialized view distinguishes not requested, loading, ready,
+unavailable, unsupported, and stale. Within ready values, `null` means a
+supported field currently has no value; missing required fields are validation
+or programming failures. Transport recovery may retain prior values visibly
+as stale, but a fresh view-set snapshot atomically replaces them before new
+patches apply.
+
 Keep the layers explicit:
 
 ```text
@@ -263,8 +280,9 @@ deterministic presentation evidence passes.
 2. The React/CSS Modules shell, adaptive navigation, Zustand/virtual-table
    foundation, deterministic named demo adapter, and accessibility baseline
    are complete in Tactical `034`.
-3. Define stable Rust torrent and peer inspection projections, then adapt the
-   implemented view-set controller into the frontend model.
+3. Tactical `035` defines stable Rust torrent and active-peer inspection
+   projections, self-expiring leases, semantic view selection, suspension
+   recovery, and the live frontend adapter.
 4. Make peers the first detailed live engine view and integrate the existing
    categorized logger into the global diagnostics area.
 5. Connect remaining detail views according to debugging and product value,

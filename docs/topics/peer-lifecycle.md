@@ -24,10 +24,11 @@ then installed one complete piece-hash operation boundary without changing
 performance. Tactical `031` measures storage service before returning to peer
 policy and attributes 93--94% of wall time to serialized storage, dominated by
 small writes. Write execution therefore precedes another peer-policy change.
-Full parole selection, persistent
-integrity reputation,
-measured picker policy, incoming connections, and persistent peer records
-remain later work.
+Tactical `035` is ready to unify coherent active-connection observation across
+the registry, socket-task owner, and content scheduler without changing peer
+policy. Full parole selection, persistent integrity reputation, measured
+picker policy, incoming connections, and persistent peer records remain later
+work.
 
 ## Scope
 
@@ -61,8 +62,13 @@ RSTorrent uses these terms:
   record and endpoint.
 - A **dial attempt** is one uniquely identified transition from an eligible
   record into in-progress connection work.
-- A **peer connection** is a live socket plus peer-wire state associated with
-  exactly one successful dial attempt.
+- A **connection generation** is one uniquely identified active
+  transport/protocol lifecycle. An outgoing generation begins with a dial
+  attempt; a future incoming generation begins when an accepted transport is
+  admitted for BitTorrent handshaking.
+- A **peer connection** is a connection generation whose transport exists and
+  whose peer-wire state is being negotiated or is active. It is not a peer
+  record or a content-scheduler membership.
 - The **swarm** is the eventual complete per-torrent peer subsystem: registry,
   selector, attempts, and live connections. A peer-record map alone is not the
   whole swarm.
@@ -120,6 +126,32 @@ permits otherwise valid routed unicast endpoints, `LoopbackOnly` isolates
 controlled tools, and `Offline` prevents network work. Changing a future
 session policy must close active network resources without pretending their
 peer records failed.
+
+Tactical `035` makes the active lifecycle vocabulary transport-neutral:
+
+- direction is incoming or outgoing;
+- transport is TCP initially and later uTP without a new peer noun;
+- lifecycle is transport connecting, protocol handshaking, connected, or
+  disconnecting; and
+- choke, interest, metadata capability, availability, request, stall, and
+  usefulness facts remain orthogonal.
+
+The Peers application view contains every active connection generation in
+those phases. It retains a disconnecting row until task, registry, scheduler,
+request, and payload cleanup finish, then removes it. It contains no
+disconnected history. The future Swarm view instead projects all retained
+peer records, including idle, backed-off, failed, banned, dialing, and
+connected records. A UI projection may map these owners coherently but cannot
+become another lifecycle authority.
+
+The current `PeerRegistry`, `PeerSocketSet`, and `SwarmState` remain valid
+subowners with distinct invariants. Their cross-owner membership transitions
+need one torrent-owned coordinator and one shared task-free current-connection
+observation. This removes overlapping diagnostic snapshot nouns without
+folding socket tasks into deterministic registry or scheduler state. Incoming
+listening and uTP execution remain later tacticals, but an incoming accepted
+socket before BitTorrent handshake and a future uTP connection must fit this
+same identity and lifecycle shape.
 
 ## Reference Direction
 

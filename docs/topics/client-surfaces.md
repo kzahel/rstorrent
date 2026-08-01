@@ -25,7 +25,10 @@ direction for that shared presentation lives in
 generated TypeScript/schema boundary, authenticated polling client, pure
 reducer, and lifecycle controller. Tactical `034` adds the new responsive
 React inspection application behind an explicit demo route without replacing
-the live browser/Tauri entry or changing Android.
+the live browser/Tauri entry or changing Android. Tactical `035` is ready to
+connect that application to live torrent and active-peer views, including
+semantic responsive view selection and recovery after a suspended tab outlives
+its Rust view-set lease.
 
 ## Scope
 
@@ -126,6 +129,12 @@ LAN binding, TLS, pairing, accounts, relay operation, wake-up delivery, remote
 authorization policy, and deployment require later threat models and
 tacticals.
 
+Tactical `035` may also add an explicit unauthenticated development mode for
+initial local UI bring-up. It must be impossible to bind outside loopback,
+retain exact Origin and resource checks, isolate view-set owners, and use a
+temporary or explicitly selected profile. It is a development convenience,
+not a production browser-control posture; the authenticated mode remains.
+
 ## Reactive Views
 
 Presentation consumes named, versioned application views rather than arbitrary
@@ -192,6 +201,14 @@ transport tasks and handles do not live in the store.
 View clients are detachable. Closing a browser tab, Tauri window, or Android
 activity closes its view set or subscriptions without stopping the application
 service or active download.
+
+A browser tab may be suspended without running close handlers or polling
+timers. The application-owned five-minute lease therefore destroys a silent
+view set independently from later client traffic. On resume, the web
+controller marks retained values stale, opens one replacement set from its
+latest desired views, and atomically installs fresh snapshots before applying
+new patches. Visibility and online events may accelerate this path but do not
+own correctness.
 
 - Tauri owns the application service independently of its webview window and
   may remain alive in the tray.
