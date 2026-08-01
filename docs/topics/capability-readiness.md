@@ -24,9 +24,10 @@ roughly 5,700 logical blocks to about 500 physical writes, but controlled wall
 time stayed neutral and public write plus hash service still consumed 93--94%.
 The engine campaign is paused before any bounded storage-concurrency tactical.
 Tactical `033` now completes the leased application view-set and headless
-polling foundation. Tactical `034` is the current product-observability slice:
-it establishes the responsive frontend and deterministic demo adapter before
-new Rust peer projections are connected.
+polling foundation. Tactical `034` completes the responsive frontend,
+deterministic demo adapter, adaptive inspection hierarchy, and virtual table
+foundation. Stable Rust torrent and peer inspection projections are now the
+current product-observability slice.
 
 ## Purpose And Ownership
 
@@ -101,21 +102,20 @@ evidence.
 
 ### Now
 
-**Responsive demo inspection UI.** Tactical `034` establishes the React,
-Zustand, CSS Modules, adaptive shell, virtual torrent and peer tables, and
-deterministic named scenarios behind an explicit demo route. It preserves the
-existing live client while making the new surface independently testable and
-discussable through repeatable headless screenshots.
+**Stable peer and torrent inspection projection.** Define connection-lifetime
+peer identities, truthful bounded torrent and peer rows, privacy policy,
+source-owner projection, and adversarial fixtures. Then map the implemented
+view-set controller into Tactical `034`'s frontend inspection model while
+keeping named demo scenarios as permanent reproduction fixtures.
 
 ### Next
 
-1. **Stable peer and torrent inspection projection.** Define
-   connection-lifetime peer identities, truthful bounded rows, privacy,
-   source-owner projection, and adversarial fixtures, then map the implemented
-   view-set controller into the frontend inspection model.
-2. **Resume oracle-driven engine work.** Use the connected inspection evidence to
-   decide whether serialized storage execution, another correctness owner, or
-   measured BEP breadth becomes the next engine tactical.
+1. **Live diagnostics and remaining high-value views.** Feed the categorized
+   logger into the global Logs surface, then select tracker, request, piece,
+   disk, file, or DHT views according to observed debugging value.
+2. **Resume oracle-driven engine work.** Use the connected inspection evidence
+   to decide whether serialized storage execution, another correctness owner,
+   or measured BEP breadth becomes the next engine tactical.
 3. **Measured delivery optimization.** Add the interchangeable view-set stream
    or a binary codec only after polling, reducer, store, and rendering profiles
    identify a material latency, CPU, or allocation bottleneck.

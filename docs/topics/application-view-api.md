@@ -6,6 +6,9 @@ Status: The bounded leased view-set, authenticated JSON polling adapter,
 generated TypeScript/schema contract, pure reducer, and lifecycle controller
 are implemented by
 [`033-headless-view-set-foundation.md`](../tactical/033-headless-view-set-foundation.md).
+Tactical `034` implements the per-application Zustand store and React
+inspection model against a deterministic adapter; stable Rust torrent and peer
+projections and their adapter mapping remain next.
 The existing Tactical `008` subscriptions remain compatible adapters. No
 stable public remote wire compatibility is claimed yet.
 
@@ -510,7 +513,9 @@ delivery intervals, expiry, generated drift, and shutdown wakeup.
 This is a local application boundary and automation seam, not a production
 remote-control security or compatibility claim. Per-view retained histories,
 per-view overflow reset, streaming delivery, a binary codec, Tauri Channel
-migration, peer rows, Zustand, and React remain later layers.
+migration, stable peer rows, and the Rust-to-React adapter remain later layers.
+The transport-independent Zustand/React presentation foundation and its demo
+adapter are complete in Tactical `034`.
 
 ## Validation And Evidence
 
@@ -550,16 +555,16 @@ interactive machine.
 1. The bounded view-set domain owner, generated TypeScript/schema contract,
    polling adapter, pure reducer, and headless TypeScript evidence are complete
    in Tactical `033`.
-2. Add the stable peer projection and its hostile/scale fixtures now that the
-   view-set mechanics are proven.
-3. Establish the Zustand store and React shell on fixture data, then connect
-   torrent-list and peer views through the controller.
+2. The Zustand store, React shell, frontend inspection model, named demo
+   adapter, and virtualized scale fixtures are complete in Tactical `034`.
+3. Add stable torrent-list and peer projections with hostile and scale
+   fixtures, then map them through the controller into the inspection model.
 4. Add streaming as an interchangeable delivery adapter only after polling
    behavior and reducer recovery are stable.
 5. Measure update volume, decode/reduce cost, rendering, and memory before
    selecting binary encoding or finer-grained row patches.
 
-Tactical `033` completed the first step only.
+Tacticals `033` and `034` completed the first two steps.
 
 ## References And Deliberate Differences
 

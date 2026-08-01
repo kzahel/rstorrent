@@ -1,6 +1,6 @@
 # Tactical 034: Responsive Demo Inspection UI
 
-Status: active.
+Status: complete.
 
 ## Motivation And Desired Outcome
 
@@ -41,10 +41,11 @@ are not copied.
 
 The package versions selected when this tactical opened are React and
 React DOM `19.2.8`, Zustand `5.0.14`, Testing Library React `16.3.2`,
-Testing Library user-event `14.6.1`, jsdom `30.0.1`, Playwright `1.62.1`, and
-axe-playwright `4.12.1`. Runtime packages are MIT. Playwright is Apache-2.0;
-the dev-only axe integration is MPL-2.0. No source, asset, or fixture is
-imported from these references.
+Testing Library user-event `14.6.1`, jest-dom `7.0.0`, jsdom `29.1.1`,
+Playwright `1.62.1`, and axe-playwright `4.12.1`. Runtime packages are MIT.
+Playwright is Apache-2.0; the dev-only axe integration is MPL-2.0. jsdom was
+held at the newest release compatible with the supported Node range. No
+source, asset, or fixture is imported from these references.
 
 No BitTorrent protocol or engine transition changes in this tactical, so no
 BEP or pinned libtorrent source dossier applies.
@@ -262,6 +263,100 @@ required or authorized.
 - The existing live client remains available and unchanged outside the
   explicit demo route during this tactical.
 - Routine evidence remains headless and does not disturb the user's desktop.
+
+## Implementation Record
+
+### Frontend boundary and demo owner
+
+The explicit `?demo=` route now loads a separate React application. The
+ordinary browser and Tauri entry still load the previous live client, so this
+slice did not silently change the product host or its application transport.
+The frontend model, `InspectionApplication` port, controller, normalized
+per-instance Zustand store, and React context are independent from generated
+Rust DTOs and platform globals.
+
+The demo adapter implements all seven named scenarios from pure scenario time
+plus bounded command overlays. It emits keyed torrent, peer, and log changes;
+represents tracker reconnection by removing one connection identity and adding
+another; owns at most one timer; retains at most 256 log rows; and has an
+observable joined close. Scenario URLs accept a validated clock offset and
+autoplay flag, for example:
+
+```text
+?demo=healthy-download&at=42000&autoplay=0
+?demo=tracker-recovery&at=30000&autoplay=0
+?demo=large-swarm&at=0&autoplay=0
+```
+
+### Responsive presentation
+
+The fresh application implements the library/sidebar, torrent list,
+selected-torrent detail, status, and scenario-control hierarchy. Wide and
+compact layouts retain simultaneous list/detail inspection; phone layout
+opens a selected torrent as a focused detail surface with an explicit back
+action. General, Peers, and Logs render useful structured demo data. The
+remaining JSTorrent-derived tabs remain visible but report truthful
+unavailable states.
+
+Torrent and peer collections use one fixed-row virtual grid with stable row
+IDs, bounded overscan, semantic row and column counts, sortable headers, and
+keyboard focus and selection. CSS Modules own component layout and state;
+global CSS owns normalization and tokens only. No JSTorrent source, styles,
+assets, or fixtures were copied.
+
+### Deterministic and browser evidence
+
+Vitest covers scenario identity and time, tracker recovery, command overlays,
+keyed removal, scale counts, reducer structural sharing, exact controller
+close, responsive navigation, sorting, keyboard operation, empty and error
+states, and virtual-row bounds. The suite passed 27 tests, with the two
+pre-existing opt-in interoperability cases skipped.
+
+Four Playwright cases passed in headless Chrome. They exercise wide, compact,
+and phone navigation; pointer and keyboard paths; all seven scenario choices;
+serious and critical axe checks; and the scale fixture. The screenshots were
+captured at 1440 by 900, 920 by 720, and 390 by 844 and visually inspected.
+No Tauri window or visible browser was launched.
+
+One headless Chrome sample of `large-swarm` at 1440 by 900 recorded:
+
+| Measurement | Observed |
+| --- | ---: |
+| Logical torrent rows | 2,000 |
+| Logical peer rows | 10,000 |
+| Maximum rendered rows in either grid | 100 |
+| Total DOM elements after scrolling both grids | 840 |
+| Initial scenario render | 247 ms |
+| Ten-second demo update and paint | 50 ms |
+| Used JavaScript heap | 30,727,035 bytes |
+| Observed browser long tasks | 0 |
+
+These are deterministic development-machine smoke measurements, not browser
+support guarantees or engine throughput claims. The browser gate retains
+generous failure ceilings of 2,000 DOM elements, 256 MiB used heap, and five
+seconds for initial or update rendering so ordinary runner noise does not make
+the test brittle.
+
+### Regression evidence
+
+The locked frontend install reported zero audit findings. TypeScript checking,
+the full Vitest suite, the production Vite build, and all Playwright cases
+passed. The production build keeps the legacy client in a separate lazy
+chunk; the React demo entry was approximately 232 KiB JavaScript and 73 KiB
+gzip in this run.
+
+The unchanged Rust workspace also passed formatting, Clippy with warnings
+denied, and all workspace tests: 269 passed and three explicitly ignored live
+tests. The recurring npm `recursive` configuration warning originates from
+the development-machine npm environment and is not a repository setting.
+
+### Deliberate gaps
+
+The React application is not yet connected to the Rust view-set controller or
+selected by default in Tauri. Peer and torrent rows are demo truth only. The
+scaffolded tracker, swarm, file, piece, disk, speed, and DHT tabs do not claim
+live support. Archive and generated-add actions exist only inside the labeled
+demo adapter and do not establish product command semantics.
 
 ## Non-Goals
 

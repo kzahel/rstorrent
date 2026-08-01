@@ -23,8 +23,9 @@ fresh React, CSS Modules, adaptive navigation, touch, and accessibility
 direction for that shared presentation lives in
 [`web-ui-design.md`](web-ui-design.md). Tactical `033` now supplies its bounded
 generated TypeScript/schema boundary, authenticated polling client, pure
-reducer, and lifecycle controller without changing the visible web, desktop,
-or Android products.
+reducer, and lifecycle controller. Tactical `034` adds the new responsive
+React inspection application behind an explicit demo route without replacing
+the live browser/Tauri entry or changing Android.
 
 ## Scope
 
@@ -110,11 +111,13 @@ Platform-specific capabilities such as folder selection, tray state, external
 URL opening, or updater presentation use a separate platform-capability
 adapter. They do not enter torrent commands or view patches.
 
-The next presentation replaces the provisional direct-DOM harness with a
+The next presentation is implemented behind an explicit named-demo route as a
 fresh strict-TypeScript React application using component-scoped CSS Modules.
 It preserves JSTorrent's information hierarchy without inheriting its source
 architecture and adapts one library/list/detail model from wide desktop to
-phone-sized browser layouts. The detailed direction and open choices live in
+phone-sized browser layouts. The provisional direct-DOM live entry remains in
+place until stable Rust torrent and peer views are mapped through the new
+application adapter. The detailed direction and open choices live in
 [`web-ui-design.md`](web-ui-design.md).
 
 The initial browser surface may prove the network transport on loopback with
@@ -209,6 +212,13 @@ directories, then drive a headless Chrome process. This proves the same web
 components embedded by Tauri without launching or focusing a desktop window.
 Tauri still compiles and its transport adapter remains directly testable; the
 gateway does not become the local desktop product transport.
+
+Tactical `034` adds a still smaller deterministic seam: named demo scenarios
+implement the same frontend application port without starting Rust, a gateway,
+or torrent networking. Headless Chrome now retains wide, compact, phone,
+accessibility, keyboard, command, and large-collection evidence against that
+adapter. Real adapter tests remain necessary when Rust projections connect;
+demo evidence does not claim engine behavior.
 
 Android presentation requires separate evidence because it is implemented in
 Compose. Routine automation targets an explicitly owned no-window AVD and

@@ -11,6 +11,9 @@ export default defineConfig({
     channel: "chrome",
     colorScheme: "light",
     headless: true,
+    launchOptions: {
+      args: ["--enable-precise-memory-info"],
+    },
     reducedMotion: "reduce",
     trace: "retain-on-failure",
   },

@@ -58,13 +58,60 @@ test("phone navigation opens a full detail surface", async ({ page }) => {
 
 test("large collections retain a bounded virtual DOM", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
+  await page.addInitScript(() => {
+    const target = window as Window & { __rstorrentLongTasks?: number[] };
+    target.__rstorrentLongTasks = [];
+    new PerformanceObserver((entries) => {
+      for (const entry of entries.getEntries()) {
+        target.__rstorrentLongTasks?.push(entry.duration);
+      }
+    }).observe({ type: "longtask", buffered: true });
+  });
+  const openedAt = performance.now();
   await openScenario(page, "large-swarm", 0);
+  const initialRenderMs = performance.now() - openedAt;
   const torrents = page.getByRole("grid", { name: "Torrent library" });
   const peers = page.getByRole("grid", { name: "Connected and candidate peers" });
   await expect(torrents).toHaveAttribute("aria-rowcount", "2001");
   await expect(peers).toHaveAttribute("aria-rowcount", "10001");
   expect(await torrents.getByRole("row").count()).toBeLessThanOrEqual(100);
   expect(await peers.getByRole("row").count()).toBeLessThanOrEqual(100);
+
+  const updateStartedAt = performance.now();
+  await page.getByRole("button", { name: "+10s" }).click();
+  await expect(page.getByLabel("Demo clock 00:10")).toBeVisible();
+  const updateRenderMs = performance.now() - updateStartedAt;
+  await torrents.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event("scroll"));
+  });
+  await peers.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event("scroll"));
+  });
+  const browserMetrics = await page.evaluate(() => {
+    const measuredPerformance = performance as Performance & {
+      memory?: { usedJSHeapSize: number };
+    };
+    const measuredWindow = window as Window & { __rstorrentLongTasks?: number[] };
+    const longTasks = measuredWindow.__rstorrentLongTasks ?? [];
+    return {
+      domElements: document.getElementsByTagName("*").length,
+      usedJsHeapBytes: measuredPerformance.memory?.usedJSHeapSize ?? null,
+      longTaskCount: longTasks.length,
+      longestTaskMs: longTasks.length === 0 ? 0 : Math.max(...longTasks),
+      longTaskTotalMs: longTasks.reduce((sum, value) => sum + value, 0),
+    };
+  });
+  expect(browserMetrics.domElements).toBeLessThan(2_000);
+  if (browserMetrics.usedJsHeapBytes !== null) {
+    expect(browserMetrics.usedJsHeapBytes).toBeLessThan(256 * 1024 * 1024);
+  }
+  expect(initialRenderMs).toBeLessThan(5_000);
+  expect(updateRenderMs).toBeLessThan(5_000);
+  console.log(
+    `scale_metrics ${JSON.stringify({ initialRenderMs: Math.round(initialRenderMs), updateRenderMs: Math.round(updateRenderMs), ...browserMetrics })}`,
+  );
 });
 
 async function openScenario(page: Page, scenario: string, at: number) {

@@ -4,9 +4,10 @@ Topic: `web-ui-design`
 
 Status: Product, presentation, application-view, and client-store direction
 accepted. Tactical `033` implements the generated contract, polling client,
-lifecycle controller, and pure reducer below React/Zustand. Tactical `034` is
-the first visible implementation slice, establishing the responsive shell and
-permanent named demo adapter before new Rust projections are connected.
+lifecycle controller, and pure reducer. Tactical `034` implements the fresh
+React/Zustand/CSS Modules application, adaptive inspection hierarchy, virtual
+tables, and permanent named demo adapter. Stable Rust torrent and peer
+projections and the real adapter bridge remain the next bounded slice.
 
 ## Purpose
 
@@ -239,6 +240,14 @@ should retain screenshots at representative wide, compact, and phone-sized
 viewports and exercise pointer, keyboard, and touch-oriented paths where
 applicable.
 
+Tactical `034` establishes the first concrete evidence: deterministic wide,
+compact, and phone screenshots, keyboard and pointer browser paths, serious
+and critical axe checks, and bounded rendering of 2,000 torrents plus 10,000
+peers. The sampled large scenario retained 840 total DOM elements, used about
+29.3 MiB of JavaScript heap, rendered initially in 247 ms, applied a simulated
+ten-second update in 50 ms, and recorded no browser long tasks. These numbers
+are development smoke evidence rather than general performance guarantees.
+
 Synthetic scale fixtures should cover thousands of torrents, peers, and files
 without public network traffic. Record visible-row count, update and render
 latency, long-task or missed-frame evidence, and memory high-water when a slice
@@ -251,9 +260,9 @@ deterministic presentation evidence passes.
    client, and pure reducer described in
    [`application-view-api.md`](application-view-api.md) are implemented and
    headlessly validated by Tactical `033`.
-2. Establish the React/CSS Modules shell, adaptive navigation,
-   Zustand/virtual-table foundation, deterministic named demo adapter, and
-   accessibility baseline under synthetic large collections.
+2. The React/CSS Modules shell, adaptive navigation, Zustand/virtual-table
+   foundation, deterministic named demo adapter, and accessibility baseline
+   are complete in Tactical `034`.
 3. Define stable Rust torrent and peer inspection projections, then adapt the
    implemented view-set controller into the frontend model.
 4. Make peers the first detailed live engine view and integrate the existing
@@ -271,7 +280,7 @@ all stages as one slice.
 - the default wide-screen detail position and user-selectable layout modes;
 - archive, inbox, category, label, pause, queue, and content-retention
   semantics;
-- the router, virtualization, accessibility-test, and icon dependencies;
+- whether later navigation complexity justifies a router or icon dependency;
 - exact columns, row-detail interactions, table customization, and density
   presets;
 - how session-scoped diagnostics coexist visually with torrent-scoped tabs;
@@ -281,7 +290,7 @@ all stages as one slice.
   or a binary codec.
 
 Tactical `033` completed the headless transport-independent view-set
-foundation. Tactical `034` owns the first visible React and demo-scenario
+foundation. Tactical `034` completed the first visible React and demo-scenario
 foundation. Exact peer-view fields and privacy posture remain the next
 semantic design work; the implemented view-set limits are recorded in
 [`application-view-api.md`](application-view-api.md).

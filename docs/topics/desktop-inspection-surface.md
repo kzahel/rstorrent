@@ -4,9 +4,10 @@ Topic: `desktop-inspection-surface`
 
 Status: Strategic direction and application-view architecture accepted. The
 headless view-set, polling client, generated contract, and pure reducer are
-implemented by Tactical `033`. Tactical `034` now owns the fresh responsive
-frontend and named deterministic demo application; live peer inspection
-remains the following bounded connection slice.
+implemented by Tactical `033`. Tactical `034` implements the fresh responsive
+frontend, virtual torrent and peer tables, and named deterministic demo
+application. Live peer inspection remains the following bounded connection
+slice.
 
 ## Purpose
 
@@ -135,7 +136,7 @@ view first.
 
 Tactical `033` completed the bounded view-set contract and headless client
 foundation described in
-[`application-view-api.md`](application-view-api.md). Tactical `034` builds
+[`application-view-api.md`](application-view-api.md). Tactical `034` built
 the responsive presentation and permanent named scenario adapter first, so
 the stable peer projection and its adversarial fixtures can connect to a
 tested frontend model rather than defining component architecture indirectly.

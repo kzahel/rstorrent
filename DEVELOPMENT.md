@@ -101,6 +101,14 @@ slice; Tactical `015` remains the independent paired live-comparison work. See
 [`docs/topics/peer-lifecycle.md`](docs/topics/peer-lifecycle.md), and
 [`docs/topics/download-correctness.md`](docs/topics/download-correctness.md).
 
+Tactical `033` completed the leased view-set, generated contract, polling
+client, and headless application boundary. Tactical `034` completed the fresh
+responsive React/Zustand/CSS Modules inspection surface, virtual torrent and
+peer grids, and permanent deterministic named demo adapter. The next bounded
+product-observability slice is stable Rust torrent and peer projections plus
+the real adapter bridge; see
+[`docs/topics/web-ui-design.md`](docs/topics/web-ui-design.md).
+
 ## Toolchain
 
 On the maintainer's configured development machines, load installed Rust,
@@ -132,6 +140,34 @@ The wrapper runs npm from `clients/web`; no separate npm command is required.
 Later runs reuse installed dependencies and Cargo build output while still
 refreshing the static web assets. The process remains attached to the terminal
 so `Ctrl+C` stops it.
+
+## Exercising The Frontend Headlessly
+
+The named demo adapter drives the responsive React inspection application
+without launching Tauri, starting Rust, or using torrent networking. Start the
+local development host when manual browser inspection is wanted:
+
+```bash
+npm run dev --prefix clients/web -- --host 127.0.0.1
+```
+
+Then open a deterministic scenario such as:
+
+```text
+http://127.0.0.1:5173/?demo=healthy-download&at=42000&autoplay=0
+http://127.0.0.1:5173/?demo=tracker-recovery&at=30000&autoplay=0
+http://127.0.0.1:5173/?demo=large-swarm&at=0&autoplay=0
+```
+
+The stable scenario IDs are `healthy-download`, `stalled-metadata`,
+`tracker-recovery`, `endgame`, `large-swarm`, `disk-error`, and
+`empty-library`. Omit `autoplay=0` for a running demo clock. Headless Chrome
+validates wide, compact, phone, accessibility, keyboard, and virtualized-scale
+behavior without touching the visible desktop:
+
+```bash
+npm run test:e2e --prefix clients/web
+```
 
 The deterministic first-piece interoperability scenario uses its own locked
 Python environment and a loopback-only Rasterbar libtorrent seed:
