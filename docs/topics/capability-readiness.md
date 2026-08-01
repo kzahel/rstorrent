@@ -9,8 +9,10 @@ ordinary multi-piece single-file content. The active source-first campaign
 now drives metadata, first-piece, sustained-transfer, endgame, and publication
 parity through the completed paired libtorrent comparator before measured BEP
 breadth. Endgame and v1 hash-failure recovery now have exact bounded evidence.
-The active slice separates storage execution from peer-event progress to test
-the retained complete-download performance gap before changing peer policy.
+Bounded storage now remains live independently from peer events, but its
+corrected localhost benchmark did not improve. The active slice adds paired
+peer-utility timelines to select the retained completion-performance owner
+before changing policy.
 
 ## Purpose And Ownership
 
@@ -85,16 +87,16 @@ evidence.
 
 ### Now
 
-**Bounded async content storage.** Put physical block writes and piece hashes
-behind one torrent-local bounded owner so peer events can progress while disk
-work is pending, without weakening payload, resume, integrity, or shutdown
-ownership.
+**Paired peer-utility timeline.** Capture bounded endpoint-free candidate,
+connection, request, payload, verification, and churn aggregates for RSTorrent
+and pinned libtorrent, then use three full pairs to select the first sustained
+owner-level divergence.
 
 ### Next
 
-1. **Publication performance parity.** Continue source-derived profiling if
-   the bounded storage result leaves the retained 2.76x median and 4.06x tail
-   complete-download gap open.
+1. **Source-derived throughput owner.** Implement the bounded discovery,
+   working-set, request-service, or picker slice selected by the paired
+   timeline.
 2. **Measured BEP breadth.** Use the protocol matrix and full-reference gaps
    to choose the next discovery or transport BEP after core completion parity.
 3. **Durable single-file resume.** Extend the existing selective-storage
@@ -153,14 +155,14 @@ does not.
 
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
-| Bounded 16 KiB block pipeline | Implemented | deterministic, runtime, interop, live | Per-connection depth adapts from useful payload under one torrent allowance and a capable public peer matches the reference 50% range; working-set reliability and endgame remain open. | [`download-correctness`](download-correctness.md) |
+| Bounded 16 KiB block pipeline | Implemented | deterministic, runtime, interop, live | Per-connection depth adapts under one torrent allowance, and one bounded async storage owner preserves peer-event progress; localhost transfer overhead and public working-set performance remain open. | [`download-correctness`](download-correctness.md) |
 | Sequential multi-piece download | Implemented | runtime, interop | Ordinary single-file and selective multi-file complete; single-file durable resume is absent. | [`download-correctness`](download-correctness.md) |
 | Availability-aware piece selection | Partial | deterministic, runtime, interop | Swarm-wide availability, partial-first work, fairness, and unique-piece retention exist; rarest-first and measured scoring are absent. | [`download-correctness`](download-correctness.md) |
 | Choke recovery | Implemented | deterministic, runtime, interop | Requests move to another peer and full choked sets are replaceable; mature choking/reputation policy is absent. | [`download-correctness`](download-correctness.md) |
 | Per-request timeout and slow-peer handling | Implemented | deterministic, runtime | Useful response samples derive a bounded inactivity deadline and reduce a stalled peer to one probe; broader snub reputation remains absent. | [`download-correctness`](download-correctness.md) |
 | Endgame | Implemented | deterministic, runtime, live | Strict duplicates, core cancels, late-loss safety, exact accounting, and public verified publication pass; throughput parity remains open. | [`download-correctness`](download-correctness.md) |
 | Hash-failure recovery | Implemented | deterministic, runtime, interop, live | A failed v1 generation resets the whole piece with bounded contributors; v2 block-level recovery and full parole selection are absent. | [`download-correctness`](download-correctness.md) |
-| Reliable completion on ordinary swarms | Partial | deterministic, runtime, interop, live | Multi-peer liveness, endgame, and corrupt-generation retry pass, but completion latency is not yet comparable and public corruption was not induced. | [`download-correctness`](download-correctness.md) |
+| Reliable completion on ordinary swarms | Partial | deterministic, runtime, interop, live | Multi-peer liveness, endgame, corrupt-generation retry, and bounded storage completion pass, but completion latency is not yet comparable and public corruption was not induced. | [`download-correctness`](download-correctness.md) |
 | Payload upload and seeding | Absent | none | Request serving, choking, accounting, listening, and seed lifecycle are unimplemented. | [`protocol-support`](protocol-support.md) |
 
 ### Integrity, Storage, And Resume
@@ -171,6 +173,7 @@ does not.
 | Multi-file mapping and selective files | Implemented | deterministic, runtime, interop | General product selection changes and priority scheduling are absent. | [`client-persistence`](client-persistence.md) |
 | Cross-file, skipped-file, and padding storage | Implemented | deterministic, runtime, interop | BEP 47 symlinks are deliberately rejected. | [`client-persistence`](client-persistence.md) |
 | Path-backed staging and publication | Implemented | runtime, interop | Disk-space policy, relocation, and broad filesystem failure profiles remain incomplete. | [`client-persistence`](client-persistence.md) |
+| Bounded asynchronous content storage | Implemented | deterministic, runtime, interop, live | One torrent-local owner serializes writes and hashes with exact join; it preserves peer-event liveness but adds measured localhost overhead and is not a session-wide disk scheduler. | [`download-correctness`](download-correctness.md) |
 | Android SAF storage and publication | Implemented | runtime, AVD, physical | General root management, removable-media policy, and migration remain absent. | [`client-persistence`](client-persistence.md) |
 | Durable have state and conservative recheck | Implemented | deterministic, runtime, interop, AVD, physical | It rehashes claimed pieces rather than providing optimized fast resume. | [`client-persistence`](client-persistence.md) |
 | Recovery after content hash failure | Implemented | deterministic, runtime | Sole corrupt and ambiguous multi-source generations retry cleanly with bounded exact-generation attribution. | [`download-correctness`](download-correctness.md) |

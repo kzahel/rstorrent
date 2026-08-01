@@ -11,10 +11,12 @@ removed the classified duplex command/event backpressure deadlock and passed
 3/3 owner-only plus 3/3 paired 50% screens. Tactical `023` completed strict
 endgame duplicate-attempt lifecycle, cancellation, and public publication.
 Tactical `024` completed bounded exact-generation integrity reputation and
-known-bad exclusion. Tracker and DHT observations remain live while content
-runs. Full parole selection, persistent integrity reputation, measured
-picker policy, incoming connections, and persistent peer records remain later
-work.
+known-bad exclusion. Tactical `025` separated bounded storage work from peer
+event progress and disproved storage as the localhost speed owner. Tracker and
+DHT observations remain live while content runs. The active paired timeline
+will select measured working-set policy. Full parole selection, persistent
+integrity reputation, measured picker policy, incoming connections, and
+persistent peer records remain later work.
 
 ## Scope
 
@@ -423,7 +425,13 @@ Tactical `022` removed the duplex cycle. Tactical `023` installed strict
 endgame attempt ownership and core cancellation through deterministic,
 controlled, and public verified-publication gates. Tactical `024` installed
 exact-generation contributor reputation, whole-piece retry, and known-bad
-exclusion through pure and scripted adversarial gates. Incoming listener
-ownership and advertised-port updates, measured performance selection,
-peer-ID duplicate resolution, full parole selection, PEX, and persisted peer
-caches remain later work.
+exclusion through pure and scripted adversarial gates. Tactical `025` moved
+physical storage behind a bounded owner; its delayed-storage scenario proves
+two peers can continue delivering while one write is in flight. The corrected
+localhost benchmark did not improve, so storage is no longer the leading
+explanation for the public completion gap. A bounded paired timeline now owns
+distinguishing candidate supply, dial occupancy, useful-peer retention, and
+request service before selection or replacement policy changes. Incoming
+listener ownership and advertised-port updates, measured performance
+selection, peer-ID duplicate resolution, full parole selection, PEX, and
+persisted peer caches remain later work.

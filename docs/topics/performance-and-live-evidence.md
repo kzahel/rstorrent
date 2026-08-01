@@ -361,6 +361,33 @@ blocks to a bounded asynchronous disk owner and releases peer progress from
 write completion. Tactical `025` tests this owner with three-run before/after
 evidence before any peer-window, picker, or discovery tuning.
 
+### Bounded Storage Result: 2026-08-01
+
+Tactical `025` corrected that large-piece harness to time only the RSTorrent
+subprocess. The prior 3.829-second total included Python payload generation,
+torrent construction, and seed startup and therefore was not an engine
+ceiling. Three transfer-only runs of the synchronous commit took 0.646, 0.326,
+and 0.331 seconds (0.331-second median); the bounded asynchronous owner took
+0.745, 0.426, and 0.426 seconds (0.426-second median). The 29% regression
+rejects storage as a speed improvement in this localhost profile.
+
+The owner is retained for a separate causal result: with a 250 ms first-write
+delay, two peers deliver their complete payloads to the supervisor within 100
+ms while the write remains in flight. An 80-block saturation case reached the
+declared 64-command and 66-job high waters, completed exact content, and
+returned every queue to zero. Cancellation during queued writes and hashing
+joins the owner exactly. This establishes peer-event liveness and bounded byte
+ownership without claiming throughput.
+
+The controlled paired publication remained exact at 44.66 ms for RSTorrent
+and 86.57 ms for pinned libtorrent. A clean common-denominator Big Buck Bunny
+owner screen published all 276,445,467 bytes in 153.72 seconds with zero hash,
+publication, cleanup, or bound failures. Its storage command, completion, job,
+and payload high waters were 64, 1, 66, and 8,781,824 bytes. The result is
+slower than the prior 86.05-second public health screen, but one changed swarm
+cannot attribute that delta. It retains completion evidence and selects a
+time-series peer working-set comparison rather than further storage tuning.
+
 ## Result Classification
 
 Classify each paired attempt before interpreting speed:

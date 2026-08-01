@@ -13,8 +13,9 @@ deadlock with 3/3 owner-only and paired 50% evidence. Tactical `023` completed
 strict endgame duplicates, core cancellation, and public publication.
 Tactical `024` completed whole-piece v1 hash recovery, exact-generation
 contributor evidence, and bounded peer integrity reputation. Tactical `025`
-now separates storage execution from peer-event progress on the measured
-complete-download critical path.
+completed one bounded asynchronous storage owner with exact write/hash,
+resume, payload, cancellation, and join ownership. The next slice measures
+the live peer working set over time before changing selection policy.
 
 ## Scope
 
@@ -226,10 +227,16 @@ downloads, captures, browser state, AVD state, and subprocesses they own.
 ## Next Stopping Condition
 
 Tactical `024` completed DL-C09: whole-piece v1 reset, bounded contributor
-attribution, known-bad exclusion, and clean retry. Tactical `025` now tests one
-bounded torrent-local storage owner so slow writes and hashes cannot stop peer
-event progress. It must preserve request/payload accounting, hash recovery,
-resume ordering, exact publication, and all controlled interoperability gates.
+attribution, known-bad exclusion, and clean retry. Tactical `025` proved that
+slow writes and hashes no longer stop peer-event progress while preserving
+request/payload accounting, hash recovery, resume ordering, exact publication,
+and controlled interoperability. Its corrected localhost result disproved
+storage as the retained speed owner.
+
+The next stopping condition is a bounded paired peer-utility timeline that
+classifies candidate admission, useful connection retention, request service,
+and aggregate throughput throughout a full transfer. Source-derived policy
+changes follow only after that trace names an owner.
 
 Routine engine validation remains headless; no additional product UI is
 required by that slice.

@@ -947,16 +947,12 @@ impl SwarmState {
                 .blocks
                 .get_mut(&block)
                 .ok_or(SwarmError::UnknownBlock(block))?;
-            for attempt in state
-                .attempts
-                .iter_mut()
-                .filter(|attempt| attempt.disposition.is_active())
-            {
-                attempt.disposition = if attempt.id == evidence.id {
-                    RequestDisposition::PayloadReceived
-                } else {
-                    RequestDisposition::Superseded
-                };
+            for attempt in &mut state.attempts {
+                if attempt.id == evidence.id {
+                    attempt.disposition = RequestDisposition::PayloadReceived;
+                } else if attempt.disposition.is_active() {
+                    attempt.disposition = RequestDisposition::Superseded;
+                }
             }
             state.phase = BlockPhase::Writing {
                 source: connection,
@@ -1018,7 +1014,11 @@ impl SwarmState {
         } else {
             BlockPhase::Missing
         };
-        trim_terminal_attempts(state, self.config.max_terminal_attempts_per_block, None)?;
+        trim_terminal_attempts(
+            state,
+            self.config.max_terminal_attempts_per_block,
+            accepted.then_some(evidence),
+        )?;
         if accepted && let Some(connection) = self.connections.get_mut(&source) {
             connection.last_useful_at = Some(now);
         }
@@ -1146,11 +1146,13 @@ impl SwarmState {
         Ok(contributors.into_iter().collect())
     }
 
-    pub(crate) fn stored_contributors(&self) -> BTreeSet<ConnectionId> {
+    pub(crate) fn unverified_contributors(&self) -> BTreeSet<ConnectionId> {
         self.blocks
             .values()
             .filter_map(|block| match block.phase {
-                BlockPhase::Received { source, .. } => Some(source),
+                BlockPhase::Writing { source, .. } | BlockPhase::Received { source, .. } => {
+                    Some(source)
+                }
                 _ => None,
             })
             .collect()
@@ -2334,6 +2336,10 @@ mod tests {
                 .receive_block(connection(1), never_requested, Duration::from_secs(30))
                 .expect("unsolicited classification"),
             ReceiveDisposition::Unsolicited
+        );
+        assert_eq!(
+            state.mark_piece_verified(0).expect("verify late source"),
+            vec![connection(1)]
         );
     }
 

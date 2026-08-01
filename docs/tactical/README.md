@@ -179,8 +179,12 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; resets a failed v1 piece, retains bounded contributor generations,
   and distinguishes known-bad from ambiguous peer evidence.
 - [`025-bounded-async-content-storage.md`](025-bounded-async-content-storage.md):
-  active; separates bounded storage execution from peer-event progress while
-  retaining exact payload, hash, resume, and shutdown ownership.
+  complete; separates bounded storage execution from peer-event progress with
+  exact payload, hash, resume, and shutdown ownership, and records a negative
+  localhost speed result.
+- [`026-paired-peer-utility-timeline.md`](026-paired-peer-utility-timeline.md):
+  active; adds bounded endpoint-free time-series evidence for both comparator
+  owners and uses three full pairs to select the next throughput owner.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

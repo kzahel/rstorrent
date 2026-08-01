@@ -66,6 +66,7 @@ class ScenarioConfig:
 class RunResult:
     ordinal: int
     elapsed_seconds: float
+    transfer_seconds: float
     expected_hash: str
     actual_hash: str
     info_hash: str
@@ -81,6 +82,7 @@ class RunResult:
 class SelectiveRunResult:
     ordinal: int
     elapsed_seconds: float
+    transfer_seconds: float
     info_hash: str
     piece_hashes: list[str]
     file_hashes: dict[str, str]
@@ -561,7 +563,9 @@ def run_once(binary: Path, ordinal: int, config: ScenarioConfig) -> RunResult:
         handle = add_seed(session, torrent_info, seed_directory, alerts)
 
         output_path = run_path / "downloaded.bin"
+        transfer_started = time.monotonic()
         completed = run_diagnostic(binary, torrent_path, peer_port, output_path, config)
+        transfer_seconds = time.monotonic() - transfer_started
         alerts.extend(alert.message() for alert in session.pop_alerts())
         if completed.returncode != 0:
             raise ScenarioFailure(
@@ -593,6 +597,7 @@ def run_once(binary: Path, ordinal: int, config: ScenarioConfig) -> RunResult:
         result = RunResult(
             ordinal=ordinal,
             elapsed_seconds=time.monotonic() - started,
+            transfer_seconds=transfer_seconds,
             expected_hash=expected_hash,
             actual_hash=actual_hash,
             info_hash=info_hash,
@@ -675,12 +680,14 @@ def run_selective_once(binary: Path, ordinal: int) -> SelectiveRunResult:
         handle = add_seed(session, torrent_info, seed_directory, alerts)
 
         output_root = run_path / "downloaded"
+        transfer_started = time.monotonic()
         completed = run_selective_diagnostic(
             binary,
             torrent_path,
             peer_port,
             output_root,
         )
+        transfer_seconds = time.monotonic() - transfer_started
         alerts.extend(alert.message() for alert in session.pop_alerts())
         if completed.returncode != 0:
             raise ScenarioFailure(
@@ -736,6 +743,7 @@ def run_selective_once(binary: Path, ordinal: int) -> SelectiveRunResult:
         result = SelectiveRunResult(
             ordinal=ordinal,
             elapsed_seconds=time.monotonic() - started,
+            transfer_seconds=transfer_seconds,
             info_hash=info_hash,
             piece_hashes=piece_hashes,
             file_hashes=actual_hashes,
@@ -813,6 +821,11 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="use the five-piece selective multi-file profile",
     )
+    parser.add_argument(
+        "--binary",
+        type=Path,
+        help="use an existing rstorrent-download-piece binary instead of building",
+    )
     return parser.parse_args()
 
 
@@ -840,7 +853,9 @@ def main() -> int:
         )
 
     try:
-        binary = build_diagnostic(repository)
+        binary = arguments.binary or build_diagnostic(repository)
+        if not binary.is_file():
+            raise ScenarioFailure(f"diagnostic binary does not exist: {binary}")
         if arguments.selective_files:
             selective_results = [
                 run_selective_once(binary, ordinal)
@@ -849,6 +864,7 @@ def main() -> int:
             for result in selective_results:
                 print(
                     f"run={result.ordinal} elapsed_seconds={result.elapsed_seconds:.3f} "
+                    f"transfer_seconds={result.transfer_seconds:.3f} "
                     f"info_hash={result.info_hash} "
                     f"piece_hashes={','.join(result.piece_hashes)} "
                     f"file_hashes={','.join(f'{path}:{digest}' for path, digest in result.file_hashes.items())} "
@@ -871,6 +887,7 @@ def main() -> int:
     for result in results:
         print(
             f"run={result.ordinal} elapsed_seconds={result.elapsed_seconds:.3f} "
+            f"transfer_seconds={result.transfer_seconds:.3f} "
             f"expected_sha1={result.expected_hash} actual_sha1={result.actual_hash} "
             f"info_hash={result.info_hash} blocks={result.block_count} "
             f"payload_limit={result.payload_limit} "

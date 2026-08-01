@@ -1,20 +1,21 @@
 # Tactical 025: Bounded Async Content Storage
 
-Status: Active
+Status: Complete
 
 Topics: `download-correctness`, `performance-and-live-evidence`,
 `oracle-driven-engine-campaign`
 
 ## Motivation And Outcome
 
-Correct public completion is now repeatable, but RSTorrent's three retained
+Correct public completion was repeatable, but RSTorrent's three retained
 paired full runs took 2.76x at the median and 4.06x at the tail versus pinned
 libtorrent. The torrent supervisor currently awaits every 16 KiB seek/write
 and every completed-piece reread before consuming another peer event. A clean
-32 MiB single-piece localhost libtorrent-seed run takes 3.829 seconds, only
-about 8.4 MiB/s, while the public reference completes 276 MB near 9 MiB/s.
-This local ceiling is deterministic enough to investigate before changing
-public peer selection.
+32 MiB single-piece localhost libtorrent-seed run originally reported 3.829
+seconds, but that wall clock also included deterministic fixture generation
+and seeding setup. This tactical adds a transfer-only timer and retains the
+corrected result below rather than treating the original total as an engine
+ceiling.
 
 Separate bounded storage execution from peer/scheduler progress. Accepted
 payload remains torrent-owned and charged until a typed storage completion
@@ -63,8 +64,10 @@ winning attempt evidence to the storage owner. The existing torrent-wide
 payload reservation remains charged through queueing and physical write; only
 the write completion calls `finish_write` and releases it. At most 64 queued
 16 KiB writes provide the initial 1 MiB storage-queue bound, while the existing
-payload allowance remains the stricter total byte authority. One executing
-command and bounded completion channel are included in snapshot high waters.
+payload allowance remains the stricter total byte authority. Two local
+pending commands cover a saturated write queue plus a completion-triggered
+verify command without consuming another peer payload. One executing command
+and the bounded completion channel are included in snapshot high waters.
 
 A piece hash is submitted exactly once only after every block write completed.
 No block in a hashing piece is requestable. Hash success performs selective
@@ -115,6 +118,62 @@ pipeline only if three post-change runs improve median wall time by at least
 runtime gate proves a necessary liveness property the synchronous owner cannot
 provide. Otherwise record the negative result and restore the simpler owner.
 
+## Implementation And Evidence
+
+One torrent-local task now owns either `StagingFile` or `SelectiveStorage` by
+value. It serializes typed writes and hashes through a 64-command channel and
+returns storage only after exact shutdown and join. Accepted payload remains
+in `Writing` state and charged to the existing torrent allowance until its
+typed completion is consumed. Selective sync and verified-record persistence
+finish in the owner before the supervisor commits the resume checkpoint and
+swarm verified state.
+
+The task exposed two attempt-history bugs which are now covered directly. An
+accepted late response changes its exact attempt from expired to received,
+and finishing a write cannot prune the winning generation before a concurrent
+piece hash attributes it. Hash-failure contributor collection includes both
+received and still-writing blocks from the same generation.
+
+The corrected 32 MiB harness times only the RSTorrent subprocess and can run a
+specified old binary. Three runs of commit `9b87a1a` took 0.646, 0.326, and
+0.331 seconds of transfer time (0.331-second median). Three runs of this
+pipeline took 0.745, 0.426, and 0.426 seconds (0.426-second median). The async
+owner is therefore about 29% slower in this localhost case and makes no speed
+claim. It is retained under the tactical's alternate liveness rule: with the
+first write delayed 250 ms, two peers deliver their complete payloads to the
+supervisor within 100 ms while storage remains bounded, which the former
+synchronous owner cannot do.
+
+The 80-block saturation case reached exactly 64 queued commands and 66 pending
+jobs including the executing and local-pending work, completed exact content,
+and returned pending jobs to zero. Separate cases cancel during queued writes
+and a delayed hash and prove exact task join and cleanup. Multi-peer liveness,
+selective storage, endgame, corrupt-generation recovery, and the controlled
+mixed-source cases remain green.
+
+A controlled 79,000-byte paired publication reached both owners with exact
+integrity and cleanup. RSTorrent published in 44.66 ms and pinned libtorrent
+reached its milestone in 86.57 ms; the storage command, completion, and job
+high waters were 1, 1, and 2. This is a correctness screen, not a throughput
+claim.
+
+One common-denominator public Big Buck Bunny owner screen verified and
+published all 276,445,467 bytes and 1,055 pieces in 153.72 seconds. Metadata,
+first piece, 50%, 95%, and 99% arrived at 0.42, 0.88, 64.53, 143.68, and
+152.83 seconds. It ended with zero active requests, writes, storage jobs, or
+hash failures; command, completion, storage-job, and payload high waters were
+64, 1, 66, and 8,781,824 bytes. Public speed varied materially from the prior
+86.05-second health screen, so this run proves retained completion and bounds,
+not a causal latency change.
+
+Formatting, warning-denying workspace clippy, seven comparator unit tests,
+Python compilation, controlled interop, and the workspace suite pass with 243
+listed tests including three ignored public tests. One earlier full-suite run
+observed an extra valid retransmission in a 20 ms UDP test under concurrent
+load; the focused
+test passed five times, and its cached-token phase now uses a non-contentious
+deadline so the test measures token reuse rather than scheduler latency.
+
 ## Non-Goals
 
 - changing request-window growth, piece rarity, peer scoring, tracker/DHT
@@ -130,13 +189,13 @@ peer selection or discovery as the next owner rather than widening this slice.
 
 ## Stopping And Escalation
 
-This tactical completes when the storage task has explicit ownership,
+This tactical completed when the storage task gained explicit ownership,
 cancellation, bounded backpressure, typed completion, and exact join; all
 storage, integrity, endgame, resume, and interoperability gates pass; and the
 controlled before/after rule either retains or rejects the optimization from
 measured evidence. The public screen classifies its effect but cannot alone
 prove causality.
 
-No human decision is currently required. Stop only for a changed persistence
+No human decision was required. Stop only for a changed persistence
 or product contract, external dependency, destructive user-data migration,
 visible device action, or architecture broader than this torrent-local owner.

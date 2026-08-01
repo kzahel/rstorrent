@@ -314,14 +314,14 @@ reason to stop.
 Campaign state: **active**.
 
 Active tactical:
-[`025-bounded-async-content-storage.md`](../tactical/025-bounded-async-content-storage.md).
+[`026-paired-peer-utility-timeline.md`](../tactical/026-paired-peer-utility-timeline.md).
 Tactical
-[`024-piece-hash-failure-recovery.md`](../tactical/024-piece-hash-failure-recovery.md)
+[`025-bounded-async-content-storage.md`](../tactical/025-bounded-async-content-storage.md)
 is complete.
 
-Current milestone: measure and, if retained by the explicit before/after gate,
-separate bounded storage execution from peer-event progress before changing
-peer selection or request-window policy.
+Current milestone: capture bounded comparable peer-utility timelines through
+three full pairs, classify the first repeated owner-level divergence, and open
+the corresponding source-derived behavior tactical before changing policy.
 
 Last completed evidence:
 
@@ -438,18 +438,37 @@ Last completed evidence:
   32 MiB single-piece localhost run took 3.829 seconds. Pinned libtorrent's
   accepted-block async-write and 1 MiB queued-disk-byte ownership, compared
   with RSTorrent awaiting every 16 KiB write and piece hash in its supervisor,
-  selects Tactical `025` before peer-policy tuning.
+  selected Tactical `025` before peer-policy tuning; and
+- Tactical `025` installed one torrent-local storage task with a 64-command
+  queue, two-command local admission bound, typed write/hash completions,
+  retained payload charging, resume-before-verified ordering, cancellation,
+  and exact join. Slow-storage, queue-saturation, cancellation, integrity,
+  selective-storage, endgame, and controlled-publication gates pass;
+- the corrected transfer-only 32 MiB timer measured the synchronous commit at
+  a 0.331-second three-run median and the asynchronous owner at 0.426 seconds,
+  a 29% regression. The owner is retained only because a 250 ms write-delay
+  case proves two peers can deliver complete payload within 100 ms while the
+  prior synchronous supervisor cannot consume those events;
+- one public common-denominator Big Buck Bunny owner screen published all
+  276,445,467 bytes and 1,055 pieces in 153.72 seconds with zero hash failures,
+  active storage jobs, active requests, writes, or cleanup failures. Storage
+  command, completion, job, and payload high waters were 64, 1, 66, and
+  8,781,824 bytes; and
+- the public terminal state retained 161 content candidates, 48 dials, and
+  five connected peers, but cannot reveal their time-dependent utility. That
+  evidence selects Tactical `026`'s paired timeline rather than speculative
+  peer ranking or another storage change.
 
 Next executable action:
 
-1. retain a fresh three-run 32 MiB synchronous-storage baseline;
-2. move owned content storage behind one bounded torrent-local task with exact
-   cancellation, join, payload accounting, and typed completions;
-3. prove peer-event freshness and finite queueing under slow storage while
-   preserving piece-hash recovery and resume ordering;
-4. pass workspace, mixed-peer, large-piece, and controlled publication gates;
-   and
-5. keep the pipeline only under Tactical `025`'s measured 25% median-improvement
-   or necessary-liveness rule, then classify one clean headless public screen.
+1. survey pinned libtorrent candidate, connection-demand, turnover,
+   request-queue, `peer_info`, and `torrent_status` owners and tests;
+2. add one-second, endpoint-free, 1,024-sample bounded timelines to RSTorrent
+   and libtorrent comparator owners without changing transfer policy;
+3. pass deterministic aggregation, schema, workspace, Python, and controlled
+   publication gates;
+4. run three alternating common-denominator Big Buck Bunny full pairs; and
+5. classify candidate supply, admission/turnover, request service,
+   picker/storage, or rotation, then open the selected behavior tactical.
 
 Human blocker: **none**.

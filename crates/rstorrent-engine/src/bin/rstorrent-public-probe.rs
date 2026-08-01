@@ -339,6 +339,11 @@ struct Diagnostics {
     received_bytes: usize,
     stored_bytes: usize,
     payload_high_water: usize,
+    storage_jobs_pending: usize,
+    storage_jobs_high_water: usize,
+    storage_command_queue_high_water: usize,
+    storage_completion_queue_high_water: usize,
+    storage_hashes_started: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -738,6 +743,11 @@ fn diagnostic_result(
         received_bytes: snapshot.progress.received_bytes,
         stored_bytes: snapshot.progress.stored_bytes,
         payload_high_water: snapshot.progress.payload_high_water,
+        storage_jobs_pending: snapshot.progress.storage_jobs_pending,
+        storage_jobs_high_water: snapshot.progress.storage_jobs_high_water,
+        storage_command_queue_high_water: snapshot.progress.storage_command_queue_high_water,
+        storage_completion_queue_high_water: snapshot.progress.storage_completion_queue_high_water,
+        storage_hashes_started: snapshot.progress.storage_hashes_started,
     }
 }
 

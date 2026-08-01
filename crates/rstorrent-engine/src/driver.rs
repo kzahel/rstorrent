@@ -69,6 +69,8 @@ const MAX_UDP_TRACKER_TOKENS: usize = 64;
 const MAX_CONCURRENT_TRACKER_OPERATIONS: usize = 8;
 const TRACKER_RESULT_QUEUE: usize = 4;
 const CONTENT_DISCOVERY_QUEUE: usize = 8;
+const CONTENT_STORAGE_QUEUE: usize = 64;
+const CONTENT_STORAGE_PENDING_QUEUE: usize = 2;
 const MAX_RESOLVED_ADDRESSES: usize = 32;
 const UNKNOWN_MAGNET_LEFT: u64 = 16 * 1024;
 const UDP_TRACKER_RECEIVE_LENGTH: usize = MAX_ANNOUNCE_RESPONSE_LENGTH + 1;
@@ -383,7 +385,13 @@ struct DownloadControlInner {
     requested_bytes: AtomicUsize,
     received_bytes: AtomicUsize,
     stored_bytes: AtomicUsize,
+    storage_jobs_pending: AtomicUsize,
+    storage_jobs_high_water: AtomicUsize,
+    storage_command_queue_high_water: AtomicUsize,
+    storage_completion_queue_high_water: AtomicUsize,
     storage_write_delay_millis: AtomicU64,
+    storage_hash_delay_millis: AtomicU64,
+    storage_hashes_started: AtomicUsize,
     activity_sink: Mutex<Option<Arc<dyn DownloadActivitySink>>>,
     last_swarm_activity: Mutex<Option<SwarmActivitySnapshot>>,
     last_content_peers: Mutex<(Option<Duration>, Vec<ContentPeerActivitySnapshot>)>,
@@ -422,6 +430,11 @@ pub struct DownloadProgress {
     pub requested_bytes: usize,
     pub received_bytes: usize,
     pub stored_bytes: usize,
+    pub storage_jobs_pending: usize,
+    pub storage_jobs_high_water: usize,
+    pub storage_command_queue_high_water: usize,
+    pub storage_completion_queue_high_water: usize,
+    pub storage_hashes_started: usize,
 }
 
 impl DownloadControl {
@@ -435,7 +448,13 @@ impl DownloadControl {
                 requested_bytes: AtomicUsize::new(0),
                 received_bytes: AtomicUsize::new(0),
                 stored_bytes: AtomicUsize::new(0),
+                storage_jobs_pending: AtomicUsize::new(0),
+                storage_jobs_high_water: AtomicUsize::new(0),
+                storage_command_queue_high_water: AtomicUsize::new(0),
+                storage_completion_queue_high_water: AtomicUsize::new(0),
                 storage_write_delay_millis: AtomicU64::new(0),
+                storage_hash_delay_millis: AtomicU64::new(0),
+                storage_hashes_started: AtomicUsize::new(0),
                 activity_sink: Mutex::new(None),
                 last_swarm_activity: Mutex::new(None),
                 last_content_peers: Mutex::new((None, Vec::new())),
@@ -471,6 +490,17 @@ impl DownloadControl {
             requested_bytes: self.inner.requested_bytes.load(Ordering::Acquire),
             received_bytes: self.inner.received_bytes.load(Ordering::Acquire),
             stored_bytes: self.inner.stored_bytes.load(Ordering::Acquire),
+            storage_jobs_pending: self.inner.storage_jobs_pending.load(Ordering::Acquire),
+            storage_jobs_high_water: self.inner.storage_jobs_high_water.load(Ordering::Acquire),
+            storage_command_queue_high_water: self
+                .inner
+                .storage_command_queue_high_water
+                .load(Ordering::Acquire),
+            storage_completion_queue_high_water: self
+                .inner
+                .storage_completion_queue_high_water
+                .load(Ordering::Acquire),
+            storage_hashes_started: self.inner.storage_hashes_started.load(Ordering::Acquire),
         }
     }
 
@@ -533,6 +563,14 @@ impl DownloadControl {
         let millis = delay.as_millis().try_into().unwrap_or(u64::MAX);
         self.inner
             .storage_write_delay_millis
+            .store(millis, Ordering::Release);
+    }
+
+    #[cfg(test)]
+    pub fn set_storage_hash_delay(&self, delay: Duration) {
+        let millis = delay.as_millis().try_into().unwrap_or(u64::MAX);
+        self.inner
+            .storage_hash_delay_millis
             .store(millis, Ordering::Release);
     }
 
@@ -987,6 +1025,41 @@ impl DownloadControl {
         self.inner.stored_bytes.fetch_add(bytes, Ordering::AcqRel);
     }
 
+    fn storage_job_started(&self) {
+        let pending = self
+            .inner
+            .storage_jobs_pending
+            .fetch_add(1, Ordering::AcqRel)
+            .saturating_add(1);
+        self.inner
+            .storage_jobs_high_water
+            .fetch_max(pending, Ordering::AcqRel);
+    }
+
+    fn storage_job_finished(&self) {
+        let previous = self
+            .inner
+            .storage_jobs_pending
+            .fetch_sub(1, Ordering::AcqRel);
+        debug_assert_ne!(previous, 0);
+    }
+
+    fn observe_storage_command_queue(&self, depth: usize) {
+        self.inner
+            .storage_command_queue_high_water
+            .fetch_max(depth, Ordering::AcqRel);
+    }
+
+    fn observe_storage_completion_queue(&self, depth: usize) {
+        self.inner
+            .storage_completion_queue_high_water
+            .fetch_max(depth, Ordering::AcqRel);
+    }
+
+    fn clear_storage_jobs(&self) {
+        self.inner.storage_jobs_pending.store(0, Ordering::Release);
+    }
+
     fn record_requested(&self, bytes: usize) {
         self.inner
             .requested_bytes
@@ -1008,6 +1081,16 @@ impl DownloadControl {
             .inner
             .storage_write_delay_millis
             .load(Ordering::Acquire);
+        if millis != 0 {
+            tokio::time::sleep(Duration::from_millis(millis)).await;
+        }
+    }
+
+    async fn wait_before_storage_hash(&self) {
+        self.inner
+            .storage_hashes_started
+            .fetch_add(1, Ordering::AcqRel);
+        let millis = self.inner.storage_hash_delay_millis.load(Ordering::Acquire);
         if millis != 0 {
             tokio::time::sleep(Duration::from_millis(millis)).await;
         }
@@ -1102,6 +1185,7 @@ pub enum DownloadError {
     UdpTracker(UdpTrackerError),
     PeerRegistry(PeerRegistryError),
     PeerTask(String),
+    StorageTask(String),
     Swarm(SwarmError),
     Metadata(MetadataError),
     Handshake(HandshakeError),
@@ -1168,6 +1252,7 @@ impl fmt::Display for DownloadError {
             Self::UdpTracker(error) => write!(formatter, "UDP tracker: {error}"),
             Self::PeerRegistry(error) => write!(formatter, "peer registry: {error}"),
             Self::PeerTask(error) => write!(formatter, "peer task set: {error}"),
+            Self::StorageTask(error) => write!(formatter, "content storage task: {error}"),
             Self::Swarm(error) => write!(formatter, "swarm state: {error}"),
             Self::Metadata(error) => write!(formatter, "metadata: {error}"),
             Self::Handshake(error) => write!(formatter, "peer handshake: {error}"),
@@ -3727,19 +3812,19 @@ async fn run_single_download(
                 .map_err(DownloadError::Layout)?,
         ));
     }
-    let mut storage = StagingFile::create(config.output_path.clone(), metainfo.total_length)
+    let storage = StagingFile::create(config.output_path.clone(), metainfo.total_length)
         .await
         .map_err(DownloadError::Storage)?;
     let download = ContentSwarmDownload::new(
         config.swarm_config,
         plans,
-        ContentStorage::Single(&mut storage),
+        ContentStorage::Single(storage),
         &metainfo,
         &layout,
         None,
         &control,
     )?;
-    let completed = download_content_swarm(peers, download).await?;
+    let mut completed = download_content_swarm(peers, download).await?;
     let piece = completed
         .last_piece
         .expect("completed single-file swarm has a verified piece");
@@ -3747,7 +3832,13 @@ async fn run_single_download(
     let bytes_written = completed.total_bytes;
     let selected_written_bytes = completed.selected_written_bytes;
     let payload_high_water = completed.state.snapshot(peers.elapsed()).payload_high_water;
+    let storage = completed.take_storage()?;
     drop(completed);
+    let ContentStorage::Single(storage) = storage else {
+        return Err(DownloadError::StorageTask(
+            "single-file download returned selective storage".to_owned(),
+        ));
+    };
     storage.finalize().await.map_err(DownloadError::Storage)?;
     Ok(DownloadReport {
         info_hash: metainfo.info_hash,
@@ -3774,9 +3865,290 @@ async fn run_single_download(
     })
 }
 
+enum ContentStorage {
+    Single(StagingFile),
+    Selective(Box<SelectiveStorage>),
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct ContentWriteStats {
+    selected_bytes: usize,
+    part_bytes: usize,
+}
+
+enum ContentStorageCommand {
+    Write {
+        block: BlockKey,
+        offset: u64,
+        bytes: Vec<u8>,
+    },
+    Verify {
+        piece: u32,
+        offset: u64,
+        length: u32,
+        expected: [u8; 20],
+        durable: bool,
+    },
+}
+
+enum ContentStorageCompletion {
+    Write {
+        block: BlockKey,
+        result: Result<ContentWriteStats, DownloadError>,
+    },
+    Verify {
+        piece: u32,
+        length: u32,
+        result: Result<[u8; 20], DownloadError>,
+    },
+}
+
+struct ContentStoragePipeline {
+    commands: Option<mpsc::Sender<ContentStorageCommand>>,
+    completions: mpsc::Receiver<ContentStorageCompletion>,
+    cancellation: CancellationToken,
+    task: JoinHandle<ContentStorage>,
+    pending_commands: VecDeque<ContentStorageCommand>,
+    control: DownloadControl,
+}
+
+impl ContentStoragePipeline {
+    fn start(storage: ContentStorage, control: &DownloadControl) -> Self {
+        let (command_sender, command_receiver) = mpsc::channel(CONTENT_STORAGE_QUEUE);
+        let (completion_sender, completion_receiver) = mpsc::channel(CONTENT_STORAGE_QUEUE);
+        let cancellation = CancellationToken::new();
+        let task = tokio::spawn(run_content_storage_task(
+            storage,
+            command_receiver,
+            completion_sender,
+            cancellation.clone(),
+            control.clone(),
+        ));
+        Self {
+            commands: Some(command_sender),
+            completions: completion_receiver,
+            cancellation,
+            task,
+            pending_commands: VecDeque::with_capacity(CONTENT_STORAGE_PENDING_QUEUE),
+            control: control.clone(),
+        }
+    }
+
+    fn enqueue(&mut self, command: ContentStorageCommand) -> Result<(), DownloadError> {
+        if !self.pending_commands.is_empty() {
+            if self.pending_commands.len() >= CONTENT_STORAGE_PENDING_QUEUE {
+                return Err(DownloadError::Swarm(SwarmError::Invariant(
+                    "storage pending-command bound exceeded",
+                )));
+            }
+            self.control.storage_job_started();
+            self.pending_commands.push_back(command);
+            return Ok(());
+        }
+        self.control.storage_job_started();
+        let Some(sender) = &self.commands else {
+            self.control.storage_job_finished();
+            return Err(DownloadError::StorageTask(
+                "storage command owner is stopped".to_owned(),
+            ));
+        };
+        match sender.try_send(command) {
+            Ok(()) => {
+                self.control.observe_storage_command_queue(
+                    CONTENT_STORAGE_QUEUE.saturating_sub(sender.capacity()),
+                );
+                Ok(())
+            }
+            Err(mpsc::error::TrySendError::Full(command)) => {
+                self.pending_commands.push_back(command);
+                Ok(())
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                self.control.storage_job_finished();
+                Err(DownloadError::StorageTask(
+                    "storage command channel closed".to_owned(),
+                ))
+            }
+        }
+    }
+
+    fn flush_pending(&mut self) -> Result<bool, DownloadError> {
+        while let Some(command) = self.pending_commands.pop_front() {
+            let Some(sender) = &self.commands else {
+                self.pending_commands.push_front(command);
+                return Err(DownloadError::StorageTask(
+                    "storage command owner is stopped".to_owned(),
+                ));
+            };
+            match sender.try_send(command) {
+                Ok(()) => {
+                    self.control.observe_storage_command_queue(
+                        CONTENT_STORAGE_QUEUE.saturating_sub(sender.capacity()),
+                    );
+                }
+                Err(mpsc::error::TrySendError::Full(command)) => {
+                    self.pending_commands.push_front(command);
+                    return Ok(false);
+                }
+                Err(mpsc::error::TrySendError::Closed(command)) => {
+                    self.pending_commands.push_front(command);
+                    return Err(DownloadError::StorageTask(
+                        "storage command channel closed".to_owned(),
+                    ));
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    fn is_backpressured(&self) -> bool {
+        !self.pending_commands.is_empty()
+    }
+
+    async fn next_completion(&mut self) -> Result<ContentStorageCompletion, DownloadError> {
+        self.completions.recv().await.ok_or_else(|| {
+            DownloadError::StorageTask("storage completion channel closed".to_owned())
+        })
+    }
+
+    fn completion_received(&self) {
+        self.control.storage_job_finished();
+    }
+
+    async fn shutdown(mut self, cancel: bool) -> Result<ContentStorage, DownloadError> {
+        self.commands.take();
+        if cancel {
+            self.cancellation.cancel();
+        }
+        let result = self
+            .task
+            .await
+            .map_err(|error| DownloadError::StorageTask(error.to_string()));
+        self.control.clear_storage_jobs();
+        result
+    }
+}
+
+async fn run_content_storage_task(
+    mut storage: ContentStorage,
+    mut commands: mpsc::Receiver<ContentStorageCommand>,
+    completions: mpsc::Sender<ContentStorageCompletion>,
+    cancellation: CancellationToken,
+    control: DownloadControl,
+) -> ContentStorage {
+    loop {
+        let command = tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => break,
+            command = commands.recv() => match command {
+                Some(command) => command,
+                None => break,
+            },
+        };
+        let completion = execute_content_storage_command(&mut storage, command, &control).await;
+        let projected_depth = CONTENT_STORAGE_QUEUE
+            .saturating_sub(completions.capacity())
+            .saturating_add(1)
+            .min(CONTENT_STORAGE_QUEUE);
+        control.observe_storage_completion_queue(projected_depth);
+        let sent = tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => false,
+            result = completions.send(completion) => result.is_ok(),
+        };
+        if !sent {
+            break;
+        }
+    }
+    storage
+}
+
+async fn execute_content_storage_command(
+    storage: &mut ContentStorage,
+    command: ContentStorageCommand,
+    control: &DownloadControl,
+) -> ContentStorageCompletion {
+    match command {
+        ContentStorageCommand::Write {
+            block,
+            offset,
+            bytes,
+        } => {
+            control.wait_before_storage().await;
+            let result = match storage {
+                ContentStorage::Single(storage) => {
+                    let selected_bytes = bytes.len();
+                    storage
+                        .write_block(offset, bytes)
+                        .await
+                        .map(|()| ContentWriteStats {
+                            selected_bytes,
+                            part_bytes: 0,
+                        })
+                        .map_err(DownloadError::Storage)
+                }
+                ContentStorage::Selective(storage) => storage
+                    .write_block(block.piece, block.begin, bytes)
+                    .await
+                    .map(|stats| ContentWriteStats {
+                        selected_bytes: stats.wanted_bytes,
+                        part_bytes: stats.skipped_bytes,
+                    })
+                    .map_err(DownloadError::SelectiveStorage),
+            };
+            ContentStorageCompletion::Write { block, result }
+        }
+        ContentStorageCommand::Verify {
+            piece,
+            offset,
+            length,
+            expected,
+            durable,
+        } => {
+            control.wait_before_storage_hash().await;
+            let result = match storage {
+                ContentStorage::Single(storage) => storage
+                    .hash_piece(offset, length)
+                    .await
+                    .map_err(DownloadError::Storage),
+                ContentStorage::Selective(storage) => {
+                    async {
+                        let actual = storage
+                            .hash_piece(piece)
+                            .await
+                            .map_err(DownloadError::SelectiveStorage)?;
+                        if actual == expected {
+                            let piece_index = usize::try_from(piece).map_err(|_| {
+                                DownloadError::Layout(LayoutError::ArithmeticOverflow)
+                            })?;
+                            if durable {
+                                storage
+                                    .sync_piece(piece)
+                                    .await
+                                    .map_err(DownloadError::SelectiveStorage)?;
+                            }
+                            storage
+                                .record_verified(piece_index)
+                                .map_err(DownloadError::SelectiveStorage)?;
+                        }
+                        Ok(actual)
+                    }
+                    .await
+                }
+            };
+            ContentStorageCompletion::Verify {
+                piece,
+                length,
+                result,
+            }
+        }
+    }
+}
+
 struct ContentSwarmDownload<'a> {
     state: SwarmState,
-    storage: ContentStorage<'a>,
+    storage_pipeline: Option<ContentStoragePipeline>,
+    completed_storage: Option<ContentStorage>,
     metainfo: &'a Metainfo,
     layout: &'a TorrentLayout,
     resume: Option<&'a ResumeContext>,
@@ -3787,11 +4159,6 @@ struct ContentSwarmDownload<'a> {
     part_written_bytes: usize,
     last_piece: Option<VerifiedPiece>,
     contributor_attempts: BTreeMap<ConnectionId, DialAttempt>,
-}
-
-enum ContentStorage<'a> {
-    Single(&'a mut StagingFile),
-    Selective(&'a mut SelectiveStorage),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3806,7 +4173,7 @@ impl<'a> ContentSwarmDownload<'a> {
     fn new(
         config: SwarmConfig,
         plans: Vec<(u32, Vec<rstorrent_protocol::storage_layout::RequestRange>)>,
-        storage: ContentStorage<'a>,
+        storage: ContentStorage,
         metainfo: &'a Metainfo,
         layout: &'a TorrentLayout,
         resume: Option<&'a ResumeContext>,
@@ -3838,7 +4205,8 @@ impl<'a> ContentSwarmDownload<'a> {
             .map_err(DownloadError::Swarm)?;
         Ok(Self {
             state,
-            storage,
+            storage_pipeline: Some(ContentStoragePipeline::start(storage, control)),
+            completed_storage: None,
             metainfo,
             layout,
             resume,
@@ -3925,51 +4293,14 @@ impl<'a> ContentSwarmDownload<'a> {
                             begin,
                             length,
                         });
-                        self.control.wait_before_storage().await;
-                        let block_length = block.len();
-                        let write_result = match &mut self.storage {
-                            ContentStorage::Single(storage) => {
-                                let offset = single_file_offset(self.layout, index, begin)?;
-                                storage
-                                    .write_block(offset, block)
-                                    .await
-                                    .map(|()| (block_length, 0))
-                                    .map_err(DownloadError::Storage)
-                            }
-                            ContentStorage::Selective(storage) => storage
-                                .write_block(index, begin, block)
-                                .await
-                                .map(|stats| (stats.wanted_bytes, stats.skipped_bytes))
-                                .map_err(DownloadError::SelectiveStorage),
-                        };
-                        let stats = match write_result {
-                            Ok(stats) => stats,
-                            Err(error) => {
-                                self.state
-                                    .finish_write(key, false, now)
-                                    .map_err(DownloadError::Swarm)?;
-                                return Err(error);
-                            }
-                        };
-                        self.state
-                            .finish_write(key, true, now)
-                            .map_err(DownloadError::Swarm)?;
                         self.contributor_attempts.insert(connection, source_attempt);
-                        self.selected_written_bytes += stats.0;
-                        self.part_written_bytes += stats.1;
-                        self.control.record_stored(length as usize);
-                        self.control.emit(DownloadActivityEvent::BlockStored {
-                            piece_index: index,
-                            begin,
-                            length,
-                        });
-                        if self
-                            .state
-                            .piece_ready(index)
-                            .map_err(DownloadError::Swarm)?
-                        {
-                            return self.verify_piece(index).await;
-                        }
+                        let offset = single_file_offset(self.layout, index, begin)?;
+                        self.storage_pipeline_mut()?
+                            .enqueue(ContentStorageCommand::Write {
+                                block: key,
+                                offset,
+                                bytes: block,
+                            })?;
                     }
                     ReceiveDisposition::Redundant | ReceiveDisposition::Unsolicited => {}
                 }
@@ -3985,73 +4316,136 @@ impl<'a> ContentSwarmDownload<'a> {
         Ok(ContentMessageDisposition::Continue)
     }
 
-    async fn verify_piece(
+    fn storage_pipeline_mut(&mut self) -> Result<&mut ContentStoragePipeline, DownloadError> {
+        self.storage_pipeline.as_mut().ok_or_else(|| {
+            DownloadError::StorageTask("content storage owner is not running".to_owned())
+        })
+    }
+
+    fn flush_pending_storage(&mut self) -> Result<bool, DownloadError> {
+        self.storage_pipeline_mut()?.flush_pending()
+    }
+
+    fn storage_is_backpressured(&self) -> bool {
+        self.storage_pipeline
+            .as_ref()
+            .is_some_and(ContentStoragePipeline::is_backpressured)
+    }
+
+    fn handle_storage_completion(
         &mut self,
-        piece: u32,
+        completion: ContentStorageCompletion,
+        now: Duration,
     ) -> Result<ContentMessageDisposition, DownloadError> {
-        let piece_index = usize::try_from(piece)
-            .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
-        let piece_length = self
-            .layout
-            .piece_length_at(piece)
-            .map_err(DownloadError::Layout)?;
-        let actual = match &mut self.storage {
-            ContentStorage::Single(storage) => {
-                let offset = single_file_offset(self.layout, piece, 0)?;
-                storage
-                    .hash_piece(offset, piece_length)
-                    .await
-                    .map_err(DownloadError::Storage)?
+        self.storage_pipeline_mut()?.completion_received();
+        let disposition = match completion {
+            ContentStorageCompletion::Write { block, result } => {
+                let stats = match result {
+                    Ok(stats) => stats,
+                    Err(error) => {
+                        self.state
+                            .finish_write(block, false, now)
+                            .map_err(DownloadError::Swarm)?;
+                        self.prune_contributor_attempts();
+                        return Err(error);
+                    }
+                };
+                self.state
+                    .finish_write(block, true, now)
+                    .map_err(DownloadError::Swarm)?;
+                self.selected_written_bytes = self
+                    .selected_written_bytes
+                    .saturating_add(stats.selected_bytes);
+                self.part_written_bytes = self.part_written_bytes.saturating_add(stats.part_bytes);
+                self.control.record_stored(block.length as usize);
+                self.control.emit(DownloadActivityEvent::BlockStored {
+                    piece_index: block.piece,
+                    begin: block.begin,
+                    length: block.length,
+                });
+                if self
+                    .state
+                    .piece_ready(block.piece)
+                    .map_err(DownloadError::Swarm)?
+                {
+                    let piece_index = usize::try_from(block.piece)
+                        .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+                    let length = self
+                        .layout
+                        .piece_length_at(block.piece)
+                        .map_err(DownloadError::Layout)?;
+                    let offset = single_file_offset(self.layout, block.piece, 0)?;
+                    let expected = self.metainfo.piece_hashes[piece_index];
+                    let durable = self.resume.is_some();
+                    self.storage_pipeline_mut()?
+                        .enqueue(ContentStorageCommand::Verify {
+                            piece: block.piece,
+                            offset,
+                            length,
+                            expected,
+                            durable,
+                        })?;
+                }
+                ContentMessageDisposition::Continue
             }
-            ContentStorage::Selective(storage) => storage
-                .hash_piece(piece)
-                .await
-                .map_err(DownloadError::SelectiveStorage)?,
+            ContentStorageCompletion::Verify {
+                piece,
+                length,
+                result,
+            } => {
+                let actual = result?;
+                let piece_index = usize::try_from(piece)
+                    .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+                let expected = self.metainfo.piece_hashes[piece_index];
+                if actual != expected {
+                    let failure = self
+                        .state
+                        .mark_piece_hash_failed(piece)
+                        .map_err(DownloadError::Swarm)?;
+                    self.control.emit(DownloadActivityEvent::PieceHashFailed {
+                        piece_index: piece,
+                        contributor_count: failure.contributors.len(),
+                        failed_bytes: failure.failed_bytes,
+                    });
+                    ContentMessageDisposition::PieceHashFailed(failure)
+                } else {
+                    if let Some(resume) = self.resume {
+                        resume
+                            .checkpoints
+                            .piece_durable(piece_index)
+                            .map_err(DownloadError::Checkpoint)?;
+                    }
+                    let contributors = self
+                        .state
+                        .mark_piece_verified(piece)
+                        .map_err(DownloadError::Swarm)?;
+                    self.last_piece = Some(VerifiedPiece {
+                        index: piece,
+                        hash: actual,
+                        length,
+                    });
+                    self.control
+                        .emit(DownloadActivityEvent::PieceVerified { piece_index: piece });
+                    ContentMessageDisposition::PieceVerified(contributors)
+                }
+            }
         };
-        let expected = self.metainfo.piece_hashes[piece_index];
-        if actual != expected {
-            let failure = self
-                .state
-                .mark_piece_hash_failed(piece)
-                .map_err(DownloadError::Swarm)?;
-            self.control.emit(DownloadActivityEvent::PieceHashFailed {
-                piece_index: piece,
-                contributor_count: failure.contributors.len(),
-                failed_bytes: failure.failed_bytes,
-            });
-            return Ok(ContentMessageDisposition::PieceHashFailed(failure));
-        }
-        let contributors = self
-            .state
-            .mark_piece_verified(piece)
-            .map_err(DownloadError::Swarm)?;
-        if let ContentStorage::Selective(storage) = &mut self.storage {
-            if let Some(resume) = self.resume {
-                storage
-                    .sync_piece(piece)
-                    .await
-                    .map_err(DownloadError::SelectiveStorage)?;
-                storage
-                    .record_verified(piece_index)
-                    .map_err(DownloadError::SelectiveStorage)?;
-                resume
-                    .checkpoints
-                    .piece_durable(piece_index)
-                    .map_err(DownloadError::Checkpoint)?;
-            } else {
-                storage
-                    .record_verified(piece_index)
-                    .map_err(DownloadError::SelectiveStorage)?;
-            }
-        }
-        self.last_piece = Some(VerifiedPiece {
-            index: piece,
-            hash: actual,
-            length: piece_length,
-        });
-        self.control
-            .emit(DownloadActivityEvent::PieceVerified { piece_index: piece });
-        Ok(ContentMessageDisposition::PieceVerified(contributors))
+        self.control.observe_swarm(&self.state, now);
+        Ok(disposition)
+    }
+
+    async fn stop_storage(&mut self, cancel: bool) -> Result<(), DownloadError> {
+        let pipeline = self.storage_pipeline.take().ok_or_else(|| {
+            DownloadError::StorageTask("content storage owner is not running".to_owned())
+        })?;
+        self.completed_storage = Some(pipeline.shutdown(cancel).await?);
+        Ok(())
+    }
+
+    fn take_storage(&mut self) -> Result<ContentStorage, DownloadError> {
+        self.completed_storage.take().ok_or_else(|| {
+            DownloadError::StorageTask("content storage owner did not return storage".to_owned())
+        })
     }
 
     fn contributor_attempt(&self, connection: ConnectionId) -> Option<DialAttempt> {
@@ -4059,7 +4453,7 @@ impl<'a> ContentSwarmDownload<'a> {
     }
 
     fn prune_contributor_attempts(&mut self) {
-        let retained = self.state.stored_contributors();
+        let retained = self.state.unverified_contributors();
         self.contributor_attempts
             .retain(|connection, _| retained.contains(connection));
     }
@@ -4278,19 +4672,34 @@ async fn cleanup_content_connections(
 enum ContentSupervisorEvent {
     Peer(PeerSetEvent),
     Discovery(Option<ContentDiscoveryEvent>),
+    Storage(ContentStorageCompletion),
     Deadline,
 }
 
 async fn next_content_supervisor_event(
     sockets: &mut PeerSocketSet,
     discovery: &mut ContentDiscovery,
+    storage: &mut ContentStoragePipeline,
+    storage_backpressured: bool,
     until_expiry: Option<Duration>,
     cancellation: &CancellationToken,
 ) -> Result<ContentSupervisorEvent, DownloadError> {
+    if storage_backpressured {
+        return tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => Err(DownloadError::Cancelled),
+            completion = storage.next_completion() => {
+                completion.map(ContentSupervisorEvent::Storage)
+            }
+        };
+    }
     if let Some(wait) = until_expiry {
         tokio::select! {
             biased;
             _ = cancellation.cancelled() => Err(DownloadError::Cancelled),
+            completion = storage.next_completion() => {
+                completion.map(ContentSupervisorEvent::Storage)
+            }
             _ = tokio::time::sleep(wait) => Ok(ContentSupervisorEvent::Deadline),
             event = sockets.next_event() => event
                 .map(ContentSupervisorEvent::Peer)
@@ -4303,6 +4712,9 @@ async fn next_content_supervisor_event(
         tokio::select! {
             biased;
             _ = cancellation.cancelled() => Err(DownloadError::Cancelled),
+            completion = storage.next_completion() => {
+                completion.map(ContentSupervisorEvent::Storage)
+            }
             event = sockets.next_event() => event
                 .map(ContentSupervisorEvent::Peer)
                 .map_err(download_peer_set_error),
@@ -4344,6 +4756,7 @@ async fn run_selective_swarm_loop(
 
     loop {
         let now = peers.elapsed();
+        let storage_ready = download.flush_pending_storage()?;
         download
             .control
             .observe_content_registry(&peers.registry, now);
@@ -4356,7 +4769,11 @@ async fn run_selective_swarm_loop(
         }
         download.control.observe_swarm(&download.state, now);
 
-        let assignments = download.state.schedule(now).map_err(DownloadError::Swarm)?;
+        let assignments = if storage_ready {
+            download.state.schedule(now).map_err(DownloadError::Swarm)?
+        } else {
+            Vec::new()
+        };
         let mut failed_connections = BTreeSet::new();
         for assignment in assignments {
             if sockets
@@ -4398,13 +4815,19 @@ async fn run_selective_swarm_loop(
             return Ok(());
         }
 
-        fill_content_dials(
-            peers,
-            sockets,
-            &mut download.state,
-            download.metainfo.info_hash,
-        )?;
-        if sockets.established_len() == 0 && sockets.pending_len() == 0 && !discovery.is_active() {
+        if storage_ready {
+            fill_content_dials(
+                peers,
+                sockets,
+                &mut download.state,
+                download.metainfo.info_hash,
+            )?;
+        }
+        if sockets.established_len() == 0
+            && sockets.pending_len() == 0
+            && !discovery.is_active()
+            && download.control.snapshot().storage_jobs_pending == 0
+        {
             return Err(peers
                 .last_error
                 .take()
@@ -4426,16 +4849,28 @@ async fn run_selective_swarm_loop(
             .flatten()
             .min();
         let until_expiry = next_deadline.map(|deadline| deadline.saturating_sub(peers.elapsed()));
-        let event = next_content_supervisor_event(
-            sockets,
-            discovery,
-            until_expiry,
-            &peers.control.inner.cancellation,
-        )
-        .await?;
+        let cancellation = peers.control.inner.cancellation.clone();
+        let storage_backpressured = download.storage_is_backpressured();
+        let event = {
+            let storage = download.storage_pipeline_mut()?;
+            next_content_supervisor_event(
+                sockets,
+                discovery,
+                storage,
+                storage_backpressured,
+                until_expiry,
+                &cancellation,
+            )
+            .await?
+        };
 
         match event {
             ContentSupervisorEvent::Deadline => continue,
+            ContentSupervisorEvent::Storage(completion) => {
+                let disposition =
+                    download.handle_storage_completion(completion, peers.elapsed())?;
+                apply_content_disposition(peers, sockets, download, None, disposition).await?;
+            }
             ContentSupervisorEvent::Discovery(Some(ContentDiscoveryEvent::Peers {
                 source,
                 tracker,
@@ -4545,26 +4980,7 @@ async fn run_selective_swarm_loop(
                 let disposition = download
                     .handle_message(sockets, id, message, peers.elapsed())
                     .await?;
-                match disposition {
-                    ContentMessageDisposition::Continue => {}
-                    ContentMessageDisposition::ClosePeer(failure) => {
-                        close_content_connection(
-                            peers,
-                            sockets,
-                            &mut download.state,
-                            id,
-                            Some(failure),
-                        )
-                        .await?;
-                    }
-                    ContentMessageDisposition::PieceVerified(contributors) => {
-                        record_verified_piece_contributors(peers, download, &contributors)?;
-                    }
-                    ContentMessageDisposition::PieceHashFailed(failure) => {
-                        record_failed_piece_contributors(peers, sockets, download, &failure)
-                            .await?;
-                    }
-                }
+                apply_content_disposition(peers, sockets, download, Some(id), disposition).await?;
             }
             ContentSupervisorEvent::Peer(PeerSetEvent::Peer(PeerTaskEvent::Stopped {
                 attempt,
@@ -4584,6 +5000,38 @@ async fn run_selective_swarm_loop(
     }
 }
 
+async fn apply_content_disposition(
+    peers: &mut PeerSession,
+    sockets: &mut PeerSocketSet,
+    download: &mut ContentSwarmDownload<'_>,
+    connection: Option<ConnectionId>,
+    disposition: ContentMessageDisposition,
+) -> Result<(), DownloadError> {
+    match disposition {
+        ContentMessageDisposition::Continue => {}
+        ContentMessageDisposition::ClosePeer(failure) => {
+            let connection = connection.ok_or(DownloadError::Swarm(SwarmError::Invariant(
+                "storage completion cannot close a peer",
+            )))?;
+            close_content_connection(
+                peers,
+                sockets,
+                &mut download.state,
+                connection,
+                Some(failure),
+            )
+            .await?;
+        }
+        ContentMessageDisposition::PieceVerified(contributors) => {
+            record_verified_piece_contributors(peers, download, &contributors)?;
+        }
+        ContentMessageDisposition::PieceHashFailed(failure) => {
+            record_failed_piece_contributors(peers, sockets, download, &failure).await?;
+        }
+    }
+    Ok(())
+}
+
 async fn download_content_swarm<'a>(
     peers: &mut PeerSession,
     mut download: ContentSwarmDownload<'a>,
@@ -4595,10 +5043,20 @@ async fn download_content_swarm<'a>(
     let discovery_cleanup = discovery.shutdown().await;
     let peer_cleanup =
         cleanup_content_connections(peers, sockets, &mut download.state, failure).await;
-    let cleanup = match (discovery_cleanup, peer_cleanup) {
+    let connection_cleanup = match (discovery_cleanup, peer_cleanup) {
         (Ok(()), Ok(())) => Ok(()),
         (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
         (Err(first), Err(second)) => Err(DownloadError::PeerTask(format!(
+            "{first}; additionally {second}"
+        ))),
+    };
+    let storage_cleanup = download
+        .stop_storage(result.is_err() || connection_cleanup.is_err())
+        .await;
+    let cleanup = match (connection_cleanup, storage_cleanup) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
+        (Err(first), Err(second)) => Err(DownloadError::StorageTask(format!(
             "{first}; additionally {second}"
         ))),
     };
@@ -4829,13 +5287,13 @@ async fn run_selective_download(
         let download = ContentSwarmDownload::new(
             config.swarm_config,
             plans,
-            ContentStorage::Selective(&mut storage),
+            ContentStorage::Selective(Box::new(storage)),
             &metainfo,
             &layout,
             resume.as_ref(),
             &control,
         )?;
-        let completed = download_content_swarm(peers, download).await?;
+        let mut completed = download_content_swarm(peers, download).await?;
         let result = (
             completed.total_blocks,
             completed.total_bytes,
@@ -4844,7 +5302,16 @@ async fn run_selective_download(
             completed.state.snapshot(peers.elapsed()).payload_high_water,
             completed.last_piece,
         );
+        let returned_storage = completed.take_storage()?;
         drop(completed);
+        storage = match returned_storage {
+            ContentStorage::Selective(storage) => *storage,
+            ContentStorage::Single(_) => {
+                return Err(DownloadError::StorageTask(
+                    "selective download returned single-file storage".to_owned(),
+                ));
+            }
+        };
         result
     };
 
@@ -5029,9 +5496,9 @@ mod tests {
     use tokio::time::{sleep, timeout};
 
     use super::{
-        CLIENT_PEER_ID, ContentDownloadConfig, DEFAULT_ADVERTISED_PEER_PORT, DhtRetryTiming,
-        DownloadActivityEvent, DownloadActivitySink, DownloadConfig, DownloadControl,
-        DownloadError, MAX_DIAGNOSTIC_ERROR_LENGTH, MAX_METADATA_PEERS,
+        CLIENT_PEER_ID, CONTENT_STORAGE_QUEUE, ContentDownloadConfig, DEFAULT_ADVERTISED_PEER_PORT,
+        DhtRetryTiming, DownloadActivityEvent, DownloadActivitySink, DownloadConfig,
+        DownloadControl, DownloadError, MAX_DIAGNOSTIC_ERROR_LENGTH, MAX_METADATA_PEERS,
         MAX_RECENT_METADATA_ATTEMPTS, MagnetDownloadConfig, MetadataAcquisitionPhase,
         MetadataPeerStage, PeerConnection, PeerSession, SwarmConfig, TrackerManager,
         UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache,
@@ -6364,32 +6831,62 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             .observe_address(addresses[1], PeerSource::Manual)
             .expect("second peer");
         let control = DownloadControl::new();
-        control.set_storage_write_delay(Duration::from_millis(25));
+        control.set_storage_write_delay(Duration::from_millis(250));
+        let task_control = control.clone();
         let output = test_path("slow-storage-multi-peer");
-
-        let report = timeout(
-            Duration::from_secs(3),
+        let task_output = output.clone();
+        let mut download = tokio::spawn(async move {
             run_content_download(
                 ContentDownloadConfig {
-                    output_path: output.clone(),
+                    output_path: task_output,
                     max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                     swarm_config: SwarmConfig::for_payload_limit(2 * MIN_PAYLOAD_ALLOWANCE),
                     skip_files: Vec::new(),
                     materialize_files: Vec::new(),
                 },
                 metainfo,
-                control,
+                task_control,
                 None,
                 &mut peers,
                 None,
-            ),
-        )
+            )
+            .await
+        });
+
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if control.snapshot().received_bytes >= MIN_PAYLOAD_ALLOWANCE {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
         .await
-        .expect("bounded slow-storage download")
-        .expect("slow-storage completion");
+        .expect("first payload reached the supervisor");
+        timeout(Duration::from_millis(100), async {
+            loop {
+                if control.snapshot().received_bytes >= 2 * MIN_PAYLOAD_ALLOWANCE {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("second peer progressed while the first storage write was delayed");
+
+        let report = timeout(Duration::from_secs(3), &mut download)
+            .await
+            .expect("bounded slow-storage download")
+            .expect("download task")
+            .expect("slow-storage completion");
 
         assert_eq!(report.verified_piece_count, 2);
         assert!(report.payload_high_water <= 2 * MIN_PAYLOAD_ALLOWANCE);
+        let progress = control.snapshot();
+        assert_eq!(progress.storage_jobs_pending, 0);
+        assert!(progress.storage_jobs_high_water >= 2);
+        assert!(progress.storage_command_queue_high_water <= CONTENT_STORAGE_QUEUE);
+        assert!(progress.storage_completion_queue_high_water <= CONTENT_STORAGE_QUEUE);
         for task in tasks {
             timeout(Duration::from_secs(1), task)
                 .await
@@ -6397,6 +6894,219 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 .expect("storage-pressure peer task");
         }
         let _ = tokio::fs::remove_dir_all(output).await;
+    }
+
+    #[tokio::test]
+    async fn cancellation_joins_storage_with_queued_writes() {
+        let payload = (0..(2 * MIN_PAYLOAD_ALLOWANCE))
+            .map(|index| ((index * 17 + index / 13) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let payload_len = payload.len();
+        let metainfo =
+            Metainfo::from_info_bytes(&single_file_info_with_piece_length(&payload, payload.len()))
+                .expect("queued-write metainfo");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind queued-write peer");
+        let address = listener.local_addr().expect("queued-write address");
+        let peer_task = tokio::spawn(serve_content_peer(
+            listener,
+            metainfo.info_hash,
+            Arc::new(vec![payload.clone()]),
+            vec![true],
+        ));
+        let mut peers = PeerSession::from_endpoint(
+            address,
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(2)),
+        )
+        .expect("peer session");
+        let control = DownloadControl::new();
+        control.set_storage_write_delay(Duration::from_millis(250));
+        let task_control = control.clone();
+        let output = test_path("cancel-queued-storage.bin");
+        let task_output = output.clone();
+        let mut download = tokio::spawn(async move {
+            run_content_download(
+                ContentDownloadConfig {
+                    output_path: task_output,
+                    max_buffered_payload_bytes: payload_len,
+                    swarm_config: SwarmConfig::for_payload_limit(payload_len),
+                    skip_files: Vec::new(),
+                    materialize_files: Vec::new(),
+                },
+                metainfo,
+                task_control,
+                None,
+                &mut peers,
+                None,
+            )
+            .await
+        });
+
+        timeout(Duration::from_secs(2), async {
+            loop {
+                let progress = control.snapshot();
+                if progress.received_bytes == payload_len && progress.storage_jobs_pending >= 2 {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("two writes entered bounded storage ownership");
+        control.cancel();
+        let result = timeout(Duration::from_secs(1), &mut download)
+            .await
+            .expect("storage owner joined after queued-write cancellation")
+            .expect("download task");
+        assert!(matches!(result, Err(DownloadError::Cancelled)));
+        let progress = control.snapshot();
+        assert_eq!(progress.buffered_payload_bytes, 0);
+        assert_eq!(progress.storage_jobs_pending, 0);
+        assert!(!output.exists());
+        timeout(Duration::from_secs(1), peer_task)
+            .await
+            .expect("queued-write peer joined")
+            .expect("queued-write peer task");
+        let _ = tokio::fs::remove_file(staging_path(&output).expect("staging path")).await;
+    }
+
+    #[tokio::test]
+    async fn cancellation_joins_storage_during_piece_hash() {
+        let payload = vec![0x4d; MIN_PAYLOAD_ALLOWANCE];
+        let metainfo =
+            Metainfo::from_info_bytes(&single_file_info(&payload)).expect("hash-cancel metainfo");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind hash-cancel peer");
+        let address = listener.local_addr().expect("hash-cancel address");
+        let peer_task = tokio::spawn(serve_content_peer(
+            listener,
+            metainfo.info_hash,
+            Arc::new(vec![payload]),
+            vec![true],
+        ));
+        let mut peers = PeerSession::from_endpoint(
+            address,
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(2)),
+        )
+        .expect("peer session");
+        let control = DownloadControl::new();
+        control.set_storage_hash_delay(Duration::from_millis(250));
+        let task_control = control.clone();
+        let output = test_path("cancel-storage-hash.bin");
+        let task_output = output.clone();
+        let mut download = tokio::spawn(async move {
+            run_content_download(
+                ContentDownloadConfig {
+                    output_path: task_output,
+                    max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+                    swarm_config: SwarmConfig::for_payload_limit(MIN_PAYLOAD_ALLOWANCE),
+                    skip_files: Vec::new(),
+                    materialize_files: Vec::new(),
+                },
+                metainfo,
+                task_control,
+                None,
+                &mut peers,
+                None,
+            )
+            .await
+        });
+
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if control.snapshot().storage_hashes_started == 1 {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("piece hash entered storage owner");
+        control.cancel();
+        let result = timeout(Duration::from_secs(1), &mut download)
+            .await
+            .expect("storage owner joined after hash cancellation")
+            .expect("download task");
+        assert!(matches!(result, Err(DownloadError::Cancelled)));
+        let progress = control.snapshot();
+        assert_eq!(progress.buffered_payload_bytes, 0);
+        assert_eq!(progress.storage_jobs_pending, 0);
+        assert!(!output.exists());
+        timeout(Duration::from_secs(1), peer_task)
+            .await
+            .expect("hash-cancel peer joined")
+            .expect("hash-cancel peer task");
+        let _ = tokio::fs::remove_file(staging_path(&output).expect("staging path")).await;
+    }
+
+    #[tokio::test]
+    async fn storage_command_backpressure_is_bounded_and_completes() {
+        let payload = (0..(80 * MIN_PAYLOAD_ALLOWANCE))
+            .map(|index| ((index * 23 + index / 29) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let metainfo =
+            Metainfo::from_info_bytes(&single_file_info_with_piece_length(&payload, payload.len()))
+                .expect("storage-pressure metainfo");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind storage-pressure peer");
+        let address = listener.local_addr().expect("storage-pressure address");
+        let peer_task = tokio::spawn(serve_content_peer(
+            listener,
+            metainfo.info_hash,
+            Arc::new(vec![payload.clone()]),
+            vec![true],
+        ));
+        let mut peers = PeerSession::from_endpoint(
+            address,
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(2)),
+        )
+        .expect("peer session");
+        let control = DownloadControl::new();
+        control.set_storage_write_delay(Duration::from_millis(3));
+        let output = test_path("storage-command-pressure.bin");
+
+        let report = timeout(
+            Duration::from_secs(5),
+            run_content_download(
+                ContentDownloadConfig {
+                    output_path: output.clone(),
+                    max_buffered_payload_bytes: payload.len(),
+                    swarm_config: SwarmConfig::for_payload_limit(payload.len()),
+                    skip_files: Vec::new(),
+                    materialize_files: Vec::new(),
+                },
+                metainfo,
+                control.clone(),
+                None,
+                &mut peers,
+                None,
+            ),
+        )
+        .await
+        .expect("bounded storage-pressure deadline")
+        .expect("storage-pressure completion");
+
+        assert_eq!(report.verified_piece_count, 1);
+        assert_eq!(tokio::fs::read(&output).await.expect("output"), payload);
+        let progress = control.snapshot();
+        assert_eq!(progress.storage_jobs_pending, 0);
+        assert!(progress.storage_jobs_high_water > CONTENT_STORAGE_QUEUE);
+        assert_eq!(
+            progress.storage_command_queue_high_water,
+            CONTENT_STORAGE_QUEUE
+        );
+        assert!(progress.storage_completion_queue_high_water <= CONTENT_STORAGE_QUEUE);
+        timeout(Duration::from_secs(1), peer_task)
+            .await
+            .expect("storage-pressure peer joined")
+            .expect("storage-pressure peer task");
+        let _ = tokio::fs::remove_file(output).await;
     }
 
     #[tokio::test]
@@ -8955,7 +9665,10 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 port: announced_port,
             },
             UdpTrackerExchange {
-                timing,
+                timing: UdpTrackerTiming {
+                    retransmit_after: Duration::from_millis(200),
+                    completion_timeout: Duration::from_secs(1),
+                },
                 control: &control,
                 tracker_label: "udp://127.0.0.1",
             },
