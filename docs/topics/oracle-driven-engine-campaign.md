@@ -450,6 +450,12 @@ Last completed evidence:
   retained payload charging, resume-before-verified ordering, cancellation,
   and exact join. Slow-storage, queue-saturation, cancellation, integrity,
   selective-storage, endgame, and controlled-publication gates pass;
+- Tactical `039` later supersedes that resource model for current product
+  behavior. Outstanding request reservations now release when accepted payload
+  transfers to an independently byte-bounded storage owner; desktop uses
+  256 MiB request, 32 MiB received-payload, and 256 MiB active-piece limits,
+  while Android uses 128 MiB, 16 MiB, and 128 MiB. The historical evidence in
+  this checkpoint remains evidence for the commits that produced it;
 - the corrected transfer-only 32 MiB timer measured the synchronous commit at
   a 0.331-second three-run median and the asynchronous owner at 0.426 seconds,
   a 29% regression. The owner is retained only because a 250 ms write-delay

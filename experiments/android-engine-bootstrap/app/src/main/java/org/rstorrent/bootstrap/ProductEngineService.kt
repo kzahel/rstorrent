@@ -106,7 +106,6 @@ class ProductEngineService : Service() {
                             AndroidNetworkPolicy.ONLINE,
                             15UL,
                             60UL,
-                            (32 * 1024).toULong(),
                         ),
                     )
                 listSubscription =

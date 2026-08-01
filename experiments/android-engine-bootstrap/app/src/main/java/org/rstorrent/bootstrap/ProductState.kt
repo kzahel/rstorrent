@@ -114,6 +114,7 @@ internal object ProductStateReducer {
                                     )
                             ),
                 )
+            is ViewSnapshot.Peers -> state
             is ViewSnapshot.Diagnostics ->
                 state.copy(
                     diagnostics = snapshot.events.takeLast(512),
@@ -158,6 +159,7 @@ internal object ProductStateReducer {
                             ),
                 )
             }
+            is ViewPatch.Peers -> state
             is ViewPatch.Diagnostics -> {
                 val events =
                     (state.diagnostics + patch.events)

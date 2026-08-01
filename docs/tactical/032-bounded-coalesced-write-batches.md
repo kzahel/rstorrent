@@ -1,5 +1,9 @@
 # Tactical 032: Bounded Coalesced Write Batches
 
+> Current storage admission derives from the received-payload byte budget rather
+> than the fixed job bounds recorded here. See Tactical `039`; this document
+> remains the execution record for its original commit.
+
 Status: Complete
 
 Topics: `performance-and-live-evidence`, `download-correctness`,

@@ -17,7 +17,9 @@ use rstorrent_protocol::metadata::{
     parse_extension_handshake, parse_metadata_message,
 };
 use rstorrent_protocol::metainfo::{MAX_PIECES, Metainfo, MetainfoError};
-use rstorrent_protocol::peer_wire::{FrameError, Handshake, HandshakeError, PeerMessage};
+use rstorrent_protocol::peer_wire::{
+    FrameError, Handshake, HandshakeError, MAX_REQUEST_BLOCK_LENGTH, PeerMessage,
+};
 use rstorrent_protocol::piece::{PieceError, VerifiedPiece};
 use rstorrent_protocol::storage_layout::{FileSelection, LayoutError, TorrentLayout};
 use rstorrent_protocol::udp_tracker::{
@@ -72,9 +74,7 @@ const MAX_UDP_TRACKER_TOKENS: usize = 64;
 const MAX_CONCURRENT_TRACKER_OPERATIONS: usize = 8;
 const TRACKER_RESULT_QUEUE: usize = 4;
 const CONTENT_DISCOVERY_QUEUE: usize = 8;
-const CONTENT_STORAGE_QUEUE: usize = 64;
 const CONTENT_STORAGE_PENDING_QUEUE: usize = 2;
-const CONTENT_STORAGE_JOB_LIMIT: usize = CONTENT_STORAGE_QUEUE + CONTENT_STORAGE_PENDING_QUEUE;
 const CONTENT_STORAGE_WRITE_BATCH_BLOCKS: usize = 16;
 const CONTENT_STORAGE_WRITE_BATCH_BYTES: usize = 256 * 1024;
 const MAX_RESOLVED_ADDRESSES: usize = 32;
@@ -92,13 +92,75 @@ const METADATA_SCHEDULER_TICK: Duration = Duration::from_millis(100);
 const MAX_RECENT_METADATA_ATTEMPTS: usize = 64;
 const MAX_DIAGNOSTIC_ERROR_LENGTH: usize = 256;
 
+const fn content_storage_job_limit(max_buffered_payload_bytes: usize) -> usize {
+    max_buffered_payload_bytes / MAX_REQUEST_BLOCK_LENGTH as usize
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DownloadResourceLimits {
+    pub max_outstanding_request_bytes: usize,
+    pub max_buffered_payload_bytes: usize,
+    pub max_active_piece_bytes: usize,
+}
+
+impl DownloadResourceLimits {
+    pub const DESKTOP: Self = Self {
+        max_outstanding_request_bytes: 256 * 1024 * 1024,
+        max_buffered_payload_bytes: 32 * 1024 * 1024,
+        max_active_piece_bytes: 256 * 1024 * 1024,
+    };
+
+    pub const ANDROID: Self = Self {
+        max_outstanding_request_bytes: 128 * 1024 * 1024,
+        max_buffered_payload_bytes: 16 * 1024 * 1024,
+        max_active_piece_bytes: 128 * 1024 * 1024,
+    };
+
+    pub const fn new(
+        max_outstanding_request_bytes: usize,
+        max_buffered_payload_bytes: usize,
+        max_active_piece_bytes: usize,
+    ) -> Self {
+        Self {
+            max_outstanding_request_bytes,
+            max_buffered_payload_bytes,
+            max_active_piece_bytes,
+        }
+    }
+
+    fn validate(self) -> Result<Self, DownloadError> {
+        if self.max_outstanding_request_bytes < rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE {
+            return Err(DownloadError::InvalidResourceLimit(
+                "outstanding request allowance must fit one request block",
+            ));
+        }
+        if self.max_buffered_payload_bytes < rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE {
+            return Err(DownloadError::InvalidResourceLimit(
+                "buffered payload allowance must fit one request block",
+            ));
+        }
+        if self.max_active_piece_bytes < rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE {
+            return Err(DownloadError::InvalidResourceLimit(
+                "active piece working set must fit one request block",
+            ));
+        }
+        Ok(self)
+    }
+
+    fn swarm_config(self) -> SwarmConfig {
+        let mut config = SwarmConfig::for_request_limit(self.max_outstanding_request_bytes);
+        config.max_active_piece_bytes = self.max_active_piece_bytes;
+        config
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct DownloadConfig {
     pub metainfo_path: PathBuf,
     pub peer: SocketAddr,
     pub output_path: PathBuf,
     pub network: NetworkConfig,
-    pub max_buffered_payload_bytes: usize,
+    pub resource_limits: DownloadResourceLimits,
     pub skip_files: Vec<usize>,
     pub materialize_files: Vec<usize>,
 }
@@ -108,7 +170,7 @@ pub struct MagnetDownloadConfig {
     pub magnet: String,
     pub output_path: PathBuf,
     pub network: NetworkConfig,
-    pub max_buffered_payload_bytes: usize,
+    pub resource_limits: DownloadResourceLimits,
     pub skip_files: Vec<usize>,
     pub materialize_files: Vec<usize>,
     pub dht: Option<DhtHandle>,
@@ -119,7 +181,7 @@ pub struct ResumableMagnetDownloadConfig {
     pub magnet: String,
     pub output_path: PathBuf,
     pub network: NetworkConfig,
-    pub max_buffered_payload_bytes: usize,
+    pub resource_limits: DownloadResourceLimits,
     pub skip_files: Vec<usize>,
     pub verified_info: Option<Vec<u8>>,
     pub verified_pieces: Vec<bool>,
@@ -244,8 +306,10 @@ pub struct SwarmActivitySnapshot {
     pub writing_blocks: usize,
     pub received_blocks: usize,
     pub verified_blocks: usize,
-    pub payload_reserved: usize,
-    pub payload_high_water: usize,
+    pub active_piece_count: usize,
+    pub active_piece_bytes: usize,
+    pub outstanding_request_bytes: usize,
+    pub outstanding_request_high_water: usize,
     pub request_target_total: usize,
     pub request_target_max: usize,
     pub slow_start_peers: usize,
@@ -394,6 +458,8 @@ struct DownloadControlInner {
     cancellation: CancellationToken,
     buffered_payload_bytes: AtomicUsize,
     payload_high_water: AtomicUsize,
+    outstanding_request_bytes: AtomicUsize,
+    outstanding_request_high_water: AtomicUsize,
     requested_bytes: AtomicUsize,
     received_bytes: AtomicUsize,
     stored_bytes: AtomicUsize,
@@ -471,6 +537,8 @@ struct SafeCancelGuard {
 pub struct DownloadProgress {
     pub buffered_payload_bytes: usize,
     pub payload_high_water: usize,
+    pub outstanding_request_bytes: usize,
+    pub outstanding_request_high_water: usize,
     pub requested_bytes: usize,
     pub received_bytes: usize,
     pub stored_bytes: usize,
@@ -507,6 +575,8 @@ impl DownloadControl {
                 cancellation: CancellationToken::new(),
                 buffered_payload_bytes: AtomicUsize::new(0),
                 payload_high_water: AtomicUsize::new(0),
+                outstanding_request_bytes: AtomicUsize::new(0),
+                outstanding_request_high_water: AtomicUsize::new(0),
                 requested_bytes: AtomicUsize::new(0),
                 received_bytes: AtomicUsize::new(0),
                 stored_bytes: AtomicUsize::new(0),
@@ -561,6 +631,11 @@ impl DownloadControl {
         DownloadProgress {
             buffered_payload_bytes: self.inner.buffered_payload_bytes.load(Ordering::Acquire),
             payload_high_water: self.inner.payload_high_water.load(Ordering::Acquire),
+            outstanding_request_bytes: self.inner.outstanding_request_bytes.load(Ordering::Acquire),
+            outstanding_request_high_water: self
+                .inner
+                .outstanding_request_high_water
+                .load(Ordering::Acquire),
             requested_bytes: self.inner.requested_bytes.load(Ordering::Acquire),
             received_bytes: self.inner.received_bytes.load(Ordering::Acquire),
             stored_bytes: self.inner.stored_bytes.load(Ordering::Acquire),
@@ -1071,11 +1146,11 @@ impl DownloadControl {
             }
         }
         self.inner
-            .buffered_payload_bytes
-            .store(snapshot.payload_reserved, Ordering::Release);
+            .outstanding_request_bytes
+            .store(snapshot.outstanding_request_bytes, Ordering::Release);
         self.inner
-            .payload_high_water
-            .fetch_max(snapshot.payload_high_water, Ordering::AcqRel);
+            .outstanding_request_high_water
+            .fetch_max(snapshot.outstanding_request_high_water, Ordering::AcqRel);
         let activity = SwarmActivitySnapshot {
             pending_dials: snapshot.pending_dials,
             connected_peers: snapshot.connected_peers,
@@ -1087,8 +1162,10 @@ impl DownloadControl {
             writing_blocks: snapshot.writing_blocks,
             received_blocks: snapshot.received_blocks,
             verified_blocks: snapshot.verified_blocks,
-            payload_reserved: snapshot.payload_reserved,
-            payload_high_water: snapshot.payload_high_water,
+            active_piece_count: snapshot.active_piece_count,
+            active_piece_bytes: snapshot.active_piece_bytes,
+            outstanding_request_bytes: snapshot.outstanding_request_bytes,
+            outstanding_request_high_water: snapshot.outstanding_request_high_water,
             request_target_total: snapshot.request_target_total,
             request_target_max: snapshot.request_target_max,
             slow_start_peers: snapshot.slow_start_peers,
@@ -1191,8 +1268,42 @@ impl DownloadControl {
         debug_assert_ne!(previous, 0);
     }
 
-    fn storage_jobs_at_limit(&self) -> bool {
-        self.inner.storage_jobs_pending.load(Ordering::Acquire) >= CONTENT_STORAGE_JOB_LIMIT
+    fn storage_jobs_at_limit(&self, limit: usize) -> bool {
+        self.inner.storage_jobs_pending.load(Ordering::Acquire) >= limit
+    }
+
+    fn try_buffer_payload(&self, bytes: usize, limit: usize) -> bool {
+        let mut current = self.inner.buffered_payload_bytes.load(Ordering::Acquire);
+        loop {
+            let Some(next) = current.checked_add(bytes) else {
+                return false;
+            };
+            if next > limit {
+                return false;
+            }
+            match self.inner.buffered_payload_bytes.compare_exchange_weak(
+                current,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => {
+                    self.inner
+                        .payload_high_water
+                        .fetch_max(next, Ordering::AcqRel);
+                    return true;
+                }
+                Err(actual) => current = actual,
+            }
+        }
+    }
+
+    fn release_buffered_payload(&self, bytes: usize) {
+        let previous = self
+            .inner
+            .buffered_payload_bytes
+            .fetch_sub(bytes, Ordering::AcqRel);
+        debug_assert!(previous >= bytes);
     }
 
     fn observe_storage_command_queue(&self, depth: usize) {
@@ -1342,6 +1453,12 @@ impl DownloadControl {
             .store(0, Ordering::Release);
     }
 
+    fn clear_outstanding_requests(&self) {
+        self.inner
+            .outstanding_request_bytes
+            .store(0, Ordering::Release);
+    }
+
     async fn wait_before_storage(&self) {
         let millis = self
             .inner
@@ -1430,6 +1547,9 @@ pub struct DownloadReport {
     pub block_count: usize,
     pub payload_limit: usize,
     pub payload_high_water: usize,
+    pub outstanding_request_limit: usize,
+    pub outstanding_request_high_water: usize,
+    pub active_piece_limit: usize,
     pub verification_buffer: usize,
     pub piece_count: usize,
     pub verified_piece_count: usize,
@@ -1457,6 +1577,7 @@ pub enum DownloadError {
     InvalidNetworkTimeout {
         operation: &'static str,
     },
+    InvalidResourceLimit(&'static str),
     MetainfoTooLarge {
         maximum: usize,
     },
@@ -1528,6 +1649,7 @@ impl fmt::Display for DownloadError {
             Self::InvalidNetworkTimeout { operation } => {
                 write!(formatter, "{operation} timeout must be nonzero")
             }
+            Self::InvalidResourceLimit(message) => formatter.write_str(message),
             Self::MetainfoTooLarge { maximum } => {
                 write!(formatter, "metainfo exceeds input limit {maximum}")
             }
@@ -1813,6 +1935,7 @@ pub async fn download_verified_piece_to_descriptors_with_control(
 
 fn validate_download_config(config: &DownloadConfig) -> Result<(), DownloadError> {
     validate_network_config(config.network)?;
+    config.resource_limits.validate()?;
     if matches!(config.network.policy, NetworkPolicy::Offline) {
         return Err(DownloadError::NetworkDisabled);
     }
@@ -1826,13 +1949,17 @@ fn validate_download_config(config: &DownloadConfig) -> Result<(), DownloadError
 }
 
 fn validate_magnet_download_config(config: &MagnetDownloadConfig) -> Result<(), DownloadError> {
-    validate_network_config(config.network)
+    validate_network_config(config.network)?;
+    config.resource_limits.validate()?;
+    Ok(())
 }
 
 fn validate_resumable_magnet_download_config(
     config: &ResumableMagnetDownloadConfig,
 ) -> Result<(), DownloadError> {
-    validate_network_config(config.network)
+    validate_network_config(config.network)?;
+    config.resource_limits.validate()?;
+    Ok(())
 }
 
 fn validate_network_config(config: NetworkConfig) -> Result<(), DownloadError> {
@@ -3768,8 +3895,8 @@ async fn run_magnet_download_with_peers(
     let (_raw_info, metainfo) = peers.acquire_metadata(magnet.info_hash).await?;
     let content_config = ContentDownloadConfig {
         output_path: config.output_path,
-        max_buffered_payload_bytes: config.max_buffered_payload_bytes,
-        swarm_config: SwarmConfig::for_payload_limit(config.max_buffered_payload_bytes),
+        max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
+        swarm_config: config.resource_limits.swarm_config(),
         skip_files: config.skip_files,
         materialize_files: config.materialize_files,
     };
@@ -3854,8 +3981,8 @@ async fn run_resumable_magnet_download(
         };
         let content_config = ContentDownloadConfig {
             output_path: config.output_path,
-            max_buffered_payload_bytes: config.max_buffered_payload_bytes,
-            swarm_config: SwarmConfig::for_payload_limit(config.max_buffered_payload_bytes),
+            max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
+            swarm_config: config.resource_limits.swarm_config(),
             skip_files: config.skip_files,
             materialize_files: Vec::new(),
         };
@@ -3897,8 +4024,8 @@ async fn run_resumable_magnet_download(
             }
             let content_config = ContentDownloadConfig {
                 output_path: config.output_path,
-                max_buffered_payload_bytes: config.max_buffered_payload_bytes,
-                swarm_config: SwarmConfig::for_payload_limit(config.max_buffered_payload_bytes),
+                max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
+                swarm_config: config.resource_limits.swarm_config(),
                 skip_files: config.skip_files,
                 materialize_files: Vec::new(),
             };
@@ -4190,8 +4317,8 @@ async fn run_download(
         TorrentPeerCoordinator::from_endpoint(config.peer, PeerSource::Manual, config.network)?;
     let content_config = ContentDownloadConfig {
         output_path: config.output_path,
-        max_buffered_payload_bytes: config.max_buffered_payload_bytes,
-        swarm_config: SwarmConfig::for_payload_limit(config.max_buffered_payload_bytes),
+        max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
+        swarm_config: config.resource_limits.swarm_config(),
         skip_files: config.skip_files,
         materialize_files: config.materialize_files,
     };
@@ -4267,12 +4394,15 @@ async fn run_single_download(
         .map_err(DownloadError::Storage)?;
     let download = ContentSwarmDownload::new(
         config.swarm_config,
+        config.max_buffered_payload_bytes,
         plans,
         ContentStorage::Single(storage),
-        &metainfo,
-        &layout,
-        None,
-        &control,
+        ContentDownloadContext {
+            metainfo: &metainfo,
+            layout: &layout,
+            resume: None,
+            control: &control,
+        },
     )?;
     let mut completed = download_content_swarm(peers, download).await?;
     let piece = completed
@@ -4281,7 +4411,11 @@ async fn run_single_download(
     let block_count = completed.total_blocks;
     let bytes_written = completed.total_bytes;
     let selected_written_bytes = completed.selected_written_bytes;
-    let payload_high_water = completed.state.snapshot(peers.elapsed()).payload_high_water;
+    let outstanding_request_high_water = completed
+        .state
+        .snapshot(peers.elapsed())
+        .outstanding_request_high_water;
+    let payload_high_water = control.snapshot().payload_high_water;
     let storage = completed.take_storage()?;
     drop(completed);
     let ContentStorage::Single(storage) = storage else {
@@ -4297,6 +4431,9 @@ async fn run_single_download(
         block_count,
         payload_limit: config.max_buffered_payload_bytes,
         payload_high_water,
+        outstanding_request_limit: config.swarm_config.max_outstanding_request_bytes,
+        outstanding_request_high_water,
+        active_piece_limit: config.swarm_config.max_active_piece_bytes,
         verification_buffer: VERIFICATION_CHUNK_LENGTH,
         piece_count: layout.piece_count(),
         verified_piece_count: layout.piece_count(),
@@ -4401,12 +4538,22 @@ struct ContentStoragePipeline {
     task: JoinHandle<ContentStorage>,
     pending_commands: VecDeque<QueuedContentStorageCommand>,
     control: DownloadControl,
+    max_buffered_payload_bytes: usize,
+    job_limit: usize,
+    queue_capacity: usize,
 }
 
 impl ContentStoragePipeline {
-    fn start(storage: ContentStorage, control: &DownloadControl) -> Self {
-        let (command_sender, command_receiver) = mpsc::channel(CONTENT_STORAGE_QUEUE);
-        let (completion_sender, completion_receiver) = mpsc::channel(CONTENT_STORAGE_QUEUE);
+    fn start(
+        storage: ContentStorage,
+        control: &DownloadControl,
+        max_buffered_payload_bytes: usize,
+    ) -> Self {
+        let job_limit = content_storage_job_limit(max_buffered_payload_bytes);
+        debug_assert_ne!(job_limit, 0);
+        let queue_capacity = job_limit;
+        let (command_sender, command_receiver) = mpsc::channel(queue_capacity);
+        let (completion_sender, completion_receiver) = mpsc::channel(queue_capacity);
         let cancellation = CancellationToken::new();
         let task = tokio::spawn(run_content_storage_task(
             storage,
@@ -4414,6 +4561,7 @@ impl ContentStoragePipeline {
             completion_sender,
             cancellation.clone(),
             control.clone(),
+            queue_capacity,
         ));
         Self {
             commands: Some(command_sender),
@@ -4422,16 +4570,32 @@ impl ContentStoragePipeline {
             task,
             pending_commands: VecDeque::with_capacity(CONTENT_STORAGE_PENDING_QUEUE),
             control: control.clone(),
+            max_buffered_payload_bytes,
+            job_limit,
+            queue_capacity,
         }
     }
 
     fn enqueue(&mut self, command: ContentStorageCommand) -> Result<(), DownloadError> {
+        let buffered_bytes = command.write_bytes();
+        if buffered_bytes.is_some_and(|bytes| {
+            !self
+                .control
+                .try_buffer_payload(bytes, self.max_buffered_payload_bytes)
+        }) {
+            return Err(DownloadError::Swarm(SwarmError::Invariant(
+                "received payload exceeded the storage buffer allowance",
+            )));
+        }
         let command = QueuedContentStorageCommand {
             enqueued_at: Instant::now(),
             command,
         };
         if !self.pending_commands.is_empty() {
             if self.pending_commands.len() >= CONTENT_STORAGE_PENDING_QUEUE {
+                if let Some(bytes) = buffered_bytes {
+                    self.control.release_buffered_payload(bytes);
+                }
                 return Err(DownloadError::Swarm(SwarmError::Invariant(
                     "storage pending-command bound exceeded",
                 )));
@@ -4443,6 +4607,9 @@ impl ContentStoragePipeline {
         self.control.storage_job_started();
         let Some(sender) = &self.commands else {
             self.control.storage_job_finished();
+            if let Some(bytes) = buffered_bytes {
+                self.control.release_buffered_payload(bytes);
+            }
             return Err(DownloadError::StorageTask(
                 "storage command owner is stopped".to_owned(),
             ));
@@ -4450,7 +4617,7 @@ impl ContentStoragePipeline {
         match sender.try_send(command) {
             Ok(()) => {
                 self.control.observe_storage_command_queue(
-                    CONTENT_STORAGE_QUEUE.saturating_sub(sender.capacity()),
+                    self.queue_capacity.saturating_sub(sender.capacity()),
                 );
                 Ok(())
             }
@@ -4460,6 +4627,9 @@ impl ContentStoragePipeline {
             }
             Err(mpsc::error::TrySendError::Closed(_)) => {
                 self.control.storage_job_finished();
+                if let Some(bytes) = buffered_bytes {
+                    self.control.release_buffered_payload(bytes);
+                }
                 Err(DownloadError::StorageTask(
                     "storage command channel closed".to_owned(),
                 ))
@@ -4478,7 +4648,7 @@ impl ContentStoragePipeline {
             match sender.try_send(command) {
                 Ok(()) => {
                     self.control.observe_storage_command_queue(
-                        CONTENT_STORAGE_QUEUE.saturating_sub(sender.capacity()),
+                        self.queue_capacity.saturating_sub(sender.capacity()),
                     );
                 }
                 Err(mpsc::error::TrySendError::Full(command)) => {
@@ -4497,7 +4667,7 @@ impl ContentStoragePipeline {
     }
 
     fn is_backpressured(&self) -> bool {
-        !self.pending_commands.is_empty() || self.control.storage_jobs_at_limit()
+        !self.pending_commands.is_empty() || self.control.storage_jobs_at_limit(self.job_limit)
     }
 
     async fn next_completion(&mut self) -> Result<ContentStorageCompletion, DownloadError> {
@@ -4506,8 +4676,11 @@ impl ContentStoragePipeline {
         })
     }
 
-    fn completion_received(&self) {
+    fn completion_received(&self, completion: &ContentStorageCompletion) {
         self.control.storage_job_finished();
+        if let ContentStorageCompletion::Write { block, .. } = completion {
+            self.control.release_buffered_payload(block.length as usize);
+        }
     }
 
     async fn shutdown(mut self, cancel: bool) -> Result<ContentStorage, DownloadError> {
@@ -4520,6 +4693,7 @@ impl ContentStoragePipeline {
             .await
             .map_err(|error| DownloadError::StorageTask(error.to_string()));
         self.control.clear_storage_jobs();
+        self.control.clear_buffered_payload();
         result
     }
 }
@@ -4530,6 +4704,7 @@ async fn run_content_storage_task(
     completions: mpsc::Sender<ContentStorageCompletion>,
     cancellation: CancellationToken,
     control: DownloadControl,
+    queue_capacity: usize,
 ) -> ContentStorage {
     let mut deferred = None;
     'storage: loop {
@@ -4569,10 +4744,10 @@ async fn run_content_storage_task(
         };
 
         for completion in completions_to_send {
-            let projected_depth = CONTENT_STORAGE_QUEUE
+            let projected_depth = queue_capacity
                 .saturating_sub(completions.capacity())
                 .saturating_add(1)
-                .min(CONTENT_STORAGE_QUEUE);
+                .min(queue_capacity);
             control.observe_storage_completion_queue(projected_depth);
             let sent = tokio::select! {
                 biased;
@@ -4853,6 +5028,13 @@ struct ContentSwarmDownload<'a> {
     contributor_attempts: BTreeMap<ConnectionId, DialAttempt>,
 }
 
+struct ContentDownloadContext<'a> {
+    metainfo: &'a Metainfo,
+    layout: &'a TorrentLayout,
+    resume: Option<&'a ResumeContext>,
+    control: &'a DownloadControl,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ContentMessageDisposition {
     Continue,
@@ -4864,13 +5046,17 @@ enum ContentMessageDisposition {
 impl<'a> ContentSwarmDownload<'a> {
     fn new(
         config: SwarmConfig,
+        max_buffered_payload_bytes: usize,
         plans: Vec<(u32, Vec<rstorrent_protocol::storage_layout::RequestRange>)>,
         storage: ContentStorage,
-        metainfo: &'a Metainfo,
-        layout: &'a TorrentLayout,
-        resume: Option<&'a ResumeContext>,
-        control: &'a DownloadControl,
+        context: ContentDownloadContext<'a>,
     ) -> Result<Self, DownloadError> {
+        let ContentDownloadContext {
+            metainfo,
+            layout,
+            resume,
+            control,
+        } = context;
         let mut total_blocks = 0;
         let mut total_bytes = 0;
         let mut swarm_plans = Vec::with_capacity(plans.len());
@@ -4897,7 +5083,11 @@ impl<'a> ContentSwarmDownload<'a> {
             .map_err(DownloadError::Swarm)?;
         Ok(Self {
             state,
-            storage_pipeline: Some(ContentStoragePipeline::start(storage, control)),
+            storage_pipeline: Some(ContentStoragePipeline::start(
+                storage,
+                control,
+                max_buffered_payload_bytes,
+            )),
             completed_storage: None,
             metainfo,
             layout,
@@ -5029,7 +5219,8 @@ impl<'a> ContentSwarmDownload<'a> {
         completion: ContentStorageCompletion,
         now: Duration,
     ) -> Result<ContentMessageDisposition, DownloadError> {
-        self.storage_pipeline_mut()?.completion_received();
+        self.storage_pipeline_mut()?
+            .completion_received(&completion);
         let disposition = match completion {
             ContentStorageCompletion::Write { block, result } => {
                 let stats = match result {
@@ -5384,6 +5575,7 @@ async fn cleanup_content_connections(
         first_error = Some(error);
     }
     peers.control.clear_buffered_payload();
+    peers.control.clear_outstanding_requests();
     match first_error {
         Some(error) => Err(error),
         None => Ok(()),
@@ -6066,19 +6258,22 @@ async fn run_selective_download(
         total_bytes,
         selected_written_bytes,
         part_written_bytes,
-        payload_high_water,
+        outstanding_request_high_water,
         last_piece,
     ) = if plans.is_empty() {
         (0, 0, 0, 0, 0, None)
     } else {
         let download = ContentSwarmDownload::new(
             config.swarm_config,
+            config.max_buffered_payload_bytes,
             plans,
             ContentStorage::Selective(Box::new(storage)),
-            &metainfo,
-            &layout,
-            resume.as_ref(),
-            &control,
+            ContentDownloadContext {
+                metainfo: &metainfo,
+                layout: &layout,
+                resume: resume.as_ref(),
+                control: &control,
+            },
         )?;
         let mut completed = download_content_swarm(peers, download).await?;
         let result = (
@@ -6086,7 +6281,10 @@ async fn run_selective_download(
             completed.total_bytes,
             completed.selected_written_bytes,
             completed.part_written_bytes,
-            completed.state.snapshot(peers.elapsed()).payload_high_water,
+            completed
+                .state
+                .snapshot(peers.elapsed())
+                .outstanding_request_high_water,
             completed.last_piece,
         );
         let returned_storage = completed.take_storage()?;
@@ -6158,7 +6356,10 @@ async fn run_selective_download(
         bytes_written: total_bytes,
         block_count: total_blocks,
         payload_limit: config.max_buffered_payload_bytes,
-        payload_high_water,
+        payload_high_water: control.snapshot().payload_high_water,
+        outstanding_request_limit: config.swarm_config.max_outstanding_request_bytes,
+        outstanding_request_high_water,
+        active_piece_limit: config.swarm_config.max_active_piece_bytes,
         verification_buffer: VERIFICATION_CHUNK_LENGTH,
         piece_count: layout.piece_count(),
         verified_piece_count: layout.piece_count() - skipped_piece_count,
@@ -6283,19 +6484,20 @@ mod tests {
     use tokio::time::{sleep, timeout};
 
     use super::{
-        CLIENT_PEER_ID, CONTENT_STORAGE_QUEUE, CONTENT_STORAGE_WRITE_BATCH_BLOCKS,
-        CONTENT_STORAGE_WRITE_BATCH_BYTES, CoalescedContentWrite, ContentDownloadConfig,
-        ContentStorage, ContentStorageCommand, ContentStorageCompletion, ContentSupervisorOwner,
-        ContentWriteStats, DEFAULT_ADVERTISED_PEER_PORT, DhtRetryTiming, DownloadActivityEvent,
-        DownloadActivitySink, DownloadConfig, DownloadControl, DownloadError,
+        CLIENT_PEER_ID, CONTENT_STORAGE_WRITE_BATCH_BLOCKS, CONTENT_STORAGE_WRITE_BATCH_BYTES,
+        CoalescedContentWrite, ContentDownloadConfig, ContentStorage, ContentStorageCommand,
+        ContentStorageCompletion, ContentSupervisorOwner, ContentWriteStats,
+        DEFAULT_ADVERTISED_PEER_PORT, DhtRetryTiming, DownloadActivityEvent, DownloadActivitySink,
+        DownloadConfig, DownloadControl, DownloadError, DownloadResourceLimits,
         MAX_DIAGNOSTIC_ERROR_LENGTH, MAX_METADATA_PEERS, MAX_RECENT_METADATA_ATTEMPTS,
         MagnetDownloadConfig, MetadataAcquisitionPhase, MetadataPeerStage, PeerConnection,
         PreparedContentWrite, QueuedContentStorageCommand, SwarmConfig, TorrentPeerCoordinator,
         TrackerManager, UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming,
         UdpTrackerTokenCache, announce_udp_tracker_address, atomic_saturating_add,
         atomic_saturating_increment, coalesce_content_writes, collect_content_write_batch,
-        content_dial_slot_available, download_magnet, download_magnet_metadata_with_control,
-        download_magnet_metadata_with_dht, download_magnet_with_control, download_verified_piece,
+        content_dial_slot_available, content_storage_job_limit, download_magnet,
+        download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
+        download_magnet_with_control, download_verified_piece,
         download_verified_piece_with_control, execute_content_storage_writes, next_peer_message,
         retrying_dht_lookup, run_content_download, run_magnet_download_with_peers, send_message,
     };
@@ -6310,7 +6512,8 @@ mod tests {
     };
     use crate::storage::{StagingFile, StorageError, staging_path};
     use crate::swarm::{
-        BlockKey, DEFAULT_INITIAL_REQUESTS_PER_CONNECTION, DEFAULT_MAX_PENDING_DIALS,
+        BlockKey, DEFAULT_INITIAL_REQUESTS_PER_CONNECTION, DEFAULT_MAX_ESTABLISHED_CONNECTIONS,
+        DEFAULT_MAX_PENDING_DIALS,
     };
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -6394,7 +6597,7 @@ mod tests {
 
     #[test]
     fn storage_write_batch_respects_exact_count_and_byte_caps() {
-        let (sender, mut receiver) = mpsc::channel(CONTENT_STORAGE_QUEUE);
+        let (sender, mut receiver) = mpsc::channel(CONTENT_STORAGE_WRITE_BATCH_BLOCKS);
         for piece in 1..=CONTENT_STORAGE_WRITE_BATCH_BLOCKS {
             sender
                 .try_send(queued_write(piece as u32, 0, MIN_PAYLOAD_ALLOWANCE))
@@ -6452,6 +6655,10 @@ mod tests {
         NetworkConfig::new(NetworkPolicy::LoopbackOnly, timeout, timeout)
     }
 
+    fn resource_limits(bytes: usize) -> DownloadResourceLimits {
+        DownloadResourceLimits::new(bytes, bytes, bytes)
+    }
+
     fn test_path(name: &str) -> PathBuf {
         let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         std::env::temp_dir().join(format!(
@@ -6484,7 +6691,7 @@ mod tests {
 
     #[test]
     fn half_open_dials_do_not_consume_established_connection_slots() {
-        let mut config = SwarmConfig::for_payload_limit(MIN_PAYLOAD_ALLOWANCE);
+        let mut config = SwarmConfig::for_request_limit(MIN_PAYLOAD_ALLOWANCE);
         config.max_established_connections = 2;
         config.max_pending_dials = 2;
 
@@ -6514,6 +6721,30 @@ mod tests {
                 ContentSupervisorOwner::Discovery,
             ]
         );
+    }
+
+    #[test]
+    fn product_profiles_are_generous_and_fill_every_initial_peer_window() {
+        assert_eq!(
+            DownloadResourceLimits::DESKTOP,
+            DownloadResourceLimits::new(256 * 1024 * 1024, 32 * 1024 * 1024, 256 * 1024 * 1024)
+        );
+        assert_eq!(
+            DownloadResourceLimits::ANDROID,
+            DownloadResourceLimits::new(128 * 1024 * 1024, 16 * 1024 * 1024, 128 * 1024 * 1024)
+        );
+        let initial_window_bytes = DEFAULT_MAX_ESTABLISHED_CONNECTIONS
+            * DEFAULT_INITIAL_REQUESTS_PER_CONNECTION
+            * MIN_PAYLOAD_ALLOWANCE;
+        for limits in [
+            DownloadResourceLimits::DESKTOP,
+            DownloadResourceLimits::ANDROID,
+        ] {
+            assert!(limits.max_outstanding_request_bytes >= initial_window_bytes);
+            assert!(limits.max_buffered_payload_bytes >= MIN_PAYLOAD_ALLOWANCE);
+            assert!(limits.max_active_piece_bytes >= initial_window_bytes);
+            limits.validate().expect("valid product profile");
+        }
     }
 
     #[test]
@@ -7509,7 +7740,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 ContentDownloadConfig {
                     output_path: output.clone(),
                     max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
-                    swarm_config: SwarmConfig::for_payload_limit(2 * MIN_PAYLOAD_ALLOWANCE),
+                    swarm_config: SwarmConfig::for_request_limit(2 * MIN_PAYLOAD_ALLOWANCE),
                     skip_files: Vec::new(),
                     materialize_files: Vec::new(),
                 },
@@ -7571,7 +7802,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 ContentDownloadConfig {
                     output_path: output.clone(),
                     max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
-                    swarm_config: SwarmConfig::for_payload_limit(2 * MIN_PAYLOAD_ALLOWANCE),
+                    swarm_config: SwarmConfig::for_request_limit(2 * MIN_PAYLOAD_ALLOWANCE),
                     skip_files: Vec::new(),
                     materialize_files: Vec::new(),
                 },
@@ -7637,7 +7868,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 ContentDownloadConfig {
                     output_path: output.clone(),
                     max_buffered_payload_bytes: payload_limit,
-                    swarm_config: SwarmConfig::for_payload_limit(payload_limit),
+                    swarm_config: SwarmConfig::for_request_limit(payload_limit),
                     skip_files: Vec::new(),
                     materialize_files: Vec::new(),
                 },
@@ -7659,9 +7890,10 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             "peer never observed the request window grow"
         );
         assert!(
-            report.payload_high_water
+            report.outstanding_request_high_water
                 > DEFAULT_INITIAL_REQUESTS_PER_CONNECTION * MIN_PAYLOAD_ALLOWANCE
         );
+        assert!(report.outstanding_request_high_water <= payload_limit);
         assert!(report.payload_high_water <= payload_limit);
         let swarm = control
             .diagnostic_snapshot()
@@ -7674,6 +7906,69 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             .await
             .expect("window peer joined")
             .expect("window peer task");
+        let _ = tokio::fs::remove_file(output).await;
+    }
+
+    #[tokio::test]
+    async fn request_pipeline_exceeds_independently_bounded_resident_payload() {
+        let payload = Arc::new(
+            (0..(8 * MIN_PAYLOAD_ALLOWANCE))
+                .map(|index| ((index * 17 + index / 11) & 0xff) as u8)
+                .collect::<Vec<_>>(),
+        );
+        let info = single_file_info_with_piece_length(&payload, payload.len());
+        let metainfo = Metainfo::from_info_bytes(&info).expect("resource split metainfo");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind resource split peer");
+        let address = listener.local_addr().expect("resource split address");
+        let max_pending = Arc::new(AtomicUsize::new(0));
+        let peer_task = tokio::spawn(serve_window_probe_peer(
+            listener,
+            metainfo.info_hash,
+            payload.clone(),
+            max_pending,
+        ));
+        let output = test_path("independent-resource-budgets.bin");
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
+            address,
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(2)),
+        )
+        .expect("peer session");
+        let control = DownloadControl::new();
+        control.set_storage_write_delay(Duration::from_millis(25));
+
+        let report = timeout(
+            Duration::from_secs(5),
+            run_content_download(
+                ContentDownloadConfig {
+                    output_path: output.clone(),
+                    max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                    swarm_config: SwarmConfig::for_request_limit(8 * MIN_PAYLOAD_ALLOWANCE),
+                    skip_files: Vec::new(),
+                    materialize_files: Vec::new(),
+                },
+                metainfo,
+                control.clone(),
+                None,
+                &mut peers,
+                None,
+            ),
+        )
+        .await
+        .expect("resource split deadline")
+        .expect("resource split completion");
+
+        assert_eq!(report.verified_piece_count, 1);
+        assert!(report.payload_high_water <= 2 * MIN_PAYLOAD_ALLOWANCE);
+        assert!(report.outstanding_request_high_water >= 4 * MIN_PAYLOAD_ALLOWANCE);
+        assert!(report.outstanding_request_high_water > report.payload_high_water);
+        assert_eq!(control.snapshot().buffered_payload_bytes, 0);
+        timeout(Duration::from_secs(1), peer_task)
+            .await
+            .expect("resource split peer joined")
+            .expect("resource split peer task");
         let _ = tokio::fs::remove_file(output).await;
     }
 
@@ -7718,7 +8013,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 ContentDownloadConfig {
                     output_path: output.clone(),
                     max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
-                    swarm_config: SwarmConfig::for_payload_limit(2 * MIN_PAYLOAD_ALLOWANCE),
+                    swarm_config: SwarmConfig::for_request_limit(2 * MIN_PAYLOAD_ALLOWANCE),
                     skip_files: Vec::new(),
                     materialize_files: Vec::new(),
                 },
@@ -7756,7 +8051,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
     }
 
     #[tokio::test]
-    async fn slow_storage_preserves_multi_peer_payload_bound() {
+    async fn slow_storage_preserves_multi_peer_resident_payload_bound() {
         let first = vec![0x29; 16 * 1024];
         let second = vec![0xe3; 16 * 1024];
         let metainfo =
@@ -7795,7 +8090,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 ContentDownloadConfig {
                     output_path: task_output,
                     max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
-                    swarm_config: SwarmConfig::for_payload_limit(2 * MIN_PAYLOAD_ALLOWANCE),
+                    swarm_config: SwarmConfig::for_request_limit(2 * MIN_PAYLOAD_ALLOWANCE),
                     skip_files: Vec::new(),
                     materialize_files: Vec::new(),
                 },
@@ -7845,8 +8140,9 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let progress = control.snapshot();
         assert_eq!(progress.storage_jobs_pending, 0);
         assert!(progress.storage_jobs_high_water >= 2);
-        assert!(progress.storage_command_queue_high_water <= CONTENT_STORAGE_QUEUE);
-        assert!(progress.storage_completion_queue_high_water <= CONTENT_STORAGE_QUEUE);
+        let job_limit = content_storage_job_limit(2 * MIN_PAYLOAD_ALLOWANCE);
+        assert!(progress.storage_command_queue_high_water <= job_limit);
+        assert!(progress.storage_completion_queue_high_water <= job_limit);
         assert!((1..=2).contains(&progress.storage_write_operations_started));
         assert_eq!(
             progress.storage_write_operations_started,
@@ -7912,7 +8208,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 ContentDownloadConfig {
                     output_path: task_output,
                     max_buffered_payload_bytes: payload_len,
-                    swarm_config: SwarmConfig::for_payload_limit(payload_len),
+                    swarm_config: SwarmConfig::for_request_limit(payload_len),
                     skip_files: Vec::new(),
                     materialize_files: Vec::new(),
                 },
@@ -8004,7 +8300,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 ContentDownloadConfig {
                     output_path: task_output,
                     max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
-                    swarm_config: SwarmConfig::for_payload_limit(MIN_PAYLOAD_ALLOWANCE),
+                    swarm_config: SwarmConfig::for_request_limit(MIN_PAYLOAD_ALLOWANCE),
                     skip_files: Vec::new(),
                     materialize_files: Vec::new(),
                 },
@@ -8081,6 +8377,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let control = DownloadControl::new();
         control.set_storage_write_delay(Duration::from_millis(3));
         let output = test_path("storage-command-pressure.bin");
+        let job_limit = content_storage_job_limit(payload.len());
 
         let report = timeout(
             Duration::from_secs(5),
@@ -8088,7 +8385,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 ContentDownloadConfig {
                     output_path: output.clone(),
                     max_buffered_payload_bytes: payload.len(),
-                    swarm_config: SwarmConfig::for_payload_limit(payload.len()),
+                    swarm_config: SwarmConfig::for_request_limit(payload.len()),
                     skip_files: Vec::new(),
                     materialize_files: Vec::new(),
                 },
@@ -8107,10 +8404,11 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         assert_eq!(tokio::fs::read(&output).await.expect("output"), payload);
         let progress = control.snapshot();
         assert_eq!(progress.storage_jobs_pending, 0);
-        assert!(progress.storage_jobs_high_water > CONTENT_STORAGE_QUEUE);
-        assert!(progress.storage_command_queue_high_water <= CONTENT_STORAGE_QUEUE);
+        assert!(progress.storage_jobs_high_water <= job_limit);
+        assert!(progress.storage_jobs_high_water > CONTENT_STORAGE_WRITE_BATCH_BLOCKS);
+        assert!(progress.storage_command_queue_high_water <= job_limit);
         assert!(progress.storage_command_queue_high_water > 0);
-        assert!(progress.storage_completion_queue_high_water <= CONTENT_STORAGE_QUEUE);
+        assert!(progress.storage_completion_queue_high_water <= job_limit);
         assert_eq!(progress.storage_write_blocks_started, 80);
         assert_eq!(progress.storage_write_blocks_completed, 80);
         assert!(progress.storage_write_operations_started < 80);
@@ -8185,6 +8483,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         control.set_storage_write_delay(Duration::from_millis(5));
         let task_control = control.clone();
         let payload_limit = payload.len();
+        let job_limit = content_storage_job_limit(payload_limit);
         let output = test_path("storage-pressure-dht-intake.bin");
         let task_output = output.clone();
         let download = tokio::spawn(async move {
@@ -8192,7 +8491,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 ContentDownloadConfig {
                     output_path: task_output,
                     max_buffered_payload_bytes: payload_limit,
-                    swarm_config: SwarmConfig::for_payload_limit(payload_limit),
+                    swarm_config: SwarmConfig::for_request_limit(payload_limit),
                     skip_files: Vec::new(),
                     materialize_files: Vec::new(),
                 },
@@ -8209,8 +8508,8 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         timeout(Duration::from_secs(2), async {
             loop {
                 let progress = control.snapshot();
-                if progress.storage_jobs_high_water > CONTENT_STORAGE_QUEUE
-                    && progress.storage_jobs_pending > CONTENT_STORAGE_QUEUE
+                if progress.storage_jobs_high_water >= job_limit
+                    && progress.storage_jobs_pending >= job_limit
                 {
                     break;
                 }
@@ -8247,8 +8546,8 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         );
         let progress = control.snapshot();
         assert_eq!(progress.storage_jobs_pending, 0);
-        assert_eq!(progress.storage_jobs_high_water, CONTENT_STORAGE_QUEUE + 2);
-        assert!(progress.storage_command_queue_high_water <= CONTENT_STORAGE_QUEUE);
+        assert_eq!(progress.storage_jobs_high_water, job_limit);
+        assert!(progress.storage_command_queue_high_water <= job_limit);
         assert!(progress.storage_command_queue_high_water > 0);
         let discovered = peers
             .registry
@@ -8310,7 +8609,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 ContentDownloadConfig {
                     output_path: task_output,
                     max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
-                    swarm_config: SwarmConfig::for_payload_limit(2 * MIN_PAYLOAD_ALLOWANCE),
+                    swarm_config: SwarmConfig::for_request_limit(2 * MIN_PAYLOAD_ALLOWANCE),
                     skip_files: Vec::new(),
                     materialize_files: Vec::new(),
                 },
@@ -8338,7 +8637,11 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             .expect("download task")
             .expect("endgame completion");
         assert_eq!(report.verified_piece_count, 1);
-        assert_eq!(report.payload_high_water, 2 * MIN_PAYLOAD_ALLOWANCE);
+        assert_eq!(report.payload_high_water, MIN_PAYLOAD_ALLOWANCE);
+        assert_eq!(
+            report.outstanding_request_high_water,
+            2 * MIN_PAYLOAD_ALLOWANCE
+        );
         assert_eq!(
             tokio::fs::read(&output).await.expect("endgame output"),
             payload
@@ -8395,7 +8698,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         peers
             .observe_address(clean_address, PeerSource::Manual)
             .expect("clean peer");
-        let mut swarm_config = SwarmConfig::for_payload_limit(MIN_PAYLOAD_ALLOWANCE);
+        let mut swarm_config = SwarmConfig::for_request_limit(MIN_PAYLOAD_ALLOWANCE);
         swarm_config.max_established_connections = 1;
         swarm_config.max_pending_dials = 1;
         let control = DownloadControl::new();
@@ -8438,7 +8741,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         assert_eq!(snapshot.failed_piece_bytes, MIN_PAYLOAD_ALLOWANCE);
         assert_eq!(snapshot.last_hash_failure_contributors, 1);
         assert_eq!(snapshot.active_request_attempts, 0);
-        assert_eq!(snapshot.payload_reserved, 0);
+        assert_eq!(snapshot.outstanding_request_bytes, 0);
         let corrupt_record = peers
             .registry
             .find_endpoint(PeerEndpoint::new(corrupt_address).expect("corrupt endpoint"))
@@ -8528,7 +8831,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         peers
             .observe_address(clean_address, PeerSource::Manual)
             .expect("clean peer");
-        let mut swarm_config = SwarmConfig::for_payload_limit(2 * MIN_PAYLOAD_ALLOWANCE);
+        let mut swarm_config = SwarmConfig::for_request_limit(2 * MIN_PAYLOAD_ALLOWANCE);
         swarm_config.max_established_connections = 2;
         swarm_config.max_pending_dials = 1;
         swarm_config.unproductive_grace = Duration::from_millis(50);
@@ -8646,7 +8949,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 ContentDownloadConfig {
                     output_path: output.clone(),
                     max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
-                    swarm_config: SwarmConfig::for_payload_limit(2 * MIN_PAYLOAD_ALLOWANCE),
+                    swarm_config: SwarmConfig::for_request_limit(2 * MIN_PAYLOAD_ALLOWANCE),
                     skip_files: Vec::new(),
                     materialize_files: Vec::new(),
                 },
@@ -8709,7 +9012,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 ContentDownloadConfig {
                     output_path: task_output,
                     max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
-                    swarm_config: SwarmConfig::for_payload_limit(MIN_PAYLOAD_ALLOWANCE),
+                    swarm_config: SwarmConfig::for_request_limit(MIN_PAYLOAD_ALLOWANCE),
                     skip_files: Vec::new(),
                     materialize_files: Vec::new(),
                 },
@@ -8806,7 +9109,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         peers
             .observe_address(useful_address, PeerSource::Manual)
             .expect("replacement peer");
-        let mut swarm_config = SwarmConfig::for_payload_limit(2 * MIN_PAYLOAD_ALLOWANCE);
+        let mut swarm_config = SwarmConfig::for_request_limit(2 * MIN_PAYLOAD_ALLOWANCE);
         swarm_config.unproductive_grace = Duration::from_millis(100);
         let output = test_path("choked-capacity-replacement");
         let report = timeout(
@@ -8884,7 +9187,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         peers
             .observe_address(useful_address, PeerSource::Manual)
             .expect("wanted-piece peer");
-        let mut swarm_config = SwarmConfig::for_payload_limit(2 * MIN_PAYLOAD_ALLOWANCE);
+        let mut swarm_config = SwarmConfig::for_request_limit(2 * MIN_PAYLOAD_ALLOWANCE);
         swarm_config.unproductive_grace = Duration::from_millis(50);
         let output = test_path("irrelevant-capacity-replacement");
 
@@ -8939,7 +9242,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             loopback_network(Duration::from_secs(2)),
         )
         .expect("peer session");
-        let mut swarm_config = SwarmConfig::for_payload_limit(MIN_PAYLOAD_ALLOWANCE);
+        let mut swarm_config = SwarmConfig::for_request_limit(MIN_PAYLOAD_ALLOWANCE);
         swarm_config.max_established_connections = 1;
         swarm_config.unproductive_grace = Duration::from_millis(50);
         let output = test_path("choked-no-alternative.bin");
@@ -9017,7 +9320,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         peers
             .observe_address(replacement_address, PeerSource::Manual)
             .expect("replacement peer");
-        let mut swarm_config = SwarmConfig::for_payload_limit(MIN_PAYLOAD_ALLOWANCE);
+        let mut swarm_config = SwarmConfig::for_request_limit(MIN_PAYLOAD_ALLOWANCE);
         swarm_config.request_timeout = Duration::from_millis(75);
         let output = test_path("late-request-payload.bin");
         let control = DownloadControl::new();
@@ -9094,7 +9397,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             .observe_address(useful_address, PeerSource::Manual)
             .expect("useful peer");
         let payload_limit = payload.len();
-        let mut swarm_config = SwarmConfig::for_payload_limit(payload_limit);
+        let mut swarm_config = SwarmConfig::for_request_limit(payload_limit);
         swarm_config.request_timeout = Duration::from_secs(10);
         let control = DownloadControl::new();
         let output = test_path("sampled-stall.bin");
@@ -10118,7 +10421,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 magnet,
                 output_path: output_path.clone(),
                 network,
-                max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+                resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
                 dht: None,
@@ -10225,7 +10528,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 ),
                 output_path: output.clone(),
                 network: loopback_network(Duration::from_secs(2)),
-                max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+                resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
                 dht: None,
@@ -10302,7 +10605,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 ContentDownloadConfig {
                     output_path: output.clone(),
                     max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
-                    swarm_config: SwarmConfig::for_payload_limit(MIN_PAYLOAD_ALLOWANCE),
+                    swarm_config: SwarmConfig::for_request_limit(MIN_PAYLOAD_ALLOWANCE),
                     skip_files: Vec::new(),
                     materialize_files: Vec::new(),
                 },
@@ -10350,7 +10653,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 ),
                 output_path: output_path.clone(),
                 network: loopback_network(Duration::from_secs(2)),
-                max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+                resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
                 dht: None,
@@ -11607,7 +11910,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 magnet,
                 output_path: output_path.clone(),
                 network,
-                max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+                resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
                 dht: None,
@@ -11711,7 +12014,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             ),
             output_path: output_path.clone(),
             network: loopback_network(Duration::from_secs(2)),
-            max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+            resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
             materialize_files: Vec::new(),
             dht: None,
@@ -11818,7 +12121,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             magnet: format!("magnet:?xt=urn:btih:{}", hex(&info_hash)),
             output_path: output_path.clone(),
             network: loopback_network(Duration::from_secs(2)),
-            max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+            resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
             materialize_files: Vec::new(),
             dht: Some(dht.handle()),
@@ -11870,7 +12173,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             magnet: format!("magnet:?xt=urn:btih:{}", hex(&info_hash)),
             output_path: output_path.clone(),
             network: loopback_network(Duration::from_secs(2)),
-            max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+            resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
             materialize_files: Vec::new(),
             dht: Some(dht.handle()),
@@ -11906,7 +12209,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             magnet: format!("magnet:?xt=urn:btih:{}&x.pe={address}", hex(&info_hash)),
             output_path: output_path.clone(),
             network: loopback_network(Duration::from_secs(2)),
-            max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+            resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
             materialize_files: Vec::new(),
             dht: None,
@@ -11959,7 +12262,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             magnet: format!("magnet:?xt=urn:btih:{}&x.pe={address}", hex(&info_hash)),
             output_path: output_path.clone(),
             network: loopback_network(Duration::from_secs(2)),
-            max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+            resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
             materialize_files: Vec::new(),
             dht: None,
@@ -12009,7 +12312,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             magnet: format!("magnet:?xt=urn:btih:{}&x.pe={address}", hex(&info_hash)),
             output_path: output_path.clone(),
             network: loopback_network(Duration::from_secs(2)),
-            max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+            resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
             materialize_files: Vec::new(),
             dht: None,
@@ -12059,7 +12362,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             peer: address,
             output_path: output_path.clone(),
             network: loopback_network(Duration::from_millis(50)),
-            max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+            resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
             materialize_files: Vec::new(),
         })
@@ -12106,7 +12409,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             peer: address,
             output_path: output_path.clone(),
             network: loopback_network(Duration::from_millis(50)),
-            max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+            resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
             skip_files: vec![1],
             materialize_files: Vec::new(),
         })
@@ -12149,7 +12452,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 peer: address,
                 output_path: output_path.clone(),
                 network: loopback_network(Duration::from_secs(5)),
-                max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+                resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
                 skip_files: vec![1],
                 materialize_files: Vec::new(),
             },
@@ -12209,7 +12512,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             peer: address,
             output_path: output_path.clone(),
             network: loopback_network(Duration::from_secs(1)),
-            max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+            resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
             skip_files: vec![1],
             materialize_files: Vec::new(),
         })

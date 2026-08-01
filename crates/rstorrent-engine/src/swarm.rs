@@ -12,7 +12,7 @@ pub const DEFAULT_MAX_ESTABLISHED_CONNECTIONS: usize = 30;
 pub const DEFAULT_MAX_PENDING_DIALS: usize = 30;
 pub const DEFAULT_INITIAL_REQUESTS_PER_CONNECTION: usize = 4;
 pub const DEFAULT_MAX_REQUESTS_PER_CONNECTION: usize = 500;
-pub const DEFAULT_MAX_ACTIVE_PIECES: usize = 64;
+pub const DEFAULT_MAX_ACTIVE_PIECE_BYTES: usize = 256 * 1024 * 1024;
 pub const DEFAULT_MAX_TERMINAL_ATTEMPTS_PER_BLOCK: usize = DEFAULT_MAX_ESTABLISHED_CONNECTIONS;
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 pub const DEFAULT_UNPRODUCTIVE_GRACE: Duration = Duration::from_secs(60);
@@ -140,24 +140,24 @@ pub struct SwarmConfig {
     pub max_pending_dials: usize,
     pub initial_requests_per_connection: usize,
     pub max_requests_per_connection: usize,
-    pub max_active_pieces: usize,
+    pub max_active_piece_bytes: usize,
     pub max_terminal_attempts_per_block: usize,
-    pub payload_limit: usize,
+    pub max_outstanding_request_bytes: usize,
     pub request_timeout: Duration,
     pub request_queue_time: Duration,
     pub unproductive_grace: Duration,
 }
 
 impl SwarmConfig {
-    pub const fn for_payload_limit(payload_limit: usize) -> Self {
+    pub const fn for_request_limit(max_outstanding_request_bytes: usize) -> Self {
         Self {
             max_established_connections: DEFAULT_MAX_ESTABLISHED_CONNECTIONS,
             max_pending_dials: DEFAULT_MAX_PENDING_DIALS,
             initial_requests_per_connection: DEFAULT_INITIAL_REQUESTS_PER_CONNECTION,
             max_requests_per_connection: DEFAULT_MAX_REQUESTS_PER_CONNECTION,
-            max_active_pieces: DEFAULT_MAX_ACTIVE_PIECES,
+            max_active_piece_bytes: DEFAULT_MAX_ACTIVE_PIECE_BYTES,
             max_terminal_attempts_per_block: DEFAULT_MAX_TERMINAL_ATTEMPTS_PER_BLOCK,
-            payload_limit,
+            max_outstanding_request_bytes,
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
             request_queue_time: DEFAULT_REQUEST_QUEUE_TIME,
             unproductive_grace: DEFAULT_UNPRODUCTIVE_GRACE,
@@ -187,9 +187,9 @@ impl SwarmConfig {
                 "initial request window must be healthy and within the connection limit",
             ));
         }
-        if self.max_active_pieces == 0 {
+        if self.max_active_piece_bytes < MIN_PAYLOAD_ALLOWANCE {
             return Err(SwarmError::InvalidConfig(
-                "active piece limit must be nonzero",
+                "active piece working set is smaller than one request block",
             ));
         }
         if self.max_terminal_attempts_per_block == 0 {
@@ -197,9 +197,9 @@ impl SwarmConfig {
                 "terminal attempt retention must be nonzero",
             ));
         }
-        if self.payload_limit < MIN_PAYLOAD_ALLOWANCE {
+        if self.max_outstanding_request_bytes < MIN_PAYLOAD_ALLOWANCE {
             return Err(SwarmError::InvalidConfig(
-                "payload limit is smaller than one request block",
+                "outstanding request limit is smaller than one request block",
             ));
         }
         if self.request_timeout.is_zero()
@@ -294,7 +294,7 @@ pub enum NoRequestReason {
     NoConnections,
     AllUsefulPeersChoked,
     NoPeerHasWantedPiece,
-    PayloadAllowanceFull,
+    OutstandingRequestLimit,
     RequestWindowsFull,
     ActivePieceLimit,
 }
@@ -311,8 +311,10 @@ pub struct SwarmSnapshot {
     pub writing_blocks: usize,
     pub received_blocks: usize,
     pub verified_blocks: usize,
-    pub payload_reserved: usize,
-    pub payload_high_water: usize,
+    pub active_piece_count: usize,
+    pub active_piece_bytes: usize,
+    pub outstanding_request_bytes: usize,
+    pub outstanding_request_high_water: usize,
     pub request_target_total: usize,
     pub request_target_max: usize,
     pub slow_start_peers: usize,
@@ -591,8 +593,8 @@ pub struct SwarmState {
     connections: BTreeMap<ConnectionId, ConnectionState>,
     pending_dials: BTreeSet<PendingDialId>,
     next_attempt_id: u64,
-    payload_reserved: usize,
-    payload_high_water: usize,
+    outstanding_request_bytes: usize,
+    outstanding_request_high_water: usize,
     last_scheduled_connection: Option<ConnectionId>,
     endgame_assignments: usize,
     cancelled_request_attempts: usize,
@@ -658,8 +660,8 @@ impl SwarmState {
             connections: BTreeMap::new(),
             pending_dials: BTreeSet::new(),
             next_attempt_id: 1,
-            payload_reserved: 0,
-            payload_high_water: 0,
+            outstanding_request_bytes: 0,
+            outstanding_request_high_water: 0,
             last_scheduled_connection: None,
             endgame_assignments: 0,
             cancelled_request_attempts: 0,
@@ -791,9 +793,9 @@ impl SwarmState {
                 let length = usize::try_from(block.length)
                     .map_err(|_| SwarmError::ArithmeticOverflow("block length"))?;
                 if self
-                    .payload_reserved
+                    .outstanding_request_bytes
                     .checked_add(length)
-                    .is_none_or(|reserved| reserved > self.config.payload_limit)
+                    .is_none_or(|reserved| reserved > self.config.max_outstanding_request_bytes)
                 {
                     continue;
                 }
@@ -821,9 +823,9 @@ impl SwarmState {
                 let length = usize::try_from(block.length)
                     .map_err(|_| SwarmError::ArithmeticOverflow("block length"))?;
                 if self
-                    .payload_reserved
+                    .outstanding_request_bytes
                     .checked_add(length)
-                    .is_none_or(|reserved| reserved > self.config.payload_limit)
+                    .is_none_or(|reserved| reserved > self.config.max_outstanding_request_bytes)
                 {
                     continue;
                 }
@@ -964,9 +966,8 @@ impl SwarmState {
                 Some(evidence.id),
             )?;
         }
-        let released_reservations = active_attempts.len().saturating_sub(1);
-        for _ in 0..released_reservations {
-            self.release_payload(block.length)?;
+        for _ in 0..active_attempts.len() {
+            self.release_request(block.length)?;
         }
         self.cancelled_request_attempts = self
             .cancelled_request_attempts
@@ -1004,7 +1005,6 @@ impl SwarmState {
         {
             return Err(SwarmError::Invariant("write evidence attempt is missing"));
         }
-        self.release_payload(block.length)?;
         let state = self
             .blocks
             .get_mut(&block)
@@ -1181,7 +1181,6 @@ impl SwarmState {
             })
             .collect::<Vec<_>>();
         for block in writing {
-            self.release_payload(block.length)?;
             self.blocks
                 .get_mut(&block)
                 .ok_or(SwarmError::UnknownBlock(block))?
@@ -1307,6 +1306,7 @@ impl SwarmState {
                     Some(next_expiry.map_or(deadline, |next: Duration| next.min(deadline)));
             }
         }
+        let active_pieces = self.active_piece_indices();
         SwarmSnapshot {
             pending_dials: self.pending_dials.len(),
             connected_peers: self.connections.len(),
@@ -1322,8 +1322,10 @@ impl SwarmState {
             writing_blocks: writing,
             received_blocks: received,
             verified_blocks: verified,
-            payload_reserved: self.payload_reserved,
-            payload_high_water: self.payload_high_water,
+            active_piece_count: active_pieces.len(),
+            active_piece_bytes: self.active_piece_bytes(&active_pieces),
+            outstanding_request_bytes: self.outstanding_request_bytes,
+            outstanding_request_high_water: self.outstanding_request_high_water,
             request_target_total: self
                 .connections
                 .values()
@@ -1506,9 +1508,6 @@ impl SwarmState {
                 return Ok(Some(block));
             }
         }
-        if active.len() >= self.config.max_active_pieces {
-            return Ok(None);
-        }
         for (&piece, state) in &self.pieces {
             let index = usize::try_from(piece)
                 .map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
@@ -1520,6 +1519,9 @@ impl SwarmState {
                         .is_some_and(|block| matches!(block.phase, BlockPhase::Verified))
                 })
             {
+                continue;
+            }
+            if !self.can_activate_piece(index, &active) {
                 continue;
             }
             if let Some(block) = self.first_missing_block(piece) {
@@ -1591,6 +1593,32 @@ impl SwarmState {
             .collect()
     }
 
+    fn piece_working_set_bytes(&self, piece: usize) -> usize {
+        let Ok(piece) = u32::try_from(piece) else {
+            return usize::MAX;
+        };
+        self.pieces.get(&piece).map_or(0, |state| {
+            state.blocks.iter().fold(0_usize, |total, block| {
+                total.saturating_add(block.length as usize)
+            })
+        })
+    }
+
+    fn active_piece_bytes(&self, active: &BTreeSet<usize>) -> usize {
+        active.iter().fold(0_usize, |total, piece| {
+            total.saturating_add(self.piece_working_set_bytes(*piece))
+        })
+    }
+
+    fn can_activate_piece(&self, piece: usize, active: &BTreeSet<usize>) -> bool {
+        if active.is_empty() {
+            return true;
+        }
+        self.active_piece_bytes(active)
+            .checked_add(self.piece_working_set_bytes(piece))
+            .is_some_and(|bytes| bytes <= self.config.max_active_piece_bytes)
+    }
+
     fn assign(
         &mut self,
         connection: ConnectionId,
@@ -1643,11 +1671,13 @@ impl SwarmState {
         state.phase = BlockPhase::Requested;
         let length = usize::try_from(block.length)
             .map_err(|_| SwarmError::ArithmeticOverflow("block length"))?;
-        self.payload_reserved = self
-            .payload_reserved
+        self.outstanding_request_bytes = self
+            .outstanding_request_bytes
             .checked_add(length)
-            .ok_or(SwarmError::ArithmeticOverflow("payload reservation"))?;
-        self.payload_high_water = self.payload_high_water.max(self.payload_reserved);
+            .ok_or(SwarmError::ArithmeticOverflow("request reservation"))?;
+        self.outstanding_request_high_water = self
+            .outstanding_request_high_water
+            .max(self.outstanding_request_bytes);
         if endgame {
             self.endgame_assignments = self.endgame_assignments.saturating_add(1);
         }
@@ -1694,7 +1724,7 @@ impl SwarmState {
             BlockPhase::Missing
         };
         trim_terminal_attempts(state, self.config.max_terminal_attempts_per_block, None)?;
-        self.release_payload(block.length)
+        self.release_request(block.length)
     }
 
     fn release_requests_for_connection(
@@ -1723,13 +1753,13 @@ impl SwarmState {
         Ok(released)
     }
 
-    fn release_payload(&mut self, length: u32) -> Result<(), SwarmError> {
+    fn release_request(&mut self, length: u32) -> Result<(), SwarmError> {
         let length =
             usize::try_from(length).map_err(|_| SwarmError::ArithmeticOverflow("block length"))?;
-        self.payload_reserved = self
-            .payload_reserved
+        self.outstanding_request_bytes = self
+            .outstanding_request_bytes
             .checked_sub(length)
-            .ok_or(SwarmError::Invariant("payload reservation underflow"))?;
+            .ok_or(SwarmError::Invariant("request reservation underflow"))?;
         Ok(())
     }
 
@@ -1808,8 +1838,8 @@ impl SwarmState {
         if useful.all(|connection| connection.choking) {
             return Some(NoRequestReason::AllUsefulPeersChoked);
         }
-        if self.payload_reserved >= self.config.payload_limit {
-            return Some(NoRequestReason::PayloadAllowanceFull);
+        if self.outstanding_request_bytes >= self.config.max_outstanding_request_bytes {
+            return Some(NoRequestReason::OutstandingRequestLimit);
         }
         if self.connections.keys().all(|connection| {
             self.connections.get(connection).is_some_and(|state| {
@@ -1818,7 +1848,19 @@ impl SwarmState {
         }) {
             return Some(NoRequestReason::RequestWindowsFull);
         }
-        if self.active_piece_indices().len() >= self.config.max_active_pieces {
+        let active = self.active_piece_indices();
+        let blocked_by_working_set = self.pieces.iter().all(|(piece, state)| {
+            let incomplete = state.blocks.iter().any(|block| {
+                self.blocks
+                    .get(block)
+                    .is_some_and(|block| !matches!(block.phase, BlockPhase::Verified))
+            });
+            !incomplete
+                || usize::try_from(*piece).map_or(true, |piece| {
+                    active.contains(&piece) || !self.can_activate_piece(piece, &active)
+                })
+        });
+        if blocked_by_working_set {
             return Some(NoRequestReason::ActivePieceLimit);
         }
         None
@@ -1954,7 +1996,7 @@ mod tests {
     }
 
     fn state(piece_count: usize, plans: Vec<PiecePlan>, payload_blocks: usize) -> SwarmState {
-        let mut config = SwarmConfig::for_payload_limit(payload_blocks * BLOCK as usize);
+        let mut config = SwarmConfig::for_request_limit(payload_blocks * BLOCK as usize);
         config.request_timeout = Duration::from_secs(30);
         config.unproductive_grace = Duration::from_secs(30);
         SwarmState::new(config, piece_count, plans).expect("swarm state")
@@ -2043,7 +2085,7 @@ mod tests {
     }
 
     #[test]
-    fn distributes_requests_fairly_and_holds_the_global_payload_bound() {
+    fn distributes_requests_fairly_and_holds_the_global_request_bound() {
         let mut state = state(1, vec![plan(0, 8)], 4);
         for id in [connection(1), connection(2)] {
             add_peer(&mut state, id, &[0], false);
@@ -2058,12 +2100,97 @@ mod tests {
             BTreeSet::from([connection(1), connection(2)])
         );
         let snapshot = state.snapshot(Duration::ZERO);
-        assert_eq!(snapshot.payload_reserved, 4 * BLOCK as usize);
-        assert_eq!(snapshot.payload_high_water, snapshot.payload_reserved);
+        assert_eq!(snapshot.outstanding_request_bytes, 4 * BLOCK as usize);
+        assert_eq!(
+            snapshot.outstanding_request_high_water,
+            snapshot.outstanding_request_bytes
+        );
         assert_eq!(
             snapshot.no_request_reason,
-            Some(NoRequestReason::PayloadAllowanceFull)
+            Some(NoRequestReason::OutstandingRequestLimit)
         );
+    }
+
+    #[test]
+    fn generous_request_allowance_fills_every_default_initial_peer_window() {
+        let peer_count = DEFAULT_MAX_ESTABLISHED_CONNECTIONS;
+        let block_count = peer_count * DEFAULT_INITIAL_REQUESTS_PER_CONNECTION;
+        let config = SwarmConfig::for_request_limit(256 * 1024 * 1024);
+        let mut state = SwarmState::new(config, 1, vec![plan(0, block_count)]).expect("swarm");
+        for value in 1..=peer_count as u64 {
+            add_peer(&mut state, connection(value), &[0], false);
+        }
+
+        let assignments = state.schedule(Duration::ZERO).expect("schedule");
+
+        assert_eq!(assignments.len(), block_count);
+        for value in 1..=peer_count as u64 {
+            assert_eq!(
+                assignments
+                    .iter()
+                    .filter(|assignment| assignment.connection == connection(value))
+                    .count(),
+                DEFAULT_INITIAL_REQUESTS_PER_CONNECTION
+            );
+        }
+        let snapshot = state.snapshot(Duration::ZERO);
+        assert_eq!(
+            snapshot.outstanding_request_bytes,
+            block_count * BLOCK as usize
+        );
+        assert_eq!(
+            snapshot.outstanding_request_high_water,
+            snapshot.outstanding_request_bytes
+        );
+    }
+
+    #[test]
+    fn active_piece_working_set_is_byte_bounded_and_refills_after_verification() {
+        let mut config = SwarmConfig::for_request_limit(4 * BLOCK as usize);
+        config.max_active_piece_bytes = 2 * BLOCK as usize;
+        let mut state = SwarmState::new(config, 4, (0..4).map(|piece| plan(piece, 1)).collect())
+            .expect("swarm");
+        add_peer(&mut state, connection(1), &[0, 1, 2, 3], false);
+
+        let initial = state.schedule(Duration::ZERO).expect("initial schedule");
+        assert_eq!(initial.len(), 2);
+        let snapshot = state.snapshot(Duration::ZERO);
+        assert_eq!(snapshot.active_piece_count, 2);
+        assert_eq!(snapshot.active_piece_bytes, 2 * BLOCK as usize);
+        assert_eq!(
+            snapshot.no_request_reason,
+            Some(NoRequestReason::ActivePieceLimit)
+        );
+
+        state
+            .receive_block(connection(1), initial[0].block, Duration::ZERO)
+            .expect("payload");
+        state
+            .finish_write(initial[0].block, true, Duration::ZERO)
+            .expect("write");
+        state
+            .mark_piece_verified(initial[0].block.piece)
+            .expect("verify");
+        let refill = state.schedule(Duration::from_millis(1)).expect("refill");
+        assert_eq!(refill.len(), 1);
+        let refilled = state.snapshot(Duration::from_millis(1));
+        assert_eq!(refilled.active_piece_count, 2);
+        assert_eq!(refilled.active_piece_bytes, 2 * BLOCK as usize);
+    }
+
+    #[test]
+    fn one_piece_larger_than_the_working_set_limit_can_still_progress() {
+        let mut config = SwarmConfig::for_request_limit(2 * BLOCK as usize);
+        config.max_active_piece_bytes = BLOCK as usize;
+        let mut state = SwarmState::new(config, 1, vec![plan(0, 2)]).expect("swarm");
+        add_peer(&mut state, connection(1), &[0], false);
+
+        let assignments = state.schedule(Duration::ZERO).expect("schedule");
+
+        assert_eq!(assignments.len(), 2);
+        let snapshot = state.snapshot(Duration::ZERO);
+        assert_eq!(snapshot.active_piece_count, 1);
+        assert_eq!(snapshot.active_piece_bytes, 2 * BLOCK as usize);
     }
 
     #[test]
@@ -2115,7 +2242,7 @@ mod tests {
 
     #[test]
     fn slow_start_settles_on_a_bounded_three_second_rate_target() {
-        let config = SwarmConfig::for_payload_limit(64 * BLOCK as usize);
+        let config = SwarmConfig::for_request_limit(64 * BLOCK as usize);
         let mut window = RequestWindow::new(Duration::ZERO, config.initial_requests_per_connection);
         window.accepted_payload(
             Duration::from_millis(100),
@@ -2145,7 +2272,7 @@ mod tests {
 
     #[test]
     fn useful_response_samples_bound_connection_inactivity_timeout() {
-        let config = SwarmConfig::for_payload_limit(16 * BLOCK as usize);
+        let config = SwarmConfig::for_request_limit(16 * BLOCK as usize);
         let mut window = RequestWindow::new(Duration::ZERO, config.initial_requests_per_connection);
         assert_eq!(window.request_timeout(config), DEFAULT_REQUEST_TIMEOUT);
         window.accepted_payload(
@@ -2202,7 +2329,7 @@ mod tests {
         assert_eq!(expired.len(), 5);
         let snapshot = state.snapshot(Duration::from_millis(2_100));
         assert_eq!(snapshot.requested_blocks, 0);
-        assert_eq!(snapshot.payload_reserved, 0);
+        assert_eq!(snapshot.outstanding_request_bytes, 0);
         assert_eq!(snapshot.request_target_total, 1);
         assert_eq!(snapshot.stalled_peers, 1);
         assert_eq!(snapshot.request_timeout_min, Some(Duration::from_secs(2)));
@@ -2243,7 +2370,7 @@ mod tests {
             MIN_HEALTHY_REQUESTS_PER_CONNECTION
         );
         assert_eq!(recovered.stalled_peers, 0);
-        assert_eq!(recovered.payload_reserved, 2 * BLOCK as usize);
+        assert_eq!(recovered.outstanding_request_bytes, 2 * BLOCK as usize);
     }
 
     #[test]
@@ -2289,7 +2416,12 @@ mod tests {
             .expire_requests(Duration::from_secs(30))
             .expect("expire");
         assert_eq!(expired[0].attempt, request.attempt);
-        assert_eq!(state.snapshot(Duration::from_secs(30)).payload_reserved, 0);
+        assert_eq!(
+            state
+                .snapshot(Duration::from_secs(30))
+                .outstanding_request_bytes,
+            0
+        );
     }
 
     #[test]
@@ -2319,13 +2451,20 @@ mod tests {
             }
         );
         assert_eq!(
-            state.snapshot(Duration::from_secs(30)).payload_reserved,
-            BLOCK as usize
+            state
+                .snapshot(Duration::from_secs(30))
+                .outstanding_request_bytes,
+            0
         );
         state
             .finish_write(first.block, true, Duration::from_secs(30))
             .expect("stored");
-        assert_eq!(state.snapshot(Duration::from_secs(30)).payload_reserved, 0);
+        assert_eq!(
+            state
+                .snapshot(Duration::from_secs(30))
+                .outstanding_request_bytes,
+            0
+        );
         assert_eq!(
             state
                 .receive_block(second.connection, second.block, Duration::from_secs(30))
@@ -2376,7 +2515,7 @@ mod tests {
         assert_eq!(initial.active_request_attempts, 3);
         assert_eq!(initial.active_duplicate_attempts, 1);
         assert_eq!(initial.endgame_assignments, 1);
-        assert_eq!(initial.payload_reserved, 3 * BLOCK as usize);
+        assert_eq!(initial.outstanding_request_bytes, 3 * BLOCK as usize);
 
         let winner = owners[1];
         let loser = owners[0];
@@ -2398,7 +2537,7 @@ mod tests {
         assert_eq!(writing.active_request_attempts, 1);
         assert_eq!(writing.active_duplicate_attempts, 0);
         assert_eq!(writing.cancelled_request_attempts, 1);
-        assert_eq!(writing.payload_reserved, 2 * BLOCK as usize);
+        assert_eq!(writing.outstanding_request_bytes, BLOCK as usize);
         state
             .finish_write(winner.block, true, Duration::from_millis(1))
             .expect("winning write");
@@ -2450,7 +2589,7 @@ mod tests {
         assert_eq!(snapshot.requested_blocks, 1);
         assert_eq!(snapshot.active_request_attempts, 1);
         assert_eq!(snapshot.active_duplicate_attempts, 0);
-        assert_eq!(snapshot.payload_reserved, BLOCK as usize);
+        assert_eq!(snapshot.outstanding_request_bytes, BLOCK as usize);
         assert_eq!(
             state.block_status(assigned[0].block).expect("block status"),
             BlockStatus::Requested
@@ -2464,7 +2603,7 @@ mod tests {
                 .expect("missing block"),
             BlockStatus::Missing
         );
-        assert_eq!(state.snapshot(Duration::ZERO).payload_reserved, 0);
+        assert_eq!(state.snapshot(Duration::ZERO).outstanding_request_bytes, 0);
         add_peer(&mut state, connection(3), &[0], false);
         assert_eq!(
             state
@@ -2489,11 +2628,11 @@ mod tests {
         assert_eq!(released, vec![assigned[1].block]);
         let snapshot = state.snapshot(Duration::ZERO);
         assert_eq!(snapshot.writing_blocks, 1);
-        assert_eq!(snapshot.payload_reserved, BLOCK as usize);
+        assert_eq!(snapshot.outstanding_request_bytes, 0);
         state
             .finish_write(assigned[0].block, true, Duration::ZERO)
             .expect("write");
-        assert_eq!(state.snapshot(Duration::ZERO).payload_reserved, 0);
+        assert_eq!(state.snapshot(Duration::ZERO).outstanding_request_bytes, 0);
     }
 
     #[test]
@@ -2567,7 +2706,7 @@ mod tests {
         let failed = state.snapshot(Duration::ZERO);
         assert_eq!(failed.missing_blocks, 2);
         assert_eq!(failed.verified_blocks, 1);
-        assert_eq!(failed.payload_reserved, 0);
+        assert_eq!(failed.outstanding_request_bytes, 0);
         assert_eq!(failed.piece_hash_failures, 1);
         assert_eq!(failed.failed_piece_bytes, 2 * BLOCK as usize);
         assert_eq!(failed.last_hash_failure_contributors, 2);
@@ -2620,7 +2759,7 @@ mod tests {
 
     #[test]
     fn full_choked_set_replaces_only_after_grace_and_protects_unique_data() {
-        let mut config = SwarmConfig::for_payload_limit(BLOCK as usize);
+        let mut config = SwarmConfig::for_request_limit(BLOCK as usize);
         config.max_established_connections = 2;
         config.unproductive_grace = Duration::from_secs(30);
         let mut state =
@@ -2644,7 +2783,7 @@ mod tests {
 
     #[test]
     fn irrelevant_peer_is_replaced_but_no_capacity_does_not_trigger_churn() {
-        let mut config = SwarmConfig::for_payload_limit(BLOCK as usize);
+        let mut config = SwarmConfig::for_request_limit(BLOCK as usize);
         config.max_established_connections = 2;
         config.unproductive_grace = Duration::from_secs(10);
         let mut state = SwarmState::new(config, 1, vec![plan(0, 1)]).expect("swarm");
@@ -2662,9 +2801,9 @@ mod tests {
 
     #[test]
     fn retained_attempt_history_and_active_piece_count_stay_bounded() {
-        let mut config = SwarmConfig::for_payload_limit(BLOCK as usize);
+        let mut config = SwarmConfig::for_request_limit(BLOCK as usize);
         config.max_terminal_attempts_per_block = 2;
-        config.max_active_pieces = 1;
+        config.max_active_piece_bytes = 2 * BLOCK as usize;
         config.request_timeout = Duration::from_secs(1);
         let mut state = SwarmState::new(config, 2, vec![plan(0, 2), plan(1, 1)]).expect("swarm");
         add_peer(&mut state, connection(1), &[0, 1], false);
@@ -2698,7 +2837,7 @@ mod tests {
         state.cancel_all().expect("cancel");
         let snapshot = state.snapshot(Duration::ZERO);
         assert_eq!(snapshot.pending_dials, 0);
-        assert_eq!(snapshot.payload_reserved, 0);
+        assert_eq!(snapshot.outstanding_request_bytes, 0);
         assert_eq!(snapshot.requested_blocks, 0);
         assert_eq!(snapshot.writing_blocks, 0);
     }

@@ -9,9 +9,9 @@ use std::time::Duration;
 use rstorrent_engine::dht::{DhtConfig, DhtError, DhtService};
 use rstorrent_engine::{
     DescriptorFile, DescriptorStorage, DescriptorStoragePlan, DownloadActivityEvent,
-    DownloadActivitySink, DownloadCheckpointSink, DownloadControl, DownloadError, NetworkConfig,
-    PreparedFileHash, ResumableMagnetDownloadConfig, ResumedStorage,
-    download_magnet_metadata_with_dht, plan_descriptor_storage,
+    DownloadActivitySink, DownloadCheckpointSink, DownloadControl, DownloadError,
+    DownloadResourceLimits, NetworkConfig, PreparedFileHash, ResumableMagnetDownloadConfig,
+    ResumedStorage, download_magnet_metadata_with_dht, plan_descriptor_storage,
     resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
     verify_prepared_descriptors,
 };
@@ -37,15 +37,13 @@ use crate::{
     ViewSetOwner,
 };
 
-const DEFAULT_PAYLOAD_ALLOWANCE: usize = 32 * 1024;
-
 #[derive(Clone, Debug)]
 pub struct ApplicationConfig {
     pub profile_root: PathBuf,
     pub profile_id: String,
     pub storage_roots: Vec<ConfiguredStorageRoot>,
     pub network: NetworkConfig,
-    pub max_buffered_payload_bytes: usize,
+    pub download_resource_limits: DownloadResourceLimits,
     pub dht: DhtConfig,
     pub view_set_lease: Duration,
     pub view_set_reaper_interval: Duration,
@@ -64,7 +62,7 @@ impl ApplicationConfig {
             profile_id,
             storage_roots,
             network,
-            max_buffered_payload_bytes: DEFAULT_PAYLOAD_ALLOWANCE,
+            download_resource_limits: DownloadResourceLimits::DESKTOP,
             dht,
             view_set_lease: Duration::from_millis(crate::view_sets::VIEW_SET_LEASE_MILLIS),
             view_set_reaper_interval: Duration::from_millis(VIEW_SET_REAPER_INTERVAL_MILLIS),
@@ -90,7 +88,7 @@ pub struct ApplicationService {
     store: Arc<Mutex<SessionStore>>,
     storage_roots: BTreeMap<String, StorageRootLocation>,
     network: NetworkConfig,
-    max_buffered_payload_bytes: usize,
+    download_resource_limits: DownloadResourceLimits,
     active: Option<ActiveDownload>,
     dht: Option<DhtService>,
     views: ViewHub,
@@ -157,7 +155,7 @@ impl ApplicationService {
             store: Arc::new(Mutex::new(store)),
             storage_roots,
             network: config.network,
-            max_buffered_payload_bytes: config.max_buffered_payload_bytes,
+            download_resource_limits: config.download_resource_limits,
             active: None,
             dht: Some(dht),
             views,
@@ -400,7 +398,7 @@ impl ApplicationService {
             magnet: resume.magnet,
             output_path: PathBuf::new(),
             network: self.network,
-            max_buffered_payload_bytes: self.max_buffered_payload_bytes,
+            resource_limits: self.download_resource_limits,
             skip_files,
             verified_info: Some(raw_info),
             verified_pieces,
@@ -677,7 +675,7 @@ impl ApplicationService {
             magnet: resume.magnet,
             output_path: root.join(torrent_id),
             network: self.network,
-            max_buffered_payload_bytes: self.max_buffered_payload_bytes,
+            resource_limits: self.download_resource_limits,
             skip_files,
             verified_info: resume.raw_info,
             verified_pieces,
@@ -1498,7 +1496,7 @@ impl ViewActivitySink {
                 let missing = snapshot.missing_blocks.to_string();
                 let requested = snapshot.requested_blocks.to_string();
                 let writing = snapshot.writing_blocks.to_string();
-                let reserved = snapshot.payload_reserved.to_string();
+                let reserved = snapshot.outstanding_request_bytes.to_string();
                 let oldest = snapshot
                     .oldest_request_age_seconds
                     .map_or_else(|| "none".to_owned(), |value| value.to_string());
@@ -1524,7 +1522,7 @@ impl ViewActivitySink {
                         ("missing_blocks", &missing),
                         ("requested_blocks", &requested),
                         ("writing_blocks", &writing),
-                        ("payload_reserved", &reserved),
+                        ("outstanding_request_bytes", &reserved),
                         ("oldest_request_seconds", &oldest),
                         ("next_expiry_seconds", &next_expiry),
                         ("next_replacement_seconds", &next_replacement),

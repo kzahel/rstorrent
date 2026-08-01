@@ -5,8 +5,9 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use rstorrent_session::{
-    ApplicationConfig, ApplicationService, Command, ConfiguredStorageRoot, ErrorCode,
-    NetworkConfig, NetworkPolicy, RequestEnvelope, ResponseEnvelope, application_error_response,
+    ApplicationConfig, ApplicationService, Command, ConfiguredStorageRoot, DownloadResourceLimits,
+    ErrorCode, NetworkConfig, NetworkPolicy, RequestEnvelope, ResponseEnvelope,
+    application_error_response,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 
@@ -102,7 +103,7 @@ fn parse_arguments(
     let mut profile_id = "default".to_owned();
     let mut storage_roots = Vec::new();
     let mut timeout = Duration::from_secs(120);
-    let mut max_buffered_payload_bytes = 32 * 1024;
+    let mut download_resource_limits = DownloadResourceLimits::DESKTOP;
     let mut index = 0;
     while index < arguments.len() {
         let name = arguments[index]
@@ -144,8 +145,8 @@ fn parse_arguments(
                 timeout = Duration::from_secs(parse_positive_u64(value, name)?);
             }
             "--max-buffered-payload-bytes" => {
-                max_buffered_payload_bytes = usize::try_from(parse_positive_u64(value, name)?)
-                    .map_err(|_| {
+                download_resource_limits.max_buffered_payload_bytes =
+                    usize::try_from(parse_positive_u64(value, name)?).map_err(|_| {
                         DiagnosticError::Arguments("payload allowance exceeds usize".to_owned())
                     })?;
             }
@@ -169,7 +170,7 @@ fn parse_arguments(
         storage_roots,
         NetworkConfig::new(NetworkPolicy::LoopbackOnly, timeout, timeout),
     );
-    config.max_buffered_payload_bytes = max_buffered_payload_bytes;
+    config.download_resource_limits = download_resource_limits;
     Ok(config)
 }
 

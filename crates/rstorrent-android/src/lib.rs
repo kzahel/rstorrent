@@ -12,9 +12,9 @@ use std::time::{Duration, Instant};
 
 use rstorrent_engine::{
     DescriptorFile, DescriptorFileRole, DescriptorStorage, DescriptorStoragePlan, DownloadConfig,
-    DownloadControl, DownloadError, DownloadProgress, DownloadReport, NetworkConfig, NetworkPolicy,
-    download_verified_piece_to_descriptors_with_control, download_verified_piece_with_control,
-    plan_descriptor_storage,
+    DownloadControl, DownloadError, DownloadProgress, DownloadReport, DownloadResourceLimits,
+    NetworkConfig, NetworkPolicy, download_verified_piece_to_descriptors_with_control,
+    download_verified_piece_with_control, plan_descriptor_storage,
 };
 use rstorrent_protocol::bencode::MAX_BENCODE_INPUT_LENGTH;
 use rstorrent_protocol::metainfo::Metainfo;
@@ -46,7 +46,6 @@ pub struct AndroidApplicationConfig {
     pub network_policy: AndroidNetworkPolicy,
     pub peer_connect_timeout_seconds: u64,
     pub peer_io_timeout_seconds: u64,
-    pub max_buffered_payload_bytes: u64,
 }
 
 #[derive(Clone, Copy, Debug, uniffi::Enum)]
@@ -299,11 +298,6 @@ fn validate_application_config(
             "peer I/O timeout must be 1..={MAX_TIMEOUT_SECONDS} seconds"
         )));
     }
-    if !(MIN_PAYLOAD_BYTES..=MAX_PAYLOAD_BYTES).contains(&config.max_buffered_payload_bytes) {
-        return Err(AndroidClientError::message(format!(
-            "payload allowance must be {MIN_PAYLOAD_BYTES}..={MAX_PAYLOAD_BYTES} bytes"
-        )));
-    }
     let storage_root = if config.platform_storage {
         ConfiguredStorageRoot::platform("downloads")
     } else {
@@ -324,8 +318,7 @@ fn validate_application_config(
             Duration::from_secs(config.peer_io_timeout_seconds),
         ),
     );
-    application.max_buffered_payload_bytes = usize::try_from(config.max_buffered_payload_bytes)
-        .map_err(|_| AndroidClientError::message("payload allowance exceeds usize"))?;
+    application.download_resource_limits = DownloadResourceLimits::ANDROID;
     Ok(application)
 }
 
@@ -434,6 +427,9 @@ pub struct EngineReport {
     pub block_count: u64,
     pub payload_limit: u64,
     pub payload_high_water: u64,
+    pub outstanding_request_limit: u64,
+    pub outstanding_request_high_water: u64,
+    pub active_piece_limit: u64,
     pub verification_buffer: u64,
     pub piece_count: u64,
     pub verified_piece_count: u64,
@@ -485,6 +481,8 @@ pub struct SessionSnapshot {
     pub cancellation_requested: bool,
     pub buffered_payload_bytes: u64,
     pub payload_high_water: u64,
+    pub outstanding_request_bytes: u64,
+    pub outstanding_request_high_water: u64,
     pub requested_bytes: u64,
     pub received_bytes: u64,
     pub stored_bytes: u64,
@@ -727,6 +725,8 @@ impl EngineSession {
             cancellation_requested: inner.cancellation_requested,
             buffered_payload_bytes: progress.buffered_payload_bytes as u64,
             payload_high_water: progress.payload_high_water as u64,
+            outstanding_request_bytes: progress.outstanding_request_bytes as u64,
+            outstanding_request_high_water: progress.outstanding_request_high_water as u64,
             requested_bytes: progress.requested_bytes as u64,
             received_bytes: progress.received_bytes as u64,
             stored_bytes: progress.stored_bytes as u64,
@@ -1005,7 +1005,11 @@ fn validate_config(config: EngineConfig) -> Result<(DownloadConfig, Duration), S
                 Duration::from_secs(config.timeout_seconds),
                 Duration::from_secs(config.timeout_seconds),
             ),
-            max_buffered_payload_bytes: config.max_buffered_payload_bytes as usize,
+            resource_limits: DownloadResourceLimits::new(
+                config.max_buffered_payload_bytes as usize,
+                config.max_buffered_payload_bytes as usize,
+                config.max_buffered_payload_bytes as usize,
+            ),
             skip_files: config
                 .skip_files
                 .into_iter()
@@ -1125,6 +1129,7 @@ fn classify_failure(error: &DownloadError) -> FailureKind {
         DownloadError::NetworkDisabled
         | DownloadError::NetworkPolicyDenied { .. }
         | DownloadError::InvalidNetworkTimeout { .. }
+        | DownloadError::InvalidResourceLimit(_)
         | DownloadError::Dht(rstorrent_engine::dht::DhtError::NetworkDisabled)
         | DownloadError::MetainfoTooLarge { .. }
         | DownloadError::Magnet(_)
@@ -1172,6 +1177,9 @@ fn success_result(
             block_count: report.block_count as u64,
             payload_limit: report.payload_limit as u64,
             payload_high_water: report.payload_high_water as u64,
+            outstanding_request_limit: report.outstanding_request_limit as u64,
+            outstanding_request_high_water: report.outstanding_request_high_water as u64,
+            active_piece_limit: report.active_piece_limit as u64,
             verification_buffer: report.verification_buffer as u64,
             piece_count: report.piece_count as u64,
             verified_piece_count: report.verified_piece_count as u64,
@@ -1272,13 +1280,16 @@ mod tests {
             network_policy: AndroidNetworkPolicy::Online,
             peer_connect_timeout_seconds: 15,
             peer_io_timeout_seconds: 60,
-            max_buffered_payload_bytes: 32 * 1024,
         })
         .expect("valid Android application config");
 
         assert_eq!(config.network.policy, NetworkPolicy::Online);
         assert_eq!(config.network.peer_connect_timeout, Duration::from_secs(15));
         assert_eq!(config.network.peer_io_timeout, Duration::from_secs(60));
+        assert_eq!(
+            config.download_resource_limits,
+            DownloadResourceLimits::ANDROID
+        );
     }
 
     fn two_file_metainfo() -> Vec<u8> {

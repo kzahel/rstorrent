@@ -202,6 +202,8 @@ class ProductStateReducerTest {
             "16384",
             "16384",
             "8192",
+            0U,
+            "0",
             ProgressAssessment(
                 ProgressDisposition.ACTIVE,
                 ProgressPhase.TRANSFER,

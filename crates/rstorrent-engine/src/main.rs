@@ -6,15 +6,14 @@ use std::time::Duration;
 
 use rstorrent_engine::dht::{BootstrapNode, DhtConfig, DhtService};
 use rstorrent_engine::{
-    DownloadConfig, DownloadControl, DownloadError, DownloadProgress, MagnetDownloadConfig,
-    NetworkConfig, NetworkPolicy, download_magnet_with_control,
+    DownloadConfig, DownloadControl, DownloadError, DownloadProgress, DownloadResourceLimits,
+    MagnetDownloadConfig, NetworkConfig, NetworkPolicy, download_magnet_with_control,
     download_verified_piece_with_control,
 };
 use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 15;
 const MAX_TIMEOUT_SECONDS: u64 = 300;
-const DEFAULT_MAX_BUFFERED_PAYLOAD_BYTES: usize = 256 * 1024;
 const MAX_BUFFERED_PAYLOAD_BYTES: usize = 64 * 1024 * 1024;
 const USAGE: &str = "\
 Usage: rstorrent-download-piece \\
@@ -100,7 +99,8 @@ fn report_result(
         Ok(report) => {
             println!(
                 "verified pieces={}/{} skipped_pieces={} bytes={} sha1={} info_hash={} blocks={} \
-payload_limit={} payload_high_water={} verification_buffer={} selected_file_bytes={} \
+payload_limit={} payload_high_water={} outstanding_request_limit={} \
+outstanding_request_high_water={} active_piece_limit={} verification_buffer={} selected_file_bytes={} \
 skipped_file_bytes={} padding_bytes={} selected_written_bytes={} part_written_bytes={} \
 materialized_bytes={} part_slots_before={} part_slots_after={} part_reopened={} part_path={} \
 storage_write_operations={} storage_write_blocks={} storage_write_batch_blocks_high_water={} \
@@ -114,6 +114,9 @@ storage_write_batch_bytes_high_water={} storage_write_service_micros={}",
                 report.block_count,
                 report.payload_limit,
                 report.payload_high_water,
+                report.outstanding_request_limit,
+                report.outstanding_request_high_water,
+                report.active_piece_limit,
                 report.verification_buffer,
                 report.selected_file_bytes,
                 report.skipped_file_bytes,
@@ -150,7 +153,7 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
     let mut output_path = None;
     let mut dht_bootstrap = None;
     let mut timeout_seconds = DEFAULT_TIMEOUT_SECONDS;
-    let mut max_buffered_payload_bytes = DEFAULT_MAX_BUFFERED_PAYLOAD_BYTES;
+    let mut resource_limits = DownloadResourceLimits::DESKTOP;
     let mut skip_files = Vec::new();
     let mut materialize_files = Vec::new();
     let mut index = 0;
@@ -209,11 +212,11 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
                 let value = value
                     .to_str()
                     .ok_or_else(|| "--max-buffered-payload-bytes must be valid UTF-8".to_owned())?;
-                max_buffered_payload_bytes = value
+                resource_limits.max_buffered_payload_bytes = value
                     .parse()
                     .map_err(|_| "--max-buffered-payload-bytes must be an integer".to_owned())?;
                 if !(MIN_PAYLOAD_ALLOWANCE..=MAX_BUFFERED_PAYLOAD_BYTES)
-                    .contains(&max_buffered_payload_bytes)
+                    .contains(&resource_limits.max_buffered_payload_bytes)
                 {
                     return Err(format!(
                         "--max-buffered-payload-bytes must be between \
@@ -245,7 +248,7 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
             peer,
             output_path,
             network,
-            max_buffered_payload_bytes,
+            resource_limits,
             skip_files,
             materialize_files,
         })),
@@ -254,7 +257,7 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
                 magnet,
                 output_path,
                 network,
-                max_buffered_payload_bytes,
+                resource_limits,
                 skip_files,
                 materialize_files,
                 dht: None,
@@ -309,8 +312,8 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        DEFAULT_MAX_BUFFERED_PAYLOAD_BYTES, DEFAULT_TIMEOUT_SECONDS, DownloadCommand,
-        NetworkConfig, NetworkPolicy, parse_arguments,
+        DEFAULT_TIMEOUT_SECONDS, DownloadCommand, DownloadResourceLimits, NetworkConfig,
+        NetworkPolicy, parse_arguments,
     };
 
     fn strings(arguments: &[&str]) -> Vec<OsString> {
@@ -344,10 +347,7 @@ mod tests {
                 Duration::from_secs(DEFAULT_TIMEOUT_SECONDS),
             )
         );
-        assert_eq!(
-            config.max_buffered_payload_bytes,
-            DEFAULT_MAX_BUFFERED_PAYLOAD_BYTES
-        );
+        assert_eq!(config.resource_limits, DownloadResourceLimits::DESKTOP);
         assert!(config.skip_files.is_empty());
         assert!(config.materialize_files.is_empty());
     }

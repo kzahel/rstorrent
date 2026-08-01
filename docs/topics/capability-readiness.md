@@ -30,7 +30,10 @@ foundation. Tactical `035` completes stable Rust torrent and active-peer
 inspection projections, the semantic live adapter, independently reaped
 leases, and suspended-client recovery through a fresh snapshot. The next
 product-observability cross-section should be selected from actual inspection
-value before the engine campaign resumes.
+value before the engine campaign resumes. Tactical `039` also corrects the
+product's inherited two-block pipeline: desktop and Android now use explicit,
+generous, independently bounded request, received-payload, and active-piece
+profiles.
 
 ## Purpose And Ownership
 
@@ -175,7 +178,7 @@ does not.
 
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
-| Bounded 16 KiB block pipeline | Implemented | deterministic, runtime, interop, live | Per-connection depth adapts under one torrent allowance; already-admitted blocks coalesce into bounded physical writes, but serialized write/hash execution remains the measured public performance gap. | [`download-correctness`](download-correctness.md) |
+| Bounded 16 KiB block pipeline | Implemented | deterministic, runtime, interop, live | Per-connection depth adapts under distinct torrent request and resident-payload limits; desktop uses 256 MiB/32 MiB and Android 128 MiB/16 MiB, with no session-wide multi-torrent budget yet. | [`download-correctness`](download-correctness.md) |
 | Sequential multi-piece download | Implemented | runtime, interop | Ordinary single-file and selective multi-file complete; single-file durable resume is absent. | [`download-correctness`](download-correctness.md) |
 | Availability-aware piece selection | Partial | deterministic, runtime, interop | Swarm-wide availability, partial-first work, fairness, and unique-piece retention exist; rarest-first and measured scoring are absent. | [`download-correctness`](download-correctness.md) |
 | Choke recovery | Implemented | deterministic, runtime, interop | Requests move to another peer and full choked sets are replaceable; mature choking/reputation policy is absent. | [`download-correctness`](download-correctness.md) |

@@ -611,6 +611,14 @@ class EngineService : Service() {
                 "payload_high_water",
                 snapshot.payloadHighWater.toLong(),
             )
+            .put(
+                "outstanding_request_bytes",
+                snapshot.outstandingRequestBytes.toLong(),
+            )
+            .put(
+                "outstanding_request_high_water",
+                snapshot.outstandingRequestHighWater.toLong(),
+            )
             .put("requested_bytes", snapshot.requestedBytes.toLong())
             .put("received_bytes", snapshot.receivedBytes.toLong())
             .put("stored_bytes", snapshot.storedBytes.toLong())
@@ -641,6 +649,15 @@ class EngineService : Service() {
                 "payload_high_water",
                 report.payloadHighWater.toLong(),
             )
+            .put(
+                "outstanding_request_limit",
+                report.outstandingRequestLimit.toLong(),
+            )
+            .put(
+                "outstanding_request_high_water",
+                report.outstandingRequestHighWater.toLong(),
+            )
+            .put("active_piece_limit", report.activePieceLimit.toLong())
             .put(
                 "verification_buffer",
                 report.verificationBuffer.toLong(),

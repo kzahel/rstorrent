@@ -388,6 +388,31 @@ slower than the prior 86.05-second public health screen, but one changed swarm
 cannot attribute that delta. It retains completion evidence and selects a
 time-series peer working-set comparison rather than further storage tuning.
 
+### Product Pipeline Budget Correction: 2026-08-01
+
+Tactical `039` found that the product application still used a 32 KiB
+allowance inherited from the original controlled harness. Outstanding peer
+requests retained that same allowance through storage completion, so the
+entire desktop torrent could reserve only two ordinary 16 KiB blocks. Earlier
+live campaign commands commonly supplied larger explicit allowances--their
+8.8--13.5 MiB high waters therefore did not validate the product default.
+
+Pinned libtorrent keeps its four-request initial peer window, three-second
+adaptive target, 500-request per-peer maximum, and received disk queue as
+separate controls. RSTorrent now follows that resource separation with explicit
+product profiles: desktop permits 256 MiB of outstanding requests, 32 MiB of
+received resident payload, and a 256 MiB active-piece working set; Android uses
+128 MiB, 16 MiB, and 128 MiB respectively. The storage job bound is derived
+from its resident byte allowance instead of the historical fixed 64-command
+and 66-job limits.
+
+Deterministic and delayed-storage tests prove that all 30 default peers can
+receive four initial requests, request reservations release when accepted
+payload changes owner, the active-piece byte set refills, and resident payload
+remains independently bounded. This is a correctness and capacity correction,
+not a new public-swarm throughput or parity claim. Historical measurements
+below retain the resource model of the commits on which they were captured.
+
 ### Paired Utility Timeline: 2026-08-01
 
 Tactical `026` added a one-second, 1,024-sample bounded endpoint-free timeline

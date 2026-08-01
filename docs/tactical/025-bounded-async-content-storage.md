@@ -1,5 +1,8 @@
 # Tactical 025: Bounded Async Content Storage
 
+> Current resource ownership and bounds supersede the fixed queue and retained
+> request/payload model in this historical tactical. See Tactical `039`.
+
 Status: Complete
 
 Topics: `download-correctness`, `performance-and-live-evidence`,

@@ -9,8 +9,8 @@ use std::time::{Duration, Instant};
 use rstorrent_engine::dht::{DhtConfig, DhtService};
 use rstorrent_engine::{
     DownloadActivityEvent, DownloadActivitySink, DownloadControl, DownloadDiagnosticSnapshot,
-    DownloadError, DownloadReport, MagnetDownloadConfig, NetworkConfig, NetworkPolicy,
-    download_magnet_with_control,
+    DownloadError, DownloadReport, DownloadResourceLimits, MagnetDownloadConfig, NetworkConfig,
+    NetworkPolicy, download_magnet_with_control,
 };
 use serde::Serialize;
 
@@ -532,6 +532,10 @@ struct Diagnostics {
     active_request_attempts: Option<usize>,
     active_duplicate_attempts: Option<usize>,
     writing_blocks: Option<usize>,
+    active_piece_count: Option<usize>,
+    active_piece_bytes: Option<usize>,
+    outstanding_request_bytes: usize,
+    outstanding_request_high_water: usize,
     request_target_total: Option<usize>,
     request_target_max: Option<usize>,
     slow_start_peers: Option<usize>,
@@ -550,6 +554,7 @@ struct Diagnostics {
     requested_bytes: usize,
     received_bytes: usize,
     stored_bytes: usize,
+    buffered_payload_bytes: usize,
     payload_high_water: usize,
     storage_jobs_pending: usize,
     storage_jobs_high_water: usize,
@@ -693,6 +698,8 @@ async fn run(config: Config) -> ProbeResult {
         None
     };
 
+    let mut resource_limits = DownloadResourceLimits::DESKTOP;
+    resource_limits.max_buffered_payload_bytes = config.payload_limit;
     let download_config = MagnetDownloadConfig {
         magnet: config.magnet.clone(),
         output_path: config.output.clone(),
@@ -701,7 +708,7 @@ async fn run(config: Config) -> ProbeResult {
             Duration::from_secs(15),
             Duration::from_secs(15),
         ),
-        max_buffered_payload_bytes: config.payload_limit,
+        resource_limits,
         skip_files: Vec::new(),
         materialize_files: Vec::new(),
         dht: dht.as_ref().map(DhtService::handle),
@@ -974,6 +981,10 @@ fn diagnostic_result(
         active_request_attempts: swarm.map(|value| value.active_request_attempts),
         active_duplicate_attempts: swarm.map(|value| value.active_duplicate_attempts),
         writing_blocks: swarm.map(|value| value.writing_blocks),
+        active_piece_count: swarm.map(|value| value.active_piece_count),
+        active_piece_bytes: swarm.map(|value| value.active_piece_bytes),
+        outstanding_request_bytes: snapshot.progress.outstanding_request_bytes,
+        outstanding_request_high_water: snapshot.progress.outstanding_request_high_water,
         request_target_total: swarm.map(|value| value.request_target_total),
         request_target_max: swarm.map(|value| value.request_target_max),
         slow_start_peers: swarm.map(|value| value.slow_start_peers),
@@ -994,6 +1005,7 @@ fn diagnostic_result(
         requested_bytes: snapshot.progress.requested_bytes,
         received_bytes: snapshot.progress.received_bytes,
         stored_bytes: snapshot.progress.stored_bytes,
+        buffered_payload_bytes: snapshot.progress.buffered_payload_bytes,
         payload_high_water: snapshot.progress.payload_high_water,
         storage_jobs_pending: snapshot.progress.storage_jobs_pending,
         storage_jobs_high_water: snapshot.progress.storage_jobs_high_water,

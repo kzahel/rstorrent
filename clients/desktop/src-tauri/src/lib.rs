@@ -300,11 +300,17 @@ fn desktop_application_config(app_data: &std::path::Path) -> ApplicationConfig {
 
 #[cfg(test)]
 mod tests {
+    use rstorrent_session::DownloadResourceLimits;
+
     use super::{NetworkPolicy, desktop_application_config};
 
     #[test]
     fn desktop_product_explicitly_uses_online_networking() {
         let config = desktop_application_config(std::path::Path::new("/tmp/rstorrent-desktop"));
         assert_eq!(config.network.policy, NetworkPolicy::Online);
+        assert_eq!(
+            config.download_resource_limits,
+            DownloadResourceLimits::DESKTOP
+        );
     }
 }

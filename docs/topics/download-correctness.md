@@ -27,7 +27,10 @@ and Android-target evidence, but performance remained neutral. Tactical `031`
 now measures queue wait and per-kind storage service. Three public screens
 attribute 93--94% of wall time to serialized storage service, dominated by
 16 KiB writes at about 88%; the next slice owns write execution rather than
-selection or request policy.
+selection or request policy. Tactical `039` corrects a separate product-profile
+defect: outstanding requests, received payload, and active-piece selection now
+have distinct byte budgets instead of sharing the former 32 KiB desktop
+allowance.
 
 ## Scope
 
@@ -85,7 +88,8 @@ have state and storage-root identity.
 ### Request Ownership
 
 - Every outstanding request has exactly one torrent-level owner, one peer
-  connection generation, and one bounded payload reservation.
+  connection generation, and one bounded request reservation. That reservation
+  is scheduling work, not an eagerly allocated payload buffer.
 - Choke, disconnect, request expiry, connection replacement, pause, and
   shutdown terminate or transfer ownership explicitly.
 - A stale socket callback cannot complete or release a newer request attempt.
@@ -128,15 +132,17 @@ asserted only over installed mechanisms and retained schedules.
 ## Current Architecture And Known Stall Mechanisms
 
 One torrent supervisor owns a bounded set of live connection generations,
-piece/block state, request attempts and deadlines, payload reservations,
+piece/block state, request attempts and deadlines, request reservations,
 storage acceptance, verification, and child-task joins. It schedules across
-up to 64 active pieces and eight peers while tracker and DHT discovery remain
-live. Each connection has a bounded useful-payload-driven request window;
-the torrent payload allowance remains the aggregate authority. Useful response
-samples derive a two-to-sixty-second connection inactivity deadline; a stall
-releases that generation's window and leaves one probe request. Choke,
-disconnect, expiry, and replacement release only the affected generation's
-requests; valid late payload cannot release newer ownership.
+up to 30 established peers while tracker and DHT discovery remain live. A
+byte-oriented active-piece working set bounds selection breadth. Each
+connection has a bounded useful-payload-driven request window; a distinct
+torrent request allowance bounds aggregate promises, while the storage owner
+independently bounds received resident payload. Useful response samples derive
+a two-to-sixty-second connection inactivity deadline; a stall releases that
+generation's window and leaves one probe request. Choke, disconnect, expiry,
+and replacement release only the affected generation's requests; valid late
+payload cannot release newer ownership.
 
 A failed v1 piece generation now resets as a whole after hashing, preserves
 unrelated verified pieces, and retains bounded exact-generation contributors.
