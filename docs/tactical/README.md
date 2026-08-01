@@ -231,6 +231,16 @@ that scope and its cleanup or compatibility rules explicitly.
 - [`038-curated-test-torrent-menu.md`](038-curated-test-torrent-menu.md):
   complete; adds an accessible More > Add test torrent submenu backed by the
   five recorded WebTorrent magnets and the ordinary guarded add path.
+- [`039-generous-download-resource-pipelines.md`](039-generous-download-resource-pipelines.md):
+  complete; replaces the prototype two-block payload ceiling with explicit,
+  generous desktop and bounded Android request, buffering, and active-piece
+  budgets.
+- [`040-torrent-lifecycle-retention-actions.md`](040-torrent-lifecycle-retention-actions.md):
+  complete; adds durable archive/restore and fenced keep-data or
+  delete-managed removal through the semantic contract and web UI.
+- [`041-live-file-inspection.md`](041-live-file-inspection.md): planned; adds a
+  complete live file projection with distinct Done and Verified progress,
+  correct configurable virtual-table behavior, and headless multi-file proof.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
