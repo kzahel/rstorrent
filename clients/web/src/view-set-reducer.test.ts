@@ -51,6 +51,59 @@ function batch(
 }
 
 describe("view-set reducer", () => {
+  it("applies complete keyed file rows without losing catalog metadata", () => {
+    const first = {
+      file_id: "0",
+      file_index: 0,
+      path: ["video", "movie.mkv"],
+      length_bytes: "9007199254740993",
+      torrent_offset_bytes: "0",
+      first_piece: 0,
+      last_piece: 9,
+      selection: "wanted" as const,
+      padding: false,
+      done_bytes: "16384",
+      verified_bytes: "0",
+    };
+    let state = reduceUpdateBatch(
+      undefined,
+      batch("0", "1", [
+        {
+          type: "snapshot",
+          view_id: "files",
+          snapshot: {
+            type: "files",
+            torrent_id: torrentId,
+            state: "available",
+            filesystem_content_base: "/tmp/content",
+            files: [first],
+          },
+        },
+      ]),
+    );
+    state = reduceUpdateBatch(
+      state,
+      batch("1", "2", [
+        {
+          type: "patch",
+          view_id: "files",
+          patch: {
+            type: "files",
+            torrent_id: torrentId,
+            upsert: [{ ...first, done_bytes: "32768", verified_bytes: "16384" }],
+            removed: [],
+          },
+        },
+      ]),
+    );
+    expect(state.views.files).toMatchObject({
+      type: "files",
+      state: "available",
+      filesystem_content_base: "/tmp/content",
+      files: [{ file_id: "0", done_bytes: "32768", verified_bytes: "16384" }],
+    });
+  });
+
   it("reduces snapshots, keyed patches, removals, and later upserts", () => {
     let state = reduceUpdateBatch(
       undefined,

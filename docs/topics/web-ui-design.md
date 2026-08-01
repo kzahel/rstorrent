@@ -17,7 +17,9 @@ touch, and phone-safe More > Add test torrent submenu backed by the recorded
 WebTorrent catalog and the same add path. Tactical `040` adds live archive and
 an accessible removal dialog whose managed-data option is unchecked by
 default. The docked detail inspector is now bounded and resizable by pointer,
-touch, or keyboard. The Tauri entry remains legacy.
+touch, or keyboard. Tactical `041` adds the first live Files surface, exact
+sorting, persistent table columns and widths, and a 4,096-row named scenario.
+The Tauri entry remains legacy.
 
 ## Purpose
 
@@ -302,6 +304,28 @@ focus after Escape or completion, retains the dialog and error after command
 failure, and displays an irreversible warning only when managed-data deletion
 is selected.
 
+Tactical `041` makes Files a live responsive detail rather than a placeholder.
+The default table shows Name, Folder, Normal/Skip selection, Size, Progress,
+Done, and Verified; Type, Index, torrent offset, piece span, and absolute
+Storage Path are optional columns. Padding remains available in the typed
+projection but is hidden with an explicit count. Exact decimal counters use
+`BigInt` comparison, null sorts last in both directions, zero remains visible,
+and semantic enum order is explicit. Live update sorting is opt-in so changing
+rates or progress do not make rows jump while being inspected.
+
+Column visibility, widths, sort, and live-sort preference persist per table in
+a versioned browser-local setting. Resize separators work by pointer and
+keyboard. Wide, compact, and phone evidence keeps the active tab visible,
+closes the phone drawer fully, and leaves horizontal scrolling available for
+explicit extra columns. Serious and critical axe findings are empty.
+
+The deterministic 4,096-row scenario hides one padding row and rendered 690
+DOM elements with 66,468,705 bytes of sampled JavaScript heap. A complete
+ten-second scenario update and paint took 55 ms. Its hash-failure timeline
+regresses only unverified Done bytes while Verified remains monotonic, then
+recovers. These are bounded development observations, not browser-wide
+performance guarantees.
+
 ## Likely Sequencing
 
 1. The accepted view-set contract, generated TypeScript/schema, polling
@@ -314,9 +338,10 @@ is selected.
 3. Tactical `035` defines stable Rust torrent and active-peer inspection
    projections, self-expiring leases, semantic view selection, suspension
    recovery, and the live frontend adapter. This step is complete.
-4. Integrate the existing categorized logger into the global diagnostics area
-   or add the registry-backed Swarm view according to immediate debugging
-   value; Peers is already the first detailed live engine view.
+4. Files is complete in Tactical `041`. Integrate the existing categorized
+   logger into the global diagnostics area or add the registry-backed Swarm
+   view according to immediate debugging value; Peers and Files are the first
+   detailed live engine views.
 5. Connect remaining detail views according to debugging and product value,
    keeping unsupported scaffolds truthful.
 6. Measure before adding frame-speed streaming, binary encoding, or more

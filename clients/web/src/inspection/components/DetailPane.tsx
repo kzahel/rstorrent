@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { useInspectionStore } from "../context";
 import {
@@ -10,6 +10,7 @@ import {
 import type { DetailTab, LogRow, ViewMaterialization } from "../model";
 import { visibleLogs } from "../state";
 import { PeerTable } from "./PeerTable";
+import { FileTable } from "./FileTable";
 import { VirtualTable, type VirtualColumn } from "./VirtualTable";
 import styles from "./DetailPane.module.css";
 
@@ -81,6 +82,7 @@ export function DetailPane() {
       : (state.peersByTorrent[state.presentation.selectedTorrentId]?.order.length ?? 0),
   );
   const activeTab = useInspectionStore((state) => state.presentation.activeTab);
+  const layout = useInspectionStore((state) => state.presentation.layout);
   const selectTab = useInspectionStore((state) => state.selectTab);
   const closeDetail = useInspectionStore((state) => state.closeDetail);
   const logs = useInspectionStore((state) => state.logs);
@@ -90,6 +92,16 @@ export function DetailPane() {
     () => visibleLogs(logs, selectedId),
     [logs, selectedId],
   );
+  const tabsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      tabsRef.current
+        ?.querySelector<HTMLElement>(`[data-tab-id="${activeTab}"]`)
+        ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeTab, layout]);
 
   const selectAdjacentTab = (tab: DetailTab, direction: -1 | 1) => {
     const index = TABS.findIndex((candidate) => candidate.id === tab);
@@ -109,7 +121,12 @@ export function DetailPane() {
         </button>
         <strong>{torrent?.name ?? "Torrent details"}</strong>
       </div>
-      <div className={styles.tabs} role="tablist" aria-label="Torrent detail views">
+      <div
+        ref={tabsRef}
+        className={styles.tabs}
+        role="tablist"
+        aria-label="Torrent detail views"
+      >
         {TABS.map((tab) => (
           <button
             key={tab.id}
@@ -148,6 +165,8 @@ export function DetailPane() {
           <EmptyDetail />
         ) : activeTab === "peers" && selectedId !== null ? (
           <PeerTable torrentId={selectedId} />
+        ) : activeTab === "files" && selectedId !== null ? (
+          <FileTable torrentId={selectedId} />
         ) : activeTab === "general" && torrent !== undefined ? (
           <GeneralDetail torrent={torrent} />
         ) : activeTab === "logs" ? (
@@ -158,6 +177,7 @@ export function DetailPane() {
               <span>Selected torrent + session</span>
             </div>
             <VirtualTable
+              tableId="logs"
               label="Diagnostic log"
               rows={selectedLogs}
               getRowId={(row) => row.id}

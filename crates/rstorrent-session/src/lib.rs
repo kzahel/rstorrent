@@ -7,6 +7,7 @@ uniffi::setup_scaffolding!();
 
 mod application;
 mod control;
+mod file_views;
 mod have;
 mod store;
 mod view_sets;
@@ -21,6 +22,7 @@ pub use control::{
     RequestEnvelope, ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState,
     TorrentSnapshot, TorrentState,
 };
+pub use file_views::{FileCatalogState, FileSelectionView, FileView};
 pub use have::{HaveError, HaveState};
 pub use rstorrent_engine::{DownloadResourceLimits, NetworkConfig, NetworkPolicy};
 pub use store::{

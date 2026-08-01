@@ -10,8 +10,10 @@ Tactical `034` implements the per-application Zustand store and React
 inspection model against a deterministic adapter. Tactical `035` adds stable
 Rust torrent and active-peer projections, semantic responsive view selection,
 independently reaped leases, and browser-suspension recovery through the live
-React adapter. The existing Tactical `008` subscriptions remain compatible
-adapters. No stable public remote wire compatibility is claimed yet.
+React adapter. Tactical `041` adds the complete selected-torrent file catalog,
+distinct stored and verified progress, and a separately bounded large-snapshot
+path. The existing Tactical `008` subscriptions remain compatible adapters.
+No stable public remote wire compatibility is claimed yet.
 
 ## Purpose And Scope
 
@@ -512,8 +514,9 @@ The first useful contract progression is:
 4. selected-torrent peers; and
 5. bounded diagnostics.
 
-Files, trackers, pieces, disk activity, speed history, swarm state, and DHT
-follow through named views according to inspection value. Unsupported views
+Trackers, pieces, disk activity, speed history, swarm state, and DHT follow
+through named views according to inspection value. Files is implemented by
+Tactical `041`. Unsupported views
 must report unsupported or unavailable explicitly rather than fabricate empty
 data.
 
@@ -524,8 +527,9 @@ Tactical `033` establishes these concrete v1 choices:
 - 32 live view sets per application and 8 per authenticated adapter owner;
 - 16 named views per set and 64-byte conservative ASCII view IDs;
 - 16--512 KiB whole-set queues, defaulting to 256 KiB;
-- 512 KiB responses, 64 KiB requests, 20-second waits, 60-second maximum
-  delivery intervals, and a five-minute idle lease;
+- 512 KiB steady-state queues, a separately retained 16 MiB coherent snapshot
+  ceiling and HTTP response reader, 64 KiB requests, 20-second waits,
+  60-second maximum delivery intervals, and a five-minute idle lease;
 - one emitted but unacknowledged batch, exact replay until the next cursor,
   monotonic cursors across epoch reset, and one active consumer;
 - whole-set overflow reset followed by coherent snapshots;
@@ -550,7 +554,8 @@ per-view overflow reset, streaming delivery, a binary codec, Tauri Channel
 migration, and stable public compatibility remain later layers. The
 transport-independent Zustand/React presentation foundation and demo adapter
 are complete in Tactical `034`; stable peer rows and the Rust-to-React polling
-adapter are complete in Tactical `035`.
+adapter are complete in Tactical `035`; live Files is complete in Tactical
+`041`.
 
 ## Live Peer Extension
 
@@ -583,6 +588,39 @@ identities still isolate view sets. This mode is an automation and local
 bring-up boundary, not a production remote-access posture; bearer mode remains
 the ordinary gateway configuration.
 
+## Live Files Extension
+
+Tactical `041` implements `torrent_files` as a complete ordered catalog for
+the selected torrent. Stable file IDs are metainfo indices. Each row carries
+validated relative path components, exact decimal length and offset, inclusive
+piece span, wanted/skipped selection for ordinary files, independent padding
+identity, and exact Done and Verified byte counts. The snapshot also carries
+one filesystem content base; the TypeScript adapter derives optional absolute
+storage paths without repeating the base in every wire row. Capability-backed
+storage reports no fabricated filesystem path.
+
+The runtime-independent file-progress owner shares immutable catalog geometry
+and updates only rows intersected by stored, verified, or hash-failed piece
+ranges. Stored-block overlap is deduplicated, verification is idempotent, hash
+failure removes only unverified bytes, and durable restart reconstructs
+Verified from the checkpoint while conservatively dropping transient Done.
+Metadata arrival and catalog replacement use coherent snapshots; steady
+progress uses coalesced complete-row keyed patches at a client-requested
+250 ms minimum interval.
+
+A legal 4,096-row long-path fixture encodes to 1,481,877 bytes, above the
+ordinary 256 KiB default queue but below the advertised 16 MiB snapshot bound.
+The view set retains that coherent initial snapshot separately while later
+small patches remain governed by the 512 KiB steady-state ceiling. Gateway and
+browser readers enforce the same 16 MiB maximum; an oversized response fails
+explicitly rather than truncating.
+
+Responsive interest requests Files only while that tab is visible and evicts
+the materialization after the ordered view removal. A phone detail does not
+retain the library. Browser suspension follows the existing stale/reopen
+contract: the controlled 500 ms lease proof replaced the expired set and
+restored all 122 rows from a fresh epoch while the engine continued.
+
 ## Validation And Evidence
 
 The completed foundation evidence proves:
@@ -612,6 +650,15 @@ deletion availability are complete torrent-summary fields. Final catalog
 deletion produces the ordinary keyed removed ID; an intermediate or failed
 cleanup remains an upsert, so reducers do not infer deletion from command
 success or diagnostics.
+
+Tactical `041` adds a controlled libtorrent 2.0.13.0 multi-file proof. The
+production web build received 26,731 bytes of multi-block metadata, exposed
+all 122 files, and made piece zero cross a 7,000-byte nested prefix into the
+40,000-byte payload. It observed first Done and Verified bytes at 20,406 and
+20,413 ms from Files selection, recovered after deliberate lease expiry, and
+displayed 39.0 KiB Done and Verified for the payload at completion. The
+harness independently compared both nonempty files, joined the gateway and
+seed, and removed its temporary profile and download tree.
 
 Public swarms and visible Tauri launch are unnecessary for this foundation.
 The browser gateway, temporary profiles, controlled libtorrent peer, and pure

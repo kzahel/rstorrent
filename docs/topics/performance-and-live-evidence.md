@@ -581,6 +581,45 @@ entity sharding, mutable versioned containers, streaming, animation-frame
 delivery, and binary codecs remain later measured responses rather than
 assumed fixes.
 
+### File Projection Evidence: 2026-08-01
+
+Tactical `041` adds a larger but still bounded application-view shape. The
+4,096-row long-path Rust fixture encoded to 1,481,877 bytes. Its coherent
+snapshot is retained under a separate 16 MiB ceiling instead of raising the
+512 KiB steady-state patch queue. Static Rust catalog geometry is shared by
+`Arc`; stored, verified, and failed piece transitions derive only intersected
+complete rows. Piece checkpoints now publish a targeted durable update rather
+than reconstructing the complete SQLite-backed service snapshot on every
+verified piece.
+
+The deterministic browser scenario retained 4,096 semantic rows, hid one
+padding row, and mounted 690 DOM elements. Headless Chrome sampled 66,468,705
+bytes of JavaScript heap; a complete ten-second scenario rebuild and paint
+took 55 ms. The table remained keyboard-resizable, correctly sorted exact
+decimal values beyond JavaScript's safe integer range, and serious/critical
+axe findings were empty. These values are observations from one development
+run, not hard regression thresholds.
+
+The live adapter caches the mapped file catalog by projection identity, so a
+high-frequency torrent-summary patch does not remap 4,096 file DTOs. A Files
+patch maps only source rows whose identity changed. Two bounded shallow O(n)
+costs remain: the generic TypeScript view-set reducer rebuilds the generated
+file DTO array for a keyed patch, and the normalized inspection record copies
+its key table when one or more rows change. At the current 4,096-file ceiling
+and 250 ms minimum Files delivery interval this is acceptable initial
+evidence, not proof that entity sharding is unnecessary. Retain this item for
+profiling before raising file-count or update-cadence limits.
+
+The controlled libtorrent 2.0.13.0 proof transferred 26,731 bytes of
+multi-block metadata, a 7,000-byte nested prefix, and a 40,000-byte payload
+across 122 files and three pieces. Piece zero crossed the two nonempty files.
+From selecting Files, first Done appeared at 20,406 ms and first Verified at
+20,413 ms. A deliberate 500 ms lease expiry reopened from a fresh snapshot
+while transfer continued; final payload display was 39.0 KiB Done and
+Verified, both external content comparisons matched, and every child joined
+and cleaned up. The seed's 4 KiB/s upload limit makes these interoperability
+milestones diagnostic rather than product throughput measurements.
+
 ## Result Classification
 
 Classify each paired attempt before interpreting speed:

@@ -131,6 +131,7 @@ export function TorrentTable() {
 
   return (
     <VirtualTable
+      tableId="torrents"
       label="Torrent library"
       rows={rows}
       getRowId={(row) => row.id}

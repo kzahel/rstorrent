@@ -19,9 +19,19 @@ from pathlib import Path
 import libtorrent as lt
 
 from browser_reactive_surface import reserve_loopback_port, stop_process
-from first_verified_piece import ScenarioFailure, add_seed, create_session, wait_for_listener
+from first_verified_piece import (
+    ScenarioFailure,
+    add_seed,
+    compare_payloads,
+    create_session,
+    wait_for_listener,
+)
 from gateway_reactive_surface import build_gateway, verify_payload
-from magnet_metadata import create_fixture, magnet_uri
+from magnet_metadata import ROOT_NAME, create_fixture, magnet_uri
+
+
+BROWSER_PREFIX_SIZE = 7_000
+BROWSER_PREFIX_PATH = Path("nested/prefix.bin")
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -113,6 +123,7 @@ def run_playwright(
     gateway_address: str,
     magnet: str,
     torrent_id: str,
+    file_count: int,
     screenshot_directory: Path | None,
 ) -> str:
     environment = os.environ.copy()
@@ -122,6 +133,7 @@ def run_playwright(
             "RSTORRENT_LIVE_GATEWAY_URL": f"http://{gateway_address}",
             "RSTORRENT_LIVE_MAGNET": magnet,
             "RSTORRENT_LIVE_TORRENT_ID": torrent_id,
+            "RSTORRENT_LIVE_FILE_COUNT": str(file_count),
         }
     )
     if screenshot_directory is not None:
@@ -142,7 +154,7 @@ def run_playwright(
         capture_output=True,
         text=True,
         env=environment,
-        timeout=60,
+        timeout=90,
         check=False,
     )
     if completed.returncode != 0:
@@ -151,10 +163,19 @@ def run_playwright(
             f"stdout:\n{completed.stdout}\n"
             f"stderr:\n{completed.stderr}"
         )
-    return next(
+    passed = next(
         (line.strip() for line in completed.stdout.splitlines() if "passed" in line),
         "playwright=passed",
     )
+    milestones = next(
+        (
+            line.strip()
+            for line in completed.stdout.splitlines()
+            if line.startswith("file_live_milestones ")
+        ),
+        "file_live_milestones=unavailable",
+    )
+    return f"{passed} {milestones}"
 
 
 def build_and_start_production_web(
@@ -214,7 +235,7 @@ def run(screenshot_directory: Path | None) -> None:
     diagnostics: list[str] = []
     failure: BaseException | None = None
     try:
-        fixture = create_fixture(run_path)
+        fixture = create_fixture(run_path, prefix_payload_size=BROWSER_PREFIX_SIZE)
         session = create_session()
         session.apply_settings({"upload_rate_limit": 4 * 1024})
         port = wait_for_listener(session, diagnostics)
@@ -241,16 +262,22 @@ def run(screenshot_directory: Path | None) -> None:
             address,
             magnet_uri(fixture.info_hash, f"127.0.0.1:{port}"),
             fixture.info_hash,
+            len(fixture.files),
             screenshot_directory,
         )
         verify_payload(storage, fixture.info_hash, fixture.payload_hash)
+        compare_payloads(
+            fixture.seed_directory / ROOT_NAME / BROWSER_PREFIX_PATH,
+            storage / fixture.info_hash / BROWSER_PREFIX_PATH,
+        )
         stop_process(vite, "Vite")
         vite = None
         terminate_gateway(gateway)
         gateway = None
         print(
             f"{result} info_hash={fixture.info_hash} metadata_size={len(fixture.info_bytes)} "
-            f"pieces=3 payload_sha1={fixture.payload_hash} responsive=wide,compact,phone "
+            f"pieces=3 files={len(fixture.files)} boundary_file_bytes={BROWSER_PREFIX_SIZE} "
+            f"payload_sha1={fixture.payload_hash} responsive=wide,compact,phone "
             "peer_removal=ok gateway_shutdown=joined cleanup=ok"
         )
     except BaseException as error:

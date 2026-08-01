@@ -1,6 +1,8 @@
 import type {
   DemoScenarioId,
   DemoScenarioSummary,
+  FileRow,
+  FileSet,
   InspectionSnapshot,
   LogRow,
   PeerRow,
@@ -49,6 +51,13 @@ export const DEMO_SCENARIOS: readonly DemoScenarioSummary[] = [
     autoplay: false,
   },
   {
+    id: "file-progress",
+    title: "File progress",
+    description: "A 4,096-row file tree with stored and verified progress boundaries.",
+    durationMs: 90_000,
+    autoplay: true,
+  },
+  {
     id: "disk-error",
     title: "Disk error",
     description: "A storage write fails and leaves an actionable stopped state.",
@@ -93,6 +102,7 @@ export function buildScenarioSnapshot(
       },
     ]),
   );
+  const filesByTorrent = content.files ?? {};
   const active = content.torrents.filter(
     (torrent) => torrent.status === "downloading" || torrent.status === "metadata",
   );
@@ -114,12 +124,14 @@ export function buildScenarioSnapshot(
     torrentOrder: content.torrents.map((torrent) => torrent.id),
     torrents,
     peersByTorrent,
+    filesByTorrent,
     logs: content.logs.slice(-256),
     droppedLogs: Math.max(0, content.logs.length - 256),
     viewStatus: {
       library: { status: "ready" },
       torrentSummary: { status: "ready" },
       peers: { status: "ready" },
+      files: { status: "ready" },
       logs: { status: "ready" },
     },
   };
@@ -128,6 +140,7 @@ export function buildScenarioSnapshot(
 interface ScenarioContent {
   readonly torrents: readonly TorrentRow[];
   readonly peers: Readonly<Record<string, readonly PeerRow[]>>;
+  readonly files?: Readonly<Record<string, FileSet>>;
   readonly logs: readonly LogRow[];
 }
 
@@ -146,6 +159,8 @@ function buildScenarioContent(
       return endgame(elapsedMs);
     case "large-swarm":
       return largeSwarm();
+    case "file-progress":
+      return fileProgress(elapsedMs);
     case "disk-error":
       return diskError(elapsedMs);
     case "empty-library":
@@ -201,6 +216,7 @@ function healthyDownload(elapsedMs: number): ScenarioContent {
   return {
     torrents: [primary, completed, paused],
     peers: { [BUNNY_ID]: peers },
+    files: { [BUNNY_ID]: demoFileSet(BUNNY_ID, progress ?? 0, 36) },
     logs: timelineLogs(BUNNY_ID, [
       [0, "info", "lifecycle", "Torrent added from magnet"],
       [1, "info", "tracker", "Announce started for 3 UDP trackers"],
@@ -214,6 +230,115 @@ function healthyDownload(elapsedMs: number): ScenarioContent {
       [98, "info", "integrity", "All pieces verified"],
       [99, "info", "storage", "Published 3 files"],
     ], elapsedMs),
+  };
+}
+
+function fileProgress(elapsedMs: number): ScenarioContent {
+  const progress = clamp(0.18 + elapsedMs / 160_000, 0, 0.92);
+  const ordinaryDoneProgress = clamp(0.18 + elapsedMs / 120_000, 0, 0.94);
+  const hashFailureActive = elapsedMs >= 36_000 && elapsedMs < 48_000;
+  const doneProgress = hashFailureActive
+    ? Math.min(ordinaryDoneProgress, progress + 0.005)
+    : ordinaryDoneProgress;
+  const rate = 18_600_000 + wave(elapsedMs / 1_000, 3_200_000);
+  const files = demoFileSet(BUNNY_ID, doneProgress, 4_096, progress);
+  const total = Object.values(files.rows).reduce(
+    (sum, file) => sum + Number(file.lengthBytes),
+    0,
+  );
+  return {
+    torrents: [
+      torrent({
+        id: BUNNY_ID,
+        name: "Open Movies production archive",
+        status: "downloading",
+        sizeBytes: total,
+        progress,
+        downloadRate: rate,
+        uploadRate: 84_000,
+        peersConnected: 22,
+        peersKnown: 138,
+        etaSeconds: Math.ceil((total * (1 - progress)) / rate),
+        progressReason: "Stored blocks lead verified pieces in the active file",
+      }),
+    ],
+    peers: { [BUNNY_ID]: buildPeers(BUNNY_ID, 22, elapsedMs / 1_000, progress) },
+    files: { [BUNNY_ID]: files },
+    logs: timelineLogs(
+      BUNNY_ID,
+      [
+        [0, "info", "metadata", "Metadata verified: 4,096 files"],
+        [2, "info", "storage", "Managed file layout prepared"],
+        [8, "debug", "piece", "Stored blocks crossed a file boundary"],
+        [18, "debug", "integrity", "Verified piece advanced two file rows"],
+        [36, "warning", "piece", "Hash failure regressed unverified Done bytes"],
+      ],
+      elapsedMs,
+    ),
+  };
+}
+
+function demoFileSet(
+  torrentId: string,
+  doneProgress: number,
+  count: number,
+  verifiedProgress = doneProgress,
+): FileSet {
+  const rows: FileRow[] = [];
+  let offset = 0n;
+  for (let index = 0; index < count; index += 1) {
+    const padding = index === count - 3;
+    const length = padding
+      ? 262_144n
+      : BigInt(1_200_000 + ((index * 7919) % 9_000_000));
+    const fileDoneProgress = clamp(doneProgress * count - index, 0, 1);
+    const fileVerifiedProgress = Math.min(
+      fileDoneProgress,
+      clamp(verifiedProgress * count - index, 0, 1),
+    );
+    const done = padding
+      ? length
+      : BigInt(Math.floor(Number(length) * fileDoneProgress));
+    const verified = padding
+      ? length
+      : BigInt(Math.floor(Number(length) * fileVerifiedProgress));
+    const folder = padding
+      ? ".pad"
+      : index % 5 === 0
+        ? "featurettes/behind-the-scenes"
+        : index % 3 === 0
+          ? "audio/lossless"
+          : "video/chapter-reels";
+    const name = padding
+      ? length.toString()
+      : `asset-${String(index + 1).padStart(3, "0")}.${index % 5 === 0 ? "mkv" : index % 3 === 0 ? "flac" : "mp4"}`;
+    const path = [folder, name];
+    const id = index.toString();
+    rows.push({
+      id,
+      torrentId,
+      index,
+      path,
+      name,
+      folder,
+      extension: padding ? "" : name.split(".").at(-1) ?? "",
+      lengthBytes: length.toString(),
+      torrentOffsetBytes: offset.toString(),
+      firstPiece: Math.floor(Number(offset / 262_144n)),
+      lastPiece: Math.floor(Number((offset + length - 1n) / 262_144n)),
+      selection: padding ? null : index % 29 === 0 ? "skipped" : "wanted",
+      padding,
+      doneBytes: done.toString(),
+      verifiedBytes: verified.toString(),
+      storagePath: `/Users/demo/Downloads/${torrentId}/${path.join("/")}`,
+    });
+    offset += length;
+  }
+  return {
+    state: "available",
+    filesystemContentBase: `/Users/demo/Downloads/${torrentId}`,
+    order: rows.map((row) => row.id),
+    rows: Object.fromEntries(rows.map((row) => [row.id, row])),
   };
 }
 

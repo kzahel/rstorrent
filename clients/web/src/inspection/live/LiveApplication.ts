@@ -1,6 +1,7 @@
 import type {
   ApiHello,
   DiagnosticEvent,
+  FileView,
   PeerSourceView,
   PeerView,
   RequestEnvelope,
@@ -19,6 +20,8 @@ import type {
   InspectionCommand,
   InspectionSnapshot,
   InspectionUpdate,
+  FileRow,
+  FileSet,
   LogRow,
   PeerRow,
   PeerSet,
@@ -29,6 +32,7 @@ import type {
 const LIBRARY_VIEW_ID = "library";
 const SUMMARY_VIEW_ID = "torrent-summary";
 const PEERS_VIEW_ID = "torrent-peers";
+const FILES_VIEW_ID = "torrent-files";
 const LOGS_VIEW_ID = "logs";
 
 export interface LiveApplicationOptions extends ViewControllerOptions {
@@ -43,6 +47,10 @@ export class LiveApplication implements InspectionApplication {
   private controller: ViewController | null = null;
   private desired: DesiredInspectionViews;
   private snapshot: InspectionSnapshot;
+  private mappedFiles: {
+    readonly source: Extract<ViewSnapshot, { type: "files" }>;
+    readonly value: FileSet;
+  } | null = null;
   private hello: ApiHello | null = null;
   private closed = false;
   private readonly requestInstanceId = generateRequestInstanceId();
@@ -200,13 +208,29 @@ export class LiveApplication implements InspectionApplication {
 
   private acceptState(state: ViewSetState): void {
     if (this.closed) return;
+    const files = projection(state, FILES_VIEW_ID, "files");
+    const fileSet = this.mapFiles(files);
     this.snapshot = mapViewState(
       state,
       this.desired,
       this.capabilities(),
       "connected",
+      fileSet,
     );
     this.emit({ type: "snapshot", snapshot: this.snapshot });
+  }
+
+  private mapFiles(
+    source: Extract<ViewSnapshot, { type: "files" }> | null,
+  ): FileSet | null {
+    if (source === null) {
+      this.mappedFiles = null;
+      return null;
+    }
+    if (this.mappedFiles?.source === source) return this.mappedFiles.value;
+    const value = mapFiles(source, this.mappedFiles);
+    this.mappedFiles = { source, value };
+    return value;
   }
 
   private markReconnecting(error: Error): void {
@@ -221,6 +245,7 @@ export class LiveApplication implements InspectionApplication {
           error,
         ),
         peers: staleIfMaterialized(this.snapshot.viewStatus.peers, error),
+        files: staleIfMaterialized(this.snapshot.viewStatus.files, error),
         logs: staleIfMaterialized(this.snapshot.viewStatus.logs, error),
       },
     };
@@ -259,6 +284,18 @@ export class LiveApplication implements InspectionApplication {
         view_id: PEERS_VIEW_ID,
         torrent_id: views.torrentId,
         delivery: { min_interval_millis: 100 },
+      });
+    }
+    if (
+      views.detail === "files" &&
+      views.torrentId !== null &&
+      capabilities.has("torrent_files")
+    ) {
+      specs.push({
+        type: "torrent_files",
+        view_id: FILES_VIEW_ID,
+        torrent_id: views.torrentId,
+        delivery: { min_interval_millis: 250 },
       });
     }
     if (views.detail === "logs" && capabilities.has("diagnostics")) {
@@ -300,10 +337,12 @@ function mapViewState(
   desired: DesiredInspectionViews,
   capabilities: ReadonlySet<string>,
   connection: "connected" | "reconnecting" | "offline",
+  fileSet: FileSet | null,
 ): InspectionSnapshot {
   const library = projection(state, LIBRARY_VIEW_ID, "torrent_list");
   const summary = projection(state, SUMMARY_VIEW_ID, "torrent");
   const peers = projection(state, PEERS_VIEW_ID, "peers");
+  const files = projection(state, FILES_VIEW_ID, "files");
   const diagnostics = projection(state, LOGS_VIEW_ID, "diagnostics");
   const torrentRows = new Map<string, TorrentRow>();
   if (library !== null) {
@@ -322,6 +361,10 @@ function mapViewState(
     peerSet === null || desired.torrentId === null || peers?.torrent_id !== desired.torrentId
       ? {}
       : { [desired.torrentId]: peerSet };
+  const filesByTorrent =
+    fileSet === null || desired.torrentId === null || files?.torrent_id !== desired.torrentId
+      ? {}
+      : { [desired.torrentId]: fileSet };
   const rows = [...torrentRows.values()];
   return {
     revision: safeNumber(state.durableRevision),
@@ -336,6 +379,7 @@ function mapViewState(
     torrentOrder,
     torrents,
     peersByTorrent,
+    filesByTorrent,
     logs,
     droppedLogs: diagnostics === null ? 0 : safeNumber(diagnostics.dropped_count),
     viewStatus: {
@@ -356,6 +400,12 @@ function mapViewState(
         capabilities.has("torrent_peers"),
         peers?.torrent_id === desired.torrentId,
         "Peer inspection is unavailable",
+      ),
+      files: materialization(
+        desired.detail === "files",
+        capabilities.has("torrent_files"),
+        files?.torrent_id === desired.torrentId,
+        "File inspection is unavailable",
       ),
       logs: materialization(
         desired.detail === "logs",
@@ -411,6 +461,7 @@ function transitionSnapshot(
     torrentOrder: desired.library ? libraryRows.map((row) => row.id) : [],
     torrents: Object.fromEntries(rows),
     peersByTorrent: {},
+    filesByTorrent: {},
     logs: [],
     droppedLogs: 0,
     viewStatus: {
@@ -426,6 +477,10 @@ function transitionSnapshot(
       peers: transitionStatus(
         desired.detail === "peers",
         capabilities.has("torrent_peers"),
+      ),
+      files: transitionStatus(
+        desired.detail === "files",
+        capabilities.has("torrent_files"),
       ),
       logs: transitionStatus(
         desired.detail === "logs",
@@ -503,6 +558,95 @@ function mapPeers(peers: readonly PeerView[]): PeerSet {
   return {
     order: rows.map((peer) => peer.connectionId),
     rows: Object.fromEntries(rows.map((peer) => [peer.connectionId, peer])),
+  };
+}
+
+function mapFiles(
+  snapshot: Extract<ViewSnapshot, { type: "files" }>,
+  previous: {
+    readonly source: Extract<ViewSnapshot, { type: "files" }>;
+    readonly value: FileSet;
+  } | null = null,
+): FileSet {
+  if (canPatchMappedFiles(previous, snapshot)) {
+    let rows: Record<string, FileRow> | null = null;
+    for (let index = 0; index < snapshot.files.length; index += 1) {
+      const file = snapshot.files[index];
+      if (file === undefined || file === previous.source.files[index]) continue;
+      rows ??= { ...previous.value.rows };
+      rows[file.file_id] = mapFile(
+        file,
+        snapshot.torrent_id,
+        snapshot.filesystem_content_base,
+      );
+    }
+    return rows === null ? previous.value : { ...previous.value, rows };
+  }
+  const rows = snapshot.files.map((file) =>
+    mapFile(file, snapshot.torrent_id, snapshot.filesystem_content_base),
+  );
+  return {
+    state: snapshot.state,
+    filesystemContentBase: snapshot.filesystem_content_base,
+    order: rows.map((file) => file.id),
+    rows: Object.fromEntries(rows.map((file) => [file.id, file])),
+  };
+}
+
+function canPatchMappedFiles(
+  previous: {
+    readonly source: Extract<ViewSnapshot, { type: "files" }>;
+    readonly value: FileSet;
+  } | null,
+  snapshot: Extract<ViewSnapshot, { type: "files" }>,
+): previous is {
+  readonly source: Extract<ViewSnapshot, { type: "files" }>;
+  readonly value: FileSet;
+} {
+  if (
+    previous === null ||
+    previous.source.torrent_id !== snapshot.torrent_id ||
+    previous.source.state !== snapshot.state ||
+    previous.source.filesystem_content_base !== snapshot.filesystem_content_base ||
+    previous.source.files.length !== snapshot.files.length
+  ) {
+    return false;
+  }
+  return snapshot.files.every(
+    (file, index) => previous.source.files[index]?.file_id === file.file_id,
+  );
+}
+
+function mapFile(
+  file: FileView,
+  torrentId: string,
+  filesystemContentBase: string | null,
+): FileRow {
+  const name = file.path.at(-1) ?? "";
+  const separator = name.lastIndexOf(".");
+  return {
+    id: file.file_id,
+    torrentId,
+    index: file.file_index,
+    path: file.path,
+    name,
+    folder: file.path.slice(0, -1).join("/"),
+    extension:
+      separator <= 0 || separator === name.length - 1
+        ? ""
+        : name.slice(separator + 1).toLocaleLowerCase(),
+    lengthBytes: file.length_bytes,
+    torrentOffsetBytes: file.torrent_offset_bytes,
+    firstPiece: file.first_piece,
+    lastPiece: file.last_piece,
+    selection: file.selection,
+    padding: file.padding,
+    doneBytes: file.done_bytes,
+    verifiedBytes: file.verified_bytes,
+    storagePath:
+      filesystemContentBase === null
+        ? null
+        : [filesystemContentBase, ...file.path].join("/"),
   };
 }
 
@@ -605,6 +749,7 @@ function emptyLiveSnapshot(
     torrentOrder: [],
     torrents: {},
     peersByTorrent: {},
+    filesByTorrent: {},
     logs: [],
     droppedLogs: 0,
     viewStatus: {
@@ -612,6 +757,7 @@ function emptyLiveSnapshot(
       torrentSummary:
         desired.torrentId === null ? { status: "not_requested" } : { status: "loading" },
       peers: desired.detail === "peers" ? { status: "loading" } : { status: "not_requested" },
+      files: desired.detail === "files" ? { status: "loading" } : { status: "not_requested" },
       logs: desired.detail === "logs" ? { status: "loading" } : { status: "not_requested" },
     },
   };

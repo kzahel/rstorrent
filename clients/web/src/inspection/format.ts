@@ -10,6 +10,42 @@ export function formatBytes(value: number | null): string {
   return `${scaled >= 100 || exponent === 0 ? scaled.toFixed(0) : scaled.toFixed(1)} ${units[exponent]}`;
 }
 
+export function formatDecimalBytes(value: string | null): string {
+  if (value === null) return "—";
+  let bytes: bigint;
+  try {
+    bytes = BigInt(value);
+  } catch {
+    return "—";
+  }
+  if (bytes <= 0n) return "0 B";
+  const units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
+  let exponent = 0;
+  let divisor = 1n;
+  while (exponent < units.length - 1 && bytes >= divisor * 1024n) {
+    exponent += 1;
+    divisor *= 1024n;
+  }
+  const whole = bytes / divisor;
+  if (exponent === 0 || whole >= 100n) return `${whole.toString()} ${units[exponent]}`;
+  const tenth = ((bytes * 10n) / divisor) % 10n;
+  return `${whole.toString()}.${tenth.toString()} ${units[exponent]}`;
+}
+
+export function formatDecimalProgress(done: string, length: string): string {
+  try {
+    const doneBytes = BigInt(done);
+    const lengthBytes = BigInt(length);
+    if (lengthBytes === 0n) return "100%";
+    const tenths = (doneBytes * 1_000n) / lengthBytes;
+    return tenths >= 999n
+      ? "100%"
+      : `${(tenths / 10n).toString()}.${(tenths % 10n).toString()}%`;
+  } catch {
+    return "—";
+  }
+}
+
 export function formatRate(value: number | null): string {
   return value === null || value <= 0 ? "—" : `${formatBytes(value)}/s`;
 }

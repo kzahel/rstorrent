@@ -13,6 +13,7 @@ const COLUMNS: readonly VirtualColumn<PeerRow>[] = [
     width: 104,
     sortable: true,
     sortValue: (row) => row.state,
+    sortOrder: ["connected", "choked", "stalled", "handshaking", "connecting", "disconnecting"],
     render: (row) => (
       <span className={styles.state} data-state={row.state}>
         <span aria-hidden="true" />
@@ -54,6 +55,7 @@ const COLUMNS: readonly VirtualColumn<PeerRow>[] = [
     align: "right",
     sortable: true,
     sortValue: (row) => row.progress,
+    sortKind: "number",
     render: (row) => (row.progress === null ? "—" : formatProgress(row.progress)),
   },
   {
@@ -63,6 +65,7 @@ const COLUMNS: readonly VirtualColumn<PeerRow>[] = [
     align: "right",
     sortable: true,
     sortValue: (row) => row.downloadRate,
+    sortKind: "number",
     render: (row) => formatRate(row.downloadRate),
   },
   {
@@ -73,6 +76,7 @@ const COLUMNS: readonly VirtualColumn<PeerRow>[] = [
     align: "right",
     sortable: true,
     sortValue: (row) => row.downloadedBytes,
+    sortKind: "number",
     render: (row) => formatBytes(row.downloadedBytes),
   },
   {
@@ -82,7 +86,8 @@ const COLUMNS: readonly VirtualColumn<PeerRow>[] = [
     align: "right",
     sortable: true,
     sortValue: (row) => row.requestsPending,
-    render: (row) => row.requestsPending || "—",
+    sortKind: "number",
+    render: (row) => row.requestsPending ?? "—",
   },
   {
     id: "age",
@@ -92,6 +97,7 @@ const COLUMNS: readonly VirtualColumn<PeerRow>[] = [
     align: "right",
     sortable: true,
     sortValue: (row) => row.oldestRequestMs,
+    sortKind: "number",
     render: (row) =>
       row.oldestRequestMs === null
         ? "—"
@@ -130,6 +136,7 @@ export function PeerTable({ torrentId }: { readonly torrentId: string }) {
 
   return (
     <VirtualTable
+      tableId="peers"
       label="Active peer connections"
       rows={rows}
       getRowId={(row) => row.connectionId}
@@ -137,7 +144,6 @@ export function PeerTable({ torrentId }: { readonly torrentId: string }) {
       selectedId={selectedPeerId}
       onSelect={(row) => selectPeer(row.connectionId)}
       emptyMessage={peerEmptyMessage(materialization)}
-      initialSort={{ columnId: "down", direction: "desc" }}
     />
   );
 }

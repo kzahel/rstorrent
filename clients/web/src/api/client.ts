@@ -16,7 +16,7 @@ import {
   decodeUpdateBatch,
 } from "../validation";
 
-const MAX_RESPONSE_BYTES = 512 * 1024;
+const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
 
 export interface ApplicationViewClient {
   hello(signal?: AbortSignal): Promise<ApiHello>;

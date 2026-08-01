@@ -107,7 +107,10 @@ responsive React/Zustand/CSS Modules inspection surface, virtual torrent and
 peer grids, and permanent deterministic named demo adapter. Tactical `035`
 completed stable Rust torrent and active-peer projections, the semantic live
 adapter, independently reaped view sets, and suspended-client recovery; see
-[`docs/topics/web-ui-design.md`](docs/topics/web-ui-design.md).
+[`docs/topics/web-ui-design.md`](docs/topics/web-ui-design.md). Tactical `041`
+adds the complete selected-torrent Files projection, independent Done and
+Verified progress, configurable virtual columns, and a 4,096-row scale
+scenario through the same headless surface.
 
 Run the controlled production-web peer inspection proof without launching a
 visible browser or Tauri window with:
@@ -118,11 +121,11 @@ uv run --project tests/interop --locked \
   python tests/interop/browser_peer_inspection_surface.py
 ```
 
-Pass `--screenshot-dir target/headless-evidence/t035-live-peers` to retain
-loopback-only wide, compact, phone, and reconnecting captures. The harness
-creates and removes temporary application, browser, seed, and download state,
-uses the pinned Python libtorrent environment, verifies payload SHA-1, and
-requires every child process to join.
+Pass `--screenshot-dir target/headless-evidence/t041-live-files` to retain
+loopback-only peer and Files wide, compact, phone, and reconnecting captures.
+The harness creates and removes temporary application, browser, seed, and
+download state, uses the pinned Python libtorrent environment, verifies
+payload SHA-1, and requires every child process to join.
 
 ## Toolchain
 

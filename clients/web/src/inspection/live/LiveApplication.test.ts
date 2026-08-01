@@ -22,6 +22,7 @@ const TORRENT_ID = "000102030405060708090a0b0c0d0e0f10111213";
 
 class FakeLiveClient implements ApplicationViewClient {
   readonly updates: UpdateViewSetRequest[] = [];
+  readonly opens: OpenViewSetRequest[] = [];
   readonly requests: RequestEnvelope[] = [];
   openCount = 0;
   private rejectPoll: ((error: Error) => void) | null = null;
@@ -35,6 +36,7 @@ class FakeLiveClient implements ApplicationViewClient {
         "torrent_list",
         "torrent_summary",
         "torrent_peers",
+        "torrent_files",
         "diagnostics",
       ],
       limits: {
@@ -44,6 +46,7 @@ class FakeLiveClient implements ApplicationViewClient {
         min_queue_bytes: 16_384,
         default_queue_bytes: 262_144,
         max_queue_bytes: 524_288,
+        max_snapshot_bytes: 16_777_216,
         max_wait_millis: 20_000,
         lease_millis: "300000",
       },
@@ -62,6 +65,7 @@ class FakeLiveClient implements ApplicationViewClient {
   }
 
   async openViewSet(request: OpenViewSetRequest): Promise<OpenViewSetResponse> {
+    this.opens.push(request);
     this.openCount += 1;
     const viewSetId = `vs_${String(this.openCount).padStart(32, "0")}`;
     const initial: UpdateBatch = {
@@ -212,6 +216,40 @@ describe("LiveApplication", () => {
     await application.close();
   });
 
+  it("subscribes to files only while requested and maps exact byte strings", async () => {
+    const client = new FakeLiveClient();
+    const application = await LiveApplication.open(client, {
+      initialViews: { library: false, torrentId: TORRENT_ID, detail: "files" },
+    });
+    const snapshots: InspectionSnapshot[] = [];
+    application.subscribe((update) => {
+      if (update.type === "snapshot") snapshots.push(update.snapshot);
+    });
+    const file = snapshots.at(-1)?.filesByTorrent[TORRENT_ID]?.rows["0"];
+    expect(file).toMatchObject({
+      name: "movie.mkv",
+      lengthBytes: "9007199254740993",
+      doneBytes: "16384",
+      verifiedBytes: "0",
+      storagePath: "/tmp/content/video/movie.mkv",
+    });
+    expect(
+      client.opens[0]?.views.find((view) => view.type === "torrent_files")
+        ?.delivery.min_interval_millis,
+    ).toBe(250);
+    await application.setViews({
+      library: true,
+      torrentId: TORRENT_ID,
+      detail: "general",
+    });
+    expect(client.updates.at(-1)?.views.map((view) => view.type)).toEqual([
+      "torrent_list",
+      "torrent_summary",
+    ]);
+    expect(snapshots.at(-1)?.filesByTorrent).toEqual({});
+    await application.close();
+  });
+
   it("marks stale state then atomically installs a fresh view-set epoch", async () => {
     const client = new FakeLiveClient();
     const application = await LiveApplication.open(client, {
@@ -268,6 +306,32 @@ function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
           type: "peers",
           torrent_id: TORRENT_ID,
           peers: [peer(generation)],
+        },
+      };
+    case "torrent_files":
+      return {
+        type: "snapshot",
+        view_id: view.view_id,
+        snapshot: {
+          type: "files",
+          torrent_id: TORRENT_ID,
+          state: "available",
+          filesystem_content_base: "/tmp/content",
+          files: [
+            {
+              file_id: "0",
+              file_index: 0,
+              path: ["video", "movie.mkv"],
+              length_bytes: "9007199254740993",
+              torrent_offset_bytes: "0",
+              first_piece: 0,
+              last_piece: 7,
+              selection: "wanted",
+              padding: false,
+              done_bytes: "16384",
+              verified_bytes: "0",
+            },
+          ],
         },
       };
     case "diagnostics":

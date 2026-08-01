@@ -16,8 +16,10 @@ import type {
 import { assertApiSchema, SchemaError } from "./api/schema";
 
 const MAX_FRAME_BYTES = 512 * 1024;
+const MAX_HTTP_RESPONSE_BYTES = 16 * 1024 * 1024;
 const MAX_COLLECTION = 100_000;
 const MAX_ACTIVE_PEERS = 256;
+const MAX_FILES = 4_096;
 const MAX_U32 = 4_294_967_295;
 const DECIMAL = /^(0|[1-9][0-9]*)$/;
 const IDENTIFIER = /^[A-Za-z0-9._-]{1,128}$/;
@@ -114,6 +116,12 @@ export function decodeApiHello(source: string): ApiHello {
   );
   boundedInteger(value.limits.min_queue_bytes, "minimum queue bytes", 1, MAX_U32);
   boundedInteger(value.limits.max_queue_bytes, "maximum queue bytes", 1, MAX_U32);
+  boundedInteger(
+    value.limits.max_snapshot_bytes,
+    "maximum snapshot bytes",
+    value.limits.max_queue_bytes,
+    MAX_U32,
+  );
   boundedInteger(value.limits.max_wait_millis, "maximum wait", 0, MAX_U32);
   if (
     value.limits.min_queue_bytes > value.limits.default_queue_bytes ||
@@ -145,7 +153,7 @@ export function decodeApiErrorEnvelope(source: string): ApiErrorEnvelope {
 export function decodeOpenViewSetResponse(source: string): OpenViewSetResponse {
   const value = generated<OpenViewSetResponse>(
     "OpenViewSetResponse",
-    parseBoundedJson(source, MAX_FRAME_BYTES, "open view-set response"),
+    parseBoundedJson(source, MAX_HTTP_RESPONSE_BYTES, "open view-set response"),
   );
   identifier(value.view_set_id, "view-set ID");
   decimal(value.lease_millis, "view-set lease");
@@ -160,7 +168,7 @@ export function decodeOpenViewSetResponse(source: string): OpenViewSetResponse {
 export function decodeUpdateBatch(source: string): UpdateBatch {
   const value = generated<UpdateBatch>(
     "UpdateBatch",
-    parseBoundedJson(source, MAX_FRAME_BYTES, "view-set update response"),
+    parseBoundedJson(source, MAX_HTTP_RESPONSE_BYTES, "view-set update response"),
   );
   validateUpdateBatch(value);
   return value;
@@ -299,6 +307,24 @@ function validateViewSnapshot(value: unknown): void {
       peers.forEach((peer) => validatePeerView(peer, owningTorrent));
       break;
     }
+    case "files": {
+      torrentId(snapshot.torrent_id);
+      oneOf(snapshot.state, "file catalog state", [
+        "metadata_pending",
+        "available",
+        "torrent_missing",
+      ]);
+      optionalString(snapshot.filesystem_content_base, "filesystem content base", 16_384);
+      const files = array(snapshot.files, "torrent files");
+      if (files.length > MAX_FILES) {
+        throw new ContractError("file view exceeds its row bound");
+      }
+      files.forEach(validateFileView);
+      if (snapshot.state !== "available" && files.length !== 0) {
+        throw new ContractError("unavailable file catalog contains rows");
+      }
+      break;
+    }
     case "diagnostics":
       array(snapshot.events, "diagnostic events").forEach(
         validateDiagnosticEvent,
@@ -346,6 +372,18 @@ function validateViewPatch(value: unknown): void {
       );
       break;
     }
+    case "files": {
+      torrentId(patch.torrent_id);
+      const upserts = array(patch.upsert, "file upserts");
+      if (upserts.length > MAX_FILES) {
+        throw new ContractError("file patch exceeds its row bound");
+      }
+      upserts.forEach(validateFileView);
+      array(patch.removed, "file removals").forEach((fileId) =>
+        decimal(fileId, "file ID"),
+      );
+      break;
+    }
     case "diagnostics":
       array(patch.events, "diagnostic events").forEach(validateDiagnosticEvent);
       decimal(patch.dropped_count, "diagnostic dropped count");
@@ -389,6 +427,36 @@ function validateTorrentView(value: unknown): asserts value is TorrentView {
     boundedString(action, "progress action", 64),
   );
   optionalString(torrent.error, "torrent error", 1_024);
+}
+
+function validateFileView(value: unknown): void {
+  const file = asRecord(value, "file view");
+  decimal(file.file_id, "file ID");
+  boundedInteger(file.file_index, "file index", 0, MAX_FILES - 1);
+  const path = array(file.path, "file path");
+  if (path.length === 0 || path.length > 64) {
+    throw new ContractError("file path component count is invalid");
+  }
+  path.forEach((component) => boundedString(component, "file path component", 255));
+  decimal(file.length_bytes, "file length");
+  decimal(file.torrent_offset_bytes, "file torrent offset");
+  optionalInteger(file.first_piece, "first file piece", MAX_U32);
+  optionalInteger(file.last_piece, "last file piece", MAX_U32);
+  if (file.selection !== null) {
+    oneOf(file.selection, "file selection", ["wanted", "skipped"]);
+  }
+  boolean(file.padding, "file padding flag");
+  if (file.padding && file.selection !== null) {
+    throw new ContractError("padding file has a selection state");
+  }
+  decimal(file.done_bytes, "file done bytes");
+  decimal(file.verified_bytes, "file verified bytes");
+  const length = BigInt(string(file.length_bytes, "file length"));
+  const done = BigInt(string(file.done_bytes, "file done bytes"));
+  const verified = BigInt(string(file.verified_bytes, "file verified bytes"));
+  if (verified > done || done > length) {
+    throw new ContractError("file progress counters are inconsistent");
+  }
 }
 
 function validatePeerView(value: unknown, owningTorrent: string): void {

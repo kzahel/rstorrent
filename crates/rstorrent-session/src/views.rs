@@ -18,6 +18,7 @@ use rstorrent_engine::{
 };
 
 use crate::control::{RemovalState, ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState};
+use crate::file_views::{FileCatalogState, FileProgressModel, FileView};
 use crate::view_sets::{DEFAULT_VIEW_SET_QUEUE_BYTES, ViewSetInner, ViewSetUpdate};
 
 pub const VIEW_CONTRACT_VERSION: u16 = 2;
@@ -48,6 +49,7 @@ pub enum ViewProjection {
     Summary,
     PieceActivity,
     Peers,
+    Files,
     Diagnostics,
 }
 
@@ -685,6 +687,12 @@ pub enum ViewSnapshot {
         torrent_id: String,
         peers: Vec<PeerView>,
     },
+    Files {
+        torrent_id: String,
+        state: FileCatalogState,
+        filesystem_content_base: Option<String>,
+        files: Vec<FileView>,
+    },
     Diagnostics {
         events: Vec<DiagnosticEvent>,
         dropped_count: String,
@@ -712,6 +720,11 @@ pub enum ViewPatch {
     Peers {
         torrent_id: String,
         upsert: Vec<PeerView>,
+        removed: Vec<String>,
+    },
+    Files {
+        torrent_id: String,
+        upsert: Vec<FileView>,
         removed: Vec<String>,
     },
     Diagnostics {
@@ -786,6 +799,13 @@ struct TorrentModel {
     verified: Vec<IndexRange>,
     active: Option<ActivePiece>,
     peers: BTreeMap<String, PeerView>,
+    files: Option<FileProgressModel>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct DurableTorrentViewState {
+    pub(crate) verified: Vec<IndexRange>,
+    pub(crate) files: Option<FileProgressModel>,
 }
 
 #[derive(Clone, Debug)]
@@ -961,7 +981,7 @@ impl ViewHub {
     pub(crate) fn replace_durable(
         &self,
         snapshot: &ServiceSnapshot,
-        verified: &BTreeMap<String, Vec<IndexRange>>,
+        durable: &BTreeMap<String, DurableTorrentViewState>,
     ) -> Result<(), SubscriptionError> {
         let revision = parse_revision(&snapshot.revision)?;
         let mut hub = self
@@ -972,10 +992,12 @@ impl ViewHub {
         let mut next = BTreeMap::new();
         for torrent in &snapshot.torrents {
             let mut model = TorrentModel::from_snapshot(torrent);
-            if let Some(ranges) = verified.get(&torrent.torrent_id) {
-                model.verified = ranges.clone();
+            if let Some(state) = durable.get(&torrent.torrent_id) {
+                model.verified = state.verified.clone();
+                model.files = state.files.clone();
             } else if let Some(old) = previous.get(&torrent.torrent_id) {
                 model.verified = old.verified.clone();
+                model.files = old.files.clone();
             }
             if let Some(old) = previous.get(&torrent.torrent_id) {
                 model.view.requested_bytes = old.view.requested_bytes.clone();
@@ -988,6 +1010,15 @@ impl ViewHub {
                 model.view.progress = assess_progress(torrent, model.progress_inputs);
                 model.active = old.active.clone();
                 model.peers = old.peers.clone();
+                if let (Some(old_files), Some(durable_files)) = (&old.files, model.files.as_ref())
+                    && old_files.catalog_matches(durable_files)
+                {
+                    let mut reconciled = old_files.clone();
+                    reconciled
+                        .reconcile_verified(&durable_files.verified_piece_indices())
+                        .map_err(|error| SubscriptionError::Internal(error.to_string()))?;
+                    model.files = Some(reconciled);
+                }
             }
             next.insert(torrent.torrent_id.clone(), model);
         }
@@ -1005,12 +1036,73 @@ impl ViewHub {
             .inner
             .lock()
             .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
-        let previous = hub.torrents.clone();
         let Some(model) = hub.torrents.get_mut(torrent_id) else {
             return Ok(());
         };
-        model.apply_activity(activity);
-        hub.publish_changes(&previous)
+        let previous_view = model.view.clone();
+        let previous_verified = model.verified.clone();
+        let previous_active = model.active.clone();
+        let file_upsert = model
+            .apply_activity(activity)
+            .map_err(|error| SubscriptionError::Internal(error.to_string()))?;
+        let next_view = model.view.clone();
+        let next_verified = model.verified.clone();
+        let next_active = model.active.clone();
+        hub.publish_activity_changes(
+            torrent_id,
+            &previous_view,
+            &next_view,
+            &previous_verified,
+            &next_verified,
+            &previous_active,
+            &next_active,
+            &file_upsert,
+        )
+    }
+
+    pub(crate) fn record_piece_durable(
+        &self,
+        torrent_id: &str,
+        piece_index: u32,
+        revision: u64,
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let Some(model) = hub.torrents.get_mut(torrent_id) else {
+            return Ok(());
+        };
+        let previous_view = model.view.clone();
+        let previous_verified = model.verified.clone();
+        let previous_active = model.active.clone();
+        insert_range(&mut model.verified, piece_index, 1);
+        model.view.verified_piece_count =
+            range_cardinality(&model.verified).min(u64::from(u32::MAX)) as u32;
+        model.snapshot.verified_piece_count = model.view.verified_piece_count;
+        model.view.storage_state = StorageState::Staging;
+        model.snapshot.storage_state = StorageState::Staging;
+        let file_upsert = model
+            .files
+            .as_mut()
+            .map(|files| files.piece_verified(piece_index))
+            .transpose()
+            .map_err(|error| SubscriptionError::Internal(error.to_string()))?
+            .unwrap_or_default();
+        let next_view = model.view.clone();
+        let next_verified = model.verified.clone();
+        let next_active = model.active.clone();
+        hub.revision = revision;
+        hub.publish_activity_changes(
+            torrent_id,
+            &previous_view,
+            &next_view,
+            &previous_verified,
+            &next_verified,
+            &previous_active,
+            &next_active,
+            &file_upsert,
+        )
     }
 
     pub(crate) fn set_progress_inputs(
@@ -1189,6 +1281,33 @@ impl HubState {
                         torrent.peers.values().cloned().collect()
                     }),
             },
+            (ViewSelector::Torrent { torrent_id }, ViewProjection::Files) => {
+                match self.torrents.get(torrent_id) {
+                    Some(torrent) => ViewSnapshot::Files {
+                        torrent_id: torrent_id.clone(),
+                        state: if torrent.files.is_some() {
+                            FileCatalogState::Available
+                        } else {
+                            FileCatalogState::MetadataPending
+                        },
+                        filesystem_content_base: torrent
+                            .files
+                            .as_ref()
+                            .and_then(FileProgressModel::filesystem_content_base)
+                            .map(str::to_owned),
+                        files: torrent
+                            .files
+                            .as_ref()
+                            .map_or_else(Vec::new, FileProgressModel::rows),
+                    },
+                    None => ViewSnapshot::Files {
+                        torrent_id: torrent_id.clone(),
+                        state: FileCatalogState::TorrentMissing,
+                        filesystem_content_base: None,
+                        files: Vec::new(),
+                    },
+                }
+            }
             (selector, ViewProjection::Diagnostics) => {
                 let filter = spec.diagnostics.clone().unwrap_or_default();
                 ViewSnapshot::Diagnostics {
@@ -1202,7 +1321,10 @@ impl HubState {
                     dropped_count: self.diagnostic_dropped.to_string(),
                 }
             }
-            (ViewSelector::TorrentList, ViewProjection::PieceActivity | ViewProjection::Peers) => {
+            (
+                ViewSelector::TorrentList,
+                ViewProjection::PieceActivity | ViewProjection::Peers | ViewProjection::Files,
+            ) => {
                 unreachable!("invalid projection is rejected before snapshot construction")
             }
         }
@@ -1222,6 +1344,10 @@ impl HubState {
             .filter_map(Weak::upgrade)
             .collect::<Vec<_>>();
         for subscriber in subscribers {
+            if projection_requires_snapshot(&subscriber.spec, previous, current) {
+                subscriber.enqueue_snapshot(revision, self.snapshot_for(&subscriber.spec))?;
+                continue;
+            }
             let patch = patch_for(&subscriber.spec, previous, current);
             if let Some(patch) = patch {
                 subscriber.enqueue_patch(revision, patch)?;
@@ -1231,7 +1357,72 @@ impl HubState {
         for view_set in view_sets {
             for spec in view_set.view_specs()? {
                 let subscription = spec.subscription_spec(DEFAULT_VIEW_SET_QUEUE_BYTES);
+                if projection_requires_snapshot(&subscription, previous, current) {
+                    view_set.enqueue_snapshot(
+                        spec.view_id(),
+                        self.snapshot_for(&subscription),
+                        revision,
+                    )?;
+                    continue;
+                }
                 if let Some(patch) = patch_for(&subscription, previous, current) {
+                    view_set.enqueue_patch(spec.view_id(), patch, revision)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn publish_activity_changes(
+        &mut self,
+        torrent_id: &str,
+        previous_view: &TorrentView,
+        next_view: &TorrentView,
+        previous_verified: &[IndexRange],
+        next_verified: &[IndexRange],
+        previous_active: &Option<ActivePiece>,
+        next_active: &Option<ActivePiece>,
+        file_upsert: &[FileView],
+    ) -> Result<(), SubscriptionError> {
+        let revision = self.revision;
+        self.subscribers.retain(|_, weak| weak.strong_count() != 0);
+        let subscribers = self
+            .subscribers
+            .values()
+            .filter_map(Weak::upgrade)
+            .collect::<Vec<_>>();
+        for subscriber in subscribers {
+            if let Some(patch) = targeted_activity_patch(
+                &subscriber.spec,
+                torrent_id,
+                previous_view,
+                next_view,
+                previous_verified,
+                next_verified,
+                previous_active,
+                next_active,
+                file_upsert,
+            ) {
+                subscriber.enqueue_patch(revision, patch)?;
+            }
+        }
+        self.retain_live_view_sets();
+        let view_sets = self.view_sets.values().cloned().collect::<Vec<_>>();
+        for view_set in view_sets {
+            for spec in view_set.view_specs()? {
+                let subscription = spec.subscription_spec(DEFAULT_VIEW_SET_QUEUE_BYTES);
+                if let Some(patch) = targeted_activity_patch(
+                    &subscription,
+                    torrent_id,
+                    previous_view,
+                    next_view,
+                    previous_verified,
+                    next_verified,
+                    previous_active,
+                    next_active,
+                    file_upsert,
+                ) {
                     view_set.enqueue_patch(spec.view_id(), patch, revision)?;
                 }
             }
@@ -1387,10 +1578,15 @@ impl TorrentModel {
             verified: Vec::new(),
             active: None,
             peers: BTreeMap::new(),
+            files: None,
         }
     }
 
-    fn apply_activity(&mut self, activity: TorrentActivity) {
+    fn apply_activity(
+        &mut self,
+        activity: TorrentActivity,
+    ) -> Result<Vec<FileView>, crate::file_views::FileProgressError> {
+        let mut file_upsert = Vec::new();
         match activity {
             TorrentActivity::PieceStarted {
                 piece_index,
@@ -1435,6 +1631,9 @@ impl TorrentModel {
                     remove_range(&mut active.received, begin, length);
                     insert_range(&mut active.stored, begin, length);
                 }
+                if let Some(files) = &mut self.files {
+                    file_upsert = files.stored_block(piece_index, begin, length)?;
+                }
             }
             TorrentActivity::PieceVerified { piece_index } => {
                 insert_range(&mut self.verified, piece_index, 1);
@@ -1447,6 +1646,9 @@ impl TorrentModel {
                 {
                     self.active = None;
                 }
+                if let Some(files) = &mut self.files {
+                    file_upsert = files.piece_verified(piece_index)?;
+                }
             }
             TorrentActivity::PieceHashFailed { piece_index } => {
                 if let Some(active) = matching_active(&mut self.active, piece_index) {
@@ -1454,8 +1656,12 @@ impl TorrentModel {
                     active.received.clear();
                     active.stored.clear();
                 }
+                if let Some(files) = &mut self.files {
+                    file_upsert = files.piece_hash_failed(piece_index)?;
+                }
             }
         }
+        Ok(file_upsert)
     }
 }
 
@@ -1703,7 +1909,7 @@ pub(crate) fn validate_spec(spec: &SubscriptionSpec) -> Result<(), SubscriptionE
     if matches!(spec.selector, ViewSelector::TorrentList)
         && matches!(
             spec.projection,
-            ViewProjection::PieceActivity | ViewProjection::Peers
+            ViewProjection::PieceActivity | ViewProjection::Peers | ViewProjection::Files
         )
     {
         return Err(SubscriptionError::InvalidProjection);
@@ -1819,8 +2025,110 @@ fn patch_for(
             let next = current.get(torrent_id).map_or(&empty, |model| &model.peers);
             peer_collection_patch(torrent_id, old, next)
         }
-        (ViewSelector::TorrentList, ViewProjection::PieceActivity | ViewProjection::Peers) => None,
+        (ViewSelector::Torrent { torrent_id }, ViewProjection::Files) => {
+            let old = previous
+                .get(torrent_id)
+                .and_then(|model| model.files.as_ref());
+            let next = current
+                .get(torrent_id)
+                .and_then(|model| model.files.as_ref());
+            match (old, next) {
+                (Some(old), Some(next)) if old.catalog_matches(next) => {
+                    let upsert = next.rows_changed_since(old);
+                    (!upsert.is_empty()).then(|| ViewPatch::Files {
+                        torrent_id: torrent_id.clone(),
+                        upsert,
+                        removed: Vec::new(),
+                    })
+                }
+                _ => None,
+            }
+        }
+        (
+            ViewSelector::TorrentList,
+            ViewProjection::PieceActivity | ViewProjection::Peers | ViewProjection::Files,
+        ) => None,
         (_, ViewProjection::Diagnostics) => None,
+    }
+}
+
+fn projection_requires_snapshot(
+    spec: &SubscriptionSpec,
+    previous: &BTreeMap<String, TorrentModel>,
+    current: &BTreeMap<String, TorrentModel>,
+) -> bool {
+    let (ViewSelector::Torrent { torrent_id }, ViewProjection::Files) =
+        (&spec.selector, spec.projection)
+    else {
+        return false;
+    };
+    match (previous.get(torrent_id), current.get(torrent_id)) {
+        (None, None) => false,
+        (Some(old), Some(next)) => match (&old.files, &next.files) {
+            (None, None) => false,
+            (Some(old), Some(next)) => !old.catalog_matches(next),
+            _ => true,
+        },
+        _ => true,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn targeted_activity_patch(
+    spec: &SubscriptionSpec,
+    torrent_id: &str,
+    previous_view: &TorrentView,
+    next_view: &TorrentView,
+    previous_verified: &[IndexRange],
+    next_verified: &[IndexRange],
+    previous_active: &Option<ActivePiece>,
+    next_active: &Option<ActivePiece>,
+    file_upsert: &[FileView],
+) -> Option<ViewPatch> {
+    match (&spec.selector, spec.projection) {
+        (ViewSelector::TorrentList, ViewProjection::Summary) => {
+            (previous_view != next_view).then(|| ViewPatch::TorrentList {
+                upsert: vec![next_view.clone()],
+                removed: Vec::new(),
+            })
+        }
+        (
+            ViewSelector::Torrent {
+                torrent_id: selected,
+            },
+            ViewProjection::Summary,
+        ) if selected == torrent_id => (previous_view != next_view).then(|| ViewPatch::Torrent {
+            torrent: Some(next_view.clone()),
+        }),
+        (
+            ViewSelector::Torrent {
+                torrent_id: selected,
+            },
+            ViewProjection::PieceActivity,
+        ) if selected == torrent_id => {
+            let verified = difference(next_verified, previous_verified);
+            let cleared = difference(previous_verified, next_verified);
+            (!verified.is_empty() || !cleared.is_empty() || previous_active != next_active).then(
+                || ViewPatch::PieceActivity {
+                    torrent_id: torrent_id.to_owned(),
+                    piece_count: next_view.piece_count,
+                    verified,
+                    cleared,
+                    active: next_active.clone(),
+                },
+            )
+        }
+        (
+            ViewSelector::Torrent {
+                torrent_id: selected,
+            },
+            ViewProjection::Files,
+        ) if selected == torrent_id && !file_upsert.is_empty() => Some(ViewPatch::Files {
+            torrent_id: torrent_id.to_owned(),
+            upsert: file_upsert.to_vec(),
+            removed: Vec::new(),
+        }),
+        _ => None,
     }
 }
 
@@ -1975,6 +2283,37 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
             let mut removed_ids = removed.drain(..).collect::<std::collections::BTreeSet<_>>();
             for peer in next_upsert {
                 removed_ids.remove(&peer.connection_id);
+            }
+            removed_ids.extend(next_removed.iter().cloned());
+            *upsert = values.into_values().collect();
+            *removed = removed_ids.into_iter().collect();
+            true
+        }
+        (
+            ViewPatch::Files {
+                torrent_id,
+                upsert,
+                removed,
+            },
+            ViewPatch::Files {
+                torrent_id: next_id,
+                upsert: next_upsert,
+                removed: next_removed,
+            },
+        ) if torrent_id == next_id => {
+            let mut values = upsert
+                .drain(..)
+                .map(|file| (file.file_id.clone(), file))
+                .collect::<BTreeMap<_, _>>();
+            for id in next_removed {
+                values.remove(id);
+            }
+            for file in next_upsert {
+                values.insert(file.file_id.clone(), file.clone());
+            }
+            let mut removed_ids = removed.drain(..).collect::<std::collections::BTreeSet<_>>();
+            for file in next_upsert {
+                removed_ids.remove(&file.file_id);
             }
             removed_ids.extend(next_removed.iter().cloned());
             *upsert = values.into_values().collect();
@@ -2177,10 +2516,10 @@ mod tests {
 
     use super::{
         DeliveryPolicy, DiagnosticCategory, DiagnosticFilter, DiagnosticProfile,
-        DiagnosticSeverity, IndexRange, ProgressAction, ProgressDisposition, ProgressInputs,
-        ProgressReason, ResetReason, SubscriptionSpec, TorrentActivity, ViewHub, ViewPatch,
-        ViewProjection, ViewSelector, ViewSnapshot, ViewUpdatePayload, assess_progress,
-        ranges_from_pieces,
+        DiagnosticSeverity, DurableTorrentViewState, IndexRange, ProgressAction,
+        ProgressDisposition, ProgressInputs, ProgressReason, ResetReason, SubscriptionSpec,
+        TorrentActivity, ViewHub, ViewPatch, ViewProjection, ViewSelector, ViewSnapshot,
+        ViewUpdatePayload, assess_progress, ranges_from_pieces,
     };
     use crate::{ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState};
 
@@ -2419,10 +2758,13 @@ mod tests {
             &snapshot(1, 4),
             &BTreeMap::from([(
                 "000102030405060708090a0b0c0d0e0f10111213".to_owned(),
-                vec![IndexRange {
-                    start: 1,
-                    end_exclusive: 3,
-                }],
+                DurableTorrentViewState {
+                    verified: vec![IndexRange {
+                        start: 1,
+                        end_exclusive: 3,
+                    }],
+                    files: None,
+                },
             )]),
         )
         .expect("replace");

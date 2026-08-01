@@ -238,9 +238,10 @@ that scope and its cleanup or compatibility rules explicitly.
 - [`040-torrent-lifecycle-retention-actions.md`](040-torrent-lifecycle-retention-actions.md):
   complete; adds durable archive/restore and fenced keep-data or
   delete-managed removal through the semantic contract and web UI.
-- [`041-live-file-inspection.md`](041-live-file-inspection.md): planned; adds a
-  complete live file projection with distinct Done and Verified progress,
-  correct configurable virtual-table behavior, and headless multi-file proof.
+- [`041-live-file-inspection.md`](041-live-file-inspection.md): complete; adds a
+  bounded complete live file projection with distinct Done and Verified
+  progress, correct configurable virtual-table behavior, and controlled
+  headless multi-file proof.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

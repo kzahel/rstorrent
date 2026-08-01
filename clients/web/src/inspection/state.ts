@@ -6,6 +6,7 @@ import type {
   InspectionUpdate,
   LibraryCategory,
   LogRow,
+  FileSet,
   PeerSet,
   TorrentRow,
 } from "./model";
@@ -58,12 +59,14 @@ const EMPTY_SNAPSHOT: InspectionSnapshot = {
   torrentOrder: [],
   torrents: {},
   peersByTorrent: {},
+  filesByTorrent: {},
   logs: [],
   droppedLogs: 0,
   viewStatus: {
     library: { status: "not_requested" },
     torrentSummary: { status: "not_requested" },
     peers: { status: "not_requested" },
+    files: { status: "not_requested" },
     logs: { status: "not_requested" },
   },
 };
@@ -174,6 +177,7 @@ export function reduceInspectionUpdate(
   let torrents = state.torrents;
   let torrentOrder = state.torrentOrder;
   let peersByTorrent = state.peersByTorrent;
+  let filesByTorrent = state.filesByTorrent;
   let logs = state.logs;
   let droppedLogs = state.droppedLogs;
 
@@ -208,6 +212,30 @@ export function reduceInspectionUpdate(
     peersByTorrent = nextPeerSets;
   }
 
+  if (update.files !== undefined) {
+    const nextFileSets = { ...state.filesByTorrent };
+    for (const patch of update.files) {
+      const current = state.filesByTorrent[patch.torrentId] ?? EMPTY_FILE_SET;
+      const rows = applyRows(
+        current.rows,
+        patch.upsert,
+        patch.removed,
+        (row) => row.id,
+      );
+      nextFileSets[patch.torrentId] = {
+        state: patch.state ?? current.state,
+        filesystemContentBase:
+          patch.filesystemContentBase === undefined
+            ? current.filesystemContentBase
+            : patch.filesystemContentBase,
+        rows,
+        order:
+          patch.order ?? current.order.filter((id) => rows[id] !== undefined),
+      };
+    }
+    filesByTorrent = nextFileSets;
+  }
+
   if (update.logs !== undefined) {
     const combined = [...state.logs, ...update.logs.append];
     const overflow = Math.max(0, combined.length - 256);
@@ -228,6 +256,7 @@ export function reduceInspectionUpdate(
     torrents,
     torrentOrder,
     peersByTorrent,
+    filesByTorrent,
     logs,
     droppedLogs,
     presentation: {
@@ -277,6 +306,12 @@ function applyRows<T>(
 }
 
 const EMPTY_PEER_SET: PeerSet = { order: [], rows: {} };
+const EMPTY_FILE_SET: FileSet = {
+  state: "metadata_pending",
+  filesystemContentBase: null,
+  order: [],
+  rows: {},
+};
 
 export function visibleLogs(
   logs: readonly LogRow[],

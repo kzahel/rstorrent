@@ -1,6 +1,14 @@
+.container {
+  position: relative;
+  display: grid;
+  grid-template-rows: 30px minmax(0, 1fr);
+  height: 100%;
+  min-height: 9rem;
+}
+
 .viewport {
   position: relative;
-  height: 100%;
+  height: auto;
   min-height: 9rem;
   overflow: auto;
   outline: none;
@@ -23,8 +31,104 @@
 }
 
 .headerCell {
+  position: relative;
   min-width: 0;
   border-right: 1px solid var(--border-soft);
+}
+
+.toolbar {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  height: 30px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  border-bottom: 1px solid var(--border-soft);
+  padding: 0 0.42rem;
+  color: var(--text-muted);
+  background: var(--surface-primary);
+  font-size: 0.66rem;
+}
+
+.toolbar > button,
+.columnMenu > button {
+  border: 1px solid var(--border-soft);
+  border-radius: 0.32rem;
+  padding: 0.2rem 0.48rem;
+  color: var(--text-secondary);
+  background: var(--surface-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.columnMenu {
+  position: absolute;
+  z-index: 8;
+  top: 27px;
+  right: 0.42rem;
+  display: grid;
+  width: min(15rem, calc(100vw - 1rem));
+  max-height: min(25rem, calc(100vh - 5rem));
+  gap: 0.25rem;
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.5rem;
+  padding: 0.55rem;
+  color: var(--text-primary);
+  background: var(--surface-primary);
+  box-shadow: 0 0.55rem 1.4rem rgb(0 0 0 / 18%);
+  font-size: 0.72rem;
+}
+
+.columnMenu strong {
+  padding: 0.1rem 0.2rem 0.3rem;
+  font-size: 0.7rem;
+}
+
+.columnMenu label {
+  display: flex;
+  min-height: 1.65rem;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0 0.2rem;
+}
+
+.liveSort {
+  margin-top: 0.35rem;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 0.45rem !important;
+}
+
+.resizeHandle {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: -4px;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.resizeHandle::after {
+  position: absolute;
+  top: 25%;
+  right: 3px;
+  width: 1px;
+  height: 50%;
+  background: transparent;
+  content: "";
+}
+
+.resizeHandle:hover::after,
+.resizeHandle:focus-visible::after {
+  background: var(--accent);
+}
+
+.resizeHandle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
 }
 
 .headerCell button {

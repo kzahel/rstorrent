@@ -34,6 +34,7 @@ use ts_rs::TS;
 pub const GATEWAY_CONTRACT_VERSION: u16 = 1;
 pub const MAX_INCOMING_MESSAGE_BYTES: usize = 64 * 1024;
 pub const MAX_OUTGOING_MESSAGE_BYTES: usize = 512 * 1024;
+pub const MAX_HTTP_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_OUTGOING_MESSAGES: usize = 8;
 pub const MAX_CONNECTIONS: usize = 8;
 pub const MAX_SUBSCRIPTIONS_PER_CONNECTION: usize = 8;
@@ -630,7 +631,7 @@ fn api_error(status: StatusCode, code: ApiErrorCode, message: &str) -> Response 
 
 fn json_response<T: Serialize>(status: StatusCode, value: &T) -> Response {
     let body = match serde_json::to_vec(value) {
-        Ok(body) if body.len() <= MAX_OUTGOING_MESSAGE_BYTES => body,
+        Ok(body) if body.len() <= MAX_HTTP_RESPONSE_BYTES => body,
         Ok(_) => {
             return api_error_unchecked(
                 StatusCode::INTERNAL_SERVER_ERROR,

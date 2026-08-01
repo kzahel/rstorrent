@@ -22,6 +22,7 @@ use crate::control::{
     Command, ErrorCode, RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope,
     ResponseOutcome, StorageState, TorrentState,
 };
+use crate::file_views::FileProgressModel;
 use crate::have::HaveState;
 use crate::store::{
     ConfiguredStorageRoot, PreparedFileRecord, RemovalRecord, ResumeRecord, SessionStore,
@@ -29,8 +30,9 @@ use crate::store::{
 };
 use crate::view_sets::{VIEW_SET_REAPER_INTERVAL_MILLIS, ViewSetLeaseReaper};
 use crate::views::{
-    DiagnosticCategory, DiagnosticSeverity, IndexRange, ProgressInputs, SubscriptionError,
-    SubscriptionSpec, TorrentActivity, ViewHub, ViewSubscription, ranges_from_pieces,
+    DiagnosticCategory, DiagnosticSeverity, DurableTorrentViewState, ProgressInputs,
+    SubscriptionError, SubscriptionSpec, TorrentActivity, ViewHub, ViewSubscription,
+    ranges_from_pieces,
 };
 use crate::{
     OpenViewSetRequest, OpenViewSetResponse, UpdateViewSetRequest, ViewSet, ViewSetError,
@@ -94,7 +96,7 @@ pub struct PlatformRemovalPlan {
 #[derive(Debug)]
 pub struct ApplicationService {
     store: Arc<Mutex<SessionStore>>,
-    storage_roots: BTreeMap<String, StorageRootLocation>,
+    storage_roots: Arc<BTreeMap<String, StorageRootLocation>>,
     network: NetworkConfig,
     download_resource_limits: DownloadResourceLimits,
     active: Option<ActiveDownload>,
@@ -161,7 +163,7 @@ impl ApplicationService {
             ViewSetLeaseReaper::start(views.clone(), config.view_set_reaper_interval);
         let mut service = Self {
             store: Arc::new(Mutex::new(store)),
-            storage_roots,
+            storage_roots: Arc::new(storage_roots),
             network: config.network,
             download_resource_limits: config.download_resource_limits,
             active: None,
@@ -447,6 +449,7 @@ impl ApplicationService {
         };
         let checkpoints: Arc<dyn DownloadCheckpointSink> = Arc::new(StoreCheckpointSink {
             store: self.store.clone(),
+            storage_roots: self.storage_roots.clone(),
             torrent_id: torrent_id.clone(),
             views: self.views.clone(),
         });
@@ -857,6 +860,7 @@ impl ApplicationService {
             }
             let checkpoints = Arc::new(StoreCheckpointSink {
                 store: self.store.clone(),
+                storage_roots: self.storage_roots.clone(),
                 torrent_id: torrent_id.to_owned(),
                 views: self.views.clone(),
             });
@@ -912,6 +916,7 @@ impl ApplicationService {
         };
         let checkpoints: Arc<dyn DownloadCheckpointSink> = Arc::new(StoreCheckpointSink {
             store: self.store.clone(),
+            storage_roots: self.storage_roots.clone(),
             torrent_id: torrent_id.to_owned(),
             views: self.views.clone(),
         });
@@ -964,11 +969,12 @@ impl ApplicationService {
             &[],
         )?;
         let store = self.store.clone();
+        let storage_roots = self.storage_roots.clone();
         let views = self.views.clone();
         let torrent_id = torrent_id.to_owned();
         Ok(tokio::spawn(async move {
             let outcome = operation.await;
-            handle_task_outcome(&store, &views, &torrent_id, outcome)
+            handle_task_outcome(&store, &storage_roots, &views, &torrent_id, outcome)
         }))
     }
 
@@ -1020,11 +1026,11 @@ impl ApplicationService {
     }
 
     fn refresh_views(&self) -> Result<(), ApplicationError> {
-        let (snapshot, verified) = {
+        let (snapshot, durable) = {
             let store = self.store_mut()?;
-            durable_view_state(&store)?
+            durable_view_state(&store, &self.storage_roots)?
         };
-        self.views.replace_durable(&snapshot, &verified)?;
+        self.views.replace_durable(&snapshot, &durable)?;
         Ok(())
     }
 }
@@ -1098,6 +1104,7 @@ fn remove_managed_file(path: &Path) -> Result<(), ApplicationError> {
 
 fn handle_task_outcome(
     store: &Arc<Mutex<SessionStore>>,
+    storage_roots: &BTreeMap<String, StorageRootLocation>,
     views: &ViewHub,
     torrent_id: &str,
     outcome: Result<ApplicationTaskReport, DownloadError>,
@@ -1207,11 +1214,11 @@ fn handle_task_outcome(
                         .mark_error(torrent_id, &detail)
                         .map_err(|error| error.to_string())?;
                 }
-                let (snapshot, verified) =
-                    durable_view_state(&store).map_err(|error| error.to_string())?;
+                let (snapshot, durable) =
+                    durable_view_state(&store, storage_roots).map_err(|error| error.to_string())?;
                 drop(store);
                 views
-                    .replace_durable(&snapshot, &verified)
+                    .replace_durable(&snapshot, &durable)
                     .map_err(|error| error.to_string())?;
             }
             views
@@ -1249,6 +1256,7 @@ fn is_discovery_exhaustion(error: &DownloadError) -> bool {
 #[derive(Debug)]
 struct StoreCheckpointSink {
     store: Arc<Mutex<SessionStore>>,
+    storage_roots: Arc<BTreeMap<String, StorageRootLocation>>,
     torrent_id: String,
     views: ViewHub,
 }
@@ -1261,12 +1269,12 @@ impl StoreCheckpointSink {
     }
 
     fn refresh(&self) -> Result<(), String> {
-        let (snapshot, verified) = {
+        let (snapshot, durable) = {
             let store = self.store()?;
-            durable_view_state(&store).map_err(|error| error.to_string())?
+            durable_view_state(&store, &self.storage_roots).map_err(|error| error.to_string())?
         };
         self.views
-            .replace_durable(&snapshot, &verified)
+            .replace_durable(&snapshot, &durable)
             .map_err(|error| error.to_string())
     }
 
@@ -1367,13 +1375,16 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
     }
 
     fn piece_durable(&self, piece_index: usize) -> Result<(), String> {
-        self.store().and_then(|mut store| {
+        let revision = self.store().and_then(|mut store| {
             store
                 .record_piece(&self.torrent_id, piece_index)
-                .map(|_| ())
                 .map_err(|error| error.to_string())
         })?;
-        self.refresh()?;
+        let piece_index = u32::try_from(piece_index)
+            .map_err(|_| "durable piece index overflows u32".to_owned())?;
+        self.views
+            .record_piece_durable(&self.torrent_id, piece_index, revision)
+            .map_err(|error| error.to_string())?;
         let piece = piece_index.to_string();
         self.views
             .record_diagnostic(
@@ -1855,20 +1866,85 @@ impl ViewActivitySink {
 
 fn durable_view_state(
     store: &SessionStore,
-) -> Result<(crate::ServiceSnapshot, BTreeMap<String, Vec<IndexRange>>), StoreError> {
+    storage_roots: &BTreeMap<String, StorageRootLocation>,
+) -> Result<
+    (
+        crate::ServiceSnapshot,
+        BTreeMap<String, DurableTorrentViewState>,
+    ),
+    ApplicationError,
+> {
     let snapshot = store.snapshot()?;
-    let mut verified = BTreeMap::new();
+    let mut durable = BTreeMap::new();
     for torrent in &snapshot.torrents {
-        if let Ok(resume) = store.load_resume(&torrent.torrent_id)
-            && let Some(have) = resume.have
-        {
-            verified.insert(
+        let Ok(resume) = store.load_resume(&torrent.torrent_id) else {
+            durable.insert(
                 torrent.torrent_id.clone(),
-                ranges_from_pieces(have.pieces()),
+                DurableTorrentViewState {
+                    verified: Vec::new(),
+                    files: None,
+                },
             );
-        }
+            continue;
+        };
+        let verified_pieces = resume.have.as_ref().map_or(&[][..], |have| have.pieces());
+        let verified_indices = verified_pieces
+            .iter()
+            .enumerate()
+            .filter(|(_, verified)| **verified)
+            .map(|(index, _)| u32::try_from(index))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| ApplicationError::Configuration("piece index overflows u32".to_owned()))?;
+        let files = if let Some(raw_info) = resume.raw_info.as_deref()
+            && let Ok(metainfo) = Metainfo::from_info_bytes(raw_info)
+        {
+            let filesystem_content_base = filesystem_content_base(
+                storage_roots.get(&resume.storage_root),
+                &torrent.torrent_id,
+            )?;
+            FileProgressModel::new(
+                &metainfo,
+                &resume.skip_files,
+                &verified_indices,
+                filesystem_content_base,
+            )
+            .ok()
+        } else {
+            None
+        };
+        durable.insert(
+            torrent.torrent_id.clone(),
+            DurableTorrentViewState {
+                verified: ranges_from_pieces(verified_pieces),
+                files,
+            },
+        );
     }
-    Ok((snapshot, verified))
+    Ok((snapshot, durable))
+}
+
+fn filesystem_content_base(
+    storage_root: Option<&StorageRootLocation>,
+    torrent_id: &str,
+) -> Result<Option<String>, ApplicationError> {
+    let Some(StorageRootLocation::Path(root)) = storage_root else {
+        return Ok(None);
+    };
+    let root = if root.is_absolute() {
+        root.clone()
+    } else {
+        std::env::current_dir()
+            .map_err(|source| ApplicationError::Io {
+                operation: "resolve storage root",
+                source,
+            })?
+            .join(root)
+    };
+    root.join(torrent_id)
+        .into_os_string()
+        .into_string()
+        .map(Some)
+        .map_err(|_| ApplicationError::Configuration("storage path is not UTF-8".to_owned()))
 }
 
 #[derive(Debug)]

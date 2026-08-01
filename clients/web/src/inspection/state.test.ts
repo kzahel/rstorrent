@@ -114,12 +114,14 @@ function snapshot(rows: readonly TorrentRow[]): InspectionSnapshot {
     torrentOrder: rows.map((item) => item.id),
     torrents: Object.fromEntries(rows.map((item) => [item.id, item])),
     peersByTorrent: {},
+    filesByTorrent: {},
     logs: [],
     droppedLogs: 0,
     viewStatus: {
       library: { status: "ready" },
       torrentSummary: { status: "not_requested" },
       peers: { status: "not_requested" },
+      files: { status: "not_requested" },
       logs: { status: "not_requested" },
     },
   };

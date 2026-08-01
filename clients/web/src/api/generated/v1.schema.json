@@ -137,6 +137,11 @@
           "minimum": 0,
           "type": "integer"
         },
+        "max_snapshot_bytes": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
         "max_view_id_bytes": {
           "format": "uint16",
           "maximum": 65535,
@@ -173,6 +178,7 @@
         "min_queue_bytes",
         "default_queue_bytes",
         "max_queue_bytes",
+        "max_snapshot_bytes",
         "max_wait_millis",
         "lease_millis"
       ],
@@ -500,6 +506,91 @@
       "required": [
         "code",
         "message"
+      ],
+      "type": "object"
+    },
+    "FileCatalogState": {
+      "enum": [
+        "metadata_pending",
+        "available",
+        "torrent_missing"
+      ],
+      "type": "string"
+    },
+    "FileSelectionView": {
+      "enum": [
+        "wanted",
+        "skipped"
+      ],
+      "type": "string"
+    },
+    "FileView": {
+      "properties": {
+        "done_bytes": {
+          "type": "string"
+        },
+        "file_id": {
+          "type": "string"
+        },
+        "file_index": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "first_piece": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "last_piece": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "length_bytes": {
+          "type": "string"
+        },
+        "padding": {
+          "type": "boolean"
+        },
+        "path": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FileSelectionView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "torrent_offset_bytes": {
+          "type": "string"
+        },
+        "verified_bytes": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_id",
+        "file_index",
+        "path",
+        "length_bytes",
+        "torrent_offset_bytes",
+        "padding",
+        "done_bytes",
+        "verified_bytes"
       ],
       "type": "object"
     },
@@ -1634,6 +1725,36 @@
         },
         {
           "properties": {
+            "removed": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "files",
+              "type": "string"
+            },
+            "upsert": {
+              "items": {
+                "$ref": "#/$defs/FileView"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id",
+            "upsert",
+            "removed"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "dropped_count": {
               "type": "string"
             },
@@ -1846,6 +1967,39 @@
         },
         {
           "properties": {
+            "files": {
+              "items": {
+                "$ref": "#/$defs/FileView"
+              },
+              "type": "array"
+            },
+            "filesystem_content_base": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "state": {
+              "$ref": "#/$defs/FileCatalogState"
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "files",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id",
+            "state",
+            "files"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "dropped_count": {
               "type": "string"
             },
@@ -1958,6 +2112,32 @@
             },
             "type": {
               "const": "torrent_peers",
+              "type": "string"
+            },
+            "view_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "view_id",
+            "torrent_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "delivery": {
+              "$ref": "#/$defs/ViewDeliveryPolicy",
+              "default": {
+                "min_interval_millis": 0
+              }
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "torrent_files",
               "type": "string"
             },
             "view_id": {

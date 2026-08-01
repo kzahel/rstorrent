@@ -27,6 +27,16 @@ pub struct LayoutSegment {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FileLayoutSegment {
+    pub piece_offset: u32,
+    pub block_offset: usize,
+    pub length: usize,
+    pub file_index: usize,
+    pub file_offset: u64,
+    pub padding: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RequestRange {
     pub begin: u32,
     pub length: u32,
@@ -146,7 +156,7 @@ impl FileSelection {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TorrentLayout {
     piece_length: u32,
     total_length: u64,
@@ -291,6 +301,43 @@ impl TorrentLayout {
                 file_count: self.files.len(),
             });
         }
+        let segments = self
+            .file_segments(piece, begin, length)?
+            .into_iter()
+            .map(|segment| {
+                let target = if segment.padding {
+                    SegmentTarget::Padding
+                } else if selection.is_wanted(segment.file_index) {
+                    SegmentTarget::WantedFile {
+                        file_index: segment.file_index,
+                        file_offset: segment.file_offset,
+                    }
+                } else {
+                    SegmentTarget::SkippedFile {
+                        file_index: segment.file_index,
+                        file_offset: segment.file_offset,
+                    }
+                };
+                LayoutSegment {
+                    piece_offset: segment.piece_offset,
+                    block_offset: segment.block_offset,
+                    length: segment.length,
+                    target,
+                }
+            })
+            .collect::<Vec<_>>();
+        Ok(segments)
+    }
+
+    pub fn file_segments(
+        &self,
+        piece: u32,
+        begin: u32,
+        length: u32,
+    ) -> Result<Vec<FileLayoutSegment>, LayoutError> {
+        if length == 0 {
+            return Err(LayoutError::EmptyInterval);
+        }
         let actual_piece_length = self.piece_length_at(piece)?;
         let interval_end = begin
             .checked_add(length)
@@ -346,28 +393,15 @@ impl TorrentLayout {
             let segment_end = torrent_end.min(file_end);
             let segment_length = usize::try_from(segment_end - cursor)
                 .map_err(|_| LayoutError::ArithmeticOverflow)?;
-            let piece_offset =
-                u32::try_from(cursor - piece_start).map_err(|_| LayoutError::ArithmeticOverflow)?;
-            let block_offset = usize::try_from(cursor - torrent_start)
-                .map_err(|_| LayoutError::ArithmeticOverflow)?;
-            let target = if file.padding {
-                SegmentTarget::Padding
-            } else if selection.is_wanted(file_index) {
-                SegmentTarget::WantedFile {
-                    file_index,
-                    file_offset: cursor - file.offset,
-                }
-            } else {
-                SegmentTarget::SkippedFile {
-                    file_index,
-                    file_offset: cursor - file.offset,
-                }
-            };
-            segments.push(LayoutSegment {
-                piece_offset,
-                block_offset,
+            segments.push(FileLayoutSegment {
+                piece_offset: u32::try_from(cursor - piece_start)
+                    .map_err(|_| LayoutError::ArithmeticOverflow)?,
+                block_offset: usize::try_from(cursor - torrent_start)
+                    .map_err(|_| LayoutError::ArithmeticOverflow)?,
                 length: segment_length,
-                target,
+                file_index,
+                file_offset: cursor - file.offset,
+                padding: file.padding,
             });
             cursor = segment_end;
             if cursor == file_end {

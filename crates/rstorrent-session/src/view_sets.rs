@@ -25,6 +25,7 @@ pub const MAX_VIEW_ID_BYTES: usize = 64;
 pub const MIN_VIEW_SET_QUEUE_BYTES: u32 = 16 * 1024;
 pub const DEFAULT_VIEW_SET_QUEUE_BYTES: u32 = 256 * 1024;
 pub const MAX_VIEW_SET_QUEUE_BYTES: u32 = 512 * 1024;
+pub const MAX_VIEW_SET_SNAPSHOT_BYTES: u32 = 16 * 1024 * 1024;
 pub const MAX_VIEW_SET_WAIT_MILLIS: u32 = 20_000;
 pub const VIEW_SET_LEASE_MILLIS: u64 = 5 * 60 * 1_000;
 pub const VIEW_SET_REAPER_INTERVAL_MILLIS: u64 = 5_000;
@@ -61,6 +62,7 @@ pub struct ApiLimits {
     pub min_queue_bytes: u32,
     pub default_queue_bytes: u32,
     pub max_queue_bytes: u32,
+    pub max_snapshot_bytes: u32,
     pub max_wait_millis: u32,
     pub lease_millis: String,
 }
@@ -87,6 +89,7 @@ impl Default for ApiHello {
                 "torrent_list".to_owned(),
                 "torrent_summary".to_owned(),
                 "torrent_peers".to_owned(),
+                "torrent_files".to_owned(),
                 "piece_activity".to_owned(),
                 "diagnostics".to_owned(),
             ],
@@ -97,6 +100,7 @@ impl Default for ApiHello {
                 min_queue_bytes: MIN_VIEW_SET_QUEUE_BYTES,
                 default_queue_bytes: DEFAULT_VIEW_SET_QUEUE_BYTES,
                 max_queue_bytes: MAX_VIEW_SET_QUEUE_BYTES,
+                max_snapshot_bytes: MAX_VIEW_SET_SNAPSHOT_BYTES,
                 max_wait_millis: MAX_VIEW_SET_WAIT_MILLIS,
                 lease_millis: VIEW_SET_LEASE_MILLIS.to_string(),
             },
@@ -136,6 +140,12 @@ pub enum ViewSpec {
         #[serde(default)]
         delivery: ViewDeliveryPolicy,
     },
+    TorrentFiles {
+        view_id: String,
+        torrent_id: String,
+        #[serde(default)]
+        delivery: ViewDeliveryPolicy,
+    },
     Diagnostics {
         view_id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -154,6 +164,7 @@ impl ViewSpec {
             | Self::TorrentSummary { view_id, .. }
             | Self::PieceActivity { view_id, .. }
             | Self::TorrentPeers { view_id, .. }
+            | Self::TorrentFiles { view_id, .. }
             | Self::Diagnostics { view_id, .. } => view_id,
         }
     }
@@ -164,6 +175,7 @@ impl ViewSpec {
             | Self::TorrentSummary { delivery, .. }
             | Self::PieceActivity { delivery, .. }
             | Self::TorrentPeers { delivery, .. }
+            | Self::TorrentFiles { delivery, .. }
             | Self::Diagnostics { delivery, .. } => *delivery,
         }
     }
@@ -190,6 +202,13 @@ impl ViewSpec {
                     torrent_id: torrent_id.clone(),
                 },
                 ViewProjection::Peers,
+                None,
+            ),
+            Self::TorrentFiles { torrent_id, .. } => (
+                ViewSelector::Torrent {
+                    torrent_id: torrent_id.clone(),
+                },
+                ViewProjection::Files,
                 None,
             ),
             Self::Diagnostics {
@@ -826,6 +845,30 @@ impl ViewSetInner {
         Ok(())
     }
 
+    pub(crate) fn enqueue_snapshot(
+        &self,
+        view_id: &str,
+        snapshot: ViewSnapshot,
+        revision: u64,
+    ) -> Result<(), ViewSetError> {
+        let mut state = self.state()?;
+        if state.closed || state.reset_pending.is_some() {
+            return Ok(());
+        }
+        state.durable_revision = revision;
+        enqueue_update(
+            &mut state,
+            ViewSetUpdate::Snapshot {
+                view_id: view_id.to_owned(),
+                snapshot,
+            },
+            Instant::now(),
+        )?;
+        drop(state);
+        self.notify.notify_waiters();
+        Ok(())
+    }
+
     fn install_initial(
         &self,
         snapshots: Vec<ViewSetUpdate>,
@@ -839,10 +882,10 @@ impl ViewSetInner {
         }
         let batch = make_batch(&self.id, &mut state, 0, snapshots)?;
         let encoded_bytes = encoded_batch_len(&batch)?;
-        if encoded_bytes > state.queue_bytes_limit as usize {
+        if encoded_bytes > MAX_VIEW_SET_SNAPSHOT_BYTES as usize {
             return Err(ViewSetError::SnapshotExceedsQueue {
                 snapshot: encoded_bytes,
-                maximum: state.queue_bytes_limit,
+                maximum: MAX_VIEW_SET_SNAPSHOT_BYTES,
             });
         }
         state.queue_high_water = encoded_bytes;
@@ -904,7 +947,12 @@ impl ViewSetInner {
         let base = state.acknowledged_cursor;
         let batch = make_batch(&self.id, &mut state, base, updates)?;
         let encoded_bytes = encoded_batch_len(&batch)?;
-        if encoded_bytes > state.queue_bytes_limit as usize {
+        let batch_limit = if batch_has_snapshot(&batch) {
+            MAX_VIEW_SET_SNAPSHOT_BYTES
+        } else {
+            state.queue_bytes_limit
+        };
+        if encoded_bytes > batch_limit as usize {
             state.reset_pending = Some(ResetReason::QueueOverflow);
             return Ok(PollState::Reset(ResetReason::QueueOverflow));
         }
@@ -964,10 +1012,10 @@ impl ViewSetInner {
         }
         let batch = make_batch(&self.id, &mut state, base_cursor, updates)?;
         let encoded_bytes = encoded_batch_len(&batch)?;
-        if encoded_bytes > state.queue_bytes_limit as usize {
+        if encoded_bytes > MAX_VIEW_SET_SNAPSHOT_BYTES as usize {
             return Err(ViewSetError::SnapshotExceedsQueue {
                 snapshot: encoded_bytes,
-                maximum: state.queue_bytes_limit,
+                maximum: MAX_VIEW_SET_SNAPSHOT_BYTES,
             });
         }
         state.queue_high_water = state.queue_high_water.max(encoded_bytes);
@@ -1172,19 +1220,38 @@ fn enqueue_update(
 }
 
 fn enforce_bound(state: &mut ViewSetState) -> Result<(), ViewSetError> {
-    let in_flight = state
-        .in_flight
-        .as_ref()
-        .map_or(0, |batch| batch.encoded_bytes);
+    let in_flight = state.in_flight.as_ref().map_or(0, |batch| {
+        if batch_has_snapshot(&batch.batch) {
+            0
+        } else {
+            batch.encoded_bytes
+        }
+    });
     let used = in_flight.saturating_add(state.pending_bytes);
     state.queue_high_water = state.queue_high_water.max(used);
-    if used <= state.queue_bytes_limit as usize {
+    let pending_snapshot = state
+        .pending
+        .iter()
+        .any(|queued| matches!(queued.update, ViewSetUpdate::Snapshot { .. }));
+    let limit = if pending_snapshot {
+        MAX_VIEW_SET_SNAPSHOT_BYTES
+    } else {
+        state.queue_bytes_limit
+    };
+    if used <= limit as usize {
         return Ok(());
     }
     state.pending.clear();
     state.pending_bytes = 0;
     state.reset_pending = Some(ResetReason::QueueOverflow);
     Ok(())
+}
+
+fn batch_has_snapshot(batch: &UpdateBatch) -> bool {
+    batch
+        .updates
+        .iter()
+        .any(|update| matches!(update, ViewSetUpdate::Snapshot { .. }))
 }
 
 fn make_batch(
@@ -1243,9 +1310,10 @@ fn next_epoch() -> u64 {
 mod tests {
     use super::*;
     use crate::{
-        DiagnosticCategory, DiagnosticEvent, DiagnosticSeverity, ProgressAction,
-        ProgressAssessment, ProgressDisposition, ProgressPhase, ProgressReason, ServiceSnapshot,
-        StorageState, TorrentSnapshot, TorrentState, TorrentView,
+        DiagnosticCategory, DiagnosticEvent, DiagnosticSeverity, FileCatalogState,
+        FileSelectionView, FileView, ProgressAction, ProgressAssessment, ProgressDisposition,
+        ProgressPhase, ProgressReason, ServiceSnapshot, StorageState, TorrentSnapshot,
+        TorrentState, TorrentView,
     };
     use rstorrent_engine::peer::{PeerSource, PeerSources};
     use rstorrent_engine::swarm::ConnectionId;
@@ -1367,6 +1435,82 @@ mod tests {
             validated_open(&queue),
             Err(ViewSetError::InvalidQueueBound { .. })
         ));
+    }
+
+    #[test]
+    fn full_legal_file_snapshot_is_separate_from_steady_queue_pressure() {
+        let now = Instant::now();
+        let files = (0..4_096_u32)
+            .map(|index| FileView {
+                file_id: index.to_string(),
+                file_index: index,
+                path: vec![format!("directory-{index:04}"), "x".repeat(128)],
+                length_bytes: "16384".to_owned(),
+                torrent_offset_bytes: (u64::from(index) * 16_384).to_string(),
+                first_piece: Some(index),
+                last_piece: Some(index),
+                selection: Some(FileSelectionView::Wanted),
+                padding: false,
+                done_bytes: "0".to_owned(),
+                verified_bytes: "0".to_owned(),
+            })
+            .collect::<Vec<_>>();
+        let snapshot = ViewSnapshot::Files {
+            torrent_id: TORRENT_ID.to_owned(),
+            state: FileCatalogState::Available,
+            filesystem_content_base: Some("/tmp/rstorrent/content".to_owned()),
+            files,
+        };
+        let encoded_snapshot = serde_json::to_vec(&snapshot)
+            .expect("encode snapshot")
+            .len();
+        assert!(encoded_snapshot > DEFAULT_VIEW_SET_QUEUE_BYTES as usize);
+        assert!(encoded_snapshot < MAX_VIEW_SET_SNAPSHOT_BYTES as usize);
+        let spec = ViewSpec::TorrentFiles {
+            view_id: "files".to_owned(),
+            torrent_id: TORRENT_ID.to_owned(),
+            delivery: ViewDeliveryPolicy::default(),
+        };
+        let inner = ViewSetInner::new(
+            "vs_files".to_owned(),
+            ViewSetOwner::trusted("owner"),
+            ViewSetInitialState {
+                revision: 7,
+                views: BTreeMap::from([("files".to_owned(), spec)]),
+                queue_bytes_limit: DEFAULT_VIEW_SET_QUEUE_BYTES,
+                snapshots: vec![ViewSetUpdate::Snapshot {
+                    view_id: "files".to_owned(),
+                    snapshot,
+                }],
+                now,
+                lease: Duration::from_millis(VIEW_SET_LEASE_MILLIS),
+            },
+        )
+        .expect("large file view set");
+        inner
+            .enqueue_patch(
+                "files",
+                ViewPatch::Files {
+                    torrent_id: TORRENT_ID.to_owned(),
+                    upsert: vec![FileView {
+                        file_id: "0".to_owned(),
+                        file_index: 0,
+                        path: vec!["updated".to_owned()],
+                        length_bytes: "16384".to_owned(),
+                        torrent_offset_bytes: "0".to_owned(),
+                        first_piece: Some(0),
+                        last_piece: Some(0),
+                        selection: Some(FileSelectionView::Wanted),
+                        padding: false,
+                        done_bytes: "16384".to_owned(),
+                        verified_bytes: "0".to_owned(),
+                    }],
+                    removed: Vec::new(),
+                },
+                8,
+            )
+            .expect("patch behind in-flight snapshot");
+        assert!(inner.state().expect("state").reset_pending.is_none());
     }
 
     #[test]

@@ -7,6 +7,7 @@ import type {
   InspectionSnapshot,
   InspectionUpdate,
   KeyedPatch,
+  FileRow,
   LogRow,
   PeerRow,
   TorrentRow,
@@ -272,11 +273,23 @@ function materializeDemoViews(
           },
         }
       : {};
+  const filesByTorrent =
+    desired.detail === "files" && desired.torrentId !== null
+      ? {
+          [desired.torrentId]: source.filesByTorrent[desired.torrentId] ?? {
+            state: "metadata_pending" as const,
+            filesystemContentBase: null,
+            order: [],
+            rows: {},
+          },
+        }
+      : {};
   return {
     ...source,
     torrentOrder: desired.library ? source.torrentOrder : [],
     torrents,
     peersByTorrent,
+    filesByTorrent,
     logs: desired.detail === "logs" ? source.logs : [],
     droppedLogs: desired.detail === "logs" ? source.droppedLogs : 0,
     viewStatus: {
@@ -291,6 +304,10 @@ function materializeDemoViews(
             : { status: "ready" },
       peers:
         desired.detail === "peers"
+          ? { status: "ready" }
+          : { status: "not_requested" },
+      files:
+        desired.detail === "files"
           ? { status: "ready" }
           : { status: "not_requested" },
       logs:
@@ -371,6 +388,9 @@ function applyOverlays(
     },
     torrentOrder,
     torrents,
+    filesByTorrent: Object.fromEntries(
+      Object.entries(source.filesByTorrent).filter(([torrentId]) => !removed.has(torrentId)),
+    ),
     logs,
     droppedLogs: source.droppedLogs + Math.max(0, source.logs.length + commandLogs.length - 256),
   };
@@ -389,6 +409,14 @@ function diffSnapshots(
   );
   const peerPatches: Array<
     KeyedPatch<PeerRow> & { readonly torrentId: string; readonly order: readonly string[] }
+  > = [];
+  const filePatches: Array<
+    KeyedPatch<FileRow> & {
+      readonly torrentId: string;
+      readonly state: "metadata_pending" | "available" | "torrent_missing";
+      readonly filesystemContentBase: string | null;
+      readonly order: readonly string[];
+    }
   > = [];
   for (const [torrentId, nextSet] of Object.entries(next.peersByTorrent)) {
     const previousSet = previous.peersByTorrent[torrentId];
@@ -411,6 +439,42 @@ function diffSnapshots(
       peerPatches.push({ torrentId, upsert: [], removed: previousSet.order, order: [] });
     }
   }
+  for (const [torrentId, nextSet] of Object.entries(next.filesByTorrent)) {
+    const previousSet = previous.filesByTorrent[torrentId];
+    const upsert = nextSet.order
+      .map((id) => nextSet.rows[id])
+      .filter((row): row is FileRow => row !== undefined)
+      .filter((row) => !shallowEqual(previousSet?.rows[row.id], row));
+    const removed = previousSet?.order.filter((id) => nextSet.rows[id] === undefined) ?? [];
+    if (
+      upsert.length > 0 ||
+      removed.length > 0 ||
+      previousSet?.state !== nextSet.state ||
+      previousSet?.filesystemContentBase !== nextSet.filesystemContentBase ||
+      !arraysEqual(previousSet?.order ?? [], nextSet.order)
+    ) {
+      filePatches.push({
+        torrentId,
+        state: nextSet.state,
+        filesystemContentBase: nextSet.filesystemContentBase,
+        upsert,
+        removed,
+        order: nextSet.order,
+      });
+    }
+  }
+  for (const [torrentId, previousSet] of Object.entries(previous.filesByTorrent)) {
+    if (next.filesByTorrent[torrentId] === undefined) {
+      filePatches.push({
+        torrentId,
+        state: "torrent_missing",
+        filesystemContentBase: null,
+        upsert: [],
+        removed: previousSet.order,
+        order: [],
+      });
+    }
+  }
 
   const previousLogIds = new Set(previous.logs.map((row) => row.id));
   const appendedLogs = next.logs.filter((row) => !previousLogIds.has(row.id));
@@ -431,6 +495,7 @@ function diffSnapshots(
           },
         }),
     ...(peerPatches.length === 0 ? {} : { peers: peerPatches }),
+    ...(filePatches.length === 0 ? {} : { files: filePatches }),
     ...(appendedLogs.length === 0
       ? {}
       : {

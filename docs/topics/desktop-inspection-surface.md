@@ -14,7 +14,9 @@ adds the one-command production browser launcher needed for maintainer visual
 confirmation. Tactical `037` makes that live surface independently useful by
 adding bounded adjacent magnet input and Add controls through the application
 boundary. Tactical `038` adds responsive curated test-torrent shortcuts under
-More for the interactive inspection loop. The Tauri entry has not changed.
+More for the interactive inspection loop. Tactical `041` adds complete live
+file geometry and stored/verified progress through the same headless browser
+surface. The Tauri entry has not changed.
 
 ## Purpose
 
@@ -165,8 +167,9 @@ and removes the connection row after joined cleanup without launching Tauri or
 a visible browser. Tactical `037` drives the same proof from the toolbar rather
 than a raw HTTP command, including responsive and accessible intake behavior.
 
-The surface is therefore useful for live peer observation, but it is not yet a
-complete debugging console. The existing categorized diagnostics feed is the
-broadest next view candidate; a registry-backed Swarm table is the deeper
-peer-lifecycle candidate. Selection remains an explicit next tactical based on
-real inspection use.
+The surface is therefore useful for live peer and file observation, but it is
+not yet a complete debugging console. The existing categorized diagnostics
+feed is the broadest next view candidate; a registry-backed Swarm table is the
+deeper peer-lifecycle candidate. Pieces and Disk remain separate design
+subjects. Selection remains an explicit next tactical based on real
+inspection use.

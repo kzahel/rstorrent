@@ -151,6 +151,77 @@ test("large collections retain a bounded virtual DOM", async ({ page }) => {
   );
 });
 
+test("full file catalog stays virtualized across wide compact and phone layouts", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const openedAt = performance.now();
+  await openScenario(page, "file-progress", 24_000);
+  await page.getByRole("tab", { name: "Files" }).click();
+  const files = page.getByRole("grid", { name: "Torrent files" });
+  await expect(files).toHaveAttribute("aria-rowcount", "4096");
+  await expect(page.getByText("1 padding hidden")).toBeVisible();
+  expect(await files.getByRole("row").count()).toBeLessThanOrEqual(100);
+
+  const columns = page.getByRole("button", { name: "Columns" }).last();
+  await columns.click();
+  await page.getByRole("checkbox", { name: "Storage Path" }).check();
+  await expect(files.getByRole("columnheader", { name: "Storage Path" })).toBeVisible();
+  const nameResize = files.getByRole("separator", { name: "Resize Name column" });
+  const initialWidth = Number(await nameResize.getAttribute("aria-valuenow"));
+  await nameResize.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(nameResize).toHaveAttribute("aria-valuenow", String(initialWidth + 12));
+  await columns.click();
+
+  const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
+    (violation) => violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+  const metrics = await page.evaluate(() => {
+    const measuredPerformance = performance as Performance & {
+      memory?: { usedJSHeapSize: number };
+    };
+    return {
+      domElements: document.getElementsByTagName("*").length,
+      usedJsHeapBytes: measuredPerformance.memory?.usedJSHeapSize ?? null,
+    };
+  });
+  const updateStartedAt = performance.now();
+  await page.getByRole("button", { name: "+10s" }).click();
+  await expect(page.getByLabel("Demo clock 00:34")).toBeVisible();
+  const updateRenderMs = Math.round(performance.now() - updateStartedAt);
+  expect(metrics.domElements).toBeLessThan(1_500);
+  if (metrics.usedJsHeapBytes !== null) {
+    expect(metrics.usedJsHeapBytes).toBeLessThan(256 * 1024 * 1024);
+  }
+  expect(updateRenderMs).toBeLessThan(5_000);
+  expect(performance.now() - openedAt).toBeLessThan(5_000);
+  await capture(page, "rstorrent-files-wide.png");
+
+  await page.setViewportSize({ width: 920, height: 720 });
+  await expect(files).toBeVisible();
+  await capture(page, "rstorrent-files-compact.png");
+
+  await page
+    .getByRole("grid", { name: "Torrent library" })
+    .getByRole("row")
+    .filter({ hasText: "Open Movies production archive" })
+    .click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("button", { name: "Torrents", exact: true })).toBeVisible();
+  await expect(files).toBeVisible();
+  await expect
+    .poll(async () =>
+      page
+        .getByRole("navigation", { name: "Torrent library" })
+        .evaluate((element) => Math.round(element.getBoundingClientRect().right)),
+    )
+    .toBeLessThanOrEqual(0);
+  await capture(page, "rstorrent-files-phone.png");
+  console.log(`file_scale_metrics ${JSON.stringify({ ...metrics, updateRenderMs })}`);
+});
+
 async function openScenario(page: Page, scenario: string, at: number) {
   await page.goto(`/?demo=${scenario}&at=${at}&autoplay=0`);
   await expect(page.getByText("RSTorrent", { exact: true })).toBeVisible();

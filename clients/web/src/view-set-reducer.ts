@@ -107,6 +107,8 @@ function cloneSnapshot(snapshot: ViewSnapshot): ViewSnapshot {
       return { ...snapshot, verified: [...snapshot.verified] };
     case "peers":
       return { ...snapshot, peers: [...snapshot.peers] };
+    case "files":
+      return { ...snapshot, files: [...snapshot.files] };
     case "diagnostics":
       return { ...snapshot, events: [...snapshot.events] };
   }
@@ -154,6 +156,21 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
         type: "peers",
         torrent_id: patch.torrent_id,
         peers: [...peers.values()],
+      };
+    }
+    case "files": {
+      if (snapshot.type !== "files") throw new Error("unreachable");
+      const files = new Map(
+        snapshot.files.map((file) => [file.file_id, file]),
+      );
+      for (const fileId of patch.removed) files.delete(fileId);
+      for (const file of patch.upsert) files.set(file.file_id, file);
+      return {
+        type: "files",
+        torrent_id: patch.torrent_id,
+        state: snapshot.state,
+        filesystem_content_base: snapshot.filesystem_content_base,
+        files: [...files.values()],
       };
     }
     case "diagnostics": {

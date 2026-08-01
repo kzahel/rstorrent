@@ -25,6 +25,7 @@ from first_verified_piece import (
     create_session,
     wait_for_listener,
     write_deterministic_payload,
+    write_deterministic_range,
 )
 
 
@@ -102,6 +103,7 @@ def create_fixture(
     *,
     payload_size: int = PAYLOAD_SIZE,
     piece_size: int = PIECE_SIZE,
+    prefix_payload_size: int = 0,
 ) -> Fixture:
     seed_directory = run_path / "seed"
     torrent_root = seed_directory / ROOT_NAME
@@ -116,8 +118,17 @@ def create_fixture(
         empty_path.parent.mkdir(parents=True, exist_ok=True)
         empty_path.touch()
 
+    if prefix_payload_size > 0:
+        prefix_path = torrent_root / "nested" / "prefix.bin"
+        write_deterministic_range(prefix_path, 0, prefix_payload_size)
+        files.add_file(f"{ROOT_NAME}/nested/prefix.bin", prefix_payload_size)
+
     payload_path = torrent_root / "payload.bin"
-    payload_hash = write_deterministic_payload(payload_path, payload_size)
+    payload_hash = (
+        write_deterministic_range(payload_path, prefix_payload_size, payload_size)
+        if prefix_payload_size > 0
+        else write_deterministic_payload(payload_path, payload_size)
+    )
     files.add_file(f"{ROOT_NAME}/payload.bin", payload_size)
     creator = lt.create_torrent(
         files,
@@ -146,7 +157,8 @@ def create_fixture(
         (torrent_files.file_path(index), torrent_files.file_size(index))
         for index in range(torrent_files.num_files())
     )
-    if len(expected_files) != EMPTY_FILE_COUNT + 1:
+    expected_file_count = EMPTY_FILE_COUNT + 1 + int(prefix_payload_size > 0)
+    if len(expected_files) != expected_file_count:
         raise ScenarioFailure("fixture file count changed during torrent creation")
     return Fixture(
         torrent_path=torrent_path,

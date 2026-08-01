@@ -37,6 +37,9 @@ const controllers: InspectionController[] = [];
 
 afterEach(async () => {
   cleanup();
+  if (typeof globalThis.localStorage?.clear === "function") {
+    globalThis.localStorage.clear();
+  }
   await Promise.all(controllers.splice(0).map((controller) => controller.close()));
 });
 
@@ -79,6 +82,20 @@ describe("inspection application", () => {
     expect(peerGrid).toHaveAttribute("aria-rowcount", "10001");
     expect(within(torrentGrid).getAllByRole("row").length).toBeLessThanOrEqual(100);
     expect(within(peerGrid).getAllByRole("row").length).toBeLessThanOrEqual(100);
+  });
+
+  it("materializes a full file catalog only on the Files tab", async () => {
+    const user = userEvent.setup();
+    renderScenario("file-progress", 24_000);
+    expect(screen.queryByRole("grid", { name: "Torrent files" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Files" }));
+    const files = screen.getByRole("grid", { name: "Torrent files" });
+    expect(files).toHaveAttribute("aria-rowcount", "4096");
+    expect(within(files).getAllByRole("row").length).toBeLessThanOrEqual(100);
+    expect(screen.getByText("1 padding hidden")).toBeVisible();
+    await user.click(screen.getAllByRole("button", { name: "Columns" }).at(-1)!);
+    await user.click(screen.getByRole("checkbox", { name: "Storage Path" }));
+    expect(within(files).getByRole("columnheader", { name: /Storage Path/ })).toBeVisible();
   });
 
   it("resizes the detail pane with pointer and keyboard input", async () => {

@@ -9,15 +9,16 @@ use rstorrent_gateway::{
 use rstorrent_session::{
     ActivePiece, ApiEncoding, ApiHello, ApiLimits, ApiVersion, CapabilityStatus, Command,
     DeliveryMode, DeliveryPolicy, DiagnosticCategory, DiagnosticEvent, DiagnosticField,
-    DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity, ErrorCode, ErrorResponse, IndexRange,
-    OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
-    PeerDisconnectReason, PeerFieldCapabilities, PeerLifecycle, PeerRequestPhase, PeerRole,
-    PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
-    ProgressDisposition, ProgressPhase, ProgressReason, RemovalDataPolicy, RemovalState,
-    RequestEnvelope, ResetReason, ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState,
-    SubscriptionSpec, TorrentSnapshot, TorrentState, TorrentView, UpdateBatch,
-    UpdateViewSetRequest, ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector,
-    ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate, ViewUpdatePayload,
+    DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity, ErrorCode, ErrorResponse,
+    FileCatalogState, FileSelectionView, FileView, IndexRange, OpenViewSetOptions,
+    OpenViewSetRequest, OpenViewSetResponse, PeerDirection, PeerDisconnectReason,
+    PeerFieldCapabilities, PeerLifecycle, PeerRequestPhase, PeerRole, PeerSourceView,
+    PeerTransportKind, PeerView, ProgressAction, ProgressAssessment, ProgressDisposition,
+    ProgressPhase, ProgressReason, RemovalDataPolicy, RemovalState, RequestEnvelope, ResetReason,
+    ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState, SubscriptionSpec,
+    TorrentSnapshot, TorrentState, TorrentView, UpdateBatch, UpdateViewSetRequest,
+    ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot,
+    ViewSpec, ViewUpdate, ViewUpdatePayload,
 };
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -96,6 +97,9 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<PeerDisconnectReason>(&mut declarations)?;
     append::<PeerFieldCapabilities>(&mut declarations)?;
     append::<PeerView>(&mut declarations)?;
+    append::<FileSelectionView>(&mut declarations)?;
+    append::<FileCatalogState>(&mut declarations)?;
+    append::<FileView>(&mut declarations)?;
     append::<ViewSnapshot>(&mut declarations)?;
     append::<ViewPatch>(&mut declarations)?;
     append::<ResetReason>(&mut declarations)?;

@@ -55,13 +55,14 @@ export interface InspectionViewStatus {
   readonly library: ViewMaterialization;
   readonly torrentSummary: ViewMaterialization;
   readonly peers: ViewMaterialization;
+  readonly files: ViewMaterialization;
   readonly logs: ViewMaterialization;
 }
 
 export interface DesiredInspectionViews {
   readonly library: boolean;
   readonly torrentId: string | null;
-  readonly detail: "general" | "peers" | "logs" | null;
+  readonly detail: "general" | "peers" | "files" | "logs" | null;
 }
 
 export interface DemoState {
@@ -132,6 +133,32 @@ export interface PeerSet {
   readonly rows: Readonly<Record<string, PeerRow>>;
 }
 
+export interface FileRow {
+  readonly id: string;
+  readonly torrentId: string;
+  readonly index: number;
+  readonly path: readonly string[];
+  readonly name: string;
+  readonly folder: string;
+  readonly extension: string;
+  readonly lengthBytes: string;
+  readonly torrentOffsetBytes: string;
+  readonly firstPiece: number | null;
+  readonly lastPiece: number | null;
+  readonly selection: "wanted" | "skipped" | null;
+  readonly padding: boolean;
+  readonly doneBytes: string;
+  readonly verifiedBytes: string;
+  readonly storagePath: string | null;
+}
+
+export interface FileSet {
+  readonly state: "metadata_pending" | "available" | "torrent_missing";
+  readonly filesystemContentBase: string | null;
+  readonly order: readonly string[];
+  readonly rows: Readonly<Record<string, FileRow>>;
+}
+
 export interface InspectionSnapshot {
   readonly revision: number;
   readonly session: SessionSummary;
@@ -139,6 +166,7 @@ export interface InspectionSnapshot {
   readonly torrentOrder: readonly string[];
   readonly torrents: Readonly<Record<string, TorrentRow>>;
   readonly peersByTorrent: Readonly<Record<string, PeerSet>>;
+  readonly filesByTorrent: Readonly<Record<string, FileSet>>;
   readonly logs: readonly LogRow[];
   readonly droppedLogs: number;
   readonly viewStatus: InspectionViewStatus;
@@ -161,6 +189,12 @@ export type InspectionUpdate =
       };
       readonly peers?: readonly (KeyedPatch<PeerRow> & {
         readonly torrentId: string;
+        readonly order?: readonly string[];
+      })[];
+      readonly files?: readonly (KeyedPatch<FileRow> & {
+        readonly torrentId: string;
+        readonly state?: FileSet["state"];
+        readonly filesystemContentBase?: string | null;
         readonly order?: readonly string[];
       })[];
       readonly logs?: {
@@ -192,6 +226,7 @@ export type DemoScenarioId =
   | "tracker-recovery"
   | "endgame"
   | "large-swarm"
+  | "file-progress"
   | "disk-error"
   | "empty-library";
 

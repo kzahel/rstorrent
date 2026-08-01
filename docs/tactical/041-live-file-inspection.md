@@ -1,6 +1,6 @@
 # Live File Inspection
 
-Status: Planned.
+Status: Complete.
 
 Topics: `application-view-api`, `web-ui-design`,
 `desktop-inspection-surface`, `performance-and-live-evidence`
@@ -210,7 +210,7 @@ FileView {
     torrent_offset_bytes: decimal u64 string,
     first_piece: Option<u32>,
     last_piece: Option<u32>,          // inclusive
-    selection: wanted | skipped,
+    selection: Option<wanted | skipped>, // null for padding
     padding: bool,
     done_bytes: decimal u64 string,
     verified_bytes: decimal u64 string,
@@ -485,6 +485,57 @@ redesign; runtime file mutation or destructive file actions; a new persistence
 schema; a filesystem/SAF behavior change beyond read-only projection; a new UI
 or runtime dependency with material tradeoffs; visible application or physical
 device interaction; or broader Pieces/Disk/Android presentation work.
+
+## Outcome And Evidence
+
+The slice landed without pagination, a new codec, a persistence migration, or
+an Android screen:
+
+- `file_views` owns immutable file geometry plus rebuildable Done/Verified
+  counters. Exact overlap, zero-length files, skipped boundaries, padding,
+  verification, hash failure, duplicate blocks, resume rebuild, and invalid
+  intervals have pure Rust coverage.
+- `torrent_files` is generated through Rust, TypeScript, JSON Schema, and
+  UniFFI/Kotlin. Metadata transitions use coherent snapshots; stored and
+  verified progress uses keyed complete-row patches. The legal 4,096-row
+  long-path snapshot is 1,481,877 JSON bytes and uses the separate 16 MiB
+  snapshot path while ordinary patch retention remains capped at 512 KiB.
+- The browser requests Files only for the visible tab, drops it when interest
+  changes, validates exact decimal counters and cross-field bounds, and caches
+  mapped catalogs so unrelated summary patches do not remap every file. File
+  delivery requests a 250 ms minimum interval.
+- The shared virtual table now has typed decimal/number/text/semantic sorting,
+  stable null-last order, visible zeroes, opt-in live sorting, versioned
+  per-table column visibility and widths, pointer/keyboard resize handles, and
+  accessible configuration controls. The Files table hides padding but reports
+  its count and offers the accepted default and optional columns.
+- The named `file-progress` scenario retains 4,096 semantic rows and models a
+  hash failure that removes only unverified Done before recovery. Headless
+  Chrome rendered 690 DOM elements, sampled 66,468,705 bytes of heap, and
+  applied a complete ten-second scenario rebuild and paint in 55 ms. Wide,
+  compact, and phone layouts passed serious/critical axe checks without the
+  prior drawer or active-tab clipping.
+- The production web build completed a controlled libtorrent 2.0.13.0 magnet
+  with 26,731 bytes of multi-block metadata, 122 files, three pieces, and a
+  40,000-byte payload. A 7,000-byte nested prefix makes piece zero cross two
+  nonempty files. First Done and Verified appeared at 20,406 and 20,413 ms
+  from Files selection. A forced 500 ms view lease expiry reopened from a
+  fresh snapshot while transfer continued; final Done/Verified displayed
+  39.0 KiB and both nonempty files passed external content comparison. All
+  child processes joined and temporary state was removed.
+
+Validation completed with formatting, warning-denying workspace Clippy, all
+workspace tests, generated-contract regeneration, TypeScript typecheck, 51
+Vitest tests, production Vite build, six deterministic Playwright scenarios,
+the opt-in live Playwright proof, and the two-ABI Android/UniFFI debug build
+plus unit tests. Android's reducer explicitly ignores Files snapshots and
+patches until an Android Files product surface is authorized.
+
+Known bounded cost: a real Files patch still performs shallow O(file count)
+copies in the generated TypeScript array reducer and normalized row record.
+The current 4,096-file/4 Hz bounds and measured browser evidence are acceptable
+for this slice; profiling before higher limits or cadence is recorded in the
+performance topic.
 
 ## Stopping Condition
 
