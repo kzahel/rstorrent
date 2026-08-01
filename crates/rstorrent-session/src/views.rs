@@ -17,7 +17,7 @@ use rstorrent_engine::{
     PeerConnectionRole, PeerRequestWindowPhase, PeerTransport,
 };
 
-use crate::control::{ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState};
+use crate::control::{RemovalState, ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState};
 use crate::view_sets::{DEFAULT_VIEW_SET_QUEUE_BYTES, ViewSetInner, ViewSetUpdate};
 
 pub const VIEW_CONTRACT_VERSION: u16 = 2;
@@ -393,6 +393,10 @@ pub struct TorrentView {
     pub active_peer_connections: u32,
     pub payload_download_rate_bytes: String,
     pub progress: ProgressAssessment,
+    pub archived: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub removal_state: Option<RemovalState>,
+    pub delete_managed_data_supported: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
@@ -1373,6 +1377,9 @@ impl TorrentModel {
                 active_peer_connections: 0,
                 payload_download_rate_bytes: "0".to_owned(),
                 progress: assess_progress(snapshot, progress_inputs),
+                archived: snapshot.archived,
+                removal_state: snapshot.removal_state,
+                delete_managed_data_supported: snapshot.delete_managed_data_supported,
                 error: snapshot.error.clone(),
             },
             snapshot: snapshot.clone(),
@@ -2190,6 +2197,9 @@ mod tests {
                 piece_count,
                 verified_piece_count: 0,
                 skip_files: Vec::new(),
+                archived: false,
+                removal_state: None,
+                delete_managed_data_supported: true,
                 error: None,
             }],
         }

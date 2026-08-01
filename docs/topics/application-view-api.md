@@ -606,10 +606,12 @@ The completed foundation evidence proves:
 - one controlled libtorrent-seeded download observed through that client from
   add through verified publication and clean shutdown.
 
-Actual torrent deletion is not a prerequisite for testing collection
-`removed` diffs. A deterministic fixture or a torrent leaving a selected
-category can prove projection removal. Adding destructive or content-deleting
-commands requires its own application-control semantics and safety evidence.
+Tactical `040` now supplies actual torrent lifecycle evidence in addition to
+the earlier synthetic `removed` diffs. Archive, removal stage, and managed-data
+deletion availability are complete torrent-summary fields. Final catalog
+deletion produces the ordinary keyed removed ID; an intermediate or failed
+cleanup remains an upsert, so reducers do not infer deletion from command
+success or diagnostics.
 
 Public swarms and visible Tauri launch are unnecessary for this foundation.
 The browser gateway, temporary profiles, controlled libtorrent peer, and pure
@@ -663,4 +665,5 @@ this design.
 - browser router and navigation URL details;
 - the measured threshold for streaming, specialized field patches, or binary
   encoding; and
-- durable archive, label, removal, deletion, and queue semantics.
+- durable label and queue semantics; archive and bounded removal/deletion are
+  implemented by Tactical `040`.

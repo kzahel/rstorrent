@@ -11,7 +11,9 @@ Tactical `013` added explicit application network configuration and a blocked
 offline prerequisite without changing durable torrent intent. Tactical `033`
 implemented the leased application-view owner, generated v1 JSON contract,
 authenticated loopback polling adapter, and headless lifecycle client recorded
-in [`application-view-api.md`](application-view-api.md). No stable public
+in [`application-view-api.md`](application-view-api.md). Tactical `040` adds
+durable archive/restore and fenced removal with explicit keep-data or
+delete-managed policy. No stable public
 remote wire format is accepted yet.
 
 ## Scope
@@ -154,8 +156,16 @@ resource bounds, durable duplicate handling, storage policy, and busy state.
 Remote `.torrent` URL fetching and file-byte intake remain absent rather than
 being represented as successful magnet adds.
 
+Tactical `040` makes archive orthogonal to running intent and gives removal a
+durable generation. The application service first persists paused removal
+intent, joins any active torrent owner, and then either retains payload,
+deletes exact path-backed managed artifacts, or waits for a trusted platform
+adapter. Failed cleanup stays visible and can be retried with either retention
+policy. Android SAF plans and confirmations are in-process operations keyed by
+the matching generation; browser commands never carry paths or document URIs.
+
 Later work must define multi-torrent scheduling, stable product error
-taxonomy, capability installation, removals and deletion, production remote
+taxonomy, capability installation, production remote
 authentication and relay semantics, and compatibility rules for any
 published wire protocol.
 

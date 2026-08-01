@@ -14,7 +14,9 @@ browser launcher. Tactical `037` adds accessible, responsive magnet intake to
 the live toolbar and routes it through the semantic application command while
 retaining the permanent demo adapter. Tactical `038` adds a keyboard, pointer,
 touch, and phone-safe More > Add test torrent submenu backed by the recorded
-WebTorrent catalog and the same add path. The Tauri entry remains legacy.
+WebTorrent catalog and the same add path. Tactical `040` adds live archive and
+an accessible removal dialog whose managed-data option is unchecked by
+default. The Tauri entry remains legacy.
 
 ## Purpose
 
@@ -286,6 +288,13 @@ connected state. Serious and critical axe findings were empty. The demo scale
 measurements above remain the larger rendering-pressure evidence; one live
 peer is interoperability evidence, not a scale profile.
 
+Tactical `040` preserves the same independent frontend path for lifecycle
+controls. The demo adapter deterministically archives and removes rows; the
+live adapter maps those intents to generated Rust commands. Removal restores
+focus after Escape or completion, retains the dialog and error after command
+failure, and displays an irreversible warning only when managed-data deletion
+is selected.
+
 ## Likely Sequencing
 
 1. The accepted view-set contract, generated TypeScript/schema, polling
@@ -312,8 +321,8 @@ all stages as one slice.
 ## Deliberately Open Decisions
 
 - the default wide-screen detail position and user-selectable layout modes;
-- archive, inbox, category, label, pause, queue, and content-retention
-  semantics;
+- inbox, category, label, and queue semantics; archive and removal retention
+  semantics are implemented by Tactical `040`;
 - whether later navigation complexity justifies a router or icon dependency;
 - exact columns, row-detail interactions, table customization, and density
   presets;

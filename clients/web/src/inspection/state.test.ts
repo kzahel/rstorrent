@@ -80,6 +80,8 @@ function row(id: string, status: TorrentRow["status"]): TorrentRow {
     etaSeconds: 50,
     addedAtMs: 1,
     archived: false,
+    removalState: null,
+    deleteManagedDataSupported: true,
     infoHash: id,
     error: null,
     progressReason: "test",

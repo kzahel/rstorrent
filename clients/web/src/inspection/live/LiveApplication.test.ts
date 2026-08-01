@@ -134,6 +134,28 @@ describe("LiveApplication", () => {
     await application.close();
   });
 
+  it("maps archive and explicit retention removal commands", async () => {
+    const client = new FakeLiveClient();
+    const application = await LiveApplication.open(client);
+
+    await application.dispatch({ type: "archive", torrentId: TORRENT_ID });
+    await application.dispatch({
+      type: "remove",
+      torrentId: TORRENT_ID,
+      deleteData: true,
+    });
+
+    expect(client.requests.map((request) => request.command)).toEqual([
+      { type: "archive", torrent_id: TORRENT_ID },
+      {
+        type: "remove_torrent",
+        torrent_id: TORRENT_ID,
+        data: "delete_managed",
+      },
+    ]);
+    await application.close();
+  });
+
   it("maps active peer state and evicts obsolete responsive views", async () => {
     const client = new FakeLiveClient();
     const application = await LiveApplication.open(client, {
@@ -256,6 +278,8 @@ function torrent(): TorrentView {
       reason: "transferring_pieces",
       actions: [],
     },
+    archived: false,
+    delete_managed_data_supported: true,
   };
 }
 

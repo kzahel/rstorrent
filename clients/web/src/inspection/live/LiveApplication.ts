@@ -109,7 +109,10 @@ export class LiveApplication implements InspectionApplication {
     if (
       command.type !== "add_magnet" &&
       command.type !== "pause" &&
-      command.type !== "resume"
+      command.type !== "resume" &&
+      command.type !== "archive" &&
+      command.type !== "unarchive" &&
+      command.type !== "remove"
     ) {
       return {
         accepted: false,
@@ -127,8 +130,14 @@ export class LiveApplication implements InspectionApplication {
               storage_root: "downloads",
               skip_files: [],
             }
-          : {
-              type: command.type,
+          : command.type === "remove"
+            ? {
+                type: "remove_torrent",
+                torrent_id: command.torrentId,
+                data: command.deleteData ? "delete_managed" : "keep",
+              }
+            : {
+              type: command.type === "unarchive" ? "restore_archive" : command.type,
               torrent_id: command.torrentId,
             },
     };
@@ -146,7 +155,13 @@ export class LiveApplication implements InspectionApplication {
           ? "Torrent added"
           : command.type === "pause"
             ? "Torrent paused"
-            : "Torrent resumed",
+            : command.type === "resume"
+              ? "Torrent resumed"
+              : command.type === "archive"
+                ? "Torrent archived"
+                : command.type === "unarchive"
+                  ? "Torrent restored"
+                  : "Torrent removal started",
     };
   }
 
@@ -447,7 +462,9 @@ function mapTorrent(torrent: TorrentView): TorrentRow {
     peersKnown: null,
     etaSeconds: null,
     addedAtMs: null,
-    archived: null,
+    archived: torrent.archived,
+    removalState: torrent.removal_state ?? null,
+    deleteManagedDataSupported: torrent.delete_managed_data_supported,
     infoHash: torrent.torrent_id,
     error: torrent.error ?? null,
     progressReason: torrent.progress.reason.replaceAll("_", " "),

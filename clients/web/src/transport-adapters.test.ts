@@ -111,6 +111,8 @@ function update(sequence: number): ViewUpdate {
             reason: "transferring_pieces",
             actions: [],
           },
+          archived: false,
+          delete_managed_data_supported: true,
         },
       ],
       removed: [],

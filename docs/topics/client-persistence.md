@@ -6,7 +6,8 @@ Status: Tacticals `007` and `009` implemented the first
 `rstorrent-session` application/engine boundary, instance-scoped SQLite
 profile store, exact magnet metadata retention, per-piece checkpoints, and
 conservative restart through both path and Android SAF platform-capability
-storage.
+storage. Tactical `040` adds schema version `4`, durable archive state, and an
+explicit restartable removal job spanning SQLite and path or SAF cleanup.
 
 ## Scope
 
@@ -319,6 +320,17 @@ removal transitions should be transactional inside the database. Filesystem
 publication and deletion cannot share a transaction with SQLite; represent
 their intermediate state explicitly and make restart cleanup idempotent.
 
+Tactical `040` implements that removal boundary. A torrent row remains the
+foreign-key authority while a bounded removal job records generation, data
+policy, stage, and error. Startup finishes pending path work before restoring
+running torrents and leaves platform work available for the Android service.
+Path cleanup derives only the hash-named output, staging, and part artifacts
+under the configured root; symlinks are unlinked rather than followed, absent
+artifacts are success, and siblings and the root are retained. SAF cleanup
+derives the final, staging, and part document names from verified metadata;
+Kotlin owns the persisted grant and provider calls, while Rust validates the
+operation generation before deleting the catalog row.
+
 ## Cross-Platform Invariants
 
 - The database file format is portable; absolute paths and capabilities are
@@ -341,7 +353,7 @@ their intermediate state explicitly and make restart cleanup idempotent.
 ## Known Gaps And Open Decisions
 
 - Backup, export, restore, and later schema-migration policy beyond the
-  implemented transactional versions `0` through `2`.
+  implemented transactional versions `0` through `4`.
 - The installation-level profile registry format and whether the first product
   exposes more than its automatically created profile.
 - Whether Android places the database in backed-up or explicitly no-backup

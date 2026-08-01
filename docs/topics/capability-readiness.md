@@ -33,7 +33,8 @@ product-observability cross-section should be selected from actual inspection
 value before the engine campaign resumes. Tactical `039` also corrects the
 product's inherited two-block pipeline: desktop and Android now use explicit,
 generous, independently bounded request, received-payload, and active-piece
-profiles.
+profiles. Tactical `040` adds durable archive and restartable torrent removal
+across path and Android SAF storage, plus the guarded web confirmation flow.
 
 ## Purpose And Ownership
 
@@ -205,9 +206,9 @@ does not.
 
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
-| Durable semantic application control | Implemented | deterministic, runtime, web, AVD, physical | Removal, deletion, stable public compatibility, and general multi-torrent scheduling are absent. | [`application-control`](application-control.md) |
+| Durable semantic application control | Implemented | deterministic, runtime, web, AVD, physical | Archive and fenced keep/delete removal are implemented; stable public compatibility and general multi-torrent scheduling remain absent. | [`application-control`](application-control.md) |
 | Leased application view sets and polling client | Implemented | deterministic, runtime, interop, web | Named summary, piece, diagnostic, and active-peer views have bounded replay/reset, independent lease expiry, and fresh-snapshot recovery; file/tracker/swarm views, streaming, Tauri migration, and stable public compatibility remain absent. | [`application-view-api`](application-view-api.md) |
-| Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive web surface now adds magnets and consumes live torrent and active-peer views headlessly; production desktop integration, `.torrent` file intake, remaining detail feeds, and complete torrent controls do not. | [`client-surfaces`](client-surfaces.md) |
+| Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive web surface adds magnets, archives, and guarded removal while consuming live torrent and active-peer views headlessly; production desktop integration, `.torrent` file intake, and remaining detail feeds are incomplete. | [`client-surfaces`](client-surfaces.md) |
 | Android Compose foreground client | Partial | runtime, AVD, physical | General settings, connectivity policy, and complete torrent controls remain incomplete. | [`client-surfaces`](client-surfaces.md) |
 | Derived progress and bounded diagnostics | Implemented | deterministic, runtime, web, AVD | Scheduler and per-peer facts must grow with the corresponding owners. | [`application-control`](application-control.md) |
 | Offline, loopback-only, and online egress policy | Implemented | deterministic, runtime, web, AVD | Policy is fixed for one service lifetime; Android VPN and metered-network controls are absent. | [`application-control`](application-control.md) |

@@ -37,6 +37,16 @@ pub enum Command {
     Resume {
         torrent_id: String,
     },
+    Archive {
+        torrent_id: String,
+    },
+    RestoreArchive {
+        torrent_id: String,
+    },
+    RemoveTorrent {
+        torrent_id: String,
+        data: RemovalDataPolicy,
+    },
     Shutdown,
 }
 
@@ -44,8 +54,66 @@ impl Command {
     pub(crate) fn is_mutation(&self) -> bool {
         matches!(
             self,
-            Self::AddMagnet { .. } | Self::Pause { .. } | Self::Resume { .. }
+            Self::AddMagnet { .. }
+                | Self::Pause { .. }
+                | Self::Resume { .. }
+                | Self::Archive { .. }
+                | Self::RestoreArchive { .. }
+                | Self::RemoveTorrent { .. }
         )
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum RemovalDataPolicy {
+    Keep,
+    DeleteManaged,
+}
+
+impl RemovalDataPolicy {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Keep => "keep",
+            Self::DeleteManaged => "delete_managed",
+        }
+    }
+
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        match value {
+            "keep" => Some(Self::Keep),
+            "delete_managed" => Some(Self::DeleteManaged),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum RemovalState {
+    Pending,
+    AwaitingPlatform,
+    Failed,
+}
+
+impl RemovalState {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::AwaitingPlatform => "awaiting_platform",
+            Self::Failed => "failed",
+        }
+    }
+
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        match value {
+            "pending" => Some(Self::Pending),
+            "awaiting_platform" => Some(Self::AwaitingPlatform),
+            "failed" => Some(Self::Failed),
+            _ => None,
+        }
     }
 }
 
@@ -145,6 +213,10 @@ pub struct TorrentSnapshot {
     pub piece_count: u32,
     pub verified_piece_count: u32,
     pub skip_files: Vec<u32>,
+    pub archived: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub removal_state: Option<RemovalState>,
+    pub delete_managed_data_supported: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
@@ -281,7 +353,11 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
                 previous = Some(*index);
             }
         }
-        Command::Pause { torrent_id } | Command::Resume { torrent_id } => {
+        Command::Pause { torrent_id }
+        | Command::Resume { torrent_id }
+        | Command::Archive { torrent_id }
+        | Command::RestoreArchive { torrent_id }
+        | Command::RemoveTorrent { torrent_id, .. } => {
             validate_torrent_id(torrent_id)?;
         }
         Command::Snapshot | Command::Shutdown => {}

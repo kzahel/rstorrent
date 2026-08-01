@@ -13,11 +13,11 @@ use rstorrent_session::{
     OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
     PeerDisconnectReason, PeerFieldCapabilities, PeerLifecycle, PeerRequestPhase, PeerRole,
     PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
-    ProgressDisposition, ProgressPhase, ProgressReason, RequestEnvelope, ResetReason,
-    ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState, SubscriptionSpec,
-    TorrentSnapshot, TorrentState, TorrentView, UpdateBatch, UpdateViewSetRequest,
-    ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot,
-    ViewSpec, ViewUpdate, ViewUpdatePayload,
+    ProgressDisposition, ProgressPhase, ProgressReason, RemovalDataPolicy, RemovalState,
+    RequestEnvelope, ResetReason, ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState,
+    SubscriptionSpec, TorrentSnapshot, TorrentState, TorrentView, UpdateBatch,
+    UpdateViewSetRequest, ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector,
+    ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate, ViewUpdatePayload,
 };
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -57,6 +57,8 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
          // Do not edit by hand.\n\n",
     );
     append::<Command>(&mut declarations)?;
+    append::<RemovalDataPolicy>(&mut declarations)?;
+    append::<RemovalState>(&mut declarations)?;
     append::<ErrorCode>(&mut declarations)?;
     append::<ErrorResponse>(&mut declarations)?;
     append::<RequestEnvelope>(&mut declarations)?;
@@ -367,6 +369,9 @@ fn fixture_torrent(torrent_id: &str, verified: u32) -> TorrentView {
             },
             actions: Vec::new(),
         },
+        archived: false,
+        removal_state: None,
+        delete_managed_data_supported: true,
         error: None,
     }
 }

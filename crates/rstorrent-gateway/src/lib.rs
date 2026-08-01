@@ -187,7 +187,7 @@ pub enum GatewayServerMessage {
         stream_id: String,
     },
     Update {
-        update: ViewUpdate,
+        update: Box<ViewUpdate>,
     },
     Unsubscribed {
         request_id: String,
@@ -976,7 +976,9 @@ fn spawn_forwarder(
             let Some(update) = update else {
                 break;
             };
-            let message = GatewayServerMessage::Update { update };
+            let message = GatewayServerMessage::Update {
+                update: Box::new(update),
+            };
             let encoded_len = match serde_json::to_vec(&message) {
                 Ok(bytes) => bytes.len(),
                 Err(_) => break,

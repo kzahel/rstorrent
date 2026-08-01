@@ -407,6 +407,8 @@ function torrent(input: Partial<TorrentRow> & Pick<TorrentRow, "id" | "name" | "
     etaSeconds: input.etaSeconds ?? null,
     addedAtMs: input.addedAtMs ?? BASE_TIME_MS - 3_600_000,
     archived: input.archived ?? false,
+    removalState: input.removalState ?? null,
+    deleteManagedDataSupported: input.deleteManagedDataSupported ?? true,
     infoHash: input.infoHash ?? input.id,
     error: input.error ?? null,
     progressReason: input.progressReason ?? "Waiting for activity",

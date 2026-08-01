@@ -1275,6 +1275,9 @@ mod tests {
                 reason: ProgressReason::TransferringPieces,
                 actions: Vec::<ProgressAction>::new(),
             },
+            archived: false,
+            removal_state: None,
+            delete_managed_data_supported: true,
             error: None,
         }
     }
@@ -1299,6 +1302,9 @@ mod tests {
                 piece_count: 3,
                 verified_piece_count: verified,
                 skip_files: Vec::new(),
+                archived: false,
+                removal_state: None,
+                delete_managed_data_supported: true,
                 error: None,
             }],
         }

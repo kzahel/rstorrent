@@ -41,6 +41,7 @@ import org.rstorrent.session.uniffi.DiagnosticFilter
 import org.rstorrent.session.uniffi.DiagnosticProfile
 import org.rstorrent.session.uniffi.DiagnosticSeverity
 import org.rstorrent.session.uniffi.RequestEnvelope
+import org.rstorrent.session.uniffi.RemovalState
 import org.rstorrent.session.uniffi.ResponseOutcome
 import org.rstorrent.session.uniffi.SubscriptionSpec
 import org.rstorrent.session.uniffi.TorrentState
@@ -338,10 +339,14 @@ class ProductEngineService : Service() {
         val treeUri = safTreeUri ?: return
         for (torrent in product.torrents.values) {
             val action =
-                when (torrent.state) {
-                    TorrentState.AWAITING_STORAGE -> "storage"
-                    TorrentState.AWAITING_PUBLICATION -> "publication"
-                    else -> continue
+                if (torrent.removalState == RemovalState.AWAITING_PLATFORM) {
+                    "removal"
+                } else {
+                    when (torrent.state) {
+                        TorrentState.AWAITING_STORAGE -> "storage"
+                        TorrentState.AWAITING_PUBLICATION -> "publication"
+                        else -> continue
+                    }
                 }
             val key = "${torrent.torrentId}:$action"
             if (!safWork.add(key)) continue
@@ -387,6 +392,17 @@ class ProductEngineService : Service() {
                                 }
                             Log.i(TAG, "saf_publication_confirmed torrent=${torrent.torrentId}")
                         }
+                        "removal" -> {
+                            Log.i(TAG, "saf_removal_begin torrent=${torrent.torrentId}")
+                            val plan = client.safRemovalPlan(torrent.torrentId)
+                            ProductSafDocuments.deleteManaged(
+                                this@ProductEngineService,
+                                treeUri,
+                                plan,
+                            )
+                            client.confirmSafRemoval(torrent.torrentId, plan.operationId)
+                            Log.i(TAG, "saf_removal_confirmed torrent=${torrent.torrentId}")
+                        }
                         else -> error("unknown SAF action $action")
                     }
                 } catch (error: Throwable) {
@@ -394,6 +410,17 @@ class ProductEngineService : Service() {
                         try {
                             client.markSafUnavailable(
                                 torrent.torrentId,
+                                error.message ?: error.toString(),
+                            )
+                        } catch (markError: Throwable) {
+                            error.addSuppressed(markError)
+                        }
+                    } else if (action == "removal") {
+                        try {
+                            val plan = client.safRemovalPlan(torrent.torrentId)
+                            client.failSafRemoval(
+                                torrent.torrentId,
+                                plan.operationId,
                                 error.message ?: error.toString(),
                             )
                         } catch (markError: Throwable) {

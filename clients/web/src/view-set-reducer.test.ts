@@ -28,6 +28,8 @@ function torrent(verified: number): TorrentView {
       reason: verified === 3 ? "complete" : "transferring_pieces",
       actions: [],
     },
+    archived: false,
+    delete_managed_data_supported: true,
   };
 }
 

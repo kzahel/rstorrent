@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -12,20 +12,20 @@ use rstorrent_engine::{
     DownloadActivitySink, DownloadCheckpointSink, DownloadControl, DownloadError,
     DownloadResourceLimits, NetworkConfig, PreparedFileHash, ResumableMagnetDownloadConfig,
     ResumedStorage, download_magnet_metadata_with_dht, plan_descriptor_storage,
-    resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
-    verify_prepared_descriptors,
+    resume_magnet_to_descriptors_with_control, resume_magnet_with_control, selective_part_path,
+    selective_staging_path, verify_prepared_descriptors,
 };
 use rstorrent_protocol::metainfo::Metainfo;
 use tokio::task::JoinHandle;
 
 use crate::control::{
-    Command, ErrorCode, RequestEnvelope, ResponseEnvelope, ResponseOutcome, StorageState,
-    TorrentState,
+    Command, ErrorCode, RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope,
+    ResponseOutcome, StorageState, TorrentState,
 };
 use crate::have::HaveState;
 use crate::store::{
-    ConfiguredStorageRoot, PreparedFileRecord, ResumeRecord, SessionStore, StorageRootLocation,
-    StoreError,
+    ConfiguredStorageRoot, PreparedFileRecord, RemovalRecord, ResumeRecord, SessionStore,
+    StorageRootLocation, StoreError,
 };
 use crate::view_sets::{VIEW_SET_REAPER_INTERVAL_MILLIS, ViewSetLeaseReaper};
 use crate::views::{
@@ -81,6 +81,14 @@ struct ActiveDownload {
 enum ApplicationTaskReport {
     Metadata,
     Download,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlatformRemovalPlan {
+    pub operation_id: String,
+    pub torrent_id: String,
+    pub storage_root: String,
+    pub name: String,
 }
 
 #[derive(Debug)]
@@ -183,6 +191,7 @@ impl ApplicationService {
             )?;
         }
         service.refresh_views()?;
+        service.restore_removals().await?;
         service.restore_running().await?;
         service.refresh_views()?;
         Ok(service)
@@ -260,6 +269,38 @@ impl ApplicationService {
                     &[],
                 )?;
                 self.pause(&torrent_id).await?;
+            }
+            Command::Archive { torrent_id } => {
+                self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    DiagnosticCategory::Lifecycle,
+                    "torrent_archived",
+                    Some(&torrent_id),
+                    "Torrent archived",
+                    &[],
+                )?;
+            }
+            Command::RestoreArchive { torrent_id } => {
+                self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    DiagnosticCategory::Lifecycle,
+                    "torrent_archive_restored",
+                    Some(&torrent_id),
+                    "Torrent restored from archive",
+                    &[],
+                )?;
+            }
+            Command::RemoveTorrent { torrent_id, .. } => {
+                let torrent_id = torrent_id.to_ascii_lowercase();
+                self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    DiagnosticCategory::Lifecycle,
+                    "torrent_removal_started",
+                    Some(&torrent_id),
+                    "Torrent removal started",
+                    &[],
+                )?;
+                self.drive_removal(&torrent_id).await?;
             }
             Command::Shutdown => {
                 self.shutdown().await?;
@@ -496,6 +537,98 @@ impl ApplicationService {
         Ok(())
     }
 
+    pub async fn platform_removal_plan(
+        &mut self,
+        torrent_id: &str,
+    ) -> Result<PlatformRemovalPlan, ApplicationError> {
+        self.reap_finished().await?;
+        let torrent_id = torrent_id.to_ascii_lowercase();
+        let removal = self.store_mut()?.load_removal(&torrent_id)?;
+        if removal.policy != RemovalDataPolicy::DeleteManaged
+            || removal.state != RemovalState::AwaitingPlatform
+            || !matches!(
+                self.storage_roots.get(&removal.storage_root),
+                Some(StorageRootLocation::PlatformCapability)
+            )
+        {
+            return Err(ApplicationError::Configuration(
+                "torrent is not awaiting platform data removal".to_owned(),
+            ));
+        }
+        let raw_info = removal.raw_info.ok_or_else(|| {
+            ApplicationError::Configuration("torrent metadata is not available".to_owned())
+        })?;
+        let metainfo = Metainfo::from_info_bytes(&raw_info)
+            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+        let plan = plan_descriptor_storage(&metainfo, &[], &[])
+            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+        Ok(PlatformRemovalPlan {
+            operation_id: removal.operation_id,
+            torrent_id,
+            storage_root: removal.storage_root,
+            name: plan.name,
+        })
+    }
+
+    pub async fn confirm_platform_removal(
+        &mut self,
+        torrent_id: &str,
+        operation_id: &str,
+    ) -> Result<(), ApplicationError> {
+        self.reap_finished().await?;
+        let torrent_id = torrent_id.to_ascii_lowercase();
+        let removal = self.store_mut()?.load_removal(&torrent_id)?;
+        if removal.state != RemovalState::AwaitingPlatform || removal.operation_id != operation_id {
+            return Err(ApplicationError::Configuration(
+                "platform removal confirmation is stale".to_owned(),
+            ));
+        }
+        self.store_mut()?
+            .finalize_removal(&torrent_id, operation_id)?;
+        self.refresh_views()?;
+        self.views.record_diagnostic(
+            DiagnosticSeverity::Info,
+            DiagnosticCategory::Storage,
+            "torrent_removal_completed",
+            Some(&torrent_id),
+            "Platform-managed torrent data and catalog entry removed",
+            &[],
+        )?;
+        Ok(())
+    }
+
+    pub async fn fail_platform_removal(
+        &mut self,
+        torrent_id: &str,
+        operation_id: &str,
+        message: &str,
+    ) -> Result<(), ApplicationError> {
+        self.reap_finished().await?;
+        let torrent_id = torrent_id.to_ascii_lowercase();
+        let removal = self.store_mut()?.load_removal(&torrent_id)?;
+        if removal.state != RemovalState::AwaitingPlatform || removal.operation_id != operation_id {
+            return Err(ApplicationError::Configuration(
+                "platform removal failure is stale".to_owned(),
+            ));
+        }
+        self.store_mut()?.set_removal_state(
+            &torrent_id,
+            operation_id,
+            RemovalState::Failed,
+            Some(message),
+        )?;
+        self.refresh_views()?;
+        self.views.record_diagnostic(
+            DiagnosticSeverity::Error,
+            DiagnosticCategory::Storage,
+            "torrent_removal_failed",
+            Some(&torrent_id),
+            "Platform-managed torrent data could not be removed",
+            &[("detail", message)],
+        )?;
+        Ok(())
+    }
+
     pub async fn shutdown(&mut self) -> Result<(), ApplicationError> {
         let mut active_join_error = None;
         if let Some(mut reaper) = self.view_set_reaper.take()
@@ -563,6 +696,102 @@ impl ApplicationService {
                 break;
             }
         }
+        Ok(())
+    }
+
+    async fn restore_removals(&mut self) -> Result<(), ApplicationError> {
+        let removals = self.store_mut()?.load_removals()?;
+        for removal in removals {
+            if removal.state == RemovalState::Pending {
+                self.drive_removal(&removal.torrent_id).await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn drive_removal(&mut self, torrent_id: &str) -> Result<(), ApplicationError> {
+        let removal = match self.store_mut()?.load_removal(torrent_id) {
+            Ok(removal) => removal,
+            Err(StoreError::UnknownTorrent(_)) => return Ok(()),
+            Err(error) => return Err(error.into()),
+        };
+        if removal.state != RemovalState::Pending {
+            return Ok(());
+        }
+        if let Err(error) = self.pause(torrent_id).await {
+            return self.fail_removal(&removal, &error.to_string());
+        }
+        match removal.policy {
+            RemovalDataPolicy::Keep => self.complete_removal(&removal),
+            RemovalDataPolicy::DeleteManaged if removal.raw_info.is_none() => {
+                self.complete_removal(&removal)
+            }
+            RemovalDataPolicy::DeleteManaged => {
+                match self.storage_roots.get(&removal.storage_root).cloned() {
+                    Some(StorageRootLocation::Path(root)) => {
+                        let owned_torrent_id = torrent_id.to_owned();
+                        match tokio::task::spawn_blocking(move || {
+                            delete_path_artifacts(&root, &owned_torrent_id)
+                        })
+                        .await
+                        {
+                            Ok(Ok(())) => self.complete_removal(&removal),
+                            Ok(Err(error)) => self.fail_removal(&removal, &error.to_string()),
+                            Err(error) => self.fail_removal(
+                                &removal,
+                                &format!("managed-data cleanup task failed: {error}"),
+                            ),
+                        }
+                    }
+                    Some(StorageRootLocation::PlatformCapability) => {
+                        self.store_mut()?.set_removal_state(
+                            torrent_id,
+                            &removal.operation_id,
+                            RemovalState::AwaitingPlatform,
+                            None,
+                        )?;
+                        self.refresh_views()
+                    }
+                    None => self.fail_removal(
+                        &removal,
+                        "configured storage root is unavailable for removal",
+                    ),
+                }
+            }
+        }
+    }
+
+    fn complete_removal(&self, removal: &RemovalRecord) -> Result<(), ApplicationError> {
+        self.store_mut()?
+            .finalize_removal(&removal.torrent_id, &removal.operation_id)?;
+        self.refresh_views()?;
+        self.views.record_diagnostic(
+            DiagnosticSeverity::Info,
+            DiagnosticCategory::Lifecycle,
+            "torrent_removal_completed",
+            Some(&removal.torrent_id),
+            "Torrent removed from the session",
+            &[],
+        )?;
+        Ok(())
+    }
+
+    fn fail_removal(&self, removal: &RemovalRecord, message: &str) -> Result<(), ApplicationError> {
+        self.store_mut()?.set_removal_state(
+            &removal.torrent_id,
+            &removal.operation_id,
+            RemovalState::Failed,
+            Some(message),
+        )?;
+        self.refresh_views()?;
+        self.views.record_diagnostic(
+            DiagnosticSeverity::Error,
+            DiagnosticCategory::Storage,
+            "torrent_removal_failed",
+            Some(&removal.torrent_id),
+            "Torrent data could not be removed",
+            &[("detail", message)],
+        )?;
         Ok(())
     }
 
@@ -806,6 +1035,65 @@ impl Drop for ApplicationService {
             active.control.cancel();
         }
     }
+}
+
+fn delete_path_artifacts(root: &Path, torrent_id: &str) -> Result<(), ApplicationError> {
+    let output = root.join(torrent_id);
+    let staging = selective_staging_path(&output)
+        .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+    let part = selective_part_path(&output)
+        .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+    remove_managed_directory(&output)?;
+    remove_managed_directory(&staging)?;
+    remove_managed_file(&part)?;
+    Ok(())
+}
+
+fn remove_managed_directory(path: &Path) -> Result<(), ApplicationError> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(source) => {
+            return Err(ApplicationError::Io {
+                operation: "inspect managed torrent directory",
+                source,
+            });
+        }
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        std::fs::remove_file(path).map_err(|source| ApplicationError::Io {
+            operation: "remove managed torrent artifact",
+            source,
+        })
+    } else {
+        std::fs::remove_dir_all(path).map_err(|source| ApplicationError::Io {
+            operation: "remove managed torrent directory",
+            source,
+        })
+    }
+}
+
+fn remove_managed_file(path: &Path) -> Result<(), ApplicationError> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(source) => {
+            return Err(ApplicationError::Io {
+                operation: "inspect managed torrent part file",
+                source,
+            });
+        }
+    };
+    if metadata.is_dir() && !metadata.file_type().is_symlink() {
+        return Err(ApplicationError::Configuration(format!(
+            "managed part-file path is a directory: {}",
+            path.display()
+        )));
+    }
+    std::fs::remove_file(path).map_err(|source| ApplicationError::Io {
+        operation: "remove managed torrent part file",
+        source,
+    })
 }
 
 fn handle_task_outcome(
@@ -1698,9 +1986,10 @@ mod tests {
     use crate::{
         CONTROL_VERSION, Command, ConfiguredStorageRoot, DeliveryPolicy, DiagnosticFilter,
         DiagnosticProfile, DiagnosticSeverity, OpenViewSetOptions, OpenViewSetRequest,
-        ProgressDisposition, ProgressReason, RequestEnvelope, ResponseOutcome, SessionStore,
-        SubscriptionSpec, TorrentState, ViewDeliveryPolicy, ViewPatch, ViewProjection,
-        ViewSelector, ViewSetError, ViewSetOwner, ViewSnapshot, ViewSpec, ViewUpdatePayload,
+        ProgressDisposition, ProgressReason, RemovalDataPolicy, RemovalState, RequestEnvelope,
+        ResponseOutcome, SessionStore, SubscriptionSpec, TorrentState, ViewDeliveryPolicy,
+        ViewPatch, ViewProjection, ViewSelector, ViewSetError, ViewSetOwner, ViewSnapshot,
+        ViewSpec, ViewUpdatePayload,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -1953,6 +2242,416 @@ mod tests {
         assert_eq!(snapshot.torrents[0].state, TorrentState::Paused);
         reopened.shutdown().await.expect("shutdown reopened");
         drop(reopened);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn delete_managed_removal_joins_and_deletes_only_owned_path_artifacts() {
+        let root = test_root("remove-path");
+        let config = config(&root);
+        let raw_info =
+            b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
+        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
+        let torrent_id = crate::control::encode_info_hash(info_hash);
+        let mut store = SessionStore::open(
+            &config.profile_root,
+            &config.profile_id,
+            &config.storage_roots,
+        )
+        .expect("open setup store");
+        store
+            .handle_durable(&add_request("add-remove-path", &torrent_id))
+            .expect("add torrent");
+        store
+            .record_metadata(&torrent_id, raw_info)
+            .expect("record metadata");
+        drop(store);
+
+        let payload = root.join("payload");
+        let output = payload.join(&torrent_id);
+        let staging = payload.join(format!(".{torrent_id}.rstorrent-staging"));
+        let part = payload.join(format!(".{torrent_id}.rstorrent-parts"));
+        let sibling = payload.join("keep-me");
+        fs::create_dir_all(&output).expect("create output");
+        fs::write(output.join("payload.bin"), b"payload").expect("write output");
+        fs::create_dir_all(&staging).expect("create staging");
+        fs::write(staging.join("partial.bin"), b"partial").expect("write staging");
+        fs::write(&part, b"parts").expect("write part file");
+        fs::write(&sibling, b"sibling").expect("write sibling");
+
+        let mut service = ApplicationService::open(config)
+            .await
+            .expect("open service");
+        let request = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "remove-with-data".to_owned(),
+            expected_revision: None,
+            command: Command::RemoveTorrent {
+                torrent_id: torrent_id.clone(),
+                data: RemovalDataPolicy::DeleteManaged,
+            },
+        };
+        service.dispatch(request.clone()).await.expect("remove");
+        assert!(!output.exists());
+        assert!(!staging.exists());
+        assert!(!part.exists());
+        assert_eq!(fs::read(&sibling).expect("preserved sibling"), b"sibling");
+        assert!(
+            service
+                .store_mut()
+                .expect("store")
+                .snapshot()
+                .expect("snapshot")
+                .torrents
+                .is_empty()
+        );
+        service.dispatch(request).await.expect("idempotent replay");
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn keep_data_removal_preserves_managed_path_artifacts() {
+        let root = test_root("remove-keep");
+        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let payload = root.join("payload");
+        let output = payload.join(torrent_id);
+        let staging = payload.join(format!(".{torrent_id}.rstorrent-staging"));
+        let part = payload.join(format!(".{torrent_id}.rstorrent-parts"));
+        fs::create_dir_all(&output).expect("create output");
+        fs::create_dir_all(&staging).expect("create staging");
+        fs::write(output.join("payload.bin"), b"payload").expect("write output");
+        fs::write(staging.join("partial.bin"), b"partial").expect("write staging");
+        fs::write(&part, b"parts").expect("write part file");
+
+        let mut service = ApplicationService::open(config(&root))
+            .await
+            .expect("open service");
+        service
+            .dispatch(add_request("add-remove-keep", torrent_id))
+            .await
+            .expect("add");
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "remove-keep".to_owned(),
+                expected_revision: None,
+                command: Command::RemoveTorrent {
+                    torrent_id: torrent_id.to_owned(),
+                    data: RemovalDataPolicy::Keep,
+                },
+            })
+            .await
+            .expect("remove while keeping data");
+        assert_eq!(
+            fs::read(output.join("payload.bin")).expect("output"),
+            b"payload"
+        );
+        assert_eq!(
+            fs::read(staging.join("partial.bin")).expect("staging"),
+            b"partial"
+        );
+        assert_eq!(fs::read(&part).expect("part"), b"parts");
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn failed_path_cleanup_stays_visible_and_retries_with_a_new_generation() {
+        let root = test_root("remove-failure");
+        let config = config(&root);
+        let raw_info =
+            b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
+        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
+        let torrent_id = crate::control::encode_info_hash(info_hash);
+        let mut store = SessionStore::open(
+            &config.profile_root,
+            &config.profile_id,
+            &config.storage_roots,
+        )
+        .expect("open setup store");
+        store
+            .handle_durable(&add_request("add-remove-failure", &torrent_id))
+            .expect("add torrent");
+        store
+            .record_metadata(&torrent_id, raw_info)
+            .expect("record metadata");
+        drop(store);
+        let part = root
+            .join("payload")
+            .join(format!(".{torrent_id}.rstorrent-parts"));
+        fs::create_dir_all(&part).expect("create invalid part directory");
+
+        let mut service = ApplicationService::open(config)
+            .await
+            .expect("open service");
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "remove-fails".to_owned(),
+                expected_revision: None,
+                command: Command::RemoveTorrent {
+                    torrent_id: torrent_id.clone(),
+                    data: RemovalDataPolicy::DeleteManaged,
+                },
+            })
+            .await
+            .expect("accept failed cleanup intent");
+        let failed = service
+            .store_mut()
+            .expect("store")
+            .snapshot()
+            .expect("failed snapshot")
+            .torrents
+            .remove(0);
+        assert_eq!(failed.removal_state, Some(RemovalState::Failed));
+        assert!(failed.error.is_some());
+
+        fs::remove_dir(&part).expect("repair invalid part path");
+        fs::write(&part, b"part").expect("create valid part file");
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "remove-retry".to_owned(),
+                expected_revision: None,
+                command: Command::RemoveTorrent {
+                    torrent_id: torrent_id.clone(),
+                    data: RemovalDataPolicy::DeleteManaged,
+                },
+            })
+            .await
+            .expect("retry cleanup");
+        assert!(!part.exists());
+        assert!(
+            service
+                .store_mut()
+                .expect("store")
+                .snapshot()
+                .expect("snapshot")
+                .torrents
+                .is_empty()
+        );
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn startup_resumes_a_durable_pending_path_removal() {
+        let root = test_root("remove-restart");
+        let config = config(&root);
+        let raw_info =
+            b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
+        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
+        let torrent_id = crate::control::encode_info_hash(info_hash);
+        let mut store = SessionStore::open(
+            &config.profile_root,
+            &config.profile_id,
+            &config.storage_roots,
+        )
+        .expect("open setup store");
+        store
+            .handle_durable(&add_request("add-remove-restart", &torrent_id))
+            .expect("add torrent");
+        store
+            .record_metadata(&torrent_id, raw_info)
+            .expect("record metadata");
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "remove-before-restart".to_owned(),
+                expected_revision: None,
+                command: Command::RemoveTorrent {
+                    torrent_id: torrent_id.clone(),
+                    data: RemovalDataPolicy::DeleteManaged,
+                },
+            })
+            .expect("persist pending removal");
+        drop(store);
+        let output = root.join("payload").join(&torrent_id);
+        fs::create_dir_all(&output).expect("create interrupted output");
+        fs::write(output.join("payload.bin"), b"payload").expect("write output");
+
+        let mut service = ApplicationService::open(config)
+            .await
+            .expect("resume application");
+        assert!(!output.exists());
+        assert!(
+            service
+                .store_mut()
+                .expect("store")
+                .snapshot()
+                .expect("snapshot")
+                .torrents
+                .is_empty()
+        );
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn platform_removal_requires_matching_generation_confirmation() {
+        let root = test_root("remove-platform");
+        let mut config = config(&root);
+        config.storage_roots = vec![ConfiguredStorageRoot::platform("downloads")];
+        let raw_info =
+            b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
+        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
+        let torrent_id = crate::control::encode_info_hash(info_hash);
+        let mut store = SessionStore::open(
+            &config.profile_root,
+            &config.profile_id,
+            &config.storage_roots,
+        )
+        .expect("open setup store");
+        store
+            .handle_durable(&add_request("add-remove-platform", &torrent_id))
+            .expect("add torrent");
+        store
+            .record_metadata(&torrent_id, raw_info)
+            .expect("record metadata");
+        drop(store);
+
+        let mut service = ApplicationService::open(config.clone())
+            .await
+            .expect("open service");
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "remove-platform".to_owned(),
+                expected_revision: None,
+                command: Command::RemoveTorrent {
+                    torrent_id: torrent_id.clone(),
+                    data: RemovalDataPolicy::DeleteManaged,
+                },
+            })
+            .await
+            .expect("request platform removal");
+        let initial_plan = service
+            .platform_removal_plan(&torrent_id)
+            .await
+            .expect("platform plan");
+        assert_eq!(initial_plan.name, "test");
+        assert_eq!(initial_plan.storage_root, "downloads");
+        assert!(
+            service
+                .confirm_platform_removal(&torrent_id, "stale-operation")
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            service
+                .store_mut()
+                .expect("store")
+                .snapshot()
+                .expect("snapshot")
+                .torrents[0]
+                .removal_state,
+            Some(RemovalState::AwaitingPlatform)
+        );
+        service
+            .fail_platform_removal(
+                &torrent_id,
+                &initial_plan.operation_id,
+                "provider permission was revoked",
+            )
+            .await
+            .expect("record platform failure");
+        let failed = service
+            .store_mut()
+            .expect("store")
+            .snapshot()
+            .expect("failed snapshot")
+            .torrents
+            .remove(0);
+        assert_eq!(failed.removal_state, Some(RemovalState::Failed));
+        assert_eq!(
+            failed.error.as_deref(),
+            Some("provider permission was revoked")
+        );
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "retry-platform-removal".to_owned(),
+                expected_revision: None,
+                command: Command::RemoveTorrent {
+                    torrent_id: torrent_id.clone(),
+                    data: RemovalDataPolicy::DeleteManaged,
+                },
+            })
+            .await
+            .expect("retry platform removal");
+        let plan = service
+            .platform_removal_plan(&torrent_id)
+            .await
+            .expect("retry platform plan");
+        assert_ne!(plan.operation_id, initial_plan.operation_id);
+        service
+            .shutdown()
+            .await
+            .expect("shutdown before confirmation");
+        drop(service);
+
+        let mut service = ApplicationService::open(config)
+            .await
+            .expect("reopen awaiting platform removal");
+        let resumed_plan = service
+            .platform_removal_plan(&torrent_id)
+            .await
+            .expect("resume platform plan");
+        assert_eq!(resumed_plan, plan);
+        service
+            .confirm_platform_removal(&torrent_id, &plan.operation_id)
+            .await
+            .expect("confirm current operation");
+        assert!(
+            service
+                .store_mut()
+                .expect("store")
+                .snapshot()
+                .expect("snapshot")
+                .torrents
+                .is_empty()
+        );
+
+        let metadata_pending = "000102030405060708090a0b0c0d0e0f10111213";
+        service
+            .dispatch(add_request(
+                "add-platform-without-metadata",
+                metadata_pending,
+            ))
+            .await
+            .expect("add metadata-pending platform torrent");
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "remove-platform-without-metadata".to_owned(),
+                expected_revision: None,
+                command: Command::RemoveTorrent {
+                    torrent_id: metadata_pending.to_owned(),
+                    data: RemovalDataPolicy::DeleteManaged,
+                },
+            })
+            .await
+            .expect("remove metadata-pending torrent");
+        assert!(
+            service
+                .store_mut()
+                .expect("store")
+                .snapshot()
+                .expect("snapshot")
+                .torrents
+                .is_empty()
+        );
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
         fs::remove_dir_all(root).expect("remove test root");
     }
 

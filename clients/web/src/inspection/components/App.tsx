@@ -2,10 +2,12 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { useInspectionDispatch, useInspectionStore } from "../context";
 import { formatRate } from "../format";
+import type { TorrentRow } from "../model";
 import type { TestTorrentShortcut } from "../testTorrents";
 import { validateTorrentInput } from "../torrentInput";
 import { DetailPane } from "./DetailPane";
 import { MoreActionsMenu } from "./MoreActionsMenu";
+import { RemoveTorrentDialog } from "./RemoveTorrentDialog";
 import { ScenarioBar } from "./ScenarioBar";
 import { Sidebar } from "./Sidebar";
 import { TorrentTable } from "./TorrentTable";
@@ -33,7 +35,9 @@ export function App() {
   const [torrentInput, setTorrentInput] = useState("");
   const [inputInvalid, setInputInvalid] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<TorrentRow | undefined>();
   const addingRef = useRef(false);
+  const removeButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const update = () => {
@@ -99,12 +103,29 @@ export function App() {
     }
   };
 
+  const removeTorrent = async (deleteData: boolean) => {
+    if (removeTarget === undefined) return;
+    try {
+      const message = await dispatch({
+        type: "remove",
+        torrentId: removeTarget.id,
+        deleteData,
+      });
+      setStatus(message);
+      setRemoveTarget(undefined);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+      throw error;
+    }
+  };
+
   return (
-    <div
-      className={styles.app}
-      data-detail-open={detailOpen}
-      data-sidebar-open={sidebarOpen}
-    >
+    <>
+      <div
+        className={styles.app}
+        data-detail-open={detailOpen}
+        data-sidebar-open={sidebarOpen}
+      >
       <header className={styles.header}>
         <button
           className={styles.menuButton}
@@ -187,14 +208,24 @@ export function App() {
               )}
               <button
                 type="button"
-                disabled={selected === undefined || selected.status === "downloading" || selected.status === "metadata"}
+                disabled={
+                  selected === undefined ||
+                  selected.removalState !== null ||
+                  selected.status === "downloading" ||
+                  selected.status === "metadata"
+                }
                 onClick={() => selected === undefined ? undefined : void send({ type: "resume", torrentId: selected.id })}
               >
                 <span aria-hidden="true">▶</span> Start
               </button>
               <button
                 type="button"
-                disabled={selected === undefined || selected.status === "paused" || selected.status === "complete"}
+                disabled={
+                  selected === undefined ||
+                  selected.removalState !== null ||
+                  selected.status === "paused" ||
+                  selected.status === "complete"
+                }
                 onClick={() => selected === undefined ? undefined : void send({ type: "pause", torrentId: selected.id })}
               >
                 <span aria-hidden="true">Ⅱ</span> Pause
@@ -205,22 +236,35 @@ export function App() {
                   onAddTestTorrent={addTestTorrent}
                 />
               ) : null}
-              {demo === null ? null : (
-                <button
-                  type="button"
-                  disabled={selected === undefined || selected.archived === null}
-                  onClick={() =>
-                    selected === undefined || selected.archived === null
-                      ? undefined
-                      : void send({
-                          type: selected.archived ? "unarchive" : "archive",
-                          torrentId: selected.id,
-                        })
-                  }
-                >
-                  <span aria-hidden="true">□</span> {selected?.archived ? "Restore" : "Archive"}
-                </button>
-              )}
+              <button
+                type="button"
+                disabled={
+                  selected === undefined ||
+                  selected.archived === null ||
+                  selected.removalState !== null
+                }
+                onClick={() =>
+                  selected === undefined || selected.archived === null
+                    ? undefined
+                    : void send({
+                        type: selected.archived ? "unarchive" : "archive",
+                        torrentId: selected.id,
+                      })
+                }
+              >
+                <span aria-hidden="true">□</span> {selected?.archived ? "Restore" : "Archive"}
+              </button>
+              <button
+                ref={removeButtonRef}
+                type="button"
+                disabled={
+                  selected === undefined ||
+                  (selected.removalState !== null && selected.removalState !== "failed")
+                }
+                onClick={() => setRemoveTarget(selected)}
+              >
+                <span aria-hidden="true">×</span> Remove
+              </button>
               <output
                 id="command-status"
                 className={styles.commandStatus}
@@ -237,6 +281,16 @@ export function App() {
           <DetailPane />
         </main>
       </div>
-    </div>
+      </div>
+      {removeTarget === undefined ? null : (
+        <RemoveTorrentDialog
+          torrentName={removeTarget.name}
+          deleteDataSupported={removeTarget.deleteManagedDataSupported}
+          returnFocus={removeButtonRef}
+          onCancel={() => setRemoveTarget(undefined)}
+          onConfirm={removeTorrent}
+        />
+      )}
+    </>
   );
 }

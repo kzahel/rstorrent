@@ -42,6 +42,43 @@ test("compact tracker recovery remains legible", async ({ page }) => {
   await capture(page, "rstorrent-demo-compact.png");
 });
 
+test("removal keeps data by default and exposes destructive intent", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 920, height: 720 });
+  await openScenario(page, "healthy-download", 42_000);
+  const trigger = page.getByRole("button", { name: "Remove", exact: true });
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Remove torrent?" });
+  const deleteData = dialog.getByRole("checkbox", {
+    name: "Also delete downloaded data",
+  });
+  await expect(deleteData).not.toBeChecked();
+  await deleteData.check();
+  await expect(dialog.getByRole("alert")).toContainText("cannot be undone");
+  const destructive = dialog.getByRole("button", {
+    name: "Remove and delete data",
+  });
+  await destructive.focus();
+  await page.keyboard.press("Tab");
+  await expect(deleteData).toBeFocused();
+  const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
+    (violation) => violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+  await capture(page, "rstorrent-remove-dialog.png");
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await expect(trigger).toBeFocused();
+
+  await trigger.click();
+  const retained = page.getByRole("dialog", { name: "Remove torrent?" });
+  await expect(retained.getByRole("checkbox")).not.toBeChecked();
+  await retained.getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(retained).not.toBeVisible();
+  await expect(page.getByText("Torrent removed", { exact: true })).toBeVisible();
+});
+
 test("phone navigation opens a full detail surface", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openScenario(page, "healthy-download", 42_000);

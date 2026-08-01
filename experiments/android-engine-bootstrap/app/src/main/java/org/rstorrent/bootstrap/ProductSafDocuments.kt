@@ -9,6 +9,7 @@ import android.provider.DocumentsContract
 import java.io.Closeable
 import org.rstorrent.bootstrap.uniffi.SafDescriptor
 import org.rstorrent.bootstrap.uniffi.SafFileRole
+import org.rstorrent.bootstrap.uniffi.SafRemovalPlan
 import org.rstorrent.bootstrap.uniffi.SafStorage
 import org.rstorrent.bootstrap.uniffi.SafStoragePlan
 
@@ -177,6 +178,22 @@ object ProductSafDocuments {
         }
     }
 
+    fun deleteManaged(
+        context: Context,
+        treeUri: Uri,
+        plan: SafRemovalPlan,
+    ) {
+        require(hasGrant(context, treeUri)) { "persisted SAF grant is unavailable" }
+        val root = documentUri(treeUri)
+        deleteManagedArtifacts(
+            plan.name,
+            find = { name -> findUniqueChild(context, root, name) },
+            delete = { document ->
+                DocumentsContract.deleteDocument(context.contentResolver, document)
+            },
+        )
+    }
+
     private fun hasGrant(
         context: Context,
         treeUri: Uri,
@@ -287,4 +304,18 @@ object ProductSafDocuments {
         context
             .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
             .getString(TREE_URI, null)
+}
+
+internal fun managedRemovalNames(name: String): List<String> =
+    listOf(name, ".$name.rstorrent-staging", ".$name.rstorrent-parts")
+
+internal fun <T> deleteManagedArtifacts(
+    name: String,
+    find: (String) -> T?,
+    delete: (T) -> Boolean,
+) {
+    for (artifact in managedRemovalNames(name)) {
+        val document = find(artifact) ?: continue
+        check(delete(document)) { "provider refused to delete SAF document $artifact" }
+    }
 }

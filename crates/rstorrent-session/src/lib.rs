@@ -13,17 +13,19 @@ mod view_sets;
 mod views;
 
 pub use application::{
-    ApplicationConfig, ApplicationError, ApplicationService, application_error_response,
+    ApplicationConfig, ApplicationError, ApplicationService, PlatformRemovalPlan,
+    application_error_response,
 };
 pub use control::{
-    CONTROL_VERSION, Command, ErrorCode, ErrorResponse, RequestEnvelope, ResponseEnvelope,
-    ResponseOutcome, ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState,
+    CONTROL_VERSION, Command, ErrorCode, ErrorResponse, RemovalDataPolicy, RemovalState,
+    RequestEnvelope, ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState,
+    TorrentSnapshot, TorrentState,
 };
 pub use have::{HaveError, HaveState};
 pub use rstorrent_engine::{DownloadResourceLimits, NetworkConfig, NetworkPolicy};
 pub use store::{
-    ConfiguredStorageRoot, PreparedFileRecord, ResumeRecord, SessionStore, StorageRootLocation,
-    StoreError,
+    ConfiguredStorageRoot, PreparedFileRecord, RemovalRecord, ResumeRecord, SessionStore,
+    StorageRootLocation, StoreError,
 };
 pub use view_sets::{
     API_VERSION, ApiEncoding, ApiHello, ApiLimits, ApiVersion, DeliveryMode, OpenViewSetOptions,

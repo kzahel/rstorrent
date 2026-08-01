@@ -1,0 +1,85 @@
+.backdrop {
+  position: fixed;
+  z-index: 100;
+  display: grid;
+  inset: 0;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(9 20 33 / 52%);
+}
+
+.dialog {
+  width: min(30rem, 100%);
+  border: 1px solid var(--border-strong);
+  border-radius: 0.65rem;
+  padding: 1.15rem;
+  color: var(--text-primary);
+  background: var(--surface-primary);
+  box-shadow: 0 1.2rem 3rem rgb(8 20 34 / 35%);
+}
+
+.dialog h2 {
+  margin: 0 0 0.55rem;
+  font-size: 1.05rem;
+}
+
+.dialog p {
+  margin: 0.5rem 0;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 1rem 0 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.warning,
+.error {
+  border-left: 3px solid var(--danger);
+  padding: 0.5rem 0.65rem;
+  color: var(--danger) !important;
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.note {
+  color: var(--text-muted) !important;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.15rem;
+}
+
+.actions button {
+  min-height: 2rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.4rem;
+  padding: 0 0.75rem;
+  color: var(--text-primary);
+  background: var(--surface-secondary);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.actions button:focus-visible {
+  outline: 2px solid var(--focus);
+}
+
+.actions .remove {
+  border-color: #a92d2d;
+  color: #fff;
+  background: #b83232;
+}
+
+.actions button:disabled {
+  opacity: 0.55;
+}

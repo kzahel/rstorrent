@@ -12,13 +12,13 @@ use rstorrent_protocol::metainfo::{MAX_FILES, MAX_PIECES, Metainfo};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use crate::control::{
-    Command, ErrorCode, RequestEnvelope, ResponseEnvelope, ServiceSnapshot, StorageState,
-    TorrentSnapshot, TorrentState, decode_info_hash, encode_info_hash, parse_revision,
-    validate_identifier, validate_request,
+    Command, ErrorCode, RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope,
+    ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState, decode_info_hash,
+    encode_info_hash, parse_revision, validate_identifier, validate_request,
 };
 use crate::have::{HaveError, HaveState};
 
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 const DATABASE_FILENAME: &str = "session.db";
 const MAX_RECEIPTS: i64 = 1024;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(2);
@@ -41,6 +41,19 @@ const DHT_TABLES_SQL: &str = "CREATE TABLE dht_state (
         PRIMARY KEY (family, sample_order),
         UNIQUE (family, node_id),
         UNIQUE (family, address, port)
+     ) WITHOUT ROWID;";
+const REMOVAL_TABLE_SQL: &str = "CREATE TABLE removal_jobs (
+        info_hash BLOB PRIMARY KEY
+            REFERENCES torrents(info_hash) ON DELETE CASCADE,
+        operation_id TEXT NOT NULL UNIQUE
+            CHECK (length(operation_id) BETWEEN 1 AND 128),
+        data_policy TEXT NOT NULL
+            CHECK (data_policy IN ('keep', 'delete_managed')),
+        state TEXT NOT NULL
+            CHECK (state IN ('pending', 'awaiting_platform', 'failed')),
+        error TEXT CHECK (error IS NULL OR length(error) <= 1024),
+        created_revision INTEGER NOT NULL CHECK (created_revision >= 0),
+        updated_revision INTEGER NOT NULL CHECK (updated_revision >= 0)
      ) WITHOUT ROWID;";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -89,6 +102,17 @@ pub struct ResumeRecord {
     pub desired_running: bool,
     pub raw_info: Option<Vec<u8>>,
     pub have: Option<HaveState>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RemovalRecord {
+    pub torrent_id: String,
+    pub operation_id: String,
+    pub storage_root: String,
+    pub policy: RemovalDataPolicy,
+    pub state: RemovalState,
+    pub raw_info: Option<Vec<u8>>,
+    pub error: Option<String>,
 }
 
 pub struct SessionStore {
@@ -444,6 +468,168 @@ impl SessionStore {
             raw_info: row.4,
             have,
         })
+    }
+
+    pub fn load_removal(&self, torrent_id: &str) -> Result<RemovalRecord, StoreError> {
+        let info_hash = decode_info_hash(torrent_id)
+            .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
+        self.connection
+            .query_row(
+                "SELECT r.operation_id, t.storage_root, r.data_policy, r.state,
+                        t.raw_info, r.error
+                 FROM removal_jobs r
+                 JOIN torrents t ON t.info_hash = r.info_hash
+                 WHERE r.info_hash = ?1",
+                [info_hash.as_slice()],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, Option<Vec<u8>>>(4)?,
+                        row.get::<_, Option<String>>(5)?,
+                    ))
+                },
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_owned()))
+            .and_then(|row| removal_record(torrent_id, row))
+    }
+
+    pub fn load_removals(&self) -> Result<Vec<RemovalRecord>, StoreError> {
+        let mut statement = self.connection.prepare(
+            "SELECT t.info_hash, r.operation_id, t.storage_root, r.data_policy,
+                    r.state, t.raw_info, r.error
+             FROM removal_jobs r
+             JOIN torrents t ON t.info_hash = r.info_hash
+             ORDER BY t.info_hash",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, Vec<u8>>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, Option<Vec<u8>>>(5)?,
+                row.get::<_, Option<String>>(6)?,
+            ))
+        })?;
+        let mut removals = Vec::new();
+        for row in rows {
+            let row = row?;
+            let info_hash: [u8; 20] = row
+                .0
+                .try_into()
+                .map_err(|_| StoreError::DurableState("invalid info-hash length".to_owned()))?;
+            removals.push(removal_record(
+                &encode_info_hash(info_hash),
+                (row.1, row.2, row.3, row.4, row.5, row.6),
+            )?);
+        }
+        Ok(removals)
+    }
+
+    pub fn set_removal_state(
+        &mut self,
+        torrent_id: &str,
+        operation_id: &str,
+        state: RemovalState,
+        error: Option<&str>,
+    ) -> Result<u64, StoreError> {
+        let info_hash = decode_info_hash(torrent_id)
+            .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
+        let transaction = self.connection.transaction()?;
+        let current = transaction
+            .query_row(
+                "SELECT state FROM removal_jobs
+                 WHERE info_hash = ?1 AND operation_id = ?2",
+                params![info_hash.as_slice(), operation_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .ok_or_else(|| {
+                StoreError::DurableState("removal operation is stale or unavailable".to_owned())
+            })?;
+        let current = RemovalState::parse(&current)
+            .ok_or_else(|| StoreError::DurableState("invalid removal state".to_owned()))?;
+        let transition_allowed = matches!(
+            (current, state),
+            (
+                RemovalState::Pending,
+                RemovalState::AwaitingPlatform | RemovalState::Failed
+            ) | (RemovalState::AwaitingPlatform, RemovalState::Failed)
+        );
+        if !transition_allowed {
+            return Err(StoreError::DurableState(format!(
+                "invalid removal transition from {} to {}",
+                current.as_str(),
+                state.as_str()
+            )));
+        }
+        let revision = increment_revision(&transaction)?;
+        let updated = transaction.execute(
+            "UPDATE removal_jobs
+             SET state = ?3, error = ?4, updated_revision = ?5
+             WHERE info_hash = ?1 AND operation_id = ?2",
+            params![
+                info_hash.as_slice(),
+                operation_id,
+                state.as_str(),
+                error.map(bounded_error),
+                sql_revision(revision)?,
+            ],
+        )?;
+        if updated != 1 {
+            return Err(StoreError::DurableState(
+                "removal operation is stale or unavailable".to_owned(),
+            ));
+        }
+        transaction.execute(
+            "UPDATE torrents SET updated_revision = ?2 WHERE info_hash = ?1",
+            params![info_hash.as_slice(), sql_revision(revision)?],
+        )?;
+        transaction.commit()?;
+        Ok(revision)
+    }
+
+    pub fn finalize_removal(
+        &mut self,
+        torrent_id: &str,
+        operation_id: &str,
+    ) -> Result<u64, StoreError> {
+        let info_hash = decode_info_hash(torrent_id)
+            .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
+        let transaction = self.connection.transaction()?;
+        let state = transaction
+            .query_row(
+                "SELECT state FROM removal_jobs
+                 WHERE info_hash = ?1 AND operation_id = ?2",
+                params![info_hash.as_slice(), operation_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .ok_or_else(|| {
+                StoreError::DurableState("removal operation is stale or unavailable".to_owned())
+            })?;
+        let state = RemovalState::parse(&state)
+            .ok_or_else(|| StoreError::DurableState("invalid removal state".to_owned()))?;
+        if state == RemovalState::Failed {
+            return Err(StoreError::DurableState(
+                "failed removal must be explicitly retried".to_owned(),
+            ));
+        }
+        let revision = increment_revision(&transaction)?;
+        let removed = transaction.execute(
+            "DELETE FROM torrents WHERE info_hash = ?1",
+            [info_hash.as_slice()],
+        )?;
+        if removed != 1 {
+            return Err(StoreError::UnknownTorrent(torrent_id.to_owned()));
+        }
+        transaction.commit()?;
+        Ok(revision)
     }
 
     pub fn record_metadata(
@@ -1035,6 +1221,7 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
                     have_state IS NULL OR length(have_state) <= 3311
                 ),
                 error TEXT CHECK (error IS NULL OR length(error) <= 1024),
+                archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
                 created_revision INTEGER NOT NULL,
                 updated_revision INTEGER NOT NULL,
                 CHECK (
@@ -1073,6 +1260,7 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
             [profile_id],
         )?;
         transaction.execute_batch(DHT_TABLES_SQL)?;
+        transaction.execute_batch(REMOVAL_TABLE_SQL)?;
         transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         transaction.commit()?;
     }
@@ -1113,6 +1301,7 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
                     have_state IS NULL OR length(have_state) <= 3311
                 ),
                 error TEXT CHECK (error IS NULL OR length(error) <= 1024),
+                archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
                 created_revision INTEGER NOT NULL,
                 updated_revision INTEGER NOT NULL,
                 CHECK (
@@ -1120,8 +1309,15 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
                     (piece_count IS NOT NULL AND have_state IS NOT NULL)
                 )
              );
-             INSERT INTO torrents
-                SELECT * FROM torrents_v1;
+             INSERT INTO torrents(
+                info_hash, magnet, storage_root, desired_state, state,
+                storage_state, raw_info, piece_count, have_state, error,
+                archived, created_revision, updated_revision
+             ) SELECT
+                info_hash, magnet, storage_root, desired_state, state,
+                storage_state, raw_info, piece_count, have_state, error,
+                0, created_revision, updated_revision
+             FROM torrents_v1;
              CREATE TABLE file_selection (
                 info_hash BLOB NOT NULL
                     REFERENCES torrents(info_hash) ON DELETE CASCADE,
@@ -1145,12 +1341,30 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
              DROP TABLE torrents_v1;",
         )?;
         transaction.execute_batch(DHT_TABLES_SQL)?;
+        transaction.execute_batch(REMOVAL_TABLE_SQL)?;
         transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         transaction.commit()?;
     }
     if version == 2 {
         let transaction = connection.transaction()?;
         transaction.execute_batch(DHT_TABLES_SQL)?;
+        transaction.execute(
+            "ALTER TABLE torrents ADD COLUMN archived INTEGER NOT NULL DEFAULT 0
+             CHECK (archived IN (0, 1))",
+            [],
+        )?;
+        transaction.execute_batch(REMOVAL_TABLE_SQL)?;
+        transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        transaction.commit()?;
+    }
+    if version == 3 {
+        let transaction = connection.transaction()?;
+        transaction.execute(
+            "ALTER TABLE torrents ADD COLUMN archived INTEGER NOT NULL DEFAULT 0
+             CHECK (archived IN (0, 1))",
+            [],
+        )?;
+        transaction.execute_batch(REMOVAL_TABLE_SQL)?;
         transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         transaction.commit()?;
     }
@@ -1218,6 +1432,15 @@ fn apply_mutation(
         }
         Command::Resume { torrent_id } => {
             set_desired_state(transaction, torrent_id, true, current_revision)
+        }
+        Command::Archive { torrent_id } => {
+            set_archived(transaction, torrent_id, true, current_revision)
+        }
+        Command::RestoreArchive { torrent_id } => {
+            set_archived(transaction, torrent_id, false, current_revision)
+        }
+        Command::RemoveTorrent { torrent_id, data } => {
+            begin_removal(transaction, torrent_id, *data, current_revision)
         }
         Command::Snapshot | Command::Shutdown => {
             unreachable!("non-mutations are handled before transaction")
@@ -1331,14 +1554,18 @@ fn set_desired_state(
     })?;
     let row = transaction
         .query_row(
-            "SELECT state, raw_info IS NOT NULL, desired_state
-             FROM torrents WHERE info_hash = ?1",
+            "SELECT t.state, t.raw_info IS NOT NULL, t.desired_state,
+                    r.info_hash IS NOT NULL
+             FROM torrents t
+             LEFT JOIN removal_jobs r ON r.info_hash = t.info_hash
+             WHERE t.info_hash = ?1",
             [info_hash.as_slice()],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, bool>(1)?,
                     row.get::<_, String>(2)?,
+                    row.get::<_, bool>(3)?,
                 ))
             },
         )
@@ -1353,6 +1580,12 @@ fn set_desired_state(
                 ),
             )
         })?;
+    if row.3 {
+        return Err((
+            ErrorCode::InvalidTorrentState,
+            "torrent removal is already in progress".to_owned(),
+        ));
+    }
     let desired = if running { "running" } else { "paused" };
     if row.2 == desired {
         return Ok(current_revision);
@@ -1409,13 +1642,169 @@ fn set_desired_state(
     Ok(revision)
 }
 
+fn set_archived(
+    transaction: &Transaction<'_>,
+    torrent_id: &str,
+    archived: bool,
+    current_revision: u64,
+) -> Result<u64, (ErrorCode, String)> {
+    let info_hash = decode_info_hash(torrent_id).ok_or_else(|| {
+        (
+            ErrorCode::InvalidRequest,
+            "invalid torrent identity".to_owned(),
+        )
+    })?;
+    let current = transaction
+        .query_row(
+            "SELECT t.archived, r.info_hash IS NOT NULL
+             FROM torrents t
+             LEFT JOIN removal_jobs r ON r.info_hash = t.info_hash
+             WHERE t.info_hash = ?1",
+            [info_hash.as_slice()],
+            |row| Ok((row.get::<_, bool>(0)?, row.get::<_, bool>(1)?)),
+        )
+        .optional()
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                ErrorCode::UnknownTorrent,
+                format!(
+                    "torrent {} is not in the profile",
+                    torrent_id.to_ascii_lowercase()
+                ),
+            )
+        })?;
+    if current.1 {
+        return Err((
+            ErrorCode::InvalidTorrentState,
+            "torrent removal is already in progress".to_owned(),
+        ));
+    }
+    if current.0 == archived {
+        return Ok(current_revision);
+    }
+    let revision = next_revision(transaction, current_revision)?;
+    transaction
+        .execute(
+            "UPDATE torrents SET archived = ?2, updated_revision = ?3
+             WHERE info_hash = ?1",
+            params![
+                info_hash.as_slice(),
+                archived,
+                i64::try_from(revision)
+                    .map_err(|_| internal_message("profile revision overflow"))?
+            ],
+        )
+        .map_err(internal_error)?;
+    Ok(revision)
+}
+
+fn begin_removal(
+    transaction: &Transaction<'_>,
+    torrent_id: &str,
+    policy: RemovalDataPolicy,
+    current_revision: u64,
+) -> Result<u64, (ErrorCode, String)> {
+    let info_hash = decode_info_hash(torrent_id).ok_or_else(|| {
+        (
+            ErrorCode::InvalidRequest,
+            "invalid torrent identity".to_owned(),
+        )
+    })?;
+    let removal_state = transaction
+        .query_row(
+            "SELECT r.state
+             FROM torrents t
+             LEFT JOIN removal_jobs r ON r.info_hash = t.info_hash
+             WHERE t.info_hash = ?1",
+            [info_hash.as_slice()],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                ErrorCode::UnknownTorrent,
+                format!(
+                    "torrent {} is not in the profile",
+                    torrent_id.to_ascii_lowercase()
+                ),
+            )
+        })?;
+    if removal_state
+        .as_deref()
+        .is_some_and(|state| state != "failed")
+    {
+        return Err((
+            ErrorCode::InvalidTorrentState,
+            "torrent removal is already in progress".to_owned(),
+        ));
+    }
+
+    let revision = next_revision(transaction, current_revision)?;
+    let revision_sql =
+        i64::try_from(revision).map_err(|_| internal_message("profile revision overflow"))?;
+    let operation_id = format!("remove-{revision}-{}", torrent_id.to_ascii_lowercase());
+    transaction
+        .execute(
+            "UPDATE torrents
+             SET desired_state = 'paused', state = 'paused', error = NULL,
+                 updated_revision = ?2
+             WHERE info_hash = ?1",
+            params![info_hash.as_slice(), revision_sql],
+        )
+        .map_err(internal_error)?;
+    transaction
+        .execute(
+            "INSERT INTO removal_jobs(
+                info_hash, operation_id, data_policy, state, error,
+                created_revision, updated_revision
+             ) VALUES (?1, ?2, ?3, 'pending', NULL, ?4, ?4)
+             ON CONFLICT(info_hash) DO UPDATE SET
+                operation_id = excluded.operation_id,
+                data_policy = excluded.data_policy,
+                state = 'pending',
+                error = NULL,
+                created_revision = excluded.created_revision,
+                updated_revision = excluded.updated_revision",
+            params![
+                info_hash.as_slice(),
+                operation_id,
+                policy.as_str(),
+                revision_sql
+            ],
+        )
+        .map_err(internal_error)?;
+    Ok(revision)
+}
+
+fn next_revision(
+    transaction: &Transaction<'_>,
+    current_revision: u64,
+) -> Result<u64, (ErrorCode, String)> {
+    let revision = current_revision
+        .checked_add(1)
+        .ok_or_else(|| internal_message("profile revision overflow"))?;
+    let revision_sql =
+        i64::try_from(revision).map_err(|_| internal_message("profile revision overflow"))?;
+    transaction
+        .execute(
+            "UPDATE profile_state SET revision = ?1 WHERE singleton = 1",
+            [revision_sql],
+        )
+        .map_err(internal_error)?;
+    Ok(revision)
+}
+
 fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSnapshot, StoreError> {
     let revision = read_revision(connection)?;
     let mut statement = connection.prepare(
-        "SELECT info_hash, storage_root, state, storage_state,
-                raw_info IS NOT NULL, piece_count, have_state, error
-         FROM torrents
-         ORDER BY info_hash",
+        "SELECT t.info_hash, t.storage_root, t.state, t.storage_state,
+                t.raw_info IS NOT NULL, t.piece_count, t.have_state,
+                t.error, t.archived, r.state, r.error
+         FROM torrents t
+         LEFT JOIN removal_jobs r ON r.info_hash = t.info_hash
+         ORDER BY t.info_hash",
     )?;
     let rows = statement.query_map([], |row| {
         Ok((
@@ -1427,6 +1816,9 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
             row.get::<_, Option<i64>>(5)?,
             row.get::<_, Option<Vec<u8>>>(6)?,
             row.get::<_, Option<String>>(7)?,
+            row.get::<_, bool>(8)?,
+            row.get::<_, Option<String>>(9)?,
+            row.get::<_, Option<String>>(10)?,
         ))
     })?;
     let mut torrents = Vec::new();
@@ -1474,13 +1866,49 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
             verified_piece_count: u32::try_from(verified_piece_count)
                 .map_err(|_| StoreError::DurableState("verified count overflow".to_owned()))?,
             skip_files: read_selection(connection, &info_hash)?,
-            error: row.7,
+            archived: row.8,
+            removal_state: match row.9.as_deref() {
+                Some(value) => {
+                    Some(RemovalState::parse(value).ok_or_else(|| {
+                        StoreError::DurableState("invalid removal state".to_owned())
+                    })?)
+                }
+                None => None,
+            },
+            delete_managed_data_supported: true,
+            error: row.10.or(row.7),
         });
     }
     Ok(ServiceSnapshot {
         profile_id: profile_id.to_owned(),
         revision: revision.to_string(),
         torrents,
+    })
+}
+
+fn removal_record(
+    torrent_id: &str,
+    row: (
+        String,
+        String,
+        String,
+        String,
+        Option<Vec<u8>>,
+        Option<String>,
+    ),
+) -> Result<RemovalRecord, StoreError> {
+    let policy = RemovalDataPolicy::parse(&row.2)
+        .ok_or_else(|| StoreError::DurableState("invalid removal data policy".to_owned()))?;
+    let state = RemovalState::parse(&row.3)
+        .ok_or_else(|| StoreError::DurableState("invalid removal state".to_owned()))?;
+    Ok(RemovalRecord {
+        torrent_id: torrent_id.to_ascii_lowercase(),
+        operation_id: row.0,
+        storage_root: row.1,
+        policy,
+        state,
+        raw_info: row.4,
+        error: row.5,
     })
 }
 
@@ -1634,8 +2062,8 @@ mod tests {
         ConfiguredStorageRoot, PreparedFileRecord, SCHEMA_VERSION, SessionStore, StoreError,
     };
     use crate::{
-        CONTROL_VERSION, Command, ErrorCode, RequestEnvelope, ResponseOutcome, StorageState,
-        TorrentState,
+        CONTROL_VERSION, Command, ErrorCode, RemovalDataPolicy, RemovalState, RequestEnvelope,
+        ResponseOutcome, StorageState, TorrentState,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -1807,6 +2235,7 @@ mod tests {
                 "DROP TABLE prepared_files;
                  DROP TABLE dht_nodes;
                  DROP TABLE dht_state;
+                 DROP TABLE removal_jobs;
                  PRAGMA user_version = 1;",
             )
             .expect("downgrade fixture to the version-one shape");
@@ -1835,6 +2264,48 @@ mod tests {
             )
             .expect("inspect prepared table");
         assert_eq!(prepared_table, 1);
+        drop(connection);
+        drop(migrated);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn migrates_version_three_catalog_with_retention_defaults() {
+        let root = test_root("schema-v3");
+        let configured = configured_root(&root);
+        let mut store =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
+        store
+            .handle_durable(&add_request("add-before-v3-migration"))
+            .expect("add durable torrent");
+        let database_path = store.database_path().to_owned();
+        drop(store);
+
+        let connection = Connection::open(&database_path).expect("open raw database");
+        connection
+            .execute_batch(
+                "DROP TABLE removal_jobs;
+                 ALTER TABLE torrents DROP COLUMN archived;
+                 PRAGMA user_version = 3;",
+            )
+            .expect("downgrade fixture to version-three shape");
+        drop(connection);
+
+        let migrated = SessionStore::open(&root, "default", &[configured]).expect("migrate v3");
+        let snapshot = migrated.snapshot().expect("migrated snapshot");
+        assert_eq!(snapshot.torrents.len(), 1);
+        assert!(!snapshot.torrents[0].archived);
+        assert_eq!(snapshot.torrents[0].removal_state, None);
+        let connection = Connection::open(database_path).expect("inspect migrated database");
+        let removal_table: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM sqlite_master
+                 WHERE type = 'table' AND name = 'removal_jobs'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("inspect removal table");
+        assert_eq!(removal_table, 1);
         drop(connection);
         drop(migrated);
         fs::remove_dir_all(root).expect("remove test profile");
@@ -1907,6 +2378,134 @@ mod tests {
         assert_eq!(
             reopened.handle_durable(&request).expect("durable retry"),
             first
+        );
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn archive_and_removal_generations_are_durable_and_idempotent() {
+        let root = test_root("retention");
+        let configured = configured_root(&root);
+        let mut store = SessionStore::open(&root, "default", &[configured]).expect("open");
+        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        store
+            .handle_durable(&add_request("add-retention"))
+            .expect("add torrent");
+
+        let archive = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "archive".to_owned(),
+            expected_revision: None,
+            command: Command::Archive {
+                torrent_id: torrent_id.to_owned(),
+            },
+        };
+        store.handle_durable(&archive).expect("archive");
+        let archived_revision = store.revision().expect("archived revision");
+        assert!(store.snapshot().expect("snapshot").torrents[0].archived);
+        store
+            .handle_durable(&RequestEnvelope {
+                request_id: "archive-again".to_owned(),
+                ..archive.clone()
+            })
+            .expect("idempotent archive");
+        assert_eq!(store.revision().expect("unchanged"), archived_revision);
+
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "restore-archive".to_owned(),
+                expected_revision: None,
+                command: Command::RestoreArchive {
+                    torrent_id: torrent_id.to_owned(),
+                },
+            })
+            .expect("restore archive");
+        assert!(!store.snapshot().expect("snapshot").torrents[0].archived);
+
+        let remove = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "remove".to_owned(),
+            expected_revision: None,
+            command: Command::RemoveTorrent {
+                torrent_id: torrent_id.to_owned(),
+                data: RemovalDataPolicy::DeleteManaged,
+            },
+        };
+        let accepted = store.handle_durable(&remove).expect("request removal");
+        let removal = store.load_removal(torrent_id).expect("load removal");
+        assert_eq!(removal.policy, RemovalDataPolicy::DeleteManaged);
+        assert_eq!(removal.state, RemovalState::Pending);
+        assert_eq!(
+            store.snapshot().expect("snapshot").torrents[0].removal_state,
+            Some(RemovalState::Pending)
+        );
+        assert!(matches!(
+            store
+                .handle_durable(&RequestEnvelope {
+                    request_id: "resume-removing".to_owned(),
+                    command: Command::Resume {
+                        torrent_id: torrent_id.to_owned(),
+                    },
+                    ..remove.clone()
+                })
+                .expect("reject resume")
+                .outcome,
+            ResponseOutcome::Error { .. }
+        ));
+
+        store
+            .set_removal_state(
+                torrent_id,
+                &removal.operation_id,
+                RemovalState::Failed,
+                Some("provider unavailable"),
+            )
+            .expect("record failure");
+        drop(store);
+        let mut reopened = SessionStore::open(&root, "default", &[]).expect("reopen");
+        let failed = reopened.load_removal(torrent_id).expect("durable failure");
+        assert_eq!(failed.state, RemovalState::Failed);
+        assert_eq!(failed.error.as_deref(), Some("provider unavailable"));
+        assert!(
+            reopened
+                .finalize_removal(torrent_id, &failed.operation_id)
+                .is_err()
+        );
+
+        reopened
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "remove-keep-after-failure".to_owned(),
+                expected_revision: None,
+                command: Command::RemoveTorrent {
+                    torrent_id: torrent_id.to_owned(),
+                    data: RemovalDataPolicy::Keep,
+                },
+            })
+            .expect("rearm removal");
+        let rearmed = reopened.load_removal(torrent_id).expect("rearmed job");
+        assert_ne!(rearmed.operation_id, removal.operation_id);
+        assert_eq!(rearmed.policy, RemovalDataPolicy::Keep);
+        assert!(
+            reopened
+                .finalize_removal(torrent_id, &removal.operation_id)
+                .is_err()
+        );
+        reopened
+            .finalize_removal(torrent_id, &rearmed.operation_id)
+            .expect("finalize current generation");
+        assert!(
+            reopened
+                .snapshot()
+                .expect("empty snapshot")
+                .torrents
+                .is_empty()
+        );
+        assert_eq!(
+            reopened.handle_durable(&remove).expect("receipt replay"),
+            accepted
         );
         drop(reopened);
         fs::remove_dir_all(root).expect("remove test profile");

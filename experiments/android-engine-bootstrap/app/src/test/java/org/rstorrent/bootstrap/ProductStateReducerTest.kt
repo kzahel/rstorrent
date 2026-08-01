@@ -22,6 +22,48 @@ import org.rstorrent.session.uniffi.ViewUpdatePayload
 
 class ProductStateReducerTest {
     @Test
+    fun safRemovalUsesOnlyTheThreeNativeManagedArtifactRoles() {
+        assertEquals(
+            listOf("test", ".test.rstorrent-staging", ".test.rstorrent-parts"),
+            managedRemovalNames("test"),
+        )
+    }
+
+    @Test
+    fun safRemovalIsRepeatableAndTreatsMissingArtifactsAsSuccess() {
+        val documents = managedRemovalNames("test").toMutableSet()
+        val deleted = mutableListOf<String>()
+        repeat(2) {
+            deleteManagedArtifacts(
+                "test",
+                find = { name -> name.takeIf(documents::contains) },
+                delete = { name ->
+                    deleted += name
+                    documents.remove(name)
+                },
+            )
+        }
+        assertEquals(managedRemovalNames("test"), deleted)
+        assertEquals(emptySet<String>(), documents)
+    }
+
+    @Test
+    fun safRemovalSurfacesProviderRefusalWithoutContinuing() {
+        val attempted = mutableListOf<String>()
+        assertThrows(IllegalStateException::class.java) {
+            deleteManagedArtifacts(
+                "test",
+                find = { it },
+                delete = { name ->
+                    attempted += name
+                    false
+                },
+            )
+        }
+        assertEquals(listOf("test"), attempted)
+    }
+
+    @Test
     fun diagnosticSnapshotsAndPatchesRemainOrderedAndBounded() {
         val event =
             DiagnosticEvent(
@@ -210,6 +252,9 @@ class ProductStateReducerTest {
                 ProgressReason.TRANSFERRING_PIECES,
                 emptyList(),
             ),
+            false,
+            null,
+            true,
             null,
         )
 

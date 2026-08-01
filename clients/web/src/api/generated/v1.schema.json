@@ -284,6 +284,58 @@
         },
         {
           "properties": {
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "archive",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "restore_archive",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/RemovalDataPolicy"
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "remove_torrent",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "type": {
               "const": "shutdown",
               "type": "string"
@@ -1078,6 +1130,21 @@
       ],
       "type": "string"
     },
+    "RemovalDataPolicy": {
+      "enum": [
+        "keep",
+        "delete_managed"
+      ],
+      "type": "string"
+    },
+    "RemovalState": {
+      "enum": [
+        "pending",
+        "awaiting_platform",
+        "failed"
+      ],
+      "type": "string"
+    },
     "RequestEnvelope": {
       "properties": {
         "command": {
@@ -1204,6 +1271,12 @@
     },
     "TorrentSnapshot": {
       "properties": {
+        "archived": {
+          "type": "boolean"
+        },
+        "delete_managed_data_supported": {
+          "type": "boolean"
+        },
         "error": {
           "type": [
             "string",
@@ -1217,6 +1290,16 @@
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
+        },
+        "removal_state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RemovalState"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "skip_files": {
           "items": {
@@ -1252,7 +1335,9 @@
         "metadata_available",
         "piece_count",
         "verified_piece_count",
-        "skip_files"
+        "skip_files",
+        "archived",
+        "delete_managed_data_supported"
       ],
       "type": "object"
     },
@@ -1277,6 +1362,12 @@
           "minimum": 0,
           "type": "integer"
         },
+        "archived": {
+          "type": "boolean"
+        },
+        "delete_managed_data_supported": {
+          "type": "boolean"
+        },
         "error": {
           "type": [
             "string",
@@ -1299,6 +1390,16 @@
         },
         "received_bytes": {
           "type": "string"
+        },
+        "removal_state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RemovalState"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "requested_bytes": {
           "type": "string"
@@ -1333,7 +1434,9 @@
         "stored_bytes",
         "active_peer_connections",
         "payload_download_rate_bytes",
-        "progress"
+        "progress",
+        "archived",
+        "delete_managed_data_supported"
       ],
       "type": "object"
     },

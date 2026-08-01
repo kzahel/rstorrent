@@ -86,6 +86,8 @@ export interface TorrentRow {
   readonly etaSeconds: number | null;
   readonly addedAtMs: number | null;
   readonly archived: boolean | null;
+  readonly removalState: "pending" | "awaiting_platform" | "failed" | null;
+  readonly deleteManagedDataSupported: boolean;
   readonly infoHash: string;
   readonly error: string | null;
   readonly progressReason: string;
@@ -173,6 +175,11 @@ export type InspectionCommand =
   | { readonly type: "resume"; readonly torrentId: string }
   | { readonly type: "archive"; readonly torrentId: string }
   | { readonly type: "unarchive"; readonly torrentId: string }
+  | {
+      readonly type: "remove";
+      readonly torrentId: string;
+      readonly deleteData: boolean;
+    }
   | { readonly type: "add_demo_torrent" }
   | { readonly type: "set_demo_scenario"; readonly scenarioId: DemoScenarioId }
   | { readonly type: "set_demo_running"; readonly running: boolean }

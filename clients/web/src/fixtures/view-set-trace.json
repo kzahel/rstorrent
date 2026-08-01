@@ -43,7 +43,9 @@
                   "phase": "transfer",
                   "reason": "transferring_pieces",
                   "actions": []
-                }
+                },
+                "archived": false,
+                "delete_managed_data_supported": true
               }
             ]
           }
@@ -83,7 +85,9 @@
                   "phase": "transfer",
                   "reason": "transferring_pieces",
                   "actions": []
-                }
+                },
+                "archived": false,
+                "delete_managed_data_supported": true
               }
             ],
             "removed": []
@@ -126,7 +130,9 @@
                   "phase": "publication",
                   "reason": "complete",
                   "actions": []
-                }
+                },
+                "archived": false,
+                "delete_managed_data_supported": true
               }
             ]
           }

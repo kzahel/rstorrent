@@ -2,9 +2,10 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { createRef } from "react";
 
 import type { InspectionApplication } from "../application";
 import { InspectionProvider } from "../context";
@@ -18,6 +19,7 @@ import type {
 } from "../model";
 import { WEBTORRENT_TEST_TORRENTS } from "../testTorrents";
 import { App } from "./App";
+import { RemoveTorrentDialog } from "./RemoveTorrentDialog";
 
 beforeAll(() => {
   globalThis.ResizeObserver = class {
@@ -77,6 +79,64 @@ describe("inspection application", () => {
     expect(peerGrid).toHaveAttribute("aria-rowcount", "10001");
     expect(within(torrentGrid).getAllByRole("row").length).toBeLessThanOrEqual(100);
     expect(within(peerGrid).getAllByRole("row").length).toBeLessThanOrEqual(100);
+  });
+
+  it("confirms removal with retained data by default and restores focus", async () => {
+    const user = userEvent.setup();
+    renderScenario("healthy-download", 42_000);
+    const trigger = screen.getByRole("button", { name: "Remove" });
+
+    await user.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "Remove torrent?" });
+    const deleteData = within(dialog).getByRole("checkbox", {
+      name: "Also delete downloaded data",
+    });
+    expect(deleteData).not.toBeChecked();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    await user.click(deleteData);
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(/cannot be undone/i);
+    const destructive = within(dialog).getByRole("button", {
+      name: "Remove and delete data",
+    });
+    destructive.focus();
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(deleteData).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+
+    await user.click(trigger);
+    const reopened = screen.getByRole("dialog", { name: "Remove torrent?" });
+    expect(within(reopened).getByRole("checkbox")).not.toBeChecked();
+    await user.click(within(reopened).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByText("Torrent removed", { exact: true })).toBeVisible();
+  });
+
+  it("keeps a failed removal dialog actionable", async () => {
+    const user = userEvent.setup();
+    const returnFocus = createRef<HTMLButtonElement>();
+    render(
+      <>
+        <button ref={returnFocus}>Remove trigger</button>
+        <RemoveTorrentDialog
+          torrentName="Test transfer"
+          deleteDataSupported={true}
+          returnFocus={returnFocus}
+          onCancel={() => {}}
+          onConfirm={async () => {
+            throw new Error("Provider permission was revoked");
+          }}
+        />
+      </>,
+    );
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Remove" }));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Provider permission was revoked",
+    );
+    expect(within(dialog).getByRole("button", { name: "Remove" })).toBeEnabled();
+    expect(within(dialog).getByRole("button", { name: "Remove" })).toHaveFocus();
   });
 
   it("renders truthful empty state without fabricating details", () => {

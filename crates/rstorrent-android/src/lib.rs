@@ -19,8 +19,8 @@ use rstorrent_engine::{
 use rstorrent_protocol::bencode::MAX_BENCODE_INPUT_LENGTH;
 use rstorrent_protocol::metainfo::Metainfo;
 use rstorrent_session::{
-    ApplicationConfig, ApplicationService, ConfiguredStorageRoot, RequestEnvelope,
-    ResponseEnvelope, SubscriptionSpec, ViewSubscription, ViewUpdate,
+    ApplicationConfig, ApplicationService, ConfiguredStorageRoot, PlatformRemovalPlan,
+    RequestEnvelope, ResponseEnvelope, SubscriptionSpec, ViewSubscription, ViewUpdate,
 };
 use sha1::{Digest, Sha1};
 use tokio::sync::Mutex as AsyncMutex;
@@ -233,6 +233,53 @@ impl AndroidApplicationClient {
             .map_err(|error| AndroidClientError::message(error.to_string()))
     }
 
+    pub async fn saf_removal_plan(
+        &self,
+        torrent_id: String,
+    ) -> Result<SafRemovalPlan, AndroidClientError> {
+        let plan = self
+            .service
+            .lock()
+            .await
+            .as_mut()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .platform_removal_plan(&torrent_id)
+            .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))?;
+        Ok(map_saf_removal_plan(plan))
+    }
+
+    pub async fn confirm_saf_removal(
+        &self,
+        torrent_id: String,
+        operation_id: String,
+    ) -> Result<(), AndroidClientError> {
+        self.service
+            .lock()
+            .await
+            .as_mut()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .confirm_platform_removal(&torrent_id, &operation_id)
+            .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
+    pub async fn fail_saf_removal(
+        &self,
+        torrent_id: String,
+        operation_id: String,
+        message: String,
+    ) -> Result<(), AndroidClientError> {
+        self.service
+            .lock()
+            .await
+            .as_mut()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .fail_platform_removal(&torrent_id, &operation_id, &message)
+            .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
     pub async fn shutdown(&self) -> Result<(), AndroidClientError> {
         let service = self.service.lock().await.take();
         if let Some(mut service) = service {
@@ -371,6 +418,23 @@ pub struct SafStoragePlan {
     pub info_hash_hex: String,
     pub name: String,
     pub files: Vec<SafPlanFile>,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct SafRemovalPlan {
+    pub operation_id: String,
+    pub torrent_id: String,
+    pub storage_root: String,
+    pub name: String,
+}
+
+fn map_saf_removal_plan(plan: PlatformRemovalPlan) -> SafRemovalPlan {
+    SafRemovalPlan {
+        operation_id: plan.operation_id,
+        torrent_id: plan.torrent_id,
+        storage_root: plan.storage_root,
+        name: plan.name,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, uniffi::Enum)]
