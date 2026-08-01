@@ -4,9 +4,9 @@ Topic: `web-ui-design`
 
 Status: Product, presentation, application-view, and client-store direction
 accepted. Tactical `033` implements the generated contract, polling client,
-lifecycle controller, and pure reducer below React/Zustand. The exact
-presentation library inventory and first visible implementation tactical
-remain pending.
+lifecycle controller, and pure reducer below React/Zustand. Tactical `034` is
+the first visible implementation slice, establishing the responsive shell and
+permanent named demo adapter before new Rust projections are connected.
 
 ## Purpose
 
@@ -251,10 +251,11 @@ deterministic presentation evidence passes.
    client, and pure reducer described in
    [`application-view-api.md`](application-view-api.md) are implemented and
    headlessly validated by Tactical `033`.
-2. Establish the React/CSS Modules shell, adaptive navigation, fixture-backed
-   category/list/detail hierarchy, and accessibility baseline.
-3. Establish the Zustand and virtualized-table foundation under
-   synthetic large collections, then connect the torrent list.
+2. Establish the React/CSS Modules shell, adaptive navigation,
+   Zustand/virtual-table foundation, deterministic named demo adapter, and
+   accessibility baseline under synthetic large collections.
+3. Define stable Rust torrent and peer inspection projections, then adapt the
+   implemented view-set controller into the frontend model.
 4. Make peers the first detailed live engine view and integrate the existing
    categorized logger into the global diagnostics area.
 5. Connect remaining detail views according to debugging and product value,
@@ -280,6 +281,7 @@ all stages as one slice.
   or a binary codec.
 
 Tactical `033` completed the headless transport-independent view-set
-foundation. No visible React tactical is active. Exact peer-view fields and
-privacy posture remain the next semantic design work; the implemented
-view-set limits are recorded in [`application-view-api.md`](application-view-api.md).
+foundation. Tactical `034` owns the first visible React and demo-scenario
+foundation. Exact peer-view fields and privacy posture remain the next
+semantic design work; the implemented view-set limits are recorded in
+[`application-view-api.md`](application-view-api.md).

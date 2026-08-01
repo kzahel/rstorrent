@@ -24,8 +24,9 @@ roughly 5,700 logical blocks to about 500 physical writes, but controlled wall
 time stayed neutral and public write plus hash service still consumed 93--94%.
 The engine campaign is paused before any bounded storage-concurrency tactical.
 Tactical `033` now completes the leased application view-set and headless
-polling foundation; stable peer inspection is the current product-observability
-slice.
+polling foundation. Tactical `034` is the current product-observability slice:
+it establishes the responsive frontend and deterministic demo adapter before
+new Rust peer projections are connected.
 
 ## Purpose And Ownership
 
@@ -100,20 +101,19 @@ evidence.
 
 ### Now
 
-**Stable peer inspection projection.** Tactical `033` completes the leased
-view-set owner, generated TypeScript/schema boundary, authenticated polling
-adapter, pure reducer, lifecycle controller, and controlled headless proof.
-The next bounded semantic slice defines connection-lifetime peer identities,
-truthful peer rows, privacy/bounds, source-owner projection, and adversarial
-plus scale fixtures. Android UI parity and visible React work are not part of
-that peer-contract slice.
+**Responsive demo inspection UI.** Tactical `034` establishes the React,
+Zustand, CSS Modules, adaptive shell, virtual torrent and peer tables, and
+deterministic named scenarios behind an explicit demo route. It preserves the
+existing live client while making the new surface independently testable and
+discussable through repeatable headless screenshots.
 
 ### Next
 
-1. **Responsive web inspection foundation.** Establish the React, Zustand,
-   CSS Modules, adaptive shell, and virtualized table foundation; connect the
-   torrent list and peer activity without implying an Android mirror.
-2. **Resume oracle-driven engine work.** Use the new inspection evidence to
+1. **Stable peer and torrent inspection projection.** Define
+   connection-lifetime peer identities, truthful bounded rows, privacy,
+   source-owner projection, and adversarial fixtures, then map the implemented
+   view-set controller into the frontend inspection model.
+2. **Resume oracle-driven engine work.** Use the connected inspection evidence to
    decide whether serialized storage execution, another correctness owner, or
    measured BEP breadth becomes the next engine tactical.
 3. **Measured delivery optimization.** Add the interchangeable view-set stream

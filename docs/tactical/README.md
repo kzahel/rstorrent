@@ -210,6 +210,10 @@ that scope and its cleanup or compatibility rules explicitly.
   polling, generated TypeScript and JSON Schema, a pure reducer and headless
   lifecycle client, and controlled libtorrent-seeded view evidence before
   React or peer-table work.
+- [`034-responsive-demo-inspection-ui.md`](034-responsive-demo-inspection-ui.md):
+  active; establishes the fresh React, Zustand, CSS Modules, responsive
+  inspection shell, virtual tables, and deterministic named demo scenarios
+  before connecting new Rust peer projections.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
