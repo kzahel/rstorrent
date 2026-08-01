@@ -21,6 +21,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::network::{NetworkConfig, NetworkPolicy};
 use crate::peer::{DialAttempt, DialAttemptId, PeerFailure};
+use crate::peer_runtime::connection_id;
 use crate::swarm::ConnectionId;
 
 const CLIENT_PEER_ID: [u8; 20] = *b"-RS0001-000000000000";
@@ -144,11 +145,22 @@ impl Error for PeerSocketError {
     }
 }
 
+#[cfg(test)]
 pub(crate) async fn connect(
     attempt: DialAttempt,
     info_hash: [u8; 20],
     advertise_extensions: bool,
     network: NetworkConfig,
+) -> Result<(PeerConnection, Handshake), PeerSocketError> {
+    connect_with_progress(attempt, info_hash, advertise_extensions, network, None).await
+}
+
+async fn connect_with_progress(
+    attempt: DialAttempt,
+    info_hash: [u8; 20],
+    advertise_extensions: bool,
+    network: NetworkConfig,
+    progress: Option<&mpsc::Sender<PeerDialProgress>>,
 ) -> Result<(PeerConnection, Handshake), PeerSocketError> {
     let address = attempt.endpoint().address();
     if !network.policy.allows(address) {
@@ -167,6 +179,9 @@ pub(crate) async fn connect(
             operation: "connect to peer",
             source,
         })?;
+    if let Some(progress) = progress {
+        let _ = progress.send(PeerDialProgress { attempt }).await;
+    }
     let handshake = if advertise_extensions {
         let mut reserved = [0; 8];
         reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
@@ -340,6 +355,9 @@ impl Error for PeerTaskSendError {}
 
 #[derive(Debug)]
 pub(crate) enum PeerSetEvent {
+    DialPhase {
+        attempt: DialAttempt,
+    },
     DialCompleted {
         attempt: DialAttempt,
         result: ConnectedPeerResult,
@@ -349,6 +367,11 @@ pub(crate) enum PeerSetEvent {
 
 type ConnectedPeerResult = Result<(PeerConnection, Handshake), PeerSocketError>;
 type PendingDialResult = (DialAttempt, ConnectedPeerResult);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PeerDialProgress {
+    attempt: DialAttempt,
+}
 
 #[derive(Debug)]
 pub(crate) enum PeerSetError {
@@ -391,17 +414,22 @@ pub(crate) struct PeerSocketSet {
     tasks: BTreeMap<ConnectionId, PeerSocketTask>,
     pending: JoinSet<PendingDialResult>,
     pending_attempts: BTreeMap<DialAttemptId, (DialAttempt, CancellationToken)>,
+    dial_progress_tx: mpsc::Sender<PeerDialProgress>,
+    dial_progress_rx: mpsc::Receiver<PeerDialProgress>,
 }
 
 impl PeerSocketSet {
     pub(crate) fn new() -> Self {
         let (events_tx, events_rx) = mpsc::channel(PEER_EVENT_QUEUE);
+        let (dial_progress_tx, dial_progress_rx) = mpsc::channel(PEER_EVENT_QUEUE);
         Self {
             events_tx,
             events_rx,
             tasks: BTreeMap::new(),
             pending: JoinSet::new(),
             pending_attempts: BTreeMap::new(),
+            dial_progress_tx,
+            dial_progress_rx,
         }
     }
 
@@ -411,6 +439,13 @@ impl PeerSocketSet {
 
     pub(crate) fn pending_len(&self) -> usize {
         self.pending_attempts.len()
+    }
+
+    pub(crate) fn pending_attempts(&self) -> Vec<DialAttempt> {
+        self.pending_attempts
+            .values()
+            .map(|(attempt, _)| *attempt)
+            .collect()
     }
 
     pub(crate) fn connection_attempts(&self) -> Vec<DialAttempt> {
@@ -436,13 +471,20 @@ impl PeerSocketSet {
             return Err(PeerSetError::DuplicateDial(attempt.id()));
         }
         let cancellation = CancellationToken::new();
+        let progress = self.dial_progress_tx.clone();
         self.pending_attempts
             .insert(attempt.id(), (attempt, cancellation.clone()));
         self.pending.spawn(async move {
             let result = tokio::select! {
                 biased;
                 _ = cancellation.cancelled() => Err(PeerSocketError::Cancelled),
-                result = connect(attempt, info_hash, advertise_extensions, network) => result,
+                result = connect_with_progress(
+                    attempt,
+                    info_hash,
+                    advertise_extensions,
+                    network,
+                    Some(&progress),
+                ) => result,
             };
             (attempt, result)
         });
@@ -487,6 +529,12 @@ impl PeerSocketSet {
                 .ok_or(PeerSetError::EventQueueClosed);
         }
         tokio::select! {
+            progress = self.dial_progress_rx.recv() => {
+                let progress = progress.ok_or(PeerSetError::EventQueueClosed)?;
+                Ok(PeerSetEvent::DialPhase {
+                    attempt: progress.attempt,
+                })
+            }
             event = self.events_rx.recv() => event
                 .map(PeerSetEvent::Peer)
                 .ok_or(PeerSetError::EventQueueClosed),
@@ -539,10 +587,6 @@ impl Default for PeerSocketSet {
     fn default() -> Self {
         Self::new()
     }
-}
-
-pub(crate) fn connection_id(attempt: DialAttempt) -> ConnectionId {
-    ConnectionId::new(attempt.id().get()).expect("dial attempt identifiers are nonzero")
 }
 
 async fn run_peer_task(
@@ -620,23 +664,26 @@ async fn run_peer_task(
 mod tests {
     use std::time::Duration;
 
-    use rstorrent_protocol::peer_wire::{PeerMessage, encode_message};
+    use rstorrent_protocol::peer_wire::{
+        HANDSHAKE_LENGTH, PeerMessage, encode_handshake, encode_message,
+    };
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
-    use tokio::sync::mpsc;
+    use tokio::sync::{mpsc, oneshot};
     use tokio::time::timeout;
 
     use super::{
-        PEER_COMMAND_QUEUE, PeerConnection, PeerSocketError, PeerSocketTask, PeerTaskEvent,
+        PEER_COMMAND_QUEUE, PeerConnection, PeerSetEvent, PeerSocketError, PeerSocketSet,
+        PeerSocketTask, PeerTaskEvent,
     };
+    use crate::network::{NetworkConfig, NetworkPolicy};
     use crate::peer::{
         DialAttempt, PeerEndpoint, PeerObservation, PeerRegistry, PeerRegistryConfig,
         PeerSelectionContext, PeerSelector, PeerSource,
     };
 
-    fn test_attempt() -> DialAttempt {
-        let endpoint = PeerEndpoint::new("127.0.0.1:6881".parse().expect("test address"))
-            .expect("valid endpoint");
+    fn test_attempt_for(address: std::net::SocketAddr) -> DialAttempt {
+        let endpoint = PeerEndpoint::new(address).expect("valid endpoint");
         let mut registry = PeerRegistry::new(PeerRegistryConfig::default()).expect("registry");
         registry
             .observe(
@@ -651,6 +698,10 @@ mod tests {
         registry.begin_dial(candidate, context).expect("attempt")
     }
 
+    fn test_attempt() -> DialAttempt {
+        test_attempt_for("127.0.0.1:6881".parse().expect("test address"))
+    }
+
     async fn connected_pair(io_timeout: Duration) -> (PeerConnection, TcpStream) {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let address = listener.local_addr().expect("address");
@@ -660,6 +711,68 @@ mod tests {
             PeerConnection::for_test(test_attempt(), client, io_timeout),
             server,
         )
+    }
+
+    #[tokio::test]
+    async fn socket_set_reports_transport_before_handshake_completion() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let attempt = test_attempt_for(address);
+        let info_hash = [7; 20];
+        let (release_tx, release_rx) = oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            let mut request = [0; HANDSHAKE_LENGTH];
+            stream
+                .read_exact(&mut request)
+                .await
+                .expect("read handshake");
+            release_rx.await.expect("release handshake");
+            stream
+                .write_all(&encode_handshake(info_hash, [8; 20]))
+                .await
+                .expect("write handshake");
+        });
+
+        let mut sockets = PeerSocketSet::new();
+        sockets
+            .begin_dial(
+                attempt,
+                info_hash,
+                true,
+                NetworkConfig::new(
+                    NetworkPolicy::LoopbackOnly,
+                    Duration::from_secs(1),
+                    Duration::from_secs(1),
+                ),
+            )
+            .expect("begin dial");
+        assert!(matches!(
+            timeout(Duration::from_secs(1), sockets.next_event())
+                .await
+                .expect("transport phase deadline")
+                .expect("transport phase"),
+            PeerSetEvent::DialPhase { attempt: actual } if actual == attempt
+        ));
+
+        release_tx.send(()).expect("release server");
+        let connection = match timeout(Duration::from_secs(1), sockets.next_event())
+            .await
+            .expect("handshake deadline")
+            .expect("handshake event")
+        {
+            PeerSetEvent::DialCompleted {
+                attempt: actual,
+                result: Ok((connection, _)),
+            } => {
+                assert_eq!(actual, attempt);
+                connection
+            }
+            event => panic!("unexpected event {event:?}"),
+        };
+        sockets.add_connection(connection).expect("own connection");
+        assert!(sockets.shutdown().await.expect("shutdown").is_empty());
+        server.await.expect("server task");
     }
 
     #[tokio::test]

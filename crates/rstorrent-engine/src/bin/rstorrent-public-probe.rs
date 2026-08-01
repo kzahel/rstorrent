@@ -1189,6 +1189,7 @@ mod tests {
             content_peers_captured_at: None,
             content_peers: Vec::new(),
             content_registry: None,
+            peer_connections: Vec::new(),
             metadata: MetadataAcquisitionSnapshot::default(),
         };
         timeline.record(Duration::ZERO, &observation_snapshot(0, 0), &diagnostics);

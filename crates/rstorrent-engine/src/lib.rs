@@ -8,6 +8,7 @@ mod metadata_seed;
 mod network;
 mod part_file;
 pub mod peer;
+mod peer_runtime;
 mod peer_socket;
 mod selective_storage;
 mod storage;
@@ -31,6 +32,11 @@ pub use metadata_seed::{
 };
 pub use network::{NetworkConfig, NetworkPolicy};
 pub use part_file::{PartFile, PartFileError, PartFileIdentity};
+pub use peer_runtime::{
+    PeerConnectionDirection, PeerConnectionLifecycle, PeerConnectionObservation,
+    PeerConnectionRole, PeerContentActivity, PeerRequestWindowPhase, PeerRuntimeError,
+    PeerTransport,
+};
 pub use selective_storage::{
     DescriptorFile, DescriptorFileRole, DescriptorStorage, DescriptorStoragePlan,
     DescriptorStoragePlanFile, MaterializationReport, PreparedFileHash, ResumedStorage,

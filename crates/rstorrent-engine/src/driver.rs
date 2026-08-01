@@ -37,13 +37,16 @@ use tokio_util::sync::CancellationToken;
 use crate::dht::{DhtError, DhtHandle};
 use crate::network::{NetworkConfig, NetworkPolicy};
 use crate::peer::{
-    DialAttempt, DialAttemptId, PeerEndpoint, PeerFailure, PeerIntegrityAction, PeerObservation,
-    PeerRegistry, PeerRegistryConfig, PeerRegistryCounts, PeerRegistryError, PeerRegistrySnapshot,
-    PeerSelectionContext, PeerSelector, PeerSource,
+    DialAttempt, DialAttemptId, DialCandidate, PeerEndpoint, PeerFailure, PeerIntegrityAction,
+    PeerObservation, PeerRegistry, PeerRegistryConfig, PeerRegistryCounts, PeerRegistryError,
+    PeerRegistrySnapshot, PeerSelectionContext, PeerSelector, PeerSource,
+};
+use crate::peer_runtime::{
+    PeerConnectionObservation, PeerConnectionRole, PeerContentActivity, PeerRequestWindowPhase,
+    PeerRuntime, PeerRuntimeError, connection_id,
 };
 use crate::peer_socket::{
-    self, PeerConnection, PeerSetError, PeerSetEvent, PeerSocketError, PeerSocketSet,
-    PeerTaskEvent, connection_id,
+    self, PeerConnection, PeerSetError, PeerSetEvent, PeerSocketError, PeerSocketSet, PeerTaskEvent,
 };
 use crate::selective_storage::{
     DescriptorStorage, PreparedFileHash, ResumedStorage, SelectiveStorage, SelectiveStorageError,
@@ -362,6 +365,7 @@ pub struct DownloadDiagnosticSnapshot {
     pub content_peers_captured_at: Option<Duration>,
     pub content_peers: Vec<ContentPeerActivitySnapshot>,
     pub content_registry: Option<PeerRegistryCounts>,
+    pub peer_connections: Vec<PeerConnectionObservation>,
     pub metadata: MetadataAcquisitionSnapshot,
 }
 
@@ -407,6 +411,7 @@ struct DownloadControlInner {
     last_swarm_activity: Mutex<Option<SwarmActivitySnapshot>>,
     last_content_peers: Mutex<(Option<Duration>, Vec<ContentPeerActivitySnapshot>)>,
     last_content_registry: Mutex<Option<PeerRegistryCounts>>,
+    peer_connections: Mutex<Vec<PeerConnectionObservation>>,
     metadata_diagnostics: Mutex<MetadataDiagnosticState>,
     safe_cancel_state: AtomicUsize,
 }
@@ -512,6 +517,7 @@ impl DownloadControl {
                 last_swarm_activity: Mutex::new(None),
                 last_content_peers: Mutex::new((None, Vec::new())),
                 last_content_registry: Mutex::new(None),
+                peer_connections: Mutex::new(Vec::new()),
                 metadata_diagnostics: Mutex::new(MetadataDiagnosticState::default()),
                 safe_cancel_state: AtomicUsize::new(0),
             }),
@@ -617,6 +623,12 @@ impl DownloadControl {
             (state.0, state.1.clone())
         };
         let captured_at = self.diagnostic_elapsed();
+        let peer_connections = self
+            .inner
+            .peer_connections
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
         let metadata = {
             let state = self
                 .inner
@@ -647,6 +659,7 @@ impl DownloadControl {
             content_peers_captured_at,
             content_peers,
             content_registry,
+            peer_connections,
             metadata,
         }
     }
@@ -1113,6 +1126,14 @@ impl DownloadControl {
             Some(registry.counts(PeerSelectionContext { now }));
     }
 
+    fn observe_peer_runtime(&self, runtime: &PeerRuntime) {
+        *self
+            .inner
+            .peer_connections
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = runtime.snapshot();
+    }
+
     fn record_stored(&self, bytes: usize) {
         self.inner.stored_bytes.fetch_add(bytes, Ordering::AcqRel);
     }
@@ -1415,6 +1436,7 @@ pub enum DownloadError {
     Dht(DhtError),
     UdpTracker(UdpTrackerError),
     PeerRegistry(PeerRegistryError),
+    PeerRuntime(PeerRuntimeError),
     PeerTask(String),
     StorageTask(String),
     Swarm(SwarmError),
@@ -1482,6 +1504,7 @@ impl fmt::Display for DownloadError {
             Self::Dht(error) => write!(formatter, "DHT: {error}"),
             Self::UdpTracker(error) => write!(formatter, "UDP tracker: {error}"),
             Self::PeerRegistry(error) => write!(formatter, "peer registry: {error}"),
+            Self::PeerRuntime(error) => write!(formatter, "peer runtime: {error}"),
             Self::PeerTask(error) => write!(formatter, "peer task set: {error}"),
             Self::StorageTask(error) => write!(formatter, "content storage task: {error}"),
             Self::Swarm(error) => write!(formatter, "swarm state: {error}"),
@@ -1570,6 +1593,7 @@ impl Error for DownloadError {
             Self::Dht(error) => Some(error),
             Self::UdpTracker(error) => Some(error),
             Self::PeerRegistry(error) => Some(error),
+            Self::PeerRuntime(error) => Some(error),
             Self::Swarm(error) => Some(error),
             Self::Metadata(error) => Some(error),
             Self::Handshake(error) => Some(error),
@@ -2082,7 +2106,7 @@ struct ContentDiscovery {
 }
 
 impl ContentDiscovery {
-    fn start(peers: &mut PeerSession, info_hash: [u8; 20]) -> Self {
+    fn start(peers: &mut TorrentPeerCoordinator, info_hash: [u8; 20]) -> Self {
         let (sender, receiver) = mpsc::channel(CONTENT_DISCOVERY_QUEUE);
         let cancellation = CancellationToken::new();
         let mut tasks = Vec::new();
@@ -2459,8 +2483,9 @@ fn udp_tracker_label(tracker: &UdpTrackerUrl) -> String {
 }
 
 #[derive(Debug)]
-struct PeerSession {
+struct TorrentPeerCoordinator {
     registry: PeerRegistry,
+    runtime: PeerRuntime,
     selector: PeerSelector,
     started_at: Instant,
     network: NetworkConfig,
@@ -2580,12 +2605,13 @@ async fn retrying_dht_lookup(
     }
 }
 
-impl PeerSession {
+impl TorrentPeerCoordinator {
     fn new(network: NetworkConfig, control: DownloadControl) -> Result<Self, DownloadError> {
         validate_network_config(network)?;
         Ok(Self {
             registry: PeerRegistry::new(PeerRegistryConfig::default())
                 .map_err(DownloadError::PeerRegistry)?,
+            runtime: PeerRuntime::default(),
             selector: PeerSelector,
             started_at: Instant::now(),
             network,
@@ -2596,6 +2622,185 @@ impl PeerSession {
             last_error: None,
             next_dht_lookup: Instant::now(),
         })
+    }
+
+    fn begin_dial(
+        &mut self,
+        candidate: DialCandidate,
+        role: PeerConnectionRole,
+    ) -> Result<DialAttempt, DownloadError> {
+        let context = PeerSelectionContext {
+            now: self.elapsed(),
+        };
+        let attempt = self
+            .registry
+            .begin_dial(candidate, context)
+            .map_err(DownloadError::PeerRegistry)?;
+        if let Err(error) = self.runtime.begin_outgoing(attempt, role, context.now) {
+            let _ = self.registry.dial_cancelled(attempt);
+            return Err(DownloadError::PeerRuntime(error));
+        }
+        self.publish_peer_runtime()?;
+        Ok(attempt)
+    }
+
+    fn transport_connected(&mut self, attempt: DialAttempt) -> Result<(), DownloadError> {
+        let connection = connection_id(attempt);
+        let Some(peer) = self.runtime.observation(connection) else {
+            return Ok(());
+        };
+        if peer.lifecycle != crate::peer_runtime::PeerConnectionLifecycle::TransportConnecting {
+            return Ok(());
+        }
+        self.runtime
+            .transport_connected(connection, self.elapsed())
+            .map_err(DownloadError::PeerRuntime)?;
+        self.publish_peer_runtime()
+    }
+
+    fn dial_succeeded(
+        &mut self,
+        attempt: DialAttempt,
+        handshake: &Handshake,
+    ) -> Result<(), DownloadError> {
+        self.registry
+            .dial_succeeded(attempt, self.elapsed())
+            .map_err(DownloadError::PeerRegistry)?;
+        self.runtime
+            .handshake_completed(connection_id(attempt), handshake, self.elapsed())
+            .map_err(DownloadError::PeerRuntime)?;
+        self.publish_peer_runtime()
+    }
+
+    fn dial_failed(
+        &mut self,
+        attempt: DialAttempt,
+        failure: PeerFailure,
+    ) -> Result<(), DownloadError> {
+        let connection = connection_id(attempt);
+        self.runtime
+            .begin_disconnect(connection, Some(failure), self.elapsed())
+            .map_err(DownloadError::PeerRuntime)?;
+        self.publish_peer_runtime()?;
+        self.registry
+            .dial_failed(attempt, self.elapsed(), failure)
+            .map_err(DownloadError::PeerRegistry)?;
+        self.runtime
+            .remove(connection)
+            .map_err(DownloadError::PeerRuntime)?;
+        self.publish_peer_runtime()
+    }
+
+    fn dial_cancelled(&mut self, attempt: DialAttempt) -> Result<(), DownloadError> {
+        let connection = connection_id(attempt);
+        self.runtime
+            .begin_disconnect(connection, None, self.elapsed())
+            .map_err(DownloadError::PeerRuntime)?;
+        self.publish_peer_runtime()?;
+        self.registry
+            .dial_cancelled(attempt)
+            .map_err(DownloadError::PeerRegistry)?;
+        self.runtime
+            .remove(connection)
+            .map_err(DownloadError::PeerRuntime)?;
+        self.publish_peer_runtime()
+    }
+
+    fn begin_disconnect(
+        &mut self,
+        attempt: DialAttempt,
+        failure: Option<PeerFailure>,
+    ) -> Result<(), DownloadError> {
+        self.runtime
+            .begin_disconnect(connection_id(attempt), failure, self.elapsed())
+            .map_err(DownloadError::PeerRuntime)?;
+        self.publish_peer_runtime()
+    }
+
+    fn connection_closed(
+        &mut self,
+        attempt: DialAttempt,
+        failure: Option<PeerFailure>,
+    ) -> Result<(), DownloadError> {
+        let connection = connection_id(attempt);
+        if self.runtime.observation(connection).is_some_and(|peer| {
+            peer.lifecycle != crate::peer_runtime::PeerConnectionLifecycle::Disconnecting
+        }) {
+            self.begin_disconnect(attempt, failure)?;
+        }
+        self.registry
+            .connection_closed(attempt, self.elapsed(), failure)
+            .map_err(DownloadError::PeerRegistry)?;
+        self.runtime
+            .remove(connection)
+            .map_err(DownloadError::PeerRuntime)?;
+        self.publish_peer_runtime()
+    }
+
+    fn handoff_to_content(&mut self, attempt: DialAttempt) -> Result<(), DownloadError> {
+        self.runtime
+            .set_role(connection_id(attempt), PeerConnectionRole::Content)
+            .map_err(DownloadError::PeerRuntime)?;
+        self.publish_peer_runtime()
+    }
+
+    fn observe_content_peers(&mut self, state: &SwarmState) -> Result<(), DownloadError> {
+        for peer in state.connection_activity(self.elapsed()) {
+            self.runtime
+                .set_content_activity(
+                    peer.id,
+                    PeerContentActivity {
+                        choking: peer.choking,
+                        wanted_piece_count: peer.wanted_piece_count,
+                        pending_requests: peer.pending_requests,
+                        target_requests: peer.target_requests,
+                        queued_payload_bytes: peer.queued_payload_bytes,
+                        useful_payload_bytes: peer.useful_payload_bytes,
+                        observed_payload_rate: peer.observed_payload_rate,
+                        connected_age: peer.connected_age,
+                        last_useful_age: peer.last_useful_age,
+                        last_payload_age: peer.last_payload_age,
+                        request_timeout: peer.request_timeout,
+                        oldest_request_age: peer.oldest_request_age,
+                        request_window_phase: match peer.window_phase {
+                            ConnectionWindowPhaseSnapshot::SlowStart => {
+                                PeerRequestWindowPhase::SlowStart
+                            }
+                            ConnectionWindowPhaseSnapshot::Steady => PeerRequestWindowPhase::Steady,
+                            ConnectionWindowPhaseSnapshot::Stalled => {
+                                PeerRequestWindowPhase::Stalled
+                            }
+                        },
+                    },
+                )
+                .map_err(DownloadError::PeerRuntime)?;
+        }
+        self.publish_peer_runtime()
+    }
+
+    fn publish_peer_runtime(&mut self) -> Result<(), DownloadError> {
+        let connections = self
+            .runtime
+            .snapshot()
+            .into_iter()
+            .map(|peer| peer.connection_id)
+            .collect::<Vec<_>>();
+        for connection in connections {
+            let record_id = self
+                .runtime
+                .observation(connection)
+                .and_then(|peer| peer.record_id);
+            if let Some(sources) = record_id
+                .and_then(|record_id| self.registry.get(record_id))
+                .map(|record| record.sources())
+            {
+                self.runtime
+                    .set_sources(connection, sources)
+                    .map_err(DownloadError::PeerRuntime)?;
+            }
+        }
+        self.control.observe_peer_runtime(&self.runtime);
+        Ok(())
     }
 
     fn from_endpoint(
@@ -2673,7 +2878,7 @@ impl PeerSession {
         self.registry
             .observe(PeerObservation::dialable(endpoint, source), self.elapsed())
             .map_err(DownloadError::PeerRegistry)?;
-        Ok(())
+        self.publish_peer_runtime()
     }
 
     fn elapsed(&self) -> Duration {
@@ -2825,22 +3030,15 @@ impl PeerSession {
             self.control.emit(DownloadActivityEvent::PeerDialStarted {
                 peer: candidate.endpoint().to_string(),
             });
-            let attempt = self
-                .registry
-                .begin_dial(candidate, context)
-                .map_err(DownloadError::PeerRegistry)?;
+            let attempt = self.begin_dial(candidate, PeerConnectionRole::Content)?;
             match connect_peer(attempt, info_hash, advertise_extensions, self.network).await {
                 Ok((connection, handshake)) => {
-                    self.registry
-                        .dial_succeeded(attempt, self.elapsed())
-                        .map_err(DownloadError::PeerRegistry)?;
+                    self.dial_succeeded(attempt, &handshake)?;
                     self.connection = Some(connection);
                     return Ok(handshake);
                 }
                 Err(error) => {
-                    self.registry
-                        .dial_failed(attempt, self.elapsed(), peer_failure(&error))
-                        .map_err(DownloadError::PeerRegistry)?;
+                    self.dial_failed(attempt, peer_failure(&error))?;
                     self.last_error = Some(error);
                 }
             }
@@ -2895,15 +3093,10 @@ impl PeerSession {
                 self.control.emit(DownloadActivityEvent::PeerDialStarted {
                     peer: candidate.endpoint().to_string(),
                 });
-                let attempt = self
-                    .registry
-                    .begin_dial(candidate, context)
-                    .map_err(DownloadError::PeerRegistry)?;
+                let attempt = self.begin_dial(candidate, PeerConnectionRole::Metadata)?;
                 self.control.metadata_dial_started(attempt);
                 if let Err(error) = sockets.begin_dial(attempt, info_hash, true, self.network) {
-                    self.registry
-                        .dial_cancelled(attempt)
-                        .map_err(DownloadError::PeerRegistry)?;
+                    self.dial_cancelled(attempt)?;
                     return Err(download_peer_set_error(error));
                 }
             }
@@ -2941,6 +3134,9 @@ impl PeerSession {
                 }
             };
             match event {
+                MetadataSupervisorEvent::Socket(Ok(PeerSetEvent::DialPhase { attempt })) => {
+                    self.transport_connected(attempt)?;
+                }
                 MetadataSupervisorEvent::Discovery(Ok(())) => {
                     discovery_failed_while_active = false;
                 }
@@ -2949,10 +3145,8 @@ impl PeerSession {
                     discovery_failed_while_active = true;
                 }
                 MetadataSupervisorEvent::Cancelled => {
-                    let now = self.elapsed();
                     cleanup_metadata_attempts(
-                        &mut self.registry,
-                        now,
+                        self,
                         &mut sockets,
                         &mut workers,
                         &mut worker_cancellations,
@@ -2964,9 +3158,7 @@ impl PeerSession {
                     attempt,
                     result: Ok((connection, handshake)),
                 })) => {
-                    self.registry
-                        .dial_succeeded(attempt, self.elapsed())
-                        .map_err(DownloadError::PeerRegistry)?;
+                    self.dial_succeeded(attempt, &handshake)?;
                     self.control
                         .metadata_peer_connected(attempt, handshake.supports_extensions());
                     let cancellation = CancellationToken::new();
@@ -2983,9 +3175,7 @@ impl PeerSession {
                     result: Err(error),
                 })) => {
                     if matches!(&error, PeerSocketError::Cancelled) {
-                        self.registry
-                            .dial_cancelled(attempt)
-                            .map_err(DownloadError::PeerRegistry)?;
+                        self.dial_cancelled(attempt)?;
                         self.control.metadata_peer_finished(
                             attempt.id(),
                             MetadataPeerStage::Cancelled,
@@ -2993,9 +3183,7 @@ impl PeerSession {
                         );
                     } else {
                         let detail = error.to_string();
-                        self.registry
-                            .dial_failed(attempt, self.elapsed(), error.peer_failure())
-                            .map_err(DownloadError::PeerRegistry)?;
+                        self.dial_failed(attempt, error.peer_failure())?;
                         self.last_error = Some(download_peer_socket_error(error));
                         self.control.metadata_peer_finished(
                             attempt.id(),
@@ -3005,10 +3193,8 @@ impl PeerSession {
                     }
                 }
                 MetadataSupervisorEvent::Socket(Ok(PeerSetEvent::Peer(_))) => {
-                    let now = self.elapsed();
                     cleanup_metadata_attempts(
-                        &mut self.registry,
-                        now,
+                        self,
                         &mut sockets,
                         &mut workers,
                         &mut worker_cancellations,
@@ -3019,10 +3205,8 @@ impl PeerSession {
                     ));
                 }
                 MetadataSupervisorEvent::Socket(Err(error)) => {
-                    let now = self.elapsed();
                     cleanup_metadata_attempts(
-                        &mut self.registry,
-                        now,
+                        self,
                         &mut sockets,
                         &mut workers,
                         &mut worker_cancellations,
@@ -3036,10 +3220,8 @@ impl PeerSession {
                     metainfo,
                 }))) => {
                     worker_cancellations.remove(&connection.attempt().id());
-                    let now = self.elapsed();
                     cleanup_metadata_attempts(
-                        &mut self.registry,
-                        now,
+                        self,
                         &mut sockets,
                         &mut workers,
                         &mut worker_cancellations,
@@ -3057,24 +3239,18 @@ impl PeerSession {
                 }))) => {
                     worker_cancellations.remove(&connection.attempt().id());
                     let failure = peer_failure(&error);
-                    self.registry
-                        .connection_closed(connection.attempt(), self.elapsed(), Some(failure))
-                        .map_err(DownloadError::PeerRegistry)?;
+                    self.connection_closed(connection.attempt(), Some(failure))?;
                     self.last_error = Some(error);
                 }
                 MetadataSupervisorEvent::Worker(Some(Ok(MetadataPeerResult::Cancelled {
                     connection,
                 }))) => {
                     worker_cancellations.remove(&connection.attempt().id());
-                    self.registry
-                        .connection_closed(connection.attempt(), self.elapsed(), None)
-                        .map_err(DownloadError::PeerRegistry)?;
+                    self.connection_closed(connection.attempt(), None)?;
                 }
                 MetadataSupervisorEvent::Worker(Some(Err(error))) => {
-                    let now = self.elapsed();
                     cleanup_metadata_attempts(
-                        &mut self.registry,
-                        now,
+                        self,
                         &mut sockets,
                         &mut workers,
                         &mut worker_cancellations,
@@ -3083,10 +3259,8 @@ impl PeerSession {
                     return Err(DownloadError::PeerTask(error.to_string()));
                 }
                 MetadataSupervisorEvent::Worker(None) => {
-                    let now = self.elapsed();
                     cleanup_metadata_attempts(
-                        &mut self.registry,
-                        now,
+                        self,
                         &mut sockets,
                         &mut workers,
                         &mut worker_cancellations,
@@ -3104,9 +3278,8 @@ impl PeerSession {
         let Some(connection) = self.connection.take() else {
             return Ok(());
         };
-        self.registry
-            .connection_closed(connection.attempt(), self.elapsed(), failure)
-            .map_err(DownloadError::PeerRegistry)
+        self.begin_disconnect(connection.attempt(), failure)?;
+        self.connection_closed(connection.attempt(), failure)
     }
 
     async fn shutdown_tracker(&mut self) -> Result<(), DownloadError> {
@@ -3189,24 +3362,34 @@ async fn run_metadata_peer(
 }
 
 async fn cleanup_metadata_attempts(
-    registry: &mut PeerRegistry,
-    now: Duration,
+    peers: &mut TorrentPeerCoordinator,
     sockets: &mut PeerSocketSet,
     workers: &mut JoinSet<MetadataPeerResult>,
     worker_cancellations: &mut BTreeMap<DialAttemptId, (DialAttempt, CancellationToken)>,
 ) -> Result<(), DownloadError> {
+    let mut first_error = None;
+    for attempt in sockets
+        .pending_attempts()
+        .into_iter()
+        .chain(worker_cancellations.values().map(|(attempt, _)| *attempt))
+    {
+        if let Err(error) = peers.begin_disconnect(attempt, None)
+            && first_error.is_none()
+        {
+            first_error = Some(error);
+        }
+    }
     for (_, cancellation) in worker_cancellations.values() {
         cancellation.cancel();
     }
 
-    let mut first_error = None;
     match std::mem::take(sockets).shutdown().await {
         Ok(pending) => {
             for attempt in pending {
-                if let Err(error) = registry.dial_cancelled(attempt)
+                if let Err(error) = peers.dial_cancelled(attempt)
                     && first_error.is_none()
                 {
-                    first_error = Some(DownloadError::PeerRegistry(error));
+                    first_error = Some(error);
                 }
             }
         }
@@ -3218,10 +3401,10 @@ async fn cleanup_metadata_attempts(
             Ok(result) => {
                 let attempt = result.attempt();
                 worker_cancellations.remove(&attempt.id());
-                if let Err(error) = registry.connection_closed(attempt, now, None)
+                if let Err(error) = peers.connection_closed(attempt, None)
                     && first_error.is_none()
                 {
-                    first_error = Some(DownloadError::PeerRegistry(error));
+                    first_error = Some(error);
                 }
             }
             Err(error) if first_error.is_none() => {
@@ -3231,10 +3414,10 @@ async fn cleanup_metadata_attempts(
         }
     }
     for (_, (attempt, _)) in std::mem::take(worker_cancellations) {
-        if let Err(error) = registry.connection_closed(attempt, now, None)
+        if let Err(error) = peers.connection_closed(attempt, None)
             && first_error.is_none()
         {
-            first_error = Some(DownloadError::PeerRegistry(error));
+            first_error = Some(error);
         }
     }
 
@@ -3525,7 +3708,7 @@ async fn run_magnet_download(
     let mut peers = tokio::select! {
         biased;
         _ = control.inner.cancellation.cancelled() => return Err(DownloadError::Cancelled),
-        peers = PeerSession::from_magnet(&magnet, config.network, control.clone(), config.dht.clone()) => peers?,
+        peers = TorrentPeerCoordinator::from_magnet(&magnet, config.network, control.clone(), config.dht.clone()) => peers?,
     };
     let operation_control = control.clone();
     let result = tokio::select! {
@@ -3545,7 +3728,7 @@ async fn run_magnet_download_with_peers(
     config: MagnetDownloadConfig,
     control: DownloadControl,
     magnet: Magnet,
-    peers: &mut PeerSession,
+    peers: &mut TorrentPeerCoordinator,
 ) -> Result<DownloadReport, DownloadError> {
     let (_raw_info, metainfo) = peers.acquire_metadata(magnet.info_hash).await?;
     let content_config = ContentDownloadConfig {
@@ -3568,7 +3751,7 @@ async fn run_magnet_metadata(
     let mut peers = tokio::select! {
         biased;
         _ = control.inner.cancellation.cancelled() => return Err(DownloadError::Cancelled),
-        peers = PeerSession::from_magnet(&magnet, network, control.clone(), dht) => peers?,
+        peers = TorrentPeerCoordinator::from_magnet(&magnet, network, control.clone(), dht) => peers?,
     };
     let result = tokio::select! {
         biased;
@@ -3632,7 +3815,7 @@ async fn run_resumable_magnet_download(
         let mut peers = tokio::select! {
             biased;
             _ = control.inner.cancellation.cancelled() => return Err(DownloadError::Cancelled),
-            peers = PeerSession::from_magnet(&magnet, config.network, control.clone(), content_dht) => peers?,
+            peers = TorrentPeerCoordinator::from_magnet(&magnet, config.network, control.clone(), content_dht) => peers?,
         };
         let content_config = ContentDownloadConfig {
             output_path: config.output_path,
@@ -3665,7 +3848,7 @@ async fn run_resumable_magnet_download(
     let mut peers = tokio::select! {
         biased;
         _ = control.inner.cancellation.cancelled() => return Err(DownloadError::Cancelled),
-        peers = PeerSession::from_magnet(&magnet, config.network, control.clone(), dht) => peers?,
+        peers = TorrentPeerCoordinator::from_magnet(&magnet, config.network, control.clone(), dht) => peers?,
     };
     let operation_control = control.clone();
     let result = tokio::select! {
@@ -3968,7 +4151,8 @@ async fn run_download(
 ) -> Result<DownloadReport, DownloadError> {
     let metainfo_bytes = read_bounded_metainfo(&config.metainfo_path).await?;
     let metainfo = Metainfo::from_bytes(&metainfo_bytes).map_err(DownloadError::Metainfo)?;
-    let mut peers = PeerSession::from_endpoint(config.peer, PeerSource::Manual, config.network)?;
+    let mut peers =
+        TorrentPeerCoordinator::from_endpoint(config.peer, PeerSource::Manual, config.network)?;
     let content_config = ContentDownloadConfig {
         output_path: config.output_path,
         max_buffered_payload_bytes: config.max_buffered_payload_bytes,
@@ -3992,7 +4176,7 @@ async fn run_content_download(
     metainfo: Metainfo,
     control: DownloadControl,
     descriptors: Option<DescriptorStorage>,
-    peers: &mut PeerSession,
+    peers: &mut TorrentPeerCoordinator,
     resume: Option<ResumeContext>,
 ) -> Result<DownloadReport, DownloadError> {
     peers.control = control.clone();
@@ -4026,7 +4210,7 @@ async fn run_single_download(
     config: ContentDownloadConfig,
     metainfo: Metainfo,
     control: DownloadControl,
-    peers: &mut PeerSession,
+    peers: &mut TorrentPeerCoordinator,
 ) -> Result<DownloadReport, DownloadError> {
     u32::try_from(metainfo.total_length)
         .map_err(|_| DownloadError::Metainfo(MetainfoError::InvalidField("info.length")))?;
@@ -4933,7 +5117,7 @@ impl<'a> ContentSwarmDownload<'a> {
 }
 
 fn record_verified_piece_contributors(
-    peers: &mut PeerSession,
+    peers: &mut TorrentPeerCoordinator,
     download: &mut ContentSwarmDownload<'_>,
     contributors: &[ConnectionId],
 ) -> Result<(), DownloadError> {
@@ -4955,7 +5139,7 @@ fn record_verified_piece_contributors(
 }
 
 async fn record_failed_piece_contributors(
-    peers: &mut PeerSession,
+    peers: &mut TorrentPeerCoordinator,
     sockets: &mut PeerSocketSet,
     download: &mut ContentSwarmDownload<'_>,
     failure: &PieceHashFailure,
@@ -5032,7 +5216,7 @@ fn content_dial_slot_available(
 }
 
 fn fill_content_dials(
-    peers: &mut PeerSession,
+    peers: &mut TorrentPeerCoordinator,
     sockets: &mut PeerSocketSet,
     state: &mut SwarmState,
     info_hash: [u8; 20],
@@ -5053,21 +5237,16 @@ fn fill_content_dials(
         peers.control.emit(DownloadActivityEvent::PeerDialStarted {
             peer: candidate.endpoint().to_string(),
         });
-        let attempt = peers
-            .registry
-            .begin_dial(candidate, context)
-            .map_err(DownloadError::PeerRegistry)?;
-        state
-            .begin_dial(pending_dial_id(attempt))
-            .map_err(DownloadError::Swarm)?;
+        let attempt = peers.begin_dial(candidate, PeerConnectionRole::Content)?;
+        if let Err(error) = state.begin_dial(pending_dial_id(attempt)) {
+            peers.dial_cancelled(attempt)?;
+            return Err(DownloadError::Swarm(error));
+        }
         if let Err(error) = sockets.begin_dial(attempt, info_hash, false, peers.network) {
             state
                 .finish_dial(pending_dial_id(attempt))
                 .map_err(DownloadError::Swarm)?;
-            peers
-                .registry
-                .dial_cancelled(attempt)
-                .map_err(DownloadError::PeerRegistry)?;
+            peers.dial_cancelled(attempt)?;
             return Err(download_peer_set_error(error));
         }
         started += 1;
@@ -5076,7 +5255,7 @@ fn fill_content_dials(
 }
 
 async fn close_content_connection(
-    peers: &mut PeerSession,
+    peers: &mut TorrentPeerCoordinator,
     sockets: &mut PeerSocketSet,
     state: &mut SwarmState,
     connection: ConnectionId,
@@ -5085,6 +5264,13 @@ async fn close_content_connection(
     if !sockets.contains(connection) {
         return Ok(());
     }
+    let attempt =
+        sockets
+            .attempt(connection)
+            .ok_or(DownloadError::Swarm(SwarmError::Invariant(
+                "active peer socket has no dial attempt",
+            )))?;
+    peers.begin_disconnect(attempt, failure)?;
     let attempt = sockets
         .remove_connection(connection)
         .await
@@ -5092,18 +5278,22 @@ async fn close_content_connection(
     state
         .remove_connection(connection, ConnectionRemoval::Disconnected)
         .map_err(DownloadError::Swarm)?;
-    peers
-        .registry
-        .connection_closed(attempt, peers.elapsed(), failure)
-        .map_err(DownloadError::PeerRegistry)
+    peers.connection_closed(attempt, failure)
 }
 
 async fn replace_content_connection(
-    peers: &mut PeerSession,
+    peers: &mut TorrentPeerCoordinator,
     sockets: &mut PeerSocketSet,
     state: &mut SwarmState,
     connection: ConnectionId,
 ) -> Result<(), DownloadError> {
+    let attempt =
+        sockets
+            .attempt(connection)
+            .ok_or(DownloadError::Swarm(SwarmError::Invariant(
+                "replacement peer socket has no dial attempt",
+            )))?;
+    peers.begin_disconnect(attempt, None)?;
     let attempt = sockets
         .remove_connection(connection)
         .await
@@ -5111,35 +5301,58 @@ async fn replace_content_connection(
     state
         .remove_connection(connection, ConnectionRemoval::Replaced)
         .map_err(DownloadError::Swarm)?;
-    peers
-        .registry
-        .connection_closed(attempt, peers.elapsed(), None)
-        .map_err(DownloadError::PeerRegistry)
+    peers.connection_closed(attempt, None)
 }
 
 async fn cleanup_content_connections(
-    peers: &mut PeerSession,
+    peers: &mut TorrentPeerCoordinator,
     sockets: PeerSocketSet,
     state: &mut SwarmState,
     failure: Option<PeerFailure>,
 ) -> Result<(), DownloadError> {
     let active = sockets.connection_attempts();
-    let pending = sockets.shutdown().await.map_err(download_peer_set_error)?;
+    let pending_before_shutdown = sockets.pending_attempts();
+    let mut first_error = None;
+    for attempt in active.iter().chain(&pending_before_shutdown).copied() {
+        if let Err(error) = peers.begin_disconnect(attempt, failure)
+            && first_error.is_none()
+        {
+            first_error = Some(error);
+        }
+    }
+    let pending = match sockets.shutdown().await {
+        Ok(pending) => pending,
+        Err(error) => {
+            if first_error.is_none() {
+                first_error = Some(download_peer_set_error(error));
+            }
+            pending_before_shutdown
+        }
+    };
     for attempt in active {
-        peers
-            .registry
-            .connection_closed(attempt, peers.elapsed(), failure)
-            .map_err(DownloadError::PeerRegistry)?;
+        if let Err(error) = peers.connection_closed(attempt, failure)
+            && first_error.is_none()
+        {
+            first_error = Some(error);
+        }
     }
     for attempt in pending {
-        peers
-            .registry
-            .dial_cancelled(attempt)
-            .map_err(DownloadError::PeerRegistry)?;
+        if let Err(error) = peers.dial_cancelled(attempt)
+            && first_error.is_none()
+        {
+            first_error = Some(error);
+        }
     }
-    state.cancel_all().map_err(DownloadError::Swarm)?;
+    if let Err(error) = state.cancel_all().map_err(DownloadError::Swarm)
+        && first_error.is_none()
+    {
+        first_error = Some(error);
+    }
     peers.control.clear_buffered_payload();
-    Ok(())
+    match first_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }
 
 enum ContentSupervisorEvent {
@@ -5267,7 +5480,7 @@ async fn next_content_supervisor_event(
 }
 
 async fn run_selective_swarm_loop(
-    peers: &mut PeerSession,
+    peers: &mut TorrentPeerCoordinator,
     sockets: &mut PeerSocketSet,
     discovery: &mut ContentDiscovery,
     download: &mut ContentSwarmDownload<'_>,
@@ -5275,6 +5488,7 @@ async fn run_selective_swarm_loop(
     let mut next_owner = ContentSupervisorOwner::Storage;
     if let Some(connection) = peers.connection.take() {
         let attempt = connection.attempt();
+        peers.handoff_to_content(attempt)?;
         let id = sockets
             .add_connection(connection)
             .map_err(download_peer_set_error)?;
@@ -5310,6 +5524,7 @@ async fn run_selective_swarm_loop(
             let _ = request;
         }
         download.control.observe_swarm(&download.state, now);
+        peers.observe_content_peers(&download.state)?;
 
         let assignments = if storage_ready {
             download.state.schedule(now).map_err(DownloadError::Swarm)?
@@ -5353,6 +5568,7 @@ async fn run_selective_swarm_loop(
         download
             .control
             .observe_swarm(&download.state, peers.elapsed());
+        peers.observe_content_peers(&download.state)?;
         if download.is_complete(peers.elapsed()) {
             return Ok(());
         }
@@ -5449,13 +5665,16 @@ async fn run_selective_swarm_loop(
                 peers.last_error = Some(error);
             }
             ContentSupervisorEvent::Discovery(None) => {}
+            ContentSupervisorEvent::Peer(PeerSetEvent::DialPhase { attempt }) => {
+                peers.transport_connected(attempt)?;
+            }
             ContentSupervisorEvent::Peer(PeerSetEvent::DialCompleted { attempt, result }) => {
                 download
                     .state
                     .finish_dial(pending_dial_id(attempt))
                     .map_err(DownloadError::Swarm)?;
                 match result {
-                    Ok((connection, _handshake)) => {
+                    Ok((connection, handshake)) => {
                         if sockets.established_len()
                             >= download.state.config().max_established_connections
                         {
@@ -5470,21 +5689,13 @@ async fn run_selective_swarm_loop(
                                 )
                                 .await?;
                             } else {
-                                peers
-                                    .registry
-                                    .dial_succeeded(attempt, peers.elapsed())
-                                    .map_err(DownloadError::PeerRegistry)?;
-                                peers
-                                    .registry
-                                    .connection_closed(attempt, peers.elapsed(), None)
-                                    .map_err(DownloadError::PeerRegistry)?;
+                                peers.dial_succeeded(attempt, &handshake)?;
+                                peers.begin_disconnect(attempt, None)?;
+                                peers.connection_closed(attempt, None)?;
                                 continue;
                             }
                         }
-                        peers
-                            .registry
-                            .dial_succeeded(attempt, peers.elapsed())
-                            .map_err(DownloadError::PeerRegistry)?;
+                        peers.dial_succeeded(attempt, &handshake)?;
                         let id = sockets
                             .add_connection(connection)
                             .map_err(download_peer_set_error)?;
@@ -5505,10 +5716,7 @@ async fn run_selective_swarm_loop(
                     }
                     Err(error) => {
                         let failure = error.peer_failure();
-                        peers
-                            .registry
-                            .dial_failed(attempt, peers.elapsed(), failure)
-                            .map_err(DownloadError::PeerRegistry)?;
+                        peers.dial_failed(attempt, failure)?;
                         peers.last_error = Some(download_peer_socket_error(error));
                     }
                 }
@@ -5545,7 +5753,7 @@ async fn run_selective_swarm_loop(
 }
 
 async fn apply_content_disposition(
-    peers: &mut PeerSession,
+    peers: &mut TorrentPeerCoordinator,
     sockets: &mut PeerSocketSet,
     download: &mut ContentSwarmDownload<'_>,
     connection: Option<ConnectionId>,
@@ -5577,7 +5785,7 @@ async fn apply_content_disposition(
 }
 
 async fn download_content_swarm<'a>(
-    peers: &mut PeerSession,
+    peers: &mut TorrentPeerCoordinator,
     mut download: ContentSwarmDownload<'a>,
 ) -> Result<ContentSwarmDownload<'a>, DownloadError> {
     let mut sockets = PeerSocketSet::new();
@@ -5620,7 +5828,7 @@ async fn run_selective_download(
     metainfo: Metainfo,
     control: DownloadControl,
     descriptors: Option<DescriptorStorage>,
-    peers: &mut PeerSession,
+    peers: &mut TorrentPeerCoordinator,
     resume: Option<ResumeContext>,
 ) -> Result<DownloadReport, DownloadError> {
     let layout = TorrentLayout::from_metainfo(&metainfo);
@@ -6047,7 +6255,7 @@ mod tests {
         DownloadActivitySink, DownloadConfig, DownloadControl, DownloadError,
         MAX_DIAGNOSTIC_ERROR_LENGTH, MAX_METADATA_PEERS, MAX_RECENT_METADATA_ATTEMPTS,
         MagnetDownloadConfig, MetadataAcquisitionPhase, MetadataPeerStage, PeerConnection,
-        PeerSession, PreparedContentWrite, QueuedContentStorageCommand, SwarmConfig,
+        PreparedContentWrite, QueuedContentStorageCommand, SwarmConfig, TorrentPeerCoordinator,
         TrackerManager, UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming,
         UdpTrackerTokenCache, announce_udp_tracker_address, atomic_saturating_add,
         atomic_saturating_increment, coalesce_content_writes, collect_content_write_batch,
@@ -6325,7 +6533,7 @@ mod tests {
     #[tokio::test]
     async fn explicit_policies_gate_non_loopback_peers_and_offline_dns() {
         let public = "192.0.2.1:6881".parse().expect("documentation peer");
-        let loopback = PeerSession::from_endpoint(
+        let loopback = TorrentPeerCoordinator::from_endpoint(
             public,
             PeerSource::Manual,
             loopback_network(Duration::from_secs(1)),
@@ -6338,7 +6546,7 @@ mod tests {
             }) if address == public
         ));
 
-        let online = PeerSession::from_endpoint(
+        let online = TorrentPeerCoordinator::from_endpoint(
             public,
             PeerSource::Manual,
             NetworkConfig::new(
@@ -6368,7 +6576,7 @@ mod tests {
     #[tokio::test]
     async fn final_dial_rechecks_network_policy() {
         let public = "192.0.2.1:6881".parse().expect("documentation peer");
-        let mut peers = PeerSession::from_endpoint(
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
             public,
             PeerSource::Manual,
             NetworkConfig::new(
@@ -7086,12 +7294,10 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
     ) {
         let (mut peer, request) = prepare_endgame_peer(listener, info_hash).await;
         requests_ready.wait().await;
-        let cancel = loop {
-            match next_peer_message(&mut peer).await {
-                Ok(PeerMessage::Cancel(cancel)) => break cancel,
-                Ok(message) => panic!("unexpected command before endgame cancel {message:?}"),
-                Err(error) => panic!("endgame loser failed before cancel: {error}"),
-            }
+        let cancel = match next_peer_message(&mut peer).await {
+            Ok(PeerMessage::Cancel(cancel)) => cancel,
+            Ok(message) => panic!("unexpected command before endgame cancel {message:?}"),
+            Err(error) => panic!("endgame loser failed before cancel: {error}"),
         };
         (request, cancel)
     }
@@ -7253,7 +7459,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             AdverseRequestAction::Disconnect => "disconnect-reassignment",
             AdverseRequestAction::Choke => "choke-reassignment",
         });
-        let mut peers = PeerSession::from_endpoint(
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
             adverse_address,
             PeerSource::Manual,
             loopback_network(Duration::from_secs(2)),
@@ -7317,7 +7523,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             vec![true; metainfo.piece_count()],
         ));
         let output = test_path("multi-piece-single-file.bin");
-        let mut peers = PeerSession::from_endpoint(
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
             address,
             PeerSource::Manual,
             loopback_network(Duration::from_secs(2)),
@@ -7381,7 +7587,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             max_pending.clone(),
         ));
         let output = test_path("adaptive-window.bin");
-        let mut peers = PeerSession::from_endpoint(
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
             address,
             PeerSource::Manual,
             loopback_network(Duration::from_secs(2)),
@@ -7462,7 +7668,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
 
         let control = DownloadControl::new();
         let output = test_path("split-availability");
-        let mut peers = PeerSession::from_endpoint(
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
             first_address,
             PeerSource::Manual,
             loopback_network(Duration::from_secs(2)),
@@ -7535,7 +7741,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 vec![true, true],
             )));
         }
-        let mut peers = PeerSession::from_endpoint(
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
             addresses[0],
             PeerSource::Manual,
             loopback_network(Duration::from_secs(2)),
@@ -7655,7 +7861,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             Arc::new(vec![payload.clone()]),
             vec![true],
         ));
-        let mut peers = PeerSession::from_endpoint(
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
             address,
             PeerSource::Manual,
             loopback_network(Duration::from_secs(2)),
@@ -7747,7 +7953,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             Arc::new(vec![payload]),
             vec![true],
         ));
-        let mut peers = PeerSession::from_endpoint(
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
             address,
             PeerSource::Manual,
             loopback_network(Duration::from_secs(2)),
@@ -7831,7 +8037,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             Arc::new(vec![payload.clone()]),
             vec![true],
         ));
-        let mut peers = PeerSession::from_endpoint(
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
             address,
             PeerSource::Manual,
             loopback_network(Duration::from_secs(2)),
@@ -7933,7 +8139,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let dht = DhtService::start(dht_config(dht_address))
             .await
             .expect("start DHT client");
-        let mut peers = PeerSession::from_endpoint(
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
             initial_address,
             PeerSource::Manual,
             loopback_network(Duration::from_secs(2)),
@@ -8050,7 +8256,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             payload.clone(),
             requests_ready,
         ));
-        let mut peers = PeerSession::from_endpoint(
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
             loser_address,
             PeerSource::Manual,
             loopback_network(Duration::from_secs(2)),
@@ -8145,7 +8351,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             Arc::new(vec![payload.clone()]),
             vec![true],
         ));
-        let mut peers = PeerSession::from_endpoint(
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
             corrupt_address,
             PeerSource::Manual,
             loopback_network(Duration::from_secs(2)),
@@ -8275,7 +8481,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             Arc::new(vec![payload.clone()]),
             vec![true],
         ));
-        let mut peers = PeerSession::from_endpoint(
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
             first_address,
             PeerSource::Manual,
             loopback_network(Duration::from_secs(2)),
@@ -8384,7 +8590,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             Arc::new(vec![first, second]),
             vec![true, true],
         ));
-        let mut peers = PeerSession::from_endpoint(
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
             silent_addresses[0],
             PeerSource::Manual,
             loopback_network(Duration::from_secs(5)),
@@ -8448,7 +8654,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 Some(accepted.clone()),
             )));
         }
-        let mut peers = PeerSession::from_endpoint(
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
             addresses[0],
             PeerSource::Manual,
             loopback_network(Duration::from_secs(5)),
@@ -8551,7 +8757,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             Arc::new(vec![first, second]),
             vec![true, true],
         )));
-        let mut peers = PeerSession::from_endpoint(
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
             addresses[0],
             PeerSource::Manual,
             loopback_network(Duration::from_secs(2)),
@@ -8629,7 +8835,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             payload,
             vec![true, true],
         )));
-        let mut peers = PeerSession::from_endpoint(
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
             addresses[0],
             PeerSource::Manual,
             loopback_network(Duration::from_secs(2)),
@@ -8692,7 +8898,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             metainfo.info_hash,
             vec![0x80],
         ));
-        let mut peers = PeerSession::from_endpoint(
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
             address,
             PeerSource::Manual,
             loopback_network(Duration::from_secs(2)),
@@ -8767,7 +8973,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             Duration::from_millis(100),
             None,
         ));
-        let mut peers = PeerSession::from_endpoint(
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
             old_address,
             PeerSource::Manual,
             loopback_network(Duration::from_secs(2)),
@@ -8843,7 +9049,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             vec![true],
             Duration::from_secs(10),
         ));
-        let mut peers = PeerSession::from_endpoint(
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
             stalled_address,
             PeerSource::Manual,
             loopback_network(Duration::from_secs(10)),
@@ -9866,9 +10072,10 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         assert_eq!(parsed.udp_trackers.len(), 2);
         let network = loopback_network(Duration::from_secs(2));
         let control = DownloadControl::new();
-        let mut peers = PeerSession::from_magnet(&parsed, network, control.clone(), None)
-            .await
-            .expect("prepare tracker discovery");
+        let mut peers =
+            TorrentPeerCoordinator::from_magnet(&parsed, network, control.clone(), None)
+                .await
+                .expect("prepare tracker discovery");
         assert!(peers.registry.is_empty());
 
         let report = run_magnet_download_with_peers(
@@ -10045,7 +10252,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let dht = DhtService::start(dht_config(dht_address))
             .await
             .expect("start DHT client");
-        let mut peers = PeerSession::from_endpoint(
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
             unavailable_address,
             PeerSource::Manual,
             loopback_network(Duration::from_secs(2)),
@@ -10318,7 +10525,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let control = DownloadControl::new();
         let activity = Arc::new(RecordingActivitySink::default());
         control.set_activity_sink(activity.clone());
-        let mut peers = PeerSession::from_magnet(
+        let mut peers = TorrentPeerCoordinator::from_magnet(
             &magnet,
             loopback_network(Duration::from_secs(1)),
             control,
@@ -10393,7 +10600,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             "00".repeat(20)
         ))
         .expect("parse bounded tracker magnet");
-        let mut peers = PeerSession::from_magnet(
+        let mut peers = TorrentPeerCoordinator::from_magnet(
             &magnet,
             loopback_network(Duration::from_secs(1)),
             DownloadControl::new(),
@@ -10502,7 +10709,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let control = DownloadControl::new();
         let activity = Arc::new(RecordingActivitySink::default());
         control.set_activity_sink(activity.clone());
-        let mut peers = PeerSession::from_magnet(
+        let mut peers = TorrentPeerCoordinator::from_magnet(
             &magnet,
             loopback_network(Duration::from_secs(1)),
             control,
@@ -10786,9 +10993,10 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         );
         let parsed = Magnet::parse(&magnet).expect("parse parallel metadata magnet");
         let network = loopback_network(Duration::from_secs(5));
-        let mut peers = PeerSession::from_magnet(&parsed, network, DownloadControl::new(), None)
-            .await
-            .expect("resolve metadata peers");
+        let mut peers =
+            TorrentPeerCoordinator::from_magnet(&parsed, network, DownloadControl::new(), None)
+                .await
+                .expect("resolve metadata peers");
 
         let (raw_info, metainfo) =
             timeout(Duration::from_secs(4), peers.acquire_metadata(info_hash))
@@ -10847,7 +11055,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         );
         let parsed = Magnet::parse(&magnet).expect("parse multi-source metadata magnet");
         let control = DownloadControl::new();
-        let mut peers = PeerSession::from_magnet(
+        let mut peers = TorrentPeerCoordinator::from_magnet(
             &parsed,
             loopback_network(Duration::from_secs(2)),
             control.clone(),
@@ -10921,7 +11129,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         );
         let parsed = Magnet::parse(&magnet).expect("parse corrupt recovery magnet");
         let control = DownloadControl::new();
-        let mut peers = PeerSession::from_magnet(
+        let mut peers = TorrentPeerCoordinator::from_magnet(
             &parsed,
             loopback_network(Duration::from_secs(2)),
             control.clone(),
@@ -10971,7 +11179,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let magnet = format!("magnet:?xt=urn:btih:{}&x.pe={address}", hex(&info_hash));
         let parsed = Magnet::parse(&magnet).expect("parse one-at-a-time magnet");
         let control = DownloadControl::new();
-        let mut peers = PeerSession::from_magnet(
+        let mut peers = TorrentPeerCoordinator::from_magnet(
             &parsed,
             loopback_network(Duration::from_secs(2)),
             control.clone(),
@@ -11033,7 +11241,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         magnet.push_str(&format!("&x.pe={useful_address}"));
         let parsed = Magnet::parse(&magnet).expect("parse diagnostic metadata magnet");
         let control = DownloadControl::new();
-        let mut peers = PeerSession::from_magnet(
+        let mut peers = TorrentPeerCoordinator::from_magnet(
             &parsed,
             loopback_network(Duration::from_secs(1)),
             control.clone(),
@@ -11126,7 +11334,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         magnet.push_str(&format!("&x.pe={useful_address}"));
         let parsed = Magnet::parse(&magnet).expect("parse chattering metadata magnet");
         let control = DownloadControl::new();
-        let mut peers = PeerSession::from_magnet(
+        let mut peers = TorrentPeerCoordinator::from_magnet(
             &parsed,
             loopback_network(Duration::from_millis(150)),
             control.clone(),
@@ -11202,7 +11410,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         magnet.push_str(&format!("&x.pe={useful_address}"));
         let parsed = Magnet::parse(&magnet).expect("parse rejecting metadata magnet");
         let control = DownloadControl::new();
-        let mut peers = PeerSession::from_magnet(
+        let mut peers = TorrentPeerCoordinator::from_magnet(
             &parsed,
             loopback_network(Duration::from_secs(1)),
             control.clone(),
@@ -11290,7 +11498,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             hex(&info_hash)
         ))
         .expect("parse late metadata discovery magnet");
-        let mut peers = PeerSession::from_magnet(
+        let mut peers = TorrentPeerCoordinator::from_magnet(
             &magnet,
             loopback_network(Duration::from_secs(2)),
             DownloadControl::new(),
@@ -11353,9 +11561,10 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         );
         let parsed = Magnet::parse(&magnet).expect("parse failover magnet");
         let network = loopback_network(Duration::from_secs(2));
-        let mut peers = PeerSession::from_magnet(&parsed, network, DownloadControl::new(), None)
-            .await
-            .expect("resolve failover peers");
+        let mut peers =
+            TorrentPeerCoordinator::from_magnet(&parsed, network, DownloadControl::new(), None)
+                .await
+                .expect("resolve failover peers");
         assert_eq!(peers.registry.len(), 2);
 
         let report = run_magnet_download_with_peers(

@@ -1,6 +1,6 @@
 # Tactical 035: Live Torrent And Peer Inspection Projection
 
-Status: ready for implementation; no implementation has started.
+Status: implementation in progress; engine lifecycle observation landed.
 
 ## Motivation And Desired Outcome
 
@@ -685,6 +685,32 @@ production remote security contract, exposing non-loopback unauthenticated
 control, modifying Android or the visible desktop lifecycle, adding a broad
 framework/dependency with product tradeoffs, copying reference material, or
 resuming the engine-parity campaign outside this projection/refactor boundary.
+
+## Implementation Record
+
+### Engine lifecycle observation checkpoint
+
+The engine now owns one runtime-independent active connection observation in
+`peer_runtime`. `TorrentPeerCoordinator` advances it with the peer registry,
+socket owner, metadata workers, and content swarm rather than reconstructing
+rows from their separate diagnostic snapshots. Outgoing rows begin before
+TCP work, the socket set reports the transport-to-handshake boundary, metadata
+handoff keeps the connection generation, and disconnecting rows are removed
+only after the exact socket/worker and registry cleanup. The public shape also
+records incoming pre-handshake direction and uTP as representable future
+states without implementing either runtime path.
+
+Focused evidence for this checkpoint:
+
+```text
+cargo clippy -p rstorrent-engine --all-targets -- -D warnings
+cargo test -p rstorrent-engine --no-fail-fast
+cargo test -p rstorrent-engine socket_set_reports_transport_before_handshake_completion --no-fail-fast
+cargo test -p rstorrent-engine peer_runtime --no-fail-fast
+```
+
+The full engine run passed 145 tests with three live-network tests ignored;
+the focused transport ordering and three deterministic lifecycle tests passed.
 
 ## Stopping Condition And Next Boundary
 
