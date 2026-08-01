@@ -5,12 +5,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Notify;
 use tokio::time::Instant;
 use ts_rs::TS;
 
 use crate::control::{ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState};
+use crate::view_sets::{DEFAULT_VIEW_SET_QUEUE_BYTES, ViewSetInner, ViewSetUpdate};
 
 pub const VIEW_CONTRACT_VERSION: u16 = 2;
 pub const MIN_SUBSCRIPTION_QUEUE_BYTES: u32 = 4 * 1024;
@@ -42,7 +44,9 @@ pub enum ViewProjection {
     Diagnostics,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, TS)]
+#[derive(
+    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, JsonSchema, TS,
+)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum DiagnosticSeverity {
@@ -53,7 +57,9 @@ pub enum DiagnosticSeverity {
     Error,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, TS)]
+#[derive(
+    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, JsonSchema, TS,
+)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum DiagnosticCategory {
@@ -71,7 +77,7 @@ pub enum DiagnosticCategory {
     Performance,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum DiagnosticProfile {
@@ -80,7 +86,7 @@ pub enum DiagnosticProfile {
     Trace,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct DiagnosticFilter {
     pub profile: DiagnosticProfile,
@@ -98,14 +104,14 @@ impl Default for DiagnosticFilter {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct DiagnosticField {
     pub key: String,
     pub value: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct DiagnosticEvent {
     pub sequence: String,
@@ -119,7 +125,7 @@ pub struct DiagnosticEvent {
     pub context: Vec<DiagnosticField>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum ProgressDisposition {
@@ -129,7 +135,7 @@ pub enum ProgressDisposition {
     Inactive,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum ProgressPhase {
@@ -141,7 +147,7 @@ pub enum ProgressPhase {
     Publication,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum ProgressReason {
@@ -161,7 +167,7 @@ pub enum ProgressReason {
     Failed,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum ProgressAction {
@@ -172,7 +178,7 @@ pub enum ProgressAction {
     RepairStorage,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ProgressAssessment {
     pub disposition: ProgressDisposition,
@@ -339,7 +345,7 @@ pub struct SubscriptionSpec {
     pub diagnostics: Option<DiagnosticFilter>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct IndexRange {
     pub start: u32,
@@ -355,7 +361,7 @@ impl IndexRange {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ActivePiece {
     pub piece_index: u32,
@@ -365,7 +371,7 @@ pub struct ActivePiece {
     pub stored: Vec<IndexRange>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct TorrentView {
     pub torrent_id: String,
@@ -382,7 +388,7 @@ pub struct TorrentView {
     pub error: Option<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ViewSnapshot {
@@ -404,7 +410,7 @@ pub enum ViewSnapshot {
     },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ViewPatch {
@@ -437,11 +443,13 @@ pub enum ViewUpdatePayload {
     ResetRequired { reason: ResetReason },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum ResetReason {
     QueueOverflow,
+    CursorMismatch,
+    CursorExpired,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
@@ -466,13 +474,13 @@ pub struct SubscriptionStats {
 
 #[derive(Clone, Debug)]
 pub struct ViewHub {
-    inner: Arc<Mutex<HubState>>,
+    pub(crate) inner: Arc<Mutex<HubState>>,
 }
 
 #[derive(Debug)]
-struct HubState {
-    epoch: u64,
-    revision: u64,
+pub(crate) struct HubState {
+    pub(crate) epoch: u64,
+    pub(crate) revision: u64,
     torrents: BTreeMap<String, TorrentModel>,
     diagnostics: VecDeque<StoredDiagnostic>,
     diagnostic_bytes: usize,
@@ -480,6 +488,7 @@ struct HubState {
     next_diagnostic_sequence: u64,
     subscribers: BTreeMap<u64, Weak<SubscriberInner>>,
     next_stream_id: u64,
+    pub(crate) view_sets: BTreeMap<String, Arc<ViewSetInner>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -572,6 +581,12 @@ impl fmt::Display for SubscriptionError {
 
 impl Error for SubscriptionError {}
 
+impl From<crate::ViewSetError> for SubscriptionError {
+    fn from(error: crate::ViewSetError) -> Self {
+        Self::Internal(error.to_string())
+    }
+}
+
 impl ViewHub {
     pub fn new(snapshot: &ServiceSnapshot) -> Result<Self, SubscriptionError> {
         let revision = parse_revision(&snapshot.revision)?;
@@ -595,6 +610,7 @@ impl ViewHub {
                 next_diagnostic_sequence: 1,
                 subscribers: BTreeMap::new(),
                 next_stream_id: 1,
+                view_sets: BTreeMap::new(),
             })),
         })
     }
@@ -787,7 +803,7 @@ impl ViewHub {
 }
 
 impl HubState {
-    fn snapshot_for(&self, spec: &SubscriptionSpec) -> ViewSnapshot {
+    pub(crate) fn snapshot_for(&self, spec: &SubscriptionSpec) -> ViewSnapshot {
         match (&spec.selector, spec.projection) {
             (ViewSelector::TorrentList, ViewProjection::Summary) => ViewSnapshot::TorrentList {
                 torrents: self
@@ -837,6 +853,7 @@ impl HubState {
         previous: &BTreeMap<String, TorrentModel>,
     ) -> Result<(), SubscriptionError> {
         let revision = self.revision;
+        self.retain_live_view_sets();
         let current = &self.torrents;
         self.subscribers.retain(|_, weak| weak.strong_count() != 0);
         let subscribers = self
@@ -848,6 +865,15 @@ impl HubState {
             let patch = patch_for(&subscriber.spec, previous, current);
             if let Some(patch) = patch {
                 subscriber.enqueue_patch(revision, patch)?;
+            }
+        }
+        let view_sets = self.view_sets.values().cloned().collect::<Vec<_>>();
+        for view_set in view_sets {
+            for spec in view_set.view_specs()? {
+                let subscription = spec.subscription_spec(DEFAULT_VIEW_SET_QUEUE_BYTES);
+                if let Some(patch) = patch_for(&subscription, previous, current) {
+                    view_set.enqueue_patch(spec.view_id(), patch, revision)?;
+                }
             }
         }
         Ok(())
@@ -877,7 +903,54 @@ impl HubState {
                 )?;
             }
         }
+        self.retain_live_view_sets();
+        let view_sets = self.view_sets.values().cloned().collect::<Vec<_>>();
+        for view_set in view_sets {
+            for spec in view_set.view_specs()? {
+                let subscription = spec.subscription_spec(DEFAULT_VIEW_SET_QUEUE_BYTES);
+                if subscription.projection != ViewProjection::Diagnostics {
+                    continue;
+                }
+                let filter = subscription.diagnostics.clone().unwrap_or_default();
+                if diagnostic_matches(&subscription.selector, &filter, &event) {
+                    view_set.enqueue_patch(
+                        spec.view_id(),
+                        ViewPatch::Diagnostics {
+                            events: vec![event.clone()],
+                            dropped_count: dropped_count.clone(),
+                        },
+                        revision,
+                    )?;
+                }
+            }
+        }
         Ok(())
+    }
+
+    fn retain_live_view_sets(&mut self) {
+        let now = std::time::Instant::now();
+        self.view_sets.retain(|_, view_set| {
+            let retain = !view_set.is_expired(now);
+            if !retain {
+                view_set.close();
+            }
+            retain
+        });
+    }
+
+    pub(crate) fn snapshots_for_view_set(
+        &self,
+        view_set: &ViewSetInner,
+    ) -> Result<(u64, Vec<ViewSetUpdate>), crate::ViewSetError> {
+        let snapshots = view_set
+            .view_specs()?
+            .into_iter()
+            .map(|spec| ViewSetUpdate::Snapshot {
+                view_id: spec.view_id().to_owned(),
+                snapshot: self.snapshot_for(&spec.subscription_spec(DEFAULT_VIEW_SET_QUEUE_BYTES)),
+            })
+            .collect();
+        Ok((self.revision, snapshots))
     }
 }
 
@@ -1201,7 +1274,7 @@ impl SubscriberInner {
     }
 }
 
-fn validate_spec(spec: &SubscriptionSpec) -> Result<(), SubscriptionError> {
+pub(crate) fn validate_spec(spec: &SubscriptionSpec) -> Result<(), SubscriptionError> {
     if spec.delivery.min_interval_millis > MAX_SUBSCRIPTION_INTERVAL_MILLIS {
         return Err(SubscriptionError::InvalidInterval {
             maximum: MAX_SUBSCRIPTION_INTERVAL_MILLIS,
@@ -1334,6 +1407,10 @@ fn coalesce(update: &mut ViewUpdate, next: &ViewUpdatePayload) -> bool {
     else {
         return false;
     };
+    coalesce_patch(current, next)
+}
+
+pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool {
     match (current, next) {
         (
             ViewPatch::TorrentList { upsert, removed },

@@ -221,7 +221,7 @@ abort lifecycle. The pure reducer depends only on generated DTOs.
 - maximum views per set: 16;
 - maximum client view ID: 64 UTF-8 bytes, restricted to a conservative ASCII
   identifier alphabet;
-- whole-set requested queue: 16 KiB through 4 MiB, default 256 KiB;
+- whole-set requested queue: 16 KiB through 512 KiB, default 256 KiB;
 - maximum emitted HTTP update body: 512 KiB;
 - maximum delivery interval: 60 seconds;
 - maximum long-poll wait: 20 seconds;
@@ -405,4 +405,35 @@ React/Zustand/virtualized-table foundation.
 
 ## Implementation Record
 
-Pending.
+### Checkpoint 1: semantic owner
+
+Implemented the task-free leased view-set owner in `rstorrent-session` and
+adapted it to the existing coherent `ViewHub` models. The application service
+now exposes owner-scoped open, replace, lookup, and close operations and closes
+all sets before joined shutdown. Existing Tactical `008` subscribers and new
+view sets receive the same durable, activity, and diagnostic publication
+edges.
+
+The implementation tightened the requested queue ceiling from the tactical's
+provisional 4 MiB to 512 KiB. This makes the retained queue ceiling match the
+maximum eventual HTTP update response rather than allowing an accumulator that
+cannot be emitted through the selected adapter. The initial 16 KiB minimum and
+256 KiB default remain unchanged.
+
+Added `schemars` `1.2.2` under its MIT license after registry review. It is
+derived on the semantic DTO graph in this checkpoint; deterministic schema
+emission and validation are Stage 2 work. The generated lock additions are
+`schemars_derive` `1.2.2` and `serde_derive_internals` `0.30.0`.
+
+Deterministic evidence at this checkpoint:
+
+- 11 focused view-set tests pass, covering validation, initial snapshots,
+  exact replay until acknowledgement, accumulated next state, independent
+  clients, atomic view replacement/removal, owner isolation, cursor mismatch,
+  overflow reset with epoch rotation and fresh snapshots, lease cleanup,
+  explicit close wakeup, and application-shutdown wakeup;
+- `cargo clippy -p rstorrent-session --tests -- -D warnings` passes; and
+- the legacy subscription implementation remains in the same publication
+  paths and is retained for the workspace regression gate.
+
+Stage 2 through Stage 4 remain pending.

@@ -9,6 +9,7 @@ mod application;
 mod control;
 mod have;
 mod store;
+mod view_sets;
 mod views;
 
 pub use application::{
@@ -23,6 +24,11 @@ pub use rstorrent_engine::{NetworkConfig, NetworkPolicy};
 pub use store::{
     ConfiguredStorageRoot, PreparedFileRecord, ResumeRecord, SessionStore, StorageRootLocation,
     StoreError,
+};
+pub use view_sets::{
+    API_VERSION, ApiEncoding, ApiHello, ApiLimits, ApiVersion, DeliveryMode, OpenViewSetOptions,
+    OpenViewSetRequest, OpenViewSetResponse, UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy,
+    ViewSet, ViewSetError, ViewSetOwner, ViewSetStats, ViewSetUpdate, ViewSpec,
 };
 pub use views::{
     ActivePiece, DeliveryPolicy, DiagnosticCategory, DiagnosticEvent, DiagnosticField,

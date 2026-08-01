@@ -30,6 +30,10 @@ use crate::views::{
     DiagnosticCategory, DiagnosticSeverity, IndexRange, ProgressInputs, SubscriptionError,
     SubscriptionSpec, TorrentActivity, ViewHub, ViewSubscription, ranges_from_pieces,
 };
+use crate::{
+    OpenViewSetRequest, OpenViewSetResponse, UpdateViewSetRequest, ViewSet, ViewSetError,
+    ViewSetOwner,
+};
 
 const DEFAULT_PAYLOAD_ALLOWANCE: usize = 32 * 1024;
 
@@ -256,6 +260,39 @@ impl ApplicationService {
         Ok(self.views.subscribe(spec)?)
     }
 
+    pub fn open_view_set(
+        &self,
+        owner: ViewSetOwner,
+        request: OpenViewSetRequest,
+    ) -> Result<OpenViewSetResponse, ViewSetError> {
+        self.views.open_view_set(owner, request)
+    }
+
+    pub fn update_view_set(
+        &self,
+        owner: &ViewSetOwner,
+        view_set_id: &str,
+        request: UpdateViewSetRequest,
+    ) -> Result<(), ViewSetError> {
+        self.views.update_view_set(owner, view_set_id, request)
+    }
+
+    pub fn view_set(
+        &self,
+        owner: &ViewSetOwner,
+        view_set_id: &str,
+    ) -> Result<ViewSet, ViewSetError> {
+        self.views.view_set(owner, view_set_id)
+    }
+
+    pub fn close_view_set(
+        &self,
+        owner: &ViewSetOwner,
+        view_set_id: &str,
+    ) -> Result<(), ViewSetError> {
+        self.views.close_view_set(owner, view_set_id)
+    }
+
     pub async fn descriptor_storage_plan(
         &mut self,
         torrent_id: &str,
@@ -433,6 +470,7 @@ impl ApplicationService {
     }
 
     pub async fn shutdown(&mut self) -> Result<(), ApplicationError> {
+        self.views.close_all_view_sets();
         let mut active_join_error = None;
         if let Some(active) = self.active.take() {
             active.control.cancel();
@@ -1613,9 +1651,10 @@ mod tests {
     use super::{ApplicationConfig, ApplicationService};
     use crate::{
         CONTROL_VERSION, Command, ConfiguredStorageRoot, DeliveryPolicy, DiagnosticFilter,
-        DiagnosticProfile, DiagnosticSeverity, ProgressDisposition, ProgressReason,
-        RequestEnvelope, ResponseOutcome, SessionStore, SubscriptionSpec, TorrentState, ViewPatch,
-        ViewProjection, ViewSelector, ViewSnapshot, ViewUpdatePayload,
+        DiagnosticProfile, DiagnosticSeverity, OpenViewSetOptions, OpenViewSetRequest,
+        ProgressDisposition, ProgressReason, RequestEnvelope, ResponseOutcome, SessionStore,
+        SubscriptionSpec, TorrentState, ViewDeliveryPolicy, ViewPatch, ViewProjection,
+        ViewSelector, ViewSetError, ViewSetOwner, ViewSnapshot, ViewSpec, ViewUpdatePayload,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -1663,6 +1702,42 @@ mod tests {
             IpAddr::V4(address) => DhtEndpoint::new(DhtIp::V4(address.octets()), port),
             IpAddr::V6(address) => DhtEndpoint::new(DhtIp::V6(address.octets()), port),
         }
+    }
+
+    #[tokio::test]
+    async fn application_shutdown_closes_view_sets_and_wakes_waiters() {
+        let root = test_root("view-set-shutdown");
+        let mut service = ApplicationService::open(config(&root))
+            .await
+            .expect("open application");
+        let owner = ViewSetOwner::trusted("test-owner");
+        let opened = service
+            .open_view_set(
+                owner.clone(),
+                OpenViewSetRequest {
+                    views: vec![ViewSpec::TorrentList {
+                        view_id: "library".to_owned(),
+                        delivery: ViewDeliveryPolicy::default(),
+                    }],
+                    options: OpenViewSetOptions::default(),
+                },
+            )
+            .expect("open view set");
+        let view_set = service
+            .view_set(&owner, &opened.view_set_id)
+            .expect("view set handle");
+        let cursor = opened.initial.cursor;
+        let waiter = tokio::spawn(async move { view_set.next_updates(&cursor, 20_000).await });
+        tokio::task::yield_now().await;
+
+        service.shutdown().await.expect("shutdown");
+        let result = tokio::time::timeout(std::time::Duration::from_secs(1), waiter)
+            .await
+            .expect("waiter timed out")
+            .expect("waiter task");
+        assert_eq!(result, Err(ViewSetError::Closed));
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
     }
 
     async fn answer_dht_query(router: &UdpSocket) {

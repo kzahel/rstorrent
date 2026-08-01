@@ -21,6 +21,7 @@ getrandom = "0.3.4"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha1 = "0.10.6"
+schemars = "1.2.2"
 tokio = "1.47.1"
 tokio-util = "0.7.16"
 ts-rs = { version = "12.0.1", features = ["serde-compat"] }

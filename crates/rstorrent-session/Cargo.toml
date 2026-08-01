@@ -11,7 +11,9 @@ uniffi = ["dep:uniffi"]
 [dependencies]
 rstorrent-engine = { path = "../rstorrent-engine" }
 rstorrent-protocol = { path = "../rstorrent-protocol" }
+getrandom = { workspace = true }
 rusqlite = { workspace = true }
+schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha1 = { workspace = true }
