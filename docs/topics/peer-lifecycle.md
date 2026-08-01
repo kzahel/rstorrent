@@ -8,9 +8,10 @@ replacement, and failover. Tactical `020` completed bounded per-connection
 useful-payload feedback and sampled inactivity. Tactical `021` installed
 bounded tracker fan-out plus a source-derived 30-peer live set. Tactical `022`
 removed the classified duplex command/event backpressure deadlock and passed
-3/3 owner-only plus 3/3 paired 50% screens. Tactical `023` now owns strict
-endgame duplicate-attempt lifecycle and cancellation. Tracker and DHT
-observations remain live while content runs. Integrity reputation, measured
+3/3 owner-only plus 3/3 paired 50% screens. Tactical `023` completed strict
+endgame duplicate-attempt lifecycle, cancellation, and public publication.
+Tactical `024` owns bounded integrity reputation. Tracker and DHT observations
+remain live while content runs. Persistent integrity reputation, measured
 picker policy, incoming connections, and persistent peer records remain later
 work.
 
@@ -413,9 +414,10 @@ awaits event delivery before draining more commands. Tactical `022` owns this
 duplex cycle; request-window policy is unchanged until transport progress is
 restored.
 
-Tactical `022` removed the duplex cycle. Tactical `023` has installed strict
-endgame attempt ownership and core cancellation through deterministic and
-controlled gates; its public publication gate remains pending. Incoming
+Tactical `022` removed the duplex cycle. Tactical `023` installed strict
+endgame attempt ownership and core cancellation through deterministic,
+controlled, and public verified-publication gates. Tactical `024` now owns
+exact-generation contributor reputation and known-bad exclusion. Incoming
 listener ownership and advertised-port updates, measured performance
 selection, peer-ID duplicate resolution, integrity reputation, PEX, and
 persisted peer caches remain later work.

@@ -314,14 +314,14 @@ reason to stop.
 Campaign state: **active**.
 
 Active tactical:
-[`023-strict-endgame-ownership.md`](../tactical/023-strict-endgame-ownership.md).
+[`024-piece-hash-failure-recovery.md`](../tactical/024-piece-hash-failure-recovery.md).
 Tactical
-[`022-duplex-peer-task-liveness.md`](../tactical/022-duplex-peer-task-liveness.md)
+[`023-strict-endgame-ownership.md`](../tactical/023-strict-endgame-ownership.md)
 is complete.
 
-Current milestone: install strict bounded endgame duplicate ownership and core
-cancellation, then advance from the passing 50% screen to verified
-publication.
+Current milestone: recover from a failed v1 piece generation with bounded
+contributor evidence, then return to the paired verified-publication
+performance critical path.
 
 Last completed evidence:
 
@@ -414,14 +414,23 @@ Last completed evidence:
   34.70--55.37 seconds, and the alternating screen classified `both_reached`
   in 3/3 at 30.74--45.82 seconds for RSTorrent versus 24.00--25.80 for
   libtorrent. All runs cleaned up exactly, selecting strict endgame and
-  verified publication rather than another transport-liveness change.
+  verified publication rather than another transport-liveness change; and
+- commit `85b200c` installed strict endgame ownership and core cancellation.
+  One owner-only and three alternating full Big Buck Bunny screens published
+  exact content and cleaned up. The alternating RSTorrent runs took
+  80.22--123.18 seconds versus libtorrent's 29.80--30.32 seconds, for a 2.76x
+  median and 4.06x maximum ratio. Endgame remained bounded at 12--59
+  assignments, 12--62 cancellations, 0--432 KiB redundancy, and zero active
+  attempts. The functional completion gate passes; comparable performance
+  remains open after the higher-priority fatal hash path.
 
 Next executable action:
 
-1. represent multiple bounded active attempts without weakening payload
-   ownership;
-2. add core cancel codec and first-response loser cancellation;
-3. pass pure, scripted, workspace, and controlled interoperability gates; and
-4. run the clean owner-only then alternating verified-publication screen.
+1. retain the winning connection generation through stored block state;
+2. reset a failed v1 piece and return bounded contributor evidence;
+3. distinguish uniquely bad from ambiguous contributors in peer reputation;
+4. pass pure, scripted, workspace, and controlled interoperability gates; and
+5. screen one clean headless public verified publication without inducing
+   corruption on the public swarm.
 
 Human blocker: **none**.

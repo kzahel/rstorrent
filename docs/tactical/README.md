@@ -172,9 +172,12 @@ that scope and its cleanup or compatibility rules explicitly.
 - [`022-duplex-peer-task-liveness.md`](022-duplex-peer-task-liveness.md): complete;
   breaks command/event backpressure cycles without dropping or unbounding
   peer messages and passes 3/3 owner-only plus 3/3 paired 50% screens.
-- [`023-strict-endgame-ownership.md`](023-strict-endgame-ownership.md): active;
-  adds strict bounded duplicate requests, first-response cancellation, and
-  harmless late losing payload before the verified-publication gate.
+- [`023-strict-endgame-ownership.md`](023-strict-endgame-ownership.md): complete;
+  adds strict bounded duplicate requests, first-response cancellation, harmless
+  late payload, and exact public verified-publication evidence.
+- [`024-piece-hash-failure-recovery.md`](024-piece-hash-failure-recovery.md):
+  active; resets a failed v1 piece, retains bounded contributor generations,
+  and distinguishes known-bad from ambiguous peer evidence.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

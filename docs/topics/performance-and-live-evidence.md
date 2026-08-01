@@ -340,7 +340,13 @@ cleanup. The alternating screen also completed 3/3 for both owners: RSTorrent
 took 30.74, 34.14, and 45.82 seconds versus libtorrent's 24.00, 25.80, and
 24.82, producing 1.28x--1.85x paired ratios. This passes the bounded tactical
 screen but is not yet the campaign's two-cohort comparable confirmation.
-Verified publication and strict endgame behavior are next.
+Tactical `023` then reached verified publication in one clean owner-only run
+at 72.66 seconds and all three alternating pairs. RSTorrent took 80.22, 82.53,
+and 123.18 seconds versus libtorrent's 29.80, 29.93, and 30.32 seconds. The
+2.76x median and 4.06x maximum paired ratios miss the comparable gate, while
+exact integrity, publication, cleanup, and bounded endgame counters pass. This
+is retained performance debt. The campaign first closes the known fatal piece
+hash-recovery path, then resumes source-derived complete-download profiling.
 
 ## Result Classification
 

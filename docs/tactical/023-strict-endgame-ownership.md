@@ -1,6 +1,6 @@
 # Tactical 023: Strict Endgame Ownership
 
-Status: Active
+Status: Complete
 
 Topics: `download-correctness`, `peer-lifecycle`,
 `performance-and-live-evidence`, `oracle-driven-engine-campaign`
@@ -157,8 +157,23 @@ Formatting, warning-denying workspace clippy, and 230 workspace tests with
 three explicitly ignored public-network tests pass. Controlled mixed-peer
 liveness and paired 79,000-byte exact publication both pass; the paired gate
 classified `both_reached` in 50 ms for RSTorrent and 94 ms for libtorrent.
-This is a harness guard, not a public performance claim. The live gate remains
-outstanding and the tactical remains active.
+This is a harness guard, not a public performance claim.
+
+The clean owner-only common-profile Big Buck Bunny run published all
+276,445,467 bytes and 1,055 pieces in 72.66 seconds, with 88 endgame
+assignments, 88 cancellations, 32 KiB of redundant payload, and zero active
+attempts at shutdown. Three alternating complete pairs then published exact
+content for both owners in every run. RSTorrent took 80.22, 82.53, and 123.18
+seconds versus libtorrent's 29.80, 29.93, and 30.32 seconds. Its bounded
+endgame counters covered 12--59 assignments, 12--62 cancellations, 0--432 KiB
+of redundant payload, and zero active attempts at every terminal snapshot.
+Payload high water remained 13.68--15.42 MB and all temporary roots and tasks
+cleaned up exactly.
+
+This completes the tactical's functional and safety gate. The 2.76x median
+and 4.06x maximum paired ratios do not meet the campaign's comparable gate;
+that variance remains explicit performance debt. The next higher-priority
+correctness slice is whole-piece recovery after a v1 hash failure.
 
 ## Non-Goals
 
@@ -170,10 +185,9 @@ outstanding and the tactical remains active.
 
 ## Validation And Stopping Condition
 
-Run focused codec and pure ownership tests, scripted two-peer endgame and slow
-storage tests, formatting, warning-denying workspace clippy, workspace tests,
-controlled mixed-peer and paired publication interoperability, then the live
-gate. This tactical completes when strict endgame ownership, cancel delivery,
-late-loss safety, exact accounting, and cleanup pass, and the public complete
-screen succeeds or retains a classified boundary owned by the next tactical.
-No human decision is currently required.
+This tactical completed when focused codec and pure ownership tests, scripted
+two-peer endgame and slow-storage cases, formatting, warning-denying workspace
+clippy, workspace tests, controlled interoperability, and the public complete
+gate established strict ownership, cancel delivery, late-loss safety, exact
+accounting, publication, and cleanup. Tactical `024` owns the classified
+integrity boundary. No human decision was required.
