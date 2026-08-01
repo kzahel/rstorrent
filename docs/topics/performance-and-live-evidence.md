@@ -345,8 +345,21 @@ at 72.66 seconds and all three alternating pairs. RSTorrent took 80.22, 82.53,
 and 123.18 seconds versus libtorrent's 29.80, 29.93, and 30.32 seconds. The
 2.76x median and 4.06x maximum paired ratios miss the comparable gate, while
 exact integrity, publication, cleanup, and bounded endgame counters pass. This
-is retained performance debt. The campaign first closes the known fatal piece
-hash-recovery path, then resumes source-derived complete-download profiling.
+is retained performance debt.
+
+Tactical `024` then completed bounded piece-hash recovery without changing
+transfer policy. Its clean public health screen published all 276,445,467
+bytes and 1,055 pieces in 86.05 seconds, with metadata at 3.27 seconds, first
+piece at 4.49, 50% at 40.18, and zero content hash failures. Exact integrity,
+publication, task cleanup, and a 13,516,800-byte payload high water passed.
+
+A controlled 32 MiB single-piece RSTorrent download from a local libtorrent
+seed took 3.829 seconds, about 8.4 MiB/s. Source inspection found the content
+supervisor awaits each 16 KiB physical write and every piece reread/hash before
+consuming another peer event, whereas pinned libtorrent transfers accepted
+blocks to a bounded asynchronous disk owner and releases peer progress from
+write completion. Tactical `025` tests this owner with three-run before/after
+evidence before any peer-window, picker, or discovery tuning.
 
 ## Result Classification
 

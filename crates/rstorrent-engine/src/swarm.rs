@@ -262,6 +262,13 @@ pub struct RequestCancellation {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PieceHashFailure {
+    pub piece: u32,
+    pub contributors: Vec<ConnectionId>,
+    pub failed_bytes: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReceiveDisposition {
     Accept {
         evidence: RequestAttemptId,
@@ -315,6 +322,9 @@ pub struct SwarmSnapshot {
     pub endgame_assignments: usize,
     pub cancelled_request_attempts: usize,
     pub redundant_payload_bytes: usize,
+    pub piece_hash_failures: usize,
+    pub failed_piece_bytes: usize,
+    pub last_hash_failure_contributors: usize,
     pub request_timeout_min: Option<Duration>,
     pub request_timeout_max: Option<Duration>,
     pub oldest_request_age: Option<Duration>,
@@ -542,7 +552,10 @@ enum BlockPhase {
         source: ConnectionId,
         evidence: RequestAttemptId,
     },
-    Received,
+    Received {
+        source: ConnectionId,
+        evidence: RequestAttemptId,
+    },
     Verified,
 }
 
@@ -552,7 +565,7 @@ impl BlockPhase {
             Self::Missing => BlockStatus::Missing,
             Self::Requested => BlockStatus::Requested,
             Self::Writing { .. } => BlockStatus::Writing,
-            Self::Received => BlockStatus::Received,
+            Self::Received { .. } => BlockStatus::Received,
             Self::Verified => BlockStatus::Verified,
         }
     }
@@ -584,6 +597,9 @@ pub struct SwarmState {
     endgame_assignments: usize,
     cancelled_request_attempts: usize,
     redundant_payload_bytes: usize,
+    piece_hash_failures: usize,
+    failed_piece_bytes: usize,
+    last_hash_failure_contributors: usize,
 }
 
 impl SwarmState {
@@ -648,6 +664,9 @@ impl SwarmState {
             endgame_assignments: 0,
             cancelled_request_attempts: 0,
             redundant_payload_bytes: 0,
+            piece_hash_failures: 0,
+            failed_piece_bytes: 0,
+            last_hash_failure_contributors: 0,
         })
     }
 
@@ -995,7 +1014,7 @@ impl SwarmState {
             .get_mut(&block)
             .ok_or(SwarmError::UnknownBlock(block))?;
         state.phase = if accepted {
-            BlockPhase::Received
+            BlockPhase::Received { source, evidence }
         } else {
             BlockPhase::Missing
         };
@@ -1022,30 +1041,119 @@ impl SwarmState {
             .ok_or(SwarmError::UnknownPiece(piece))?;
         Ok(piece.blocks.iter().all(|block| {
             self.blocks.get(block).is_some_and(|block| {
-                matches!(block.phase, BlockPhase::Received | BlockPhase::Verified)
+                matches!(
+                    block.phase,
+                    BlockPhase::Received { .. } | BlockPhase::Verified
+                )
             })
         }))
     }
 
-    pub fn mark_piece_verified(&mut self, piece: u32) -> Result<(), SwarmError> {
-        if !self.piece_ready(piece)? {
-            return Err(SwarmError::InvalidTransition(
-                "piece cannot verify before every block is stored",
-            ));
-        }
+    pub fn mark_piece_verified(&mut self, piece: u32) -> Result<Vec<ConnectionId>, SwarmError> {
         let blocks = self
             .pieces
             .get(&piece)
             .ok_or(SwarmError::UnknownPiece(piece))?
             .blocks
             .clone();
+        if !blocks.iter().all(|block| {
+            self.blocks
+                .get(block)
+                .is_some_and(|state| matches!(state.phase, BlockPhase::Received { .. }))
+        }) {
+            return Err(SwarmError::InvalidTransition(
+                "piece cannot verify before every block is newly stored",
+            ));
+        }
+        let contributors = self.piece_contributors(&blocks)?;
         for block in blocks {
             self.blocks
                 .get_mut(&block)
                 .ok_or(SwarmError::UnknownBlock(block))?
                 .phase = BlockPhase::Verified;
         }
-        Ok(())
+        Ok(contributors)
+    }
+
+    pub fn mark_piece_hash_failed(&mut self, piece: u32) -> Result<PieceHashFailure, SwarmError> {
+        let blocks = self
+            .pieces
+            .get(&piece)
+            .ok_or(SwarmError::UnknownPiece(piece))?
+            .blocks
+            .clone();
+        if !blocks.iter().all(|block| {
+            self.blocks
+                .get(block)
+                .is_some_and(|state| matches!(state.phase, BlockPhase::Received { .. }))
+        }) {
+            return Err(SwarmError::InvalidTransition(
+                "piece cannot fail its hash before every block is stored",
+            ));
+        }
+        let contributors = self.piece_contributors(&blocks)?;
+        let failed_bytes = blocks.iter().try_fold(0_usize, |total, block| {
+            total
+                .checked_add(block.length as usize)
+                .ok_or(SwarmError::ArithmeticOverflow("failed piece bytes"))
+        })?;
+        for block in blocks {
+            self.blocks
+                .get_mut(&block)
+                .ok_or(SwarmError::UnknownBlock(block))?
+                .phase = BlockPhase::Missing;
+        }
+        self.piece_hash_failures = self.piece_hash_failures.saturating_add(1);
+        self.failed_piece_bytes = self.failed_piece_bytes.saturating_add(failed_bytes);
+        self.last_hash_failure_contributors = contributors.len();
+        Ok(PieceHashFailure {
+            piece,
+            contributors,
+            failed_bytes,
+        })
+    }
+
+    fn piece_contributors(&self, blocks: &[BlockKey]) -> Result<Vec<ConnectionId>, SwarmError> {
+        let contributors = blocks
+            .iter()
+            .try_fold(BTreeSet::new(), |mut contributors, block| {
+                let state = self
+                    .blocks
+                    .get(block)
+                    .ok_or(SwarmError::UnknownBlock(*block))?;
+                match state.phase {
+                    BlockPhase::Received { source, evidence } => {
+                        if !state.attempts.iter().any(|attempt| {
+                            attempt.id == evidence
+                                && attempt.connection == source
+                                && attempt.disposition == RequestDisposition::PayloadReceived
+                        }) {
+                            return Err(SwarmError::Invariant(
+                                "stored block contributor evidence is missing",
+                            ));
+                        }
+                        contributors.insert(source);
+                    }
+                    BlockPhase::Verified => {}
+                    _ => {
+                        return Err(SwarmError::InvalidTransition(
+                            "piece contributor requested before storage completion",
+                        ));
+                    }
+                }
+                Ok(contributors)
+            })?;
+        Ok(contributors.into_iter().collect())
+    }
+
+    pub(crate) fn stored_contributors(&self) -> BTreeSet<ConnectionId> {
+        self.blocks
+            .values()
+            .filter_map(|block| match block.phase {
+                BlockPhase::Received { source, .. } => Some(source),
+                _ => None,
+            })
+            .collect()
     }
 
     pub fn cancel_all(&mut self) -> Result<(), SwarmError> {
@@ -1177,7 +1285,7 @@ impl SwarmState {
                         .saturating_add(block_active_attempts.saturating_sub(1));
                 }
                 BlockPhase::Writing { .. } => writing += 1,
-                BlockPhase::Received => received += 1,
+                BlockPhase::Received { .. } => received += 1,
                 BlockPhase::Verified => verified += 1,
             }
         }
@@ -1250,6 +1358,9 @@ impl SwarmState {
             endgame_assignments: self.endgame_assignments,
             cancelled_request_attempts: self.cancelled_request_attempts,
             redundant_payload_bytes: self.redundant_payload_bytes,
+            piece_hash_failures: self.piece_hash_failures,
+            failed_piece_bytes: self.failed_piece_bytes,
+            last_hash_failure_contributors: self.last_hash_failure_contributors,
             request_timeout_min,
             request_timeout_max,
             oldest_request_age: oldest_issued.map(|issued| now.saturating_sub(issued)),
@@ -1468,7 +1579,7 @@ impl SwarmState {
                                 block.phase,
                                 BlockPhase::Requested
                                     | BlockPhase::Writing { .. }
-                                    | BlockPhase::Received
+                                    | BlockPhase::Received { .. }
                             )
                         })
                     })
@@ -2403,6 +2514,100 @@ mod tests {
             state.snapshot(Duration::ZERO).no_request_reason,
             Some(NoRequestReason::Complete)
         );
+    }
+
+    #[test]
+    fn hash_failure_resets_only_one_piece_and_retains_bounded_contributors() {
+        let mut state = state(2, vec![plan(0, 2), plan(1, 1)], 1);
+        add_peer(&mut state, connection(3), &[1], false);
+        let unrelated = state.schedule(Duration::ZERO).expect("unrelated piece")[0];
+        state
+            .receive_block(unrelated.connection, unrelated.block, Duration::ZERO)
+            .expect("unrelated payload");
+        state
+            .finish_write(unrelated.block, true, Duration::ZERO)
+            .expect("unrelated write");
+        assert_eq!(
+            state.mark_piece_verified(1).expect("unrelated verify"),
+            vec![connection(3)]
+        );
+        state.set_choking(connection(3), true).expect("choke peer");
+
+        add_peer(&mut state, connection(1), &[0], false);
+        let first = state.schedule(Duration::ZERO).expect("first block")[0];
+        state
+            .receive_block(first.connection, first.block, Duration::ZERO)
+            .expect("first payload");
+        state
+            .finish_write(first.block, true, Duration::ZERO)
+            .expect("first write");
+        state.set_choking(connection(1), true).expect("choke first");
+
+        add_peer(&mut state, connection(2), &[0], false);
+        let second = state.schedule(Duration::ZERO).expect("second block")[0];
+        state
+            .receive_block(second.connection, second.block, Duration::ZERO)
+            .expect("second payload");
+        state
+            .finish_write(second.block, true, Duration::ZERO)
+            .expect("second write");
+
+        let failure = state.mark_piece_hash_failed(0).expect("hash failure");
+        assert_eq!(failure.piece, 0);
+        assert_eq!(failure.contributors, vec![connection(1), connection(2)]);
+        assert_eq!(failure.failed_bytes, 2 * BLOCK as usize);
+        let failed = state.snapshot(Duration::ZERO);
+        assert_eq!(failed.missing_blocks, 2);
+        assert_eq!(failed.verified_blocks, 1);
+        assert_eq!(failed.payload_reserved, 0);
+        assert_eq!(failed.piece_hash_failures, 1);
+        assert_eq!(failed.failed_piece_bytes, 2 * BLOCK as usize);
+        assert_eq!(failed.last_hash_failure_contributors, 2);
+
+        state
+            .set_choking(connection(2), true)
+            .expect("choke second");
+        add_peer(&mut state, connection(4), &[0], false);
+        for _ in 0..2 {
+            let request = state.schedule(Duration::ZERO).expect("retry")[0];
+            assert_eq!(request.connection, connection(4));
+            state
+                .receive_block(request.connection, request.block, Duration::ZERO)
+                .expect("retry payload");
+            state
+                .finish_write(request.block, true, Duration::ZERO)
+                .expect("retry write");
+        }
+        assert_eq!(
+            state.mark_piece_verified(0).expect("retry verify"),
+            vec![connection(4)]
+        );
+        assert_eq!(
+            state.snapshot(Duration::ZERO).no_request_reason,
+            Some(NoRequestReason::Complete)
+        );
+    }
+
+    #[test]
+    fn hash_failure_rejects_incomplete_or_already_verified_piece() {
+        let mut state = state(1, vec![plan(0, 1)], 1);
+        assert!(matches!(
+            state.mark_piece_hash_failed(0),
+            Err(SwarmError::InvalidTransition(_))
+        ));
+        add_peer(&mut state, connection(1), &[0], false);
+        let request = state.schedule(Duration::ZERO).expect("request")[0];
+        state
+            .receive_block(request.connection, request.block, Duration::ZERO)
+            .expect("payload");
+        state
+            .finish_write(request.block, true, Duration::ZERO)
+            .expect("write");
+        state.mark_piece_verified(0).expect("verify");
+        assert!(matches!(
+            state.mark_piece_hash_failed(0),
+            Err(SwarmError::InvalidTransition(_))
+        ));
     }
 
     #[test]

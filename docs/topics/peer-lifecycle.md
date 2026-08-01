@@ -10,8 +10,9 @@ bounded tracker fan-out plus a source-derived 30-peer live set. Tactical `022`
 removed the classified duplex command/event backpressure deadlock and passed
 3/3 owner-only plus 3/3 paired 50% screens. Tactical `023` completed strict
 endgame duplicate-attempt lifecycle, cancellation, and public publication.
-Tactical `024` owns bounded integrity reputation. Tracker and DHT observations
-remain live while content runs. Persistent integrity reputation, measured
+Tactical `024` completed bounded exact-generation integrity reputation and
+known-bad exclusion. Tracker and DHT observations remain live while content
+runs. Full parole selection, persistent integrity reputation, measured
 picker policy, incoming connections, and persistent peer records remain later
 work.
 
@@ -156,13 +157,16 @@ make those scenarios independently testable:
 - supervised connection tasks using bounded commands and events, explicit
   cancellation, and observable joins.
 
-Tactical `023` now uses the request-attempt shape to retain multiple bounded
+Tactical `023` uses the request-attempt shape to retain multiple bounded
 owners for a block during strict endgame. Ordinary scheduling still permits
 only one active attempt until every missing block is covered. First response
 wins, loser cancels are typed, and every attempt remains charged to the global
-payload allowance. Do not introduce generic picker, transport, reputation, or
-policy traits until a concrete second implementation or measured ownership
-problem requires them.
+payload allowance. Tactical `024` retains the winning dial generation through
+stored state, rewards successful contributors, bans a sole corrupt source,
+and places ambiguous contributors on bounded parole without falsely banning
+them. Do not introduce generic picker, transport, reputation, or policy traits
+until a concrete second implementation or measured ownership problem requires
+them.
 
 ## Adversarial Scenario Families
 
@@ -223,12 +227,13 @@ blocked result.
 
 ### Integrity-facing transitions
 
-The first peer tactical retains bounded contributor and generation evidence so
-a valid late block is harmless and an unsolicited block cannot consume another
-request's reservation. Automatic hash retry, contributor reputation, bounded
-endgame duplicates, and cancel messages remain the following correctness
-slice unless implementation evidence shows that their state shape must be
-settled earlier.
+Stored blocks retain bounded contributor and dial-generation evidence so a
+valid late block is harmless, an unsolicited block cannot consume another
+request's reservation, and a failed v1 generation can attribute suspicion
+without confusing a replacement socket. Automatic hash retry, asymmetric
+trust, known-bad exclusion, bounded endgame duplicates, and cancel messages
+now pass pure and scripted evidence. Full parole piece ownership and persisted
+reputation remain later slices selected only by adversarial evidence.
 
 ## Test And Evidence Strategy
 
@@ -416,8 +421,9 @@ restored.
 
 Tactical `022` removed the duplex cycle. Tactical `023` installed strict
 endgame attempt ownership and core cancellation through deterministic,
-controlled, and public verified-publication gates. Tactical `024` now owns
-exact-generation contributor reputation and known-bad exclusion. Incoming
-listener ownership and advertised-port updates, measured performance
-selection, peer-ID duplicate resolution, integrity reputation, PEX, and
-persisted peer caches remain later work.
+controlled, and public verified-publication gates. Tactical `024` installed
+exact-generation contributor reputation, whole-piece retry, and known-bad
+exclusion through pure and scripted adversarial gates. Incoming listener
+ownership and advertised-port updates, measured performance selection,
+peer-ID duplicate resolution, full parole selection, PEX, and persisted peer
+caches remain later work.

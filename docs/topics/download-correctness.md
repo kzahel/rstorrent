@@ -11,9 +11,10 @@ inactivity. Tactical `021` installed tracker fan-out and a bounded 30-peer
 admission set, and Tactical `022` removed the resulting duplex channel
 deadlock with 3/3 owner-only and paired 50% evidence. Tactical `023` completed
 strict endgame duplicates, core cancellation, and public publication.
-Tactical `024` owns hash-failure recovery, which remains a sufficient cause of
-an ordinary near-completion failure, so broad
-public-swarm reliability is not yet claimed.
+Tactical `024` completed whole-piece v1 hash recovery, exact-generation
+contributor evidence, and bounded peer integrity reputation. Tactical `025`
+now separates storage execution from peer-event progress on the measured
+complete-download critical path.
 
 ## Scope
 
@@ -124,11 +125,13 @@ releases that generation's window and leaves one probe request. Choke,
 disconnect, expiry, and replacement release only the affected generation's
 requests; valid late payload cannot release newer ownership.
 
-The remaining known fatal near-completion mechanism is a final piece hash
-failure: verified state stays safe, but the owner terminates instead of
-resetting the piece and applying bounded contributor evidence. Strict endgame
-duplicates and core losing-request cancellation are installed and publicly
-exercised. Their retained performance variance is not a correctness failure.
+A failed v1 piece generation now resets as a whole after hashing, preserves
+unrelated verified pieces, and retains bounded exact-generation contributors.
+A sole source is known bad and banned; ambiguous contributors accumulate
+bounded suspicion without false immediate bans. Strict endgame duplicates and
+core losing-request cancellation are installed and publicly exercised. The
+remaining measured gap is completion performance rather than a known fatal
+ordinary transition.
 
 These are structural facts, not a diagnosis of any particular public run.
 
@@ -166,7 +169,7 @@ related unit test exists.
 | DL-C06 | Tracker discovers a useful peer after content begins | Observation joins the registry and may become a live content source while work remains. | Passing independent delayed tracker and DHT runtime evidence through the same intake boundary. |
 | DL-C07 | Final blocks are slow across several peers | Endgame issues bounded duplicates without violating payload or request budgets. | Passing pure, scripted, and four exact public complete runs with 12--88 bounded assignments and zero active request attempts at termination. |
 | DL-C08 | One endgame copy arrives after another completed | First valid block wins, losers are cancelled, and late duplicates are harmless. | Passing pure, scripted exact core-cancel-before-storage, and public complete evidence with 0--432 KiB bounded redundancy. |
-| DL-C09 | A received piece fails its SHA-1 hash | No have bit is set; the whole piece becomes schedulable again; contributor evidence is bounded. | Partial: mismatch is detected and no have bit is set, but execution terminates and attribution is absent. |
+| DL-C09 | A received piece fails its SHA-1 hash | No have bit is set; the whole piece becomes schedulable again; contributor evidence is bounded. | Passing pure and scripted evidence: sole corrupt and ambiguous multi-source generations reset, preserve unrelated state, apply exact-generation reputation, and complete from a clean generation. |
 | DL-C10 | Storage write fails after a block arrives | The block is not considered received and no false verified state is committed. | Passing deterministic state evidence; broader filesystem recovery policy remains incomplete. |
 | DL-C11 | Restart claims all but one piece | Claimed pieces are rechecked, the missing piece downloads, and publication occurs once. | Passing controlled process-death and conservative recheck evidence for the established multi-file profile. |
 | DL-C12 | A claimed piece changed on disk before restart | Recheck clears only the bad claim and never publishes it as verified. | Passing controlled corruption and resume evidence. |
@@ -222,11 +225,11 @@ downloads, captures, browser state, AVD state, and subprocesses they own.
 
 ## Next Stopping Condition
 
-Tactical `023` completed DL-C07 and DL-C08: bounded strict endgame duplicates,
-core cancel messages, and harmless losing responses. Tactical `024` owns
-DL-C09 whole-piece reset after hash failure and bounded contributor
-attribution. It preserves Tactical `017`'s request/payload accounting and all
-controlled storage, resume, tracker, DHT, and mixed-peer evidence.
+Tactical `024` completed DL-C09: whole-piece v1 reset, bounded contributor
+attribution, known-bad exclusion, and clean retry. Tactical `025` now tests one
+bounded torrent-local storage owner so slow writes and hashes cannot stop peer
+event progress. It must preserve request/payload accounting, hash recovery,
+resume ordering, exact publication, and all controlled interoperability gates.
 
 Routine engine validation remains headless; no additional product UI is
 required by that slice.

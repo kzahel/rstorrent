@@ -162,6 +162,20 @@ pub enum PeerFailure {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PeerIntegrity {
+    pub trust_points: i8,
+    pub hash_failures: u8,
+    pub valid_pieces: u32,
+    pub on_parole: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PeerIntegrityAction {
+    Retain,
+    Ban,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct PeerHistory {
     pub dial_attempts: u32,
     pub total_failures: u32,
@@ -184,6 +198,8 @@ pub struct PeerRecord {
     observation_order: u64,
     phase: PeerPhase,
     history: PeerHistory,
+    integrity: PeerIntegrity,
+    last_connection_attempt: Option<DialAttemptId>,
 }
 
 impl PeerRecord {
@@ -217,6 +233,10 @@ impl PeerRecord {
 
     pub fn history(&self) -> PeerHistory {
         self.history
+    }
+
+    pub fn integrity(&self) -> PeerIntegrity {
+        self.integrity
     }
 }
 
@@ -289,6 +309,7 @@ pub struct PeerRecordSnapshot {
     pub phase: PeerPhase,
     pub eligibility: DialEligibility,
     pub history: PeerHistory,
+    pub integrity: PeerIntegrity,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -491,6 +512,7 @@ impl PeerRegistry {
                     phase: record.phase,
                     eligibility,
                     history: record.history,
+                    integrity: record.integrity,
                 }
             })
             .collect();
@@ -584,6 +606,8 @@ impl PeerRegistry {
             observation_order,
             phase: PeerPhase::Idle,
             history: PeerHistory::default(),
+            integrity: PeerIntegrity::default(),
+            last_connection_attempt: None,
         });
         self.next_record_id = next_record_id;
         self.next_observation_order = next_observation_order;
@@ -669,6 +693,7 @@ impl PeerRegistry {
         record.history.retry_at = None;
         record.history.last_failure = None;
         record.history.last_connected_at = Some(now);
+        record.last_connection_attempt = Some(attempt.id);
         Ok(())
     }
 
@@ -705,6 +730,30 @@ impl PeerRegistry {
         }
     }
 
+    pub fn record_piece_passed(&mut self, attempt: DialAttempt) -> Result<(), PeerRegistryError> {
+        let record = self.record_for_integrity_mut(attempt)?;
+        record.integrity.trust_points = record.integrity.trust_points.saturating_add(1).min(8);
+        record.integrity.valid_pieces = record.integrity.valid_pieces.saturating_add(1);
+        record.integrity.on_parole = false;
+        Ok(())
+    }
+
+    pub fn record_piece_failed(
+        &mut self,
+        attempt: DialAttempt,
+        known_bad: bool,
+    ) -> Result<PeerIntegrityAction, PeerRegistryError> {
+        let record = self.record_for_integrity_mut(attempt)?;
+        record.integrity.trust_points = record.integrity.trust_points.saturating_sub(2).max(-7);
+        record.integrity.hash_failures = record.integrity.hash_failures.saturating_add(1);
+        record.integrity.on_parole = true;
+        if known_bad || record.integrity.trust_points <= -7 {
+            Ok(PeerIntegrityAction::Ban)
+        } else {
+            Ok(PeerIntegrityAction::Retain)
+        }
+    }
+
     fn record_index(&self, id: PeerRecordId) -> Option<usize> {
         self.records.iter().position(|record| record.id == id)
     }
@@ -732,6 +781,28 @@ impl PeerRegistry {
             }
         };
         if record.phase != expected {
+            return Err(PeerRegistryError::StaleAttempt(attempt.id));
+        }
+        Ok(record)
+    }
+
+    fn record_for_integrity_mut(
+        &mut self,
+        attempt: DialAttempt,
+    ) -> Result<&mut PeerRecord, PeerRegistryError> {
+        let record = self
+            .records
+            .iter_mut()
+            .find(|record| record.id == attempt.record_id)
+            .ok_or(PeerRegistryError::UnknownRecord(attempt.record_id))?;
+        let current_generation = match record.phase {
+            PeerPhase::Connected { attempt_id } => attempt_id == attempt.id,
+            PeerPhase::Idle | PeerPhase::Banned => {
+                record.last_connection_attempt == Some(attempt.id)
+            }
+            PeerPhase::Dialing { .. } => false,
+        };
+        if record.endpoint != attempt.endpoint || !current_generation {
             return Err(PeerRegistryError::StaleAttempt(attempt.id));
         }
         Ok(record)
@@ -875,9 +946,9 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        DialEligibility, PeerEndpoint, PeerFailure, PeerObservation, PeerObservationDisposition,
-        PeerPhase, PeerRegistry, PeerRegistryConfig, PeerRegistryError, PeerSelectionContext,
-        PeerSelector, PeerSource,
+        DialEligibility, PeerEndpoint, PeerFailure, PeerIntegrityAction, PeerObservation,
+        PeerObservationDisposition, PeerPhase, PeerRegistry, PeerRegistryConfig, PeerRegistryError,
+        PeerSelectionContext, PeerSelector, PeerSource,
     };
 
     fn endpoint(port: u16) -> PeerEndpoint {
@@ -1054,6 +1125,126 @@ mod tests {
             registry.connection_closed(successful_attempt, Duration::from_secs(15), None),
             Err(PeerRegistryError::StaleAttempt(_))
         ));
+    }
+
+    #[test]
+    fn integrity_reputation_is_asymmetric_bounded_and_generation_safe() {
+        let mut registry = PeerRegistry::new(config(2)).expect("registry");
+        let record_id = registry
+            .observe(
+                PeerObservation::dialable(endpoint(6_881), PeerSource::Tracker),
+                Duration::ZERO,
+            )
+            .expect("observation")
+            .record_id;
+        let selector = PeerSelector;
+        let context = PeerSelectionContext {
+            now: Duration::ZERO,
+        };
+        let attempt = registry
+            .begin_dial(
+                selector.select(&registry, context).expect("candidate"),
+                context,
+            )
+            .expect("dial");
+        registry
+            .dial_succeeded(attempt, Duration::ZERO)
+            .expect("connect");
+
+        assert_eq!(
+            registry
+                .record_piece_failed(attempt, false)
+                .expect("ambiguous failure"),
+            PeerIntegrityAction::Retain
+        );
+        let failed = registry.get(record_id).expect("record").integrity();
+        assert_eq!(failed.trust_points, -2);
+        assert_eq!(failed.hash_failures, 1);
+        assert!(failed.on_parole);
+
+        registry.record_piece_passed(attempt).expect("valid piece");
+        let passed = registry.get(record_id).expect("record").integrity();
+        assert_eq!(passed.trust_points, -1);
+        assert_eq!(passed.valid_pieces, 1);
+        assert!(!passed.on_parole);
+
+        registry
+            .connection_closed(attempt, Duration::from_secs(1), None)
+            .expect("close");
+        let retry_context = PeerSelectionContext {
+            now: Duration::from_secs(1),
+        };
+        let retry = registry
+            .begin_dial(
+                selector
+                    .select(&registry, retry_context)
+                    .expect("retry candidate"),
+                retry_context,
+            )
+            .expect("retry dial");
+        registry
+            .dial_succeeded(retry, Duration::from_secs(1))
+            .expect("retry connect");
+        assert!(matches!(
+            registry.record_piece_failed(attempt, true),
+            Err(PeerRegistryError::StaleAttempt(_))
+        ));
+        assert_eq!(
+            registry
+                .record_piece_failed(retry, true)
+                .expect("known bad"),
+            PeerIntegrityAction::Ban
+        );
+        let known_bad = registry.get(record_id).expect("record").integrity();
+        assert_eq!(known_bad.trust_points, -3);
+        assert_eq!(known_bad.hash_failures, 2);
+        assert!(known_bad.on_parole);
+    }
+
+    #[test]
+    fn repeated_ambiguous_failures_reach_the_fixed_ban_floor() {
+        let mut registry = PeerRegistry::new(config(1)).expect("registry");
+        registry
+            .observe(
+                PeerObservation::dialable(endpoint(6_881), PeerSource::Tracker),
+                Duration::ZERO,
+            )
+            .expect("observation");
+        let context = PeerSelectionContext {
+            now: Duration::ZERO,
+        };
+        let attempt = registry
+            .begin_dial(
+                PeerSelector.select(&registry, context).expect("candidate"),
+                context,
+            )
+            .expect("dial");
+        registry
+            .dial_succeeded(attempt, Duration::ZERO)
+            .expect("connect");
+        for _ in 0..3 {
+            assert_eq!(
+                registry
+                    .record_piece_failed(attempt, false)
+                    .expect("ambiguous failure"),
+                PeerIntegrityAction::Retain
+            );
+        }
+        assert_eq!(
+            registry
+                .record_piece_failed(attempt, false)
+                .expect("trust floor"),
+            PeerIntegrityAction::Ban
+        );
+        assert_eq!(
+            registry
+                .records()
+                .next()
+                .expect("record")
+                .integrity()
+                .trust_points,
+            -7
+        );
     }
 
     #[test]

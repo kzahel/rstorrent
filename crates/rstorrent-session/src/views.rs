@@ -963,6 +963,13 @@ impl TorrentModel {
                     self.active = None;
                 }
             }
+            TorrentActivity::PieceHashFailed { piece_index } => {
+                if let Some(active) = matching_active(&mut self.active, piece_index) {
+                    active.requested.clear();
+                    active.received.clear();
+                    active.stored.clear();
+                }
+            }
         }
     }
 }
@@ -989,6 +996,9 @@ pub(crate) enum TorrentActivity {
         length: u32,
     },
     PieceVerified {
+        piece_index: u32,
+    },
+    PieceHashFailed {
         piece_index: u32,
     },
 }
@@ -1580,8 +1590,9 @@ mod tests {
     use super::{
         DeliveryPolicy, DiagnosticCategory, DiagnosticFilter, DiagnosticProfile,
         DiagnosticSeverity, IndexRange, ProgressAction, ProgressDisposition, ProgressInputs,
-        ProgressReason, ResetReason, SubscriptionSpec, TorrentActivity, ViewHub, ViewProjection,
-        ViewSelector, ViewSnapshot, ViewUpdatePayload, assess_progress, ranges_from_pieces,
+        ProgressReason, ResetReason, SubscriptionSpec, TorrentActivity, ViewHub, ViewPatch,
+        ViewProjection, ViewSelector, ViewSnapshot, ViewUpdatePayload, assess_progress,
+        ranges_from_pieces,
     };
     use crate::{ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState};
 
@@ -1653,6 +1664,52 @@ mod tests {
         let serialized = serde_json::to_string(&patch).expect("serialize");
         assert!(serialized.contains("900000"));
         assert!(serialized.contains("33554432"));
+    }
+
+    #[tokio::test]
+    async fn piece_hash_failure_clears_unverified_active_ranges() {
+        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let hub = ViewHub::new(&snapshot(0, 1)).expect("hub");
+        let subscription = hub.subscribe(piece_spec(4096)).expect("subscribe");
+        subscription.next_update().await.expect("snapshot");
+        hub.record_activity(
+            torrent_id,
+            TorrentActivity::PieceStarted {
+                piece_index: 0,
+                piece_length: 16 * 1024,
+            },
+        )
+        .expect("start piece");
+        subscription.next_update().await.expect("start patch");
+        hub.record_activity(
+            torrent_id,
+            TorrentActivity::BlockStored {
+                piece_index: 0,
+                begin: 0,
+                length: 16 * 1024,
+            },
+        )
+        .expect("stored block");
+        subscription.next_update().await.expect("stored patch");
+        hub.record_activity(
+            torrent_id,
+            TorrentActivity::PieceHashFailed { piece_index: 0 },
+        )
+        .expect("failed piece");
+        let update = subscription.next_update().await.expect("reset patch");
+        let ViewUpdatePayload::Patch {
+            patch:
+                ViewPatch::PieceActivity {
+                    active: Some(active),
+                    ..
+                },
+        } = update.payload
+        else {
+            panic!("expected active-piece reset patch");
+        };
+        assert!(active.requested.is_empty());
+        assert!(active.received.is_empty());
+        assert!(active.stored.is_empty());
     }
 
     #[tokio::test]

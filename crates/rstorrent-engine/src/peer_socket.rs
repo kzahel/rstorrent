@@ -421,6 +421,10 @@ impl PeerSocketSet {
         self.tasks.contains_key(&id)
     }
 
+    pub(crate) fn attempt(&self, id: ConnectionId) -> Option<DialAttempt> {
+        self.tasks.get(&id).map(PeerSocketTask::attempt)
+    }
+
     pub(crate) fn begin_dial(
         &mut self,
         attempt: DialAttempt,

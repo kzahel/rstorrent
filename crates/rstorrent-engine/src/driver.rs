@@ -37,8 +37,8 @@ use tokio_util::sync::CancellationToken;
 use crate::dht::{DhtError, DhtHandle};
 use crate::network::{NetworkConfig, NetworkPolicy};
 use crate::peer::{
-    DialAttempt, DialAttemptId, PeerEndpoint, PeerFailure, PeerObservation, PeerRegistry,
-    PeerRegistryConfig, PeerRegistryCounts, PeerRegistryError, PeerRegistrySnapshot,
+    DialAttempt, DialAttemptId, PeerEndpoint, PeerFailure, PeerIntegrityAction, PeerObservation,
+    PeerRegistry, PeerRegistryConfig, PeerRegistryCounts, PeerRegistryError, PeerRegistrySnapshot,
     PeerSelectionContext, PeerSelector, PeerSource,
 };
 use crate::peer_socket::{
@@ -54,7 +54,8 @@ use crate::storage::{
 };
 use crate::swarm::{
     BlockKey, ConnectionId, ConnectionRemoval, ConnectionWindowPhaseSnapshot, NoRequestReason,
-    PendingDialId, PiecePlan, ReceiveDisposition, SwarmConfig, SwarmError, SwarmState,
+    PendingDialId, PieceHashFailure, PiecePlan, ReceiveDisposition, SwarmConfig, SwarmError,
+    SwarmState,
 };
 use crate::tracker::{TrackerAction, TrackerId, TrackerSchedule, TrackerWaitKind};
 
@@ -159,6 +160,11 @@ pub enum DownloadActivityEvent {
     PieceVerified {
         piece_index: u32,
     },
+    PieceHashFailed {
+        piece_index: u32,
+        contributor_count: usize,
+        failed_bytes: usize,
+    },
     TrackerAnnounceStarted {
         tracker: String,
         tier: u8,
@@ -210,7 +216,7 @@ pub enum DownloadActivityEvent {
     PeerDialStarted {
         peer: String,
     },
-    SwarmState(SwarmActivitySnapshot),
+    SwarmState(Box<SwarmActivitySnapshot>),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -236,6 +242,9 @@ pub struct SwarmActivitySnapshot {
     pub endgame_assignments: usize,
     pub cancelled_request_attempts: usize,
     pub redundant_payload_bytes: usize,
+    pub piece_hash_failures: usize,
+    pub failed_piece_bytes: usize,
+    pub last_hash_failure_contributors: usize,
     pub request_timeout_min_seconds: Option<u64>,
     pub request_timeout_max_seconds: Option<u64>,
     pub oldest_request_age_seconds: Option<u64>,
@@ -933,6 +942,9 @@ impl DownloadControl {
             endgame_assignments: snapshot.endgame_assignments,
             cancelled_request_attempts: snapshot.cancelled_request_attempts,
             redundant_payload_bytes: snapshot.redundant_payload_bytes,
+            piece_hash_failures: snapshot.piece_hash_failures,
+            failed_piece_bytes: snapshot.failed_piece_bytes,
+            last_hash_failure_contributors: snapshot.last_hash_failure_contributors,
             request_timeout_min_seconds: snapshot.request_timeout_min.map(|value| value.as_secs()),
             request_timeout_max_seconds: snapshot.request_timeout_max.map(|value| value.as_secs()),
             oldest_request_age_seconds: snapshot.oldest_request_age.map(|age| age.as_secs()),
@@ -958,7 +970,7 @@ impl DownloadControl {
             }
         };
         if changed {
-            self.emit(DownloadActivityEvent::SwarmState(activity));
+            self.emit(DownloadActivityEvent::SwarmState(Box::new(activity)));
         }
     }
 
@@ -3774,6 +3786,7 @@ struct ContentSwarmDownload<'a> {
     selected_written_bytes: usize,
     part_written_bytes: usize,
     last_piece: Option<VerifiedPiece>,
+    contributor_attempts: BTreeMap<ConnectionId, DialAttempt>,
 }
 
 enum ContentStorage<'a> {
@@ -3781,10 +3794,12 @@ enum ContentStorage<'a> {
     Selective(&'a mut SelectiveStorage),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum ContentMessageDisposition {
     Continue,
     ClosePeer(PeerFailure),
+    PieceVerified(Vec<ConnectionId>),
+    PieceHashFailed(PieceHashFailure),
 }
 
 impl<'a> ContentSwarmDownload<'a> {
@@ -3833,6 +3848,7 @@ impl<'a> ContentSwarmDownload<'a> {
             selected_written_bytes: 0,
             part_written_bytes: 0,
             last_piece: None,
+            contributor_attempts: BTreeMap::new(),
         })
     }
 
@@ -3890,6 +3906,11 @@ impl<'a> ContentSwarmDownload<'a> {
                     .map_err(DownloadError::Swarm)?
                 {
                     ReceiveDisposition::Accept { cancellations, .. } => {
+                        let source_attempt = sockets.attempt(connection).ok_or({
+                            DownloadError::Swarm(SwarmError::Invariant(
+                                "accepted block source socket is missing",
+                            ))
+                        })?;
                         for cancellation in cancellations {
                             let _ = sockets
                                 .send(
@@ -3933,6 +3954,7 @@ impl<'a> ContentSwarmDownload<'a> {
                         self.state
                             .finish_write(key, true, now)
                             .map_err(DownloadError::Swarm)?;
+                        self.contributor_attempts.insert(connection, source_attempt);
                         self.selected_written_bytes += stats.0;
                         self.part_written_bytes += stats.1;
                         self.control.record_stored(length as usize);
@@ -3946,7 +3968,7 @@ impl<'a> ContentSwarmDownload<'a> {
                             .piece_ready(index)
                             .map_err(DownloadError::Swarm)?
                         {
-                            self.verify_piece(index).await?;
+                            return self.verify_piece(index).await;
                         }
                     }
                     ReceiveDisposition::Redundant | ReceiveDisposition::Unsolicited => {}
@@ -3963,7 +3985,10 @@ impl<'a> ContentSwarmDownload<'a> {
         Ok(ContentMessageDisposition::Continue)
     }
 
-    async fn verify_piece(&mut self, piece: u32) -> Result<(), DownloadError> {
+    async fn verify_piece(
+        &mut self,
+        piece: u32,
+    ) -> Result<ContentMessageDisposition, DownloadError> {
         let piece_index = usize::try_from(piece)
             .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
         let piece_length = self
@@ -3985,12 +4010,19 @@ impl<'a> ContentSwarmDownload<'a> {
         };
         let expected = self.metainfo.piece_hashes[piece_index];
         if actual != expected {
-            return Err(DownloadError::Piece(PieceError::HashMismatch {
-                expected,
-                actual,
-            }));
+            let failure = self
+                .state
+                .mark_piece_hash_failed(piece)
+                .map_err(DownloadError::Swarm)?;
+            self.control.emit(DownloadActivityEvent::PieceHashFailed {
+                piece_index: piece,
+                contributor_count: failure.contributors.len(),
+                failed_bytes: failure.failed_bytes,
+            });
+            return Ok(ContentMessageDisposition::PieceHashFailed(failure));
         }
-        self.state
+        let contributors = self
+            .state
             .mark_piece_verified(piece)
             .map_err(DownloadError::Swarm)?;
         if let ContentStorage::Selective(storage) = &mut self.storage {
@@ -4019,8 +4051,74 @@ impl<'a> ContentSwarmDownload<'a> {
         });
         self.control
             .emit(DownloadActivityEvent::PieceVerified { piece_index: piece });
-        Ok(())
+        Ok(ContentMessageDisposition::PieceVerified(contributors))
     }
+
+    fn contributor_attempt(&self, connection: ConnectionId) -> Option<DialAttempt> {
+        self.contributor_attempts.get(&connection).copied()
+    }
+
+    fn prune_contributor_attempts(&mut self) {
+        let retained = self.state.stored_contributors();
+        self.contributor_attempts
+            .retain(|connection, _| retained.contains(connection));
+    }
+}
+
+fn record_verified_piece_contributors(
+    peers: &mut PeerSession,
+    download: &mut ContentSwarmDownload<'_>,
+    contributors: &[ConnectionId],
+) -> Result<(), DownloadError> {
+    for &connection in contributors {
+        let attempt = download.contributor_attempt(connection).ok_or({
+            DownloadError::Swarm(SwarmError::Invariant(
+                "verified piece contributor attempt is missing",
+            ))
+        })?;
+        match peers.registry.record_piece_passed(attempt) {
+            Ok(())
+            | Err(PeerRegistryError::StaleAttempt(_))
+            | Err(PeerRegistryError::UnknownRecord(_)) => {}
+            Err(error) => return Err(DownloadError::PeerRegistry(error)),
+        }
+    }
+    download.prune_contributor_attempts();
+    Ok(())
+}
+
+async fn record_failed_piece_contributors(
+    peers: &mut PeerSession,
+    sockets: &mut PeerSocketSet,
+    download: &mut ContentSwarmDownload<'_>,
+    failure: &PieceHashFailure,
+) -> Result<(), DownloadError> {
+    let known_bad = failure.contributors.len() == 1;
+    let mut banned = Vec::new();
+    for &connection in &failure.contributors {
+        let attempt = download.contributor_attempt(connection).ok_or({
+            DownloadError::Swarm(SwarmError::Invariant(
+                "failed piece contributor attempt is missing",
+            ))
+        })?;
+        match peers.registry.record_piece_failed(attempt, known_bad) {
+            Ok(PeerIntegrityAction::Retain) => {}
+            Ok(PeerIntegrityAction::Ban) => banned.push((connection, attempt)),
+            Err(PeerRegistryError::StaleAttempt(_)) | Err(PeerRegistryError::UnknownRecord(_)) => {}
+            Err(error) => return Err(DownloadError::PeerRegistry(error)),
+        }
+    }
+    for (connection, attempt) in banned {
+        if sockets.contains(connection) {
+            close_content_connection(peers, sockets, &mut download.state, connection, None).await?;
+        }
+        peers
+            .registry
+            .ban(attempt.record_id())
+            .map_err(DownloadError::PeerRegistry)?;
+    }
+    download.prune_contributor_attempts();
+    Ok(())
 }
 
 fn single_file_offset(
@@ -4444,19 +4542,28 @@ async fn run_selective_swarm_loop(
                 if !sockets.contains(id) {
                     continue;
                 }
-                if download
+                let disposition = download
                     .handle_message(sockets, id, message, peers.elapsed())
-                    .await?
-                    == ContentMessageDisposition::ClosePeer(PeerFailure::Protocol)
-                {
-                    close_content_connection(
-                        peers,
-                        sockets,
-                        &mut download.state,
-                        id,
-                        Some(PeerFailure::Protocol),
-                    )
                     .await?;
+                match disposition {
+                    ContentMessageDisposition::Continue => {}
+                    ContentMessageDisposition::ClosePeer(failure) => {
+                        close_content_connection(
+                            peers,
+                            sockets,
+                            &mut download.state,
+                            id,
+                            Some(failure),
+                        )
+                        .await?;
+                    }
+                    ContentMessageDisposition::PieceVerified(contributors) => {
+                        record_verified_piece_contributors(peers, download, &contributors)?;
+                    }
+                    ContentMessageDisposition::PieceHashFailed(failure) => {
+                        record_failed_piece_contributors(peers, sockets, download, &failure)
+                            .await?;
+                    }
                 }
             }
             ContentSupervisorEvent::Peer(PeerSetEvent::Peer(PeerTaskEvent::Stopped {
@@ -5645,6 +5752,69 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         }
     }
 
+    async fn serve_one_block_then_choke_peer(
+        listener: TcpListener,
+        info_hash: [u8; 20],
+        payload: Arc<Vec<u8>>,
+    ) {
+        let (mut stream, _) = listener.accept().await.expect("accept parole peer");
+        let mut handshake = [0; HANDSHAKE_LENGTH];
+        stream
+            .read_exact(&mut handshake)
+            .await
+            .expect("read parole handshake");
+        decode_handshake(&handshake, info_hash).expect("valid parole handshake");
+        stream
+            .write_all(&encode_handshake(info_hash, *b"-RS-PAROLE-000000000"))
+            .await
+            .expect("send parole handshake");
+        let mut peer =
+            PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(2));
+        send_message(&mut peer, &PeerMessage::Bitfield(vec![0x80]))
+            .await
+            .expect("send parole availability");
+        send_message(&mut peer, &PeerMessage::Unchoke)
+            .await
+            .expect("send parole unchoke");
+        let request = loop {
+            match next_peer_message(&mut peer).await {
+                Ok(PeerMessage::Interested) => {}
+                Ok(PeerMessage::Request(request)) => break request,
+                Ok(message) => panic!("unexpected parole command {message:?}"),
+                Err(error) => panic!("parole peer failed before request: {error}"),
+            }
+        };
+        let begin = request.begin as usize;
+        let end = begin + request.length as usize;
+        send_message(
+            &mut peer,
+            &PeerMessage::Piece {
+                index: request.index,
+                begin: request.begin,
+                block: payload[begin..end].to_vec(),
+            },
+        )
+        .await
+        .expect("send parole payload");
+        send_message(&mut peer, &PeerMessage::Choke)
+            .await
+            .expect("send parole choke");
+        loop {
+            match next_peer_message(&mut peer).await {
+                Ok(PeerMessage::Interested)
+                | Ok(PeerMessage::Request(_))
+                | Ok(PeerMessage::Cancel(_)) => {}
+                Err(DownloadError::PeerClosed)
+                | Err(DownloadError::Io {
+                    operation: "read peer message",
+                    ..
+                }) => return,
+                Ok(message) => panic!("unexpected post-choke command {message:?}"),
+                Err(error) => panic!("parole peer failed after choke: {error}"),
+            }
+        }
+    }
+
     async fn accept_handshake_without_reply(listener: TcpListener) {
         let (mut stream, _) = listener.accept().await.expect("accept silent peer");
         let mut handshake = [0; HANDSHAKE_LENGTH];
@@ -6317,6 +6487,242 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         assert_eq!(swarm.endgame_assignments, 1);
         assert_eq!(swarm.cancelled_request_attempts, 1);
         assert_eq!(swarm.active_request_attempts, 0);
+        let _ = tokio::fs::remove_file(output).await;
+    }
+
+    #[tokio::test]
+    async fn sole_corrupt_source_is_banned_and_clean_peer_retries_piece() {
+        let payload = (0..MIN_PAYLOAD_ALLOWANCE)
+            .map(|index| ((index * 29 + index / 11) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let mut corrupt = payload.clone();
+        corrupt[37] ^= 0x80;
+        let metainfo =
+            Metainfo::from_info_bytes(&single_file_info(&payload)).expect("hash retry metainfo");
+        let corrupt_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind corrupt peer");
+        let corrupt_address = corrupt_listener.local_addr().expect("corrupt address");
+        let clean_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind clean peer");
+        let clean_address = clean_listener.local_addr().expect("clean address");
+        let corrupt_task = tokio::spawn(serve_content_peer(
+            corrupt_listener,
+            metainfo.info_hash,
+            Arc::new(vec![corrupt]),
+            vec![true],
+        ));
+        let clean_task = tokio::spawn(serve_content_peer(
+            clean_listener,
+            metainfo.info_hash,
+            Arc::new(vec![payload.clone()]),
+            vec![true],
+        ));
+        let mut peers = PeerSession::from_endpoint(
+            corrupt_address,
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(2)),
+        )
+        .expect("peer session");
+        peers
+            .observe_address(clean_address, PeerSource::Manual)
+            .expect("clean peer");
+        let mut swarm_config = SwarmConfig::for_payload_limit(MIN_PAYLOAD_ALLOWANCE);
+        swarm_config.max_established_connections = 1;
+        swarm_config.max_pending_dials = 1;
+        let control = DownloadControl::new();
+        let activity = Arc::new(RecordingActivitySink::default());
+        control.set_activity_sink(activity.clone());
+        let output = test_path("piece-hash-retry.bin");
+
+        let report = timeout(
+            Duration::from_secs(3),
+            run_content_download(
+                ContentDownloadConfig {
+                    output_path: output.clone(),
+                    max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+                    swarm_config,
+                    skip_files: Vec::new(),
+                    materialize_files: Vec::new(),
+                },
+                metainfo,
+                control.clone(),
+                None,
+                &mut peers,
+                None,
+            ),
+        )
+        .await
+        .expect("bounded hash recovery")
+        .expect("clean peer completes failed piece");
+
+        assert_eq!(report.verified_piece_count, 1);
+        assert_eq!(report.selected_written_bytes, 2 * payload.len());
+        assert_eq!(
+            tokio::fs::read(&output).await.expect("published output"),
+            payload
+        );
+        let snapshot = control
+            .diagnostic_snapshot()
+            .swarm
+            .expect("hash failure diagnostics");
+        assert_eq!(snapshot.piece_hash_failures, 1);
+        assert_eq!(snapshot.failed_piece_bytes, MIN_PAYLOAD_ALLOWANCE);
+        assert_eq!(snapshot.last_hash_failure_contributors, 1);
+        assert_eq!(snapshot.active_request_attempts, 0);
+        assert_eq!(snapshot.payload_reserved, 0);
+        let corrupt_record = peers
+            .registry
+            .find_endpoint(PeerEndpoint::new(corrupt_address).expect("corrupt endpoint"))
+            .expect("corrupt record");
+        assert_eq!(corrupt_record.phase(), crate::peer::PeerPhase::Banned);
+        assert_eq!(corrupt_record.integrity().trust_points, -2);
+        assert_eq!(corrupt_record.integrity().hash_failures, 1);
+        let clean_record = peers
+            .registry
+            .find_endpoint(PeerEndpoint::new(clean_address).expect("clean endpoint"))
+            .expect("clean record");
+        assert_eq!(clean_record.integrity().trust_points, 1);
+        assert_eq!(clean_record.integrity().valid_pieces, 1);
+        assert!(
+            activity
+                .events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .iter()
+                .any(|event| matches!(
+                    event,
+                    DownloadActivityEvent::PieceHashFailed {
+                        piece_index: 0,
+                        contributor_count: 1,
+                        failed_bytes: MIN_PAYLOAD_ALLOWANCE,
+                    }
+                ))
+        );
+        for task in [corrupt_task, clean_task] {
+            timeout(Duration::from_secs(1), task)
+                .await
+                .expect("hash recovery peer joined")
+                .expect("hash recovery peer task");
+        }
+        let _ = tokio::fs::remove_file(output).await;
+    }
+
+    #[tokio::test]
+    async fn ambiguous_corrupt_generation_records_suspects_without_false_bans() {
+        let payload = (0..(2 * MIN_PAYLOAD_ALLOWANCE))
+            .map(|index| ((index * 17 + index / 13) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let mut corrupt = payload.clone();
+        corrupt[17] ^= 0x40;
+        corrupt[MIN_PAYLOAD_ALLOWANCE + 17] ^= 0x40;
+        let info = single_file_info_with_piece_length(&payload, payload.len());
+        let metainfo = Metainfo::from_info_bytes(&info).expect("ambiguous hash metainfo");
+        let first_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind first suspect");
+        let first_address = first_listener.local_addr().expect("first suspect address");
+        let second_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind second suspect");
+        let second_address = second_listener
+            .local_addr()
+            .expect("second suspect address");
+        let clean_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind clean generation");
+        let clean_address = clean_listener.local_addr().expect("clean address");
+        let first_task = tokio::spawn(serve_one_block_then_choke_peer(
+            first_listener,
+            metainfo.info_hash,
+            Arc::new(corrupt),
+        ));
+        let second_task = tokio::spawn(serve_one_block_then_choke_peer(
+            second_listener,
+            metainfo.info_hash,
+            Arc::new(payload.clone()),
+        ));
+        let clean_task = tokio::spawn(serve_content_peer(
+            clean_listener,
+            metainfo.info_hash,
+            Arc::new(vec![payload.clone()]),
+            vec![true],
+        ));
+        let mut peers = PeerSession::from_endpoint(
+            first_address,
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(2)),
+        )
+        .expect("peer session");
+        peers
+            .observe_address(second_address, PeerSource::Manual)
+            .expect("second suspect");
+        peers
+            .observe_address(clean_address, PeerSource::Manual)
+            .expect("clean peer");
+        let mut swarm_config = SwarmConfig::for_payload_limit(2 * MIN_PAYLOAD_ALLOWANCE);
+        swarm_config.max_established_connections = 2;
+        swarm_config.max_pending_dials = 1;
+        swarm_config.unproductive_grace = Duration::from_millis(50);
+        let control = DownloadControl::new();
+        let output = test_path("ambiguous-piece-hash-retry.bin");
+
+        let report = timeout(
+            Duration::from_secs(3),
+            run_content_download(
+                ContentDownloadConfig {
+                    output_path: output.clone(),
+                    max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                    swarm_config,
+                    skip_files: Vec::new(),
+                    materialize_files: Vec::new(),
+                },
+                metainfo,
+                control.clone(),
+                None,
+                &mut peers,
+                None,
+            ),
+        )
+        .await
+        .expect("bounded ambiguous recovery")
+        .expect("clean generation completes");
+
+        assert_eq!(report.verified_piece_count, 1);
+        assert_eq!(report.selected_written_bytes, 2 * payload.len());
+        assert_eq!(
+            tokio::fs::read(&output).await.expect("published output"),
+            payload
+        );
+        let snapshot = control
+            .diagnostic_snapshot()
+            .swarm
+            .expect("ambiguous hash diagnostics");
+        assert_eq!(snapshot.piece_hash_failures, 1);
+        assert_eq!(snapshot.failed_piece_bytes, payload.len());
+        assert_eq!(snapshot.last_hash_failure_contributors, 2);
+        for address in [first_address, second_address] {
+            let record = peers
+                .registry
+                .find_endpoint(PeerEndpoint::new(address).expect("suspect endpoint"))
+                .expect("suspect record");
+            assert_ne!(record.phase(), crate::peer::PeerPhase::Banned);
+            assert_eq!(record.integrity().trust_points, -2);
+            assert_eq!(record.integrity().hash_failures, 1);
+            assert!(record.integrity().on_parole);
+        }
+        let clean_record = peers
+            .registry
+            .find_endpoint(PeerEndpoint::new(clean_address).expect("clean endpoint"))
+            .expect("clean record");
+        assert_eq!(clean_record.integrity().trust_points, 1);
+        for task in [first_task, second_task, clean_task] {
+            timeout(Duration::from_secs(1), task)
+                .await
+                .expect("ambiguous recovery peer joined")
+                .expect("ambiguous recovery peer task");
+        }
         let _ = tokio::fs::remove_file(output).await;
     }
 

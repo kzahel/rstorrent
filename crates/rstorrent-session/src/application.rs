@@ -1118,9 +1118,17 @@ impl DownloadActivitySink for ViewActivitySink {
                     piece_index: *piece_index,
                 }
             }
+            DownloadActivityEvent::PieceHashFailed { piece_index, .. } => {
+                TorrentActivity::PieceHashFailed {
+                    piece_index: *piece_index,
+                }
+            }
             _ => return self.record_discovery_event(event),
         };
         let _ = self.views.record_activity(&self.torrent_id, piece_activity);
+        if matches!(event, DownloadActivityEvent::PieceHashFailed { .. }) {
+            return self.record_discovery_event(event);
+        }
         let (severity, category, code, summary) = match event {
             DownloadActivityEvent::PieceStarted { .. } => (
                 DiagnosticSeverity::Debug,
@@ -1438,6 +1446,27 @@ impl ViewActivitySink {
                         ("next_expiry_seconds", &next_expiry),
                         ("next_replacement_seconds", &next_replacement),
                         ("no_request_reason", &reason),
+                    ],
+                );
+            }
+            DownloadActivityEvent::PieceHashFailed {
+                piece_index,
+                contributor_count,
+                failed_bytes,
+            } => {
+                let piece_index = piece_index.to_string();
+                let contributors = contributor_count.to_string();
+                let failed_bytes = failed_bytes.to_string();
+                let _ = self.views.record_diagnostic(
+                    DiagnosticSeverity::Warning,
+                    DiagnosticCategory::Integrity,
+                    "piece_hash_failed",
+                    Some(&self.torrent_id),
+                    "Piece hash failed; retrying the entire piece",
+                    &[
+                        ("piece_index", &piece_index),
+                        ("contributors", &contributors),
+                        ("failed_bytes", &failed_bytes),
                     ],
                 );
             }

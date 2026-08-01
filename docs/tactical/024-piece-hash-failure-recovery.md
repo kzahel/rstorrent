@@ -1,6 +1,6 @@
 # Tactical 024: Piece Hash-Failure Recovery
 
-Status: Active
+Status: Complete
 
 Topics: `download-correctness`, `peer-lifecycle`,
 `oracle-driven-engine-campaign`
@@ -135,16 +135,59 @@ prevents recovery, strict parole ownership becomes the next integrity tactical
 rather than an unbounded addition here. Otherwise the campaign returns to the
 paired completion critical path after this slice.
 
+## Implementation Evidence
+
+Stored block state now retains the winning connection and request-attempt
+generation until the piece passes or fails. A failed v1 piece returns every
+received block to missing, leaves unrelated verified pieces unchanged, and
+increments cumulative failed-generation, byte, and contributor diagnostics.
+The driver treats mismatch as a recoverable result, overwrites every full block
+before rehashing, and retains only dial attempts still referenced by an
+unverified stored block.
+
+Peer records now own bounded integrity state separately from transport
+failures. A passed piece adds one trust point up to eight and clears parole. A
+failed piece subtracts two down to minus seven and saturates its failure count.
+A sole contributor is disconnected and banned immediately; ambiguous
+contributors are marked on parole without false immediate bans. Reputation
+callbacks prove the retained dial generation and ignore an evicted or replaced
+record rather than penalizing its successor.
+
+The engine emits a typed hash-failure event and snapshot counters. The session
+records an integrity warning and clears the unverified active-piece ranges so
+retry presentation cannot retain stale stored blocks. The public probe exports
+the same bounded counters without peer endpoints.
+
+Pure cases cover whole-piece reset, unrelated verified state, exact sorted
+contributors, clean retry, invalid transitions, asymmetric trust, accumulated
+ban threshold, and stale generations. In the first scripted socket case, a
+sole corrupt source is banned and a clean replacement publishes the exact
+piece. In the second, corrupt and clean contributors make blame ambiguous;
+both retain minus-two suspicion without being banned, then a clean generation
+publishes. Both end with zero requests and payload reservations.
+
+Formatting, warning-denying workspace clippy, and the full workspace test
+suite pass; 240 tests are listed, including three explicitly ignored public
+network tests. The controlled mixed-peer 1 MiB fixture passes with exact bytes
+and cleanup. The paired 79,000-byte controlled publication classified
+`both_reached`: RSTorrent took 46.93 ms and libtorrent 72.21 ms with integrity
+and cleanup true for both.
+
+The clean public common-profile Big Buck Bunny screen published all
+276,445,467 bytes and 1,055 pieces in 86.05 seconds. Metadata arrived at 3.27
+seconds, the first piece at 4.49, 50% at 40.18, and all pieces at 86.01. It had
+zero content hash failures, 38 endgame assignments, 37 cancellations, zero
+active attempts, a 13,516,800-byte payload high water, exact integrity, and
+clean shutdown. Public corruption was not induced.
+
 ## Stopping And Escalation
 
-This tactical completes when DL-C09 passes pure and scripted adversarial
+This tactical completed when DL-C09 passed pure and scripted adversarial
 coverage, a hash mismatch is nonterminal, a clean generation verifies and
 publishes, known-bad and ambiguous attribution remain distinct and bounded,
 all tasks and reservations clean up, and controlled interoperability remains
 green. Public-swarm corruption is not required and must not be induced.
 
-No human decision is currently required. Ordinary internal refactoring,
-additional same-owner adversarial cases, conservative bounded counters, and
-headless temporary artifacts are authorized. Stop only if evidence requires a
-new persistence/product contract, external dependency, visible device action,
-or materially broader peer-security policy.
+No human decision was required. Full parole scheduling remains a named future
+integrity slice if adversarial evidence selects it. Tactical `025` returns to
+the measured completion-performance critical path.

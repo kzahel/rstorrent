@@ -176,8 +176,11 @@ that scope and its cleanup or compatibility rules explicitly.
   adds strict bounded duplicate requests, first-response cancellation, harmless
   late payload, and exact public verified-publication evidence.
 - [`024-piece-hash-failure-recovery.md`](024-piece-hash-failure-recovery.md):
-  active; resets a failed v1 piece, retains bounded contributor generations,
+  complete; resets a failed v1 piece, retains bounded contributor generations,
   and distinguishes known-bad from ambiguous peer evidence.
+- [`025-bounded-async-content-storage.md`](025-bounded-async-content-storage.md):
+  active; separates bounded storage execution from peer-event progress while
+  retaining exact payload, hash, resume, and shutdown ownership.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

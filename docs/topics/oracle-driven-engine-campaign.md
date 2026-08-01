@@ -314,14 +314,14 @@ reason to stop.
 Campaign state: **active**.
 
 Active tactical:
-[`024-piece-hash-failure-recovery.md`](../tactical/024-piece-hash-failure-recovery.md).
+[`025-bounded-async-content-storage.md`](../tactical/025-bounded-async-content-storage.md).
 Tactical
-[`023-strict-endgame-ownership.md`](../tactical/023-strict-endgame-ownership.md)
+[`024-piece-hash-failure-recovery.md`](../tactical/024-piece-hash-failure-recovery.md)
 is complete.
 
-Current milestone: recover from a failed v1 piece generation with bounded
-contributor evidence, then return to the paired verified-publication
-performance critical path.
+Current milestone: measure and, if retained by the explicit before/after gate,
+separate bounded storage execution from peer-event progress before changing
+peer selection or request-window policy.
 
 Last completed evidence:
 
@@ -422,15 +422,34 @@ Last completed evidence:
   median and 4.06x maximum ratio. Endgame remained bounded at 12--59
   assignments, 12--62 cancellations, 0--432 KiB redundancy, and zero active
   attempts. The functional completion gate passes; comparable performance
-  remains open after the higher-priority fatal hash path.
+  remains open after the higher-priority fatal hash path; and
+- Tactical `024` installed whole-piece v1 hash reset, exact retained
+  connection-generation contributors, asymmetric bounded trust, immediate
+  exclusion of a sole corrupt source, and ambiguous suspicion without false
+  immediate bans. Pure transitions and scripted sole-source and mixed-source
+  corrupt generations retry and publish cleanly with zero leaked attempts or
+  payload reservations;
+- its workspace gates pass with 240 listed tests including three ignored
+  public tests. Controlled mixed-peer publication remains exact, and the
+  paired 79,000-byte controlled fixture took 46.93 ms for RSTorrent versus
+  72.21 ms for libtorrent with exact cleanup for both; and
+- its clean public Big Buck Bunny screen published all 276,445,467 bytes in
+  86.05 seconds with zero hash failures and exact cleanup. A separate clean
+  32 MiB single-piece localhost run took 3.829 seconds. Pinned libtorrent's
+  accepted-block async-write and 1 MiB queued-disk-byte ownership, compared
+  with RSTorrent awaiting every 16 KiB write and piece hash in its supervisor,
+  selects Tactical `025` before peer-policy tuning.
 
 Next executable action:
 
-1. retain the winning connection generation through stored block state;
-2. reset a failed v1 piece and return bounded contributor evidence;
-3. distinguish uniquely bad from ambiguous contributors in peer reputation;
-4. pass pure, scripted, workspace, and controlled interoperability gates; and
-5. screen one clean headless public verified publication without inducing
-   corruption on the public swarm.
+1. retain a fresh three-run 32 MiB synchronous-storage baseline;
+2. move owned content storage behind one bounded torrent-local task with exact
+   cancellation, join, payload accounting, and typed completions;
+3. prove peer-event freshness and finite queueing under slow storage while
+   preserving piece-hash recovery and resume ordering;
+4. pass workspace, mixed-peer, large-piece, and controlled publication gates;
+   and
+5. keep the pipeline only under Tactical `025`'s measured 25% median-improvement
+   or necessary-liveness rule, then classify one clean headless public screen.
 
 Human blocker: **none**.
