@@ -61,6 +61,10 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`client-surfaces.md`](client-surfaces.md): shared browser/Tauri web
   presentation, Android Compose adaptation, generated client types, reactive
   view delivery, and platform lifecycle boundaries.
+- [`desktop-inspection-surface.md`](desktop-inspection-surface.md): accepted
+  pivot to a JSTorrent-derived detailed desktop/web product and debugging
+  surface, an intentional Android presentation split, and the API questions
+  that remain open before implementation.
 - [`peer-lifecycle.md`](peer-lifecycle.md): peer observations, bounded records,
   derived dial eligibility, connection attempts, adversarial multi-peer
   ownership, slot replacement, and the discovery-to-swarm boundary.

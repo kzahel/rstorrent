@@ -6,8 +6,10 @@ Status: Paused after completed Tactical `032` by maintainer direction. The
 paired headless comparator and bounded utility timeline drive metadata,
 first-piece, sustained-transfer, endgame, and full publication parity from
 pinned libtorrent source and tests. Bounded write coalescing is complete;
-serialized storage execution remains the measured owner. High-impact BEP
-breadth still follows the core common-denominator parity gate.
+serialized storage execution remains the measured owner. Product direction
+has moved temporarily to the detailed desktop inspection surface recorded in
+[`desktop-inspection-surface.md`](desktop-inspection-surface.md). High-impact
+BEP breadth still follows the core common-denominator parity gate.
 
 ## Purpose And Scope
 
@@ -547,8 +549,10 @@ Last completed evidence:
   time with zero hash failures and successful cleanup. This selects serialized
   storage execution without opening its concurrency design.
 
-Next executable action: **none until explicit maintainer authorization**.
-The recorded candidate is a source-first study of bounded positional storage
-concurrency with per-piece verification fences, not an approved tactical.
+Next executable action: **none in this campaign until explicit maintainer
+authorization**. Product discussion now owns the desktop inspection
+application-view boundary. The recorded engine candidate remains a
+source-first study of bounded positional storage concurrency with per-piece
+verification fences, not an approved tactical.
 
 Human blocker: **intentional maintainer review before more implementation**.

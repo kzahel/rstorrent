@@ -98,17 +98,17 @@ evidence.
 
 ### Now
 
-**Bounded positional storage concurrency (paused).** Tactical `032` proved
-bounded coalescing and selected serialized storage execution as the remaining
-owner. Do not open the concurrency tactical until the maintainer authorizes
-work after reviewing the campaign direction.
+**Desktop inspection strategy and API discussion.** Engine parity is paused
+after Tactical `032`. Establish the JSTorrent-derived detailed desktop/web
+direction and agree on the application-view boundary before opening an
+inspection implementation tactical. Android UI parity is not part of this
+phase.
 
 ### Next
 
-1. **Paired completion parity.** After any authorized storage-owner change,
-   re-run controlled and public comparator cohorts and use the retained
-   timeline to select the next measured owner without changing several
-   policies together.
+1. **Detailed desktop inspection surface.** After its application-view design
+   is agreed, introduce the JSTorrent-derived shell and make peer activity the
+   first live inspection focus without implying an Android mirror.
 2. **Measured BEP breadth.** Use the protocol matrix and full-reference gaps
    to choose the next discovery or transport BEP after core completion parity.
 3. **Durable single-file resume.** Extend the existing selective-storage

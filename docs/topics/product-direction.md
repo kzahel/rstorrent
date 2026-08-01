@@ -109,6 +109,21 @@ Android/ChromeOS and desktop are the initial product surfaces. Desktop is the
 fastest bring-up and diagnostic environment. Android/ChromeOS supplies the
 primary product pressure and must receive physical-device validation.
 
+### Detailed desktop inspection and platform presentation split
+
+After the first engine-parity campaign produced a roughly functional client
+but an indirect interactive debugging loop, desktop/web becomes the detailed
+inspection surface as recorded in
+[`desktop-inspection-surface.md`](desktop-inspection-surface.md). Its product
+reference is the existing JSTorrent torrent-detail interface rather than a
+new minimal dashboard.
+
+Android remains a first-party product but no longer has a default obligation
+to mirror desktop tabs or diagnostic density. Engine and application
+semantics remain shared; presentation parity is decided per feature. The
+oracle-driven engine campaign is paused while the desktop application-view API
+and inspection direction are discussed.
+
 ### Bounded implementation tacticals
 
 Substantial implementation begins with a numbered tactical. An automated run

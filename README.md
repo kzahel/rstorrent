@@ -122,6 +122,9 @@ provenance policy.
   guide implementation.
 - [Product and engine direction](docs/topics/product-direction.md) records the
   durable decisions, open questions, and bring-up sequence.
+- [Desktop inspection surface](docs/topics/desktop-inspection-surface.md)
+  records the accepted JSTorrent-derived desktop/web direction, Android
+  presentation split, and deliberately open application-view design.
 - [Capability readiness](docs/topics/capability-readiness.md) is the current
   engine and product scoreboard and owns the prioritized work queue.
 - [Download correctness](docs/topics/download-correctness.md) tracks completion,

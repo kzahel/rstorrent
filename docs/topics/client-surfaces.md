@@ -14,7 +14,11 @@ no-window Android AVD harnesses plus equivalent bounded diagnostics and
 progress explanations on the shared web and Android Compose surfaces.
 Tactical `013` made desktop and Android select online torrent networking while
 the browser gateway and presentation harnesses explicitly remain
-loopback-only.
+loopback-only. The accepted
+[`desktop-inspection-surface`](desktop-inspection-surface.md) direction now
+allows desktop/web and Android presentation to diverge: desktop/web becomes a
+dense JSTorrent-derived inspection surface, while Android remains a separate
+platform-appropriate product without automatic tab or diagnostic parity.
 
 ## Scope
 
@@ -58,6 +62,11 @@ Android uses UniFFI-generated Kotlin records, enums, objects, and suspend
 functions. A small Kotlin adapter exposes subscription handles as lifecycle-
 aware `Flow`s and maps portable application values into presentation models.
 Peer payload, piece payload, file payload, and hashing do not cross UniFFI.
+
+Shared application semantics do not require identical presentation. Existing
+cross-surface contracts remain valid where already implemented, but new
+desktop inspection views do not imply Android UI work unless a later product
+decision says otherwise.
 
 ## UI Reuse Direction
 
