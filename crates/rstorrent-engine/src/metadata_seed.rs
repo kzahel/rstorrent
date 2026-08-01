@@ -291,7 +291,7 @@ impl MetadataSeedServer {
                 | PeerMessage::NotInterested
                 | PeerMessage::Have(_)
                 | PeerMessage::Bitfield(_) => {}
-                PeerMessage::Request(_) => {
+                PeerMessage::Request(_) | PeerMessage::Cancel(_) => {
                     return Err(MetadataSeedError::UnexpectedMessage("payload request"));
                 }
                 PeerMessage::Piece { .. } => {

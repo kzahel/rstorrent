@@ -126,6 +126,40 @@ piece counts, per-peer request state, and current capture time. Endgame owns a
 failure only when all ordinary blocks are already covered and duplicate or
 cancel progress is absent; hash mismatch selects the integrity owner instead.
 
+## Implementation Evidence
+
+`SwarmState` now represents a requested block with one or more active attempts
+instead of embedding a single attempt ID in the block phase. Normal scheduling
+still exhausts every missing block first. Once none remain, an unchoked peer
+with no active request may take one busy block that it does not already own.
+Every attempt reserves its full possible payload against the existing
+torrent-wide allowance. Choke, disconnect, expiry, and cancellation remove
+only the named connection's attempts and return the block to missing only
+after its final owner terminates.
+
+The first evidenced response transfers one reservation to the write, marks
+every other active attempt superseded, releases their reservations, and
+returns typed cancellations. The runtime writes all matching core ID-8 cancel
+frames before entering the storage delay. Losing payload remains redundant
+and cannot alter accounting. The terminal-attempt bound is now 30, matching
+the established-connection bound so evidence for every possible live loser
+can remain classifiable without an unbounded history.
+
+Pure adversarial cases prove strict timing, one duplicate for an idle peer,
+no duplicate while ordinary work remains, first-response cancellation, late
+loser redundancy, partial and final owner teardown, rescheduling, and exact
+payload high water. A scripted two-peer test holds both requests at a barrier,
+lets the winner respond, observes the loser's exact cancel while the download
+is still inside a 250 ms storage delay, then verifies publication, cleanup,
+and zero active attempts. Valid and malformed request/cancel codec cases pass.
+
+Formatting, warning-denying workspace clippy, and 230 workspace tests with
+three explicitly ignored public-network tests pass. Controlled mixed-peer
+liveness and paired 79,000-byte exact publication both pass; the paired gate
+classified `both_reached` in 50 ms for RSTorrent and 94 ms for libtorrent.
+This is a harness guard, not a public performance claim. The live gate remains
+outstanding and the tactical remains active.
+
 ## Non-Goals
 
 - piece hash-failure reset, contributor reputation, banning, or parole

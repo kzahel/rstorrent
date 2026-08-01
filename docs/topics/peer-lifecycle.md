@@ -155,11 +155,13 @@ make those scenarios independently testable:
 - supervised connection tasks using bounded commands and events, explicit
   cancellation, and observable joins.
 
-The request-attempt shape may represent more than one attempt for a block so a
-later endgame tactical does not require another ownership rewrite. Ordinary
-scheduling in the first slice still permits only one active attempt per block.
-Do not introduce generic picker, transport, reputation, or policy traits until
-a concrete second implementation or measured ownership problem requires them.
+Tactical `023` now uses the request-attempt shape to retain multiple bounded
+owners for a block during strict endgame. Ordinary scheduling still permits
+only one active attempt until every missing block is covered. First response
+wins, loser cancels are typed, and every attempt remains charged to the global
+payload allowance. Do not introduce generic picker, transport, reputation, or
+policy traits until a concrete second implementation or measured ownership
+problem requires them.
 
 ## Adversarial Scenario Families
 
@@ -411,6 +413,9 @@ awaits event delivery before draining more commands. Tactical `022` owns this
 duplex cycle; request-window policy is unchanged until transport progress is
 restored.
 
-Incoming listener ownership and advertised-port updates, measured performance
-selection, peer-ID duplicate resolution, endgame, integrity reputation, PEX,
-and persisted peer caches remain later work.
+Tactical `022` removed the duplex cycle. Tactical `023` has installed strict
+endgame attempt ownership and core cancellation through deterministic and
+controlled gates; its public publication gate remains pending. Incoming
+listener ownership and advertised-port updates, measured performance
+selection, peer-ID duplicate resolution, integrity reputation, PEX, and
+persisted peer caches remain later work.

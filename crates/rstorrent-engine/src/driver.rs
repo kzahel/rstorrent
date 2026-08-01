@@ -220,6 +220,8 @@ pub struct SwarmActivitySnapshot {
     pub unchoked_peers: usize,
     pub missing_blocks: usize,
     pub requested_blocks: usize,
+    pub active_request_attempts: usize,
+    pub active_duplicate_attempts: usize,
     pub writing_blocks: usize,
     pub received_blocks: usize,
     pub verified_blocks: usize,
@@ -231,6 +233,9 @@ pub struct SwarmActivitySnapshot {
     pub stalled_peers: usize,
     pub useful_payload_bytes: usize,
     pub observed_payload_rate: usize,
+    pub endgame_assignments: usize,
+    pub cancelled_request_attempts: usize,
+    pub redundant_payload_bytes: usize,
     pub request_timeout_min_seconds: Option<u64>,
     pub request_timeout_max_seconds: Option<u64>,
     pub oldest_request_age_seconds: Option<u64>,
@@ -912,6 +917,8 @@ impl DownloadControl {
             unchoked_peers: snapshot.unchoked_peers,
             missing_blocks: snapshot.missing_blocks,
             requested_blocks: snapshot.requested_blocks,
+            active_request_attempts: snapshot.active_request_attempts,
+            active_duplicate_attempts: snapshot.active_duplicate_attempts,
             writing_blocks: snapshot.writing_blocks,
             received_blocks: snapshot.received_blocks,
             verified_blocks: snapshot.verified_blocks,
@@ -923,6 +930,9 @@ impl DownloadControl {
             stalled_peers: snapshot.stalled_peers,
             useful_payload_bytes: snapshot.useful_payload_bytes,
             observed_payload_rate: snapshot.observed_payload_rate,
+            endgame_assignments: snapshot.endgame_assignments,
+            cancelled_request_attempts: snapshot.cancelled_request_attempts,
+            redundant_payload_bytes: snapshot.redundant_payload_bytes,
             request_timeout_min_seconds: snapshot.request_timeout_min.map(|value| value.as_secs()),
             request_timeout_max_seconds: snapshot.request_timeout_max.map(|value| value.as_secs()),
             oldest_request_age_seconds: snapshot.oldest_request_age.map(|age| age.as_secs()),
@@ -1504,7 +1514,7 @@ impl PremetadataPeerState {
                 }
                 self.bitfield = Some(bitfield);
             }
-            PeerMessage::Request(_) | PeerMessage::Piece { .. } => {
+            PeerMessage::Request(_) | PeerMessage::Cancel(_) | PeerMessage::Piece { .. } => {
                 return Err(DownloadError::InvalidPremetadataState(
                     "payload message arrived before verified metadata",
                 ));
@@ -3832,6 +3842,7 @@ impl<'a> ContentSwarmDownload<'a> {
 
     async fn handle_message(
         &mut self,
+        sockets: &PeerSocketSet,
         connection: ConnectionId,
         message: PeerMessage,
         now: Duration,
@@ -3878,7 +3889,15 @@ impl<'a> ContentSwarmDownload<'a> {
                     .receive_block(connection, key, now)
                     .map_err(DownloadError::Swarm)?
                 {
-                    ReceiveDisposition::Accept { .. } => {
+                    ReceiveDisposition::Accept { cancellations, .. } => {
+                        for cancellation in cancellations {
+                            let _ = sockets
+                                .send(
+                                    cancellation.connection,
+                                    PeerMessage::Cancel(cancellation.block.request()),
+                                )
+                                .await;
+                        }
                         self.control.record_received(block.len());
                         self.control.emit(DownloadActivityEvent::BlockReceived {
                             piece_index: index,
@@ -3937,6 +3956,7 @@ impl<'a> ContentSwarmDownload<'a> {
             | PeerMessage::Interested
             | PeerMessage::NotInterested
             | PeerMessage::Request(_)
+            | PeerMessage::Cancel(_)
             | PeerMessage::Extended { .. } => {}
         }
         self.control.observe_swarm(&self.state, now);
@@ -4425,7 +4445,7 @@ async fn run_selective_swarm_loop(
                     continue;
                 }
                 if download
-                    .handle_message(id, message, peers.elapsed())
+                    .handle_message(sockets, id, message, peers.elapsed())
                     .await?
                     == ContentMessageDisposition::ClosePeer(PeerFailure::Protocol)
                 {
@@ -5451,6 +5471,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                     .await
                     .expect("send content block");
                 }
+                Ok(PeerMessage::Cancel(_)) => {}
                 Err(DownloadError::PeerClosed)
                 | Err(DownloadError::Io {
                     operation: "read peer message",
@@ -5493,6 +5514,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             match next_peer_message(&mut peer).await {
                 Ok(PeerMessage::Interested) => {}
                 Ok(PeerMessage::Request(request)) => pending.push(request),
+                Ok(PeerMessage::Cancel(_)) => {}
                 Ok(message) => panic!("unexpected initial window command {message:?}"),
                 Err(error) => panic!("window peer failed before initial requests: {error}"),
             }
@@ -5505,6 +5527,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 match next_peer_message(&mut peer).await {
                     Ok(PeerMessage::Request(request)) => pending.push(request),
                     Ok(PeerMessage::Interested) => {}
+                    Ok(PeerMessage::Cancel(_)) => {}
                     Ok(message) => panic!("unexpected refill window command {message:?}"),
                     Err(error) => panic!("window peer failed while awaiting refill: {error}"),
                 }
@@ -5528,6 +5551,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 match timeout(Duration::from_millis(20), next_peer_message(&mut peer)).await {
                     Ok(Ok(PeerMessage::Request(request))) => pending.push(request),
                     Ok(Ok(PeerMessage::Interested)) => {}
+                    Ok(Ok(PeerMessage::Cancel(_))) => {}
                     Ok(Err(DownloadError::PeerClosed))
                     | Ok(Err(DownloadError::Io {
                         operation: "read peer message",
@@ -5543,7 +5567,9 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
 
         loop {
             match next_peer_message(&mut peer).await {
-                Ok(PeerMessage::Request(_)) | Ok(PeerMessage::Interested) => {}
+                Ok(PeerMessage::Request(_))
+                | Ok(PeerMessage::Cancel(_))
+                | Ok(PeerMessage::Interested) => {}
                 Err(DownloadError::PeerClosed)
                 | Err(DownloadError::Io {
                     operation: "read peer message",
@@ -5612,6 +5638,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 Ok(PeerMessage::Request(_)) => {
                     // Requests queued before the choke crossed the wire are harmless.
                 }
+                Ok(PeerMessage::Cancel(_)) => {}
                 Ok(message) => panic!("choked peer received command {message:?}"),
                 Err(error) => panic!("choked peer failed: {error}"),
             }
@@ -5660,6 +5687,94 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 }) => return,
                 Ok(message) => panic!("unexpected command for choked peer {message:?}"),
                 Err(error) => panic!("choked peer failed: {error}"),
+            }
+        }
+    }
+
+    async fn prepare_endgame_peer(
+        listener: TcpListener,
+        info_hash: [u8; 20],
+    ) -> (PeerConnection, rstorrent_protocol::peer_wire::BlockRequest) {
+        let (mut stream, _) = listener.accept().await.expect("accept endgame peer");
+        let mut handshake = [0; HANDSHAKE_LENGTH];
+        stream
+            .read_exact(&mut handshake)
+            .await
+            .expect("read endgame handshake");
+        decode_handshake(&handshake, info_hash).expect("valid endgame handshake");
+        stream
+            .write_all(&encode_handshake(info_hash, *b"-RS-ENDGAME-00000000"))
+            .await
+            .expect("send endgame handshake");
+        let mut peer =
+            PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(2));
+        send_message(&mut peer, &PeerMessage::Bitfield(vec![0x80]))
+            .await
+            .expect("send endgame availability");
+        send_message(&mut peer, &PeerMessage::Unchoke)
+            .await
+            .expect("send endgame unchoke");
+        let request = loop {
+            match next_peer_message(&mut peer).await {
+                Ok(PeerMessage::Interested) => {}
+                Ok(PeerMessage::Request(request)) => break request,
+                Ok(message) => panic!("unexpected endgame command {message:?}"),
+                Err(error) => panic!("endgame peer failed before request: {error}"),
+            }
+        };
+        (peer, request)
+    }
+
+    async fn serve_endgame_loser(
+        listener: TcpListener,
+        info_hash: [u8; 20],
+        requests_ready: Arc<Barrier>,
+    ) -> (
+        rstorrent_protocol::peer_wire::BlockRequest,
+        rstorrent_protocol::peer_wire::BlockRequest,
+    ) {
+        let (mut peer, request) = prepare_endgame_peer(listener, info_hash).await;
+        requests_ready.wait().await;
+        let cancel = loop {
+            match next_peer_message(&mut peer).await {
+                Ok(PeerMessage::Cancel(cancel)) => break cancel,
+                Ok(message) => panic!("unexpected command before endgame cancel {message:?}"),
+                Err(error) => panic!("endgame loser failed before cancel: {error}"),
+            }
+        };
+        (request, cancel)
+    }
+
+    async fn serve_endgame_winner(
+        listener: TcpListener,
+        info_hash: [u8; 20],
+        payload: Vec<u8>,
+        requests_ready: Arc<Barrier>,
+    ) {
+        let (mut peer, request) = prepare_endgame_peer(listener, info_hash).await;
+        requests_ready.wait().await;
+        let begin = request.begin as usize;
+        let end = begin + request.length as usize;
+        send_message(
+            &mut peer,
+            &PeerMessage::Piece {
+                index: request.index,
+                begin: request.begin,
+                block: payload[begin..end].to_vec(),
+            },
+        )
+        .await
+        .expect("send winning endgame block");
+        loop {
+            match next_peer_message(&mut peer).await {
+                Err(DownloadError::PeerClosed)
+                | Err(DownloadError::Io {
+                    operation: "read peer message",
+                    ..
+                }) => return,
+                Ok(PeerMessage::Interested) => {}
+                Ok(message) => panic!("unexpected post-win command {message:?}"),
+                Err(error) => panic!("endgame winner failed after payload: {error}"),
             }
         }
     }
@@ -5751,7 +5866,9 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                     operation: "read peer message",
                     ..
                 }) => return,
-                Ok(PeerMessage::Request(_)) | Ok(PeerMessage::Interested) => {}
+                Ok(PeerMessage::Request(_))
+                | Ok(PeerMessage::Cancel(_))
+                | Ok(PeerMessage::Interested) => {}
                 Ok(message) => panic!("unexpected post-payload command {message:?}"),
                 Err(error) => panic!("delayed peer failed after payload: {error}"),
             }
@@ -6110,6 +6227,97 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 .expect("storage-pressure peer task");
         }
         let _ = tokio::fs::remove_dir_all(output).await;
+    }
+
+    #[tokio::test]
+    async fn endgame_cancel_reaches_loser_before_slow_storage_completes() {
+        let payload = vec![0x7d; MIN_PAYLOAD_ALLOWANCE];
+        let metainfo =
+            Metainfo::from_info_bytes(&single_file_info(&payload)).expect("endgame metainfo");
+        let loser_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind endgame loser");
+        let loser_address = loser_listener.local_addr().expect("loser address");
+        let winner_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind endgame winner");
+        let winner_address = winner_listener.local_addr().expect("winner address");
+        let requests_ready = Arc::new(Barrier::new(2));
+        let loser = tokio::spawn(serve_endgame_loser(
+            loser_listener,
+            metainfo.info_hash,
+            requests_ready.clone(),
+        ));
+        let winner = tokio::spawn(serve_endgame_winner(
+            winner_listener,
+            metainfo.info_hash,
+            payload.clone(),
+            requests_ready,
+        ));
+        let mut peers = PeerSession::from_endpoint(
+            loser_address,
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(2)),
+        )
+        .expect("peer session");
+        peers
+            .observe_address(winner_address, PeerSource::Manual)
+            .expect("winner peer");
+        let control = DownloadControl::new();
+        control.set_storage_write_delay(Duration::from_millis(250));
+        let task_control = control.clone();
+        let output = test_path("endgame-cancel.bin");
+        let task_output = output.clone();
+        let mut download = tokio::spawn(async move {
+            run_content_download(
+                ContentDownloadConfig {
+                    output_path: task_output,
+                    max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                    swarm_config: SwarmConfig::for_payload_limit(2 * MIN_PAYLOAD_ALLOWANCE),
+                    skip_files: Vec::new(),
+                    materialize_files: Vec::new(),
+                },
+                metainfo,
+                task_control,
+                None,
+                &mut peers,
+                None,
+            )
+            .await
+        });
+
+        let (request, cancel) = timeout(Duration::from_secs(2), loser)
+            .await
+            .expect("loser observed cancellation")
+            .expect("loser task");
+        assert_eq!(cancel, request);
+        assert!(
+            !download.is_finished(),
+            "cancel must be emitted before the storage delay completes"
+        );
+        let report = timeout(Duration::from_secs(3), &mut download)
+            .await
+            .expect("endgame download deadline")
+            .expect("download task")
+            .expect("endgame completion");
+        assert_eq!(report.verified_piece_count, 1);
+        assert_eq!(report.payload_high_water, 2 * MIN_PAYLOAD_ALLOWANCE);
+        assert_eq!(
+            tokio::fs::read(&output).await.expect("endgame output"),
+            payload
+        );
+        timeout(Duration::from_secs(1), winner)
+            .await
+            .expect("winner joined")
+            .expect("winner task");
+        let swarm = control
+            .diagnostic_snapshot()
+            .swarm
+            .expect("terminal swarm diagnostics");
+        assert_eq!(swarm.endgame_assignments, 1);
+        assert_eq!(swarm.cancelled_request_attempts, 1);
+        assert_eq!(swarm.active_request_attempts, 0);
+        let _ = tokio::fs::remove_file(output).await;
     }
 
     #[tokio::test]

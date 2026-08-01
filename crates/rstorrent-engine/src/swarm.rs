@@ -13,7 +13,7 @@ pub const DEFAULT_MAX_PENDING_DIALS: usize = 8;
 pub const DEFAULT_INITIAL_REQUESTS_PER_CONNECTION: usize = 4;
 pub const DEFAULT_MAX_REQUESTS_PER_CONNECTION: usize = 500;
 pub const DEFAULT_MAX_ACTIVE_PIECES: usize = 64;
-pub const DEFAULT_MAX_TERMINAL_ATTEMPTS_PER_BLOCK: usize = 4;
+pub const DEFAULT_MAX_TERMINAL_ATTEMPTS_PER_BLOCK: usize = DEFAULT_MAX_ESTABLISHED_CONNECTIONS;
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 pub const DEFAULT_UNPRODUCTIVE_GRACE: Duration = Duration::from_secs(60);
 pub const DEFAULT_REQUEST_QUEUE_TIME: Duration = Duration::from_secs(3);
@@ -255,10 +255,17 @@ pub struct ExpiredRequest {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RequestCancellation {
+    pub attempt: RequestAttemptId,
+    pub connection: ConnectionId,
+    pub block: BlockKey,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReceiveDisposition {
     Accept {
         evidence: RequestAttemptId,
-        superseded: Option<RequestAttemptId>,
+        cancellations: Vec<RequestCancellation>,
         late: bool,
     },
     Redundant,
@@ -292,6 +299,8 @@ pub struct SwarmSnapshot {
     pub unchoked_peers: usize,
     pub missing_blocks: usize,
     pub requested_blocks: usize,
+    pub active_request_attempts: usize,
+    pub active_duplicate_attempts: usize,
     pub writing_blocks: usize,
     pub received_blocks: usize,
     pub verified_blocks: usize,
@@ -303,6 +312,9 @@ pub struct SwarmSnapshot {
     pub stalled_peers: usize,
     pub useful_payload_bytes: usize,
     pub observed_payload_rate: usize,
+    pub endgame_assignments: usize,
+    pub cancelled_request_attempts: usize,
+    pub redundant_payload_bytes: usize,
     pub request_timeout_min: Option<Duration>,
     pub request_timeout_max: Option<Duration>,
     pub oldest_request_age: Option<Duration>,
@@ -525,7 +537,7 @@ fn rate_target(payload_rate: usize, config: SwarmConfig) -> usize {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum BlockPhase {
     Missing,
-    Requested(RequestAttemptId),
+    Requested,
     Writing {
         source: ConnectionId,
         evidence: RequestAttemptId,
@@ -538,7 +550,7 @@ impl BlockPhase {
     const fn status(self) -> BlockStatus {
         match self {
             Self::Missing => BlockStatus::Missing,
-            Self::Requested(_) => BlockStatus::Requested,
+            Self::Requested => BlockStatus::Requested,
             Self::Writing { .. } => BlockStatus::Writing,
             Self::Received => BlockStatus::Received,
             Self::Verified => BlockStatus::Verified,
@@ -569,6 +581,9 @@ pub struct SwarmState {
     payload_reserved: usize,
     payload_high_water: usize,
     last_scheduled_connection: Option<ConnectionId>,
+    endgame_assignments: usize,
+    cancelled_request_attempts: usize,
+    redundant_payload_bytes: usize,
 }
 
 impl SwarmState {
@@ -630,6 +645,9 @@ impl SwarmState {
             payload_reserved: 0,
             payload_high_water: 0,
             last_scheduled_connection: None,
+            endgame_assignments: 0,
+            cancelled_request_attempts: 0,
+            redundant_payload_bytes: 0,
         })
     }
 
@@ -760,13 +778,38 @@ impl SwarmState {
                 {
                     continue;
                 }
-                let assignment = self.assign(connection, block, now)?;
+                let assignment = self.assign(connection, block, now, false)?;
                 assignments.push(assignment);
                 self.last_scheduled_connection = Some(connection);
                 progress = true;
             }
             if !progress {
                 break;
+            }
+        }
+        if !self
+            .blocks
+            .values()
+            .any(|block| matches!(block.phase, BlockPhase::Missing))
+        {
+            for connection in self.ordered_connection_ids() {
+                if self.connection_request_count(connection) != 0 {
+                    continue;
+                }
+                let Some(block) = self.next_endgame_block_for_connection(connection)? else {
+                    continue;
+                };
+                let length = usize::try_from(block.length)
+                    .map_err(|_| SwarmError::ArithmeticOverflow("block length"))?;
+                if self
+                    .payload_reserved
+                    .checked_add(length)
+                    .is_none_or(|reserved| reserved > self.config.payload_limit)
+                {
+                    continue;
+                }
+                assignments.push(self.assign(connection, block, now, true)?);
+                self.last_scheduled_connection = Some(connection);
             }
         }
         Ok(assignments)
@@ -777,13 +820,12 @@ impl SwarmState {
         let active = self
             .blocks
             .iter()
-            .filter_map(|(key, block)| match block.phase {
-                BlockPhase::Requested(attempt_id) => block
+            .flat_map(|(key, block)| {
+                block
                     .attempts
                     .iter()
-                    .find(|attempt| attempt.id == attempt_id)
-                    .map(|attempt| (*key, *attempt)),
-                _ => None,
+                    .filter(|attempt| attempt.disposition.is_active())
+                    .map(|attempt| (*key, *attempt))
             })
             .collect::<Vec<_>>();
 
@@ -845,54 +887,82 @@ impl SwarmState {
             .iter()
             .rev()
             .find(|attempt| attempt.connection == connection)
-            .map(|attempt| attempt.id);
-        let BlockPhase::Requested(active_id) = state.phase else {
-            return Ok(if evidence.is_some() {
-                ReceiveDisposition::Redundant
-            } else {
-                ReceiveDisposition::Unsolicited
-            });
-        };
-        let Some(evidence_id) = evidence else {
+            .copied();
+        if !matches!(state.phase, BlockPhase::Requested) {
+            if evidence.is_some() {
+                self.redundant_payload_bytes = self
+                    .redundant_payload_bytes
+                    .saturating_add(block.length as usize);
+                return Ok(ReceiveDisposition::Redundant);
+            }
+            return Ok(ReceiveDisposition::Unsolicited);
+        }
+        let Some(evidence) = evidence else {
             return Ok(ReceiveDisposition::Unsolicited);
         };
-        let active_attempt = state
+        let active_attempts = state
             .attempts
             .iter()
-            .find(|attempt| attempt.id == active_id)
-            .ok_or(SwarmError::Invariant("active request attempt is missing"))?;
-        let active_connection = active_attempt.connection;
-        let late = active_connection != connection;
-        let request_issued_at = (!late).then_some(active_attempt.issued_at);
-        let superseded = late.then_some(active_id);
+            .filter(|attempt| attempt.disposition.is_active())
+            .copied()
+            .collect::<Vec<_>>();
+        if active_attempts.is_empty() {
+            return Err(SwarmError::Invariant(
+                "requested block has no active request attempt",
+            ));
+        }
+        let evidence_is_active = evidence.disposition.is_active();
+        let late = !evidence_is_active;
+        let request_issued_at = evidence_is_active.then_some(evidence.issued_at);
+        let cancellations = active_attempts
+            .iter()
+            .filter(|attempt| attempt.id != evidence.id)
+            .map(|attempt| RequestCancellation {
+                attempt: attempt.id,
+                connection: attempt.connection,
+                block,
+            })
+            .collect::<Vec<_>>();
         {
             let state = self
                 .blocks
                 .get_mut(&block)
                 .ok_or(SwarmError::UnknownBlock(block))?;
-            if let Some(attempt) = state
+            for attempt in state
                 .attempts
                 .iter_mut()
-                .find(|attempt| attempt.id == active_id)
+                .filter(|attempt| attempt.disposition.is_active())
             {
-                attempt.disposition = if late {
-                    RequestDisposition::Superseded
-                } else {
+                attempt.disposition = if attempt.id == evidence.id {
                     RequestDisposition::PayloadReceived
+                } else {
+                    RequestDisposition::Superseded
                 };
             }
             state.phase = BlockPhase::Writing {
                 source: connection,
-                evidence: evidence_id,
+                evidence: evidence.id,
             };
+            trim_terminal_attempts(
+                state,
+                self.config.max_terminal_attempts_per_block,
+                Some(evidence.id),
+            )?;
         }
+        let released_reservations = active_attempts.len().saturating_sub(1);
+        for _ in 0..released_reservations {
+            self.release_payload(block.length)?;
+        }
+        self.cancelled_request_attempts = self
+            .cancelled_request_attempts
+            .saturating_add(cancellations.len());
         let config = self.config;
         self.connection_mut(connection)?
             .request_window
             .accepted_payload(now, block.length as usize, request_issued_at, config);
         Ok(ReceiveDisposition::Accept {
-            evidence: evidence_id,
-            superseded,
+            evidence: evidence.id,
+            cancellations,
             late,
         })
     }
@@ -920,14 +990,16 @@ impl SwarmState {
             return Err(SwarmError::Invariant("write evidence attempt is missing"));
         }
         self.release_payload(block.length)?;
-        self.blocks
+        let state = self
+            .blocks
             .get_mut(&block)
-            .ok_or(SwarmError::UnknownBlock(block))?
-            .phase = if accepted {
+            .ok_or(SwarmError::UnknownBlock(block))?;
+        state.phase = if accepted {
             BlockPhase::Received
         } else {
             BlockPhase::Missing
         };
+        trim_terminal_attempts(state, self.config.max_terminal_attempts_per_block, None)?;
         if accepted && let Some(connection) = self.connections.get_mut(&source) {
             connection.last_useful_at = Some(now);
         }
@@ -980,9 +1052,12 @@ impl SwarmState {
         let requested = self
             .blocks
             .iter()
-            .filter_map(|(block, state)| match state.phase {
-                BlockPhase::Requested(attempt) => Some((*block, attempt)),
-                _ => None,
+            .flat_map(|(block, state)| {
+                state
+                    .attempts
+                    .iter()
+                    .filter(|attempt| attempt.disposition.is_active())
+                    .map(|attempt| (*block, attempt.id))
             })
             .collect::<Vec<_>>();
         for (block, attempt) in requested {
@@ -1059,6 +1134,8 @@ impl SwarmState {
     pub fn snapshot(&self, now: Duration) -> SwarmSnapshot {
         let mut missing = 0;
         let mut requested = 0;
+        let mut active_request_attempts = 0_usize;
+        let mut active_duplicate_attempts = 0_usize;
         let mut writing = 0;
         let mut received = 0;
         let mut verified = 0;
@@ -1068,13 +1145,15 @@ impl SwarmState {
         for block in self.blocks.values() {
             match block.phase {
                 BlockPhase::Missing => missing += 1,
-                BlockPhase::Requested(attempt_id) => {
+                BlockPhase::Requested => {
                     requested += 1;
-                    if let Some(attempt) = block
+                    let mut block_active_attempts = 0_usize;
+                    for attempt in block
                         .attempts
                         .iter()
-                        .find(|attempt| attempt.id == attempt_id)
+                        .filter(|attempt| attempt.disposition.is_active())
                     {
+                        block_active_attempts = block_active_attempts.saturating_add(1);
                         oldest_issued =
                             Some(oldest_issued.map_or(attempt.issued_at, |oldest: Duration| {
                                 oldest.min(attempt.issued_at)
@@ -1092,6 +1171,10 @@ impl SwarmState {
                         next_expiry =
                             Some(next_expiry.map_or(deadline, |next: Duration| next.min(deadline)));
                     }
+                    active_request_attempts =
+                        active_request_attempts.saturating_add(block_active_attempts);
+                    active_duplicate_attempts = active_duplicate_attempts
+                        .saturating_add(block_active_attempts.saturating_sub(1));
                 }
                 BlockPhase::Writing { .. } => writing += 1,
                 BlockPhase::Received => received += 1,
@@ -1124,6 +1207,8 @@ impl SwarmState {
                 .count(),
             missing_blocks: missing,
             requested_blocks: requested,
+            active_request_attempts,
+            active_duplicate_attempts,
             writing_blocks: writing,
             received_blocks: received,
             verified_blocks: verified,
@@ -1162,6 +1247,9 @@ impl SwarmState {
                 .values()
                 .map(|connection| connection.request_window.observed_payload_rate)
                 .sum(),
+            endgame_assignments: self.endgame_assignments,
+            cancelled_request_attempts: self.cancelled_request_attempts,
+            redundant_payload_bytes: self.redundant_payload_bytes,
             request_timeout_min,
             request_timeout_max,
             oldest_request_age: oldest_issued.map(|issued| now.saturating_sub(issued)),
@@ -1175,24 +1263,23 @@ impl SwarmState {
         let wanted = self.incomplete_piece_indices();
         let mut requests = BTreeMap::<ConnectionId, (usize, usize, Option<Duration>)>::new();
         for (key, state) in &self.blocks {
-            let BlockPhase::Requested(attempt_id) = state.phase else {
+            if !matches!(state.phase, BlockPhase::Requested) {
                 continue;
-            };
-            let Some(attempt) = state
+            }
+            for attempt in state
                 .attempts
                 .iter()
-                .find(|attempt| attempt.id == attempt_id)
-            else {
-                continue;
-            };
-            let entry = requests.entry(attempt.connection).or_default();
-            entry.0 = entry.0.saturating_add(1);
-            entry.1 = entry.1.saturating_add(key.length as usize);
-            entry.2 = Some(
-                entry
-                    .2
-                    .map_or(attempt.issued_at, |oldest| oldest.min(attempt.issued_at)),
-            );
+                .filter(|attempt| attempt.disposition.is_active())
+            {
+                let entry = requests.entry(attempt.connection).or_default();
+                entry.0 = entry.0.saturating_add(1);
+                entry.1 = entry.1.saturating_add(key.length as usize);
+                entry.2 = Some(
+                    entry
+                        .2
+                        .map_or(attempt.issued_at, |oldest| oldest.min(attempt.issued_at)),
+                );
+            }
         }
         self.connections
             .iter()
@@ -1329,6 +1416,32 @@ impl SwarmState {
         Ok(None)
     }
 
+    fn next_endgame_block_for_connection(
+        &self,
+        connection: ConnectionId,
+    ) -> Result<Option<BlockKey>, SwarmError> {
+        let connection_state = self
+            .connections
+            .get(&connection)
+            .ok_or(SwarmError::UnknownConnection(connection))?;
+        if connection_state.choking {
+            return Ok(None);
+        }
+        Ok(self.blocks.iter().find_map(|(block, block_state)| {
+            let piece = usize::try_from(block.piece).ok()?;
+            (matches!(block_state.phase, BlockPhase::Requested)
+                && block_state
+                    .attempts
+                    .iter()
+                    .any(|attempt| attempt.disposition.is_active())
+                && !block_state.attempts.iter().any(|attempt| {
+                    attempt.disposition.is_active() && attempt.connection == connection
+                })
+                && connection_state.availability[piece])
+                .then_some(*block)
+        }))
+    }
+
     fn first_missing_block(&self, piece: u32) -> Option<BlockKey> {
         self.pieces
             .get(&piece)?
@@ -1353,7 +1466,7 @@ impl SwarmState {
                         self.blocks.get(block).is_some_and(|block| {
                             matches!(
                                 block.phase,
-                                BlockPhase::Requested(_)
+                                BlockPhase::Requested
                                     | BlockPhase::Writing { .. }
                                     | BlockPhase::Received
                             )
@@ -1370,6 +1483,7 @@ impl SwarmState {
         connection: ConnectionId,
         block: BlockKey,
         now: Duration,
+        endgame: bool,
     ) -> Result<RequestAssignment, SwarmError> {
         let attempt_id = RequestAttemptId(self.next_attempt_id);
         self.next_attempt_id = self
@@ -1380,27 +1494,32 @@ impl SwarmState {
             .blocks
             .get_mut(&block)
             .ok_or(SwarmError::UnknownBlock(block))?;
-        if !matches!(state.phase, BlockPhase::Missing) {
-            return Err(SwarmError::InvalidTransition("block is not missing"));
+        let valid_phase = if endgame {
+            matches!(state.phase, BlockPhase::Requested)
+                && state
+                    .attempts
+                    .iter()
+                    .any(|attempt| attempt.disposition.is_active())
+                && !state.attempts.iter().any(|attempt| {
+                    attempt.disposition.is_active() && attempt.connection == connection
+                })
+        } else {
+            matches!(state.phase, BlockPhase::Missing)
+        };
+        if !valid_phase {
+            return Err(SwarmError::InvalidTransition(if endgame {
+                "block cannot accept this endgame request"
+            } else {
+                "block is not missing"
+            }));
         }
-        while state
-            .attempts
-            .iter()
-            .filter(|attempt| !attempt.disposition.is_active())
-            .count()
-            >= self.config.max_terminal_attempts_per_block
-        {
-            let Some(index) = state
-                .attempts
-                .iter()
-                .position(|attempt| !attempt.disposition.is_active())
-            else {
-                return Err(SwarmError::Invariant(
-                    "terminal attempt count cannot be reduced",
-                ));
-            };
-            state.attempts.remove(index);
-        }
+        trim_terminal_attempts(
+            state,
+            self.config
+                .max_terminal_attempts_per_block
+                .saturating_sub(1),
+            None,
+        )?;
         state.attempts.push_back(RequestAttempt {
             id: attempt_id,
             block,
@@ -1408,7 +1527,7 @@ impl SwarmState {
             issued_at: now,
             disposition: RequestDisposition::Requested,
         });
-        state.phase = BlockPhase::Requested(attempt_id);
+        state.phase = BlockPhase::Requested;
         let length = usize::try_from(block.length)
             .map_err(|_| SwarmError::ArithmeticOverflow("block length"))?;
         self.payload_reserved = self
@@ -1416,6 +1535,9 @@ impl SwarmState {
             .checked_add(length)
             .ok_or(SwarmError::ArithmeticOverflow("payload reservation"))?;
         self.payload_high_water = self.payload_high_water.max(self.payload_reserved);
+        if endgame {
+            self.endgame_assignments = self.endgame_assignments.saturating_add(1);
+        }
         Ok(RequestAssignment {
             attempt: attempt_id,
             connection,
@@ -1433,7 +1555,7 @@ impl SwarmState {
             .blocks
             .get_mut(&block)
             .ok_or(SwarmError::UnknownBlock(block))?;
-        if state.phase != BlockPhase::Requested(attempt_id) {
+        if !matches!(state.phase, BlockPhase::Requested) {
             return Err(SwarmError::InvalidTransition(
                 "request attempt no longer owns the block",
             ));
@@ -1449,7 +1571,16 @@ impl SwarmState {
             ));
         }
         attempt.disposition = disposition;
-        state.phase = BlockPhase::Missing;
+        state.phase = if state
+            .attempts
+            .iter()
+            .any(|attempt| attempt.disposition.is_active())
+        {
+            BlockPhase::Requested
+        } else {
+            BlockPhase::Missing
+        };
+        trim_terminal_attempts(state, self.config.max_terminal_attempts_per_block, None)?;
         self.release_payload(block.length)
     }
 
@@ -1461,14 +1592,14 @@ impl SwarmState {
         let requested = self
             .blocks
             .iter()
-            .filter_map(|(block, state)| match state.phase {
-                BlockPhase::Requested(attempt_id) => state
+            .flat_map(|(block, state)| {
+                state
                     .attempts
                     .iter()
-                    .find(|attempt| attempt.id == attempt_id)
-                    .filter(|attempt| attempt.connection == connection)
-                    .map(|_| (*block, attempt_id)),
-                _ => None,
+                    .filter(|attempt| {
+                        attempt.disposition.is_active() && attempt.connection == connection
+                    })
+                    .map(|attempt| (*block, attempt.id))
             })
             .collect::<Vec<_>>();
         let mut released = Vec::with_capacity(requested.len());
@@ -1492,14 +1623,16 @@ impl SwarmState {
     fn connection_request_count(&self, connection: ConnectionId) -> usize {
         self.blocks
             .values()
-            .filter(|state| match state.phase {
-                BlockPhase::Requested(attempt_id) => state
+            .map(|state| {
+                state
                     .attempts
                     .iter()
-                    .any(|attempt| attempt.id == attempt_id && attempt.connection == connection),
-                _ => false,
+                    .filter(|attempt| {
+                        attempt.disposition.is_active() && attempt.connection == connection
+                    })
+                    .count()
             })
-            .count()
+            .sum()
     }
 
     fn incomplete_piece_indices(&self) -> BTreeSet<usize> {
@@ -1577,6 +1710,32 @@ impl SwarmState {
         }
         None
     }
+}
+
+fn trim_terminal_attempts(
+    state: &mut BlockState,
+    maximum: usize,
+    protected: Option<RequestAttemptId>,
+) -> Result<(), SwarmError> {
+    while state
+        .attempts
+        .iter()
+        .filter(|attempt| !attempt.disposition.is_active())
+        .count()
+        > maximum
+    {
+        let Some(index) = state
+            .attempts
+            .iter()
+            .position(|attempt| !attempt.disposition.is_active() && Some(attempt.id) != protected)
+        else {
+            return Err(SwarmError::Invariant(
+                "terminal attempt count cannot be reduced",
+            ));
+        };
+        state.attempts.remove(index);
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2036,7 +2195,11 @@ mod tests {
                 .expect("late block"),
             ReceiveDisposition::Accept {
                 evidence: first.attempt,
-                superseded: Some(second.attempt),
+                cancellations: vec![RequestCancellation {
+                    attempt: second.attempt,
+                    connection: second.connection,
+                    block: second.block,
+                }],
                 late: true,
             }
         );
@@ -2060,6 +2223,136 @@ mod tests {
                 .receive_block(connection(1), never_requested, Duration::from_secs(30))
                 .expect("unsolicited classification"),
             ReceiveDisposition::Unsolicited
+        );
+    }
+
+    #[test]
+    fn strict_endgame_duplicates_one_idle_peer_and_first_response_cancels_loser() {
+        let mut state = state(1, vec![plan(0, 2)], 3);
+        for id in 1..=3 {
+            add_peer(&mut state, connection(id), &[0], false);
+        }
+
+        let assigned = state.schedule(Duration::ZERO).expect("endgame schedule");
+        assert_eq!(assigned.len(), 3);
+        let duplicate_block = assigned
+            .iter()
+            .find_map(|candidate| {
+                (assigned
+                    .iter()
+                    .filter(|request| request.block == candidate.block)
+                    .count()
+                    == 2)
+                    .then_some(candidate.block)
+            })
+            .expect("one duplicated block");
+        let owners = assigned
+            .iter()
+            .filter(|request| request.block == duplicate_block)
+            .copied()
+            .collect::<Vec<_>>();
+        assert_eq!(owners.len(), 2);
+        let initial = state.snapshot(Duration::ZERO);
+        assert_eq!(initial.requested_blocks, 2);
+        assert_eq!(initial.active_request_attempts, 3);
+        assert_eq!(initial.active_duplicate_attempts, 1);
+        assert_eq!(initial.endgame_assignments, 1);
+        assert_eq!(initial.payload_reserved, 3 * BLOCK as usize);
+
+        let winner = owners[1];
+        let loser = owners[0];
+        assert_eq!(
+            state
+                .receive_block(winner.connection, winner.block, Duration::from_millis(1))
+                .expect("winning block"),
+            ReceiveDisposition::Accept {
+                evidence: winner.attempt,
+                cancellations: vec![RequestCancellation {
+                    attempt: loser.attempt,
+                    connection: loser.connection,
+                    block: loser.block,
+                }],
+                late: false,
+            }
+        );
+        let writing = state.snapshot(Duration::from_millis(1));
+        assert_eq!(writing.active_request_attempts, 1);
+        assert_eq!(writing.active_duplicate_attempts, 0);
+        assert_eq!(writing.cancelled_request_attempts, 1);
+        assert_eq!(writing.payload_reserved, 2 * BLOCK as usize);
+        state
+            .finish_write(winner.block, true, Duration::from_millis(1))
+            .expect("winning write");
+        assert_eq!(
+            state
+                .receive_block(loser.connection, loser.block, Duration::from_millis(2))
+                .expect("late losing payload"),
+            ReceiveDisposition::Redundant
+        );
+        assert_eq!(
+            state
+                .snapshot(Duration::from_millis(2))
+                .redundant_payload_bytes,
+            BLOCK as usize
+        );
+    }
+
+    #[test]
+    fn strict_endgame_waits_until_every_ordinary_block_is_covered() {
+        let mut state = state(2, vec![plan(0, 1), plan(1, 1)], 3);
+        for id in 1..=3 {
+            add_peer(&mut state, connection(id), &[0], false);
+        }
+
+        let assigned = state.schedule(Duration::ZERO).expect("ordinary schedule");
+
+        assert_eq!(assigned.len(), 1);
+        let snapshot = state.snapshot(Duration::ZERO);
+        assert_eq!(snapshot.missing_blocks, 1);
+        assert_eq!(snapshot.active_request_attempts, 1);
+        assert_eq!(snapshot.active_duplicate_attempts, 0);
+        assert_eq!(snapshot.endgame_assignments, 0);
+    }
+
+    #[test]
+    fn terminating_one_endgame_owner_keeps_the_other_request_live() {
+        let mut state = state(1, vec![plan(0, 1)], 2);
+        add_peer(&mut state, connection(1), &[0], false);
+        add_peer(&mut state, connection(2), &[0], false);
+        let assigned = state.schedule(Duration::ZERO).expect("endgame schedule");
+        assert_eq!(assigned.len(), 2);
+
+        let released = state
+            .remove_connection(connection(1), ConnectionRemoval::Disconnected)
+            .expect("disconnect one owner");
+
+        assert_eq!(released, vec![assigned[0].block]);
+        let snapshot = state.snapshot(Duration::ZERO);
+        assert_eq!(snapshot.requested_blocks, 1);
+        assert_eq!(snapshot.active_request_attempts, 1);
+        assert_eq!(snapshot.active_duplicate_attempts, 0);
+        assert_eq!(snapshot.payload_reserved, BLOCK as usize);
+        assert_eq!(
+            state.block_status(assigned[0].block).expect("block status"),
+            BlockStatus::Requested
+        );
+        state
+            .remove_connection(connection(2), ConnectionRemoval::Disconnected)
+            .expect("disconnect final owner");
+        assert_eq!(
+            state
+                .block_status(assigned[0].block)
+                .expect("missing block"),
+            BlockStatus::Missing
+        );
+        assert_eq!(state.snapshot(Duration::ZERO).payload_reserved, 0);
+        add_peer(&mut state, connection(3), &[0], false);
+        assert_eq!(
+            state
+                .schedule(Duration::from_secs(1))
+                .expect("reschedule")
+                .len(),
+            1
         );
     }
 

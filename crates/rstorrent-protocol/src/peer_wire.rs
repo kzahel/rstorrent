@@ -112,6 +112,7 @@ pub enum PeerMessage {
     Have(u32),
     Bitfield(Vec<u8>),
     Request(BlockRequest),
+    Cancel(BlockRequest),
     Piece {
         index: u32,
         begin: u32,
@@ -265,9 +266,13 @@ pub fn encode_message(message: &PeerMessage) -> Result<Vec<u8>, FrameError> {
             payload.push(5);
             payload.extend_from_slice(bitfield);
         }
-        PeerMessage::Request(request) => {
+        PeerMessage::Request(request) | PeerMessage::Cancel(request) => {
             validate_request_length(request.length)?;
-            payload.push(6);
+            payload.push(if matches!(message, PeerMessage::Request(_)) {
+                6
+            } else {
+                8
+            });
             payload.extend_from_slice(&request.index.to_be_bytes());
             payload.extend_from_slice(&request.begin.to_be_bytes());
             payload.extend_from_slice(&request.length.to_be_bytes());
@@ -348,7 +353,7 @@ fn decode_frame(mut frame: Vec<u8>) -> Result<PeerMessage, FrameError> {
             frame.drain(..5);
             Ok(PeerMessage::Bitfield(frame))
         }
-        6 => {
+        6 | 8 => {
             exact_length(id, length, 13)?;
             let request = BlockRequest {
                 index: read_u32(&frame, 5),
@@ -356,7 +361,11 @@ fn decode_frame(mut frame: Vec<u8>) -> Result<PeerMessage, FrameError> {
                 length: read_u32(&frame, 13),
             };
             validate_request_length(request.length)?;
-            Ok(PeerMessage::Request(request))
+            Ok(if id == 6 {
+                PeerMessage::Request(request)
+            } else {
+                PeerMessage::Cancel(request)
+            })
         }
         7 => {
             if !(10..=MAX_CORE_FRAME_LENGTH).contains(&length) {
@@ -517,24 +526,57 @@ mod tests {
     }
 
     #[test]
-    fn request_round_trip_enforces_block_limit() {
-        let request = PeerMessage::Request(BlockRequest {
+    fn request_and_cancel_round_trip_enforce_block_limit() {
+        let block = BlockRequest {
             index: 2,
             begin: 32_768,
             length: 16_384,
-        });
-        let frame = encode_message(&request).expect("encode request");
-        let mut decoder = FrameDecoder::new();
-        assert_eq!(decoder.push(&frame).expect("decode request"), [request]);
+        };
+        for message in [PeerMessage::Request(block), PeerMessage::Cancel(block)] {
+            let frame = encode_message(&message).expect("encode request-shaped message");
+            let mut decoder = FrameDecoder::new();
+            assert_eq!(
+                decoder.push(&frame).expect("decode request-shaped message"),
+                [message]
+            );
+        }
 
-        assert!(matches!(
-            encode_message(&PeerMessage::Request(BlockRequest {
+        for message in [
+            PeerMessage::Request(BlockRequest {
                 index: 0,
                 begin: 0,
                 length: 16_385,
-            })),
-            Err(FrameError::RequestBlockTooLarge { .. })
-        ));
+            }),
+            PeerMessage::Cancel(BlockRequest {
+                index: 0,
+                begin: 0,
+                length: 0,
+            }),
+        ] {
+            assert!(matches!(
+                encode_message(&message),
+                Err(FrameError::RequestBlockTooLarge { .. })
+            ));
+        }
+
+        for id in [6, 8] {
+            let mut decoder = FrameDecoder::new();
+            assert_eq!(
+                decoder.push(&[0, 0, 0, 1, id]),
+                Err(FrameError::InvalidMessageLength { id, length: 1 })
+            );
+        }
+
+        let mut zero_length_cancel = vec![0, 0, 0, 13, 8];
+        zero_length_cancel.extend_from_slice(&[0; 12]);
+        let mut decoder = FrameDecoder::new();
+        assert_eq!(
+            decoder.push(&zero_length_cancel),
+            Err(FrameError::RequestBlockTooLarge {
+                length: 0,
+                maximum: super::MAX_REQUEST_BLOCK_LENGTH,
+            })
+        );
     }
 
     #[test]
