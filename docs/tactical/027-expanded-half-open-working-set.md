@@ -1,6 +1,6 @@
 # Tactical 027: Expanded Half-Open Working Set
 
-Status: Active
+Status: Complete
 
 Topics: `peer-lifecycle`, `performance-and-live-evidence`,
 `oracle-driven-engine-campaign`
@@ -134,6 +134,46 @@ The tactical completes when the 30/31 bounds, useful-peer liveness, saturation
 cancellation, controlled interop, and product-path timeline screens pass; the
 living topics record whether the next owner is storage, request service,
 ranking, or confirmation breadth. No human decision is currently required.
+
+## Implementation And Evidence
+
+The pure default now permits exactly 30 pending dial identifiers independently
+from the existing 30 established connections. The 31st attempt is rejected at
+the pure owner and becomes admissible only after one exact pending identifier
+finishes. The torrent payload allowance, active-piece limit, request windows,
+storage queues, and peer event channel are unchanged.
+
+A scripted runtime places one useful peer at observation position 30 behind 29
+peers which accept the TCP and BitTorrent handshakes but never reply. All 30
+attempts begin together and the useful peer publishes two verified pieces in
+about 50 ms, well before the configured five-second handshake deadline which
+would have held the old first cohort. A separate 30-silent case observes every
+outbound handshake, cancels, joins every peer task, returns every registry
+record to idle, and leaves only the documented resumable staging artifact
+which the test removes.
+
+Formatting, warning-denying workspace clippy, and 246 listed workspace tests
+pass; 243 tests pass and three changing-public-network probes remain
+intentionally ignored. The controlled 1 MiB mixed swarm, nine comparator unit
+tests, and controlled paired publication all pass with exact integrity and
+cleanup.
+
+Three product tracker+DHT 50% screens reached the exact 528-piece threshold in
+61.47, 64.21, and 68.34 seconds with clean cancellation and integrity. Those
+runs supplied only 12--16 content candidates, so their 64.21-second median
+cannot attribute an improvement to the wider cohort. One complete screen
+published all 276,445,467 bytes and 1,055 pieces in 149.42 seconds with zero
+hash failures and all request and storage jobs drained.
+
+That completion timeline selected a preceding supervisor-fairness defect. DHT
+reported 171 peers around content second 30 and 340 cumulatively around second
+120, while the content registry stayed at 12 known peers until the terminal
+sample. The code agrees: while storage has local backpressure,
+`next_content_supervisor_event` awaits only storage completion; outside that
+state its biased selection ranks storage before peer and discovery events.
+Candidate intake and dial refill can therefore remain queued for most of a
+healthy transfer. Tactical `028` owns fair bounded discovery admission before
+storage, ranking, or request-policy tuning.
 
 Stop only for a new external dependency, product-visible contract, destructive
 user-data action, persistence compatibility break, visible or physical-device

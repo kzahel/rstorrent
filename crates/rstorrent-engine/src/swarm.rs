@@ -9,7 +9,7 @@ use rstorrent_protocol::peer_wire::{BlockRequest, MAX_REQUEST_BLOCK_LENGTH};
 use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
 
 pub const DEFAULT_MAX_ESTABLISHED_CONNECTIONS: usize = 30;
-pub const DEFAULT_MAX_PENDING_DIALS: usize = 8;
+pub const DEFAULT_MAX_PENDING_DIALS: usize = 30;
 pub const DEFAULT_INITIAL_REQUESTS_PER_CONNECTION: usize = 4;
 pub const DEFAULT_MAX_REQUESTS_PER_CONNECTION: usize = 500;
 pub const DEFAULT_MAX_ACTIVE_PIECES: usize = 64;
@@ -1984,12 +1984,14 @@ mod tests {
         for value in 1..=DEFAULT_MAX_PENDING_DIALS as u64 {
             state.begin_dial(dial(value)).expect("dial slot");
         }
+        let overflow = DEFAULT_MAX_PENDING_DIALS as u64 + 1;
         assert_eq!(
-            state.begin_dial(dial(10)),
+            state.begin_dial(dial(overflow)),
             Err(SwarmError::PendingDialCapacity)
         );
         state.finish_dial(dial(1)).expect("finish dial");
-        state.begin_dial(dial(10)).expect("reused dial slot");
+        state.begin_dial(dial(overflow)).expect("reused dial slot");
+        assert_eq!(state.snapshot(Duration::ZERO).pending_dials, 30);
     }
 
     #[test]

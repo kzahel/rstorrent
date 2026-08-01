@@ -315,17 +315,15 @@ reason to stop.
 Campaign state: **active**.
 
 Active tactical:
-[`027-expanded-half-open-working-set.md`](../tactical/027-expanded-half-open-working-set.md).
-Tacticals
-[`025-bounded-async-content-storage.md`](../tactical/025-bounded-async-content-storage.md)
-and
-[`026-paired-peer-utility-timeline.md`](../tactical/026-paired-peer-utility-timeline.md)
+[`028-fair-content-supervisor-intake.md`](../tactical/028-fair-content-supervisor-intake.md).
+Tacticals `025` through
+[`027-expanded-half-open-working-set.md`](../tactical/027-expanded-half-open-working-set.md)
 are complete.
 
-Current milestone: raise the separate torrent-local half-open cohort from
-eight to 30, prove exact admission and useful-peer liveness adversarially, then
-use product tracker+DHT timelines to classify the next owner without changing
-ranking, request, and storage policies together.
+Current milestone: admit bounded discovery and begin eligible dials during
+storage pressure, then rotate safe ready storage, peer, and discovery owners
+without increasing any queue or payload bound. Product timelines must no
+longer defer supplied peers until terminal state.
 
 Last completed evidence:
 
@@ -473,18 +471,32 @@ Last completed evidence:
   eight were dialing, and six were connected. The run held that eight-attempt
   ceiling while taking roughly 100 seconds to grow to 29 connections and
   reached 50% at 143.94 seconds, selecting Tactical `027`'s source-derived
-  30-attempt startup cohort.
+  30-attempt startup cohort;
+- Tactical `027` raised only the pending-dial bound. A useful position-30 peer
+  completed behind 29 silent handshakes in about 50 ms, and 30 fully silent
+  attempts canceled, joined, and returned the registry to idle exactly;
+- three clean product 50% screens completed in 61.47--68.34 seconds. Their
+  sparse 12--16-candidate swarms made the latency result inconclusive for the
+  expanded cohort;
+- one clean complete screen published 276,445,467 bytes and 1,055 pieces in
+  149.42 seconds with zero hash failures and all request/storage jobs drained;
+  and
+- that timeline reported 171 cumulative DHT peers around content second 30
+  and 340 around second 120 while the content registry remained at 12 known
+  peers until termination. The storage-backpressured supervisor branch awaits
+  storage alone and the ordinary biased branch ranks storage before discovery,
+  selecting Tactical `028`'s fair intake owner.
 
 Next executable action:
 
-1. change the pure pending-dial default from eight to 30 while retaining the
-   separate 30-established-peer and fixed payload bounds;
-2. prove exact 30/31 admission, prompt access to a useful peer in positions
-   9--30, simultaneous completion safety, saturated cancellation, and cleanup;
-3. pass workspace, mixed-peer, Python, and controlled paired gates;
-4. run three tracker+DHT owner screens to 50% and one complete screen when the
-   cohort remains integrity-clean; and
-5. classify storage, request service, ranking, or confirmation breadth from
-   the retained paired timeline.
+1. add deterministic rotating-owner state and bounded discovery polling under
+   storage backpressure;
+2. start eligible half-open dials independently from storage-command readiness
+   while leaving request scheduling gated by write capacity;
+3. prove late tracker/DHT intake, storage progress, payload bounds, saturated
+   cancellation, and exact publication with scripted queues;
+4. pass workspace, mixed-peer, Python, and controlled paired gates; and
+5. run product timeline screens and classify request service, storage,
+   ranking, or confirmation breadth from prompt registry-growth evidence.
 
 Human blocker: **none**.

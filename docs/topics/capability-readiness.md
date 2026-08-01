@@ -12,8 +12,9 @@ breadth. Endgame and v1 hash-failure recovery now have exact bounded evidence.
 Bounded storage now remains live independently from peer events, but its
 corrected localhost benchmark did not improve. Paired peer-utility timelines
 then isolated a source-rich product-path run which retained 119 eligible peers
-behind an eight-attempt half-open ceiling. The active slice expands that
-bounded startup cohort to 30 before changing ranking or request policy.
+behind an eight-attempt half-open ceiling. That cohort is now 30 with exact
+adversarial evidence. The active slice prevents saturated storage service from
+deferring bounded discovery intake until transfer completion.
 
 ## Purpose And Ownership
 
@@ -88,16 +89,15 @@ evidence.
 
 ### Now
 
-**Expanded half-open working set.** Raise the torrent-local half-open cohort
-from eight to 30 under the existing separate 30-established-peer and fixed
-payload bounds. Prove source-rich useful-peer liveness, exact 30/31 admission,
-cancellation, and cleanup before screening the product tracker+DHT path.
+**Fair content-supervisor intake.** Admit bounded tracker/DHT batches and start
+eligible dials during storage pressure, then rotate safe ready storage, peer,
+and discovery owners without increasing any queue or payload bound.
 
 ### Next
 
-1. **Source-derived service owner.** Use the paired timeline after the wider
-   cohort to select storage, request service, peer ranking, or confirmation
-   breadth without changing several policies together.
+1. **Source-derived service owner.** Use the paired timeline after fair intake
+   to select storage, request service, peer ranking, or confirmation breadth
+   without changing several policies together.
 2. **Measured BEP breadth.** Use the protocol matrix and full-reference gaps
    to choose the next discovery or transport BEP after core completion parity.
 3. **Durable single-file resume.** Extend the existing selective-storage

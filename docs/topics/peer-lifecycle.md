@@ -15,10 +15,12 @@ known-bad exclusion. Tactical `025` separated bounded storage work from peer
 event progress and disproved storage as the localhost speed owner. Tactical
 `026` completed the bounded paired timeline: a source-rich product path held
 eight half-open attempts while 119 candidates remained eligible. Tactical
-`027` now expands that separate pending cohort to 30. Tracker and DHT
-observations remain live while content runs. Full parole selection, persistent
-integrity reputation, measured picker policy, incoming connections, and
-persistent peer records remain later work.
+`027` expanded that separate pending cohort to 30. Its complete public
+timeline showed DHT results queued outside the registry while storage stayed
+saturated. Tactical `028` now owns fair bounded discovery, dial, peer, and
+storage service. Full parole selection, persistent integrity reputation,
+measured picker policy, incoming connections, and persistent peer records
+remain later work.
 
 ## Scope
 
@@ -442,6 +444,14 @@ defaults offer a 30-attempt startup boost and 30 attempts per second.
 Tactical `027` therefore owns one falsifiable admission change: 30 pending
 attempts beneath the existing independent 30-established-peer and fixed
 payload bounds. It does not change ranking, request windows, storage, or
-turnover. Incoming listener ownership and advertised-port updates, measured
-performance selection, peer-ID duplicate resolution, full parole selection,
-PEX, and persisted peer caches remain later work.
+turnover. Its deterministic position-30 and 30-silent cancellation cases pass.
+Three exact 50% screens and one 149.42-second exact completion also pass, but
+the complete timeline reported DHT peers long before the content registry
+grew. Continuously ready storage is selected before discovery in the biased
+supervisor and is the new preceding lifecycle owner.
+
+Tactical `028` admits discovery and begins bounded dials during storage
+pressure, then gives safe ready owners explicit rotating service. Incoming
+listener ownership and advertised-port updates, measured performance
+selection, peer-ID duplicate resolution, full parole selection, PEX, and
+persisted peer caches remain later work.

@@ -16,9 +16,10 @@ contributor evidence, and bounded peer integrity reputation. Tactical `025`
 completed one bounded asynchronous storage owner with exact write/hash,
 resume, payload, cancellation, and join ownership. Tactical `026` completed
 the paired live peer-utility timeline and selected the continuously occupied
-eight-attempt half-open cohort. Tactical `027` now expands that cohort to 30
-under the existing live-peer and payload bounds before changing selection or
-request policy.
+eight-attempt half-open cohort. Tactical `027` expanded that cohort to 30
+under the existing live-peer and payload bounds. Its public timeline exposed
+discovery events queued behind continuously ready storage; Tactical `028` now
+owns fair supervisor intake before selection or request policy changes.
 
 ## Scope
 
@@ -236,13 +237,16 @@ request/payload accounting, hash recovery, resume ordering, exact publication,
 and controlled interoperability. Its corrected localhost result disproved
 storage as the retained speed owner.
 
-The paired timeline now shows the product tracker+DHT path with 159 candidates
-by metadata, 119 still eligible after one content second, and exactly eight
-half-open attempts. The next stopping condition is exact 30/31 pending-dial
-ownership plus a scripted useful peer in candidate positions 9--30 completing
-before the former cohort's timeout. Saturated cancellation and product-path
-timeline screens must retain all connection, payload, storage, integrity, and
-cleanup bounds.
+Tactical `027` now proves exact 30/31 pending-dial ownership, prompt completion
+from a useful peer in position 30 behind 29 silent handshakes, and exact
+cancellation of 30 silent attempts. Its complete public screen found DHT peer
+batches reported at content seconds 30 and 120 but not reflected in the
+content registry until termination while storage stayed saturated.
+
+The next stopping condition is prompt bounded discovery admission and dial
+refill under storage pressure, explicit safe event-owner rotation, and exact
+publication and cleanup without increasing storage, peer-event, pending-dial,
+established-peer, request, or payload bounds.
 
 Routine engine validation remains headless; no additional product UI is
 required by that slice.

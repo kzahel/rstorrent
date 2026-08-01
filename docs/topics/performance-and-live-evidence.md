@@ -424,6 +424,25 @@ source-derived 30-attempt startup cohort. Continuously saturated 64-command
 storage and 66-job high waters remain a measured secondary hypothesis if
 broader admission does not improve service.
 
+### Expanded Cohort Result: 2026-08-01
+
+Tactical `027` changed only the pending-dial default from eight to 30. A useful
+peer at position 30 behind 29 silent handshakes completed a controlled transfer
+in about 50 ms; 30 silent attempts also canceled and joined exactly. Three
+product-path 50% screens completed in 61.47--68.34 seconds, but supplied only
+12--16 candidates and therefore do not attribute their 64.21-second median to
+the wider cohort.
+
+One product-path completion published all 276,445,467 bytes in 149.42 seconds
+with zero hash failures and drained request and storage queues. Its timeline
+reported 171 cumulative DHT peers near content second 30 and 340 near second
+120, while the content registry stayed at 12 known peers until the final
+sample. Storage remained at its 66-job high water throughout. The supervisor's
+storage-backpressured branch receives only storage completions, and its
+ordinary biased selection also places storage before peer and discovery
+events. Tactical `028` therefore owns prompt bounded discovery admission and
+explicit safe event-owner fairness before further storage or request tuning.
+
 ## Result Classification
 
 Classify each paired attempt before interpreting speed:

@@ -5518,7 +5518,7 @@ mod tests {
         SelectiveStorageError, selective_part_path, selective_staging_path,
     };
     use crate::storage::staging_path;
-    use crate::swarm::DEFAULT_INITIAL_REQUESTS_PER_CONNECTION;
+    use crate::swarm::{DEFAULT_INITIAL_REQUESTS_PER_CONNECTION, DEFAULT_MAX_PENDING_DIALS};
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -6283,12 +6283,22 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
     }
 
     async fn accept_handshake_without_reply(listener: TcpListener) {
+        accept_handshake_without_reply_and_count(listener, None).await;
+    }
+
+    async fn accept_handshake_without_reply_and_count(
+        listener: TcpListener,
+        accepted: Option<Arc<AtomicUsize>>,
+    ) {
         let (mut stream, _) = listener.accept().await.expect("accept silent peer");
         let mut handshake = [0; HANDSHAKE_LENGTH];
         stream
             .read_exact(&mut handshake)
             .await
             .expect("read silent handshake");
+        if let Some(accepted) = accepted {
+            accepted.fetch_add(1, Ordering::AcqRel);
+        }
         let mut end = [0; 1];
         assert_eq!(stream.read(&mut end).await.expect("wait for close"), 0);
     }
@@ -7443,25 +7453,25 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
     }
 
     #[tokio::test]
-    async fn silent_handshakes_do_not_block_a_parallel_useful_peer() {
+    async fn useful_peer_at_end_of_full_pending_cohort_completes_promptly() {
+        assert_eq!(DEFAULT_MAX_PENDING_DIALS, 30);
         let first = vec![0x13; 16 * 1024];
         let second = vec![0x57; 16 * 1024];
         let metainfo =
             Metainfo::from_bytes(&two_piece_metainfo(&first, &second)).expect("two-piece metainfo");
-        let silent_a = TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind silent A");
-        let address_a = silent_a.local_addr().expect("silent A address");
-        let silent_b = TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind silent B");
-        let address_b = silent_b.local_addr().expect("silent B address");
+        let mut silent_addresses = Vec::new();
+        let mut silent_tasks = Vec::new();
+        for _ in 1..DEFAULT_MAX_PENDING_DIALS {
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind silent peer");
+            silent_addresses.push(listener.local_addr().expect("silent address"));
+            silent_tasks.push(tokio::spawn(accept_handshake_without_reply(listener)));
+        }
         let useful = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind useful peer");
         let useful_address = useful.local_addr().expect("useful address");
-        let silent_task_a = tokio::spawn(accept_handshake_without_reply(silent_a));
-        let silent_task_b = tokio::spawn(accept_handshake_without_reply(silent_b));
         let useful_task = tokio::spawn(serve_content_peer(
             useful,
             metainfo.info_hash,
@@ -7469,17 +7479,19 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             vec![true, true],
         ));
         let mut peers = PeerSession::from_endpoint(
-            address_a,
+            silent_addresses[0],
             PeerSource::Manual,
             loopback_network(Duration::from_secs(5)),
         )
         .expect("peer session");
-        peers
-            .observe_address(address_b, PeerSource::Manual)
-            .expect("silent B");
+        for address in &silent_addresses[1..] {
+            peers
+                .observe_address(*address, PeerSource::Manual)
+                .expect("silent peer");
+        }
         peers
             .observe_address(useful_address, PeerSource::Manual)
-            .expect("useful peer");
+            .expect("30th useful peer");
         let output = test_path("silent-handshake-parallel");
         let report = timeout(
             Duration::from_secs(2),
@@ -7502,13 +7514,106 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         .expect("silent handshakes did not serialize progress")
         .expect("useful peer completed");
         assert_eq!(report.verified_piece_count, 2);
-        for task in [silent_task_a, silent_task_b, useful_task] {
+        silent_tasks.push(useful_task);
+        for task in silent_tasks {
             timeout(Duration::from_secs(1), task)
                 .await
                 .expect("peer joined")
                 .expect("peer task");
         }
         let _ = tokio::fs::remove_dir_all(output).await;
+    }
+
+    #[tokio::test]
+    async fn cancellation_joins_a_full_silent_pending_cohort() {
+        let payload = vec![0x31; 16 * 1024];
+        let metainfo =
+            Metainfo::from_info_bytes(&single_file_info(&payload)).expect("single-piece metainfo");
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let mut addresses = Vec::new();
+        let mut tasks = Vec::new();
+        for _ in 0..DEFAULT_MAX_PENDING_DIALS {
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind silent peer");
+            addresses.push(listener.local_addr().expect("silent address"));
+            tasks.push(tokio::spawn(accept_handshake_without_reply_and_count(
+                listener,
+                Some(accepted.clone()),
+            )));
+        }
+        let mut peers = PeerSession::from_endpoint(
+            addresses[0],
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(5)),
+        )
+        .expect("peer session");
+        for address in &addresses[1..] {
+            peers
+                .observe_address(*address, PeerSource::Manual)
+                .expect("silent peer");
+        }
+        let output = test_path("full-silent-pending-cancel.bin");
+        let control = DownloadControl::new();
+        let task_output = output.clone();
+        let task_control = control.clone();
+        let download = tokio::spawn(async move {
+            let result = run_content_download(
+                ContentDownloadConfig {
+                    output_path: task_output,
+                    max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+                    swarm_config: SwarmConfig::for_payload_limit(MIN_PAYLOAD_ALLOWANCE),
+                    skip_files: Vec::new(),
+                    materialize_files: Vec::new(),
+                },
+                metainfo,
+                task_control,
+                None,
+                &mut peers,
+                None,
+            )
+            .await;
+            (result, peers)
+        });
+        let all_started = timeout(Duration::from_secs(2), async {
+            while accepted.load(Ordering::Acquire) < DEFAULT_MAX_PENDING_DIALS {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+        assert!(
+            all_started.is_ok(),
+            "only {} of {DEFAULT_MAX_PENDING_DIALS} pending handshakes started",
+            accepted.load(Ordering::Acquire)
+        );
+        control.cancel();
+        let (result, peers) = timeout(Duration::from_secs(1), download)
+            .await
+            .expect("download joined")
+            .expect("download task");
+        assert!(matches!(result, Err(DownloadError::Cancelled)));
+        assert_eq!(accepted.load(Ordering::Acquire), DEFAULT_MAX_PENDING_DIALS);
+        assert!(
+            peers
+                .registry
+                .records()
+                .all(|record| record.phase() == PeerPhase::Idle)
+        );
+        for task in tasks {
+            timeout(Duration::from_secs(1), task)
+                .await
+                .expect("silent peer joined")
+                .expect("silent peer task");
+        }
+        assert!(!output.exists());
+        let staging = staging_path(&output).expect("staging path");
+        assert!(
+            staging.exists(),
+            "direct content cancellation stays resumable"
+        );
+        tokio::fs::remove_file(staging)
+            .await
+            .expect("remove canceled staging file");
     }
 
     #[tokio::test]

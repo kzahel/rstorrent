@@ -186,8 +186,11 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; adds bounded endpoint-free time-series evidence for both
   comparator owners and classifies candidate supply plus half-open admission.
 - [`027-expanded-half-open-working-set.md`](027-expanded-half-open-working-set.md):
-  active; expands the source-rich startup dial cohort from eight to 30 while
+  complete; expands the source-rich startup dial cohort from eight to 30 while
   preserving the separate 30-live-peer and fixed payload bounds.
+- [`028-fair-content-supervisor-intake.md`](028-fair-content-supervisor-intake.md):
+  active; prevents continuous accepted-block storage from starving bounded
+  discovery admission, dial refill, and safe peer-event service.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
