@@ -16,8 +16,10 @@ behind an eight-attempt half-open ceiling. That cohort is now 30 with exact
 adversarial evidence. Fair supervisor intake now admits DHT results and fills
 that cohort during storage pressure. Coalesced selective hashing now removes
 redundant seeks, but a controlled profile remained neutral and public storage
-occupancy stayed saturated. The active slice moves the complete common piece
-hash behind one bounded blocking positional-I/O boundary.
+occupancy stayed saturated. The complete common piece hash now runs behind one
+bounded blocking positional-I/O boundary, but controlled and public timing
+again stayed neutral. The active slice separates storage queue wait from write
+and hash service time before another behavior change.
 
 ## Purpose And Ownership
 
@@ -92,16 +94,15 @@ evidence.
 
 ### Now
 
-**Single-boundary selective hash job.** Execute each common all-wanted piece
-hash as one bounded blocking positional-I/O job while retaining the 16 KiB
-buffer, cross-file correctness, storage queue bounds, and exact shutdown.
+**Storage command duration evidence.** Attribute the full storage queue to
+queue wait, write service, and hash service with fixed bounded diagnostics,
+controlled delays, and retained public timeline evidence.
 
 ### Next
 
-1. **Source-derived service owner.** Use task-duration and paired timelines
-   after the complete hash-job boundary to select write ownership, request
-   service, peer ranking, or confirmation breadth without changing several
-   policies together.
+1. **Source-derived service owner.** Use storage-duration and paired timelines
+   to select write ownership, request service, peer ranking, or confirmation
+   breadth without changing several policies together.
 2. **Measured BEP breadth.** Use the protocol matrix and full-reference gaps
    to choose the next discovery or transport BEP after core completion parity.
 3. **Durable single-file resume.** Extend the existing selective-storage

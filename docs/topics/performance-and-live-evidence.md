@@ -467,11 +467,17 @@ screens still reached 66 occupied storage jobs; two reached the milestone at
 screen published all 276,445,467 exact bytes at 180.64 seconds with zero hash
 failures and drained queues.
 
-The remaining source-derived storage defect is the operation boundary: every
-fixed read still enters and leaves Tokio's blocking file machinery separately.
-Tactical `030` moves a complete common all-wanted piece hash behind one bounded
-blocking positional-I/O job, then reruns the same evidence before any peer or
-request policy change.
+Tactical `030` now executes a complete all-wanted piece hash in one bounded
+blocking positional-I/O job. The 32 MiB controlled median remained neutral at
+1.139 seconds versus Tactical `029`'s 1.121. Two public 50% samples took 79.47
+and 223.85 seconds; a third timed out at 359 of 1,055 pieces. A complete screen
+timed out at 375 pieces and 98,304,000 verified bytes. All terminal snapshots
+retained 66 storage jobs, all had zero hash failures, and cleanup was exact.
+
+Full queue occupancy has now survived two hash operation-shape changes without
+a controlled speed improvement. It is not sufficient attribution. Tactical
+`031` records command queue wait, complete write service, complete hash service,
+and the active operation age before any storage, peer, or request-policy change.
 
 ## Result Classification
 

@@ -1,6 +1,6 @@
 # Tactical 030: Single-Boundary Selective Hash Job
 
-Status: Active
+Status: Complete
 
 Topics: `download-correctness`, `performance-and-live-evidence`,
 `oracle-driven-engine-campaign`
@@ -20,6 +20,15 @@ handles, walks the already validated segment map in torrent order, retains a
 single fixed 16 KiB buffer, and returns one digest or typed error. Establish
 deterministic lifecycle and operation-shape evidence, then rerun the controlled
 and public profiles before choosing another owner.
+
+The bounded operation boundary is now implemented on the shared Rust engine
+and compiles for both installed Android ABIs. Exact tests cover the common
+single-file shape, two wanted files separated by padding, truncation, a panicked
+blocking task, and retention of the mixed skipped-file path. The controlled
+and public timing hypotheses were both negative: the change does not support a
+speed claim, and terminal public snapshots still held 66 storage jobs. Tactical
+`031` therefore measures queue wait and write/hash service duration before any
+further storage, request, or peer-policy change.
 
 ## Source Dossier
 
@@ -131,3 +140,50 @@ break, product-visible contract, destructive user-data action, visible or
 physical-device interaction, or evidence requiring a general shared disk-pool
 architecture. A neutral benchmark or public timeout is evidence, not a
 blocker.
+
+## Implementation And Evidence
+
+For a piece containing only wanted-file and padding spans,
+`SelectiveStorage` now duplicates at most one handle for each touched wanted
+file, converts those temporary duplicates to standard handles, and gives one
+immutable span plan to `spawn_blocking`. The job uses `FileExt::read_at` on
+Unix/Android, `FileExt::seek_read` on Windows, and a safe seek/read fallback on
+other targets. Exact-read logic retries interruption, advances checked offsets,
+and reports zero-length reads as `UnexpectedEof`. The fixed 16 KiB buffer is
+unchanged. Temporary handles close with the job, and join failure becomes a
+typed storage I/O error.
+
+A 256 KiB one-file test proves one blocking job, one duplicated handle, 16
+positional reads, no seek, no part-file read, and the exact SHA-1. A second
+test crosses two wanted files with padding between them and proves two handles,
+one job, exact fixed-chunk read count, zero padding bytes in torrent order, and
+the exact SHA-1. Truncation produces typed `UnexpectedEof`; a controlled task
+panic produces a typed join error. The existing mixed-source fixture now also
+asserts that wanted/skipped pieces retain zero blocking jobs, zero duplicated
+handles, and both wanted-file and part-file reads. Existing storage-owner hash
+cancellation continues to join within its bound.
+
+The 32 MiB controlled profile passed 3/3 with exact hashes, publication, and
+cleanup at 1.543, 1.139, and 1.105 seconds (median 1.139). Tactical `029`'s
+immediate prior median was 1.121 seconds. The 1.6% regression is neutral local
+variance and rejects a performance claim.
+
+Three tracker+DHT 50% screens reached the milestone twice at 79.47 and 223.85
+seconds. The third timed out at 359 of 1,055 pieces and 94,109,696 verified
+bytes. All had zero hash failures and exact cleanup; all still reached and
+ended with 66 storage jobs. One complete screen timed out at 300 seconds with
+375 pieces and 98,304,000 bytes verified, zero hash failures, 30 connected
+peers, 86 active requests, 66 writing blocks, and 66 pending storage jobs.
+
+Formatting, warning-denying workspace clippy, and 252 listed workspace tests
+pass: 249 passed and the three explicit public-network tests remained ignored.
+The selective profile passed 3/3, the controlled mixed-peer profile passed,
+all nine comparator tests passed, and paired controlled publication completed
+exactly for both implementations. The engine also passed `cargo check` for
+the installed `aarch64-linux-android` and `x86_64-linux-android` targets.
+
+Stopping condition: met. Common all-wanted hashes cross one blocking boundary,
+safe positional reads and exact task ownership pass, and the retained evidence
+classifies the next work. Since controlled hashing remained neutral, the next
+slice follows the predeclared branch and measures storage command wait and
+service time rather than stacking another storage optimization.

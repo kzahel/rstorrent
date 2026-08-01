@@ -195,8 +195,11 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; removes redundant per-chunk async seeks from bounded multi-file
   piece verification and records a neutral controlled timing result.
 - [`030-single-boundary-selective-hash-job.md`](030-single-boundary-selective-hash-job.md):
-  active; moves each common all-wanted piece hash behind one bounded blocking
-  positional-I/O boundary.
+  complete; moves each common all-wanted piece hash behind one bounded blocking
+  positional-I/O boundary and records neutral controlled/public results.
+- [`031-storage-command-duration-evidence.md`](031-storage-command-duration-evidence.md):
+  active; separates bounded storage queue wait from per-kind write and hash
+  service duration before another behavioral change.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

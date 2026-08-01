@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use rstorrent_protocol::metainfo::Metainfo;
 use rstorrent_protocol::storage_layout::{
-    FileSelection, LayoutError, SegmentTarget, TorrentLayout,
+    FileSelection, LayoutError, LayoutSegment, SegmentTarget, TorrentLayout,
 };
 use sha1::{Digest, Sha1};
 use tokio::fs::{File, OpenOptions};
@@ -287,6 +287,144 @@ struct SelectiveHashIoStats {
     wanted_file_seeks: usize,
     wanted_file_reads: usize,
     part_file_reads: usize,
+    wanted_file_duplicates: usize,
+    blocking_jobs: usize,
+}
+
+#[derive(Debug)]
+struct BlockingHashPlan {
+    files: Vec<std::fs::File>,
+    spans: Vec<BlockingHashSpan>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BlockingHashSpan {
+    WantedFile {
+        file_slot: usize,
+        file_offset: u64,
+        length: usize,
+    },
+    Padding {
+        length: usize,
+    },
+}
+
+type BlockingHashResult = Result<([u8; 20], SelectiveHashIoStats), SelectiveStorageError>;
+
+impl BlockingHashPlan {
+    fn hash(mut self) -> BlockingHashResult {
+        let mut hasher = Sha1::new();
+        let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
+        let mut stats = SelectiveHashIoStats {
+            wanted_file_duplicates: self.files.len(),
+            blocking_jobs: 1,
+            ..SelectiveHashIoStats::default()
+        };
+        for span in self.spans {
+            let mut consumed = 0_usize;
+            match span {
+                BlockingHashSpan::WantedFile {
+                    file_slot,
+                    file_offset,
+                    length: span_length,
+                } => {
+                    let file = self.files.get_mut(file_slot).ok_or(
+                        SelectiveStorageError::InvalidStorageOperation(
+                            "blocking hash file slot is absent",
+                        ),
+                    )?;
+                    while consumed < span_length {
+                        let length = (span_length - consumed).min(buffer.len());
+                        let offset = file_offset
+                            .checked_add(u64::try_from(consumed).map_err(|_| {
+                                SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow)
+                            })?)
+                            .ok_or(SelectiveStorageError::Layout(
+                                LayoutError::ArithmeticOverflow,
+                            ))?;
+                        read_exact_at(file, &mut buffer[..length], offset).map_err(|source| {
+                            SelectiveStorageError::Io {
+                                operation:
+                                    "read selected staging range in blocking verification job",
+                                source,
+                            }
+                        })?;
+                        stats.wanted_file_reads = stats.wanted_file_reads.saturating_add(1);
+                        hasher.update(&buffer[..length]);
+                        consumed += length;
+                    }
+                }
+                BlockingHashSpan::Padding {
+                    length: span_length,
+                } => {
+                    buffer.fill(0);
+                    while consumed < span_length {
+                        let length = (span_length - consumed).min(buffer.len());
+                        hasher.update(&buffer[..length]);
+                        consumed += length;
+                    }
+                }
+            }
+        }
+        Ok((hasher.finalize().into(), stats))
+    }
+}
+
+async fn await_blocking_hash(
+    task: tokio::task::JoinHandle<BlockingHashResult>,
+) -> BlockingHashResult {
+    task.await.map_err(|source| SelectiveStorageError::Io {
+        operation: "join selected piece blocking verification job",
+        source: io::Error::other(source),
+    })?
+}
+
+fn read_exact_at(
+    file: &mut std::fs::File,
+    mut bytes: &mut [u8],
+    mut offset: u64,
+) -> io::Result<()> {
+    while !bytes.is_empty() {
+        match positional_read(file, bytes, offset) {
+            Ok(0) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "selected staging file ended during piece verification",
+                ));
+            }
+            Ok(read) => {
+                offset = offset
+                    .checked_add(read as u64)
+                    .ok_or_else(|| io::Error::other("positional read offset overflow"))?;
+                bytes = &mut bytes[read..];
+            }
+            Err(source) if source.kind() == io::ErrorKind::Interrupted => {}
+            Err(source) => return Err(source),
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn positional_read(file: &mut std::fs::File, bytes: &mut [u8], offset: u64) -> io::Result<usize> {
+    use std::os::unix::fs::FileExt;
+
+    file.read_at(bytes, offset)
+}
+
+#[cfg(windows)]
+fn positional_read(file: &mut std::fs::File, bytes: &mut [u8], offset: u64) -> io::Result<usize> {
+    use std::os::windows::fs::FileExt;
+
+    file.seek_read(bytes, offset)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn positional_read(file: &mut std::fs::File, bytes: &mut [u8], offset: u64) -> io::Result<usize> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    file.seek(SeekFrom::Start(offset))?;
+    file.read(bytes)
 }
 
 impl SelectiveStorage {
@@ -806,17 +944,83 @@ impl SelectiveStorage {
             .map(|(hash, _stats)| hash)
     }
 
+    async fn prepare_blocking_hash_plan(
+        &self,
+        segments: &[LayoutSegment],
+    ) -> Result<Option<BlockingHashPlan>, SelectiveStorageError> {
+        if segments
+            .iter()
+            .any(|segment| matches!(segment.target, SegmentTarget::SkippedFile { .. }))
+        {
+            return Ok(None);
+        }
+
+        let mut file_indices = Vec::new();
+        let mut files = Vec::new();
+        let mut spans = Vec::with_capacity(segments.len());
+        for segment in segments {
+            match segment.target {
+                SegmentTarget::WantedFile {
+                    file_index,
+                    file_offset,
+                } => {
+                    let file_slot = if let Some(slot) = file_indices
+                        .iter()
+                        .position(|existing| *existing == file_index)
+                    {
+                        slot
+                    } else {
+                        let file = self.files[file_index]
+                            .as_ref()
+                            .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?
+                            .try_clone()
+                            .await
+                            .map_err(|source| SelectiveStorageError::Io {
+                                operation:
+                                    "duplicate selected staging file for blocking verification",
+                                source,
+                            })?
+                            .into_std()
+                            .await;
+                        let slot = files.len();
+                        file_indices.push(file_index);
+                        files.push(file);
+                        slot
+                    };
+                    spans.push(BlockingHashSpan::WantedFile {
+                        file_slot,
+                        file_offset,
+                        length: segment.length,
+                    });
+                }
+                SegmentTarget::Padding => spans.push(BlockingHashSpan::Padding {
+                    length: segment.length,
+                }),
+                SegmentTarget::SkippedFile { .. } => {
+                    return Err(SelectiveStorageError::InvalidStorageOperation(
+                        "skipped segment entered all-wanted blocking hash plan",
+                    ));
+                }
+            }
+        }
+        Ok(Some(BlockingHashPlan { files, spans }))
+    }
+
     async fn hash_piece_with_stats(
         &mut self,
         piece_index: u32,
     ) -> Result<([u8; 20], SelectiveHashIoStats), SelectiveStorageError> {
         let piece_length = self.layout.piece_length_at(piece_index)?;
-        let mut hasher = Sha1::new();
-        let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
-        let mut stats = SelectiveHashIoStats::default();
         let segments = self
             .layout
             .segments(piece_index, 0, piece_length, &self.selection)?;
+        if let Some(plan) = self.prepare_blocking_hash_plan(&segments).await? {
+            return await_blocking_hash(tokio::task::spawn_blocking(move || plan.hash())).await;
+        }
+
+        let mut hasher = Sha1::new();
+        let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
+        let mut stats = SelectiveHashIoStats::default();
         for segment in segments {
             let mut consumed = 0_usize;
             match segment.target {
@@ -1577,9 +1781,9 @@ mod tests {
     use sha1::{Digest, Sha1};
 
     use super::{
-        DescriptorFile, DescriptorStorage, PreparedFileHash, ResumedStorage, SelectiveStorage,
-        SelectiveStorageError, VERIFICATION_CHUNK_LENGTH, collect_descriptors,
-        materialization_path, remove_selective_part_if_present,
+        BlockingHashResult, DescriptorFile, DescriptorStorage, PreparedFileHash, ResumedStorage,
+        SelectiveStorage, SelectiveStorageError, VERIFICATION_CHUNK_LENGTH, await_blocking_hash,
+        collect_descriptors, materialization_path, remove_selective_part_if_present,
         remove_selective_staging_if_present, selective_part_path, selective_staging_path,
         verify_prepared_descriptors,
     };
@@ -1649,7 +1853,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn contiguous_wanted_piece_hash_seeks_once_and_streams_fixed_chunks() {
+    async fn contiguous_wanted_piece_hash_runs_in_one_bounded_job() {
         let output = test_path("contiguous-hash");
         clean(&output).await;
         let piece_length = 256 * 1024_u32;
@@ -1694,13 +1898,152 @@ mod tests {
             .await
             .expect("hash contiguous piece");
         assert_eq!(actual, expected);
-        assert_eq!(stats.wanted_file_seeks, 1);
+        assert_eq!(stats.wanted_file_seeks, 0);
         assert_eq!(
             stats.wanted_file_reads,
             bytes.len().div_ceil(VERIFICATION_CHUNK_LENGTH)
         );
         assert_eq!(stats.part_file_reads, 0);
+        assert_eq!(stats.wanted_file_duplicates, 1);
+        assert_eq!(stats.blocking_jobs, 1);
         clean(&output).await;
+    }
+
+    #[tokio::test]
+    async fn blocking_hash_preserves_cross_file_and_padding_order() {
+        let output = test_path("blocking-cross-file-padding");
+        clean(&output).await;
+        let piece_length = 256 * 1024_u32;
+        let first_length = 100_000_u64;
+        let padding_length = 4_000_u64;
+        let second_length = u64::from(piece_length) - first_length - padding_length;
+        let mut bytes = (0..piece_length as usize)
+            .map(|offset| ((offset * 17 + offset / 31) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        bytes[first_length as usize..(first_length + padding_length) as usize].fill(0);
+        let expected: [u8; 20] = Sha1::digest(&bytes).into();
+        let metainfo = Metainfo {
+            info_hash: [8; 20],
+            piece_hashes: vec![expected],
+            piece_length,
+            total_length: u64::from(piece_length),
+            name: "cross-file-padding".to_owned(),
+            private: false,
+            mode: MetainfoMode::MultiFile,
+            files: vec![
+                MetainfoFile {
+                    path: vec!["first.bin".to_owned()],
+                    length: first_length,
+                    offset: 0,
+                    padding: false,
+                },
+                MetainfoFile {
+                    path: vec![".pad".to_owned(), "4000".to_owned()],
+                    length: padding_length,
+                    offset: first_length,
+                    padding: true,
+                },
+                MetainfoFile {
+                    path: vec!["second.bin".to_owned()],
+                    length: second_length,
+                    offset: first_length + padding_length,
+                    padding: false,
+                },
+            ],
+        };
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[]).expect("selection");
+        let mut storage =
+            SelectiveStorage::create(output.clone(), &metainfo, layout.clone(), selection.clone())
+                .await
+                .expect("create storage");
+        for request in layout.request_ranges(0, &selection).expect("requests") {
+            let begin = request.begin as usize;
+            storage
+                .write_block(
+                    0,
+                    request.begin,
+                    bytes[begin..begin + request.length as usize].to_vec(),
+                )
+                .await
+                .expect("write block");
+        }
+        let (actual, stats) = storage
+            .hash_piece_with_stats(0)
+            .await
+            .expect("hash cross-file piece");
+        assert_eq!(actual, expected);
+        assert_eq!(stats.wanted_file_seeks, 0);
+        assert_eq!(stats.wanted_file_duplicates, 2);
+        assert_eq!(stats.blocking_jobs, 1);
+        assert_eq!(
+            stats.wanted_file_reads,
+            (first_length as usize).div_ceil(VERIFICATION_CHUNK_LENGTH)
+                + (second_length as usize).div_ceil(VERIFICATION_CHUNK_LENGTH)
+        );
+        assert_eq!(stats.part_file_reads, 0);
+        clean(&output).await;
+    }
+
+    #[tokio::test]
+    async fn blocking_hash_reports_a_truncated_staging_file() {
+        let output = test_path("blocking-truncated");
+        clean(&output).await;
+        let metainfo = Metainfo {
+            info_hash: [9; 20],
+            piece_hashes: vec![[0; 20]],
+            piece_length: 32_768,
+            total_length: 32_768,
+            name: "truncated".to_owned(),
+            private: false,
+            mode: MetainfoMode::MultiFile,
+            files: vec![MetainfoFile {
+                path: vec!["payload.bin".to_owned()],
+                length: 32_768,
+                offset: 0,
+                padding: false,
+            }],
+        };
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[]).expect("selection");
+        let mut storage =
+            SelectiveStorage::create(output.clone(), &metainfo, layout.clone(), selection.clone())
+                .await
+                .expect("create storage");
+        for request in layout.request_ranges(0, &selection).expect("requests") {
+            storage
+                .write_block(0, request.begin, vec![3; request.length as usize])
+                .await
+                .expect("write block");
+        }
+        storage.files[0]
+            .as_ref()
+            .expect("wanted file")
+            .set_len(16_384)
+            .await
+            .expect("truncate staging file");
+        assert!(matches!(
+            storage.hash_piece(0).await,
+            Err(SelectiveStorageError::Io {
+                operation: "read selected staging range in blocking verification job",
+                source,
+            }) if source.kind() == std::io::ErrorKind::UnexpectedEof
+        ));
+        clean(&output).await;
+    }
+
+    #[tokio::test]
+    async fn blocking_hash_task_panic_is_a_typed_join_failure() {
+        let task = tokio::task::spawn_blocking(|| -> BlockingHashResult {
+            panic!("controlled blocking hash panic")
+        });
+        assert!(matches!(
+            await_blocking_hash(task).await,
+            Err(SelectiveStorageError::Io {
+                operation: "join selected piece blocking verification job",
+                source,
+            }) if source.kind() == std::io::ErrorKind::Other
+        ));
     }
 
     fn new_descriptor(path: &Path) -> std::fs::File {
@@ -1817,10 +2160,17 @@ mod tests {
             let piece_length = layout.piece_length_at(piece_index).expect("piece length") as usize;
             let expected: [u8; 20] =
                 Sha1::digest(&bytes[piece_start..piece_start + piece_length]).into();
-            assert_eq!(
-                storage.hash_piece(piece_index).await.expect("mixed hash"),
-                expected
-            );
+            let (actual, stats) = storage
+                .hash_piece_with_stats(piece_index)
+                .await
+                .expect("mixed hash");
+            assert_eq!(actual, expected);
+            if piece_index == 0 {
+                assert_eq!(stats.blocking_jobs, 0);
+                assert_eq!(stats.wanted_file_duplicates, 0);
+                assert!(stats.wanted_file_seeks > 0);
+                assert!(stats.part_file_reads > 0);
+            }
             storage
                 .record_verified(piece_index as usize)
                 .expect("record verified");

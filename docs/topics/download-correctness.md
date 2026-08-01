@@ -21,9 +21,11 @@ under the existing live-peer and payload bounds. Its public timeline exposed
 discovery events queued behind continuously ready storage; Tactical `028` now
 completed fair supervisor intake. Tactical `029` removed redundant selective
 hash seeks with exact integrity, but controlled timing stayed neutral and live
-storage occupancy remained saturated. Tactical `030` now owns the complete
-all-wanted piece-hash operation boundary before selection or request policy
-changes.
+storage occupancy remained saturated. Tactical `030` moved the complete
+all-wanted piece hash behind one bounded blocking job with exact shared-engine
+and Android-target evidence, but performance remained neutral. Tactical `031`
+now measures queue wait and per-kind storage service before selection or
+request policy changes.
 
 ## Scope
 
@@ -255,10 +257,18 @@ Its 32 MiB controlled median moved from 1.101 to 1.121 seconds, so it makes no
 speed claim; public screens continued to hit the 66-job storage high-water
 mark. Exact full publication completed at 180.64 seconds.
 
-The next stopping condition is one blocking boundary for a complete
-all-wanted piece hash, portable positional-read correctness, bounded temporary
-file handles, exact cancellation/join evidence, and representative
-before/after timing without changing any storage, request, or payload queue.
+Tactical `030` now executes the common all-wanted piece hash behind one
+blocking positional-I/O boundary with fixed-buffer, cross-file, padding,
+truncation, task-failure, mixed-source, and Android-target evidence. Its 32 MiB
+controlled median remained neutral at 1.139 seconds versus 1.121 immediately
+before. Two public 50% samples took 79.47 and 223.85 seconds, one timed out at
+359 pieces, and a complete screen timed out at 375 pieces. Every terminal
+snapshot still held 66 storage jobs with zero hash failures.
+
+The next stopping condition is exact bounded attribution of storage queue wait,
+write service, and hash service through controlled delays and public timeline
+evidence. No storage, request, or peer policy changes until those durations
+identify the owner.
 
 Routine engine validation remains headless; no additional product UI is
 required by that slice.

@@ -315,15 +315,14 @@ reason to stop.
 Campaign state: **active**.
 
 Active tactical:
-[`030-single-boundary-selective-hash-job.md`](../tactical/030-single-boundary-selective-hash-job.md).
+[`031-storage-command-duration-evidence.md`](../tactical/031-storage-command-duration-evidence.md).
 Tacticals `025` through
-[`029-coalesced-selective-piece-hashing.md`](../tactical/029-coalesced-selective-piece-hashing.md)
+[`030-single-boundary-selective-hash-job.md`](../tactical/030-single-boundary-selective-hash-job.md)
 are complete.
 
-Current milestone: execute a complete common all-wanted piece hash behind one
-bounded blocking positional-I/O boundary while retaining the 16 KiB buffer,
-portable safe reads, bounded temporary handles, and every storage, payload,
-integrity, and cancellation bound.
+Current milestone: measure bounded storage command queue wait and separate
+write/hash service duration, including the current operation age, then use
+controlled delays and public evidence to select the actual retained owner.
 
 Last completed evidence:
 
@@ -511,17 +510,28 @@ Last completed evidence:
 - a complete screen verified all 276,445,467 bytes at 180.61 seconds and
   published exact content at 180.64 seconds with zero hash failures and drained
   queues. Persistent saturation selects Tactical `030`'s complete hash-job
-  boundary.
+  boundary;
+- Tactical `030` now gives each all-wanted piece one bounded blocking
+  positional-I/O job with exact one-file, cross-file, padding, truncation,
+  task-failure, mixed-source, cancellation, and Android-target evidence;
+- its 32 MiB controlled median was a neutral 1.139 seconds versus 1.121 before.
+  Two public 50% screens took 79.47 and 223.85 seconds, while one timed out at
+  359 of 1,055 pieces; and
+- a complete screen timed out at 375 pieces and 98,304,000 verified bytes with
+  zero hash failures, 30 peers, 86 requests, 66 writes, and 66 storage jobs.
+  Repeated full queues without controlled hash improvement select Tactical
+  `031`'s per-command duration evidence.
 
 Next executable action:
 
-1. add portable safe positional reads with exact short-read and error behavior;
-2. duplicate at most one handle per wanted file touched by a piece and hash the
-   complete all-wanted segment traversal in one bounded blocking job;
-3. prove single-file operation shape, cross-file/padding ordering, truncation,
-   task failure, cancellation, and exact owner joins;
-4. pass workspace, selective/mixed, Python, and controlled paired gates; and
-5. rerun the controlled profile plus public timeline screens, then classify
-   storage writes, request service, or peer ranking from retained evidence.
+1. timestamp bounded storage command admission, service start, and completion;
+2. publish fixed per-kind counts, cumulative/max queue and service times, and
+   current operation kind/age through existing diagnostics;
+3. prove exact attribution and lifecycle with controlled write/hash delays,
+   queued commands, failures, and cancellation;
+4. pass workspace, selective/hash/mixed, Python, and paired controlled gates;
+   and
+5. run product timeline screens and classify write service, hash service,
+   request service, or peer utility from retained evidence.
 
 Human blocker: **none**.
