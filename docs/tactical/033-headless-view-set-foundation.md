@@ -436,4 +436,44 @@ Deterministic evidence at this checkpoint:
 - the legacy subscription implementation remains in the same publication
   paths and is retained for the workspace regression gate.
 
-Stage 2 through Stage 4 remain pending.
+At Checkpoint 1, Stage 2 through Stage 4 remained pending.
+
+### Checkpoint 2: generated boundary and pure reducer
+
+Extended the deterministic exporter to emit:
+
+- `clients/web/src/api/generated/v1.ts` from `ts-rs`;
+- `clients/web/src/api/generated/v1.schema.json` from `schemars`;
+- the retained legacy reactive fixture; and
+- `clients/web/src/fixtures/view-set-trace.json` from Rust DTO values.
+
+The handwritten `src/api/index.ts` is the stable import barrel. Existing web
+code now imports through it, and the old `src/generated/contract.ts` output is
+removed. Re-running `npm run generate` after generation left all four outputs
+unchanged.
+
+Added Ajv `8.20.0` under its MIT license after registry and lockfile review.
+It validates generated structural shapes while existing focused TypeScript
+checks continue to own canonical decimals, collection/range bounds, and
+cross-field invariants. Generated schemas leave additive object properties
+open but reject unknown tagged variants and enums. A regression proves that
+`prepared`, previously omitted from the handwritten storage-state validator,
+is accepted through the generated `StorageState` definition; no replacement
+storage-state list exists in TypeScript.
+
+The new task-free reducer stores projections by client `view_id`, checks view
+set, epoch, base cursor, and projection continuity, treats an already-applied
+batch as idempotent, applies removal before later upsert, and clears stale
+state on an explicit epoch reset. Runtime transport, polling, abort, and timer
+ownership remain outside it.
+
+Evidence at this checkpoint:
+
+- `cargo clippy -p rstorrent-gateway --all-targets -- -D warnings` passes;
+- `cargo test -p rstorrent-gateway --no-fail-fast` passes (2 tests);
+- `npm run typecheck --prefix clients/web` passes;
+- `npm test --prefix clients/web` passes (13 tests, 1 opt-in integration test
+  skipped); and
+- `npm run build --prefix clients/web` passes.
+
+Stage 3 and Stage 4 remain pending.

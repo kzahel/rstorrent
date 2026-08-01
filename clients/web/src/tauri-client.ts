@@ -5,7 +5,7 @@ import type {
   ResponseEnvelope,
   SubscriptionSpec,
   ViewUpdate,
-} from "./generated/contract";
+} from "./api";
 import type {
   ApplicationClient,
   ApplicationSubscription,

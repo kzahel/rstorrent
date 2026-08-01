@@ -61,7 +61,7 @@ export type ViewSnapshot = { "type": "torrent_list", torrents: Array<TorrentView
 
 export type ViewPatch = { "type": "torrent_list", upsert: Array<TorrentView>, removed: Array<string>, } | { "type": "torrent", torrent: TorrentView | null, } | { "type": "piece_activity", torrent_id: string, piece_count: number, verified: Array<IndexRange>, cleared: Array<IndexRange>, active: ActivePiece | null, } | { "type": "diagnostics", events: Array<DiagnosticEvent>, dropped_count: string, };
 
-export type ResetReason = "queue_overflow";
+export type ResetReason = "queue_overflow" | "cursor_mismatch" | "cursor_expired";
 
 export type ViewUpdatePayload = { "type": "snapshot", snapshot: ViewSnapshot, } | { "type": "patch", patch: ViewPatch, } | { "type": "reset_required", reason: ResetReason, };
 
@@ -72,4 +72,30 @@ export type GatewayErrorCode = "authentication_required" | "authentication_faile
 export type GatewayClientMessage = { "type": "authenticate", contract_version: number, token: string, } | { "type": "dispatch", request: RequestEnvelope, } | { "type": "subscribe", request_id: string, spec: SubscriptionSpec, } | { "type": "resync", request_id: string, stream_id: string, } | { "type": "unsubscribe", request_id: string, stream_id: string, };
 
 export type GatewayServerMessage = { "type": "authenticated", contract_version: number, } | { "type": "response", response: ResponseEnvelope, } | { "type": "subscribed", request_id: string, stream_id: string, } | { "type": "update", update: ViewUpdate, } | { "type": "unsubscribed", request_id: string, stream_id: string, } | { "type": "error", request_id?: string | null, code: GatewayErrorCode, message: string, };
+
+export type ApiEncoding = "json" | "cbor";
+
+export type DeliveryMode = "poll" | "long_poll" | "stream";
+
+export type ApiVersion = { current: number, minimum: number, };
+
+export type ApiLimits = { max_view_sets_per_owner: number, max_views_per_set: number, max_view_id_bytes: number, min_queue_bytes: number, default_queue_bytes: number, max_queue_bytes: number, max_wait_millis: number, lease_millis: string, };
+
+export type ApiHello = { api: ApiVersion, encodings: Array<ApiEncoding>, deliveries: Array<DeliveryMode>, capabilities: Array<string>, limits: ApiLimits, };
+
+export type ViewDeliveryPolicy = { min_interval_millis: number, };
+
+export type ViewSpec = { "type": "torrent_list", view_id: string, delivery: ViewDeliveryPolicy, } | { "type": "torrent_summary", view_id: string, torrent_id: string, delivery: ViewDeliveryPolicy, } | { "type": "piece_activity", view_id: string, torrent_id: string, delivery: ViewDeliveryPolicy, } | { "type": "diagnostics", view_id: string, torrent_id?: string | null, filter: DiagnosticFilter, delivery: ViewDeliveryPolicy, };
+
+export type OpenViewSetOptions = { requested_queue_bytes?: number | null, };
+
+export type OpenViewSetRequest = { views: Array<ViewSpec>, options: OpenViewSetOptions, };
+
+export type UpdateViewSetRequest = { views: Array<ViewSpec>, };
+
+export type ViewSetUpdate = { "type": "snapshot", view_id: string, snapshot: ViewSnapshot, } | { "type": "patch", view_id: string, patch: ViewPatch, } | { "type": "view_removed", view_id: string, } | { "type": "reset_required", view_id?: string | null, reason: ResetReason, };
+
+export type UpdateBatch = { api_version: number, view_set_id: string, epoch: string, base_cursor: string, cursor: string, durable_revision: string, updates: Array<ViewSetUpdate>, };
+
+export type OpenViewSetResponse = { view_set_id: string, lease_millis: string, effective_queue_bytes: number, effective_views: Array<ViewSpec>, initial: UpdateBatch, };
 

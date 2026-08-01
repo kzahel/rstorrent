@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ViewUpdate } from "./generated/contract";
+import type { ViewUpdate } from "./api";
 import rustTrace from "./fixtures/reactive-trace.json";
 import {
   ContinuityError,

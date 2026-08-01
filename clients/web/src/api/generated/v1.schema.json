@@ -1,0 +1,1523 @@
+{
+  "$defs": {
+    "ActivePiece": {
+      "properties": {
+        "piece_index": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "piece_length": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "received": {
+          "items": {
+            "$ref": "#/$defs/IndexRange"
+          },
+          "type": "array"
+        },
+        "requested": {
+          "items": {
+            "$ref": "#/$defs/IndexRange"
+          },
+          "type": "array"
+        },
+        "stored": {
+          "items": {
+            "$ref": "#/$defs/IndexRange"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "piece_index",
+        "piece_length",
+        "requested",
+        "received",
+        "stored"
+      ],
+      "type": "object"
+    },
+    "ApiEncoding": {
+      "enum": [
+        "json",
+        "cbor"
+      ],
+      "type": "string"
+    },
+    "ApiHello": {
+      "properties": {
+        "api": {
+          "$ref": "#/$defs/ApiVersion"
+        },
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "deliveries": {
+          "items": {
+            "$ref": "#/$defs/DeliveryMode"
+          },
+          "type": "array"
+        },
+        "encodings": {
+          "items": {
+            "$ref": "#/$defs/ApiEncoding"
+          },
+          "type": "array"
+        },
+        "limits": {
+          "$ref": "#/$defs/ApiLimits"
+        }
+      },
+      "required": [
+        "api",
+        "encodings",
+        "deliveries",
+        "capabilities",
+        "limits"
+      ],
+      "type": "object"
+    },
+    "ApiLimits": {
+      "properties": {
+        "default_queue_bytes": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "lease_millis": {
+          "type": "string"
+        },
+        "max_queue_bytes": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_view_id_bytes": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_view_sets_per_owner": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_views_per_set": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_wait_millis": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "min_queue_bytes": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_view_sets_per_owner",
+        "max_views_per_set",
+        "max_view_id_bytes",
+        "min_queue_bytes",
+        "default_queue_bytes",
+        "max_queue_bytes",
+        "max_wait_millis",
+        "lease_millis"
+      ],
+      "type": "object"
+    },
+    "ApiVersion": {
+      "properties": {
+        "current": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "minimum": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "current",
+        "minimum"
+      ],
+      "type": "object"
+    },
+    "Command": {
+      "oneOf": [
+        {
+          "properties": {
+            "magnet": {
+              "type": "string"
+            },
+            "skip_files": {
+              "default": [],
+              "items": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "storage_root": {
+              "type": "string"
+            },
+            "type": {
+              "const": "add_magnet",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "magnet",
+            "storage_root"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "snapshot",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "pause",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "resume",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "shutdown",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "DeliveryMode": {
+      "enum": [
+        "poll",
+        "long_poll",
+        "stream"
+      ],
+      "type": "string"
+    },
+    "DiagnosticCategory": {
+      "enum": [
+        "lifecycle",
+        "discovery",
+        "tracker",
+        "peer",
+        "metadata",
+        "protocol",
+        "scheduler",
+        "piece",
+        "storage",
+        "integrity",
+        "platform",
+        "performance"
+      ],
+      "type": "string"
+    },
+    "DiagnosticEvent": {
+      "properties": {
+        "category": {
+          "$ref": "#/$defs/DiagnosticCategory"
+        },
+        "code": {
+          "type": "string"
+        },
+        "context": {
+          "items": {
+            "$ref": "#/$defs/DiagnosticField"
+          },
+          "type": "array"
+        },
+        "sequence": {
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/DiagnosticSeverity"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "timestamp_millis": {
+          "type": "string"
+        },
+        "torrent_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "sequence",
+        "timestamp_millis",
+        "severity",
+        "category",
+        "code",
+        "summary",
+        "context"
+      ],
+      "type": "object"
+    },
+    "DiagnosticField": {
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "type": "object"
+    },
+    "DiagnosticFilter": {
+      "properties": {
+        "categories": {
+          "items": {
+            "$ref": "#/$defs/DiagnosticCategory"
+          },
+          "type": "array"
+        },
+        "minimum_severity": {
+          "$ref": "#/$defs/DiagnosticSeverity"
+        },
+        "profile": {
+          "$ref": "#/$defs/DiagnosticProfile"
+        }
+      },
+      "required": [
+        "profile",
+        "minimum_severity",
+        "categories"
+      ],
+      "type": "object"
+    },
+    "DiagnosticProfile": {
+      "enum": [
+        "normal",
+        "detailed",
+        "trace"
+      ],
+      "type": "string"
+    },
+    "DiagnosticSeverity": {
+      "enum": [
+        "trace",
+        "debug",
+        "info",
+        "warning",
+        "error"
+      ],
+      "type": "string"
+    },
+    "ErrorCode": {
+      "enum": [
+        "invalid_version",
+        "invalid_request",
+        "request_conflict",
+        "stale_revision",
+        "unknown_storage_root",
+        "unknown_torrent",
+        "invalid_torrent_state",
+        "invalid_durable_state",
+        "storage_needs_repair",
+        "busy",
+        "internal"
+      ],
+      "type": "string"
+    },
+    "ErrorResponse": {
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "GatewayErrorCode": {
+      "enum": [
+        "authentication_required",
+        "authentication_failed",
+        "invalid_version",
+        "invalid_message",
+        "resource_limit",
+        "unknown_subscription",
+        "internal"
+      ],
+      "type": "string"
+    },
+    "GatewayServerMessage": {
+      "oneOf": [
+        {
+          "properties": {
+            "contract_version": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "authenticated",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "contract_version"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "response": {
+              "$ref": "#/$defs/ResponseEnvelope"
+            },
+            "type": {
+              "const": "response",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "response"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "request_id": {
+              "type": "string"
+            },
+            "stream_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "subscribed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "request_id",
+            "stream_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "update",
+              "type": "string"
+            },
+            "update": {
+              "$ref": "#/$defs/ViewUpdate"
+            }
+          },
+          "required": [
+            "type",
+            "update"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "request_id": {
+              "type": "string"
+            },
+            "stream_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "unsubscribed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "request_id",
+            "stream_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/GatewayErrorCode"
+            },
+            "message": {
+              "type": "string"
+            },
+            "request_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "error",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "code",
+            "message"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "IndexRange": {
+      "properties": {
+        "end_exclusive": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "start": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end_exclusive"
+      ],
+      "type": "object"
+    },
+    "OpenViewSetOptions": {
+      "properties": {
+        "requested_queue_bytes": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "OpenViewSetRequest": {
+      "properties": {
+        "options": {
+          "$ref": "#/$defs/OpenViewSetOptions",
+          "default": {}
+        },
+        "views": {
+          "items": {
+            "$ref": "#/$defs/ViewSpec"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "views"
+      ],
+      "type": "object"
+    },
+    "OpenViewSetResponse": {
+      "properties": {
+        "effective_queue_bytes": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "effective_views": {
+          "items": {
+            "$ref": "#/$defs/ViewSpec"
+          },
+          "type": "array"
+        },
+        "initial": {
+          "$ref": "#/$defs/UpdateBatch"
+        },
+        "lease_millis": {
+          "type": "string"
+        },
+        "view_set_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "view_set_id",
+        "lease_millis",
+        "effective_queue_bytes",
+        "effective_views",
+        "initial"
+      ],
+      "type": "object"
+    },
+    "ProgressAction": {
+      "enum": [
+        "enable_network",
+        "enable_discovery",
+        "select_storage",
+        "resume",
+        "repair_storage"
+      ],
+      "type": "string"
+    },
+    "ProgressAssessment": {
+      "properties": {
+        "actions": {
+          "items": {
+            "$ref": "#/$defs/ProgressAction"
+          },
+          "type": "array"
+        },
+        "disposition": {
+          "$ref": "#/$defs/ProgressDisposition"
+        },
+        "phase": {
+          "$ref": "#/$defs/ProgressPhase"
+        },
+        "reason": {
+          "$ref": "#/$defs/ProgressReason"
+        }
+      },
+      "required": [
+        "disposition",
+        "phase",
+        "reason",
+        "actions"
+      ],
+      "type": "object"
+    },
+    "ProgressDisposition": {
+      "enum": [
+        "active",
+        "waiting",
+        "blocked",
+        "inactive"
+      ],
+      "type": "string"
+    },
+    "ProgressPhase": {
+      "enum": [
+        "discovery",
+        "metadata",
+        "storage",
+        "transfer",
+        "verification",
+        "publication"
+      ],
+      "type": "string"
+    },
+    "ProgressReason": {
+      "enum": [
+        "network_disabled",
+        "discovering_peers",
+        "waiting_for_discovery",
+        "no_enabled_discovery_source",
+        "acquiring_metadata",
+        "preparing_storage",
+        "waiting_for_storage",
+        "transferring_pieces",
+        "verifying_pieces",
+        "waiting_for_publication",
+        "paused",
+        "complete",
+        "needs_repair",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "RequestEnvelope": {
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/Command"
+        },
+        "expected_revision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "version": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "request_id",
+        "command"
+      ],
+      "type": "object"
+    },
+    "ResetReason": {
+      "enum": [
+        "queue_overflow",
+        "cursor_mismatch",
+        "cursor_expired"
+      ],
+      "type": "string"
+    },
+    "ResponseEnvelope": {
+      "oneOf": [
+        {
+          "properties": {
+            "snapshot": {
+              "$ref": "#/$defs/ServiceSnapshot"
+            },
+            "status": {
+              "const": "success",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "snapshot"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            "status": {
+              "const": "error",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "error"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "request_id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "version": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "request_id",
+        "revision"
+      ],
+      "type": "object"
+    },
+    "ServiceSnapshot": {
+      "properties": {
+        "profile_id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "torrents": {
+          "items": {
+            "$ref": "#/$defs/TorrentSnapshot"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "profile_id",
+        "revision",
+        "torrents"
+      ],
+      "type": "object"
+    },
+    "StorageState": {
+      "enum": [
+        "none",
+        "staging",
+        "prepared",
+        "published",
+        "needs_repair"
+      ],
+      "type": "string"
+    },
+    "TorrentSnapshot": {
+      "properties": {
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "metadata_available": {
+          "type": "boolean"
+        },
+        "piece_count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "skip_files": {
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "state": {
+          "$ref": "#/$defs/TorrentState"
+        },
+        "storage_root": {
+          "type": "string"
+        },
+        "storage_state": {
+          "$ref": "#/$defs/StorageState"
+        },
+        "torrent_id": {
+          "type": "string"
+        },
+        "verified_piece_count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "torrent_id",
+        "storage_root",
+        "state",
+        "storage_state",
+        "metadata_available",
+        "piece_count",
+        "verified_piece_count",
+        "skip_files"
+      ],
+      "type": "object"
+    },
+    "TorrentState": {
+      "enum": [
+        "awaiting_metadata",
+        "awaiting_storage",
+        "checking",
+        "downloading",
+        "awaiting_publication",
+        "paused",
+        "complete",
+        "needs_repair",
+        "error"
+      ],
+      "type": "string"
+    },
+    "TorrentView": {
+      "properties": {
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "metadata_available": {
+          "type": "boolean"
+        },
+        "piece_count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "progress": {
+          "$ref": "#/$defs/ProgressAssessment"
+        },
+        "received_bytes": {
+          "type": "string"
+        },
+        "requested_bytes": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/TorrentState"
+        },
+        "storage_state": {
+          "$ref": "#/$defs/StorageState"
+        },
+        "stored_bytes": {
+          "type": "string"
+        },
+        "torrent_id": {
+          "type": "string"
+        },
+        "verified_piece_count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "torrent_id",
+        "state",
+        "storage_state",
+        "metadata_available",
+        "piece_count",
+        "verified_piece_count",
+        "requested_bytes",
+        "received_bytes",
+        "stored_bytes",
+        "progress"
+      ],
+      "type": "object"
+    },
+    "UpdateBatch": {
+      "properties": {
+        "api_version": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "base_cursor": {
+          "type": "string"
+        },
+        "cursor": {
+          "type": "string"
+        },
+        "durable_revision": {
+          "type": "string"
+        },
+        "epoch": {
+          "type": "string"
+        },
+        "updates": {
+          "items": {
+            "$ref": "#/$defs/ViewSetUpdate"
+          },
+          "type": "array"
+        },
+        "view_set_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "api_version",
+        "view_set_id",
+        "epoch",
+        "base_cursor",
+        "cursor",
+        "durable_revision",
+        "updates"
+      ],
+      "type": "object"
+    },
+    "UpdateViewSetRequest": {
+      "properties": {
+        "views": {
+          "items": {
+            "$ref": "#/$defs/ViewSpec"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "views"
+      ],
+      "type": "object"
+    },
+    "ViewDeliveryPolicy": {
+      "properties": {
+        "min_interval_millis": {
+          "default": 0,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "ViewPatch": {
+      "oneOf": [
+        {
+          "properties": {
+            "removed": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": {
+              "const": "torrent_list",
+              "type": "string"
+            },
+            "upsert": {
+              "items": {
+                "$ref": "#/$defs/TorrentView"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "type",
+            "upsert",
+            "removed"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "torrent": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TorrentView"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "const": "torrent",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "active": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ActivePiece"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "cleared": {
+              "items": {
+                "$ref": "#/$defs/IndexRange"
+              },
+              "type": "array"
+            },
+            "piece_count": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "piece_activity",
+              "type": "string"
+            },
+            "verified": {
+              "items": {
+                "$ref": "#/$defs/IndexRange"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id",
+            "piece_count",
+            "verified",
+            "cleared"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "dropped_count": {
+              "type": "string"
+            },
+            "events": {
+              "items": {
+                "$ref": "#/$defs/DiagnosticEvent"
+              },
+              "type": "array"
+            },
+            "type": {
+              "const": "diagnostics",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "events",
+            "dropped_count"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ViewSetUpdate": {
+      "oneOf": [
+        {
+          "properties": {
+            "snapshot": {
+              "$ref": "#/$defs/ViewSnapshot"
+            },
+            "type": {
+              "const": "snapshot",
+              "type": "string"
+            },
+            "view_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "view_id",
+            "snapshot"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "patch": {
+              "$ref": "#/$defs/ViewPatch"
+            },
+            "type": {
+              "const": "patch",
+              "type": "string"
+            },
+            "view_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "view_id",
+            "patch"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "view_removed",
+              "type": "string"
+            },
+            "view_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "view_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "reason": {
+              "$ref": "#/$defs/ResetReason"
+            },
+            "type": {
+              "const": "reset_required",
+              "type": "string"
+            },
+            "view_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "reason"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ViewSnapshot": {
+      "oneOf": [
+        {
+          "properties": {
+            "torrents": {
+              "items": {
+                "$ref": "#/$defs/TorrentView"
+              },
+              "type": "array"
+            },
+            "type": {
+              "const": "torrent_list",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrents"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "torrent": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TorrentView"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "const": "torrent",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "active": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ActivePiece"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "piece_count": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "piece_activity",
+              "type": "string"
+            },
+            "verified": {
+              "items": {
+                "$ref": "#/$defs/IndexRange"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id",
+            "piece_count",
+            "verified"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "dropped_count": {
+              "type": "string"
+            },
+            "events": {
+              "items": {
+                "$ref": "#/$defs/DiagnosticEvent"
+              },
+              "type": "array"
+            },
+            "type": {
+              "const": "diagnostics",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "events",
+            "dropped_count"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ViewSpec": {
+      "oneOf": [
+        {
+          "properties": {
+            "delivery": {
+              "$ref": "#/$defs/ViewDeliveryPolicy",
+              "default": {
+                "min_interval_millis": 0
+              }
+            },
+            "type": {
+              "const": "torrent_list",
+              "type": "string"
+            },
+            "view_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "view_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "delivery": {
+              "$ref": "#/$defs/ViewDeliveryPolicy",
+              "default": {
+                "min_interval_millis": 0
+              }
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "torrent_summary",
+              "type": "string"
+            },
+            "view_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "view_id",
+            "torrent_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "delivery": {
+              "$ref": "#/$defs/ViewDeliveryPolicy",
+              "default": {
+                "min_interval_millis": 0
+              }
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "piece_activity",
+              "type": "string"
+            },
+            "view_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "view_id",
+            "torrent_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "delivery": {
+              "$ref": "#/$defs/ViewDeliveryPolicy",
+              "default": {
+                "min_interval_millis": 0
+              }
+            },
+            "filter": {
+              "$ref": "#/$defs/DiagnosticFilter",
+              "default": {
+                "categories": [],
+                "minimum_severity": "info",
+                "profile": "normal"
+              }
+            },
+            "torrent_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "diagnostics",
+              "type": "string"
+            },
+            "view_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "view_id"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ViewUpdate": {
+      "oneOf": [
+        {
+          "properties": {
+            "snapshot": {
+              "$ref": "#/$defs/ViewSnapshot"
+            },
+            "type": {
+              "const": "snapshot",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "snapshot"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "patch": {
+              "$ref": "#/$defs/ViewPatch"
+            },
+            "type": {
+              "const": "patch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "patch"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "reason": {
+              "$ref": "#/$defs/ResetReason"
+            },
+            "type": {
+              "const": "reset_required",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "reason"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "base_revision": {
+          "type": "string"
+        },
+        "contract_version": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "epoch": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "sequence": {
+          "type": "string"
+        },
+        "stream_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "stream_id",
+        "epoch",
+        "sequence",
+        "base_revision",
+        "revision"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://rstorrent.invalid/schemas/api/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

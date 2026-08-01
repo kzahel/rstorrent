@@ -1,13 +1,17 @@
 import type {
   ActivePiece,
+  ApiHello,
   GatewayServerMessage,
   IndexRange,
+  OpenViewSetResponse,
   ServiceSnapshot,
   TorrentView,
+  UpdateBatch,
   ViewPatch,
   ViewSnapshot,
   ViewUpdate,
-} from "./generated/contract";
+} from "./api";
+import { assertApiSchema, SchemaError } from "./api/schema";
 
 const MAX_FRAME_BYTES = 512 * 1024;
 const MAX_COLLECTION = 100_000;
@@ -18,18 +22,34 @@ const TORRENT_ID = /^[A-Fa-f0-9]{40}$/;
 
 export class ContractError extends Error {}
 
+function parseBoundedJson(source: string, maximum: number, label: string): unknown {
+  if (new TextEncoder().encode(source).byteLength > maximum) {
+    throw new ContractError(`${label} exceeds the client bound`);
+  }
+  try {
+    return JSON.parse(source) as unknown;
+  } catch {
+    throw new ContractError(`${label} is not valid JSON`);
+  }
+}
+
+function generated<T>(definition: string, value: unknown): T {
+  try {
+    assertApiSchema<T>(definition, value);
+    return value;
+  } catch (error) {
+    if (error instanceof SchemaError) {
+      throw new ContractError(error.message);
+    }
+    throw error;
+  }
+}
+
 export function decodeGatewayServerMessage(
   source: string,
 ): GatewayServerMessage {
-  if (new TextEncoder().encode(source).byteLength > MAX_FRAME_BYTES) {
-    throw new ContractError("gateway frame exceeds the client bound");
-  }
-  let value: unknown;
-  try {
-    value = JSON.parse(source);
-  } catch {
-    throw new ContractError("gateway frame is not valid JSON");
-  }
+  const value = parseBoundedJson(source, MAX_FRAME_BYTES, "gateway frame");
+  generated<GatewayServerMessage>("GatewayServerMessage", value);
   const record = asRecord(value, "gateway message");
   switch (string(record.type, "message type")) {
     case "authenticated":
@@ -65,6 +85,99 @@ export function decodeGatewayServerMessage(
       throw new ContractError("unknown gateway message type");
   }
   return value as GatewayServerMessage;
+}
+
+export function decodeApiHello(source: string): ApiHello {
+  const value = generated<ApiHello>(
+    "ApiHello",
+    parseBoundedJson(source, MAX_FRAME_BYTES, "API hello response"),
+  );
+  if (value.api.minimum > 1 || value.api.current < 1) {
+    throw new ContractError("API version 1 is not supported by the server");
+  }
+  decimal(value.limits.lease_millis, "view-set lease");
+  boundedInteger(
+    value.limits.max_view_sets_per_owner,
+    "maximum view sets",
+    1,
+    65_535,
+  );
+  boundedInteger(value.limits.max_views_per_set, "maximum views", 1, 65_535);
+  boundedInteger(
+    value.limits.max_view_id_bytes,
+    "maximum view ID bytes",
+    1,
+    65_535,
+  );
+  boundedInteger(value.limits.min_queue_bytes, "minimum queue bytes", 1, MAX_U32);
+  boundedInteger(value.limits.max_queue_bytes, "maximum queue bytes", 1, MAX_U32);
+  boundedInteger(value.limits.max_wait_millis, "maximum wait", 0, MAX_U32);
+  if (
+    value.limits.min_queue_bytes > value.limits.default_queue_bytes ||
+    value.limits.default_queue_bytes > value.limits.max_queue_bytes
+  ) {
+    throw new ContractError("API queue limits are inconsistent");
+  }
+  return value;
+}
+
+export function decodeOpenViewSetResponse(source: string): OpenViewSetResponse {
+  const value = generated<OpenViewSetResponse>(
+    "OpenViewSetResponse",
+    parseBoundedJson(source, MAX_FRAME_BYTES, "open view-set response"),
+  );
+  identifier(value.view_set_id, "view-set ID");
+  decimal(value.lease_millis, "view-set lease");
+  boundedInteger(value.effective_queue_bytes, "view-set queue bytes", 1, MAX_U32);
+  validateUpdateBatch(value.initial);
+  if (value.initial.view_set_id !== value.view_set_id) {
+    throw new ContractError("initial batch belongs to another view set");
+  }
+  return value;
+}
+
+export function decodeUpdateBatch(source: string): UpdateBatch {
+  const value = generated<UpdateBatch>(
+    "UpdateBatch",
+    parseBoundedJson(source, MAX_FRAME_BYTES, "view-set update response"),
+  );
+  validateUpdateBatch(value);
+  return value;
+}
+
+function validateUpdateBatch(batch: UpdateBatch): void {
+  if (batch.api_version !== 1) {
+    throw new ContractError("unsupported application API version");
+  }
+  identifier(batch.view_set_id, "view-set ID");
+  decimal(batch.epoch, "view-set epoch");
+  decimal(batch.base_cursor, "view-set base cursor");
+  decimal(batch.cursor, "view-set cursor");
+  decimal(batch.durable_revision, "durable revision");
+  const base = BigInt(batch.base_cursor);
+  const cursor = BigInt(batch.cursor);
+  if (
+    (batch.updates.length === 0 && cursor !== base) ||
+    (batch.updates.length > 0 && cursor !== base + 1n)
+  ) {
+    throw new ContractError("view-set batch cursor does not match its updates");
+  }
+  for (const update of batch.updates) {
+    if ("view_id" in update && update.view_id !== null) {
+      identifier(update.view_id, "view ID");
+    }
+    switch (update.type) {
+      case "snapshot":
+        validateViewSnapshot(update.snapshot);
+        break;
+      case "patch":
+        validateViewPatch(update.patch);
+        break;
+      case "view_removed":
+      case "reset_required":
+        break;
+    }
+  }
 }
 
 function validateResponse(value: unknown): void {
@@ -128,9 +241,6 @@ function validateUpdate(value: unknown): void {
       validateViewPatch(update.patch);
       break;
     case "reset_required":
-      if (update.reason !== "queue_overflow") {
-        throw new ContractError("unknown reset reason");
-      }
       break;
     default:
       throw new ContractError("unknown view update type");
@@ -204,22 +314,6 @@ function validateViewPatch(value: unknown): void {
 function validateTorrentView(value: unknown): asserts value is TorrentView {
   const torrent = asRecord(value, "torrent view");
   torrentId(torrent.torrent_id);
-  oneOf(torrent.state, "torrent state", [
-    "awaiting_metadata",
-    "awaiting_storage",
-    "checking",
-    "downloading",
-    "awaiting_publication",
-    "paused",
-    "complete",
-    "needs_repair",
-    "error",
-  ]);
-  oneOf(torrent.storage_state, "storage state", [
-    "none",
-    "staging",
-    "published",
-  ]);
   boolean(torrent.metadata_available, "metadata available");
   boundedInteger(torrent.piece_count, "piece count", 0, MAX_U32);
   boundedInteger(

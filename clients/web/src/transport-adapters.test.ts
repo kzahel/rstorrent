@@ -1,7 +1,7 @@
 import type { Channel } from "@tauri-apps/api/core";
 import { describe, expect, it } from "vitest";
 
-import type { ViewUpdate } from "./generated/contract";
+import type { ViewUpdate } from "./api";
 import { TauriSubscription } from "./tauri-client";
 import { WebSocketSubscription } from "./websocket-client";
 

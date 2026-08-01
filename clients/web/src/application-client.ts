@@ -3,7 +3,7 @@ import type {
   ResponseEnvelope,
   SubscriptionSpec,
   ViewUpdate,
-} from "./generated/contract";
+} from "./api";
 
 export interface ApplicationSubscription extends AsyncIterable<ViewUpdate> {
   readonly streamId: string;

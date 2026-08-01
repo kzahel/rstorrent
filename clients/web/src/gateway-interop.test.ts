@@ -4,7 +4,7 @@ import { WebSocket as NodeWebSocket } from "ws";
 import type {
   IndexRange,
   RequestEnvelope,
-} from "./generated/contract";
+} from "./api";
 import {
   emptyApplicationViewState,
   reduceViewUpdate,

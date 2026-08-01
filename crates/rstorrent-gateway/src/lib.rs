@@ -19,6 +19,7 @@ use rstorrent_session::{
     ApplicationService, RequestEnvelope, ResponseEnvelope, SubscriptionSpec, ViewSubscription,
     ViewUpdate, application_error_response,
 };
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore, mpsc};
@@ -90,7 +91,7 @@ impl GatewayConfig {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum GatewayClientMessage {
     Authenticate {
@@ -114,7 +115,7 @@ pub enum GatewayClientMessage {
     },
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum GatewayServerMessage {
     Authenticated {
@@ -142,7 +143,7 @@ pub enum GatewayServerMessage {
     },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum GatewayErrorCode {
     AuthenticationRequired,

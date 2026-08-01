@@ -6,12 +6,13 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "generate": "cargo run -p rstorrent-gateway --bin export_types -- src/generated/contract.ts src/fixtures/reactive-trace.json",
+    "generate": "cargo run -p rstorrent-gateway --bin export_types -- src/api/generated/v1.ts src/api/generated/v1.schema.json src/fixtures/reactive-trace.json src/fixtures/view-set-trace.json",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@tauri-apps/api": "2.11.1"
+    "@tauri-apps/api": "2.11.1",
+    "ajv": "8.20.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.11.4",

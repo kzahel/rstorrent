@@ -1,0 +1,131 @@
+{
+  "open": {
+    "view_set_id": "vs_000102030405060708090a0b0c0d0e0f",
+    "lease_millis": "300000",
+    "effective_queue_bytes": 262144,
+    "effective_views": [
+      {
+        "type": "torrent_list",
+        "view_id": "library",
+        "delivery": {
+          "min_interval_millis": 0
+        }
+      }
+    ],
+    "initial": {
+      "api_version": 1,
+      "view_set_id": "vs_000102030405060708090a0b0c0d0e0f",
+      "epoch": "10",
+      "base_cursor": "0",
+      "cursor": "1",
+      "durable_revision": "7",
+      "updates": [
+        {
+          "type": "snapshot",
+          "view_id": "library",
+          "snapshot": {
+            "type": "torrent_list",
+            "torrents": [
+              {
+                "torrent_id": "000102030405060708090a0b0c0d0e0f10111213",
+                "state": "downloading",
+                "storage_state": "staging",
+                "metadata_available": true,
+                "piece_count": 3,
+                "verified_piece_count": 0,
+                "requested_bytes": "16384",
+                "received_bytes": "16384",
+                "stored_bytes": "16384",
+                "progress": {
+                  "disposition": "active",
+                  "phase": "transfer",
+                  "reason": "transferring_pieces",
+                  "actions": []
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "updates": [
+    {
+      "api_version": 1,
+      "view_set_id": "vs_000102030405060708090a0b0c0d0e0f",
+      "epoch": "10",
+      "base_cursor": "1",
+      "cursor": "2",
+      "durable_revision": "8",
+      "updates": [
+        {
+          "type": "patch",
+          "view_id": "library",
+          "patch": {
+            "type": "torrent_list",
+            "upsert": [
+              {
+                "torrent_id": "000102030405060708090a0b0c0d0e0f10111213",
+                "state": "downloading",
+                "storage_state": "staging",
+                "metadata_available": true,
+                "piece_count": 3,
+                "verified_piece_count": 1,
+                "requested_bytes": "16384",
+                "received_bytes": "16384",
+                "stored_bytes": "16384",
+                "progress": {
+                  "disposition": "active",
+                  "phase": "transfer",
+                  "reason": "transferring_pieces",
+                  "actions": []
+                }
+              }
+            ],
+            "removed": []
+          }
+        }
+      ]
+    },
+    {
+      "api_version": 1,
+      "view_set_id": "vs_000102030405060708090a0b0c0d0e0f",
+      "epoch": "11",
+      "base_cursor": "0",
+      "cursor": "1",
+      "durable_revision": "9",
+      "updates": [
+        {
+          "type": "reset_required",
+          "reason": "queue_overflow"
+        },
+        {
+          "type": "snapshot",
+          "view_id": "library",
+          "snapshot": {
+            "type": "torrent_list",
+            "torrents": [
+              {
+                "torrent_id": "000102030405060708090a0b0c0d0e0f10111213",
+                "state": "complete",
+                "storage_state": "published",
+                "metadata_available": true,
+                "piece_count": 3,
+                "verified_piece_count": 3,
+                "requested_bytes": "16384",
+                "received_bytes": "16384",
+                "stored_bytes": "16384",
+                "progress": {
+                  "disposition": "inactive",
+                  "phase": "publication",
+                  "reason": "complete",
+                  "actions": []
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

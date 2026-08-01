@@ -6,7 +6,7 @@ import type {
   ViewPatch,
   ViewSnapshot,
   ViewUpdate,
-} from "./generated/contract";
+} from "./api";
 
 export interface PieceActivityState {
   torrentId: string;

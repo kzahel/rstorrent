@@ -8,7 +8,7 @@ import type {
   DiagnosticSeverity,
   RequestEnvelope,
   TorrentView,
-} from "./generated/contract";
+} from "./api";
 import type {
   ApplicationClient,
   ApplicationSubscription,
