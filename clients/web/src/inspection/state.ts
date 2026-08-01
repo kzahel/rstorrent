@@ -15,6 +15,7 @@ export interface PresentationState {
   readonly selectedTorrentId: string | null;
   readonly selectedPeerId: string | null;
   readonly activeTab: DetailTab;
+  readonly detailPanePercent: number;
   readonly detailOpen: boolean;
   readonly sidebarOpen: boolean;
   readonly layout: "wide" | "compact" | "phone";
@@ -30,6 +31,7 @@ export interface InspectionActions {
   readonly selectTorrent: (torrentId: string) => void;
   readonly selectPeer: (connectionId: string | null) => void;
   readonly selectTab: (tab: DetailTab) => void;
+  readonly setDetailPanePercent: (percent: number) => void;
   readonly closeDetail: () => void;
   readonly toggleSidebar: () => void;
   readonly closeSidebar: () => void;
@@ -38,6 +40,10 @@ export interface InspectionActions {
 
 export type InspectionStore = InspectionState & InspectionActions;
 export type InspectionStoreApi = StoreApi<InspectionStore>;
+
+export const DEFAULT_DETAIL_PANE_PERCENT = 57;
+export const MIN_DETAIL_PANE_PERCENT = 25;
+export const MAX_DETAIL_PANE_PERCENT = 80;
 
 const EMPTY_SNAPSHOT: InspectionSnapshot = {
   revision: 0,
@@ -67,6 +73,7 @@ const DEFAULT_PRESENTATION: PresentationState = {
   selectedTorrentId: null,
   selectedPeerId: null,
   activeTab: "peers",
+  detailPanePercent: DEFAULT_DETAIL_PANE_PERCENT,
   detailOpen: false,
   sidebarOpen: false,
   layout: "wide",
@@ -106,6 +113,14 @@ export function createInspectionStore(): InspectionStoreApi {
     selectTab: (activeTab) => {
       set((state) => ({
         presentation: { ...state.presentation, activeTab },
+      }));
+    },
+    setDetailPanePercent: (percent) => {
+      set((state) => ({
+        presentation: {
+          ...state.presentation,
+          detailPanePercent: clampDetailPanePercent(percent),
+        },
       }));
     },
     closeDetail: () => {
@@ -269,5 +284,13 @@ export function visibleLogs(
 ): readonly LogRow[] {
   return logs.filter(
     (row) => row.torrentId === null || row.torrentId === torrentId,
+  );
+}
+
+function clampDetailPanePercent(percent: number): number {
+  if (!Number.isFinite(percent)) return DEFAULT_DETAIL_PANE_PERCENT;
+  return Math.min(
+    MAX_DETAIL_PANE_PERCENT,
+    Math.max(MIN_DETAIL_PANE_PERCENT, Math.round(percent)),
   );
 }

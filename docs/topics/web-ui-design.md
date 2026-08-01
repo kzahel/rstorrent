@@ -16,7 +16,8 @@ retaining the permanent demo adapter. Tactical `038` adds a keyboard, pointer,
 touch, and phone-safe More > Add test torrent submenu backed by the recorded
 WebTorrent catalog and the same add path. Tactical `040` adds live archive and
 an accessible removal dialog whose managed-data option is unchecked by
-default. The Tauri entry remains legacy.
+default. The docked detail inspector is now bounded and resizable by pointer,
+touch, or keyboard. The Tauri entry remains legacy.
 
 ## Purpose
 
@@ -100,6 +101,12 @@ On a wide display, the category sidebar may remain visible and the torrent
 list may coexist with a docked, resizable detail inspector. A selected torrent
 may also enter a focused detail mode when the user wants more room for peers,
 files, pieces, or another dense view.
+
+The implemented horizontal separator retains its size in per-application
+presentation state, exposes range semantics to assistive technology, supports
+Up/Down and Home/End keys, and accepts pointer or touch dragging. Its bounded
+25--80% range protects useful space for both collection and detail content.
+The preference is not yet persisted across application reloads.
 
 As space narrows, the sidebar becomes collapsible, a rail, or a drawer. The
 torrent list and detail inspector may stop sharing the viewport. At phone

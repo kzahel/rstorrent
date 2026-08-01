@@ -123,9 +123,17 @@
 
 .main {
   display: grid;
-  grid-template-rows: minmax(190px, 43fr) 7px minmax(220px, 57fr);
+  grid-template-rows:
+    minmax(190px, var(--collection-pane-share, 43fr))
+    7px
+    minmax(220px, var(--detail-pane-share, 57fr));
   min-width: 0;
   min-height: 0;
+}
+
+.main[data-resizing="true"] {
+  cursor: row-resize;
+  user-select: none;
 }
 
 .collection {
@@ -252,17 +260,39 @@
 }
 
 .splitter {
+  position: relative;
+  z-index: 4;
   display: grid;
   place-items: center;
   border-block: 1px solid var(--border-strong);
   background: var(--surface-tertiary);
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.splitter::before {
+  position: absolute;
+  inset: -6px 0;
+  content: "";
 }
 
 .splitter span {
+  position: relative;
   width: 2rem;
   height: 2px;
   border-radius: 2px;
   background: var(--border-strong);
+}
+
+.splitter:hover span,
+.splitter:focus-visible span,
+.splitter[data-resizing="true"] span {
+  background: var(--accent);
+}
+
+.splitter:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
 }
 
 .scrim {

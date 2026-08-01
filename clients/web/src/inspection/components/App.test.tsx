@@ -4,7 +4,7 @@ import "@testing-library/jest-dom/vitest";
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createRef } from "react";
 
 import type { InspectionApplication } from "../application";
@@ -79,6 +79,66 @@ describe("inspection application", () => {
     expect(peerGrid).toHaveAttribute("aria-rowcount", "10001");
     expect(within(torrentGrid).getAllByRole("row").length).toBeLessThanOrEqual(100);
     expect(within(peerGrid).getAllByRole("row").length).toBeLessThanOrEqual(100);
+  });
+
+  it("resizes the detail pane with pointer and keyboard input", async () => {
+    const user = userEvent.setup();
+    renderScenario("healthy-download", 42_000);
+    const splitter = screen.getByRole("separator", {
+      name: "Resize torrent details",
+    });
+    const main = screen.getByRole("main");
+    expect(splitter).toHaveAttribute("aria-orientation", "horizontal");
+    expect(splitter).toHaveAttribute("aria-valuemin", "25");
+    expect(splitter).toHaveAttribute("aria-valuemax", "80");
+    expect(splitter).toHaveAttribute("aria-valuenow", "57");
+
+    vi.spyOn(main, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      right: 1_000,
+      bottom: 700,
+      left: 0,
+      width: 1_000,
+      height: 700,
+      toJSON: () => ({}),
+    });
+    vi.spyOn(splitter, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 300,
+      top: 300,
+      right: 1_000,
+      bottom: 307,
+      left: 0,
+      width: 1_000,
+      height: 7,
+      toJSON: () => ({}),
+    });
+    Object.defineProperties(splitter, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+
+    fireEvent.pointerDown(splitter, {
+      button: 0,
+      pointerId: 7,
+      clientY: 300,
+    });
+    fireEvent.pointerMove(splitter, { pointerId: 7, clientY: 200 });
+    expect(splitter).toHaveAttribute("aria-valuenow", "72");
+    expect(main.style.getPropertyValue("--detail-pane-share")).toBe("72fr");
+    fireEvent.pointerUp(splitter, { pointerId: 7, clientY: 200 });
+    expect(main).toHaveAttribute("data-resizing", "false");
+
+    splitter.focus();
+    await user.keyboard("{ArrowDown}");
+    expect(splitter).toHaveAttribute("aria-valuenow", "67");
+    await user.keyboard("{Home}");
+    expect(splitter).toHaveAttribute("aria-valuenow", "25");
+    await user.keyboard("{End}");
+    expect(splitter).toHaveAttribute("aria-valuenow", "80");
   });
 
   it("confirms removal with retained data by default and restores focus", async () => {

@@ -62,6 +62,18 @@ describe("inspection store", () => {
     expect(store.getState().logs).toHaveLength(256);
     expect(store.getState().droppedLogs).toBe(46);
   });
+
+  it("keeps the detail pane size within its usable range", () => {
+    const store = createInspectionStore();
+    expect(store.getState().presentation.detailPanePercent).toBe(57);
+
+    store.getState().setDetailPanePercent(10);
+    expect(store.getState().presentation.detailPanePercent).toBe(25);
+    store.getState().setDetailPanePercent(95);
+    expect(store.getState().presentation.detailPanePercent).toBe(80);
+    store.getState().setDetailPanePercent(Number.NaN);
+    expect(store.getState().presentation.detailPanePercent).toBe(57);
+  });
 });
 
 function row(id: string, status: TorrentRow["status"]): TorrentRow {

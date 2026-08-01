@@ -1,8 +1,20 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+  type KeyboardEvent,
+  type PointerEvent,
+} from "react";
 
 import { useInspectionDispatch, useInspectionStore } from "../context";
 import { formatRate } from "../format";
 import type { TorrentRow } from "../model";
+import {
+  MAX_DETAIL_PANE_PERCENT,
+  MIN_DETAIL_PANE_PERCENT,
+} from "../state";
 import type { TestTorrentShortcut } from "../testTorrents";
 import { validateTorrentInput } from "../torrentInput";
 import { DetailPane } from "./DetailPane";
@@ -27,17 +39,27 @@ export function App() {
   const sidebarOpen = useInspectionStore(
     (state) => state.presentation.sidebarOpen,
   );
+  const detailPanePercent = useInspectionStore(
+    (state) => state.presentation.detailPanePercent,
+  );
   const toggleSidebar = useInspectionStore((state) => state.toggleSidebar);
   const closeSidebar = useInspectionStore((state) => state.closeSidebar);
   const setLayout = useInspectionStore((state) => state.setLayout);
+  const setDetailPanePercent = useInspectionStore(
+    (state) => state.setDetailPanePercent,
+  );
   const dispatch = useInspectionDispatch();
   const [status, setStatus] = useState("");
   const [torrentInput, setTorrentInput] = useState("");
   const [inputInvalid, setInputInvalid] = useState(false);
   const [adding, setAdding] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<TorrentRow | undefined>();
+  const [resizingDetail, setResizingDetail] = useState(false);
   const addingRef = useRef(false);
   const removeButtonRef = useRef<HTMLButtonElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  const splitterRef = useRef<HTMLDivElement>(null);
+  const activeSplitterPointer = useRef<number | null>(null);
 
   useEffect(() => {
     const update = () => {
@@ -119,6 +141,66 @@ export function App() {
     }
   };
 
+  const resizeDetailFromPointer = (clientY: number) => {
+    const mainBounds = mainRef.current?.getBoundingClientRect();
+    const splitterBounds = splitterRef.current?.getBoundingClientRect();
+    if (mainBounds === undefined || splitterBounds === undefined) return;
+    const availableHeight = mainBounds.height - splitterBounds.height;
+    if (availableHeight <= 0) return;
+    const detailHeight =
+      mainBounds.bottom - clientY - splitterBounds.height / 2;
+    setDetailPanePercent((detailHeight / availableHeight) * 100);
+  };
+
+  const startDetailResize = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    activeSplitterPointer.current = event.pointerId;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setResizingDetail(true);
+    resizeDetailFromPointer(event.clientY);
+  };
+
+  const continueDetailResize = (event: PointerEvent<HTMLDivElement>) => {
+    if (activeSplitterPointer.current !== event.pointerId) return;
+    resizeDetailFromPointer(event.clientY);
+  };
+
+  const stopDetailResize = (event: PointerEvent<HTMLDivElement>) => {
+    if (activeSplitterPointer.current !== event.pointerId) return;
+    activeSplitterPointer.current = null;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setResizingDetail(false);
+  };
+
+  const resizeDetailWithKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
+    let nextPercent: number | undefined;
+    switch (event.key) {
+      case "ArrowUp":
+        nextPercent = detailPanePercent + 5;
+        break;
+      case "ArrowDown":
+        nextPercent = detailPanePercent - 5;
+        break;
+      case "Home":
+        nextPercent = MIN_DETAIL_PANE_PERCENT;
+        break;
+      case "End":
+        nextPercent = MAX_DETAIL_PANE_PERCENT;
+        break;
+    }
+    if (nextPercent === undefined) return;
+    event.preventDefault();
+    setDetailPanePercent(nextPercent);
+  };
+
+  const paneGridStyle = {
+    "--collection-pane-share": `${100 - detailPanePercent}fr`,
+    "--detail-pane-share": `${detailPanePercent}fr`,
+  } as CSSProperties;
+
   return (
     <>
       <div
@@ -166,7 +248,12 @@ export function App() {
           aria-label="Close library navigation"
           onClick={closeSidebar}
         />
-        <main className={styles.main}>
+        <main
+          ref={mainRef}
+          className={styles.main}
+          data-resizing={resizingDetail}
+          style={paneGridStyle}
+        >
           <section className={styles.collection} aria-label="Torrent collection">
             <div className={styles.toolbar}>
               {demo === null ? (
@@ -277,7 +364,33 @@ export function App() {
               <TorrentTable />
             </div>
           </section>
-          <div className={styles.splitter} aria-hidden="true"><span /></div>
+          <div
+            ref={splitterRef}
+            className={styles.splitter}
+            role="separator"
+            aria-label="Resize torrent details"
+            aria-orientation="horizontal"
+            aria-valuemin={MIN_DETAIL_PANE_PERCENT}
+            aria-valuemax={MAX_DETAIL_PANE_PERCENT}
+            aria-valuenow={detailPanePercent}
+            aria-valuetext={`${detailPanePercent}% height for torrent details`}
+            data-resizing={resizingDetail}
+            tabIndex={0}
+            title="Drag to resize; use Up and Down arrow keys for precise control"
+            onPointerDown={startDetailResize}
+            onPointerMove={continueDetailResize}
+            onPointerUp={stopDetailResize}
+            onPointerCancel={stopDetailResize}
+            onLostPointerCapture={(event) => {
+              if (activeSplitterPointer.current === event.pointerId) {
+                activeSplitterPointer.current = null;
+                setResizingDetail(false);
+              }
+            }}
+            onKeyDown={resizeDetailWithKeyboard}
+          >
+            <span aria-hidden="true" />
+          </div>
           <DetailPane />
         </main>
       </div>
