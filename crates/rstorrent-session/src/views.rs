@@ -14,11 +14,12 @@ use ts_rs::TS;
 use rstorrent_engine::peer::{PeerFailure, PeerSource, PeerSources};
 use rstorrent_engine::{
     PeerConnectionDirection, PeerConnectionLifecycle, PeerConnectionObservation,
-    PeerConnectionRole, PeerRequestWindowPhase, PeerTransport,
+    PeerConnectionRole, PeerRequestWindowPhase, PeerTransport, TrackerRuntimeSnapshot,
 };
 
 use crate::control::{RemovalState, ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState};
 use crate::file_views::{FileCatalogState, FileProgressModel, FileView};
+use crate::tracker_views::{TrackerCatalogState, TrackerView, TrackerViewModel};
 use crate::view_sets::{DEFAULT_VIEW_SET_QUEUE_BYTES, ViewSetInner, ViewSetUpdate};
 
 pub const VIEW_CONTRACT_VERSION: u16 = 2;
@@ -50,6 +51,7 @@ pub enum ViewProjection {
     PieceActivity,
     Peers,
     Files,
+    Trackers,
     Diagnostics,
 }
 
@@ -695,6 +697,11 @@ pub enum ViewSnapshot {
         filesystem_content_base: Option<String>,
         files: Vec<FileView>,
     },
+    Trackers {
+        torrent_id: String,
+        state: TrackerCatalogState,
+        trackers: Vec<TrackerView>,
+    },
     Diagnostics {
         events: Vec<DiagnosticEvent>,
         dropped_count: String,
@@ -727,6 +734,11 @@ pub enum ViewPatch {
     Files {
         torrent_id: String,
         upsert: Vec<FileView>,
+        removed: Vec<String>,
+    },
+    Trackers {
+        torrent_id: String,
+        upsert: Vec<TrackerView>,
         removed: Vec<String>,
     },
     Diagnostics {
@@ -802,6 +814,7 @@ struct TorrentModel {
     active: Option<ActivePiece>,
     peers: BTreeMap<String, PeerView>,
     files: Option<FileProgressModel>,
+    trackers: TrackerViewModel,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -809,6 +822,7 @@ pub(crate) struct DurableTorrentViewState {
     pub(crate) display_name: Option<String>,
     pub(crate) verified: Vec<IndexRange>,
     pub(crate) files: Option<FileProgressModel>,
+    pub(crate) trackers: TrackerViewModel,
 }
 
 #[derive(Clone, Debug)]
@@ -999,10 +1013,12 @@ impl ViewHub {
                 model.view.display_name = state.display_name.clone();
                 model.verified = state.verified.clone();
                 model.files = state.files.clone();
+                model.trackers = state.trackers.clone();
             } else if let Some(old) = previous.get(&torrent.torrent_id) {
                 model.view.display_name = old.view.display_name.clone();
                 model.verified = old.verified.clone();
                 model.files = old.files.clone();
+                model.trackers = old.trackers.clone();
             }
             if let Some(old) = previous.get(&torrent.torrent_id) {
                 model.view.requested_bytes = old.view.requested_bytes.clone();
@@ -1023,6 +1039,9 @@ impl ViewHub {
                         .reconcile_verified(&durable_files.verified_piece_indices())
                         .map_err(|error| SubscriptionError::Internal(error.to_string()))?;
                     model.files = Some(reconciled);
+                }
+                if old.trackers.catalog_matches(&model.trackers) {
+                    model.trackers = old.trackers.clone();
                 }
             }
             next.insert(torrent.torrent_id.clone(), model);
@@ -1194,6 +1213,24 @@ impl ViewHub {
         )
     }
 
+    pub(crate) fn record_tracker_state(
+        &self,
+        torrent_id: &str,
+        snapshot: &TrackerRuntimeSnapshot,
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let Some(model) = hub.torrents.get_mut(torrent_id) else {
+            return Ok(());
+        };
+        let previous = model.trackers.row_map().clone();
+        model.trackers.apply_snapshot(snapshot);
+        let current = model.trackers.row_map().clone();
+        hub.publish_tracker_changes(torrent_id, &previous, &current)
+    }
+
     pub fn record_diagnostic(
         &self,
         severity: DiagnosticSeverity,
@@ -1313,6 +1350,20 @@ impl HubState {
                     },
                 }
             }
+            (ViewSelector::Torrent { torrent_id }, ViewProjection::Trackers) => {
+                match self.torrents.get(torrent_id) {
+                    Some(torrent) => ViewSnapshot::Trackers {
+                        torrent_id: torrent_id.clone(),
+                        state: TrackerCatalogState::Available,
+                        trackers: torrent.trackers.rows(),
+                    },
+                    None => ViewSnapshot::Trackers {
+                        torrent_id: torrent_id.clone(),
+                        state: TrackerCatalogState::TorrentMissing,
+                        trackers: Vec::new(),
+                    },
+                }
+            }
             (selector, ViewProjection::Diagnostics) => {
                 let filter = spec.diagnostics.clone().unwrap_or_default();
                 ViewSnapshot::Diagnostics {
@@ -1328,7 +1379,10 @@ impl HubState {
             }
             (
                 ViewSelector::TorrentList,
-                ViewProjection::PieceActivity | ViewProjection::Peers | ViewProjection::Files,
+                ViewProjection::PieceActivity
+                | ViewProjection::Peers
+                | ViewProjection::Files
+                | ViewProjection::Trackers,
             ) => {
                 unreachable!("invalid projection is rejected before snapshot construction")
             }
@@ -1529,6 +1583,52 @@ impl HubState {
         Ok(())
     }
 
+    fn publish_tracker_changes(
+        &mut self,
+        torrent_id: &str,
+        previous: &BTreeMap<String, TrackerView>,
+        current: &BTreeMap<String, TrackerView>,
+    ) -> Result<(), SubscriptionError> {
+        let Some(patch) = tracker_collection_patch(torrent_id, previous, current) else {
+            return Ok(());
+        };
+        let revision = self.revision;
+        self.subscribers.retain(|_, weak| weak.strong_count() != 0);
+        let subscribers = self
+            .subscribers
+            .values()
+            .filter_map(Weak::upgrade)
+            .collect::<Vec<_>>();
+        for subscriber in subscribers {
+            if matches!(
+                (&subscriber.spec.selector, subscriber.spec.projection),
+                (
+                    ViewSelector::Torrent { torrent_id: selected },
+                    ViewProjection::Trackers
+                ) if selected == torrent_id
+            ) {
+                subscriber.enqueue_patch(revision, patch.clone())?;
+            }
+        }
+        self.retain_live_view_sets();
+        let view_sets = self.view_sets.values().cloned().collect::<Vec<_>>();
+        for view_set in view_sets {
+            for spec in view_set.view_specs()? {
+                let subscription = spec.subscription_spec(DEFAULT_VIEW_SET_QUEUE_BYTES);
+                if matches!(
+                    (&subscription.selector, subscription.projection),
+                    (
+                        ViewSelector::Torrent { torrent_id: selected },
+                        ViewProjection::Trackers
+                    ) if selected == torrent_id
+                ) {
+                    view_set.enqueue_patch(spec.view_id(), patch.clone(), revision)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn retain_live_view_sets(&mut self) {
         let now = std::time::Instant::now();
         self.view_sets.retain(|_, view_set| {
@@ -1585,6 +1685,7 @@ impl TorrentModel {
             active: None,
             peers: BTreeMap::new(),
             files: None,
+            trackers: TrackerViewModel::default(),
         }
     }
 
@@ -1915,7 +2016,10 @@ pub(crate) fn validate_spec(spec: &SubscriptionSpec) -> Result<(), SubscriptionE
     if matches!(spec.selector, ViewSelector::TorrentList)
         && matches!(
             spec.projection,
-            ViewProjection::PieceActivity | ViewProjection::Peers | ViewProjection::Files
+            ViewProjection::PieceActivity
+                | ViewProjection::Peers
+                | ViewProjection::Files
+                | ViewProjection::Trackers
         )
     {
         return Err(SubscriptionError::InvalidProjection);
@@ -2050,9 +2154,22 @@ fn patch_for(
                 _ => None,
             }
         }
+        (ViewSelector::Torrent { torrent_id }, ViewProjection::Trackers) => {
+            let empty = BTreeMap::new();
+            let old = previous
+                .get(torrent_id)
+                .map_or(&empty, |model| model.trackers.row_map());
+            let next = current
+                .get(torrent_id)
+                .map_or(&empty, |model| model.trackers.row_map());
+            tracker_collection_patch(torrent_id, old, next)
+        }
         (
             ViewSelector::TorrentList,
-            ViewProjection::PieceActivity | ViewProjection::Peers | ViewProjection::Files,
+            ViewProjection::PieceActivity
+            | ViewProjection::Peers
+            | ViewProjection::Files
+            | ViewProjection::Trackers,
         ) => None,
         (_, ViewProjection::Diagnostics) => None,
     }
@@ -2063,6 +2180,11 @@ fn projection_requires_snapshot(
     previous: &BTreeMap<String, TorrentModel>,
     current: &BTreeMap<String, TorrentModel>,
 ) -> bool {
+    if let (ViewSelector::Torrent { torrent_id }, ViewProjection::Trackers) =
+        (&spec.selector, spec.projection)
+    {
+        return previous.contains_key(torrent_id) != current.contains_key(torrent_id);
+    }
     let (ViewSelector::Torrent { torrent_id }, ViewProjection::Files) =
         (&spec.selector, spec.projection)
     else {
@@ -2195,6 +2317,28 @@ fn peer_collection_patch(
     })
 }
 
+fn tracker_collection_patch(
+    torrent_id: &str,
+    previous: &BTreeMap<String, TrackerView>,
+    current: &BTreeMap<String, TrackerView>,
+) -> Option<ViewPatch> {
+    let upsert = current
+        .iter()
+        .filter(|(id, tracker)| previous.get(*id) != Some(*tracker))
+        .map(|(_, tracker)| tracker.clone())
+        .collect::<Vec<_>>();
+    let removed = previous
+        .keys()
+        .filter(|id| !current.contains_key(*id))
+        .cloned()
+        .collect::<Vec<_>>();
+    (!upsert.is_empty() || !removed.is_empty()).then(|| ViewPatch::Trackers {
+        torrent_id: torrent_id.to_owned(),
+        upsert,
+        removed,
+    })
+}
+
 fn coalesce(update: &mut ViewUpdate, next: &ViewUpdatePayload) -> bool {
     let (ViewUpdatePayload::Patch { patch: current }, ViewUpdatePayload::Patch { patch: next }) =
         (&mut update.payload, next)
@@ -2320,6 +2464,37 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
             let mut removed_ids = removed.drain(..).collect::<std::collections::BTreeSet<_>>();
             for file in next_upsert {
                 removed_ids.remove(&file.file_id);
+            }
+            removed_ids.extend(next_removed.iter().cloned());
+            *upsert = values.into_values().collect();
+            *removed = removed_ids.into_iter().collect();
+            true
+        }
+        (
+            ViewPatch::Trackers {
+                torrent_id,
+                upsert,
+                removed,
+            },
+            ViewPatch::Trackers {
+                torrent_id: next_id,
+                upsert: next_upsert,
+                removed: next_removed,
+            },
+        ) if torrent_id == next_id => {
+            let mut values = upsert
+                .drain(..)
+                .map(|tracker| (tracker.tracker_id.clone(), tracker))
+                .collect::<BTreeMap<_, _>>();
+            for id in next_removed {
+                values.remove(id);
+            }
+            for tracker in next_upsert {
+                values.insert(tracker.tracker_id.clone(), tracker.clone());
+            }
+            let mut removed_ids = removed.drain(..).collect::<std::collections::BTreeSet<_>>();
+            for tracker in next_upsert {
+                removed_ids.remove(&tracker.tracker_id);
             }
             removed_ids.extend(next_removed.iter().cloned());
             *upsert = values.into_values().collect();
@@ -2519,6 +2694,12 @@ pub(crate) fn ranges_from_pieces(pieces: &[bool]) -> Vec<IndexRange> {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::time::Duration;
+
+    use rstorrent_engine::{
+        TrackerNextAction, TrackerRuntimeRecordSnapshot, TrackerRuntimeSnapshot,
+        TrackerRuntimeStatus, TrackerSource, TrackerTransport,
+    };
 
     use super::{
         DeliveryPolicy, DiagnosticCategory, DiagnosticFilter, DiagnosticProfile,
@@ -2527,6 +2708,7 @@ mod tests {
         TorrentActivity, ViewHub, ViewPatch, ViewProjection, ViewSelector, ViewSnapshot,
         ViewUpdatePayload, assess_progress, ranges_from_pieces,
     };
+    use crate::tracker_views::TrackerViewModel;
     use crate::{ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState};
 
     fn snapshot(revision: u64, piece_count: u32) -> ServiceSnapshot {
@@ -2562,6 +2744,95 @@ mod tests {
             },
             diagnostics: None,
         }
+    }
+
+    fn tracker_snapshot(status: TrackerRuntimeStatus, attempts: u32) -> TrackerRuntimeSnapshot {
+        TrackerRuntimeSnapshot {
+            captured_at: Duration::from_secs(2),
+            active: !matches!(status, TrackerRuntimeStatus::Inactive),
+            records: vec![TrackerRuntimeRecordSnapshot {
+                tracker_id: "udp://tracker.example:6969".to_owned(),
+                url: "udp://tracker.example:6969".to_owned(),
+                tier: 0,
+                source: TrackerSource::Magnet,
+                transport: TrackerTransport::Udp,
+                status,
+                announce_event: None,
+                total_attempts: attempts,
+                consecutive_failures: u8::from(matches!(status, TrackerRuntimeStatus::RetryWait)),
+                last_peer_count: Some(9),
+                seeders: Some(4),
+                leechers: Some(5),
+                interval: Some(Duration::from_secs(600)),
+                next_action: Some(if matches!(status, TrackerRuntimeStatus::RetryWait) {
+                    TrackerNextAction::Retry
+                } else {
+                    TrackerNextAction::Reannounce
+                }),
+                next_action_in: Some(Duration::from_secs(15)),
+                last_success_age: Some(Duration::from_secs(1)),
+                last_failure_age: None,
+                last_error: None,
+            }],
+        }
+    }
+
+    #[tokio::test]
+    async fn tracker_state_publishes_complete_keyed_rows_and_terminal_inactive_state() {
+        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
+        let subscription = hub
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::Torrent {
+                    torrent_id: torrent_id.to_owned(),
+                },
+                projection: ViewProjection::Trackers,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 16 * 1024,
+                },
+                diagnostics: None,
+            })
+            .expect("tracker subscription");
+        let initial = subscription.next_update().await.expect("initial snapshot");
+        assert!(matches!(
+            initial.payload,
+            ViewUpdatePayload::Snapshot {
+                snapshot: ViewSnapshot::Trackers { trackers, .. }
+            } if trackers.is_empty()
+        ));
+
+        hub.record_tracker_state(
+            torrent_id,
+            &tracker_snapshot(TrackerRuntimeStatus::ReannounceWait, 1),
+        )
+        .expect("tracker success state");
+        let update = subscription.next_update().await.expect("success patch");
+        assert!(matches!(
+            update.payload,
+            ViewUpdatePayload::Patch {
+                patch: ViewPatch::Trackers { ref upsert, ref removed, .. }
+            } if upsert.len() == 1
+                && removed.is_empty()
+                && upsert[0].last_peer_count == Some(9)
+        ));
+
+        hub.record_tracker_state(
+            torrent_id,
+            &tracker_snapshot(TrackerRuntimeStatus::Inactive, 2),
+        )
+        .expect("tracker terminal state");
+        let terminal = subscription.next_update().await.expect("terminal patch");
+        assert!(matches!(
+            terminal.payload,
+            ViewUpdatePayload::Patch {
+                patch: ViewPatch::Trackers { ref upsert, .. }
+            } if upsert.len() == 1
+                && matches!(
+                    upsert[0].status,
+                    crate::tracker_views::TrackerStatusView::Inactive
+                )
+        ));
     }
 
     #[tokio::test]
@@ -2771,6 +3042,7 @@ mod tests {
                         end_exclusive: 3,
                     }],
                     files: None,
+                    trackers: TrackerViewModel::default(),
                 },
             )]),
         )
@@ -2816,6 +3088,7 @@ mod tests {
                     display_name: Some("Verified fixture".to_owned()),
                     verified: Vec::new(),
                     files: None,
+                    trackers: TrackerViewModel::default(),
                 },
             )]),
         )

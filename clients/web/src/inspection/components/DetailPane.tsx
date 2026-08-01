@@ -11,6 +11,7 @@ import type { DetailTab, LogRow, ViewMaterialization } from "../model";
 import { visibleLogs } from "../state";
 import { PeerTable } from "./PeerTable";
 import { FileTable } from "./FileTable";
+import { TrackerTable } from "./TrackerTable";
 import { VirtualTable, type VirtualColumn } from "./VirtualTable";
 import styles from "./DetailPane.module.css";
 
@@ -80,6 +81,12 @@ export function DetailPane() {
     state.presentation.selectedTorrentId === null
       ? 0
       : (state.peersByTorrent[state.presentation.selectedTorrentId]?.order.length ?? 0),
+  );
+  const trackerCount = useInspectionStore((state) =>
+    state.presentation.selectedTorrentId === null
+      ? 0
+      : (state.trackersByTorrent[state.presentation.selectedTorrentId]?.order
+          .length ?? 0),
   );
   const activeTab = useInspectionStore((state) => state.presentation.activeTab);
   const layout = useInspectionStore((state) => state.presentation.layout);
@@ -151,6 +158,8 @@ export function DetailPane() {
             {tab.label}
             {tab.id === "peers" && peerCount > 0 ? (
               <span>{peerCount.toLocaleString()}</span>
+            ) : tab.id === "trackers" && trackerCount > 0 ? (
+              <span>{trackerCount.toLocaleString()}</span>
             ) : null}
           </button>
         ))}
@@ -165,6 +174,8 @@ export function DetailPane() {
           <EmptyDetail />
         ) : activeTab === "peers" && selectedId !== null ? (
           <PeerTable torrentId={selectedId} />
+        ) : activeTab === "trackers" && selectedId !== null ? (
+          <TrackerTable torrentId={selectedId} />
         ) : activeTab === "files" && selectedId !== null ? (
           <FileTable torrentId={selectedId} />
         ) : activeTab === "general" && torrent !== undefined ? (

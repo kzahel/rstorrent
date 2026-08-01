@@ -39,7 +39,38 @@ test("compact tracker recovery remains legible", async ({ page }) => {
     "aria-rowcount",
     "15",
   );
-  await capture(page, "rstorrent-demo-compact.png");
+  await page.getByRole("tab", { name: "Trackers" }).click();
+  const trackers = page.getByRole("grid", { name: "Torrent trackers" });
+  await expect(trackers).toHaveAttribute("aria-rowcount", "3");
+  await expect(trackers.getByRole("row").filter({ hasText: "42" })).toContainText(
+    "Announce in",
+  );
+  await expect(trackers.getByText("reannounce wait").first()).toBeVisible();
+  const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+  await capture(page, "rstorrent-trackers-compact.png");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page
+    .getByRole("grid", { name: "Torrent library" })
+    .getByRole("row")
+    .filter({ hasText: "Big Buck Bunny" })
+    .click();
+  await expect(trackers).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Torrents", exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(async () =>
+      page
+        .getByRole("navigation", { name: "Torrent library" })
+        .evaluate((element) => Math.round(element.getBoundingClientRect().right)),
+    )
+    .toBeLessThanOrEqual(0);
+  await capture(page, "rstorrent-trackers-phone.png");
 });
 
 test("removal keeps data by default and exposes destructive intent", async ({

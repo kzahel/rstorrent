@@ -59,6 +59,61 @@ describe("torrent display-name validation", () => {
   });
 });
 
+describe("tracker view validation", () => {
+  it("accepts bounded state and rejects an oversized retained error", () => {
+    const batch = trackerBatch();
+    expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
+    batch.updates[0]!.snapshot.trackers[0]!.last_error = "x".repeat(257);
+    expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
+      /last error exceeds 256 bytes/,
+    );
+  });
+});
+
+function trackerBatch() {
+  return {
+    api_version: 1,
+    view_set_id: "vs_000102030405060708090a0b0c0d0e0f",
+    epoch: "1",
+    base_cursor: "0",
+    cursor: "1",
+    durable_revision: "1",
+    updates: [
+      {
+        type: "snapshot" as const,
+        view_id: "torrent-trackers",
+        snapshot: {
+          type: "trackers" as const,
+          torrent_id: "0".repeat(40),
+          state: "available",
+          trackers: [
+            {
+              tracker_id: "udp://tracker.example:6969",
+              url: "udp://tracker.example:6969",
+              transport: "udp",
+              source: "magnet",
+              tier: 0,
+              status: "retry_wait",
+              announce_event: null,
+              total_attempts: 1,
+              consecutive_failures: 1,
+              last_peer_count: null,
+              seeders: null,
+              leechers: null,
+              interval_seconds: null,
+              next_action: "retry",
+              next_action_in_millis: "17000",
+              last_success_age_millis: null,
+              last_failure_age_millis: "100",
+              last_error: "timeout",
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
+
 function torrentBatch(displayName: string) {
   return {
     api_version: 1,

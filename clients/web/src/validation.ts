@@ -20,6 +20,7 @@ const MAX_HTTP_RESPONSE_BYTES = 16 * 1024 * 1024;
 const MAX_COLLECTION = 100_000;
 const MAX_ACTIVE_PEERS = 256;
 const MAX_FILES = 4_096;
+const MAX_TRACKERS = 32;
 const MAX_U32 = 4_294_967_295;
 const DECIMAL = /^(0|[1-9][0-9]*)$/;
 const IDENTIFIER = /^[A-Za-z0-9._-]{1,128}$/;
@@ -325,6 +326,22 @@ function validateViewSnapshot(value: unknown): void {
       }
       break;
     }
+    case "trackers": {
+      torrentId(snapshot.torrent_id);
+      oneOf(snapshot.state, "tracker catalog state", [
+        "available",
+        "torrent_missing",
+      ]);
+      const trackers = array(snapshot.trackers, "torrent trackers");
+      if (trackers.length > MAX_TRACKERS) {
+        throw new ContractError("tracker view exceeds its row bound");
+      }
+      trackers.forEach(validateTrackerView);
+      if (snapshot.state !== "available" && trackers.length !== 0) {
+        throw new ContractError("unavailable tracker catalog contains rows");
+      }
+      break;
+    }
     case "diagnostics":
       array(snapshot.events, "diagnostic events").forEach(
         validateDiagnosticEvent,
@@ -381,6 +398,18 @@ function validateViewPatch(value: unknown): void {
       upserts.forEach(validateFileView);
       array(patch.removed, "file removals").forEach((fileId) =>
         decimal(fileId, "file ID"),
+      );
+      break;
+    }
+    case "trackers": {
+      torrentId(patch.torrent_id);
+      const upserts = array(patch.upsert, "tracker upserts");
+      if (upserts.length > MAX_TRACKERS) {
+        throw new ContractError("tracker patch exceeds its row bound");
+      }
+      upserts.forEach(validateTrackerView);
+      array(patch.removed, "tracker removals").forEach((trackerId) =>
+        boundedString(trackerId, "tracker ID", 2_048),
       );
       break;
     }
@@ -458,6 +487,46 @@ function validateFileView(value: unknown): void {
   if (verified > done || done > length) {
     throw new ContractError("file progress counters are inconsistent");
   }
+}
+
+function validateTrackerView(value: unknown): void {
+  const tracker = asRecord(value, "tracker view");
+  const id = boundedString(tracker.tracker_id, "tracker ID", 2_048);
+  const url = boundedString(tracker.url, "tracker URL", 2_048);
+  if (id !== url || !url.startsWith("udp://")) {
+    throw new ContractError("tracker identity is not its canonical UDP URL");
+  }
+  oneOf(tracker.transport, "tracker transport", ["udp"]);
+  oneOf(tracker.source, "tracker source", ["magnet"]);
+  boundedInteger(tracker.tier, "tracker tier", 0, MAX_U32);
+  oneOf(tracker.status, "tracker status", [
+    "inactive",
+    "idle",
+    "announcing",
+    "retry_wait",
+    "reannounce_wait",
+  ]);
+  if (tracker.announce_event !== null) {
+    oneOf(tracker.announce_event, "tracker announce event", ["started", "update"]);
+  }
+  boundedInteger(tracker.total_attempts, "tracker attempts", 0, MAX_U32);
+  boundedInteger(tracker.consecutive_failures, "tracker failures", 0, 127);
+  ["last_peer_count", "seeders", "leechers", "interval_seconds"].forEach(
+    (field) => optionalInteger(tracker[field], `tracker ${field}`, MAX_U32),
+  );
+  if (tracker.next_action !== null) {
+    oneOf(tracker.next_action, "tracker next action", [
+      "announce",
+      "retry",
+      "reannounce",
+    ]);
+  }
+  [
+    "next_action_in_millis",
+    "last_success_age_millis",
+    "last_failure_age_millis",
+  ].forEach((field) => optionalDecimal(tracker[field], `tracker ${field}`));
+  optionalString(tracker.last_error, "tracker last error", 256);
 }
 
 function validatePeerView(value: unknown, owningTorrent: string): void {

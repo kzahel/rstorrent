@@ -41,16 +41,40 @@ describe("DemoApplication", () => {
     controller.start();
     const torrentId = controller.store.getState().torrentOrder[0]!;
     expect(controller.store.getState().peersByTorrent[torrentId]?.order).toHaveLength(0);
+    controller.store.getState().selectTab("trackers");
+    await Promise.resolve();
+    expect(
+      controller.store.getState().trackersByTorrent[torrentId]?.rows[
+        "udp://tracker.openbittorrent.com:80"
+      ]?.status,
+    ).toBe("announcing");
 
     await controller.dispatch({
       type: "advance_demo_clock",
       milliseconds: 24_000,
     });
+    expect(controller.store.getState().torrents[torrentId]?.peersKnown).toBe(42);
+    const recoveredTracker =
+      controller.store.getState().trackersByTorrent[torrentId]?.rows[
+        "udp://tracker.openbittorrent.com:80"
+      ];
+    expect(recoveredTracker).toMatchObject({
+      status: "reannounce_wait",
+      lastPeerCount: 42,
+      seeders: 31,
+      leechers: 11,
+      consecutiveFailures: 0,
+      error: null,
+    });
+    controller.store.getState().selectTab("peers");
+    await vi.waitFor(() => {
+      expect(
+        controller.store.getState().peersByTorrent[torrentId]?.order,
+      ).toHaveLength(14);
+    });
     const originalConnection = controller.store.getState().peersByTorrent[
       torrentId
     ]?.order[0];
-    expect(controller.store.getState().peersByTorrent[torrentId]?.order).toHaveLength(14);
-    expect(controller.store.getState().torrents[torrentId]?.peersKnown).toBe(42);
     await controller.dispatch({
       type: "advance_demo_clock",
       milliseconds: 22_000,

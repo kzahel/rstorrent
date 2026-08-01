@@ -8,6 +8,7 @@ import type {
   LogRow,
   FileSet,
   PeerSet,
+  TrackerSet,
   TorrentRow,
 } from "./model";
 
@@ -60,6 +61,7 @@ const EMPTY_SNAPSHOT: InspectionSnapshot = {
   torrents: {},
   peersByTorrent: {},
   filesByTorrent: {},
+  trackersByTorrent: {},
   logs: [],
   droppedLogs: 0,
   viewStatus: {
@@ -67,6 +69,7 @@ const EMPTY_SNAPSHOT: InspectionSnapshot = {
     torrentSummary: { status: "not_requested" },
     peers: { status: "not_requested" },
     files: { status: "not_requested" },
+    trackers: { status: "not_requested" },
     logs: { status: "not_requested" },
   },
 };
@@ -178,6 +181,7 @@ export function reduceInspectionUpdate(
   let torrentOrder = state.torrentOrder;
   let peersByTorrent = state.peersByTorrent;
   let filesByTorrent = state.filesByTorrent;
+  let trackersByTorrent = state.trackersByTorrent;
   let logs = state.logs;
   let droppedLogs = state.droppedLogs;
 
@@ -236,6 +240,27 @@ export function reduceInspectionUpdate(
     filesByTorrent = nextFileSets;
   }
 
+  if (update.trackers !== undefined) {
+    const nextTrackerSets = { ...state.trackersByTorrent };
+    for (const patch of update.trackers) {
+      const current =
+        state.trackersByTorrent[patch.torrentId] ?? EMPTY_TRACKER_SET;
+      const rows = applyRows(
+        current.rows,
+        patch.upsert,
+        patch.removed,
+        (row) => row.id,
+      );
+      nextTrackerSets[patch.torrentId] = {
+        state: patch.state ?? current.state,
+        rows,
+        order:
+          patch.order ?? current.order.filter((id) => rows[id] !== undefined),
+      };
+    }
+    trackersByTorrent = nextTrackerSets;
+  }
+
   if (update.logs !== undefined) {
     const combined = [...state.logs, ...update.logs.append];
     const overflow = Math.max(0, combined.length - 256);
@@ -257,6 +282,7 @@ export function reduceInspectionUpdate(
     torrentOrder,
     peersByTorrent,
     filesByTorrent,
+    trackersByTorrent,
     logs,
     droppedLogs,
     presentation: {
@@ -309,6 +335,11 @@ const EMPTY_PEER_SET: PeerSet = { order: [], rows: {} };
 const EMPTY_FILE_SET: FileSet = {
   state: "metadata_pending",
   filesystemContentBase: null,
+  order: [],
+  rows: {},
+};
+const EMPTY_TRACKER_SET: TrackerSet = {
+  state: "available",
   order: [],
   rows: {},
 };

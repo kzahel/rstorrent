@@ -56,13 +56,14 @@ export interface InspectionViewStatus {
   readonly torrentSummary: ViewMaterialization;
   readonly peers: ViewMaterialization;
   readonly files: ViewMaterialization;
+  readonly trackers: ViewMaterialization;
   readonly logs: ViewMaterialization;
 }
 
 export interface DesiredInspectionViews {
   readonly library: boolean;
   readonly torrentId: string | null;
-  readonly detail: "general" | "peers" | "files" | "logs" | null;
+  readonly detail: "general" | "trackers" | "peers" | "files" | "logs" | null;
 }
 
 export interface DemoState {
@@ -159,6 +160,40 @@ export interface FileSet {
   readonly rows: Readonly<Record<string, FileRow>>;
 }
 
+export interface TrackerRow {
+  readonly id: string;
+  readonly torrentId: string;
+  readonly url: string;
+  readonly transport: "udp";
+  readonly source: "magnet";
+  readonly tier: number;
+  readonly status:
+    | "inactive"
+    | "idle"
+    | "announcing"
+    | "retry_wait"
+    | "reannounce_wait";
+  readonly announceEvent: "started" | "update" | null;
+  readonly totalAttempts: number;
+  readonly consecutiveFailures: number;
+  readonly lastPeerCount: number | null;
+  readonly seeders: number | null;
+  readonly leechers: number | null;
+  readonly intervalSeconds: number | null;
+  readonly nextAction: "announce" | "retry" | "reannounce" | null;
+  readonly nextActionInMs: number | null;
+  readonly observedAtMs: number;
+  readonly lastSuccessAgeMs: number | null;
+  readonly lastFailureAgeMs: number | null;
+  readonly error: string | null;
+}
+
+export interface TrackerSet {
+  readonly state: "available" | "torrent_missing";
+  readonly order: readonly string[];
+  readonly rows: Readonly<Record<string, TrackerRow>>;
+}
+
 export interface InspectionSnapshot {
   readonly revision: number;
   readonly session: SessionSummary;
@@ -167,6 +202,7 @@ export interface InspectionSnapshot {
   readonly torrents: Readonly<Record<string, TorrentRow>>;
   readonly peersByTorrent: Readonly<Record<string, PeerSet>>;
   readonly filesByTorrent: Readonly<Record<string, FileSet>>;
+  readonly trackersByTorrent: Readonly<Record<string, TrackerSet>>;
   readonly logs: readonly LogRow[];
   readonly droppedLogs: number;
   readonly viewStatus: InspectionViewStatus;
@@ -195,6 +231,11 @@ export type InspectionUpdate =
         readonly torrentId: string;
         readonly state?: FileSet["state"];
         readonly filesystemContentBase?: string | null;
+        readonly order?: readonly string[];
+      })[];
+      readonly trackers?: readonly (KeyedPatch<TrackerRow> & {
+        readonly torrentId: string;
+        readonly state?: TrackerSet["state"];
         readonly order?: readonly string[];
       })[];
       readonly logs?: {

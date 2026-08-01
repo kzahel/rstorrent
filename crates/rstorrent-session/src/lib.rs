@@ -10,6 +10,7 @@ mod control;
 mod file_views;
 mod have;
 mod store;
+mod tracker_views;
 mod view_sets;
 mod views;
 
@@ -28,6 +29,10 @@ pub use rstorrent_engine::{DownloadResourceLimits, NetworkConfig, NetworkPolicy}
 pub use store::{
     ConfiguredStorageRoot, PreparedFileRecord, RemovalRecord, ResumeRecord, SessionStore,
     StorageRootLocation, StoreError,
+};
+pub use tracker_views::{
+    TrackerAnnounceEventView, TrackerCatalogState, TrackerNextActionView, TrackerSourceView,
+    TrackerStatusView, TrackerTransportView, TrackerView,
 };
 pub use view_sets::{
     API_VERSION, ApiEncoding, ApiHello, ApiLimits, ApiVersion, DeliveryMode, OpenViewSetOptions,

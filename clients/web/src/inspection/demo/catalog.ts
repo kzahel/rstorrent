@@ -7,6 +7,8 @@ import type {
   LogRow,
   PeerRow,
   TorrentRow,
+  TrackerRow,
+  TrackerSet,
 } from "../model";
 
 const BASE_TIME_MS = Date.UTC(2026, 7, 1, 8, 0, 0);
@@ -103,6 +105,7 @@ export function buildScenarioSnapshot(
     ]),
   );
   const filesByTorrent = content.files ?? {};
+  const trackersByTorrent = content.trackers ?? {};
   const active = content.torrents.filter(
     (torrent) => torrent.status === "downloading" || torrent.status === "metadata",
   );
@@ -125,6 +128,7 @@ export function buildScenarioSnapshot(
     torrents,
     peersByTorrent,
     filesByTorrent,
+    trackersByTorrent,
     logs: content.logs.slice(-256),
     droppedLogs: Math.max(0, content.logs.length - 256),
     viewStatus: {
@@ -132,6 +136,7 @@ export function buildScenarioSnapshot(
       torrentSummary: { status: "ready" },
       peers: { status: "ready" },
       files: { status: "ready" },
+      trackers: { status: "ready" },
       logs: { status: "ready" },
     },
   };
@@ -141,6 +146,7 @@ interface ScenarioContent {
   readonly torrents: readonly TorrentRow[];
   readonly peers: Readonly<Record<string, readonly PeerRow[]>>;
   readonly files?: Readonly<Record<string, FileSet>>;
+  readonly trackers?: Readonly<Record<string, TrackerSet>>;
   readonly logs: readonly LogRow[];
 }
 
@@ -392,6 +398,64 @@ function trackerRecovery(elapsedMs: number): ScenarioContent {
     };
   }
   const rate = progress === null || progress === 1 ? 0 : 8_800_000 + wave(seconds, 1_200_000);
+  const observedAtMs = Date.now();
+  const primaryStatus: TrackerRow["status"] =
+    seconds < 3
+      ? "announcing"
+      : seconds < 22
+        ? "retry_wait"
+        : "reannounce_wait";
+  const primary: TrackerRow = {
+    id: "udp://tracker.openbittorrent.com:80",
+    torrentId: BUNNY_ID,
+    url: "udp://tracker.openbittorrent.com:80",
+    transport: "udp",
+    source: "magnet",
+    tier: 0,
+    status: primaryStatus,
+    announceEvent: seconds < 3 ? "started" : null,
+    totalAttempts: seconds < 22 ? 1 : 2,
+    consecutiveFailures: seconds >= 3 && seconds < 22 ? 1 : 0,
+    lastPeerCount: seconds < 22 ? null : 42,
+    seeders: seconds < 22 ? null : 31,
+    leechers: seconds < 22 ? null : 11,
+    intervalSeconds: seconds < 22 ? null : 600,
+    nextAction:
+      seconds < 3 ? null : seconds < 22 ? "retry" : "reannounce",
+    nextActionInMs:
+      seconds < 3
+        ? null
+        : seconds < 22
+          ? Math.max(0, (22 - seconds) * 1_000)
+          : Math.max(0, (622 - seconds) * 1_000),
+    observedAtMs,
+    lastSuccessAgeMs: seconds < 22 ? null : (seconds - 22) * 1_000,
+    lastFailureAgeMs: seconds < 3 ? null : (seconds - 3) * 1_000,
+    error: seconds >= 3 && seconds < 22 ? "UDP announce timed out" : null,
+  };
+  const fallback: TrackerRow = {
+    id: "udp://tracker.opentrackr.org:1337",
+    torrentId: BUNNY_ID,
+    url: "udp://tracker.opentrackr.org:1337",
+    transport: "udp",
+    source: "magnet",
+    tier: 0,
+    status: seconds < 22 ? "idle" : "reannounce_wait",
+    announceEvent: null,
+    totalAttempts: seconds < 22 ? 0 : 1,
+    consecutiveFailures: 0,
+    lastPeerCount: seconds < 22 ? null : 18,
+    seeders: seconds < 22 ? null : 14,
+    leechers: seconds < 22 ? null : 4,
+    intervalSeconds: seconds < 22 ? null : 900,
+    nextAction: seconds < 22 ? "announce" : "reannounce",
+    nextActionInMs:
+      seconds < 22 ? 0 : Math.max(0, (922 - seconds) * 1_000),
+    observedAtMs,
+    lastSuccessAgeMs: seconds < 22 ? null : (seconds - 22) * 1_000,
+    lastFailureAgeMs: null,
+    error: null,
+  };
   return {
     torrents: [
       torrent({
@@ -408,6 +472,13 @@ function trackerRecovery(elapsedMs: number): ScenarioContent {
       }),
     ],
     peers: { [BUNNY_ID]: peers },
+    trackers: {
+      [BUNNY_ID]: {
+        state: "available",
+        order: [primary.id, fallback.id],
+        rows: { [primary.id]: primary, [fallback.id]: fallback },
+      },
+    },
     logs: timelineLogs(BUNNY_ID, [
       [0, "info", "tracker", "UDP announce started"],
       [3, "warning", "tracker", "UDP announce timed out"],

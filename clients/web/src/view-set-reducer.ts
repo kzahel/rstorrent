@@ -109,6 +109,8 @@ function cloneSnapshot(snapshot: ViewSnapshot): ViewSnapshot {
       return { ...snapshot, peers: [...snapshot.peers] };
     case "files":
       return { ...snapshot, files: [...snapshot.files] };
+    case "trackers":
+      return { ...snapshot, trackers: [...snapshot.trackers] };
     case "diagnostics":
       return { ...snapshot, events: [...snapshot.events] };
   }
@@ -171,6 +173,22 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
         state: snapshot.state,
         filesystem_content_base: snapshot.filesystem_content_base,
         files: [...files.values()],
+      };
+    }
+    case "trackers": {
+      if (snapshot.type !== "trackers") throw new Error("unreachable");
+      const trackers = new Map(
+        snapshot.trackers.map((tracker) => [tracker.tracker_id, tracker]),
+      );
+      for (const trackerId of patch.removed) trackers.delete(trackerId);
+      for (const tracker of patch.upsert) {
+        trackers.set(tracker.tracker_id, tracker);
+      }
+      return {
+        type: "trackers",
+        torrent_id: patch.torrent_id,
+        state: snapshot.state,
+        trackers: [...trackers.values()],
       };
     }
     case "diagnostics": {

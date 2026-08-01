@@ -37,6 +37,7 @@ class FakeLiveClient implements ApplicationViewClient {
         "torrent_summary",
         "torrent_peers",
         "torrent_files",
+        "torrent_trackers",
         "diagnostics",
       ],
       limits: {
@@ -251,6 +252,49 @@ describe("LiveApplication", () => {
     await application.close();
   });
 
+  it("subscribes to trackers only while requested and maps retained state", async () => {
+    const client = new FakeLiveClient();
+    const application = await LiveApplication.open(client, {
+      initialViews: {
+        library: false,
+        torrentId: TORRENT_ID,
+        detail: "trackers",
+      },
+    });
+    const snapshots: InspectionSnapshot[] = [];
+    application.subscribe((update) => {
+      if (update.type === "snapshot") snapshots.push(update.snapshot);
+    });
+    const tracker =
+      snapshots.at(-1)?.trackersByTorrent[TORRENT_ID]?.rows[
+        "udp://tracker.example:6969"
+      ];
+    expect(tracker).toMatchObject({
+      torrentId: TORRENT_ID,
+      status: "retry_wait",
+      lastPeerCount: 12,
+      seeders: 7,
+      leechers: 5,
+      nextAction: "retry",
+      nextActionInMs: 17_000,
+      error: "temporary timeout",
+    });
+    expect(
+      client.opens[0]?.views.find((view) => view.type === "torrent_trackers")
+        ?.delivery.min_interval_millis,
+    ).toBe(250);
+    await application.setViews({
+      library: true,
+      torrentId: TORRENT_ID,
+      detail: "general",
+    });
+    expect(snapshots.at(-1)?.trackersByTorrent).toEqual({});
+    expect(snapshots.at(-1)?.viewStatus.trackers.status).toBe(
+      "not_requested",
+    );
+    await application.close();
+  });
+
   it("marks stale state then atomically installs a fresh view-set epoch", async () => {
     const client = new FakeLiveClient();
     const application = await LiveApplication.open(client, {
@@ -331,6 +375,38 @@ function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
               padding: false,
               done_bytes: "16384",
               verified_bytes: "0",
+            },
+          ],
+        },
+      };
+    case "torrent_trackers":
+      return {
+        type: "snapshot",
+        view_id: view.view_id,
+        snapshot: {
+          type: "trackers",
+          torrent_id: TORRENT_ID,
+          state: "available",
+          trackers: [
+            {
+              tracker_id: "udp://tracker.example:6969",
+              url: "udp://tracker.example:6969",
+              transport: "udp",
+              source: "magnet",
+              tier: 0,
+              status: "retry_wait",
+              announce_event: null,
+              total_attempts: 2,
+              consecutive_failures: 1,
+              last_peer_count: 12,
+              seeders: 7,
+              leechers: 5,
+              interval_seconds: 600,
+              next_action: "retry",
+              next_action_in_millis: "17000",
+              last_success_age_millis: "4000",
+              last_failure_age_millis: "500",
+              last_error: "temporary timeout",
             },
           ],
         },

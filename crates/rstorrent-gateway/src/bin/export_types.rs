@@ -16,9 +16,10 @@ use rstorrent_session::{
     PeerTransportKind, PeerView, ProgressAction, ProgressAssessment, ProgressDisposition,
     ProgressPhase, ProgressReason, RemovalDataPolicy, RemovalState, RequestEnvelope, ResetReason,
     ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState, SubscriptionSpec,
-    TorrentSnapshot, TorrentState, TorrentView, UpdateBatch, UpdateViewSetRequest,
-    ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot,
-    ViewSpec, ViewUpdate, ViewUpdatePayload,
+    TorrentSnapshot, TorrentState, TorrentView, TrackerAnnounceEventView, TrackerCatalogState,
+    TrackerNextActionView, TrackerSourceView, TrackerStatusView, TrackerTransportView, TrackerView,
+    UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector,
+    ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate, ViewUpdatePayload,
 };
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -100,6 +101,13 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<FileSelectionView>(&mut declarations)?;
     append::<FileCatalogState>(&mut declarations)?;
     append::<FileView>(&mut declarations)?;
+    append::<TrackerCatalogState>(&mut declarations)?;
+    append::<TrackerTransportView>(&mut declarations)?;
+    append::<TrackerSourceView>(&mut declarations)?;
+    append::<TrackerStatusView>(&mut declarations)?;
+    append::<TrackerAnnounceEventView>(&mut declarations)?;
+    append::<TrackerNextActionView>(&mut declarations)?;
+    append::<TrackerView>(&mut declarations)?;
     append::<ViewSnapshot>(&mut declarations)?;
     append::<ViewPatch>(&mut declarations)?;
     append::<ResetReason>(&mut declarations)?;

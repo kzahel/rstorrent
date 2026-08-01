@@ -11,6 +11,7 @@ import type {
   LogRow,
   PeerRow,
   TorrentRow,
+  TrackerRow,
 } from "../model";
 import {
   buildScenarioSnapshot,
@@ -284,12 +285,23 @@ function materializeDemoViews(
           },
         }
       : {};
+  const trackersByTorrent =
+    desired.detail === "trackers" && desired.torrentId !== null
+      ? {
+          [desired.torrentId]: source.trackersByTorrent[desired.torrentId] ?? {
+            state: "available" as const,
+            order: [],
+            rows: {},
+          },
+        }
+      : {};
   return {
     ...source,
     torrentOrder: desired.library ? source.torrentOrder : [],
     torrents,
     peersByTorrent,
     filesByTorrent,
+    trackersByTorrent,
     logs: desired.detail === "logs" ? source.logs : [],
     droppedLogs: desired.detail === "logs" ? source.droppedLogs : 0,
     viewStatus: {
@@ -308,6 +320,10 @@ function materializeDemoViews(
           : { status: "not_requested" },
       files:
         desired.detail === "files"
+          ? { status: "ready" }
+          : { status: "not_requested" },
+      trackers:
+        desired.detail === "trackers"
           ? { status: "ready" }
           : { status: "not_requested" },
       logs:
@@ -391,6 +407,11 @@ function applyOverlays(
     filesByTorrent: Object.fromEntries(
       Object.entries(source.filesByTorrent).filter(([torrentId]) => !removed.has(torrentId)),
     ),
+    trackersByTorrent: Object.fromEntries(
+      Object.entries(source.trackersByTorrent).filter(
+        ([torrentId]) => !removed.has(torrentId),
+      ),
+    ),
     logs,
     droppedLogs: source.droppedLogs + Math.max(0, source.logs.length + commandLogs.length - 256),
   };
@@ -415,6 +436,13 @@ function diffSnapshots(
       readonly torrentId: string;
       readonly state: "metadata_pending" | "available" | "torrent_missing";
       readonly filesystemContentBase: string | null;
+      readonly order: readonly string[];
+    }
+  > = [];
+  const trackerPatches: Array<
+    KeyedPatch<TrackerRow> & {
+      readonly torrentId: string;
+      readonly state: "available" | "torrent_missing";
       readonly order: readonly string[];
     }
   > = [];
@@ -475,6 +503,42 @@ function diffSnapshots(
       });
     }
   }
+  for (const [torrentId, nextSet] of Object.entries(next.trackersByTorrent)) {
+    const previousSet = previous.trackersByTorrent[torrentId];
+    const upsert = nextSet.order
+      .map((id) => nextSet.rows[id])
+      .filter((row): row is TrackerRow => row !== undefined)
+      .filter((row) => !shallowEqual(previousSet?.rows[row.id], row));
+    const removed =
+      previousSet?.order.filter((id) => nextSet.rows[id] === undefined) ?? [];
+    if (
+      upsert.length > 0 ||
+      removed.length > 0 ||
+      previousSet?.state !== nextSet.state ||
+      !arraysEqual(previousSet?.order ?? [], nextSet.order)
+    ) {
+      trackerPatches.push({
+        torrentId,
+        state: nextSet.state,
+        upsert,
+        removed,
+        order: nextSet.order,
+      });
+    }
+  }
+  for (const [torrentId, previousSet] of Object.entries(
+    previous.trackersByTorrent,
+  )) {
+    if (next.trackersByTorrent[torrentId] === undefined) {
+      trackerPatches.push({
+        torrentId,
+        state: "torrent_missing",
+        upsert: [],
+        removed: previousSet.order,
+        order: [],
+      });
+    }
+  }
 
   const previousLogIds = new Set(previous.logs.map((row) => row.id));
   const appendedLogs = next.logs.filter((row) => !previousLogIds.has(row.id));
@@ -496,6 +560,7 @@ function diffSnapshots(
         }),
     ...(peerPatches.length === 0 ? {} : { peers: peerPatches }),
     ...(filePatches.length === 0 ? {} : { files: filePatches }),
+    ...(trackerPatches.length === 0 ? {} : { trackers: trackerPatches }),
     ...(appendedLogs.length === 0
       ? {}
       : {

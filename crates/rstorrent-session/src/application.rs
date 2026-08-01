@@ -28,6 +28,7 @@ use crate::store::{
     ConfiguredStorageRoot, PreparedFileRecord, RemovalRecord, ResumeRecord, SessionStore,
     StorageRootLocation, StoreError,
 };
+use crate::tracker_views::TrackerViewModel;
 use crate::view_sets::{VIEW_SET_REAPER_INTERVAL_MILLIS, ViewSetLeaseReaper};
 use crate::views::{
     DiagnosticCategory, DiagnosticSeverity, DurableTorrentViewState, ProgressInputs,
@@ -1455,6 +1456,10 @@ impl DownloadActivitySink for ViewActivitySink {
             );
             return;
         }
+        if let DownloadActivityEvent::TrackerState(snapshot) = &event {
+            let _ = self.views.record_tracker_state(&self.torrent_id, snapshot);
+            return;
+        }
         let piece_activity = match &event {
             DownloadActivityEvent::MetadataVerified { .. } => {
                 return self.record_discovery_event(event);
@@ -1860,7 +1865,9 @@ impl ViewActivitySink {
             DownloadActivityEvent::PeerConnections { .. } => {
                 unreachable!("peer projections are handled before diagnostic events")
             }
-            DownloadActivityEvent::TrackerState(_) => {}
+            DownloadActivityEvent::TrackerState(_) => {
+                unreachable!("tracker projections are handled before diagnostic events")
+            }
         }
     }
 }
@@ -1885,6 +1892,7 @@ fn durable_view_state(
                     display_name: None,
                     verified: Vec::new(),
                     files: None,
+                    trackers: TrackerViewModel::default(),
                 },
             );
             continue;
@@ -1917,12 +1925,14 @@ fn durable_view_state(
         } else {
             None
         };
+        let trackers = TrackerViewModel::from_magnet(&resume.magnet);
         durable.insert(
             torrent.torrent_id.clone(),
             DurableTorrentViewState {
                 display_name,
                 verified: ranges_from_pieces(verified_pieces),
                 files,
+                trackers,
             },
         );
     }

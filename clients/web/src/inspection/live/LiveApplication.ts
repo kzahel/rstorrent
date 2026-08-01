@@ -7,6 +7,7 @@ import type {
   RequestEnvelope,
   TorrentState,
   TorrentView,
+  TrackerView,
   ViewSnapshot,
   ViewSpec,
 } from "../../api";
@@ -26,6 +27,8 @@ import type {
   PeerRow,
   PeerSet,
   TorrentRow,
+  TrackerRow,
+  TrackerSet,
   ViewMaterialization,
 } from "../model";
 
@@ -33,6 +36,7 @@ const LIBRARY_VIEW_ID = "library";
 const SUMMARY_VIEW_ID = "torrent-summary";
 const PEERS_VIEW_ID = "torrent-peers";
 const FILES_VIEW_ID = "torrent-files";
+const TRACKERS_VIEW_ID = "torrent-trackers";
 const LOGS_VIEW_ID = "logs";
 
 export interface LiveApplicationOptions extends ViewControllerOptions {
@@ -246,6 +250,10 @@ export class LiveApplication implements InspectionApplication {
         ),
         peers: staleIfMaterialized(this.snapshot.viewStatus.peers, error),
         files: staleIfMaterialized(this.snapshot.viewStatus.files, error),
+        trackers: staleIfMaterialized(
+          this.snapshot.viewStatus.trackers,
+          error,
+        ),
         logs: staleIfMaterialized(this.snapshot.viewStatus.logs, error),
       },
     };
@@ -284,6 +292,18 @@ export class LiveApplication implements InspectionApplication {
         view_id: PEERS_VIEW_ID,
         torrent_id: views.torrentId,
         delivery: { min_interval_millis: 100 },
+      });
+    }
+    if (
+      views.detail === "trackers" &&
+      views.torrentId !== null &&
+      capabilities.has("torrent_trackers")
+    ) {
+      specs.push({
+        type: "torrent_trackers",
+        view_id: TRACKERS_VIEW_ID,
+        torrent_id: views.torrentId,
+        delivery: { min_interval_millis: 250 },
       });
     }
     if (
@@ -343,6 +363,7 @@ function mapViewState(
   const summary = projection(state, SUMMARY_VIEW_ID, "torrent");
   const peers = projection(state, PEERS_VIEW_ID, "peers");
   const files = projection(state, FILES_VIEW_ID, "files");
+  const trackers = projection(state, TRACKERS_VIEW_ID, "trackers");
   const diagnostics = projection(state, LOGS_VIEW_ID, "diagnostics");
   const torrentRows = new Map<string, TorrentRow>();
   if (library !== null) {
@@ -365,6 +386,21 @@ function mapViewState(
     fileSet === null || desired.torrentId === null || files?.torrent_id !== desired.torrentId
       ? {}
       : { [desired.torrentId]: fileSet };
+  const trackerSet =
+    trackers === null
+      ? null
+      : mapTrackers(trackers.trackers, trackers.torrent_id);
+  const trackersByTorrent =
+    trackerSet === null ||
+    desired.torrentId === null ||
+    trackers?.torrent_id !== desired.torrentId
+      ? {}
+      : {
+          [desired.torrentId]: {
+            ...trackerSet,
+            state: trackers.state,
+          },
+        };
   const rows = [...torrentRows.values()];
   return {
     revision: safeNumber(state.durableRevision),
@@ -380,6 +416,7 @@ function mapViewState(
     torrents,
     peersByTorrent,
     filesByTorrent,
+    trackersByTorrent,
     logs,
     droppedLogs: diagnostics === null ? 0 : safeNumber(diagnostics.dropped_count),
     viewStatus: {
@@ -406,6 +443,12 @@ function mapViewState(
         capabilities.has("torrent_files"),
         files?.torrent_id === desired.torrentId,
         "File inspection is unavailable",
+      ),
+      trackers: materialization(
+        desired.detail === "trackers",
+        capabilities.has("torrent_trackers"),
+        trackers?.torrent_id === desired.torrentId,
+        "Tracker inspection is unavailable",
       ),
       logs: materialization(
         desired.detail === "logs",
@@ -462,6 +505,7 @@ function transitionSnapshot(
     torrents: Object.fromEntries(rows),
     peersByTorrent: {},
     filesByTorrent: {},
+    trackersByTorrent: {},
     logs: [],
     droppedLogs: 0,
     viewStatus: {
@@ -481,6 +525,10 @@ function transitionSnapshot(
       files: transitionStatus(
         desired.detail === "files",
         capabilities.has("torrent_files"),
+      ),
+      trackers: transitionStatus(
+        desired.detail === "trackers",
+        capabilities.has("torrent_trackers"),
       ),
       logs: transitionStatus(
         desired.detail === "logs",
@@ -650,6 +698,50 @@ function mapFile(
   };
 }
 
+function mapTrackers(
+  trackers: readonly TrackerView[],
+  torrentId: string,
+): TrackerSet {
+  const observedAtMs = Date.now();
+  const rows = trackers.map((tracker) =>
+    mapTracker(tracker, torrentId, observedAtMs),
+  );
+  return {
+    state: "available",
+    order: rows.map((tracker) => tracker.id),
+    rows: Object.fromEntries(rows.map((tracker) => [tracker.id, tracker])),
+  };
+}
+
+function mapTracker(
+  tracker: TrackerView,
+  torrentId: string,
+  observedAtMs: number,
+): TrackerRow {
+  return {
+    id: tracker.tracker_id,
+    torrentId,
+    url: tracker.url,
+    transport: tracker.transport,
+    source: tracker.source,
+    tier: tracker.tier,
+    status: tracker.status,
+    announceEvent: tracker.announce_event,
+    totalAttempts: tracker.total_attempts,
+    consecutiveFailures: tracker.consecutive_failures,
+    lastPeerCount: tracker.last_peer_count,
+    seeders: tracker.seeders,
+    leechers: tracker.leechers,
+    intervalSeconds: tracker.interval_seconds,
+    nextAction: tracker.next_action,
+    nextActionInMs: safeNullableNumber(tracker.next_action_in_millis),
+    observedAtMs,
+    lastSuccessAgeMs: safeNullableNumber(tracker.last_success_age_millis),
+    lastFailureAgeMs: safeNullableNumber(tracker.last_failure_age_millis),
+    error: tracker.last_error,
+  };
+}
+
 function mapPeer(peer: PeerView): PeerRow {
   const state: PeerRow["state"] =
     peer.lifecycle === "transport_connecting"
@@ -750,6 +842,7 @@ function emptyLiveSnapshot(
     torrents: {},
     peersByTorrent: {},
     filesByTorrent: {},
+    trackersByTorrent: {},
     logs: [],
     droppedLogs: 0,
     viewStatus: {
@@ -758,6 +851,10 @@ function emptyLiveSnapshot(
         desired.torrentId === null ? { status: "not_requested" } : { status: "loading" },
       peers: desired.detail === "peers" ? { status: "loading" } : { status: "not_requested" },
       files: desired.detail === "files" ? { status: "loading" } : { status: "not_requested" },
+      trackers:
+        desired.detail === "trackers"
+          ? { status: "loading" }
+          : { status: "not_requested" },
       logs: desired.detail === "logs" ? { status: "loading" } : { status: "not_requested" },
     },
   };

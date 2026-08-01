@@ -1537,6 +1537,171 @@
       ],
       "type": "object"
     },
+    "TrackerAnnounceEventView": {
+      "enum": [
+        "started",
+        "update"
+      ],
+      "type": "string"
+    },
+    "TrackerCatalogState": {
+      "enum": [
+        "available",
+        "torrent_missing"
+      ],
+      "type": "string"
+    },
+    "TrackerNextActionView": {
+      "enum": [
+        "announce",
+        "retry",
+        "reannounce"
+      ],
+      "type": "string"
+    },
+    "TrackerSourceView": {
+      "enum": [
+        "magnet"
+      ],
+      "type": "string"
+    },
+    "TrackerStatusView": {
+      "enum": [
+        "inactive",
+        "idle",
+        "announcing",
+        "retry_wait",
+        "reannounce_wait"
+      ],
+      "type": "string"
+    },
+    "TrackerTransportView": {
+      "enum": [
+        "udp"
+      ],
+      "type": "string"
+    },
+    "TrackerView": {
+      "properties": {
+        "announce_event": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TrackerAnnounceEventView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "consecutive_failures": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "interval_seconds": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "last_error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_failure_age_millis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_peer_count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "last_success_age_millis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "leechers": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "next_action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TrackerNextActionView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "next_action_in_millis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "seeders": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/TrackerSourceView"
+        },
+        "status": {
+          "$ref": "#/$defs/TrackerStatusView"
+        },
+        "tier": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total_attempts": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tracker_id": {
+          "type": "string"
+        },
+        "transport": {
+          "$ref": "#/$defs/TrackerTransportView"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tracker_id",
+        "url",
+        "transport",
+        "source",
+        "tier",
+        "status",
+        "total_attempts",
+        "consecutive_failures"
+      ],
+      "type": "object"
+    },
     "UpdateBatch": {
       "properties": {
         "api_version": {
@@ -1747,6 +1912,36 @@
             "upsert": {
               "items": {
                 "$ref": "#/$defs/FileView"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id",
+            "upsert",
+            "removed"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "removed": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "trackers",
+              "type": "string"
+            },
+            "upsert": {
+              "items": {
+                "$ref": "#/$defs/TrackerView"
               },
               "type": "array"
             }
@@ -2006,6 +2201,33 @@
         },
         {
           "properties": {
+            "state": {
+              "$ref": "#/$defs/TrackerCatalogState"
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "trackers": {
+              "items": {
+                "$ref": "#/$defs/TrackerView"
+              },
+              "type": "array"
+            },
+            "type": {
+              "const": "trackers",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id",
+            "state",
+            "trackers"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "dropped_count": {
               "type": "string"
             },
@@ -2144,6 +2366,32 @@
             },
             "type": {
               "const": "torrent_files",
+              "type": "string"
+            },
+            "view_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "view_id",
+            "torrent_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "delivery": {
+              "$ref": "#/$defs/ViewDeliveryPolicy",
+              "default": {
+                "min_interval_millis": 0
+              }
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "torrent_trackers",
               "type": "string"
             },
             "view_id": {

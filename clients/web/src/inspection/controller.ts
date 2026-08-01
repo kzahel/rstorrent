@@ -129,6 +129,7 @@ function desiredViewsFor(state: InspectionStore): DesiredInspectionViews {
     torrentId === null
       ? null
       : presentation.activeTab === "peers" ||
+          presentation.activeTab === "trackers" ||
           presentation.activeTab === "files" ||
           presentation.activeTab === "logs" ||
           presentation.activeTab === "general"
