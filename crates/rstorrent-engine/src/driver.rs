@@ -7711,8 +7711,15 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         assert_eq!(progress.storage_jobs_pending, 0);
         assert_eq!(progress.storage_write_operations_started, 1);
         assert_eq!(progress.storage_write_operations_completed, 1);
-        assert_eq!(progress.storage_write_blocks_started, 1);
-        assert_eq!(progress.storage_write_blocks_completed, 1);
+        assert!((1..=2).contains(&progress.storage_write_blocks_started));
+        assert_eq!(
+            progress.storage_write_blocks_started,
+            progress.storage_write_blocks_completed
+        );
+        assert_eq!(
+            progress.storage_write_batch_blocks_high_water,
+            progress.storage_write_blocks_started
+        );
         assert!(progress.storage_write_service_micros >= 200_000);
         assert_eq!(progress.storage_hash_operations_started, 0);
         assert_eq!(progress.storage_active_write_micros, None);

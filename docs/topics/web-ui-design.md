@@ -3,8 +3,10 @@
 Topic: `web-ui-design`
 
 Status: Product, presentation, application-view, and client-store direction
-accepted. The exact remaining library inventory and first implementation
-tactical remain pending.
+accepted. Tactical `033` implements the generated contract, polling client,
+lifecycle controller, and pure reducer below React/Zustand. The exact
+presentation library inventory and first visible implementation tactical
+remain pending.
 
 ## Purpose
 
@@ -245,9 +247,10 @@ deterministic presentation evidence passes.
 
 ## Likely Sequencing
 
-1. Implement and headlessly validate the accepted view-set contract, generated
-   TypeScript/schema, polling client, and pure reducer described in
-   [`application-view-api.md`](application-view-api.md).
+1. The accepted view-set contract, generated TypeScript/schema, polling
+   client, and pure reducer described in
+   [`application-view-api.md`](application-view-api.md) are implemented and
+   headlessly validated by Tactical `033`.
 2. Establish the React/CSS Modules shell, adaptive navigation, fixture-backed
    category/list/detail hierarchy, and accessibility baseline.
 3. Establish the Zustand and virtualized-table foundation under
@@ -276,6 +279,7 @@ all stages as one slice.
 - the thresholds and transport shape that would justify low-latency streaming
   or a binary codec.
 
-Tactical `033` is active for the headless transport-independent view-set
-foundation. No visible React tactical is active. Exact peer-view fields,
-privacy posture, and resource limits remain the next design work.
+Tactical `033` completed the headless transport-independent view-set
+foundation. No visible React tactical is active. Exact peer-view fields and
+privacy posture remain the next semantic design work; the implemented
+view-set limits are recorded in [`application-view-api.md`](application-view-api.md).

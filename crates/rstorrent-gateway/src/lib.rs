@@ -7,16 +7,19 @@ use std::error::Error;
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use axum::Router;
+use axum::extract::rejection::{JsonRejection, QueryRejection};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{ConnectInfo, State};
+use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
+use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
 use rstorrent_session::{
-    ApplicationService, RequestEnvelope, ResponseEnvelope, SubscriptionSpec, ViewSubscription,
+    ApiHello, ApplicationService, OpenViewSetRequest, RequestEnvelope, ResponseEnvelope,
+    SubscriptionSpec, UpdateViewSetRequest, ViewSetError, ViewSetOwner, ViewSubscription,
     ViewUpdate, application_error_response,
 };
 use schemars::JsonSchema;
@@ -35,6 +38,8 @@ pub const MAX_CONNECTIONS: usize = 8;
 pub const MAX_SUBSCRIPTIONS_PER_CONNECTION: usize = 8;
 pub const MAX_TOKEN_BYTES: usize = 128;
 pub const MAX_ORIGIN_BYTES: usize = 512;
+
+static NEXT_HTTP_OWNER: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone)]
 pub struct GatewayConfig {
@@ -155,6 +160,30 @@ pub enum GatewayErrorCode {
     Internal,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ApiErrorCode {
+    AuthenticationFailed,
+    InvalidRequest,
+    ResourceLimit,
+    UnknownViewSet,
+    ConcurrentPull,
+    ViewSetClosed,
+    ResponseTooLarge,
+    Internal,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+pub struct ApiError {
+    pub code: ApiErrorCode,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+pub struct ApiErrorEnvelope {
+    pub error: ApiError,
+}
+
 #[derive(Debug)]
 pub enum GatewayError {
     Configuration(String),
@@ -187,6 +216,7 @@ struct GatewayState {
     allowed_origin: Arc<str>,
     service: Arc<Mutex<ApplicationService>>,
     connections: Arc<Semaphore>,
+    http_owner: ViewSetOwner,
 }
 
 impl fmt::Debug for GatewayState {
@@ -217,6 +247,10 @@ pub async fn bind(
         allowed_origin: Arc::from(config.allowed_origin),
         service,
         connections: Arc::new(Semaphore::new(config.max_connections)),
+        http_owner: ViewSetOwner::trusted(format!(
+            "gateway-http-{}",
+            NEXT_HTTP_OWNER.fetch_add(1, Ordering::Relaxed)
+        )),
     };
     Ok(GatewayServer {
         listener,
@@ -246,17 +280,296 @@ impl GatewayServer {
     }
 
     pub async fn serve(self, shutdown: CancellationToken) -> Result<(), GatewayError> {
+        let service = self.state.service.clone();
         let router = Router::new()
             .route("/control", get(upgrade))
+            .route("/api/v1/hello", get(api_hello))
+            .route("/api/v1/commands", post(api_command))
+            .route("/api/v1/view-sets", post(open_view_set))
+            .route(
+                "/api/v1/view-sets/{id}/views",
+                axum::routing::put(update_view_set),
+            )
+            .route("/api/v1/view-sets/{id}/updates", get(view_set_updates))
+            .route(
+                "/api/v1/view-sets/{id}",
+                axum::routing::delete(close_view_set),
+            )
+            .layer(axum::extract::DefaultBodyLimit::max(
+                MAX_INCOMING_MESSAGE_BYTES,
+            ))
             .with_state(self.state);
         axum::serve(
             self.listener,
             router.into_make_service_with_connect_info::<SocketAddr>(),
         )
-        .with_graceful_shutdown(shutdown.cancelled_owned())
+        .with_graceful_shutdown(async move {
+            shutdown.cancelled().await;
+            service.lock().await.close_view_sets();
+        })
         .await
         .map_err(GatewayError::Serve)
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdatesQuery {
+    after: String,
+    #[serde(default)]
+    wait_ms: u32,
+}
+
+async fn api_hello(State(state): State<GatewayState>, headers: HeaderMap) -> Response {
+    if let Err(error) = authenticate_http(&state, &headers) {
+        return error.into_response();
+    }
+    json_response(StatusCode::OK, &ApiHello::default())
+}
+
+async fn api_command(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    request: Result<Json<RequestEnvelope>, JsonRejection>,
+) -> Response {
+    if let Err(error) = authenticate_http(&state, &headers) {
+        return error.into_response();
+    }
+    let Json(request) = match request {
+        Ok(request) => request,
+        Err(error) => return invalid_request(error.body_text()),
+    };
+    let request_id = request.request_id.clone();
+    let mut service = state.service.lock().await;
+    let response = match service.dispatch(request).await {
+        Ok(response) => response,
+        Err(error) => {
+            application_error_response(request_id, service.revision().unwrap_or(0), &error)
+        }
+    };
+    json_response(StatusCode::OK, &response)
+}
+
+async fn open_view_set(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    request: Result<Json<OpenViewSetRequest>, JsonRejection>,
+) -> Response {
+    if let Err(error) = authenticate_http(&state, &headers) {
+        return error.into_response();
+    }
+    let Json(request) = match request {
+        Ok(request) => request,
+        Err(error) => return invalid_request(error.body_text()),
+    };
+    let result = state
+        .service
+        .lock()
+        .await
+        .open_view_set(state.http_owner.clone(), request);
+    match result {
+        Ok(response) => json_response(StatusCode::CREATED, &response),
+        Err(error) => view_set_error(error),
+    }
+}
+
+async fn update_view_set(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    request: Result<Json<UpdateViewSetRequest>, JsonRejection>,
+) -> Response {
+    if let Err(error) = authenticate_http(&state, &headers) {
+        return error.into_response();
+    }
+    if !valid_view_set_id(&id) {
+        return invalid_request("view-set ID is invalid");
+    }
+    let Json(request) = match request {
+        Ok(request) => request,
+        Err(error) => return invalid_request(error.body_text()),
+    };
+    let result = state
+        .service
+        .lock()
+        .await
+        .update_view_set(&state.http_owner, &id, request);
+    match result {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => view_set_error(error),
+    }
+}
+
+async fn view_set_updates(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    query: Result<Query<UpdatesQuery>, QueryRejection>,
+) -> Response {
+    if let Err(error) = authenticate_http(&state, &headers) {
+        return error.into_response();
+    }
+    if !valid_view_set_id(&id) {
+        return invalid_request("view-set ID is invalid");
+    }
+    let Query(query) = match query {
+        Ok(query) => query,
+        Err(error) => return invalid_request(error.body_text()),
+    };
+    if query.after.len() > 20 {
+        return invalid_request("view-set cursor exceeds its bound");
+    }
+    let view_set = {
+        let service = state.service.lock().await;
+        service.view_set(&state.http_owner, &id)
+    };
+    let view_set = match view_set {
+        Ok(view_set) => view_set,
+        Err(error) => return view_set_error(error),
+    };
+    match view_set.next_updates(&query.after, query.wait_ms).await {
+        Ok(batch) => json_response(StatusCode::OK, &batch),
+        Err(error) => view_set_error(error),
+    }
+}
+
+async fn close_view_set(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if let Err(error) = authenticate_http(&state, &headers) {
+        return error.into_response();
+    }
+    if !valid_view_set_id(&id) {
+        return invalid_request("view-set ID is invalid");
+    }
+    match state
+        .service
+        .lock()
+        .await
+        .close_view_set(&state.http_owner, &id)
+    {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => view_set_error(error),
+    }
+}
+
+#[derive(Clone, Copy)]
+enum HttpAuthError {
+    Origin,
+    Credential,
+}
+
+impl HttpAuthError {
+    fn into_response(self) -> Response {
+        let status = match self {
+            Self::Origin => StatusCode::FORBIDDEN,
+            Self::Credential => StatusCode::UNAUTHORIZED,
+        };
+        api_error(
+            status,
+            ApiErrorCode::AuthenticationFailed,
+            "gateway credential was rejected",
+        )
+    }
+}
+
+fn authenticate_http(state: &GatewayState, headers: &HeaderMap) -> Result<(), HttpAuthError> {
+    if headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        != Some(state.allowed_origin.as_ref())
+    {
+        return Err(HttpAuthError::Origin);
+    }
+    let credential = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "));
+    if credential.is_none_or(|credential| {
+        credential.len() > MAX_TOKEN_BYTES
+            || !constant_time_equal(credential.as_bytes(), state.token.as_bytes())
+    }) {
+        return Err(HttpAuthError::Credential);
+    }
+    Ok(())
+}
+
+fn view_set_error(error: ViewSetError) -> Response {
+    let (status, code) = match error {
+        ViewSetError::InvalidViewCount { .. }
+        | ViewSetError::InvalidViewId
+        | ViewSetError::DuplicateViewId(_)
+        | ViewSetError::InvalidDeliveryInterval { .. }
+        | ViewSetError::InvalidQueueBound { .. }
+        | ViewSetError::InvalidView(_)
+        | ViewSetError::SnapshotExceedsQueue { .. } => {
+            (StatusCode::BAD_REQUEST, ApiErrorCode::InvalidRequest)
+        }
+        ViewSetError::ResourceLimit => (StatusCode::TOO_MANY_REQUESTS, ApiErrorCode::ResourceLimit),
+        ViewSetError::UnknownViewSet => (StatusCode::NOT_FOUND, ApiErrorCode::UnknownViewSet),
+        ViewSetError::ConsumerBusy => (StatusCode::CONFLICT, ApiErrorCode::ConcurrentPull),
+        ViewSetError::Closed => (StatusCode::GONE, ApiErrorCode::ViewSetClosed),
+        ViewSetError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, ApiErrorCode::Internal),
+    };
+    api_error(status, code, &error.to_string())
+}
+
+fn invalid_request(message: impl AsRef<str>) -> Response {
+    api_error(
+        StatusCode::BAD_REQUEST,
+        ApiErrorCode::InvalidRequest,
+        message.as_ref(),
+    )
+}
+
+fn api_error(status: StatusCode, code: ApiErrorCode, message: &str) -> Response {
+    let mut message = message.to_owned();
+    message.truncate(message.floor_char_boundary(1024));
+    json_response(
+        status,
+        &ApiErrorEnvelope {
+            error: ApiError { code, message },
+        },
+    )
+}
+
+fn json_response<T: Serialize>(status: StatusCode, value: &T) -> Response {
+    let body = match serde_json::to_vec(value) {
+        Ok(body) if body.len() <= MAX_OUTGOING_MESSAGE_BYTES => body,
+        Ok(_) => {
+            return api_error_unchecked(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ApiErrorCode::ResponseTooLarge,
+                "gateway response exceeds its configured bound",
+            );
+        }
+        Err(_) => {
+            return api_error_unchecked(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ApiErrorCode::Internal,
+                "gateway response serialization failed",
+            );
+        }
+    };
+    (status, [(header::CONTENT_TYPE, "application/json")], body).into_response()
+}
+
+fn api_error_unchecked(status: StatusCode, code: ApiErrorCode, message: &str) -> Response {
+    let body = serde_json::to_vec(&ApiErrorEnvelope {
+        error: ApiError {
+            code,
+            message: message.to_owned(),
+        },
+    })
+    .expect("fixed API error must serialize");
+    (status, [(header::CONTENT_TYPE, "application/json")], body).into_response()
+}
+
+fn valid_view_set_id(value: &str) -> bool {
+    value.len() == 35
+        && value.starts_with("vs_")
+        && value[3..].bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 async fn upgrade(
@@ -616,6 +929,8 @@ fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Read, Write};
+    use std::net::{SocketAddr, TcpStream};
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -624,8 +939,8 @@ mod tests {
     use futures_util::{SinkExt, StreamExt};
     use rstorrent_session::{
         ApplicationConfig, ApplicationService, Command, ConfiguredStorageRoot, DeliveryPolicy,
-        NetworkConfig, NetworkPolicy, RequestEnvelope, ResponseOutcome, SubscriptionSpec,
-        ViewProjection, ViewSelector, ViewUpdatePayload,
+        NetworkConfig, NetworkPolicy, OpenViewSetResponse, RequestEnvelope, ResponseOutcome,
+        SubscriptionSpec, UpdateBatch, ViewProjection, ViewSelector, ViewUpdatePayload,
     };
     use tokio::sync::Mutex;
     use tokio_tungstenite::connect_async;
@@ -682,6 +997,63 @@ mod tests {
             panic!("expected text response");
         };
         serde_json::from_str(&text).expect("decode response")
+    }
+
+    async fn http_request(
+        address: SocketAddr,
+        method: &str,
+        path: &str,
+        token: Option<&str>,
+        origin: Option<&str>,
+        body: Option<String>,
+    ) -> (u16, Vec<u8>) {
+        let method = method.to_owned();
+        let path = path.to_owned();
+        let token = token.map(str::to_owned);
+        let origin = origin.map(str::to_owned);
+        tokio::task::spawn_blocking(move || {
+            let body = body.unwrap_or_default();
+            let mut request = format!(
+                "{method} {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\nContent-Length: {}\r\n",
+                body.len()
+            );
+            if let Some(token) = token {
+                request.push_str(&format!("Authorization: Bearer {token}\r\n"));
+            }
+            if let Some(origin) = origin {
+                request.push_str(&format!("Origin: {origin}\r\n"));
+            }
+            if !body.is_empty() {
+                request.push_str("Content-Type: application/json\r\n");
+            }
+            request.push_str("\r\n");
+            request.push_str(&body);
+            let mut stream = TcpStream::connect(address).expect("connect HTTP gateway");
+            stream
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .expect("set HTTP timeout");
+            stream
+                .write_all(request.as_bytes())
+                .expect("write HTTP request");
+            let mut response = Vec::new();
+            stream
+                .read_to_end(&mut response)
+                .expect("read HTTP response");
+            let split = response
+                .windows(4)
+                .position(|window| window == b"\r\n\r\n")
+                .expect("HTTP header terminator");
+            let headers = std::str::from_utf8(&response[..split]).expect("HTTP response headers");
+            let status = headers
+                .lines()
+                .next()
+                .and_then(|line| line.split_whitespace().nth(1))
+                .and_then(|status| status.parse().ok())
+                .expect("HTTP response status");
+            (status, response[(split + 4)..].to_vec())
+        })
+        .await
+        .expect("HTTP request task")
     }
 
     #[test]
@@ -850,6 +1222,255 @@ mod tests {
         task.await
             .expect("server join")
             .expect("server termination");
+        service.lock().await.shutdown().await.expect("shutdown");
+        drop(service);
+        std::fs::remove_dir_all(root).expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn http_view_sets_enforce_auth_replay_bounds_and_shutdown() {
+        let root = test_root("http-view-set");
+        let service = test_service(&root).await;
+        let server = bind(
+            GatewayConfig {
+                bind: "127.0.0.1:0".parse().expect("address"),
+                token: "correct-token".to_owned(),
+                allowed_origin: "http://127.0.0.1:5173".to_owned(),
+                max_connections: 2,
+            },
+            service.clone(),
+        )
+        .await
+        .expect("bind");
+        let address = server.local_addr();
+        let shutdown = CancellationToken::new();
+        let task = tokio::spawn(server.serve(shutdown.clone()));
+
+        assert_eq!(
+            http_request(address, "GET", "/api/v1/hello", None, None, None)
+                .await
+                .0,
+            403
+        );
+        assert_eq!(
+            http_request(
+                address,
+                "GET",
+                "/api/v1/hello",
+                None,
+                Some("http://127.0.0.1:5173"),
+                None,
+            )
+            .await
+            .0,
+            401
+        );
+        assert_eq!(
+            http_request(
+                address,
+                "GET",
+                "/api/v1/hello",
+                Some("correct-token"),
+                Some("https://attacker.invalid"),
+                None,
+            )
+            .await
+            .0,
+            403
+        );
+        assert_eq!(
+            http_request(
+                address,
+                "GET",
+                "/api/v1/hello",
+                Some("correct-token"),
+                Some("http://127.0.0.1:5173"),
+                None,
+            )
+            .await
+            .0,
+            200
+        );
+
+        let open_body = serde_json::json!({
+            "views": [{
+                "type": "torrent_list",
+                "view_id": "library",
+                "delivery": { "min_interval_millis": 0 }
+            }],
+            "options": {}
+        })
+        .to_string();
+        let (status, body) = http_request(
+            address,
+            "POST",
+            "/api/v1/view-sets",
+            Some("correct-token"),
+            Some("http://127.0.0.1:5173"),
+            Some(open_body),
+        )
+        .await;
+        assert_eq!(status, 201);
+        let opened: OpenViewSetResponse = serde_json::from_slice(&body).expect("open response");
+
+        let replay_path = format!(
+            "/api/v1/view-sets/{}/updates?after=0&wait_ms=0",
+            opened.view_set_id
+        );
+        let (status, body) = http_request(
+            address,
+            "GET",
+            &replay_path,
+            Some("correct-token"),
+            Some("http://127.0.0.1:5173"),
+            None,
+        )
+        .await;
+        assert_eq!(status, 200);
+        let replay: UpdateBatch = serde_json::from_slice(&body).expect("replay response");
+        assert_eq!(replay, opened.initial);
+
+        let invalid_wait = format!(
+            "/api/v1/view-sets/{}/updates?after={}&wait_ms=20001",
+            opened.view_set_id, opened.initial.cursor
+        );
+        assert_eq!(
+            http_request(
+                address,
+                "GET",
+                &invalid_wait,
+                Some("correct-token"),
+                Some("http://127.0.0.1:5173"),
+                None,
+            )
+            .await
+            .0,
+            400
+        );
+        let oversized = format!("{{\"views\":[],\"future\":\"{}\"}}", "x".repeat(70_000));
+        assert_eq!(
+            http_request(
+                address,
+                "POST",
+                "/api/v1/view-sets",
+                Some("correct-token"),
+                Some("http://127.0.0.1:5173"),
+                Some(oversized),
+            )
+            .await
+            .0,
+            400
+        );
+
+        let wait_path = format!(
+            "/api/v1/view-sets/{}/updates?after={}&wait_ms=20000",
+            opened.view_set_id, opened.initial.cursor
+        );
+        let waiter = tokio::spawn(async move {
+            http_request(
+                address,
+                "GET",
+                &wait_path,
+                Some("correct-token"),
+                Some("http://127.0.0.1:5173"),
+                None,
+            )
+            .await
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        shutdown.cancel();
+        let (status, _) = tokio::time::timeout(Duration::from_secs(1), waiter)
+            .await
+            .expect("long poll did not wake")
+            .expect("long poll task");
+        assert_eq!(status, 410);
+        task.await
+            .expect("server join")
+            .expect("server termination");
+        service.lock().await.shutdown().await.expect("shutdown");
+        drop(service);
+        std::fs::remove_dir_all(root).expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn http_view_sets_are_isolated_between_gateway_owners() {
+        let root = test_root("http-owner");
+        let service = test_service(&root).await;
+        let first = bind(
+            GatewayConfig {
+                bind: "127.0.0.1:0".parse().expect("address"),
+                token: "first-token".to_owned(),
+                allowed_origin: "http://first.invalid".to_owned(),
+                max_connections: 1,
+            },
+            service.clone(),
+        )
+        .await
+        .expect("bind first");
+        let second = bind(
+            GatewayConfig {
+                bind: "127.0.0.1:0".parse().expect("address"),
+                token: "second-token".to_owned(),
+                allowed_origin: "http://second.invalid".to_owned(),
+                max_connections: 1,
+            },
+            service.clone(),
+        )
+        .await
+        .expect("bind second");
+        let first_address = first.local_addr();
+        let second_address = second.local_addr();
+        let first_shutdown = CancellationToken::new();
+        let second_shutdown = CancellationToken::new();
+        let first_task = tokio::spawn(first.serve(first_shutdown.clone()));
+        let second_task = tokio::spawn(second.serve(second_shutdown.clone()));
+        let body = serde_json::json!({
+            "views": [{
+                "type": "torrent_list",
+                "view_id": "library",
+                "delivery": { "min_interval_millis": 0 }
+            }],
+            "options": {}
+        })
+        .to_string();
+        let (_, body) = http_request(
+            first_address,
+            "POST",
+            "/api/v1/view-sets",
+            Some("first-token"),
+            Some("http://first.invalid"),
+            Some(body),
+        )
+        .await;
+        let opened: OpenViewSetResponse = serde_json::from_slice(&body).expect("open response");
+        let path = format!(
+            "/api/v1/view-sets/{}/updates?after=0&wait_ms=0",
+            opened.view_set_id
+        );
+        assert_eq!(
+            http_request(
+                second_address,
+                "GET",
+                &path,
+                Some("second-token"),
+                Some("http://second.invalid"),
+                None,
+            )
+            .await
+            .0,
+            404
+        );
+
+        first_shutdown.cancel();
+        second_shutdown.cancel();
+        first_task
+            .await
+            .expect("first server join")
+            .expect("first server termination");
+        second_task
+            .await
+            .expect("second server join")
+            .expect("second server termination");
         service.lock().await.shutdown().await.expect("shutdown");
         drop(service);
         std::fs::remove_dir_all(root).expect("remove root");

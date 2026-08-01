@@ -116,8 +116,8 @@ describe("view-set reducer", () => {
     const reset = reduceUpdateBatch(
       state,
       batch(
-        "0",
-        "1",
+        "2",
+        "3",
         [
           { type: "reset_required", reason: "queue_overflow" },
           {
@@ -137,6 +137,7 @@ describe("view-set reducer", () => {
     );
     expect(reset.views.library).toBeUndefined();
     expect(reset.views.pieces?.type).toBe("piece_activity");
+    expect(reset.cursor).toBe("3");
   });
 
   it("rejects gaps, wrong identities, and patches without snapshots", () => {

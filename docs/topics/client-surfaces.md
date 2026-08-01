@@ -21,7 +21,10 @@ dense JSTorrent-derived inspection surface, while Android remains a separate
 platform-appropriate product without automatic tab or diagnostic parity. The
 fresh React, CSS Modules, adaptive navigation, touch, and accessibility
 direction for that shared presentation lives in
-[`web-ui-design.md`](web-ui-design.md).
+[`web-ui-design.md`](web-ui-design.md). Tactical `033` now supplies its bounded
+generated TypeScript/schema boundary, authenticated polling client, pure
+reducer, and lifecycle controller without changing the visible web, desktop,
+or Android products.
 
 ## Scope
 

@@ -47,6 +47,45 @@
       ],
       "type": "string"
     },
+    "ApiError": {
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ApiErrorCode"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "ApiErrorCode": {
+      "enum": [
+        "authentication_failed",
+        "invalid_request",
+        "resource_limit",
+        "unknown_view_set",
+        "concurrent_pull",
+        "view_set_closed",
+        "response_too_large",
+        "internal"
+      ],
+      "type": "string"
+    },
+    "ApiErrorEnvelope": {
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/ApiError"
+        }
+      },
+      "required": [
+        "error"
+      ],
+      "type": "object"
+    },
     "ApiHello": {
       "properties": {
         "api": {

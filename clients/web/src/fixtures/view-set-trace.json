@@ -91,8 +91,8 @@
       "api_version": 1,
       "view_set_id": "vs_000102030405060708090a0b0c0d0e0f",
       "epoch": "11",
-      "base_cursor": "0",
-      "cursor": "1",
+      "base_cursor": "2",
+      "cursor": "3",
       "durable_revision": "9",
       "updates": [
         {

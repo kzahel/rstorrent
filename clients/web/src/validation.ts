@@ -1,16 +1,18 @@
 import type {
   ActivePiece,
+  ApiErrorEnvelope,
   ApiHello,
   GatewayServerMessage,
   IndexRange,
   OpenViewSetResponse,
+  ResponseEnvelope,
   ServiceSnapshot,
   TorrentView,
   UpdateBatch,
   ViewPatch,
   ViewSnapshot,
   ViewUpdate,
-} from "./api";
+} from "./api/generated/v1";
 import { assertApiSchema, SchemaError } from "./api/schema";
 
 const MAX_FRAME_BYTES = 512 * 1024;
@@ -121,6 +123,24 @@ export function decodeApiHello(source: string): ApiHello {
   return value;
 }
 
+export function decodeResponseEnvelope(source: string): ResponseEnvelope {
+  const value = generated<ResponseEnvelope>(
+    "ResponseEnvelope",
+    parseBoundedJson(source, MAX_FRAME_BYTES, "command response"),
+  );
+  validateResponse(value);
+  return value;
+}
+
+export function decodeApiErrorEnvelope(source: string): ApiErrorEnvelope {
+  const value = generated<ApiErrorEnvelope>(
+    "ApiErrorEnvelope",
+    parseBoundedJson(source, MAX_FRAME_BYTES, "API error response"),
+  );
+  boundedString(value.error.message, "API error message", 1_024);
+  return value;
+}
+
 export function decodeOpenViewSetResponse(source: string): OpenViewSetResponse {
   const value = generated<OpenViewSetResponse>(
     "OpenViewSetResponse",
@@ -158,7 +178,7 @@ function validateUpdateBatch(batch: UpdateBatch): void {
   const cursor = BigInt(batch.cursor);
   if (
     (batch.updates.length === 0 && cursor !== base) ||
-    (batch.updates.length > 0 && cursor !== base + 1n)
+    (batch.updates.length > 0 && cursor <= base)
   ) {
     throw new ContractError("view-set batch cursor does not match its updates");
   }

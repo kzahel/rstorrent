@@ -43,7 +43,7 @@ export function reduceUpdateBatch(
       throw new ViewSetContinuityError("reset did not rotate the view-set epoch");
     }
   } else {
-    if (batch.base_cursor !== "0") {
+    if (state === undefined && batch.base_cursor !== "0") {
       throw new ViewSetContinuityError("new view-set epoch does not start at cursor zero");
     }
     if (
@@ -51,6 +51,12 @@ export function reduceUpdateBatch(
       batch.updates[0]?.type !== "reset_required"
     ) {
       throw new ViewSetContinuityError("epoch changed without an explicit reset");
+    }
+    if (
+      state !== undefined &&
+      BigInt(batch.cursor) <= BigInt(state.cursor)
+    ) {
+      throw new ViewSetContinuityError("reset reused an old view-set cursor");
     }
   }
 

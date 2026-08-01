@@ -22,8 +22,10 @@ again stayed neutral. The duration slice attributed 93--94% of public wall
 time to serialized storage service. Bounded coalesced batches now reduce
 roughly 5,700 logical blocks to about 500 physical writes, but controlled wall
 time stayed neutral and public write plus hash service still consumed 93--94%.
-The campaign is paused for maintainer review before any bounded
-storage-concurrency tactical.
+The engine campaign is paused before any bounded storage-concurrency tactical.
+Tactical `033` now completes the leased application view-set and headless
+polling foundation; stable peer inspection is the current product-observability
+slice.
 
 ## Purpose And Ownership
 
@@ -98,27 +100,25 @@ evidence.
 
 ### Now
 
-**View-set application API foundation.** Engine parity is paused after
-Tactical `032`. The recoverable view-set, polling-to-streaming, generated
-TypeScript/schema, and Zustand controller/store architecture is accepted in
-[`application-view-api.md`](application-view-api.md) and
-[`web-ui-design.md`](web-ui-design.md).
-[`Tactical 033`](../tactical/033-headless-view-set-foundation.md) is active for
-the Rust view-set owner, deterministic recovery tests, polling adapter, pure
-TypeScript reducer/CLI, and controlled headless interoperability evidence.
-Android UI parity is not part of this phase.
+**Stable peer inspection projection.** Tactical `033` completes the leased
+view-set owner, generated TypeScript/schema boundary, authenticated polling
+adapter, pure reducer, lifecycle controller, and controlled headless proof.
+The next bounded semantic slice defines connection-lifetime peer identities,
+truthful peer rows, privacy/bounds, source-owner projection, and adversarial
+plus scale fixtures. Android UI parity and visible React work are not part of
+that peer-contract slice.
 
 ### Next
 
-1. **Stable peer inspection projection.** Define bounded connection-lifetime
-   peer identities and rows, hostile/scale fixtures, and application-view
-   projection from the existing peer owners.
-2. **Responsive web inspection foundation.** Establish the React, Zustand,
+1. **Responsive web inspection foundation.** Establish the React, Zustand,
    CSS Modules, adaptive shell, and virtualized table foundation; connect the
    torrent list and peer activity without implying an Android mirror.
-3. **Resume oracle-driven engine work.** Use the new inspection evidence to
+2. **Resume oracle-driven engine work.** Use the new inspection evidence to
    decide whether serialized storage execution, another correctness owner, or
    measured BEP breadth becomes the next engine tactical.
+3. **Measured delivery optimization.** Add the interchangeable view-set stream
+   or a binary codec only after polling, reducer, store, and rendering profiles
+   identify a material latency, CPU, or allocation bottleneck.
 
 ### Later
 
@@ -200,6 +200,7 @@ does not.
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
 | Durable semantic application control | Implemented | deterministic, runtime, web, AVD, physical | Removal, deletion, stable public compatibility, and general multi-torrent scheduling are absent. | [`application-control`](application-control.md) |
+| Leased application view sets and polling client | Implemented | deterministic, runtime, interop | Named summary, piece, and diagnostic views have bounded replay/reset and a headless controller; peer/file/tracker views, streaming, Tauri migration, and stable public compatibility remain absent. | [`application-view-api`](application-view-api.md) |
 | Shared web and Tauri desktop UI | Partial | runtime, web, desktop | The shell and one-torrent flow work; production desktop integration and complete torrent controls do not. | [`client-surfaces`](client-surfaces.md) |
 | Android Compose foreground client | Partial | runtime, AVD, physical | General settings, connectivity policy, and complete torrent controls remain incomplete. | [`client-surfaces`](client-surfaces.md) |
 | Derived progress and bounded diagnostics | Implemented | deterministic, runtime, web, AVD | Scheduler and per-peer facts must grow with the corresponding owners. | [`application-control`](application-control.md) |

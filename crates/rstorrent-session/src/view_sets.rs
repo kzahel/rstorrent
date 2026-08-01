@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::error::Error;
 use std::fmt;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
@@ -294,6 +294,7 @@ pub enum ViewSetError {
     ResourceLimit,
     UnknownViewSet,
     SnapshotExceedsQueue { snapshot: usize, maximum: u32 },
+    ConsumerBusy,
     Closed,
     Internal(String),
 }
@@ -325,6 +326,7 @@ impl fmt::Display for ViewSetError {
                 formatter,
                 "view-set snapshot is {snapshot} bytes and exceeds {maximum} bytes"
             ),
+            Self::ConsumerBusy => write!(formatter, "view set already has an active consumer"),
             Self::Closed => write!(formatter, "view set is closed"),
             Self::Internal(message) => write!(formatter, "view set internal error: {message}"),
         }
@@ -345,6 +347,7 @@ pub(crate) struct ViewSetInner {
     owner: ViewSetOwner,
     state: Mutex<ViewSetState>,
     notify: Notify,
+    polling: AtomicBool,
 }
 
 #[derive(Debug)]
@@ -357,6 +360,7 @@ struct ViewSetState {
     queue_bytes_limit: u32,
     pending: VecDeque<QueuedViewSetUpdate>,
     pending_bytes: usize,
+    last_delivered: BTreeMap<String, Instant>,
     in_flight: Option<StoredBatch>,
     queue_high_water: usize,
     reset_count: u64,
@@ -369,6 +373,7 @@ struct ViewSetState {
 struct QueuedViewSetUpdate {
     update: ViewSetUpdate,
     encoded_bytes: usize,
+    ready_at: Instant,
 }
 
 #[derive(Clone, Debug)]
@@ -379,7 +384,7 @@ struct StoredBatch {
 
 enum PollState {
     Ready(UpdateBatch),
-    Wait,
+    Wait(Option<Instant>),
     Reset(ResetReason),
     Closed,
 }
@@ -400,6 +405,7 @@ impl ViewSet {
             });
         }
         let after = parse_decimal(after)?;
+        let _poll = self.inner.start_poll()?;
         let deadline =
             tokio::time::Instant::now() + Duration::from_millis(u64::from(max_wait_millis));
         loop {
@@ -408,17 +414,22 @@ impl ViewSet {
                 PollState::Ready(batch) => return Ok(batch),
                 PollState::Reset(reason) => return self.reset_from_hub(reason),
                 PollState::Closed => return Err(ViewSetError::Closed),
-                PollState::Wait if max_wait_millis == 0 => {
+                PollState::Wait(_) if max_wait_millis == 0 => {
                     return self.inner.empty_batch(after, Instant::now());
                 }
-                PollState::Wait => {
+                PollState::Wait(ready_at) => {
                     if tokio::time::Instant::now() >= deadline {
                         return self.inner.empty_batch(after, Instant::now());
                     }
+                    let wake_at = ready_at.map_or(deadline, |ready_at| {
+                        tokio::time::Instant::from_std(ready_at).min(deadline)
+                    });
                     tokio::select! {
                         () = notified => {}
-                        () = tokio::time::sleep_until(deadline) => {
-                            return self.inner.empty_batch(after, Instant::now());
+                        () = tokio::time::sleep_until(wake_at) => {
+                            if wake_at == deadline {
+                                return self.inner.empty_batch(after, Instant::now());
+                            }
                         }
                     }
                 }
@@ -595,6 +606,7 @@ impl ViewSetInner {
                 queue_bytes_limit,
                 pending: VecDeque::new(),
                 pending_bytes: 0,
+                last_delivered: BTreeMap::new(),
                 in_flight: None,
                 queue_high_water: 0,
                 reset_count: 0,
@@ -603,8 +615,9 @@ impl ViewSetInner {
                 closed: false,
             }),
             notify: Notify::new(),
+            polling: AtomicBool::new(false),
         });
-        inner.install_initial(snapshots)?;
+        inner.install_initial(snapshots, now)?;
         Ok(inner)
     }
 
@@ -676,11 +689,14 @@ impl ViewSetInner {
         if state.closed {
             return Err(ViewSetError::Closed);
         }
+        state
+            .last_delivered
+            .retain(|view_id, _| views.contains_key(view_id));
         state.views = views;
         state.durable_revision = revision;
         state.last_activity = now;
         for update in updates {
-            enqueue_update(&mut state, update)?;
+            enqueue_update(&mut state, update, now)?;
         }
         drop(state);
         self.notify.notify_waiters();
@@ -698,20 +714,41 @@ impl ViewSetInner {
             return Ok(());
         }
         state.durable_revision = revision;
+        let now = Instant::now();
+        let ready_at = state
+            .views
+            .get(view_id)
+            .and_then(|spec| {
+                state.last_delivered.get(view_id).map(|last| {
+                    *last + Duration::from_millis(u64::from(spec.delivery().min_interval_millis))
+                })
+            })
+            .unwrap_or(now)
+            .max(now);
         enqueue_update(
             &mut state,
             ViewSetUpdate::Patch {
                 view_id: view_id.to_owned(),
                 patch,
             },
+            ready_at,
         )?;
         drop(state);
         self.notify.notify_waiters();
         Ok(())
     }
 
-    fn install_initial(&self, snapshots: Vec<ViewSetUpdate>) -> Result<(), ViewSetError> {
+    fn install_initial(
+        &self,
+        snapshots: Vec<ViewSetUpdate>,
+        now: Instant,
+    ) -> Result<(), ViewSetError> {
         let mut state = self.state()?;
+        for snapshot in &snapshots {
+            if let Some(view_id) = snapshot.view_id() {
+                state.last_delivered.insert(view_id.to_owned(), now);
+            }
+        }
         let batch = make_batch(&self.id, &mut state, 0, snapshots)?;
         let encoded_bytes = encoded_batch_len(&batch)?;
         if encoded_bytes > state.queue_bytes_limit as usize {
@@ -753,14 +790,30 @@ impl ViewSetInner {
             return Ok(PollState::Reset(reason));
         }
         if state.pending.is_empty() {
-            return Ok(PollState::Wait);
+            return Ok(PollState::Wait(None));
         }
-        let updates = state
-            .pending
-            .drain(..)
-            .map(|queued| queued.update)
-            .collect::<Vec<_>>();
-        state.pending_bytes = 0;
+        let mut updates = Vec::new();
+        let mut retained = VecDeque::with_capacity(state.pending.len());
+        let mut next_ready = None::<Instant>;
+        while let Some(queued) = state.pending.pop_front() {
+            if queued.ready_at <= now {
+                state.pending_bytes = state.pending_bytes.saturating_sub(queued.encoded_bytes);
+                updates.push(queued.update);
+            } else {
+                next_ready =
+                    Some(next_ready.map_or(queued.ready_at, |ready| ready.min(queued.ready_at)));
+                retained.push_back(queued);
+            }
+        }
+        state.pending = retained;
+        if updates.is_empty() {
+            return Ok(PollState::Wait(next_ready));
+        }
+        for update in &updates {
+            if let Some(view_id) = update.view_id() {
+                state.last_delivered.insert(view_id.to_owned(), now);
+            }
+        }
         let base = state.acknowledged_cursor;
         let batch = make_batch(&self.id, &mut state, base, updates)?;
         let encoded_bytes = encoded_batch_len(&batch)?;
@@ -805,11 +858,11 @@ impl ViewSetInner {
             return Err(ViewSetError::Closed);
         }
         state.epoch = next_epoch();
-        state.acknowledged_cursor = 0;
-        state.next_cursor = 1;
+        let base_cursor = state.acknowledged_cursor;
         state.durable_revision = revision;
         state.pending.clear();
         state.pending_bytes = 0;
+        state.last_delivered.clear();
         state.in_flight = None;
         state.reset_pending = None;
         state.reset_count = state.reset_count.saturating_add(1);
@@ -819,7 +872,12 @@ impl ViewSetInner {
             reason,
         }];
         updates.append(&mut snapshots);
-        let batch = make_batch(&self.id, &mut state, 0, updates)?;
+        for update in &updates {
+            if let Some(view_id) = update.view_id() {
+                state.last_delivered.insert(view_id.to_owned(), now);
+            }
+        }
+        let batch = make_batch(&self.id, &mut state, base_cursor, updates)?;
         let encoded_bytes = encoded_batch_len(&batch)?;
         if encoded_bytes > state.queue_bytes_limit as usize {
             return Err(ViewSetError::SnapshotExceedsQueue {
@@ -852,6 +910,23 @@ impl ViewSetInner {
         self.state
             .lock()
             .map_err(|_| ViewSetError::Internal("view-set lock is poisoned".to_owned()))
+    }
+
+    fn start_poll(&self) -> Result<ActivePoll<'_>, ViewSetError> {
+        self.polling
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map_err(|_| ViewSetError::ConsumerBusy)?;
+        Ok(ActivePoll { inner: self })
+    }
+}
+
+struct ActivePoll<'a> {
+    inner: &'a ViewSetInner,
+}
+
+impl Drop for ActivePoll<'_> {
+    fn drop(&mut self) {
+        self.inner.polling.store(false, Ordering::Release);
     }
 }
 
@@ -959,7 +1034,11 @@ pub(crate) fn generate_view_set_id() -> Result<String, ViewSetError> {
     Ok(output)
 }
 
-fn enqueue_update(state: &mut ViewSetState, update: ViewSetUpdate) -> Result<(), ViewSetError> {
+fn enqueue_update(
+    state: &mut ViewSetState,
+    update: ViewSetUpdate,
+    ready_at: Instant,
+) -> Result<(), ViewSetError> {
     if matches!(
         update,
         ViewSetUpdate::Snapshot { .. } | ViewSetUpdate::ViewRemoved { .. }
@@ -987,6 +1066,7 @@ fn enqueue_update(state: &mut ViewSetState, update: ViewSetUpdate) -> Result<(),
         {
             let previous = queued.encoded_bytes;
             queued.encoded_bytes = encoded_update_len(&queued.update)?;
+            queued.ready_at = queued.ready_at.max(ready_at);
             Some((previous, queued.encoded_bytes))
         } else {
             None
@@ -1001,6 +1081,7 @@ fn enqueue_update(state: &mut ViewSetState, update: ViewSetUpdate) -> Result<(),
     state.pending.push_back(QueuedViewSetUpdate {
         update,
         encoded_bytes,
+        ready_at,
     });
     enforce_bound(state)
 }
@@ -1011,9 +1092,7 @@ fn enforce_bound(state: &mut ViewSetState) -> Result<(), ViewSetError> {
         .as_ref()
         .map_or(0, |batch| batch.encoded_bytes);
     let used = in_flight.saturating_add(state.pending_bytes);
-    state.queue_high_water = state
-        .queue_high_water
-        .max(used.min(state.queue_bytes_limit as usize));
+    state.queue_high_water = state.queue_high_water.max(used);
     if used <= state.queue_bytes_limit as usize {
         return Ok(());
     }
@@ -1212,7 +1291,7 @@ mod tests {
                 8,
             )
             .expect("patch");
-        let next = match inner.poll_state(1, now).expect("poll") {
+        let next = match inner.poll_state(1, Instant::now()).expect("poll") {
             PollState::Ready(batch) => batch,
             _ => panic!("next batch missing"),
         };
@@ -1229,6 +1308,54 @@ mod tests {
         assert!(matches!(
             inner.poll_state(99, now).expect("poll"),
             PollState::Reset(ResetReason::CursorMismatch)
+        ));
+    }
+
+    #[test]
+    fn nonzero_delivery_interval_defers_accumulated_patch_without_a_task() {
+        let now = Instant::now();
+        let delayed = ViewSpec::TorrentList {
+            view_id: "library".to_owned(),
+            delivery: ViewDeliveryPolicy {
+                min_interval_millis: 1_000,
+            },
+        };
+        let inner = ViewSetInner::new(
+            "vs_delayed".to_owned(),
+            ViewSetOwner::trusted("owner"),
+            7,
+            BTreeMap::from([("library".to_owned(), delayed)]),
+            DEFAULT_VIEW_SET_QUEUE_BYTES,
+            vec![ViewSetUpdate::Snapshot {
+                view_id: "library".to_owned(),
+                snapshot: ViewSnapshot::TorrentList {
+                    torrents: vec![torrent_view("aa", 0)],
+                },
+            }],
+            now,
+        )
+        .expect("view set");
+        assert!(matches!(
+            inner.poll_state(1, now).expect("acknowledge initial"),
+            PollState::Wait(None)
+        ));
+        inner
+            .enqueue_patch(
+                "library",
+                ViewPatch::TorrentList {
+                    upsert: vec![torrent_view("aa", 1)],
+                    removed: Vec::new(),
+                },
+                8,
+            )
+            .expect("patch");
+        let ready_at = match inner.poll_state(1, Instant::now()).expect("poll") {
+            PollState::Wait(Some(ready_at)) => ready_at,
+            _ => panic!("patch should wait for its delivery interval"),
+        };
+        assert!(matches!(
+            inner.poll_state(1, ready_at).expect("poll at deadline"),
+            PollState::Ready(_)
         ));
     }
 
@@ -1393,6 +1520,10 @@ mod tests {
             .await
             .expect("reset batch");
         assert_ne!(reset.epoch, opened.initial.epoch);
+        assert!(
+            parse_decimal(&reset.cursor).expect("reset cursor")
+                > parse_decimal(&opened.initial.cursor).expect("initial cursor")
+        );
         assert!(matches!(
             reset.updates.first(),
             Some(ViewSetUpdate::ResetRequired {
@@ -1435,8 +1566,16 @@ mod tests {
             .view_set(&owner, &opened.view_set_id)
             .expect("view set handle");
         let cursor = opened.initial.cursor.clone();
-        let waiter = tokio::spawn(async move { view_set.next_updates(&cursor, 20_000).await });
-        tokio::task::yield_now().await;
+        let waiting_view_set = view_set.clone();
+        let waiter =
+            tokio::spawn(async move { waiting_view_set.next_updates(&cursor, 20_000).await });
+        while !view_set.inner.polling.load(Ordering::Acquire) {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            view_set.next_updates(&opened.initial.cursor, 0).await,
+            Err(ViewSetError::ConsumerBusy)
+        );
         hub.close_view_set(&owner, &opened.view_set_id)
             .expect("close");
         let result = tokio::time::timeout(Duration::from_secs(1), waiter)

@@ -8,10 +8,11 @@ recoverable reactive views and browser, Tauri, and Android adapters. Tactical
 `012` added bounded typed diagnostics, derived progress assessment, and prompt
 task-terminal supervision with isolated headless presentation evidence.
 Tactical `013` added explicit application network configuration and a blocked
-offline prerequisite without changing durable torrent intent. The next
-application-view architecture is accepted in
-[`application-view-api.md`](application-view-api.md); no stable public remote
-wire format is accepted yet.
+offline prerequisite without changing durable torrent intent. Tactical `033`
+implemented the leased application-view owner, generated v1 JSON contract,
+authenticated loopback polling adapter, and headless lifecycle client recorded
+in [`application-view-api.md`](application-view-api.md). No stable public
+remote wire format is accepted yet.
 
 ## Scope
 
@@ -178,5 +179,6 @@ The implemented subscription and client direction is recorded in
 Coherent snapshots remain recovery authority above typed patches and
 independent bounded subscriber state. The WebSocket adapter is not the
 application authority, and local Tauri control does not use networking.
-The accepted successor aggregates those subscriptions behind one leased view
-set and preserves the same recovery invariant through polling and streaming.
+Tactical `033` aggregates those subscriptions behind one leased view set and
+preserves the same recovery invariant through authenticated polling. Streaming
+remains an interchangeable future adapter rather than a current claim.

@@ -179,6 +179,10 @@ official references as design evidence:
 - [`schemars` documentation](https://docs.rs/schemars/latest/schemars/): JSON
   Schema generation from the same Rust DTOs removes duplicated handwritten
   structural type lists while separate validators retain semantic bounds.
+- [Ajv JSON Schema documentation](https://ajv.js.org/): the pinned `8.20.0`
+  client validator compiles the generated draft 2020-12 definitions while
+  small handwritten checks retain canonical decimals, ranges, and negotiated
+  resource invariants.
 - [Zustand documentation](https://github.com/pmndrs/zustand): its vanilla
   store, React selector, shallow-selection, and direct subscription APIs fit a
   per-application materialized view store without making React own transport

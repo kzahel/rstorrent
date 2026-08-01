@@ -293,6 +293,10 @@ impl ApplicationService {
         self.views.close_view_set(owner, view_set_id)
     }
 
+    pub fn close_view_sets(&self) {
+        self.views.close_all_view_sets();
+    }
+
     pub async fn descriptor_storage_plan(
         &mut self,
         torrent_id: &str,
@@ -470,7 +474,7 @@ impl ApplicationService {
     }
 
     pub async fn shutdown(&mut self) -> Result<(), ApplicationError> {
-        self.views.close_all_view_sets();
+        self.close_view_sets();
         let mut active_join_error = None;
         if let Some(active) = self.active.take() {
             active.control.cancel();

@@ -206,9 +206,10 @@ that scope and its cleanup or compatibility rules explicitly.
   Physical writes fell by about 91%, but controlled wall time stayed neutral
   and public serialized storage service remained above 93%.
 - [`033-headless-view-set-foundation.md`](033-headless-view-set-foundation.md):
-  active; establishes leased multi-view sets, recoverable polling, generated
-  TypeScript and JSON Schema, a pure headless client, and controlled
-  libtorrent-seeded view evidence before React or peer-table work.
+  complete; establishes leased multi-view sets, recoverable authenticated
+  polling, generated TypeScript and JSON Schema, a pure reducer and headless
+  lifecycle client, and controlled libtorrent-seeded view evidence before
+  React or peer-table work.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

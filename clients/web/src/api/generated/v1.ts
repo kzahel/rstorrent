@@ -73,6 +73,12 @@ export type GatewayClientMessage = { "type": "authenticate", contract_version: n
 
 export type GatewayServerMessage = { "type": "authenticated", contract_version: number, } | { "type": "response", response: ResponseEnvelope, } | { "type": "subscribed", request_id: string, stream_id: string, } | { "type": "update", update: ViewUpdate, } | { "type": "unsubscribed", request_id: string, stream_id: string, } | { "type": "error", request_id?: string | null, code: GatewayErrorCode, message: string, };
 
+export type ApiErrorCode = "authentication_failed" | "invalid_request" | "resource_limit" | "unknown_view_set" | "concurrent_pull" | "view_set_closed" | "response_too_large" | "internal";
+
+export type ApiError = { code: ApiErrorCode, message: string, };
+
+export type ApiErrorEnvelope = { error: ApiError, };
+
 export type ApiEncoding = "json" | "cbor";
 
 export type DeliveryMode = "poll" | "long_poll" | "stream";

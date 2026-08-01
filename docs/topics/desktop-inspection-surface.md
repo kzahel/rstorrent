@@ -3,10 +3,10 @@
 Topic: `desktop-inspection-surface`
 
 Status: Strategic direction and application-view architecture accepted. The
-fresh responsive frontend direction is recorded in
-[`web-ui-design.md`](web-ui-design.md), and the view-set contract is recorded
-in [`application-view-api.md`](application-view-api.md). Implementation remains
-pending a bounded tactical.
+headless view-set, polling client, generated contract, and pure reducer are
+implemented by Tactical `033`. The fresh responsive frontend direction is
+recorded in [`web-ui-design.md`](web-ui-design.md); peer inspection and visible
+presentation remain pending bounded tacticals.
 
 ## Purpose
 
@@ -133,7 +133,8 @@ can decide whether to resume the recorded storage-execution candidate, select
 a different engine owner from interactive evidence, or fill another detail
 view first.
 
-Tactical `033` is active for the bounded view-set contract and headless client
+Tactical `033` completed the bounded view-set contract and headless client
 foundation described in
 [`application-view-api.md`](application-view-api.md). The stable peer
-projection and its table follow it.
+projection and its adversarial/scale fixtures are now the next semantic slice;
+its table follows through the separate responsive presentation work.

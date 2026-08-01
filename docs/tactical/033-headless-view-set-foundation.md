@@ -1,6 +1,6 @@
 # Tactical 033: Headless View-Set Foundation
 
-Status: active.
+Status: complete.
 
 ## Motivation And Desired Outcome
 
@@ -476,4 +476,97 @@ Evidence at this checkpoint:
   skipped); and
 - `npm run build --prefix clients/web` passes.
 
-Stage 3 and Stage 4 remain pending.
+At Checkpoint 2, Stage 3 and Stage 4 remained pending.
+
+### Checkpoint 3: authenticated polling and lifecycle controller
+
+Added all recorded `/api/v1` HTTP routes to the loopback gateway while
+retaining `/control`. Every route requires the configured exact `Origin` and
+bearer credential. A gateway-installed opaque owner scopes every view-set
+operation; a second gateway over the same application service receives only
+`unknown_view_set` for another owner's identifier. JSON requests are limited
+to 64 KiB and responses to 512 KiB, and view-set, wait, body, and resource
+errors use generated structured envelopes.
+
+The update route copies a task-free `ViewSet` handle under the application
+mutex and releases that mutex before waiting. One atomic consumer guard
+rejects concurrent pulls. Gateway cancellation closes all view sets before
+Axum waits for graceful request completion, so a pending 20-second pull wakes
+and the server joins promptly.
+
+Added a JSON codec boundary, bounded Fetch response reader,
+`HttpApplicationClient`, and lifecycle-owning `ViewController`. The controller
+maintains exactly one pull, advances its cursor only after validation,
+reduction, and listener application succeed, requests an immediate pull after
+commands or view changes, uses bounded retry, reopens an expired lease with
+the last desired views, aborts its wait, joins its loop, and explicitly closes
+the remote set. No transport, promise, timer, or abort handle enters reducer
+state.
+
+Two recovery details were hardened during this checkpoint:
+
+- cursors remain monotonic when an epoch rotates, including when an
+  unacknowledged batch is discarded, so an old numeric cursor cannot silently
+  acknowledge an unseen reset; and
+- nonzero per-view minimum delivery intervals are enforced by pull-time
+  deadlines in the task-free owner rather than a new background task.
+
+Deterministic/runtime evidence:
+
+- 12 focused session tests pass, including concurrent-consumer rejection and
+  deferred delivery;
+- 4 gateway tests pass, including origin/bearer rejection, exact replay,
+  malformed and oversized requests, owner isolation, wait bounds, and prompt
+  graceful shutdown; and
+- 16 TypeScript tests pass with 2 opt-in interoperability tests skipped,
+  including one-poll ownership, failed-reduction non-acknowledgement, lease
+  reopen, schema drift, generated fixtures, and reducer recovery.
+
+### Checkpoint 4: controlled completion proof
+
+Added `tests/interop/gateway_view_set_surface.py` and the opt-in headless
+TypeScript driver. Against libtorrent `2.0.13.0` on loopback, the retained
+trace proved:
+
+```text
+view_set_interop info_hash=a962f460b83861cfb5faa1d7ad7da9c3f3cc2fc4
+batches=11 requested=40000 received=40000 stored=40000
+view_set_close=ok metadata_size=26686 pieces=3
+payload_sha1=576143b2992ecf25c780ff41c79552f3bb50941b
+gateway_shutdown=joined cleanup=ok
+```
+
+The controller opened the torrent-list view, added the magnet through the
+real command route, observed its upsert, atomically added selected summary and
+piece-activity views, observed positive request/receive/store activity, and
+reached three verified pieces plus `complete`. The harness independently read
+the published payload, matched its SHA-1, joined the gateway and libtorrent
+owners, and removed the temporary profile and payload tree.
+
+Final gates:
+
+- `cargo fmt --all -- --check` passed;
+- `cargo clippy --workspace -- -D warnings` passed;
+- `cargo test --workspace --no-fail-fast` passed with 269 tests and 3 ignored
+  opt-in live tests;
+- `npm ci --prefix clients/web` completed with no audit findings;
+- a before/after checksum check proved `npm run generate --prefix clients/web`
+  left every generated declaration, schema, and fixture unchanged;
+- `npm run typecheck --prefix clients/web` passed;
+- `npm test --prefix clients/web` passed with 16 tests and 2 opt-in
+  interoperability tests skipped;
+- `npm run build --prefix clients/web` passed; and
+- the controlled libtorrent view-set proof above passed.
+
+The final workspace gate exposed a stale Tactical `032` cancellation-test
+expectation: one delayed coalesced write operation may already own either one
+or both adjacent admitted blocks. The test now checks the established bounded
+invariant (one completed operation, one or two blocks, and equal started and
+completed block counts) instead of timing-dependent single-block batching.
+The exact test passed five consecutive reruns before the final workspace gate.
+
+The initial implementation intentionally resets and resnapshots the whole
+view set on queue overflow. The optional per-view reset identity is retained
+for a later measured need; this slice does not add separate per-view retained
+histories. Streaming, CBOR, Tauri migration, peer rows, Zustand, React, and
+visible UI remain the recorded next layers rather than implied claims.

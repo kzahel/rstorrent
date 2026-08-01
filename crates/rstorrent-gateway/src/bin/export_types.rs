@@ -2,7 +2,10 @@ use std::error::Error;
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
-use rstorrent_gateway::{GatewayClientMessage, GatewayErrorCode, GatewayServerMessage};
+use rstorrent_gateway::{
+    ApiError, ApiErrorCode, ApiErrorEnvelope, GatewayClientMessage, GatewayErrorCode,
+    GatewayServerMessage,
+};
 use rstorrent_session::{
     ActivePiece, ApiEncoding, ApiHello, ApiLimits, ApiVersion, Command, DeliveryMode,
     DeliveryPolicy, DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
@@ -87,6 +90,9 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<GatewayErrorCode>(&mut declarations)?;
     append::<GatewayClientMessage>(&mut declarations)?;
     append::<GatewayServerMessage>(&mut declarations)?;
+    append::<ApiErrorCode>(&mut declarations)?;
+    append::<ApiError>(&mut declarations)?;
+    append::<ApiErrorEnvelope>(&mut declarations)?;
     append::<ApiEncoding>(&mut declarations)?;
     append::<DeliveryMode>(&mut declarations)?;
     append::<ApiVersion>(&mut declarations)?;
@@ -110,6 +116,7 @@ fn append<T: TS>(output: &mut String) -> Result<(), std::fmt::Error> {
 fn write_schema(output: &Path) -> Result<(), Box<dyn Error>> {
     let mut definitions = Map::new();
     add_schema::<GatewayServerMessage>(&mut definitions, "GatewayServerMessage")?;
+    add_schema::<ApiErrorEnvelope>(&mut definitions, "ApiErrorEnvelope")?;
     add_schema::<ApiHello>(&mut definitions, "ApiHello")?;
     add_schema::<RequestEnvelope>(&mut definitions, "RequestEnvelope")?;
     add_schema::<ResponseEnvelope>(&mut definitions, "ResponseEnvelope")?;
@@ -278,8 +285,8 @@ fn write_view_set_fixture(output: PathBuf) -> Result<(), Box<dyn Error>> {
         api_version: rstorrent_session::API_VERSION,
         view_set_id: view_set_id.clone(),
         epoch: "11".to_owned(),
-        base_cursor: "0".to_owned(),
-        cursor: "1".to_owned(),
+        base_cursor: "2".to_owned(),
+        cursor: "3".to_owned(),
         durable_revision: "9".to_owned(),
         updates: vec![
             ViewSetUpdate::ResetRequired {

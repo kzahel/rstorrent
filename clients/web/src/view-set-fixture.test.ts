@@ -17,7 +17,7 @@ describe("Rust view-set fixture", () => {
       state = reduceUpdateBatch(state, update);
     }
     expect(state.epoch).toBe("11");
-    expect(state.cursor).toBe("1");
+    expect(state.cursor).toBe("3");
     expect(state.views.library).toMatchObject({
       type: "torrent_list",
       torrents: [{ verified_piece_count: 3, state: "complete" }],

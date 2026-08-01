@@ -2,11 +2,12 @@
 
 Topic: `application-view-api`
 
-Status: Semantic direction accepted. The existing per-projection subscriptions
-from Tactical `008` remain the implemented proof;
-[`033-headless-view-set-foundation.md`](../tactical/033-headless-view-set-foundation.md)
-is implementing the bounded successor. No stable public remote wire
-compatibility is claimed yet.
+Status: The bounded leased view-set, authenticated JSON polling adapter,
+generated TypeScript/schema contract, pure reducer, and lifecycle controller
+are implemented by
+[`033-headless-view-set-foundation.md`](../tactical/033-headless-view-set-foundation.md).
+The existing Tactical `008` subscriptions remain compatible adapters. No
+stable public remote wire compatibility is claimed yet.
 
 ## Purpose And Scope
 
@@ -89,9 +90,10 @@ delivery mechanism or codec does not create a second application API.
 
 The existing `ViewHub`, named projections, typed patches, per-subscriber
 queues, epochs, sequence continuity, coalescing, and reset behavior are useful
-foundations. The next design aggregates the views visible to one client into
-one view set and adds pull consumption. It should evolve those owners rather
-than preserve the current one-subscription-per-projection public shape.
+foundations. The implemented successor aggregates the views visible to one
+client into one view set and adds pull consumption. It evolves those owners
+without making the earlier one-subscription-per-projection proof the future
+public shape.
 
 ## Owner And Task Map
 
@@ -478,28 +480,59 @@ follow through named views according to inspection value. Unsupported views
 must report unsupported or unavailable explicitly rather than fabricate empty
 data.
 
+## Implemented Foundation
+
+Tactical `033` establishes these concrete v1 choices:
+
+- 32 live view sets per application and 8 per authenticated adapter owner;
+- 16 named views per set and 64-byte conservative ASCII view IDs;
+- 16--512 KiB whole-set queues, defaulting to 256 KiB;
+- 512 KiB responses, 64 KiB requests, 20-second waits, 60-second maximum
+  delivery intervals, and a five-minute idle lease;
+- one emitted but unacknowledged batch, exact replay until the next cursor,
+  monotonic cursors across epoch reset, and one active consumer;
+- whole-set overflow reset followed by coherent snapshots;
+- authenticated loopback JSON pull routes plus the retained Tactical `008`
+  WebSocket adapter;
+- Rust-derived TypeScript declarations and JSON Schema, Ajv structural
+  validation, semantic bounds, and a pure keyed reducer; and
+- a bounded Fetch client and `ViewController` with abort, retry, lease reopen,
+  immediate post-command pulls, joined close, and no task handles in state.
+
+The controlled libtorrent proof observed a real magnet add, list upsert,
+selected summary and piece views, 40,000 requested/received/stored bytes,
+three verified pieces, complete publication, exact payload SHA-1, explicit
+view-set close, joined gateway shutdown, and temporary cleanup. Deterministic
+tests additionally cover owner isolation, concurrent-consumer rejection,
+lost-response replay, failed-reduction non-acknowledgement, overflow recovery,
+delivery intervals, expiry, generated drift, and shutdown wakeup.
+
+This is a local application boundary and automation seam, not a production
+remote-control security or compatibility claim. Per-view retained histories,
+per-view overflow reset, streaming delivery, a binary codec, Tauri Channel
+migration, peer rows, Zustand, and React remain later layers.
+
 ## Validation And Evidence
 
-Before the React surface depends on view sets, the foundation tactical should
-prove:
+The completed foundation evidence proves:
 
 - deterministic opening, specification changes, per-view snapshots, keyed
   upserts, row removals, view removal and re-add, atomic batches, and close;
 - independent view sets with different desired projections and consumption
   speeds;
-- one-consumer enforcement and poll-to-stream cursor continuity;
+- one-consumer enforcement and polling cursor continuity;
 - lost-response replay and acknowledgement only after client reduction;
-- queue coalescing, exact high-water accounting, overflow, per-view reset, and
+- queue coalescing, exact high-water accounting, whole-set overflow reset, and
   fresh-snapshot convergence;
-- cursor expiry, epoch mismatch, lease expiry, application shutdown, and
-  prompt joined task termination;
+- cursor mismatch, monotonic epoch reset, lease expiry and client reopen,
+  application shutdown, and prompt joined task termination;
 - authenticated ownership, request/frame bounds, and a view-set ID that is not
   treated as a credential in the loopback gateway;
 - generated TypeScript plus JSON Schema drift checks and independently tested
   semantic limits;
-- a pure TypeScript reducer and CLI client that can materialize the same
+- a pure TypeScript reducer and headless client that can materialize the same
   snapshots and diffs through polling; and
-- one controlled libtorrent-seeded download observed through that CLI from
+- one controlled libtorrent-seeded download observed through that client from
   add through verified publication and clean shutdown.
 
 Actual torrent deletion is not a prerequisite for testing collection
@@ -514,10 +547,10 @@ interactive machine.
 
 ## Recommended Implementation Sequence
 
-1. Open one bounded tactical for the view-set domain owner, generated
-   TypeScript/schema contract, polling adapter, pure reducer, and headless
-   TypeScript CLI evidence.
-2. Add the stable peer projection and its hostile/scale fixtures once the
+1. The bounded view-set domain owner, generated TypeScript/schema contract,
+   polling adapter, pure reducer, and headless TypeScript evidence are complete
+   in Tactical `033`.
+2. Add the stable peer projection and its hostile/scale fixtures now that the
    view-set mechanics are proven.
 3. Establish the Zustand store and React shell on fixture data, then connect
    torrent-list and peer views through the controller.
@@ -526,7 +559,7 @@ interactive machine.
 5. Measure update volume, decode/reduce cost, rendering, and memory before
    selecting binary encoding or finer-grained row patches.
 
-Tactical `033` is active for the first step only.
+Tactical `033` completed the first step only.
 
 ## References And Deliberate Differences
 
@@ -547,7 +580,8 @@ this design.
 ## Remaining Open Decisions
 
 - exact initial fields and privacy/redaction policy for torrent and peer rows;
-- concrete resource limits, lease durations, and retained cursor window;
+- whether measured use justifies raising the implemented resource limits or
+  retaining more than one unacknowledged cursor batch;
 - whether category filtering is producer-side for the first list view or
   initially client-side within a bounded complete torrent list;
 - exact reset granularity when one view snapshot itself exceeds its bound;
