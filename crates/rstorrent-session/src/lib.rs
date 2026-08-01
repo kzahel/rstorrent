@@ -31,10 +31,12 @@ pub use view_sets::{
     ViewSet, ViewSetError, ViewSetOwner, ViewSetStats, ViewSetUpdate, ViewSpec,
 };
 pub use views::{
-    ActivePiece, DeliveryPolicy, DiagnosticCategory, DiagnosticEvent, DiagnosticField,
-    DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity, IndexRange, ProgressAction,
-    ProgressAssessment, ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason,
-    ResetReason, SubscriptionError, SubscriptionSpec, SubscriptionStats, TorrentView,
-    VIEW_CONTRACT_VERSION, ViewHub, ViewPatch, ViewProjection, ViewSelector, ViewSnapshot,
-    ViewSubscription, ViewUpdate, ViewUpdatePayload, assess_progress,
+    ActivePiece, CapabilityStatus, DeliveryPolicy, DiagnosticCategory, DiagnosticEvent,
+    DiagnosticField, DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity, IndexRange,
+    PeerDirection, PeerDisconnectReason, PeerFieldCapabilities, PeerLifecycle, PeerRequestPhase,
+    PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
+    ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason, ResetReason,
+    SubscriptionError, SubscriptionSpec, SubscriptionStats, TorrentView, VIEW_CONTRACT_VERSION,
+    ViewHub, ViewPatch, ViewProjection, ViewSelector, ViewSnapshot, ViewSubscription, ViewUpdate,
+    ViewUpdatePayload, assess_progress,
 };

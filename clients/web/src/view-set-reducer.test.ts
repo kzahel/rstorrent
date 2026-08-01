@@ -20,6 +20,8 @@ function torrent(verified: number): TorrentView {
     requested_bytes: "16384",
     received_bytes: "16384",
     stored_bytes: "16384",
+    active_peer_connections: 0,
+    payload_download_rate_bytes: "0",
     progress: {
       disposition: verified === 3 ? "inactive" : "active",
       phase: verified === 3 ? "publication" : "transfer",

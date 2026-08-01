@@ -105,6 +105,8 @@ function cloneSnapshot(snapshot: ViewSnapshot): ViewSnapshot {
       return { ...snapshot };
     case "piece_activity":
       return { ...snapshot, verified: [...snapshot.verified] };
+    case "peers":
+      return { ...snapshot, peers: [...snapshot.peers] };
     case "diagnostics":
       return { ...snapshot, events: [...snapshot.events] };
   }
@@ -139,6 +141,19 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
         piece_count: patch.piece_count,
         verified,
         active: patch.active,
+      };
+    }
+    case "peers": {
+      if (snapshot.type !== "peers") throw new Error("unreachable");
+      const peers = new Map(
+        snapshot.peers.map((peer) => [peer.connection_id, peer]),
+      );
+      for (const connectionId of patch.removed) peers.delete(connectionId);
+      for (const peer of patch.upsert) peers.set(peer.connection_id, peer);
+      return {
+        type: "peers",
+        torrent_id: patch.torrent_id,
+        peers: [...peers.values()],
       };
     }
     case "diagnostics": {

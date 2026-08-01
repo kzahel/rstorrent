@@ -199,6 +199,14 @@
       ],
       "type": "object"
     },
+    "CapabilityStatus": {
+      "enum": [
+        "available",
+        "unavailable",
+        "unsupported"
+      ],
+      "type": "string"
+    },
     "Command": {
       "oneOf": [
         {
@@ -658,6 +666,343 @@
       ],
       "type": "object"
     },
+    "PeerDirection": {
+      "enum": [
+        "incoming",
+        "outgoing"
+      ],
+      "type": "string"
+    },
+    "PeerDisconnectReason": {
+      "enum": [
+        "connect",
+        "handshake",
+        "protocol",
+        "remote_closed"
+      ],
+      "type": "string"
+    },
+    "PeerFieldCapabilities": {
+      "properties": {
+        "client_name": {
+          "$ref": "#/$defs/CapabilityStatus"
+        },
+        "interest_directions": {
+          "$ref": "#/$defs/CapabilityStatus"
+        },
+        "local_choke": {
+          "$ref": "#/$defs/CapabilityStatus"
+        },
+        "local_endpoint": {
+          "$ref": "#/$defs/CapabilityStatus"
+        },
+        "metadata_stage": {
+          "$ref": "#/$defs/CapabilityStatus"
+        },
+        "piece_availability": {
+          "$ref": "#/$defs/CapabilityStatus"
+        },
+        "protocol_rates": {
+          "$ref": "#/$defs/CapabilityStatus"
+        },
+        "upload": {
+          "$ref": "#/$defs/CapabilityStatus"
+        },
+        "ut_metadata": {
+          "$ref": "#/$defs/CapabilityStatus"
+        }
+      },
+      "required": [
+        "local_endpoint",
+        "client_name",
+        "ut_metadata",
+        "interest_directions",
+        "local_choke",
+        "piece_availability",
+        "protocol_rates",
+        "upload",
+        "metadata_stage"
+      ],
+      "type": "object"
+    },
+    "PeerLifecycle": {
+      "enum": [
+        "transport_connecting",
+        "protocol_handshaking",
+        "connected",
+        "disconnecting"
+      ],
+      "type": "string"
+    },
+    "PeerRequestPhase": {
+      "enum": [
+        "slow_start",
+        "steady",
+        "stalled"
+      ],
+      "type": "string"
+    },
+    "PeerRole": {
+      "enum": [
+        "metadata",
+        "content"
+      ],
+      "type": "string"
+    },
+    "PeerSourceView": {
+      "enum": [
+        "tracker",
+        "peer_exchange",
+        "dht",
+        "local_discovery",
+        "incoming",
+        "manual",
+        "magnet_hint",
+        "cache"
+      ],
+      "type": "string"
+    },
+    "PeerTransportKind": {
+      "enum": [
+        "tcp",
+        "utp"
+      ],
+      "type": "string"
+    },
+    "PeerView": {
+      "properties": {
+        "available_piece_count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "capabilities": {
+          "$ref": "#/$defs/PeerFieldCapabilities"
+        },
+        "client_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "connected_age_millis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "connection_id": {
+          "type": "string"
+        },
+        "direction": {
+          "$ref": "#/$defs/PeerDirection"
+        },
+        "disconnect_reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PeerDisconnectReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_payload_age_millis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_useful_age_millis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/PeerLifecycle"
+        },
+        "lifecycle_age_millis": {
+          "type": "string"
+        },
+        "local_choking": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "local_endpoint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "local_interested": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "oldest_request_age_millis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "payload_download_rate_bytes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "payload_downloaded_bytes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "payload_upload_rate_bytes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "payload_uploaded_bytes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "peer_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "peer_record_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pending_requests": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "protocol_download_rate_bytes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "protocol_downloaded_bytes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "queued_payload_bytes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "remote_choking": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "remote_endpoint": {
+          "type": "string"
+        },
+        "remote_interested": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "request_phase": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PeerRequestPhase"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "request_timeout_millis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "$ref": "#/$defs/PeerRole"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/PeerSourceView"
+          },
+          "type": "array"
+        },
+        "supports_extensions": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "supports_ut_metadata": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "target_requests": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "torrent_id": {
+          "type": "string"
+        },
+        "transport": {
+          "$ref": "#/$defs/PeerTransportKind"
+        },
+        "wanted_piece_count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "connection_id",
+        "torrent_id",
+        "direction",
+        "transport",
+        "lifecycle",
+        "role",
+        "lifecycle_age_millis",
+        "remote_endpoint",
+        "sources",
+        "capabilities"
+      ],
+      "type": "object"
+    },
     "ProgressAction": {
       "enum": [
         "enable_network",
@@ -927,6 +1272,11 @@
     },
     "TorrentView": {
       "properties": {
+        "active_peer_connections": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
         "error": {
           "type": [
             "string",
@@ -935,6 +1285,9 @@
         },
         "metadata_available": {
           "type": "boolean"
+        },
+        "payload_download_rate_bytes": {
+          "type": "string"
         },
         "piece_count": {
           "format": "uint32",
@@ -978,6 +1331,8 @@
         "requested_bytes",
         "received_bytes",
         "stored_bytes",
+        "active_peer_connections",
+        "payload_download_rate_bytes",
         "progress"
       ],
       "type": "object"
@@ -1141,6 +1496,36 @@
             "piece_count",
             "verified",
             "cleared"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "removed": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "peers",
+              "type": "string"
+            },
+            "upsert": {
+              "items": {
+                "$ref": "#/$defs/PeerView"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id",
+            "upsert",
+            "removed"
           ],
           "type": "object"
         },
@@ -1335,6 +1720,29 @@
         },
         {
           "properties": {
+            "peers": {
+              "items": {
+                "$ref": "#/$defs/PeerView"
+              },
+              "type": "array"
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "peers",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id",
+            "peers"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "dropped_count": {
               "type": "string"
             },
@@ -1421,6 +1829,32 @@
             },
             "type": {
               "const": "piece_activity",
+              "type": "string"
+            },
+            "view_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "view_id",
+            "torrent_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "delivery": {
+              "$ref": "#/$defs/ViewDeliveryPolicy",
+              "default": {
+                "min_interval_millis": 0
+              }
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "torrent_peers",
               "type": "string"
             },
             "view_id": {

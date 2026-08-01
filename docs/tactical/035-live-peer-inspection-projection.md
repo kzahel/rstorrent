@@ -712,6 +712,40 @@ cargo test -p rstorrent-engine peer_runtime --no-fail-fast
 The full engine run passed 145 tests with three live-network tests ignored;
 the focused transport ordering and three deterministic lifecycle tests passed.
 
+### Rust peer view and lease checkpoint
+
+The application contract now includes the `torrent_peers` view as complete
+keyed row upserts/removals, with explicit lifecycle, direction, transport,
+source, request-window, rate, capability, null, and disconnect fields. The
+engine publishes the coherent connection observation at lifecycle boundaries
+and at a bounded activity cadence. The application maps and bounds it once,
+updates interested peer and torrent-summary views without cloning the complete
+torrent collection, and no longer copies peer endpoints into diagnostic log
+context. Generated TypeScript and JSON Schema remain the wire authority.
+
+One application-owned lease reaper now destroys abandoned view sets
+independently of later client or producer work. Only open, accepted desired-
+view replacement, and the beginning of `next_updates` renew
+`last_client_activity`; publication and an already-running poll do not. The
+shutdown path cancels and joins the single reaper. A shortened-lease test
+proves producer activity cannot keep a silent set alive and that expiry wakes
+its blocked long poll.
+
+Focused evidence for this checkpoint:
+
+```text
+cargo clippy --workspace -- -D warnings
+cargo test -p rstorrent-session --no-fail-fast
+npm run generate --prefix clients/web
+npm run typecheck --prefix clients/web
+npm test --prefix clients/web -- --run
+```
+
+The session run passed 47 tests across the library and binary, including peer
+generation upsert/disconnecting/removal and independent lease expiry. The
+frontend run passed 27 tests with two browser tests skipped by their existing
+opt-in gate.
+
 ## Stopping Condition And Next Boundary
 
 This tactical is complete when the engine has one coherent active-connection

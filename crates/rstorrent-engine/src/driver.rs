@@ -86,6 +86,7 @@ const DHT_RETRY_INITIAL_DELAY: Duration = Duration::from_secs(15);
 const DHT_RETRY_MAX_DELAY: Duration = Duration::from_secs(5 * 60);
 const DHT_SUCCESS_REQUERY_DELAY: Duration = Duration::from_secs(60);
 const CONTENT_PEER_DIAGNOSTIC_INTERVAL: Duration = Duration::from_secs(1);
+const PEER_OBSERVATION_INTERVAL: Duration = Duration::from_millis(100);
 const MAX_METADATA_PEERS: usize = 8;
 const METADATA_SCHEDULER_TICK: Duration = Duration::from_millis(100);
 const MAX_RECENT_METADATA_ATTEMPTS: usize = 64;
@@ -223,6 +224,10 @@ pub enum DownloadActivityEvent {
     DhtDisabledForPrivateTorrent,
     PeerDialStarted {
         peer: String,
+    },
+    PeerConnections {
+        captured_at: Duration,
+        peers: Box<Vec<PeerConnectionObservation>>,
     },
     SwarmState(Box<SwarmActivitySnapshot>),
 }
@@ -411,9 +416,16 @@ struct DownloadControlInner {
     last_swarm_activity: Mutex<Option<SwarmActivitySnapshot>>,
     last_content_peers: Mutex<(Option<Duration>, Vec<ContentPeerActivitySnapshot>)>,
     last_content_registry: Mutex<Option<PeerRegistryCounts>>,
-    peer_connections: Mutex<Vec<PeerConnectionObservation>>,
+    peer_connections: Mutex<PeerConnectionDiagnosticState>,
     metadata_diagnostics: Mutex<MetadataDiagnosticState>,
     safe_cancel_state: AtomicUsize,
+}
+
+#[derive(Debug, Default)]
+struct PeerConnectionDiagnosticState {
+    current: Vec<PeerConnectionObservation>,
+    last_emitted: Vec<PeerConnectionObservation>,
+    last_emitted_at: Option<Duration>,
 }
 
 #[derive(Debug, Default)]
@@ -517,7 +529,7 @@ impl DownloadControl {
                 last_swarm_activity: Mutex::new(None),
                 last_content_peers: Mutex::new((None, Vec::new())),
                 last_content_registry: Mutex::new(None),
-                peer_connections: Mutex::new(Vec::new()),
+                peer_connections: Mutex::new(PeerConnectionDiagnosticState::default()),
                 metadata_diagnostics: Mutex::new(MetadataDiagnosticState::default()),
                 safe_cancel_state: AtomicUsize::new(0),
             }),
@@ -628,6 +640,7 @@ impl DownloadControl {
             .peer_connections
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .current
             .clone();
         let metadata = {
             let state = self
@@ -1126,12 +1139,33 @@ impl DownloadControl {
             Some(registry.counts(PeerSelectionContext { now }));
     }
 
-    fn observe_peer_runtime(&self, runtime: &PeerRuntime) {
-        *self
-            .inner
-            .peer_connections
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = runtime.snapshot();
+    fn observe_peer_runtime(&self, runtime: &PeerRuntime, captured_at: Duration, force: bool) {
+        let current = runtime.snapshot();
+        let emit = {
+            let mut state = self
+                .inner
+                .peer_connections
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state.current = current.clone();
+            let due = force
+                || state.last_emitted_at.is_none_or(|previous| {
+                    captured_at.saturating_sub(previous) >= PEER_OBSERVATION_INTERVAL
+                });
+            if due && state.last_emitted != current {
+                state.last_emitted = current.clone();
+                state.last_emitted_at = Some(captured_at);
+                true
+            } else {
+                false
+            }
+        };
+        if emit {
+            self.emit(DownloadActivityEvent::PeerConnections {
+                captured_at,
+                peers: Box::new(current),
+            });
+        }
     }
 
     fn record_stored(&self, bytes: usize) {
@@ -2640,7 +2674,7 @@ impl TorrentPeerCoordinator {
             let _ = self.registry.dial_cancelled(attempt);
             return Err(DownloadError::PeerRuntime(error));
         }
-        self.publish_peer_runtime()?;
+        self.publish_peer_runtime(true)?;
         Ok(attempt)
     }
 
@@ -2655,7 +2689,7 @@ impl TorrentPeerCoordinator {
         self.runtime
             .transport_connected(connection, self.elapsed())
             .map_err(DownloadError::PeerRuntime)?;
-        self.publish_peer_runtime()
+        self.publish_peer_runtime(true)
     }
 
     fn dial_succeeded(
@@ -2669,7 +2703,7 @@ impl TorrentPeerCoordinator {
         self.runtime
             .handshake_completed(connection_id(attempt), handshake, self.elapsed())
             .map_err(DownloadError::PeerRuntime)?;
-        self.publish_peer_runtime()
+        self.publish_peer_runtime(true)
     }
 
     fn dial_failed(
@@ -2681,14 +2715,14 @@ impl TorrentPeerCoordinator {
         self.runtime
             .begin_disconnect(connection, Some(failure), self.elapsed())
             .map_err(DownloadError::PeerRuntime)?;
-        self.publish_peer_runtime()?;
+        self.publish_peer_runtime(true)?;
         self.registry
             .dial_failed(attempt, self.elapsed(), failure)
             .map_err(DownloadError::PeerRegistry)?;
         self.runtime
             .remove(connection)
             .map_err(DownloadError::PeerRuntime)?;
-        self.publish_peer_runtime()
+        self.publish_peer_runtime(true)
     }
 
     fn dial_cancelled(&mut self, attempt: DialAttempt) -> Result<(), DownloadError> {
@@ -2696,14 +2730,14 @@ impl TorrentPeerCoordinator {
         self.runtime
             .begin_disconnect(connection, None, self.elapsed())
             .map_err(DownloadError::PeerRuntime)?;
-        self.publish_peer_runtime()?;
+        self.publish_peer_runtime(true)?;
         self.registry
             .dial_cancelled(attempt)
             .map_err(DownloadError::PeerRegistry)?;
         self.runtime
             .remove(connection)
             .map_err(DownloadError::PeerRuntime)?;
-        self.publish_peer_runtime()
+        self.publish_peer_runtime(true)
     }
 
     fn begin_disconnect(
@@ -2714,7 +2748,7 @@ impl TorrentPeerCoordinator {
         self.runtime
             .begin_disconnect(connection_id(attempt), failure, self.elapsed())
             .map_err(DownloadError::PeerRuntime)?;
-        self.publish_peer_runtime()
+        self.publish_peer_runtime(true)
     }
 
     fn connection_closed(
@@ -2734,14 +2768,14 @@ impl TorrentPeerCoordinator {
         self.runtime
             .remove(connection)
             .map_err(DownloadError::PeerRuntime)?;
-        self.publish_peer_runtime()
+        self.publish_peer_runtime(true)
     }
 
     fn handoff_to_content(&mut self, attempt: DialAttempt) -> Result<(), DownloadError> {
         self.runtime
             .set_role(connection_id(attempt), PeerConnectionRole::Content)
             .map_err(DownloadError::PeerRuntime)?;
-        self.publish_peer_runtime()
+        self.publish_peer_runtime(true)
     }
 
     fn observe_content_peers(&mut self, state: &SwarmState) -> Result<(), DownloadError> {
@@ -2775,10 +2809,10 @@ impl TorrentPeerCoordinator {
                 )
                 .map_err(DownloadError::PeerRuntime)?;
         }
-        self.publish_peer_runtime()
+        self.publish_peer_runtime(false)
     }
 
-    fn publish_peer_runtime(&mut self) -> Result<(), DownloadError> {
+    fn publish_peer_runtime(&mut self, force: bool) -> Result<(), DownloadError> {
         let connections = self
             .runtime
             .snapshot()
@@ -2799,7 +2833,8 @@ impl TorrentPeerCoordinator {
                     .map_err(DownloadError::PeerRuntime)?;
             }
         }
-        self.control.observe_peer_runtime(&self.runtime);
+        self.control
+            .observe_peer_runtime(&self.runtime, self.elapsed(), force);
         Ok(())
     }
 
@@ -2878,7 +2913,7 @@ impl TorrentPeerCoordinator {
         self.registry
             .observe(PeerObservation::dialable(endpoint, source), self.elapsed())
             .map_err(DownloadError::PeerRegistry)?;
-        self.publish_peer_runtime()
+        self.publish_peer_runtime(true)
     }
 
     fn elapsed(&self) -> Duration {

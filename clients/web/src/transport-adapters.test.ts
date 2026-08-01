@@ -103,6 +103,8 @@ function update(sequence: number): ViewUpdate {
           requested_bytes: String(sequence * 16_384),
           received_bytes: String(sequence * 16_384),
           stored_bytes: String(sequence * 16_384),
+          active_peer_connections: 0,
+          payload_download_rate_bytes: "0",
           progress: {
             disposition: "active",
             phase: "transfer",

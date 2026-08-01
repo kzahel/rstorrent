@@ -23,7 +23,7 @@ export type ServiceSnapshot = { profile_id: string, revision: string, torrents: 
 
 export type ViewSelector = { "type": "torrent_list" } | { "type": "torrent", torrent_id: string, };
 
-export type ViewProjection = "summary" | "piece_activity" | "diagnostics";
+export type ViewProjection = "summary" | "piece_activity" | "peers" | "diagnostics";
 
 export type DeliveryPolicy = { min_interval_millis: number, max_queue_bytes: number, };
 
@@ -55,11 +55,31 @@ export type IndexRange = { start: number, end_exclusive: number, };
 
 export type ActivePiece = { piece_index: number, piece_length: number, requested: Array<IndexRange>, received: Array<IndexRange>, stored: Array<IndexRange>, };
 
-export type TorrentView = { torrent_id: string, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, requested_bytes: string, received_bytes: string, stored_bytes: string, progress: ProgressAssessment, error?: string | null, };
+export type TorrentView = { torrent_id: string, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, requested_bytes: string, received_bytes: string, stored_bytes: string, active_peer_connections: number, payload_download_rate_bytes: string, progress: ProgressAssessment, error?: string | null, };
 
-export type ViewSnapshot = { "type": "torrent_list", torrents: Array<TorrentView>, } | { "type": "torrent", torrent: TorrentView | null, } | { "type": "piece_activity", torrent_id: string, piece_count: number, verified: Array<IndexRange>, active: ActivePiece | null, } | { "type": "diagnostics", events: Array<DiagnosticEvent>, dropped_count: string, };
+export type CapabilityStatus = "available" | "unavailable" | "unsupported";
 
-export type ViewPatch = { "type": "torrent_list", upsert: Array<TorrentView>, removed: Array<string>, } | { "type": "torrent", torrent: TorrentView | null, } | { "type": "piece_activity", torrent_id: string, piece_count: number, verified: Array<IndexRange>, cleared: Array<IndexRange>, active: ActivePiece | null, } | { "type": "diagnostics", events: Array<DiagnosticEvent>, dropped_count: string, };
+export type PeerDirection = "incoming" | "outgoing";
+
+export type PeerTransportKind = "tcp" | "utp";
+
+export type PeerLifecycle = "transport_connecting" | "protocol_handshaking" | "connected" | "disconnecting";
+
+export type PeerRole = "metadata" | "content";
+
+export type PeerRequestPhase = "slow_start" | "steady" | "stalled";
+
+export type PeerSourceView = "tracker" | "peer_exchange" | "dht" | "local_discovery" | "incoming" | "manual" | "magnet_hint" | "cache";
+
+export type PeerDisconnectReason = "connect" | "handshake" | "protocol" | "remote_closed";
+
+export type PeerFieldCapabilities = { local_endpoint: CapabilityStatus, client_name: CapabilityStatus, ut_metadata: CapabilityStatus, interest_directions: CapabilityStatus, local_choke: CapabilityStatus, piece_availability: CapabilityStatus, protocol_rates: CapabilityStatus, upload: CapabilityStatus, metadata_stage: CapabilityStatus, };
+
+export type PeerView = { connection_id: string, torrent_id: string, peer_record_id: string | null, direction: PeerDirection, transport: PeerTransportKind, lifecycle: PeerLifecycle, role: PeerRole, lifecycle_age_millis: string, remote_endpoint: string, local_endpoint: string | null, sources: Array<PeerSourceView>, peer_id: string | null, client_name: string | null, supports_extensions: boolean | null, supports_ut_metadata: boolean | null, local_interested: boolean | null, remote_interested: boolean | null, remote_choking: boolean | null, local_choking: boolean | null, available_piece_count: number | null, wanted_piece_count: number | null, payload_download_rate_bytes: string | null, payload_downloaded_bytes: string | null, protocol_download_rate_bytes: string | null, protocol_downloaded_bytes: string | null, payload_upload_rate_bytes: string | null, payload_uploaded_bytes: string | null, pending_requests: number | null, target_requests: number | null, queued_payload_bytes: string | null, oldest_request_age_millis: string | null, request_timeout_millis: string | null, request_phase: PeerRequestPhase | null, connected_age_millis: string | null, last_useful_age_millis: string | null, last_payload_age_millis: string | null, disconnect_reason: PeerDisconnectReason | null, capabilities: PeerFieldCapabilities, };
+
+export type ViewSnapshot = { "type": "torrent_list", torrents: Array<TorrentView>, } | { "type": "torrent", torrent: TorrentView | null, } | { "type": "piece_activity", torrent_id: string, piece_count: number, verified: Array<IndexRange>, active: ActivePiece | null, } | { "type": "peers", torrent_id: string, peers: Array<PeerView>, } | { "type": "diagnostics", events: Array<DiagnosticEvent>, dropped_count: string, };
+
+export type ViewPatch = { "type": "torrent_list", upsert: Array<TorrentView>, removed: Array<string>, } | { "type": "torrent", torrent: TorrentView | null, } | { "type": "piece_activity", torrent_id: string, piece_count: number, verified: Array<IndexRange>, cleared: Array<IndexRange>, active: ActivePiece | null, } | { "type": "peers", torrent_id: string, upsert: Array<PeerView>, removed: Array<string>, } | { "type": "diagnostics", events: Array<DiagnosticEvent>, dropped_count: string, };
 
 export type ResetReason = "queue_overflow" | "cursor_mismatch" | "cursor_expired";
 
@@ -91,7 +111,7 @@ export type ApiHello = { api: ApiVersion, encodings: Array<ApiEncoding>, deliver
 
 export type ViewDeliveryPolicy = { min_interval_millis: number, };
 
-export type ViewSpec = { "type": "torrent_list", view_id: string, delivery: ViewDeliveryPolicy, } | { "type": "torrent_summary", view_id: string, torrent_id: string, delivery: ViewDeliveryPolicy, } | { "type": "piece_activity", view_id: string, torrent_id: string, delivery: ViewDeliveryPolicy, } | { "type": "diagnostics", view_id: string, torrent_id?: string | null, filter: DiagnosticFilter, delivery: ViewDeliveryPolicy, };
+export type ViewSpec = { "type": "torrent_list", view_id: string, delivery: ViewDeliveryPolicy, } | { "type": "torrent_summary", view_id: string, torrent_id: string, delivery: ViewDeliveryPolicy, } | { "type": "piece_activity", view_id: string, torrent_id: string, delivery: ViewDeliveryPolicy, } | { "type": "torrent_peers", view_id: string, torrent_id: string, delivery: ViewDeliveryPolicy, } | { "type": "diagnostics", view_id: string, torrent_id?: string | null, filter: DiagnosticFilter, delivery: ViewDeliveryPolicy, };
 
 export type OpenViewSetOptions = { requested_queue_bytes?: number | null, };
 

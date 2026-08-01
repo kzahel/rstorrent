@@ -8,6 +8,8 @@ use std::time::{Duration, Instant};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Notify;
+use tokio::task::{JoinError, JoinHandle};
+use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
 
 use crate::views::{
@@ -25,6 +27,7 @@ pub const DEFAULT_VIEW_SET_QUEUE_BYTES: u32 = 256 * 1024;
 pub const MAX_VIEW_SET_QUEUE_BYTES: u32 = 512 * 1024;
 pub const MAX_VIEW_SET_WAIT_MILLIS: u32 = 20_000;
 pub const VIEW_SET_LEASE_MILLIS: u64 = 5 * 60 * 1_000;
+pub const VIEW_SET_REAPER_INTERVAL_MILLIS: u64 = 5_000;
 pub const MAX_VIEW_DELIVERY_INTERVAL_MILLIS: u32 = 60_000;
 
 static NEXT_VIEW_SET_EPOCH: AtomicU64 = AtomicU64::new(1);
@@ -83,6 +86,7 @@ impl Default for ApiHello {
             capabilities: vec![
                 "torrent_list".to_owned(),
                 "torrent_summary".to_owned(),
+                "torrent_peers".to_owned(),
                 "piece_activity".to_owned(),
                 "diagnostics".to_owned(),
             ],
@@ -126,6 +130,12 @@ pub enum ViewSpec {
         #[serde(default)]
         delivery: ViewDeliveryPolicy,
     },
+    TorrentPeers {
+        view_id: String,
+        torrent_id: String,
+        #[serde(default)]
+        delivery: ViewDeliveryPolicy,
+    },
     Diagnostics {
         view_id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -143,6 +153,7 @@ impl ViewSpec {
             Self::TorrentList { view_id, .. }
             | Self::TorrentSummary { view_id, .. }
             | Self::PieceActivity { view_id, .. }
+            | Self::TorrentPeers { view_id, .. }
             | Self::Diagnostics { view_id, .. } => view_id,
         }
     }
@@ -152,6 +163,7 @@ impl ViewSpec {
             Self::TorrentList { delivery, .. }
             | Self::TorrentSummary { delivery, .. }
             | Self::PieceActivity { delivery, .. }
+            | Self::TorrentPeers { delivery, .. }
             | Self::Diagnostics { delivery, .. } => *delivery,
         }
     }
@@ -171,6 +183,13 @@ impl ViewSpec {
                     torrent_id: torrent_id.clone(),
                 },
                 ViewProjection::PieceActivity,
+                None,
+            ),
+            Self::TorrentPeers { torrent_id, .. } => (
+                ViewSelector::Torrent {
+                    torrent_id: torrent_id.clone(),
+                },
+                ViewProjection::Peers,
                 None,
             ),
             Self::Diagnostics {
@@ -348,6 +367,51 @@ pub(crate) struct ViewSetInner {
     state: Mutex<ViewSetState>,
     notify: Notify,
     polling: AtomicBool,
+    lease: Duration,
+}
+
+#[derive(Debug)]
+pub(crate) struct ViewSetLeaseReaper {
+    cancellation: CancellationToken,
+    task: Option<JoinHandle<()>>,
+}
+
+impl ViewSetLeaseReaper {
+    pub(crate) fn start(hub: ViewHub, interval: Duration) -> Self {
+        let cancellation = CancellationToken::new();
+        let task_cancellation = cancellation.clone();
+        let task = tokio::spawn(async move {
+            let mut timer = tokio::time::interval(interval);
+            timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = task_cancellation.cancelled() => break,
+                    _ = timer.tick() => {
+                        hub.reap_expired_view_sets();
+                    }
+                }
+            }
+        });
+        Self {
+            cancellation,
+            task: Some(task),
+        }
+    }
+
+    pub(crate) async fn shutdown(&mut self) -> Result<(), JoinError> {
+        self.cancellation.cancel();
+        if let Some(task) = self.task.take() {
+            task.await?;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for ViewSetLeaseReaper {
+    fn drop(&mut self) {
+        self.cancellation.cancel();
+    }
 }
 
 #[derive(Debug)]
@@ -365,7 +429,7 @@ struct ViewSetState {
     queue_high_water: usize,
     reset_count: u64,
     reset_pending: Option<ResetReason>,
-    last_activity: Instant,
+    last_client_activity: Instant,
     closed: bool,
 }
 
@@ -380,6 +444,15 @@ struct QueuedViewSetUpdate {
 struct StoredBatch {
     batch: UpdateBatch,
     encoded_bytes: usize,
+}
+
+struct ViewSetInitialState {
+    revision: u64,
+    views: BTreeMap<String, ViewSpec>,
+    queue_bytes_limit: u32,
+    snapshots: Vec<ViewSetUpdate>,
+    now: Instant,
+    lease: Duration,
 }
 
 enum PollState {
@@ -406,6 +479,7 @@ impl ViewSet {
         }
         let after = parse_decimal(after)?;
         let _poll = self.inner.start_poll()?;
+        self.inner.touch(Instant::now())?;
         let deadline =
             tokio::time::Instant::now() + Duration::from_millis(u64::from(max_wait_millis));
         loop {
@@ -493,11 +567,14 @@ impl ViewHub {
         let inner = ViewSetInner::new(
             id.clone(),
             owner,
-            hub.revision,
-            views,
-            queue_bytes,
-            snapshots,
-            now,
+            ViewSetInitialState {
+                revision: hub.revision,
+                views,
+                queue_bytes_limit: queue_bytes,
+                snapshots,
+                now,
+                lease: hub.view_set_lease,
+            },
         )?;
         let response = inner.open_response()?;
         hub.view_sets.insert(id, inner);
@@ -550,7 +627,6 @@ impl ViewHub {
             .map_err(|_| ViewSetError::Internal("view hub lock is poisoned".to_owned()))?;
         prune_expired(&mut hub, now);
         let inner = owned_view_set(&hub, owner, id)?;
-        inner.touch(now)?;
         Ok(ViewSet {
             inner,
             hub: Arc::downgrade(&self.inner),
@@ -576,6 +652,15 @@ impl ViewHub {
         }
     }
 
+    pub(crate) fn reap_expired_view_sets(&self) -> usize {
+        let Ok(mut hub) = self.inner.lock() else {
+            return 0;
+        };
+        let before = hub.view_sets.len();
+        prune_expired(&mut hub, Instant::now());
+        before.saturating_sub(hub.view_sets.len())
+    }
+
     #[cfg(test)]
     pub(crate) fn expire_view_sets_at(&self, now: Instant) {
         if let Ok(mut hub) = self.inner.lock() {
@@ -585,15 +670,19 @@ impl ViewHub {
 }
 
 impl ViewSetInner {
-    pub(crate) fn new(
+    fn new(
         id: String,
         owner: ViewSetOwner,
-        revision: u64,
-        views: BTreeMap<String, ViewSpec>,
-        queue_bytes_limit: u32,
-        snapshots: Vec<ViewSetUpdate>,
-        now: Instant,
+        initial: ViewSetInitialState,
     ) -> Result<Arc<Self>, ViewSetError> {
+        let ViewSetInitialState {
+            revision,
+            views,
+            queue_bytes_limit,
+            snapshots,
+            now,
+            lease,
+        } = initial;
         let inner = Arc::new(Self {
             id,
             owner,
@@ -611,11 +700,12 @@ impl ViewSetInner {
                 queue_high_water: 0,
                 reset_count: 0,
                 reset_pending: None,
-                last_activity: now,
+                last_client_activity: now,
                 closed: false,
             }),
             notify: Notify::new(),
             polling: AtomicBool::new(false),
+            lease,
         });
         inner.install_initial(snapshots, now)?;
         Ok(inner)
@@ -644,7 +734,7 @@ impl ViewSetInner {
             .clone();
         Ok(OpenViewSetResponse {
             view_set_id: self.id.clone(),
-            lease_millis: VIEW_SET_LEASE_MILLIS.to_string(),
+            lease_millis: self.lease.as_millis().to_string(),
             effective_queue_bytes: state.queue_bytes_limit,
             effective_views: state.views.values().cloned().collect(),
             initial,
@@ -653,9 +743,7 @@ impl ViewSetInner {
 
     pub(crate) fn is_expired(&self, now: Instant) -> bool {
         self.state.lock().map_or(true, |state| {
-            state.closed
-                || now.saturating_duration_since(state.last_activity)
-                    >= Duration::from_millis(VIEW_SET_LEASE_MILLIS)
+            state.closed || now.saturating_duration_since(state.last_client_activity) >= self.lease
         })
     }
 
@@ -664,7 +752,7 @@ impl ViewSetInner {
         if state.closed {
             return Err(ViewSetError::Closed);
         }
-        state.last_activity = now;
+        state.last_client_activity = now;
         Ok(())
     }
 
@@ -694,7 +782,7 @@ impl ViewSetInner {
             .retain(|view_id, _| views.contains_key(view_id));
         state.views = views;
         state.durable_revision = revision;
-        state.last_activity = now;
+        state.last_client_activity = now;
         for update in updates {
             enqueue_update(&mut state, update, now)?;
         }
@@ -770,7 +858,6 @@ impl ViewSetInner {
         if state.closed {
             return Ok(PollState::Closed);
         }
-        state.last_activity = now;
         if let Some(in_flight) = &state.in_flight {
             let base = parse_decimal(&in_flight.batch.base_cursor)?;
             let cursor = parse_decimal(&in_flight.batch.cursor)?;
@@ -829,12 +916,11 @@ impl ViewSetInner {
         Ok(PollState::Ready(batch))
     }
 
-    fn empty_batch(&self, after: u64, now: Instant) -> Result<UpdateBatch, ViewSetError> {
-        let mut state = self.state()?;
+    fn empty_batch(&self, after: u64, _now: Instant) -> Result<UpdateBatch, ViewSetError> {
+        let state = self.state()?;
         if state.closed {
             return Err(ViewSetError::Closed);
         }
-        state.last_activity = now;
         Ok(UpdateBatch {
             api_version: API_VERSION,
             view_set_id: self.id.clone(),
@@ -866,7 +952,6 @@ impl ViewSetInner {
         state.in_flight = None;
         state.reset_pending = None;
         state.reset_count = state.reset_count.saturating_add(1);
-        state.last_activity = now;
         let mut updates = vec![ViewSetUpdate::ResetRequired {
             view_id: None,
             reason,
@@ -1162,6 +1247,12 @@ mod tests {
         ProgressAssessment, ProgressDisposition, ProgressPhase, ProgressReason, ServiceSnapshot,
         StorageState, TorrentSnapshot, TorrentState, TorrentView,
     };
+    use rstorrent_engine::peer::{PeerSource, PeerSources};
+    use rstorrent_engine::swarm::ConnectionId;
+    use rstorrent_engine::{
+        PeerConnectionDirection, PeerConnectionLifecycle, PeerConnectionObservation,
+        PeerConnectionRole, PeerTransport,
+    };
 
     const TORRENT_ID: &str = "000102030405060708090a0b0c0d0e0f10111213";
 
@@ -1176,6 +1267,8 @@ mod tests {
             requested_bytes: "0".to_owned(),
             received_bytes: "0".to_owned(),
             stored_bytes: "0".to_owned(),
+            active_peer_connections: 0,
+            payload_download_rate_bytes: "0".to_owned(),
             progress: ProgressAssessment {
                 disposition: ProgressDisposition::Active,
                 phase: ProgressPhase::Transfer,
@@ -1223,16 +1316,19 @@ mod tests {
         ViewSetInner::new(
             "vs_test".to_owned(),
             ViewSetOwner::trusted("owner"),
-            7,
-            views,
-            DEFAULT_VIEW_SET_QUEUE_BYTES,
-            vec![ViewSetUpdate::Snapshot {
-                view_id: "library".to_owned(),
-                snapshot: ViewSnapshot::TorrentList {
-                    torrents: vec![torrent_view("aa", 0)],
-                },
-            }],
-            now,
+            ViewSetInitialState {
+                revision: 7,
+                views,
+                queue_bytes_limit: DEFAULT_VIEW_SET_QUEUE_BYTES,
+                snapshots: vec![ViewSetUpdate::Snapshot {
+                    view_id: "library".to_owned(),
+                    snapshot: ViewSnapshot::TorrentList {
+                        torrents: vec![torrent_view("aa", 0)],
+                    },
+                }],
+                now,
+                lease: Duration::from_millis(VIEW_SET_LEASE_MILLIS),
+            },
         )
         .expect("view set")
     }
@@ -1323,16 +1419,19 @@ mod tests {
         let inner = ViewSetInner::new(
             "vs_delayed".to_owned(),
             ViewSetOwner::trusted("owner"),
-            7,
-            BTreeMap::from([("library".to_owned(), delayed)]),
-            DEFAULT_VIEW_SET_QUEUE_BYTES,
-            vec![ViewSetUpdate::Snapshot {
-                view_id: "library".to_owned(),
-                snapshot: ViewSnapshot::TorrentList {
-                    torrents: vec![torrent_view("aa", 0)],
-                },
-            }],
-            now,
+            ViewSetInitialState {
+                revision: 7,
+                views: BTreeMap::from([("library".to_owned(), delayed)]),
+                queue_bytes_limit: DEFAULT_VIEW_SET_QUEUE_BYTES,
+                snapshots: vec![ViewSetUpdate::Snapshot {
+                    view_id: "library".to_owned(),
+                    snapshot: ViewSnapshot::TorrentList {
+                        torrents: vec![torrent_view("aa", 0)],
+                    },
+                }],
+                now,
+                lease: Duration::from_millis(VIEW_SET_LEASE_MILLIS),
+            },
         )
         .expect("view set");
         assert!(matches!(
@@ -1583,5 +1682,133 @@ mod tests {
             .expect("waiter timed out")
             .expect("waiter task");
         assert_eq!(result, Err(ViewSetError::Closed));
+    }
+
+    #[tokio::test]
+    async fn lease_reaper_closes_silent_set_and_wakes_long_poll() {
+        let lease = Duration::from_millis(40);
+        let hub = ViewHub::new_with_view_set_lease(&service_snapshot(0, 0), lease).expect("hub");
+        let mut reaper = ViewSetLeaseReaper::start(hub.clone(), Duration::from_millis(5));
+        let owner = ViewSetOwner::trusted("owner");
+        let opened = hub
+            .open_view_set(owner.clone(), open_request(vec![spec()]))
+            .expect("view set");
+        let view_set = hub
+            .view_set(&owner, &opened.view_set_id)
+            .expect("view set handle");
+        let cursor = opened.initial.cursor.clone();
+        let waiter = tokio::spawn(async move { view_set.next_updates(&cursor, 20_000).await });
+
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        hub.record_diagnostic(
+            DiagnosticSeverity::Info,
+            DiagnosticCategory::Lifecycle,
+            "producer_activity",
+            None,
+            "Producer publication must not renew a client lease",
+            &[],
+        )
+        .expect("record producer activity");
+
+        let result = tokio::time::timeout(Duration::from_millis(300), waiter)
+            .await
+            .expect("reaper did not wake waiter")
+            .expect("waiter task");
+        assert_eq!(result, Err(ViewSetError::Closed));
+        assert!(matches!(
+            hub.view_set(&owner, &opened.view_set_id),
+            Err(ViewSetError::UnknownViewSet)
+        ));
+        reaper.shutdown().await.expect("join reaper");
+    }
+
+    #[tokio::test]
+    async fn peer_view_upserts_generations_and_removes_only_on_cleanup() {
+        let hub = ViewHub::new(&service_snapshot(0, 0)).expect("hub");
+        let owner = ViewSetOwner::trusted("owner");
+        let opened = hub
+            .open_view_set(
+                owner.clone(),
+                open_request(vec![ViewSpec::TorrentPeers {
+                    view_id: "peers".to_owned(),
+                    torrent_id: TORRENT_ID.to_owned(),
+                    delivery: ViewDeliveryPolicy::default(),
+                }]),
+            )
+            .expect("view set");
+        let view_set = hub
+            .view_set(&owner, &opened.view_set_id)
+            .expect("view set handle");
+        assert!(matches!(
+            opened.initial.updates.as_slice(),
+            [ViewSetUpdate::Snapshot {
+                snapshot: ViewSnapshot::Peers { peers, .. },
+                ..
+            }] if peers.is_empty()
+        ));
+
+        let mut peer = PeerConnectionObservation {
+            connection_id: ConnectionId::new(7).expect("connection"),
+            record_id: None,
+            endpoint: "127.0.0.1:6881".parse().expect("endpoint"),
+            sources: PeerSources::from_source(PeerSource::Manual),
+            direction: PeerConnectionDirection::Outgoing,
+            transport: PeerTransport::Tcp,
+            lifecycle: PeerConnectionLifecycle::TransportConnecting,
+            role: PeerConnectionRole::Metadata,
+            started_at: Duration::from_millis(5),
+            lifecycle_changed_at: Duration::from_millis(5),
+            peer_id: None,
+            supports_extensions: None,
+            content: None,
+            close_reason: None,
+        };
+        hub.record_peer_connections(TORRENT_ID, Duration::from_millis(10), &[peer.clone()])
+            .expect("connecting row");
+        let connecting = view_set
+            .next_updates(&opened.initial.cursor, 0)
+            .await
+            .expect("connecting patch");
+        assert!(matches!(
+            connecting.updates.as_slice(),
+            [ViewSetUpdate::Patch {
+                patch: ViewPatch::Peers { upsert, removed, .. },
+                ..
+            }] if upsert.len() == 1
+                && upsert[0].lifecycle == crate::PeerLifecycle::TransportConnecting
+                && removed.is_empty()
+        ));
+
+        peer.lifecycle = PeerConnectionLifecycle::Disconnecting;
+        peer.lifecycle_changed_at = Duration::from_millis(20);
+        hub.record_peer_connections(TORRENT_ID, Duration::from_millis(25), &[peer])
+            .expect("disconnecting row");
+        let disconnecting = view_set
+            .next_updates(&connecting.cursor, 0)
+            .await
+            .expect("disconnecting patch");
+        assert!(matches!(
+            disconnecting.updates.as_slice(),
+            [ViewSetUpdate::Patch {
+                patch: ViewPatch::Peers { upsert, removed, .. },
+                ..
+            }] if upsert.len() == 1
+                && upsert[0].lifecycle == crate::PeerLifecycle::Disconnecting
+                && removed.is_empty()
+        ));
+
+        hub.record_peer_connections(TORRENT_ID, Duration::from_millis(30), &[])
+            .expect("remove row");
+        let removed = view_set
+            .next_updates(&disconnecting.cursor, 0)
+            .await
+            .expect("removal patch");
+        assert!(matches!(
+            removed.updates.as_slice(),
+            [ViewSetUpdate::Patch {
+                patch: ViewPatch::Peers { upsert, removed, .. },
+                ..
+            }] if upsert.is_empty() && removed == &["7"]
+        ));
     }
 }

@@ -4,6 +4,7 @@ use std::fmt;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use rstorrent_engine::dht::{DhtConfig, DhtError, DhtService};
 use rstorrent_engine::{
@@ -26,6 +27,7 @@ use crate::store::{
     ConfiguredStorageRoot, PreparedFileRecord, ResumeRecord, SessionStore, StorageRootLocation,
     StoreError,
 };
+use crate::view_sets::{VIEW_SET_REAPER_INTERVAL_MILLIS, ViewSetLeaseReaper};
 use crate::views::{
     DiagnosticCategory, DiagnosticSeverity, IndexRange, ProgressInputs, SubscriptionError,
     SubscriptionSpec, TorrentActivity, ViewHub, ViewSubscription, ranges_from_pieces,
@@ -88,6 +90,7 @@ pub struct ApplicationService {
     active: Option<ActiveDownload>,
     dht: Option<DhtService>,
     views: ViewHub,
+    view_set_reaper: Option<ViewSetLeaseReaper>,
 }
 
 impl ApplicationService {
@@ -135,6 +138,10 @@ impl ApplicationService {
         let dht = DhtService::start(dht_config).await?;
         let snapshot = store.snapshot()?;
         let views = ViewHub::new(&snapshot)?;
+        let view_set_reaper = ViewSetLeaseReaper::start(
+            views.clone(),
+            Duration::from_millis(VIEW_SET_REAPER_INTERVAL_MILLIS),
+        );
         let mut service = Self {
             store: Arc::new(Mutex::new(store)),
             storage_roots,
@@ -143,6 +150,7 @@ impl ApplicationService {
             active: None,
             dht: Some(dht),
             views,
+            view_set_reaper: Some(view_set_reaper),
         };
         service.views.record_diagnostic(
             DiagnosticSeverity::Info,
@@ -474,15 +482,23 @@ impl ApplicationService {
     }
 
     pub async fn shutdown(&mut self) -> Result<(), ApplicationError> {
-        self.close_view_sets();
         let mut active_join_error = None;
+        if let Some(mut reaper) = self.view_set_reaper.take()
+            && let Err(error) = reaper.shutdown().await
+        {
+            active_join_error = Some(format!("view-set lease reaper: {error}"));
+        }
+        self.close_view_sets();
         if let Some(active) = self.active.take() {
             active.control.cancel();
             match active.task.await {
                 Ok(Ok(())) => {}
-                Ok(Err(error)) => active_join_error = Some(error),
+                Ok(Err(error)) if active_join_error.is_none() => active_join_error = Some(error),
                 Err(error) if error.is_cancelled() => {}
-                Err(error) => active_join_error = Some(error.to_string()),
+                Err(error) if active_join_error.is_none() => {
+                    active_join_error = Some(error.to_string());
+                }
+                Ok(Err(_)) | Err(_) => {}
             }
         }
         if let Some(dht) = self.dht.take() {
@@ -1117,6 +1133,14 @@ struct ViewActivitySink {
 
 impl DownloadActivitySink for ViewActivitySink {
     fn record(&self, event: DownloadActivityEvent) {
+        if let DownloadActivityEvent::PeerConnections { captured_at, peers } = &event {
+            let _ = self.views.record_peer_connections(
+                &self.torrent_id,
+                *captured_at,
+                peers.as_slice(),
+            );
+            return;
+        }
         let piece_activity = match &event {
             DownloadActivityEvent::MetadataVerified { .. } => {
                 return self.record_discovery_event(event);
@@ -1437,7 +1461,7 @@ impl ViewActivitySink {
                     &[],
                 );
             }
-            DownloadActivityEvent::PeerDialStarted { peer } => {
+            DownloadActivityEvent::PeerDialStarted { peer: _ } => {
                 let _ = self
                     .views
                     .set_discovery_activity(&self.torrent_id, true, false);
@@ -1447,7 +1471,7 @@ impl ViewActivitySink {
                     "peer_dial_started",
                     Some(&self.torrent_id),
                     "Connecting to discovered peer",
-                    &[("peer", &peer)],
+                    &[],
                 );
             }
             DownloadActivityEvent::SwarmState(snapshot) => {
@@ -1518,6 +1542,9 @@ impl ViewActivitySink {
             | DownloadActivityEvent::BlockStored { .. }
             | DownloadActivityEvent::PieceVerified { .. } => {
                 unreachable!("piece events are handled before discovery events")
+            }
+            DownloadActivityEvent::PeerConnections { .. } => {
+                unreachable!("peer projections are handled before diagnostic events")
             }
         }
     }

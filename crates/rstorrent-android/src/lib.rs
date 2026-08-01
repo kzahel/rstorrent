@@ -1144,6 +1144,7 @@ fn classify_failure(error: &DownloadError) -> FailureKind {
         DownloadError::Entropy(_)
         | DownloadError::Dht(_)
         | DownloadError::Checkpoint(_)
+        | DownloadError::PeerRuntime(_)
         | DownloadError::Swarm(_)
         | DownloadError::StorageTask(_)
         | DownloadError::TrackerTask(_)

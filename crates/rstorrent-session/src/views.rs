@@ -11,6 +11,12 @@ use tokio::sync::Notify;
 use tokio::time::Instant;
 use ts_rs::TS;
 
+use rstorrent_engine::peer::{PeerFailure, PeerSource, PeerSources};
+use rstorrent_engine::{
+    PeerConnectionDirection, PeerConnectionLifecycle, PeerConnectionObservation,
+    PeerConnectionRole, PeerRequestWindowPhase, PeerTransport,
+};
+
 use crate::control::{ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState};
 use crate::view_sets::{DEFAULT_VIEW_SET_QUEUE_BYTES, ViewSetInner, ViewSetUpdate};
 
@@ -41,6 +47,7 @@ pub enum ViewSelector {
 pub enum ViewProjection {
     Summary,
     PieceActivity,
+    Peers,
     Diagnostics,
 }
 
@@ -383,9 +390,275 @@ pub struct TorrentView {
     pub requested_bytes: String,
     pub received_bytes: String,
     pub stored_bytes: String,
+    pub active_peer_connections: u32,
+    pub payload_download_rate_bytes: String,
     pub progress: ProgressAssessment,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilityStatus {
+    Available,
+    Unavailable,
+    Unsupported,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PeerDirection {
+    Incoming,
+    Outgoing,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PeerTransportKind {
+    Tcp,
+    Utp,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PeerLifecycle {
+    TransportConnecting,
+    ProtocolHandshaking,
+    Connected,
+    Disconnecting,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PeerRole {
+    Metadata,
+    Content,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PeerRequestPhase {
+    SlowStart,
+    Steady,
+    Stalled,
+}
+
+#[derive(
+    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, JsonSchema, TS,
+)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PeerSourceView {
+    Tracker,
+    PeerExchange,
+    Dht,
+    LocalDiscovery,
+    Incoming,
+    Manual,
+    MagnetHint,
+    Cache,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PeerDisconnectReason {
+    Connect,
+    Handshake,
+    Protocol,
+    RemoteClosed,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PeerFieldCapabilities {
+    pub local_endpoint: CapabilityStatus,
+    pub client_name: CapabilityStatus,
+    pub ut_metadata: CapabilityStatus,
+    pub interest_directions: CapabilityStatus,
+    pub local_choke: CapabilityStatus,
+    pub piece_availability: CapabilityStatus,
+    pub protocol_rates: CapabilityStatus,
+    pub upload: CapabilityStatus,
+    pub metadata_stage: CapabilityStatus,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PeerView {
+    pub connection_id: String,
+    pub torrent_id: String,
+    pub peer_record_id: Option<String>,
+    pub direction: PeerDirection,
+    pub transport: PeerTransportKind,
+    pub lifecycle: PeerLifecycle,
+    pub role: PeerRole,
+    pub lifecycle_age_millis: String,
+    pub remote_endpoint: String,
+    pub local_endpoint: Option<String>,
+    pub sources: Vec<PeerSourceView>,
+    pub peer_id: Option<String>,
+    pub client_name: Option<String>,
+    pub supports_extensions: Option<bool>,
+    pub supports_ut_metadata: Option<bool>,
+    pub local_interested: Option<bool>,
+    pub remote_interested: Option<bool>,
+    pub remote_choking: Option<bool>,
+    pub local_choking: Option<bool>,
+    pub available_piece_count: Option<u32>,
+    pub wanted_piece_count: Option<u32>,
+    pub payload_download_rate_bytes: Option<String>,
+    pub payload_downloaded_bytes: Option<String>,
+    pub protocol_download_rate_bytes: Option<String>,
+    pub protocol_downloaded_bytes: Option<String>,
+    pub payload_upload_rate_bytes: Option<String>,
+    pub payload_uploaded_bytes: Option<String>,
+    pub pending_requests: Option<u32>,
+    pub target_requests: Option<u32>,
+    pub queued_payload_bytes: Option<String>,
+    pub oldest_request_age_millis: Option<String>,
+    pub request_timeout_millis: Option<String>,
+    pub request_phase: Option<PeerRequestPhase>,
+    pub connected_age_millis: Option<String>,
+    pub last_useful_age_millis: Option<String>,
+    pub last_payload_age_millis: Option<String>,
+    pub disconnect_reason: Option<PeerDisconnectReason>,
+    pub capabilities: PeerFieldCapabilities,
+}
+
+impl PeerView {
+    fn from_observation(
+        torrent_id: &str,
+        captured_at: Duration,
+        peer: &PeerConnectionObservation,
+    ) -> Self {
+        let content = peer.content.as_ref();
+        Self {
+            connection_id: peer.connection_id.get().to_string(),
+            torrent_id: torrent_id.to_owned(),
+            peer_record_id: peer.record_id.map(|id| id.get().to_string()),
+            direction: match peer.direction {
+                PeerConnectionDirection::Incoming => PeerDirection::Incoming,
+                PeerConnectionDirection::Outgoing => PeerDirection::Outgoing,
+            },
+            transport: match peer.transport {
+                PeerTransport::Tcp => PeerTransportKind::Tcp,
+                PeerTransport::Utp => PeerTransportKind::Utp,
+            },
+            lifecycle: match peer.lifecycle {
+                PeerConnectionLifecycle::TransportConnecting => PeerLifecycle::TransportConnecting,
+                PeerConnectionLifecycle::ProtocolHandshaking => PeerLifecycle::ProtocolHandshaking,
+                PeerConnectionLifecycle::Connected => PeerLifecycle::Connected,
+                PeerConnectionLifecycle::Disconnecting => PeerLifecycle::Disconnecting,
+            },
+            role: match peer.role {
+                PeerConnectionRole::Metadata => PeerRole::Metadata,
+                PeerConnectionRole::Content => PeerRole::Content,
+            },
+            lifecycle_age_millis: duration_millis_string(
+                captured_at.saturating_sub(peer.lifecycle_changed_at),
+            ),
+            remote_endpoint: peer.endpoint.to_string(),
+            local_endpoint: None,
+            sources: peer_sources(peer.sources),
+            peer_id: peer.peer_id.map(hex_peer_id),
+            client_name: None,
+            supports_extensions: peer.supports_extensions,
+            supports_ut_metadata: None,
+            local_interested: content.map(|_| true),
+            remote_interested: None,
+            remote_choking: content.map(|activity| activity.choking),
+            local_choking: None,
+            available_piece_count: None,
+            wanted_piece_count: content.map(|activity| bounded_u32(activity.wanted_piece_count)),
+            payload_download_rate_bytes: content
+                .map(|activity| activity.observed_payload_rate.to_string()),
+            payload_downloaded_bytes: content
+                .map(|activity| activity.useful_payload_bytes.to_string()),
+            protocol_download_rate_bytes: None,
+            protocol_downloaded_bytes: None,
+            payload_upload_rate_bytes: None,
+            payload_uploaded_bytes: None,
+            pending_requests: content.map(|activity| bounded_u32(activity.pending_requests)),
+            target_requests: content.map(|activity| bounded_u32(activity.target_requests)),
+            queued_payload_bytes: content.map(|activity| activity.queued_payload_bytes.to_string()),
+            oldest_request_age_millis: content
+                .and_then(|activity| activity.oldest_request_age)
+                .map(duration_millis_string),
+            request_timeout_millis: content
+                .map(|activity| duration_millis_string(activity.request_timeout)),
+            request_phase: content.map(|activity| match activity.request_window_phase {
+                PeerRequestWindowPhase::SlowStart => PeerRequestPhase::SlowStart,
+                PeerRequestWindowPhase::Steady => PeerRequestPhase::Steady,
+                PeerRequestWindowPhase::Stalled => PeerRequestPhase::Stalled,
+            }),
+            connected_age_millis: content
+                .map(|activity| duration_millis_string(activity.connected_age)),
+            last_useful_age_millis: content
+                .and_then(|activity| activity.last_useful_age)
+                .map(duration_millis_string),
+            last_payload_age_millis: content
+                .and_then(|activity| activity.last_payload_age)
+                .map(duration_millis_string),
+            disconnect_reason: peer.close_reason.map(|reason| match reason {
+                PeerFailure::Connect => PeerDisconnectReason::Connect,
+                PeerFailure::Handshake => PeerDisconnectReason::Handshake,
+                PeerFailure::Protocol => PeerDisconnectReason::Protocol,
+                PeerFailure::RemoteClosed => PeerDisconnectReason::RemoteClosed,
+            }),
+            capabilities: PeerFieldCapabilities {
+                local_endpoint: CapabilityStatus::Unsupported,
+                client_name: CapabilityStatus::Unsupported,
+                ut_metadata: CapabilityStatus::Unavailable,
+                interest_directions: CapabilityStatus::Unavailable,
+                local_choke: CapabilityStatus::Unsupported,
+                piece_availability: CapabilityStatus::Unavailable,
+                protocol_rates: CapabilityStatus::Unsupported,
+                upload: CapabilityStatus::Unsupported,
+                metadata_stage: CapabilityStatus::Unavailable,
+            },
+        }
+    }
+}
+
+fn bounded_u32(value: usize) -> u32 {
+    value.try_into().unwrap_or(u32::MAX)
+}
+
+fn duration_millis_string(value: Duration) -> String {
+    value.as_millis().to_string()
+}
+
+fn hex_peer_id(peer_id: [u8; 20]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(40);
+    for byte in peer_id {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    encoded
+}
+
+fn peer_sources(sources: PeerSources) -> Vec<PeerSourceView> {
+    [
+        (PeerSource::Tracker, PeerSourceView::Tracker),
+        (PeerSource::PeerExchange, PeerSourceView::PeerExchange),
+        (PeerSource::Dht, PeerSourceView::Dht),
+        (PeerSource::LocalDiscovery, PeerSourceView::LocalDiscovery),
+        (PeerSource::Incoming, PeerSourceView::Incoming),
+        (PeerSource::Manual, PeerSourceView::Manual),
+        (PeerSource::MagnetHint, PeerSourceView::MagnetHint),
+        (PeerSource::Cache, PeerSourceView::Cache),
+    ]
+    .into_iter()
+    .filter_map(|(source, view)| sources.contains(source).then_some(view))
+    .collect()
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -403,6 +676,10 @@ pub enum ViewSnapshot {
         piece_count: u32,
         verified: Vec<IndexRange>,
         active: Option<ActivePiece>,
+    },
+    Peers {
+        torrent_id: String,
+        peers: Vec<PeerView>,
     },
     Diagnostics {
         events: Vec<DiagnosticEvent>,
@@ -427,6 +704,11 @@ pub enum ViewPatch {
         verified: Vec<IndexRange>,
         cleared: Vec<IndexRange>,
         active: Option<ActivePiece>,
+    },
+    Peers {
+        torrent_id: String,
+        upsert: Vec<PeerView>,
+        removed: Vec<String>,
     },
     Diagnostics {
         events: Vec<DiagnosticEvent>,
@@ -489,6 +771,7 @@ pub(crate) struct HubState {
     subscribers: BTreeMap<u64, Weak<SubscriberInner>>,
     next_stream_id: u64,
     pub(crate) view_sets: BTreeMap<String, Arc<ViewSetInner>>,
+    pub(crate) view_set_lease: Duration,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -498,6 +781,7 @@ struct TorrentModel {
     progress_inputs: ProgressInputs,
     verified: Vec<IndexRange>,
     active: Option<ActivePiece>,
+    peers: BTreeMap<String, PeerView>,
 }
 
 #[derive(Clone, Debug)]
@@ -589,6 +873,16 @@ impl From<crate::ViewSetError> for SubscriptionError {
 
 impl ViewHub {
     pub fn new(snapshot: &ServiceSnapshot) -> Result<Self, SubscriptionError> {
+        Self::new_with_view_set_lease(
+            snapshot,
+            Duration::from_millis(crate::view_sets::VIEW_SET_LEASE_MILLIS),
+        )
+    }
+
+    pub(crate) fn new_with_view_set_lease(
+        snapshot: &ServiceSnapshot,
+        view_set_lease: Duration,
+    ) -> Result<Self, SubscriptionError> {
         let revision = parse_revision(&snapshot.revision)?;
         Ok(Self {
             inner: Arc::new(Mutex::new(HubState {
@@ -611,6 +905,7 @@ impl ViewHub {
                 subscribers: BTreeMap::new(),
                 next_stream_id: 1,
                 view_sets: BTreeMap::new(),
+                view_set_lease,
             })),
         })
     }
@@ -675,9 +970,13 @@ impl ViewHub {
                 model.view.requested_bytes = old.view.requested_bytes.clone();
                 model.view.received_bytes = old.view.received_bytes.clone();
                 model.view.stored_bytes = old.view.stored_bytes.clone();
+                model.view.active_peer_connections = old.view.active_peer_connections;
+                model.view.payload_download_rate_bytes =
+                    old.view.payload_download_rate_bytes.clone();
                 model.progress_inputs = old.progress_inputs;
                 model.view.progress = assess_progress(torrent, model.progress_inputs);
                 model.active = old.active.clone();
+                model.peers = old.peers.clone();
             }
             next.insert(torrent.torrent_id.clone(), model);
         }
@@ -744,6 +1043,47 @@ impl ViewHub {
         model.progress_inputs.discovery_exhausted = false;
         model.view.progress = assess_progress(&model.snapshot, model.progress_inputs);
         hub.publish_changes(&previous)
+    }
+
+    pub(crate) fn record_peer_connections(
+        &self,
+        torrent_id: &str,
+        captured_at: Duration,
+        peers: &[PeerConnectionObservation],
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let Some(model) = hub.torrents.get_mut(torrent_id) else {
+            return Ok(());
+        };
+        let previous_view = model.view.clone();
+        let previous_peers = std::mem::take(&mut model.peers);
+        model.peers = peers
+            .iter()
+            .map(|peer| {
+                let view = PeerView::from_observation(torrent_id, captured_at, peer);
+                (view.connection_id.clone(), view)
+            })
+            .collect();
+        model.view.active_peer_connections = model.peers.len().try_into().unwrap_or(u32::MAX);
+        model.view.payload_download_rate_bytes = peers
+            .iter()
+            .filter_map(|peer| peer.content.as_ref())
+            .fold(0_u64, |total, content| {
+                total.saturating_add(content.observed_payload_rate.try_into().unwrap_or(u64::MAX))
+            })
+            .to_string();
+        let next_view = model.view.clone();
+        let next_peers = model.peers.clone();
+        hub.publish_peer_changes(
+            torrent_id,
+            &previous_view,
+            &next_view,
+            &previous_peers,
+            &next_peers,
+        )
     }
 
     pub fn record_diagnostic(
@@ -829,6 +1169,15 @@ impl HubState {
                     active: torrent.and_then(|torrent| torrent.active.clone()),
                 }
             }
+            (ViewSelector::Torrent { torrent_id }, ViewProjection::Peers) => ViewSnapshot::Peers {
+                torrent_id: torrent_id.clone(),
+                peers: self
+                    .torrents
+                    .get(torrent_id)
+                    .map_or_else(Vec::new, |torrent| {
+                        torrent.peers.values().cloned().collect()
+                    }),
+            },
             (selector, ViewProjection::Diagnostics) => {
                 let filter = spec.diagnostics.clone().unwrap_or_default();
                 ViewSnapshot::Diagnostics {
@@ -842,7 +1191,7 @@ impl HubState {
                     dropped_count: self.diagnostic_dropped.to_string(),
                 }
             }
-            (ViewSelector::TorrentList, ViewProjection::PieceActivity) => {
+            (ViewSelector::TorrentList, ViewProjection::PieceActivity | ViewProjection::Peers) => {
                 unreachable!("invalid projection is rejected before snapshot construction")
             }
         }
@@ -927,6 +1276,52 @@ impl HubState {
         Ok(())
     }
 
+    fn publish_peer_changes(
+        &mut self,
+        torrent_id: &str,
+        previous_view: &TorrentView,
+        next_view: &TorrentView,
+        previous_peers: &BTreeMap<String, PeerView>,
+        next_peers: &BTreeMap<String, PeerView>,
+    ) -> Result<(), SubscriptionError> {
+        let revision = self.revision;
+        self.subscribers.retain(|_, weak| weak.strong_count() != 0);
+        let subscribers = self
+            .subscribers
+            .values()
+            .filter_map(Weak::upgrade)
+            .collect::<Vec<_>>();
+        for subscriber in subscribers {
+            if let Some(patch) = targeted_peer_patch(
+                &subscriber.spec,
+                torrent_id,
+                previous_view,
+                next_view,
+                previous_peers,
+                next_peers,
+            ) {
+                subscriber.enqueue_patch(revision, patch)?;
+            }
+        }
+        self.retain_live_view_sets();
+        let view_sets = self.view_sets.values().cloned().collect::<Vec<_>>();
+        for view_set in view_sets {
+            for spec in view_set.view_specs()? {
+                if let Some(patch) = targeted_peer_patch(
+                    &spec.subscription_spec(DEFAULT_VIEW_SET_QUEUE_BYTES),
+                    torrent_id,
+                    previous_view,
+                    next_view,
+                    previous_peers,
+                    next_peers,
+                ) {
+                    view_set.enqueue_patch(spec.view_id(), patch, revision)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn retain_live_view_sets(&mut self) {
         let now = std::time::Instant::now();
         self.view_sets.retain(|_, view_set| {
@@ -968,6 +1363,8 @@ impl TorrentModel {
                 requested_bytes: "0".to_owned(),
                 received_bytes: "0".to_owned(),
                 stored_bytes: "0".to_owned(),
+                active_peer_connections: 0,
+                payload_download_rate_bytes: "0".to_owned(),
                 progress: assess_progress(snapshot, progress_inputs),
                 error: snapshot.error.clone(),
             },
@@ -975,6 +1372,7 @@ impl TorrentModel {
             progress_inputs,
             verified: Vec::new(),
             active: None,
+            peers: BTreeMap::new(),
         }
     }
 
@@ -1289,7 +1687,10 @@ pub(crate) fn validate_spec(spec: &SubscriptionSpec) -> Result<(), SubscriptionE
         });
     }
     if matches!(spec.selector, ViewSelector::TorrentList)
-        && spec.projection == ViewProjection::PieceActivity
+        && matches!(
+            spec.projection,
+            ViewProjection::PieceActivity | ViewProjection::Peers
+        )
     {
         return Err(SubscriptionError::InvalidProjection);
     }
@@ -1396,9 +1797,74 @@ fn patch_for(
                 active: next.and_then(|model| model.active.clone()),
             })
         }
-        (ViewSelector::TorrentList, ViewProjection::PieceActivity) => None,
+        (ViewSelector::Torrent { torrent_id }, ViewProjection::Peers) => {
+            let empty = BTreeMap::new();
+            let old = previous
+                .get(torrent_id)
+                .map_or(&empty, |model| &model.peers);
+            let next = current.get(torrent_id).map_or(&empty, |model| &model.peers);
+            peer_collection_patch(torrent_id, old, next)
+        }
+        (ViewSelector::TorrentList, ViewProjection::PieceActivity | ViewProjection::Peers) => None,
         (_, ViewProjection::Diagnostics) => None,
     }
+}
+
+fn targeted_peer_patch(
+    spec: &SubscriptionSpec,
+    torrent_id: &str,
+    previous_view: &TorrentView,
+    next_view: &TorrentView,
+    previous_peers: &BTreeMap<String, PeerView>,
+    next_peers: &BTreeMap<String, PeerView>,
+) -> Option<ViewPatch> {
+    match (&spec.selector, spec.projection) {
+        (ViewSelector::TorrentList, ViewProjection::Summary) => {
+            (previous_view != next_view).then(|| ViewPatch::TorrentList {
+                upsert: vec![next_view.clone()],
+                removed: Vec::new(),
+            })
+        }
+        (
+            ViewSelector::Torrent {
+                torrent_id: selected,
+            },
+            ViewProjection::Summary,
+        ) if selected == torrent_id => (previous_view != next_view).then(|| ViewPatch::Torrent {
+            torrent: Some(next_view.clone()),
+        }),
+        (
+            ViewSelector::Torrent {
+                torrent_id: selected,
+            },
+            ViewProjection::Peers,
+        ) if selected == torrent_id => {
+            peer_collection_patch(torrent_id, previous_peers, next_peers)
+        }
+        _ => None,
+    }
+}
+
+fn peer_collection_patch(
+    torrent_id: &str,
+    previous: &BTreeMap<String, PeerView>,
+    current: &BTreeMap<String, PeerView>,
+) -> Option<ViewPatch> {
+    let upsert = current
+        .iter()
+        .filter(|(id, peer)| previous.get(*id) != Some(*peer))
+        .map(|(_, peer)| peer.clone())
+        .collect::<Vec<_>>();
+    let removed = previous
+        .keys()
+        .filter(|id| !current.contains_key(*id))
+        .cloned()
+        .collect::<Vec<_>>();
+    (!upsert.is_empty() || !removed.is_empty()).then(|| ViewPatch::Peers {
+        torrent_id: torrent_id.to_owned(),
+        upsert,
+        removed,
+    })
 }
 
 fn coalesce(update: &mut ViewUpdate, next: &ViewUpdatePayload) -> bool {
@@ -1468,6 +1934,37 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
             }
             *piece_count = *next_piece_count;
             *active = next_active.clone();
+            true
+        }
+        (
+            ViewPatch::Peers {
+                torrent_id,
+                upsert,
+                removed,
+            },
+            ViewPatch::Peers {
+                torrent_id: next_id,
+                upsert: next_upsert,
+                removed: next_removed,
+            },
+        ) if torrent_id == next_id => {
+            let mut values = upsert
+                .drain(..)
+                .map(|peer| (peer.connection_id.clone(), peer))
+                .collect::<BTreeMap<_, _>>();
+            for id in next_removed {
+                values.remove(id);
+            }
+            for peer in next_upsert {
+                values.insert(peer.connection_id.clone(), peer.clone());
+            }
+            let mut removed_ids = removed.drain(..).collect::<std::collections::BTreeSet<_>>();
+            for peer in next_upsert {
+                removed_ids.remove(&peer.connection_id);
+            }
+            removed_ids.extend(next_removed.iter().cloned());
+            *upsert = values.into_values().collect();
+            *removed = removed_ids.into_iter().collect();
             true
         }
         (

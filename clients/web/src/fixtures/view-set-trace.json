@@ -36,6 +36,8 @@
                 "requested_bytes": "16384",
                 "received_bytes": "16384",
                 "stored_bytes": "16384",
+                "active_peer_connections": 0,
+                "payload_download_rate_bytes": "0",
                 "progress": {
                   "disposition": "active",
                   "phase": "transfer",
@@ -74,6 +76,8 @@
                 "requested_bytes": "16384",
                 "received_bytes": "16384",
                 "stored_bytes": "16384",
+                "active_peer_connections": 0,
+                "payload_download_rate_bytes": "0",
                 "progress": {
                   "disposition": "active",
                   "phase": "transfer",
@@ -115,6 +119,8 @@
                 "requested_bytes": "16384",
                 "received_bytes": "16384",
                 "stored_bytes": "16384",
+                "active_peer_connections": 0,
+                "payload_download_rate_bytes": "0",
                 "progress": {
                   "disposition": "inactive",
                   "phase": "publication",

@@ -7,15 +7,17 @@ use rstorrent_gateway::{
     GatewayServerMessage,
 };
 use rstorrent_session::{
-    ActivePiece, ApiEncoding, ApiHello, ApiLimits, ApiVersion, Command, DeliveryMode,
-    DeliveryPolicy, DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
-    DiagnosticProfile, DiagnosticSeverity, ErrorCode, ErrorResponse, IndexRange,
-    OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, ProgressAction,
-    ProgressAssessment, ProgressDisposition, ProgressPhase, ProgressReason, RequestEnvelope,
-    ResetReason, ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState,
-    SubscriptionSpec, TorrentSnapshot, TorrentState, TorrentView, UpdateBatch,
-    UpdateViewSetRequest, ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector,
-    ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate, ViewUpdatePayload,
+    ActivePiece, ApiEncoding, ApiHello, ApiLimits, ApiVersion, CapabilityStatus, Command,
+    DeliveryMode, DeliveryPolicy, DiagnosticCategory, DiagnosticEvent, DiagnosticField,
+    DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity, ErrorCode, ErrorResponse, IndexRange,
+    OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
+    PeerDisconnectReason, PeerFieldCapabilities, PeerLifecycle, PeerRequestPhase, PeerRole,
+    PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
+    ProgressDisposition, ProgressPhase, ProgressReason, RequestEnvelope, ResetReason,
+    ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState, SubscriptionSpec,
+    TorrentSnapshot, TorrentState, TorrentView, UpdateBatch, UpdateViewSetRequest,
+    ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot,
+    ViewSpec, ViewUpdate, ViewUpdatePayload,
 };
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -82,6 +84,16 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<IndexRange>(&mut declarations)?;
     append::<ActivePiece>(&mut declarations)?;
     append::<TorrentView>(&mut declarations)?;
+    append::<CapabilityStatus>(&mut declarations)?;
+    append::<PeerDirection>(&mut declarations)?;
+    append::<PeerTransportKind>(&mut declarations)?;
+    append::<PeerLifecycle>(&mut declarations)?;
+    append::<PeerRole>(&mut declarations)?;
+    append::<PeerRequestPhase>(&mut declarations)?;
+    append::<PeerSourceView>(&mut declarations)?;
+    append::<PeerDisconnectReason>(&mut declarations)?;
+    append::<PeerFieldCapabilities>(&mut declarations)?;
+    append::<PeerView>(&mut declarations)?;
     append::<ViewSnapshot>(&mut declarations)?;
     append::<ViewPatch>(&mut declarations)?;
     append::<ResetReason>(&mut declarations)?;
@@ -335,6 +347,8 @@ fn fixture_torrent(torrent_id: &str, verified: u32) -> TorrentView {
         requested_bytes: "16384".to_owned(),
         received_bytes: "16384".to_owned(),
         stored_bytes: "16384".to_owned(),
+        active_peer_connections: 0,
+        payload_download_rate_bytes: "0".to_owned(),
         progress: ProgressAssessment {
             disposition: if verified == 3 {
                 ProgressDisposition::Inactive
