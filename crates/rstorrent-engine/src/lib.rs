@@ -45,3 +45,7 @@ pub use selective_storage::{
     remove_selective_part_if_present, remove_selective_staging_if_present, selective_part_path,
     selective_staging_path, verify_prepared_descriptors,
 };
+pub use tracker::{
+    TrackerAnnounceEvent, TrackerNextAction, TrackerRuntimeRecordSnapshot, TrackerRuntimeSnapshot,
+    TrackerRuntimeStatus, TrackerSource, TrackerTransport,
+};

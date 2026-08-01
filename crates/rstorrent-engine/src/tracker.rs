@@ -10,13 +10,70 @@ pub(crate) const TRACKER_RETRY_MAX: Duration = Duration::from_secs(60 * 60);
 pub(crate) const TRACKER_ANNOUNCE_MIN: Duration = Duration::from_secs(5 * 60);
 pub(crate) const TRACKER_ANNOUNCE_MAX: Duration = Duration::from_secs(24 * 60 * 60);
 const MAX_TRACKER_FAILURES: u8 = 127;
+pub(crate) const MAX_TRACKER_ERROR_LENGTH: usize = 256;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct TrackerId(u8);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum TrackerSource {
+pub enum TrackerSource {
     Magnet,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TrackerTransport {
+    Udp,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TrackerRuntimeStatus {
+    Inactive,
+    Idle,
+    Announcing,
+    RetryWait,
+    ReannounceWait,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TrackerNextAction {
+    Announce,
+    Retry,
+    Reannounce,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TrackerAnnounceEvent {
+    Started,
+    Update,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TrackerRuntimeRecordSnapshot {
+    pub tracker_id: String,
+    pub url: String,
+    pub tier: u8,
+    pub source: TrackerSource,
+    pub transport: TrackerTransport,
+    pub status: TrackerRuntimeStatus,
+    pub announce_event: Option<TrackerAnnounceEvent>,
+    pub total_attempts: u32,
+    pub consecutive_failures: u8,
+    pub last_peer_count: Option<u32>,
+    pub seeders: Option<u32>,
+    pub leechers: Option<u32>,
+    pub interval: Option<Duration>,
+    pub next_action: Option<TrackerNextAction>,
+    pub next_action_in: Option<Duration>,
+    pub last_success_age: Option<Duration>,
+    pub last_failure_age: Option<Duration>,
+    pub last_error: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TrackerRuntimeSnapshot {
+    pub captured_at: Duration,
+    pub active: bool,
+    pub records: Vec<TrackerRuntimeRecordSnapshot>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -32,7 +89,11 @@ pub(crate) struct TrackerRecord {
     last_success: Option<Duration>,
     last_failure: Option<Duration>,
     next_announce: Duration,
-    interval: Duration,
+    interval: Option<Duration>,
+    last_peer_count: Option<u32>,
+    seeders: Option<u32>,
+    leechers: Option<u32>,
+    last_error: Option<String>,
 }
 
 impl TrackerRecord {
@@ -49,7 +110,11 @@ impl TrackerRecord {
             last_success: None,
             last_failure: None,
             next_announce: Duration::ZERO,
-            interval: TRACKER_ANNOUNCE_MIN,
+            interval: None,
+            last_peer_count: None,
+            seeders: None,
+            leechers: None,
+            last_error: None,
         }
     }
 
@@ -193,11 +258,12 @@ impl TrackerSchedule {
         }
     }
 
-    pub(crate) fn failed(&mut self, id: TrackerId, now: Duration) -> TrackerFailure {
+    pub(crate) fn failed(&mut self, id: TrackerId, now: Duration, detail: &str) -> TrackerFailure {
         let record = self.record_mut(id);
         record.updating = false;
         record.failures = record.failures.saturating_add(1).min(MAX_TRACKER_FAILURES);
         record.last_failure = Some(now);
+        record.last_error = Some(bounded_tracker_error(detail));
         let retry_in = tracker_failure_delay(record.failures);
         record.next_announce = now.saturating_add(retry_in);
         TrackerFailure {
@@ -211,6 +277,9 @@ impl TrackerSchedule {
         id: TrackerId,
         now: Duration,
         interval_seconds: u32,
+        peer_count: u32,
+        seeders: u32,
+        leechers: u32,
     ) -> TrackerSuccess {
         let interval = Duration::from_secs(u64::from(interval_seconds))
             .clamp(TRACKER_ANNOUNCE_MIN, TRACKER_ANNOUNCE_MAX);
@@ -225,7 +294,11 @@ impl TrackerSchedule {
             record.failures = 0;
             record.start_acknowledged = true;
             record.last_success = Some(now);
-            record.interval = interval;
+            record.interval = Some(interval);
+            record.last_peer_count = Some(peer_count);
+            record.seeders = Some(seeders);
+            record.leechers = Some(leechers);
+            record.last_error = None;
             record.next_announce = now.saturating_add(interval);
         }
         if position != 0 {
@@ -239,11 +312,98 @@ impl TrackerSchedule {
         TrackerSuccess { interval }
     }
 
+    pub(crate) fn snapshot(&self, now: Duration, active: bool) -> TrackerRuntimeSnapshot {
+        TrackerRuntimeSnapshot {
+            captured_at: now,
+            active,
+            records: self
+                .records
+                .iter()
+                .map(|record| record.snapshot(now, active))
+                .collect(),
+        }
+    }
+
     fn record_mut(&mut self, id: TrackerId) -> &mut TrackerRecord {
         self.records
             .iter_mut()
             .find(|record| record.id == id)
             .expect("selected tracker record remains installed")
+    }
+}
+
+impl TrackerRecord {
+    fn snapshot(&self, now: Duration, active: bool) -> TrackerRuntimeRecordSnapshot {
+        let (status, next_action, next_action_in) = if !active {
+            (TrackerRuntimeStatus::Inactive, None, None)
+        } else if self.updating {
+            (TrackerRuntimeStatus::Announcing, None, None)
+        } else if self.next_announce > now {
+            let (status, action) = if self.failures != 0 {
+                (TrackerRuntimeStatus::RetryWait, TrackerNextAction::Retry)
+            } else {
+                (
+                    TrackerRuntimeStatus::ReannounceWait,
+                    TrackerNextAction::Reannounce,
+                )
+            };
+            (
+                status,
+                Some(action),
+                Some(self.next_announce.saturating_sub(now)),
+            )
+        } else {
+            (
+                TrackerRuntimeStatus::Idle,
+                Some(TrackerNextAction::Announce),
+                Some(Duration::ZERO),
+            )
+        };
+        let announce_event = (active && self.updating).then_some(if self.start_acknowledged {
+            TrackerAnnounceEvent::Update
+        } else {
+            TrackerAnnounceEvent::Started
+        });
+        let url = tracker_label(&self.url);
+        TrackerRuntimeRecordSnapshot {
+            tracker_id: url.clone(),
+            url,
+            tier: self.tier,
+            source: self.source,
+            transport: TrackerTransport::Udp,
+            status,
+            announce_event,
+            total_attempts: self.total_attempts,
+            consecutive_failures: self.failures,
+            last_peer_count: self.last_peer_count,
+            seeders: self.seeders,
+            leechers: self.leechers,
+            interval: self.interval,
+            next_action,
+            next_action_in,
+            last_success_age: self.last_success.map(|instant| now.saturating_sub(instant)),
+            last_failure_age: self.last_failure.map(|instant| now.saturating_sub(instant)),
+            last_error: self.last_error.clone(),
+        }
+    }
+}
+
+fn bounded_tracker_error(detail: &str) -> String {
+    let mut bounded = String::with_capacity(detail.len().min(MAX_TRACKER_ERROR_LENGTH));
+    for character in detail.chars() {
+        if bounded.len() + character.len_utf8() > MAX_TRACKER_ERROR_LENGTH {
+            break;
+        }
+        bounded.push(character);
+    }
+    bounded
+}
+
+fn tracker_label(tracker: &UdpTrackerUrl) -> String {
+    if tracker.host.contains(':') {
+        format!("udp://[{}]:{}", tracker.host, tracker.port)
+    } else {
+        format!("udp://{}:{}", tracker.host, tracker.port)
     }
 }
 
@@ -262,7 +422,8 @@ fn tracker_failure_delay(failures: u8) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::{
-        TRACKER_ANNOUNCE_MAX, TRACKER_ANNOUNCE_MIN, TRACKER_RETRY_MAX, TrackerAction,
+        MAX_TRACKER_ERROR_LENGTH, TRACKER_ANNOUNCE_MAX, TRACKER_ANNOUNCE_MIN, TRACKER_RETRY_MAX,
+        TrackerAction, TrackerAnnounceEvent, TrackerNextAction, TrackerRuntimeStatus,
         TrackerSchedule, TrackerWaitKind, tracker_failure_delay,
     };
     use rstorrent_protocol::magnet::UdpTrackerUrl;
@@ -295,7 +456,7 @@ mod tests {
         let mut now = Duration::ZERO;
         for _ in 0..140 {
             let id = announce(&mut schedule, now);
-            let failure = schedule.failed(id, now);
+            let failure = schedule.failed(id, now, "timeout");
             now += failure.retry_in;
         }
         assert_eq!(schedule.records[0].failures(), 127);
@@ -324,7 +485,7 @@ mod tests {
         assert_eq!(url, first);
         assert_eq!(event, AnnounceEvent::Started);
         assert!(!fallback);
-        schedule.failed(first_id, Duration::ZERO);
+        schedule.failed(first_id, Duration::ZERO, "first unavailable");
 
         let TrackerAction::Announce {
             id: second_id,
@@ -339,7 +500,7 @@ mod tests {
         assert_eq!(url, second);
         assert_eq!(event, AnnounceEvent::Started);
         assert!(fallback);
-        let success = schedule.succeeded(second_id, Duration::ZERO, 1);
+        let success = schedule.succeeded(second_id, Duration::ZERO, 1, 12, 7, 5);
         assert_eq!(success.interval, TRACKER_ANNOUNCE_MIN);
 
         assert_eq!(
@@ -371,9 +532,9 @@ mod tests {
         let second = announce(&mut schedule, Duration::ZERO);
         assert_eq!(schedule.next_action(Duration::ZERO), TrackerAction::Pending);
 
-        schedule.failed(first, Duration::ZERO);
+        schedule.failed(first, Duration::ZERO, "first timeout");
         assert_eq!(schedule.next_action(Duration::ZERO), TrackerAction::Pending);
-        schedule.failed(second, Duration::ZERO);
+        schedule.failed(second, Duration::ZERO, "second timeout");
         assert!(matches!(
             schedule.next_action(Duration::ZERO),
             TrackerAction::Wait {
@@ -388,14 +549,14 @@ mod tests {
         let mut schedule = TrackerSchedule::new(vec![tracker("tracker.example", 80)]);
         let id = announce(&mut schedule, Duration::ZERO);
         assert_eq!(
-            schedule.succeeded(id, Duration::ZERO, 0).interval,
+            schedule.succeeded(id, Duration::ZERO, 0, 0, 0, 0).interval,
             TRACKER_ANNOUNCE_MIN
         );
 
         let id = announce(&mut schedule, TRACKER_ANNOUNCE_MIN);
         assert_eq!(
             schedule
-                .succeeded(id, TRACKER_ANNOUNCE_MIN, u32::MAX)
+                .succeeded(id, TRACKER_ANNOUNCE_MIN, u32::MAX, 0, 0, 0)
                 .interval,
             TRACKER_ANNOUNCE_MAX
         );
@@ -407,7 +568,7 @@ mod tests {
         let second = tracker("second.example", 81);
         let mut schedule = TrackerSchedule::new(vec![first.clone(), second]);
         let id = announce(&mut schedule, Duration::ZERO);
-        schedule.succeeded(id, Duration::ZERO, 600);
+        schedule.succeeded(id, Duration::ZERO, 600, 0, 0, 0);
 
         assert_eq!(
             schedule.next_action(Duration::from_secs(10)),
@@ -426,10 +587,10 @@ mod tests {
         let mut schedule = TrackerSchedule::new(vec![slow, fast.clone()]);
         let slow_id = announce(&mut schedule, Duration::ZERO);
         for _ in 0..5 {
-            schedule.failed(slow_id, Duration::ZERO);
+            schedule.failed(slow_id, Duration::ZERO, "slow tracker");
         }
         let fast_id = announce(&mut schedule, Duration::ZERO);
-        schedule.failed(fast_id, Duration::ZERO);
+        schedule.failed(fast_id, Duration::ZERO, "fast tracker");
 
         assert_eq!(
             schedule.next_action(Duration::ZERO),
@@ -439,5 +600,87 @@ mod tests {
                 kind: TrackerWaitKind::FailureRetry,
             }
         );
+    }
+
+    #[test]
+    fn snapshots_retain_bounded_failure_and_accepted_response_state() {
+        let first = tracker("first.example", 80);
+        let second = tracker("second.example", 81);
+        let mut schedule = TrackerSchedule::new(vec![first, second]);
+
+        let initial = schedule.snapshot(Duration::ZERO, false);
+        assert_eq!(initial.records[0].status, TrackerRuntimeStatus::Inactive);
+        assert_eq!(initial.records[0].next_action, None);
+        assert_eq!(initial.records[0].interval, None);
+
+        let first_id = announce(&mut schedule, Duration::from_secs(1));
+        let announcing = schedule.snapshot(Duration::from_secs(1), true);
+        assert_eq!(
+            announcing.records[0].status,
+            TrackerRuntimeStatus::Announcing
+        );
+        assert_eq!(
+            announcing.records[0].announce_event,
+            Some(TrackerAnnounceEvent::Started)
+        );
+
+        let long_error = "é".repeat(MAX_TRACKER_ERROR_LENGTH);
+        schedule.failed(first_id, Duration::from_secs(2), &long_error);
+        let failed = schedule.snapshot(Duration::from_secs(3), true);
+        assert_eq!(failed.records[0].status, TrackerRuntimeStatus::RetryWait);
+        assert_eq!(
+            failed.records[0].next_action,
+            Some(TrackerNextAction::Retry)
+        );
+        assert_eq!(
+            failed.records[0].next_action_in,
+            Some(Duration::from_secs(16))
+        );
+        assert_eq!(
+            failed.records[0].last_failure_age,
+            Some(Duration::from_secs(1))
+        );
+        assert_eq!(
+            failed.records[0].last_error.as_ref().map(String::len),
+            Some(MAX_TRACKER_ERROR_LENGTH)
+        );
+
+        let second_id = announce(&mut schedule, Duration::from_secs(3));
+        schedule.succeeded(second_id, Duration::from_secs(4), 600, 23, 11, 12);
+        let succeeded = schedule.snapshot(Duration::from_secs(9), true);
+        let record = &succeeded.records[0];
+        assert_eq!(record.url, "udp://second.example:81");
+        assert_eq!(record.status, TrackerRuntimeStatus::ReannounceWait);
+        assert_eq!(record.next_action, Some(TrackerNextAction::Reannounce));
+        assert_eq!(record.next_action_in, Some(Duration::from_secs(595)));
+        assert_eq!(record.last_success_age, Some(Duration::from_secs(5)));
+        assert_eq!(record.last_peer_count, Some(23));
+        assert_eq!(record.seeders, Some(11));
+        assert_eq!(record.leechers, Some(12));
+        assert_eq!(record.interval, Some(Duration::from_secs(600)));
+        assert_eq!(record.last_error, None);
+
+        let update_id = announce(&mut schedule, Duration::from_secs(604));
+        assert_eq!(update_id, second_id);
+        let updating = schedule.snapshot(Duration::from_secs(604), true);
+        assert_eq!(
+            updating.records[0].announce_event,
+            Some(TrackerAnnounceEvent::Update)
+        );
+    }
+
+    #[test]
+    fn terminal_snapshot_clears_inflight_state_without_losing_history() {
+        let mut schedule = TrackerSchedule::new(vec![tracker("tracker.example", 80)]);
+        let id = announce(&mut schedule, Duration::ZERO);
+        schedule.succeeded(id, Duration::from_secs(1), 900, 4, 3, 1);
+        let _ = announce(&mut schedule, Duration::from_secs(901));
+
+        let terminal = schedule.snapshot(Duration::from_secs(902), false);
+        assert!(!terminal.active);
+        assert_eq!(terminal.records[0].status, TrackerRuntimeStatus::Inactive);
+        assert_eq!(terminal.records[0].announce_event, None);
+        assert_eq!(terminal.records[0].next_action, None);
+        assert_eq!(terminal.records[0].last_peer_count, Some(4));
     }
 }

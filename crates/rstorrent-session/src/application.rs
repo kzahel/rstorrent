@@ -1860,6 +1860,7 @@ impl ViewActivitySink {
             DownloadActivityEvent::PeerConnections { .. } => {
                 unreachable!("peer projections are handled before diagnostic events")
             }
+            DownloadActivityEvent::TrackerState(_) => {}
         }
     }
 }

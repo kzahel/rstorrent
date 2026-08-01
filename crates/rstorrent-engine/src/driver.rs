@@ -62,7 +62,9 @@ use crate::swarm::{
     PendingDialId, PieceHashFailure, PiecePlan, ReceiveDisposition, SwarmConfig, SwarmError,
     SwarmState,
 };
-use crate::tracker::{TrackerAction, TrackerId, TrackerSchedule, TrackerWaitKind};
+use crate::tracker::{
+    TrackerAction, TrackerId, TrackerRuntimeSnapshot, TrackerSchedule, TrackerWaitKind,
+};
 
 const CLIENT_PEER_ID: [u8; 20] = *b"-RS0001-000000000000";
 const DEFAULT_ADVERTISED_PEER_PORT: u16 = 6881;
@@ -291,6 +293,7 @@ pub enum DownloadActivityEvent {
         captured_at: Duration,
         peers: Box<Vec<PeerConnectionObservation>>,
     },
+    TrackerState(Box<TrackerRuntimeSnapshot>),
     SwarmState(Box<SwarmActivitySnapshot>),
 }
 
@@ -2462,6 +2465,36 @@ async fn run_tracker_manager(
     sender: mpsc::Sender<TrackerUpdate>,
 ) {
     let started_at = Instant::now();
+    control.emit(DownloadActivityEvent::TrackerState(Box::new(
+        schedule.snapshot(started_at.elapsed(), true),
+    )));
+    run_active_tracker_manager(
+        &mut schedule,
+        info_hash,
+        tracker_key,
+        network_policy,
+        &control,
+        &cancellation,
+        &sender,
+        started_at,
+    )
+    .await;
+    control.emit(DownloadActivityEvent::TrackerState(Box::new(
+        schedule.snapshot(started_at.elapsed(), false),
+    )));
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_active_tracker_manager(
+    schedule: &mut TrackerSchedule,
+    info_hash: [u8; 20],
+    tracker_key: u32,
+    network_policy: NetworkPolicy,
+    control: &DownloadControl,
+    cancellation: &CancellationToken,
+    sender: &mpsc::Sender<TrackerUpdate>,
+    started_at: Instant,
+) {
     let mut token_caches = BTreeMap::new();
     let mut operations = JoinSet::new();
     loop {
@@ -2490,6 +2523,9 @@ async fn run_tracker_manager(
                         attempt,
                         event,
                     });
+                    control.emit(DownloadActivityEvent::TrackerState(Box::new(
+                        schedule.snapshot(started_at.elapsed(), true),
+                    )));
                     let operation_control = control.clone();
                     let mut token_cache = token_caches.remove(&id).unwrap_or_default();
                     operations.spawn(async move {
@@ -2550,12 +2586,23 @@ async fn run_tracker_manager(
             let now = started_at.elapsed();
             match operation.result {
                 Ok(response) => {
-                    let success = schedule.succeeded(operation.id, now, response.interval);
+                    let peer_count = response.peers.len().try_into().unwrap_or(u32::MAX);
+                    let success = schedule.succeeded(
+                        operation.id,
+                        now,
+                        response.interval,
+                        peer_count,
+                        response.seeders,
+                        response.leechers,
+                    );
                     control.emit(DownloadActivityEvent::TrackerAnnounceSucceeded {
                         tracker: operation.tracker.clone(),
-                        peer_count: response.peers.len().try_into().unwrap_or(u32::MAX),
+                        peer_count,
                         interval_seconds: success.interval.as_secs(),
                     });
+                    control.emit(DownloadActivityEvent::TrackerState(Box::new(
+                        schedule.snapshot(now, true),
+                    )));
                     let send = sender.send(TrackerUpdate::Peers {
                         tracker: operation.tracker,
                         peers: response.peers,
@@ -2571,13 +2618,17 @@ async fn run_tracker_manager(
                     }
                 }
                 Err(error) => {
-                    let failure = schedule.failed(operation.id, now);
+                    let detail = error.to_string();
+                    let failure = schedule.failed(operation.id, now, &detail);
                     control.emit(DownloadActivityEvent::TrackerAnnounceFailed {
                         tracker: operation.tracker,
                         failures: failure.failures,
                         retry_in_seconds: failure.retry_in.as_secs(),
-                        detail: error.to_string(),
+                        detail,
                     });
+                    control.emit(DownloadActivityEvent::TrackerState(Box::new(
+                        schedule.snapshot(now, true),
+                    )));
                 }
             }
             continue;
@@ -2586,7 +2637,7 @@ async fn run_tracker_manager(
         match pending_action.unwrap_or_else(|| schedule.next_action(started_at.elapsed())) {
             TrackerAction::Wait { delay, url, kind } => {
                 let tracker = udp_tracker_label(&url);
-                emit_tracker_wait(&control, tracker, kind, delay);
+                emit_tracker_wait(control, tracker, kind, delay);
                 tokio::select! {
                     biased;
                     _ = cancellation.cancelled() => return,
@@ -11003,11 +11054,14 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             "00".repeat(20)
         ))
         .expect("parse silent concurrent trackers");
+        let control = DownloadControl::new();
+        let activity = Arc::new(RecordingActivitySink::default());
+        control.set_activity_sink(activity.clone());
         let manager = TrackerManager::start(
             magnet.udp_trackers,
             magnet.info_hash,
             NetworkPolicy::LoopbackOnly,
-            DownloadControl::new(),
+            control,
         )
         .expect("start silent concurrent trackers");
         let mut client_addresses = Vec::new();
@@ -11025,6 +11079,31 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             .shutdown()
             .await
             .expect("shutdown concurrent tracker manager");
+        {
+            let events = activity
+                .events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            assert!(events.iter().any(|event| matches!(
+                event,
+                DownloadActivityEvent::TrackerState(snapshot)
+                    if snapshot.active
+                        && snapshot.records.iter().any(|record| matches!(
+                            record.status,
+                            crate::TrackerRuntimeStatus::Announcing
+                        ))
+            )));
+            let terminal = events.iter().rev().find_map(|event| match event {
+                DownloadActivityEvent::TrackerState(snapshot) => Some(snapshot),
+                _ => None,
+            });
+            assert!(terminal.is_some_and(|snapshot| {
+                !snapshot.active
+                    && snapshot.records.iter().all(|record| {
+                        matches!(record.status, crate::TrackerRuntimeStatus::Inactive)
+                    })
+            }));
+        }
         for client in client_addresses {
             UdpSocket::bind(client)
                 .await
