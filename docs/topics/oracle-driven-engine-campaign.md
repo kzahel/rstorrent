@@ -2,10 +2,11 @@
 
 Topic: `oracle-driven-engine-campaign`
 
-Status: Active. The campaign is completing the paired headless comparator,
-then driving metadata, first-piece, sustained-transfer, endgame, and full
-publication parity from pinned libtorrent source and tests. High-impact BEP
-breadth follows the core common-denominator parity gate.
+Status: Active. The paired headless comparator and bounded utility timeline
+now drive metadata, first-piece, sustained-transfer, endgame, and full
+publication parity from pinned libtorrent source and tests. The current slice
+expands the source-rich half-open cohort; high-impact BEP breadth follows the
+core common-denominator parity gate.
 
 ## Purpose And Scope
 
@@ -314,14 +315,17 @@ reason to stop.
 Campaign state: **active**.
 
 Active tactical:
-[`026-paired-peer-utility-timeline.md`](../tactical/026-paired-peer-utility-timeline.md).
-Tactical
+[`027-expanded-half-open-working-set.md`](../tactical/027-expanded-half-open-working-set.md).
+Tacticals
 [`025-bounded-async-content-storage.md`](../tactical/025-bounded-async-content-storage.md)
-is complete.
+and
+[`026-paired-peer-utility-timeline.md`](../tactical/026-paired-peer-utility-timeline.md)
+are complete.
 
-Current milestone: capture bounded comparable peer-utility timelines through
-three full pairs, classify the first repeated owner-level divergence, and open
-the corresponding source-derived behavior tactical before changing policy.
+Current milestone: raise the separate torrent-local half-open cohort from
+eight to 30, prove exact admission and useful-peer liveness adversarially, then
+use product tracker+DHT timelines to classify the next owner without changing
+ranking, request, and storage policies together.
 
 Last completed evidence:
 
@@ -454,21 +458,33 @@ Last completed evidence:
   active storage jobs, active requests, writes, or cleanup failures. Storage
   command, completion, job, and payload high waters were 64, 1, 66, and
   8,781,824 bytes; and
-- the public terminal state retained 161 content candidates, 48 dials, and
-  five connected peers, but cannot reveal their time-dependent utility. That
-  evidence selects Tactical `026`'s paired timeline rather than speculative
-  peer ranking or another storage change.
+- Tactical `026` added one-second endpoint-free utility timelines to both
+  comparator owners with deterministic 1,024-sample bounds, rate aggregation,
+  nullable owner-specific fields, and endpoint scrubbing;
+- its three alternating common-profile Big Buck Bunny full pairs completed
+  exact publication for both owners. RSTorrent took 132.89--138.24 seconds
+  versus libtorrent's 30.87--31.11 seconds, a 4.35x median paired ratio;
+- three to five content seconds after metadata, RSTorrent knew 10--16 peers,
+  had three or four connections and two useful peers, while libtorrent knew
+  60--65, had 17--20 connections and 11--14 useful peers. This classified
+  common-profile candidate supply; and
+- a product tracker+DHT screen changed that premise by supplying 159
+  candidates at metadata. After one content second, 119 remained eligible,
+  eight were dialing, and six were connected. The run held that eight-attempt
+  ceiling while taking roughly 100 seconds to grow to 29 connections and
+  reached 50% at 143.94 seconds, selecting Tactical `027`'s source-derived
+  30-attempt startup cohort.
 
 Next executable action:
 
-1. survey pinned libtorrent candidate, connection-demand, turnover,
-   request-queue, `peer_info`, and `torrent_status` owners and tests;
-2. add one-second, endpoint-free, 1,024-sample bounded timelines to RSTorrent
-   and libtorrent comparator owners without changing transfer policy;
-3. pass deterministic aggregation, schema, workspace, Python, and controlled
-   publication gates;
-4. run three alternating common-denominator Big Buck Bunny full pairs; and
-5. classify candidate supply, admission/turnover, request service,
-   picker/storage, or rotation, then open the selected behavior tactical.
+1. change the pure pending-dial default from eight to 30 while retaining the
+   separate 30-established-peer and fixed payload bounds;
+2. prove exact 30/31 admission, prompt access to a useful peer in positions
+   9--30, simultaneous completion safety, saturated cancellation, and cleanup;
+3. pass workspace, mixed-peer, Python, and controlled paired gates;
+4. run three tracker+DHT owner screens to 50% and one complete screen when the
+   cohort remains integrity-clean; and
+5. classify storage, request service, ranking, or confirmation breadth from
+   the retained paired timeline.
 
 Human blocker: **none**.

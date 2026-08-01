@@ -6,14 +6,19 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from public_compare import (
     DHT_BOOTSTRAP_NODES,
     HarnessError,
+    MAX_UTILITY_SAMPLES,
+    append_utility_sample,
     classify_owner,
     classify_pair,
     distribution,
     implementation_order,
+    integer_distribution,
+    libtorrent_utility_sample,
     libtorrent_settings,
     load_catalog,
     mark_percent_milestones,
@@ -145,6 +150,51 @@ class PublicCompareTests(unittest.TestCase):
     def test_distribution_uses_nearest_rank_p90(self) -> None:
         self.assertEqual(distribution(list(range(1, 11)))["p90"], 9)
         self.assertIsNone(distribution([])["median"])
+
+    def test_integer_distribution_and_utility_bound(self) -> None:
+        values = integer_distribution(list(range(10)))
+        self.assertEqual(values["median"], 4)
+        self.assertEqual(values["p90"], 8)
+        self.assertIsNone(integer_distribution([])["max"])
+
+        samples: list[dict] = []
+        coalesced = 0
+        for ordinal in range(MAX_UTILITY_SAMPLES + 1):
+            coalesced += append_utility_sample(samples, {"elapsed_seconds": ordinal})
+        self.assertLessEqual(len(samples), MAX_UTILITY_SAMPLES)
+        self.assertEqual(samples[0]["elapsed_seconds"], 0)
+        self.assertEqual(samples[-1]["elapsed_seconds"], MAX_UTILITY_SAMPLES)
+        self.assertGreater(coalesced, 0)
+
+    def test_libtorrent_utility_sample_is_aggregate_and_endpoint_free(self) -> None:
+        status = SimpleNamespace(
+            total_wanted_done=300,
+            num_pieces=2,
+            list_peers=7,
+            connect_candidates=3,
+            num_connections=2,
+            num_peers=1,
+            download_payload_rate=90,
+        )
+        peer = SimpleNamespace(
+            flags=0,
+            payload_down_speed=80,
+            download_queue_length=4,
+            total_download=250,
+            queue_bytes=65_536,
+            pending_disk_bytes=16_384,
+            ip="203.0.113.9:6881",
+            client="must not escape",
+        )
+        sample = libtorrent_utility_sample(status, [peer], 3.0, (1.0, 100))
+        self.assertEqual(sample["verified_rate"], 100)
+        self.assertEqual(sample["known_peers"], 7)
+        self.assertEqual(sample["connecting_peers"], 1)
+        self.assertEqual(sample["active_requests"], 4)
+        self.assertEqual(sample["pending_disk_bytes"], 16_384)
+        rendered = json.dumps(sample)
+        self.assertNotIn(peer.ip, rendered)
+        self.assertNotIn(peer.client, rendered)
 
 
 if __name__ == "__main__":

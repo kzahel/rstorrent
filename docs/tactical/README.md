@@ -183,8 +183,11 @@ that scope and its cleanup or compatibility rules explicitly.
   exact payload, hash, resume, and shutdown ownership, and records a negative
   localhost speed result.
 - [`026-paired-peer-utility-timeline.md`](026-paired-peer-utility-timeline.md):
-  active; adds bounded endpoint-free time-series evidence for both comparator
-  owners and uses three full pairs to select the next throughput owner.
+  complete; adds bounded endpoint-free time-series evidence for both
+  comparator owners and classifies candidate supply plus half-open admission.
+- [`027-expanded-half-open-working-set.md`](027-expanded-half-open-working-set.md):
+  active; expands the source-rich startup dial cohort from eight to 30 while
+  preserving the separate 30-live-peer and fixed payload bounds.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

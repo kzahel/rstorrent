@@ -12,9 +12,11 @@ removed the classified duplex command/event backpressure deadlock and passed
 endgame duplicate-attempt lifecycle, cancellation, and public publication.
 Tactical `024` completed bounded exact-generation integrity reputation and
 known-bad exclusion. Tactical `025` separated bounded storage work from peer
-event progress and disproved storage as the localhost speed owner. Tracker and
-DHT observations remain live while content runs. The active paired timeline
-will select measured working-set policy. Full parole selection, persistent
+event progress and disproved storage as the localhost speed owner. Tactical
+`026` completed the bounded paired timeline: a source-rich product path held
+eight half-open attempts while 119 candidates remained eligible. Tactical
+`027` now expands that separate pending cohort to 30. Tracker and DHT
+observations remain live while content runs. Full parole selection, persistent
 integrity reputation, measured picker policy, incoming connections, and
 persistent peer records remain later work.
 
@@ -429,9 +431,17 @@ exclusion through pure and scripted adversarial gates. Tactical `025` moved
 physical storage behind a bounded owner; its delayed-storage scenario proves
 two peers can continue delivering while one write is in flight. The corrected
 localhost benchmark did not improve, so storage is no longer the leading
-explanation for the public completion gap. A bounded paired timeline now owns
-distinguishing candidate supply, dial occupancy, useful-peer retention, and
-request service before selection or replacement policy changes. Incoming
-listener ownership and advertised-port updates, measured performance
-selection, peer-ID duplicate resolution, full parole selection, PEX, and
-persisted peer caches remain later work.
+explanation for the public completion gap. Tactical `026` added the bounded
+paired timeline and completed three exact public pairs. Early common-profile
+samples first showed sparse RSTorrent candidate supply, while the product
+tracker+DHT path supplied 159 candidates by metadata and retained 119 eligible
+records behind exactly eight half-open attempts. That run took roughly 100
+content seconds to grow from six to 29 connections while libtorrent's source
+defaults offer a 30-attempt startup boost and 30 attempts per second.
+
+Tactical `027` therefore owns one falsifiable admission change: 30 pending
+attempts beneath the existing independent 30-established-peer and fixed
+payload bounds. It does not change ranking, request windows, storage, or
+turnover. Incoming listener ownership and advertised-port updates, measured
+performance selection, peer-ID duplicate resolution, full parole selection,
+PEX, and persisted peer caches remain later work.

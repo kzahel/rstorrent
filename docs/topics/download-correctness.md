@@ -14,8 +14,11 @@ strict endgame duplicates, core cancellation, and public publication.
 Tactical `024` completed whole-piece v1 hash recovery, exact-generation
 contributor evidence, and bounded peer integrity reputation. Tactical `025`
 completed one bounded asynchronous storage owner with exact write/hash,
-resume, payload, cancellation, and join ownership. The next slice measures
-the live peer working set over time before changing selection policy.
+resume, payload, cancellation, and join ownership. Tactical `026` completed
+the paired live peer-utility timeline and selected the continuously occupied
+eight-attempt half-open cohort. Tactical `027` now expands that cohort to 30
+under the existing live-peer and payload bounds before changing selection or
+request policy.
 
 ## Scope
 
@@ -233,10 +236,13 @@ request/payload accounting, hash recovery, resume ordering, exact publication,
 and controlled interoperability. Its corrected localhost result disproved
 storage as the retained speed owner.
 
-The next stopping condition is a bounded paired peer-utility timeline that
-classifies candidate admission, useful connection retention, request service,
-and aggregate throughput throughout a full transfer. Source-derived policy
-changes follow only after that trace names an owner.
+The paired timeline now shows the product tracker+DHT path with 159 candidates
+by metadata, 119 still eligible after one content second, and exactly eight
+half-open attempts. The next stopping condition is exact 30/31 pending-dial
+ownership plus a scripted useful peer in candidate positions 9--30 completing
+before the former cohort's timeout. Saturated cancellation and product-path
+timeline screens must retain all connection, payload, storage, integrity, and
+cleanup bounds.
 
 Routine engine validation remains headless; no additional product UI is
 required by that slice.

@@ -10,9 +10,10 @@ now drives metadata, first-piece, sustained-transfer, endgame, and publication
 parity through the completed paired libtorrent comparator before measured BEP
 breadth. Endgame and v1 hash-failure recovery now have exact bounded evidence.
 Bounded storage now remains live independently from peer events, but its
-corrected localhost benchmark did not improve. The active slice adds paired
-peer-utility timelines to select the retained completion-performance owner
-before changing policy.
+corrected localhost benchmark did not improve. Paired peer-utility timelines
+then isolated a source-rich product-path run which retained 119 eligible peers
+behind an eight-attempt half-open ceiling. The active slice expands that
+bounded startup cohort to 30 before changing ranking or request policy.
 
 ## Purpose And Ownership
 
@@ -87,16 +88,16 @@ evidence.
 
 ### Now
 
-**Paired peer-utility timeline.** Capture bounded endpoint-free candidate,
-connection, request, payload, verification, and churn aggregates for RSTorrent
-and pinned libtorrent, then use three full pairs to select the first sustained
-owner-level divergence.
+**Expanded half-open working set.** Raise the torrent-local half-open cohort
+from eight to 30 under the existing separate 30-established-peer and fixed
+payload bounds. Prove source-rich useful-peer liveness, exact 30/31 admission,
+cancellation, and cleanup before screening the product tracker+DHT path.
 
 ### Next
 
-1. **Source-derived throughput owner.** Implement the bounded discovery,
-   working-set, request-service, or picker slice selected by the paired
-   timeline.
+1. **Source-derived service owner.** Use the paired timeline after the wider
+   cohort to select storage, request service, peer ranking, or confirmation
+   breadth without changing several policies together.
 2. **Measured BEP breadth.** Use the protocol matrix and full-reference gaps
    to choose the next discovery or transport BEP after core completion parity.
 3. **Durable single-file resume.** Extend the existing selective-storage

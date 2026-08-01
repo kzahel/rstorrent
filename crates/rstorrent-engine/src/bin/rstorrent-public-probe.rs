@@ -19,6 +19,8 @@ const DEFAULT_CLEANUP_SECONDS: u64 = 10;
 const DEFAULT_PAYLOAD_LIMIT: usize = 64 * 1024 * 1024;
 const MAX_TIMEOUT_SECONDS: u64 = 24 * 60 * 60;
 const MAX_CLEANUP_SECONDS: u64 = 60;
+const UTILITY_SAMPLE_INTERVAL: Duration = Duration::from_secs(1);
+const MAX_UTILITY_SAMPLES: usize = 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -101,6 +103,167 @@ struct Geometry {
     file_count: Option<usize>,
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+struct IntegerDistribution {
+    count: usize,
+    min: Option<usize>,
+    median: Option<usize>,
+    p90: Option<usize>,
+    max: Option<usize>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+struct UtilitySample {
+    elapsed_seconds: f64,
+    verified_piece_count: usize,
+    verified_bytes: u64,
+    verified_rate: Option<u64>,
+    tracker_response_batches: Option<u64>,
+    tracker_reported_peers: Option<u64>,
+    dht_response_batches: Option<u64>,
+    dht_reported_peers: Option<u64>,
+    dial_attempts: Option<u64>,
+    known_peers: Option<usize>,
+    eligible_peers: Option<usize>,
+    connecting_peers: Option<usize>,
+    connected_peers: Option<usize>,
+    unchoked_peers: Option<usize>,
+    wanted_peers: Option<usize>,
+    ever_useful_peers: Option<usize>,
+    active_payload_peers: Option<usize>,
+    stalled_peers: Option<usize>,
+    zero_payload_peers: Option<usize>,
+    active_requests: Option<usize>,
+    request_queue_bytes: Option<usize>,
+    request_target: Option<usize>,
+    writing_blocks: Option<usize>,
+    storage_jobs: Option<usize>,
+    pending_disk_bytes: Option<usize>,
+    payload_rate: Option<usize>,
+    peer_payload_rates: IntegerDistribution,
+    peer_request_queues: IntegerDistribution,
+}
+
+#[derive(Debug, Default)]
+struct UtilityTimeline {
+    samples: Vec<UtilitySample>,
+    coalesced_samples: usize,
+    previous_verified: Option<(f64, u64)>,
+}
+
+impl UtilityTimeline {
+    fn record(
+        &mut self,
+        elapsed: Duration,
+        observation: &ObservationSnapshot,
+        snapshot: &DownloadDiagnosticSnapshot,
+    ) {
+        let elapsed_seconds = elapsed.as_secs_f64();
+        let verified_rate = self
+            .previous_verified
+            .and_then(|(previous_at, previous_bytes)| {
+                let interval = elapsed_seconds - previous_at;
+                (interval > 0.0).then(|| {
+                    (observation.verified_bytes.saturating_sub(previous_bytes) as f64 / interval)
+                        .round() as u64
+                })
+            });
+        self.previous_verified = Some((elapsed_seconds, observation.verified_bytes));
+
+        let registry = snapshot.content_registry.as_ref();
+        let swarm = snapshot.swarm.as_ref();
+        let peers = &snapshot.content_peers;
+        let sample = UtilitySample {
+            elapsed_seconds,
+            verified_piece_count: observation.verified_piece_count,
+            verified_bytes: observation.verified_bytes,
+            verified_rate,
+            tracker_response_batches: Some(observation.tracker_response_batches),
+            tracker_reported_peers: Some(observation.tracker_reported_peers),
+            dht_response_batches: Some(observation.dht_response_batches),
+            dht_reported_peers: Some(observation.dht_reported_peers),
+            dial_attempts: Some(observation.peer_dial_attempts),
+            known_peers: registry.map(|value| value.total),
+            eligible_peers: registry.map(|value| value.eligible),
+            connecting_peers: registry.map(|value| value.dialing),
+            connected_peers: swarm.map(|value| value.connected_peers),
+            unchoked_peers: swarm.map(|value| value.unchoked_peers),
+            wanted_peers: Some(
+                peers
+                    .iter()
+                    .filter(|peer| peer.wanted_piece_count > 0)
+                    .count(),
+            ),
+            ever_useful_peers: Some(
+                peers
+                    .iter()
+                    .filter(|peer| peer.useful_payload_bytes > 0)
+                    .count(),
+            ),
+            active_payload_peers: Some(
+                peers
+                    .iter()
+                    .filter(|peer| peer.observed_payload_rate > 0)
+                    .count(),
+            ),
+            stalled_peers: swarm.map(|value| value.stalled_peers),
+            zero_payload_peers: Some(
+                peers
+                    .iter()
+                    .filter(|peer| peer.useful_payload_bytes == 0)
+                    .count(),
+            ),
+            active_requests: swarm.map(|value| value.active_request_attempts),
+            request_queue_bytes: Some(peers.iter().map(|peer| peer.queued_payload_bytes).sum()),
+            request_target: swarm.map(|value| value.request_target_total),
+            writing_blocks: swarm.map(|value| value.writing_blocks),
+            storage_jobs: Some(snapshot.progress.storage_jobs_pending),
+            pending_disk_bytes: None,
+            payload_rate: swarm.map(|value| value.observed_payload_rate),
+            peer_payload_rates: integer_distribution(
+                peers.iter().map(|peer| peer.observed_payload_rate),
+            ),
+            peer_request_queues: integer_distribution(
+                peers.iter().map(|peer| peer.pending_requests),
+            ),
+        };
+        self.push(sample);
+    }
+
+    fn push(&mut self, sample: UtilitySample) {
+        if self.samples.len() >= MAX_UTILITY_SAMPLES {
+            let previous_len = self.samples.len();
+            self.samples = self
+                .samples
+                .drain(..)
+                .enumerate()
+                .filter_map(|(index, sample)| (index == 0 || index % 2 == 1).then_some(sample))
+                .collect();
+            self.coalesced_samples = self
+                .coalesced_samples
+                .saturating_add(previous_len.saturating_sub(self.samples.len()));
+        }
+        self.samples.push(sample);
+    }
+}
+
+fn integer_distribution(values: impl IntoIterator<Item = usize>) -> IntegerDistribution {
+    let mut values = values.into_iter().collect::<Vec<_>>();
+    if values.is_empty() {
+        return IntegerDistribution::default();
+    }
+    values.sort_unstable();
+    let count = values.len();
+    let p90 = count.saturating_mul(9).div_ceil(10).saturating_sub(1);
+    IntegerDistribution {
+        count,
+        min: values.first().copied(),
+        median: values.get((count - 1) / 2).copied(),
+        p90: values.get(p90).copied(),
+        max: values.last().copied(),
+    }
+}
+
 #[derive(Debug, Default)]
 struct Observation {
     milestones: Milestones,
@@ -109,6 +272,8 @@ struct Observation {
     verified_bytes: u64,
     tracker_response_batches: u64,
     tracker_reported_peers: u64,
+    dht_response_batches: u64,
+    dht_reported_peers: u64,
     peer_dial_attempts: u64,
 }
 
@@ -138,6 +303,8 @@ impl ProbeSink {
             verified_bytes: observation.verified_bytes,
             tracker_response_batches: observation.tracker_response_batches,
             tracker_reported_peers: observation.tracker_reported_peers,
+            dht_response_batches: observation.dht_response_batches,
+            dht_reported_peers: observation.dht_reported_peers,
             peer_dial_attempts: observation.peer_dial_attempts,
         }
     }
@@ -257,6 +424,13 @@ impl DownloadActivitySink for ProbeSink {
             DownloadActivityEvent::PeerDialStarted { .. } => {
                 observation.peer_dial_attempts = observation.peer_dial_attempts.saturating_add(1);
             }
+            DownloadActivityEvent::DhtLookupSucceeded { peer_count } => {
+                observation.dht_response_batches =
+                    observation.dht_response_batches.saturating_add(1);
+                observation.dht_reported_peers = observation
+                    .dht_reported_peers
+                    .saturating_add(u64::from(peer_count));
+            }
             _ => {}
         }
     }
@@ -274,6 +448,8 @@ struct ObservationSnapshot {
     verified_bytes: u64,
     tracker_response_batches: u64,
     tracker_reported_peers: u64,
+    dht_response_batches: u64,
+    dht_reported_peers: u64,
     peer_dial_attempts: u64,
 }
 
@@ -291,6 +467,8 @@ struct Capabilities {
 
 #[derive(Debug, Serialize)]
 struct Diagnostics {
+    utility_timeline: Vec<UtilitySample>,
+    utility_timeline_coalesced_samples: usize,
     metadata_phase: String,
     candidate_count: Option<usize>,
     eligible_candidates: Option<usize>,
@@ -438,6 +616,7 @@ async fn run(config: Config) -> ProbeResult {
     let control = DownloadControl::new();
     let sink = Arc::new(ProbeSink::new(started));
     control.set_activity_sink(sink.clone());
+    let mut utility_timeline = UtilityTimeline::default();
 
     let mut dht = if config.discovery.enables_dht() {
         match DhtService::start(DhtConfig::for_network(NetworkPolicy::Online)).await {
@@ -448,6 +627,7 @@ async fn run(config: Config) -> ProbeResult {
                     started,
                     &sink,
                     &control.diagnostic_snapshot(),
+                    &utility_timeline,
                     TerminalState {
                         outcome: "error",
                         integrity_verified: false,
@@ -483,10 +663,18 @@ async fn run(config: Config) -> ProbeResult {
     tokio::pin!(deadline);
     let mut reached = false;
     let mut timed_out = false;
+    let mut next_utility_sample = Duration::ZERO;
     let mut joined: Option<Result<Result<DownloadReport, DownloadError>, tokio::task::JoinError>> =
         None;
 
     loop {
+        let elapsed = started.elapsed();
+        if sink.reached(Target::Metadata)
+            && (utility_timeline.samples.is_empty() || elapsed >= next_utility_sample)
+        {
+            utility_timeline.record(elapsed, &sink.snapshot(), &control.diagnostic_snapshot());
+            next_utility_sample = elapsed.saturating_add(UTILITY_SAMPLE_INTERVAL);
+        }
         if config.target != Target::Complete && sink.reached(config.target) {
             reached = true;
             control.cancel_when_safe();
@@ -533,11 +721,19 @@ async fn run(config: Config) -> ProbeResult {
         &sink,
         cleanup_succeeded,
     );
+    if sink.reached(Target::Metadata) {
+        utility_timeline.record(
+            started.elapsed(),
+            &sink.snapshot(),
+            &control.diagnostic_snapshot(),
+        );
+    }
     result(
         &config,
         started,
         &sink,
         &control.diagnostic_snapshot(),
+        &utility_timeline,
         terminal,
     )
 }
@@ -611,10 +807,11 @@ fn result(
     started: Instant,
     sink: &ProbeSink,
     diagnostics: &DownloadDiagnosticSnapshot,
+    utility_timeline: &UtilityTimeline,
     terminal: TerminalState,
 ) -> ProbeResult {
     let observation = sink.snapshot();
-    let diagnostics = diagnostic_result(diagnostics, &observation);
+    let diagnostics = diagnostic_result(diagnostics, &observation, utility_timeline);
     ProbeResult {
         schema_version: 1,
         implementation: "rstorrent",
@@ -645,11 +842,14 @@ fn result(
 fn diagnostic_result(
     snapshot: &DownloadDiagnosticSnapshot,
     observation: &ObservationSnapshot,
+    utility_timeline: &UtilityTimeline,
 ) -> Diagnostics {
     let registry = snapshot.metadata.registry.as_ref();
     let content_registry = snapshot.content_registry.as_ref();
     let swarm = snapshot.swarm.as_ref();
     Diagnostics {
+        utility_timeline: utility_timeline.samples.clone(),
+        utility_timeline_coalesced_samples: utility_timeline.coalesced_samples,
         metadata_phase: format!("{:?}", snapshot.metadata.phase).to_ascii_lowercase(),
         candidate_count: registry.map(|value| value.counts.total),
         eligible_candidates: registry.map(|value| value.counts.eligible),
@@ -826,9 +1026,17 @@ impl fmt::Display for Target {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
 
-    use super::{DownloadActivityEvent, DownloadActivitySink, ProbeSink, crosses};
+    use rstorrent_engine::{
+        DownloadDiagnosticSnapshot, DownloadProgress, MetadataAcquisitionSnapshot,
+    };
+
+    use super::{
+        DownloadActivityEvent, DownloadActivitySink, Geometry, IntegerDistribution,
+        MAX_UTILITY_SAMPLES, Milestones, ObservationSnapshot, ProbeSink, UtilitySample,
+        UtilityTimeline, crosses, integer_distribution,
+    };
 
     #[test]
     fn percentage_thresholds_do_not_round_down() {
@@ -851,10 +1059,119 @@ mod tests {
         sink.record(DownloadActivityEvent::PeerDialStarted {
             peer: "redacted by aggregate".to_owned(),
         });
+        sink.record(DownloadActivityEvent::DhtLookupSucceeded { peer_count: 5 });
 
         let snapshot = sink.snapshot();
         assert_eq!(snapshot.tracker_response_batches, 2);
         assert_eq!(snapshot.tracker_reported_peers, 10);
+        assert_eq!(snapshot.dht_response_batches, 1);
+        assert_eq!(snapshot.dht_reported_peers, 5);
         assert_eq!(snapshot.peer_dial_attempts, 1);
+    }
+
+    #[test]
+    fn utility_distribution_uses_bounded_nearest_rank_values() {
+        assert_eq!(
+            integer_distribution([9, 0, 5, 1, 8, 3, 2, 7, 6, 4]),
+            IntegerDistribution {
+                count: 10,
+                min: Some(0),
+                median: Some(4),
+                p90: Some(8),
+                max: Some(9),
+            }
+        );
+        assert_eq!(
+            integer_distribution(std::iter::empty()),
+            IntegerDistribution::default()
+        );
+    }
+
+    #[test]
+    fn utility_timeline_rates_and_coalescing_are_bounded() {
+        let mut timeline = UtilityTimeline::default();
+        let diagnostics = DownloadDiagnosticSnapshot {
+            progress: DownloadProgress::default(),
+            swarm: None,
+            content_peers_captured_at: None,
+            content_peers: Vec::new(),
+            content_registry: None,
+            metadata: MetadataAcquisitionSnapshot::default(),
+        };
+        timeline.record(Duration::ZERO, &observation_snapshot(0, 0), &diagnostics);
+        timeline.record(
+            Duration::from_secs(2),
+            &observation_snapshot(1, 200),
+            &diagnostics,
+        );
+        assert_eq!(timeline.samples[0].verified_rate, None);
+        assert_eq!(timeline.samples[1].verified_rate, Some(100));
+
+        for ordinal in 2..=MAX_UTILITY_SAMPLES {
+            timeline.push(utility_sample(ordinal as f64));
+        }
+        assert!(timeline.samples.len() <= MAX_UTILITY_SAMPLES);
+        assert_eq!(
+            timeline
+                .samples
+                .first()
+                .map(|sample| sample.elapsed_seconds),
+            Some(0.0)
+        );
+        assert_eq!(
+            timeline.samples.last().map(|sample| sample.elapsed_seconds),
+            Some(MAX_UTILITY_SAMPLES as f64)
+        );
+        assert!(timeline.coalesced_samples > 0);
+    }
+
+    fn observation_snapshot(
+        verified_piece_count: usize,
+        verified_bytes: u64,
+    ) -> ObservationSnapshot {
+        ObservationSnapshot {
+            milestones: Milestones::default(),
+            geometry: Geometry::default(),
+            verified_piece_count,
+            verified_bytes,
+            tracker_response_batches: 0,
+            tracker_reported_peers: 0,
+            dht_response_batches: 0,
+            dht_reported_peers: 0,
+            peer_dial_attempts: 0,
+        }
+    }
+
+    fn utility_sample(elapsed_seconds: f64) -> UtilitySample {
+        UtilitySample {
+            elapsed_seconds,
+            verified_piece_count: 0,
+            verified_bytes: 0,
+            verified_rate: None,
+            tracker_response_batches: None,
+            tracker_reported_peers: None,
+            dht_response_batches: None,
+            dht_reported_peers: None,
+            dial_attempts: None,
+            known_peers: None,
+            eligible_peers: None,
+            connecting_peers: None,
+            connected_peers: None,
+            unchoked_peers: None,
+            wanted_peers: None,
+            ever_useful_peers: None,
+            active_payload_peers: None,
+            stalled_peers: None,
+            zero_payload_peers: None,
+            active_requests: None,
+            request_queue_bytes: None,
+            request_target: None,
+            writing_blocks: None,
+            storage_jobs: None,
+            pending_disk_bytes: None,
+            payload_rate: None,
+            peer_payload_rates: IntegerDistribution::default(),
+            peer_request_queues: IntegerDistribution::default(),
+        }
     }
 }

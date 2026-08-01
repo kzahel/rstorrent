@@ -44,6 +44,8 @@ MAX_RUNS = 100
 MAX_TIMEOUT_SECONDS = 24 * 60 * 60
 MAX_DIAGNOSTIC_CHARS = 16_384
 POLL_SECONDS = 0.05
+UTILITY_SAMPLE_SECONDS = 1.0
+MAX_UTILITY_SAMPLES = 1024
 DHT_BOOTSTRAP_NODES = ",".join(
     (
         "dht.libtorrent.org:25401",
@@ -239,6 +241,96 @@ def distribution(values: list[float]) -> dict[str, float | int | None]:
     }
 
 
+def integer_distribution(values: list[int]) -> dict[str, int | None]:
+    if not values:
+        return {"count": 0, "min": None, "median": None, "p90": None, "max": None}
+    ordered = sorted(values)
+    p90_index = max(0, math.ceil(len(ordered) * 0.9) - 1)
+    return {
+        "count": len(ordered),
+        "min": ordered[0],
+        "median": ordered[(len(ordered) - 1) // 2],
+        "p90": ordered[p90_index],
+        "max": ordered[-1],
+    }
+
+
+def append_utility_sample(samples: list[dict[str, Any]], sample: dict[str, Any]) -> int:
+    coalesced = 0
+    if len(samples) >= MAX_UTILITY_SAMPLES:
+        retained = [
+            value for index, value in enumerate(samples) if index == 0 or index % 2 == 1
+        ]
+        coalesced = len(samples) - len(retained)
+        samples[:] = retained
+    samples.append(sample)
+    return coalesced
+
+
+def libtorrent_utility_sample(
+    status: Any,
+    peers: list[Any],
+    elapsed_seconds: float,
+    previous_verified: tuple[float, int] | None,
+) -> dict[str, Any]:
+    verified_bytes = int(status.total_wanted_done)
+    verified_rate = None
+    if previous_verified is not None:
+        previous_at, previous_bytes = previous_verified
+        interval = elapsed_seconds - previous_at
+        if interval > 0:
+            verified_rate = round(max(0, verified_bytes - previous_bytes) / interval)
+
+    connected = [
+        peer
+        for peer in peers
+        if not peer_has_flag(peer, lt.peer_info.connecting)
+        and not peer_has_flag(peer, lt.peer_info.handshake)
+    ]
+    payload_rates = [max(0, int(peer.payload_down_speed)) for peer in connected]
+    request_queues = [max(0, int(peer.download_queue_length)) for peer in connected]
+    return {
+        "elapsed_seconds": elapsed_seconds,
+        "verified_piece_count": int(status.num_pieces),
+        "verified_bytes": verified_bytes,
+        "verified_rate": verified_rate,
+        "tracker_response_batches": None,
+        "tracker_reported_peers": None,
+        "dht_response_batches": None,
+        "dht_reported_peers": None,
+        "dial_attempts": None,
+        "known_peers": int(status.list_peers),
+        "eligible_peers": int(status.connect_candidates),
+        "connecting_peers": max(0, int(status.num_connections) - int(status.num_peers)),
+        "connected_peers": int(status.num_peers),
+        "unchoked_peers": sum(
+            not peer_has_flag(peer, lt.peer_info.remote_choked) for peer in connected
+        ),
+        "wanted_peers": sum(
+            peer_has_flag(peer, lt.peer_info.interesting) for peer in connected
+        ),
+        "ever_useful_peers": sum(int(peer.total_download) > 0 for peer in connected),
+        "active_payload_peers": sum(rate > 0 for rate in payload_rates),
+        "stalled_peers": sum(peer_has_flag(peer, lt.peer_info.snubbed) for peer in connected),
+        "zero_payload_peers": sum(int(peer.total_download) == 0 for peer in connected),
+        "active_requests": sum(request_queues),
+        "request_queue_bytes": sum(max(0, int(peer.queue_bytes)) for peer in connected),
+        "request_target": None,
+        "writing_blocks": None,
+        "storage_jobs": None,
+        "pending_disk_bytes": sum(
+            max(0, int(peer.pending_disk_bytes)) for peer in connected
+        ),
+        "payload_rate": max(0, int(status.download_payload_rate)),
+        "peer_payload_rates": integer_distribution(payload_rates),
+        "peer_request_queues": integer_distribution(request_queues),
+    }
+
+
+def peer_has_flag(peer: Any, flag: Any) -> bool:
+    return bool(peer.flags & flag)
+
+
 def build_probe(repository: Path) -> Path:
     completed = subprocess.run(
         ["cargo", "build", "-p", "rstorrent-engine", "--bin", "rstorrent-public-probe"],
@@ -396,6 +488,11 @@ def run_libtorrent(
     verified_pieces = 0
     verified_bytes = 0
     status_metrics: dict[str, Any] = {}
+    utility_timeline: list[dict[str, Any]] = []
+    utility_timeline_coalesced = 0
+    previous_utility_verified: tuple[float, int] | None = None
+    next_utility_sample = 0.0
+    last_status: Any | None = None
     cleanup_succeeded = True
     try:
         output_root.mkdir(parents=True, exist_ok=False)
@@ -414,6 +511,7 @@ def run_libtorrent(
         while True:
             now = time.monotonic()
             status = handle.status()
+            last_status = status
             alerts.extend(bounded(alert.message(), 512) for alert in session.pop_alerts())
             del alerts[:-50]
             if status.has_metadata and milestones["metadata_verified"] is None:
@@ -458,6 +556,21 @@ def run_libtorrent(
                 "failed_bytes": int(status.total_failed_bytes),
                 "redundant_bytes": int(status.total_redundant_bytes),
             }
+            elapsed = now - started
+            if status.has_metadata and (
+                not utility_timeline or elapsed >= next_utility_sample
+            ):
+                sample = libtorrent_utility_sample(
+                    status,
+                    list(handle.get_peer_info()),
+                    elapsed,
+                    previous_utility_verified,
+                )
+                utility_timeline_coalesced += append_utility_sample(
+                    utility_timeline, sample
+                )
+                previous_utility_verified = (elapsed, int(status.total_wanted_done))
+                next_utility_sample = elapsed + UTILITY_SAMPLE_SECONDS
             if milestones[MILESTONE_KEYS[target]] is not None:
                 outcome = "milestone_reached"
                 integrity = True
@@ -467,6 +580,15 @@ def run_libtorrent(
                 terminal = "target deadline expired"
                 break
             time.sleep(POLL_SECONDS)
+        if last_status is not None and last_status.has_metadata:
+            elapsed = time.monotonic() - started
+            sample = libtorrent_utility_sample(
+                last_status,
+                list(handle.get_peer_info()),
+                elapsed,
+                previous_utility_verified,
+            )
+            utility_timeline_coalesced += append_utility_sample(utility_timeline, sample)
     except Exception as error:  # Public harness records owner errors instead of aborting its pair.
         outcome = "harness_error" if isinstance(error, HarnessError) else "error"
         terminal = f"{type(error).__name__}: {error}"
@@ -499,7 +621,12 @@ def run_libtorrent(
         "cleanup_succeeded": cleanup_succeeded,
         "terminal_detail": terminal,
         "capabilities": capabilities,
-        "diagnostics": {"status": status_metrics, "alerts": alerts},
+        "diagnostics": {
+            "status": status_metrics,
+            "alerts": alerts,
+            "utility_timeline": utility_timeline,
+            "utility_timeline_coalesced_samples": utility_timeline_coalesced,
+        },
         "process": {"peak_rss_bytes": None, "cpu_seconds": None},
     }
 

@@ -1,6 +1,6 @@
 # Tactical 026: Paired Peer Utility Timeline
 
-Status: Active
+Status: Complete
 
 Topics: `peer-lifecycle`, `performance-and-live-evidence`,
 `oracle-driven-engine-campaign`
@@ -53,9 +53,10 @@ free of Tokio, process, and JSON types.
 
 Sample each active owner once per second from metadata completion through the
 terminal milestone, with an immediate first and final sample. Retain no more
-than 1,024 samples per owner. A run beyond that bound coalesces older adjacent
-samples into fixed elapsed-time buckets while retaining the first, milestone,
-and terminal boundaries; it must never grow an unbounded vector.
+than 1,024 samples per owner. A run beyond that bound deterministically halves
+the interior history while retaining the first and final boundaries; exact
+milestone times remain in the separate top-level milestone record. The vector
+must never grow without bound.
 
 Every sample uses elapsed monotonic time and endpoint-free aggregates:
 
@@ -120,6 +121,61 @@ The tactical succeeds when both owners emit bounded honest timelines through
 the same report, deterministic and controlled gates pass, and retained paired
 evidence selects a source-derived owner or the explicit rotation branch. It
 does not require a latency improvement by itself.
+
+## Implementation And Evidence
+
+Both owners now emit the same endpoint-free utility sample shape. It includes
+verified bytes and interval rate; known, eligible, connecting, connected,
+unchoked, wanted, useful, active, stalled, and zero-payload peer counts;
+request and disk/storage backlog; aggregate rate; bounded per-peer rate and
+queue distributions; and source/dial totals where the owner exposes them.
+Unavailable meanings are `null`, including libtorrent's internal request
+target and RSTorrent's byte-exact disk backlog. The Rust probe samples existing
+diagnostic snapshots; it adds no engine task or hot-path I/O.
+
+Pure Rust and Python tests pin nearest-rank distributions, interval rates,
+the 1,024-sample/coalescing bound, first/final retention, nullable fields, and
+endpoint scrubbing. The installed Python `2.0.13.0` binding exposes
+`torrent_status` peer-list, candidate, connection, piece, byte, and payload
+rates plus `peer_info` choke, interest, snub, queue, total payload, current
+rate, and pending-disk fields. It does not expose target download queue length,
+timed-out request count, or several C++-only queue details, so those remain
+honestly absent.
+
+Formatting and warning-denying workspace clippy pass. The workspace lists 245
+tests with 242 passing and three intentionally ignored public-network probes;
+all nine comparator unit tests pass. The final controlled pair completed exact
+publication, integrity, bounded timeline emission, and cleanup for both
+owners.
+
+The controlled 79,000-byte paired fixture reached verified publication and
+clean cleanup for both owners through the new schema. Three alternating public
+Big Buck Bunny full pairs then classified `both_reached` with exact
+276,445,467-byte integrity and no cleanup or bound failures. RSTorrent
+published in 132.89, 134.43, and 138.24 seconds; libtorrent published in
+30.87, 30.89, and 31.11 seconds. The 4.35x median ratio misses the campaign's
+comparable gate.
+
+Normalizing at metadata makes the first divergence unambiguous. At three to
+five seconds of content time, RSTorrent knew 10--16 peers, had three or four
+connections and two useful peers, and received about 2.2--2.7 MB/s.
+Libtorrent knew 60--65 peers, had 17--20 connections and 11--14 useful peers,
+and ramped to about 12--29 MB/s. RSTorrent had no idle eligible candidate in
+these samples: every known peer was connected, dialing, or backed off. This
+classifies common-profile candidate supply before ranking, request service,
+or picker policy.
+
+A follow-up product-path screen changed the next premise. Tracker plus DHT
+provided 159 content candidates by metadata; after one second, 119 were still
+eligible while exactly eight were dialing and six were connected. Pinned
+libtorrent permits unlimited half-open sockets under its 200-connection global
+bound, issues a 30-attempt startup boost, and budgets 30 attempts per second.
+RSTorrent took about 100 content seconds to grow from six to 29 connections
+while holding the eight-attempt ceiling continuously. It reached 50% only at
+143.94 seconds, with 30 connections, 92 still-eligible candidates, exact
+cleanup, and no integrity failure. The changed candidate supply therefore
+selects bounded half-open admission as the next falsifiable owner before
+candidate ranking or another request-window change.
 
 ## Non-Goals
 

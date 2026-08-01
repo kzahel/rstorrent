@@ -388,6 +388,42 @@ slower than the prior 86.05-second public health screen, but one changed swarm
 cannot attribute that delta. It retains completion evidence and selects a
 time-series peer working-set comparison rather than further storage tuning.
 
+### Paired Utility Timeline: 2026-08-01
+
+Tactical `026` added a one-second, 1,024-sample bounded endpoint-free timeline
+to both comparator owners. Exact milestone times remain separate; older
+interior samples are deterministically coalesced if the bound is reached.
+Fields cover candidate, connection, request, payload, verification, and
+storage/disk aggregates with explicit `null` where an owner cannot expose an
+equivalent meaning. The controlled paired publication and deterministic Rust
+and Python aggregation, rate, bound, and scrubbing tests pass.
+
+Three alternating common-profile Big Buck Bunny full pairs reached verified
+publication and clean shutdown for both owners. RSTorrent took 132.89, 134.43,
+and 138.24 seconds; libtorrent took 30.87, 30.89, and 31.11 seconds. The median
+paired ratio is 4.35x, so functional completion remains green but comparable
+latency remains open.
+
+Libtorrent spent about 20.3--20.6 seconds reaching metadata and transferred
+content in only 10.3--10.6 seconds. Three to five content seconds after
+metadata, RSTorrent knew 10--16 peers, had three or four connections and two
+useful peers, and received roughly 2.2--2.7 MB/s. Libtorrent knew 60--65 peers,
+had 17--20 connections and 11--14 useful peers, and ramped to roughly 12--29
+MB/s. RSTorrent had no idle eligible candidates in that interval, selecting
+candidate supply before ranking or request policy for the isolated tracker
+profile.
+
+The product tracker+DHT path supplied a different state. One source-timed 50%
+screen had 159 candidates by metadata; after one content second, 119 remained
+eligible, eight were dialing, and six were connected. DHT supplied another
+148 observations around content second 30, mostly merging existing tracker
+records. RSTorrent held exactly eight half-open attempts while growing to 29
+connections over about 100 seconds, then reached 50% at 143.94 seconds with 30
+connections and 92 candidates still eligible. This selects Tactical `027`'s
+source-derived 30-attempt startup cohort. Continuously saturated 64-command
+storage and 66-job high waters remain a measured secondary hypothesis if
+broader admission does not improve service.
+
 ## Result Classification
 
 Classify each paired attempt before interpreting speed:
