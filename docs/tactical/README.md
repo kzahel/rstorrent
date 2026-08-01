@@ -216,10 +216,10 @@ that scope and its cleanup or compatibility rules explicitly.
   headless visual/accessibility/scale evidence before connecting new Rust
   peer projections.
 - [`035-live-peer-inspection-projection.md`](035-live-peer-inspection-projection.md):
-  ready; defines the peer-runtime ownership refactor, strict active-peer
-  lifecycle, truthful torrent/peer views, self-expiring view-set leases,
-  semantic responsive view selection, and suspension recovery required to
-  connect the real engine to the React inspection surface.
+  complete; unifies active connection observation, exposes truthful bounded
+  torrent/peer views, independently reaps silent view sets, connects semantic
+  responsive views to the live React surface, and proves suspended-client
+  recovery plus a verified libtorrent transfer entirely headlessly.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

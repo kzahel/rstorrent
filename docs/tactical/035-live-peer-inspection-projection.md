@@ -1,6 +1,6 @@
 # Tactical 035: Live Torrent And Peer Inspection Projection
 
-Status: implementation in progress; engine lifecycle observation landed.
+Status: complete.
 
 ## Motivation And Desired Outcome
 
@@ -741,23 +741,124 @@ npm run typecheck --prefix clients/web
 npm test --prefix clients/web -- --run
 ```
 
-The session run passed 47 tests across the library and binary, including peer
+The session run passed 48 tests across the library and binary, including peer
 generation upsert/disconnecting/removal and independent lease expiry. The
 frontend run passed 27 tests with two browser tests skipped by their existing
 opt-in gate.
 
+### Semantic frontend and live-adapter checkpoint
+
+The frontend application port now requests semantic inspection views rather
+than Rust wire specifications. Responsive layout and navigation choose the
+materialized set: phone detail does not retain the torrent library, changing
+the selected torrent evicts the old summary and peers, and the demo and live
+adapters obey the same contract. View state distinguishes not requested,
+loading, ready, unavailable, unsupported, and stale; live nullable fields are
+never filled from demo-only product assumptions.
+
+`LiveApplication` maps the validated generated contract into the existing
+Zustand inspection model. One controller coalesces desired-view changes,
+cancels obsolete work, owns polling and reopen, and preserves stale rows only
+while it establishes a replacement view set. Each browser application has a
+separate opaque owner identity. The loopback gateway now offers an explicit
+unauthenticated development mode only on an OS-assigned loopback port with one
+exact configured loopback Origin; bearer-authenticated mode remains the
+default. Tests prove owner isolation within one gateway and across gateways.
+
+The first controlled browser attempt also found a useful hostile-boundary bug:
+generated structural validation accepted `torrent_peers`, but the handwritten
+semantic validator did not include that view. The manual switch is now
+exhaustive for peer snapshots and patches, with bounded row validation covered
+by TypeScript tests.
+
+### Pressure and controlled-browser checkpoint
+
+The source-rich deterministic view test installs 30 connecting and 30
+connected rows. One representative optimized test run recorded:
+
+```text
+peer_view_pressure rows=60 projection_micros=479 snapshot_micros=501 \
+encoded_bytes=79230 queue_high_water=79230 resets=0
+```
+
+This remains comfortably below the 256 KiB default view-set queue without a
+reset. Targeted peer publication no longer clones the complete torrent map.
+Tactical `034`'s unchanged 2,000-torrent/10,000-peer browser pressure gate
+continues to bound the frontend: at most 100 rendered rows, 840 DOM elements,
+about 29.3 MiB used heap, and no observed long tasks in its recorded sample.
+These are development-machine observations, not latency guarantees.
+
+`tests/interop/browser_peer_inspection_surface.py` now builds the production
+web application and drives it in headless Chrome against a loopback libtorrent
+2.0.13.0 seed and a temporary application profile. The retained successful run
+completed in 27.7 seconds and observed the active connection, two pending
+requests, verified the three-piece payload SHA-1
+`576143b2992ecf25c780ff41c79552f3bb50941b`, and observed keyed peer removal
+after completion. Serious and critical axe violations were empty at the wide
+inspection state, and wide, compact, and phone captures were visually
+inspected.
+
+The same run held every browser update request past an explicitly test-only
+500 ms server lease while the engine continued. The application-owned reaper
+destroyed the silent set. On the first expired response, the UI showed
+`reconnecting` while retaining the old peer row as stale, opened a distinct
+view-set identity and epoch, atomically installed its fresh snapshot, and
+returned to `connected`. Gateway and web processes joined and all temporary
+profile, storage, and fixture data were removed. No Tauri window, visible
+browser, Android surface, or public swarm was used.
+
+### Known gaps and deliberate deferrals
+
+- The live torrent row uses its info-hash prefix as a display label until the
+  session projection owns a stable metadata display name.
+- Known registry-peer count, upload rate, and some detailed peer fields remain
+  honestly unavailable; short samples may display a blank rate even when
+  request counters prove useful work.
+- The first Peers grid presents the highest-value subset of the bounded wire
+  row. Row detail and column configuration may expose additional already-owned
+  fields later without changing lifecycle membership.
+- Incoming listening, uTP, the registry-backed Swarm view, a live categorized
+  Logs view, streaming delivery, binary encoding, and Android presentation
+  remain the explicit non-goals recorded above.
+
+### Final regression evidence
+
+The final pass ran:
+
+```text
+npm ci --prefix clients/web
+npm run generate --prefix clients/web
+git diff --exit-code -- clients/web/src/api/generated/v1.ts \
+  clients/web/src/api/generated/v1.schema.json clients/web/src/fixtures/
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace --no-fail-fast
+npm run typecheck --prefix clients/web
+npm test --prefix clients/web -- --run
+npm run build --prefix clients/web
+npm run test:e2e --prefix clients/web
+uv run --project tests/interop --locked \
+  python tests/interop/browser_peer_inspection_surface.py
+```
+
+The locked install reported zero vulnerabilities and generation produced no
+drift. Formatting, Clippy, and every non-ignored workspace test passed; three
+public-network engine tests remained explicitly ignored. Vitest passed 31
+tests with two existing opt-in cases skipped. The ordinary Playwright run
+passed four demo/responsive cases and skipped the controlled live case by its
+explicit environment gate; the separate harness enabled and passed that case.
+The production build completed. One final large-swarm browser sample retained
+840 DOM elements and stayed within its time, heap, and long-task ceilings.
+
 ## Stopping Condition And Next Boundary
 
-This tactical is complete when the engine has one coherent active-connection
-observation and strict vocabulary, Rust exposes truthful bounded torrent and
-peer views, abandoned view sets self-destruct on client silence, the frontend
-requests only currently relevant semantic views and recovers from suspension
-through a fresh atomic snapshot, scripted and controlled libtorrent runs are
-visible through the real React surface headlessly, performance/resource high
-waters are recorded, all generated/frontend/workspace gates pass, owning
-topics record actual evidence and gaps, and the working tree is committed and
-clean.
+The stopping condition is met: active connection ownership and vocabulary are
+coherent, projections and view sets are bounded, silent resources self-expire,
+the live frontend recovers through a fresh snapshot, real peer and verified
+transfer behavior is visible through the production React build headlessly,
+and the resource and regression evidence is recorded.
 
-The next slice should be selected from real inspection use. The likely choices
-are the categorized live Logs view or the registry-backed Swarm view; neither
-is implicitly authorized by completing this tactical.
+The next slice should be selected from real inspection use. The categorized
+live Logs view provides the broadest immediate debugging value; the
+registry-backed Swarm view is the natural next peer-lifecycle depth slice.
+Neither is implicitly authorized by completing this tactical.

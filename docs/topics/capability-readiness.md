@@ -26,8 +26,11 @@ The engine campaign is paused before any bounded storage-concurrency tactical.
 Tactical `033` now completes the leased application view-set and headless
 polling foundation. Tactical `034` completes the responsive frontend,
 deterministic demo adapter, adaptive inspection hierarchy, and virtual table
-foundation. Stable Rust torrent and peer inspection projections are now the
-current product-observability slice.
+foundation. Tactical `035` completes stable Rust torrent and active-peer
+inspection projections, the semantic live adapter, independently reaped
+leases, and suspended-client recovery through a fresh snapshot. The next
+product-observability cross-section should be selected from actual inspection
+value before the engine campaign resumes.
 
 ## Purpose And Ownership
 
@@ -102,20 +105,20 @@ evidence.
 
 ### Now
 
-**Stable peer and torrent inspection projection.** Define connection-lifetime
-peer identities, truthful bounded torrent and peer rows, privacy policy,
-source-owner projection, and adversarial fixtures. Then map the implemented
-view-set controller into Tactical `034`'s frontend inspection model while
-keeping named demo scenarios as permanent reproduction fixtures. Tactical
-[`035`](../tactical/035-live-peer-inspection-projection.md) is the ready
-execution plan. It also makes view sets self-expire on client silence and
-requires fresh-snapshot frontend recovery after browser suspension.
+**Select the next live inspection cross-section.** Tactical
+[`035`](../tactical/035-live-peer-inspection-projection.md) completed active
+Peers end to end. The existing categorized logger offers the broadest next
+debugging value, while a registry-backed Swarm view would expose eligible,
+idle, backed-off, failed, banned, dialing, and connected peer records behind
+the active connection table. Choose one bounded tactical from observed use;
+do not resume general UI breadth implicitly.
 
 ### Next
 
-1. **Live diagnostics and remaining high-value views.** Feed the categorized
-   logger into the global Logs surface, then select tracker, request, piece,
-   disk, file, or DHT views according to observed debugging value.
+1. **Live diagnostics or Swarm depth.** Feed the categorized logger into the
+   global Logs surface or expose the peer registry through Swarm, then select
+   tracker, request, piece, disk, file, or DHT views according to observed
+   debugging value.
 2. **Resume oracle-driven engine work.** Use the connected inspection evidence
    to decide whether serialized storage execution, another correctness owner,
    or measured BEP breadth becomes the next engine tactical.
@@ -203,8 +206,8 @@ does not.
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
 | Durable semantic application control | Implemented | deterministic, runtime, web, AVD, physical | Removal, deletion, stable public compatibility, and general multi-torrent scheduling are absent. | [`application-control`](application-control.md) |
-| Leased application view sets and polling client | Implemented | deterministic, runtime, interop | Named summary, piece, and diagnostic views have bounded replay/reset and a headless controller; peer/file/tracker views, streaming, Tauri migration, and stable public compatibility remain absent. | [`application-view-api`](application-view-api.md) |
-| Shared web and Tauri desktop UI | Partial | runtime, web, desktop | The shell and one-torrent flow work; production desktop integration and complete torrent controls do not. | [`client-surfaces`](client-surfaces.md) |
+| Leased application view sets and polling client | Implemented | deterministic, runtime, interop, web | Named summary, piece, diagnostic, and active-peer views have bounded replay/reset, independent lease expiry, and fresh-snapshot recovery; file/tracker/swarm views, streaming, Tauri migration, and stable public compatibility remain absent. | [`application-view-api`](application-view-api.md) |
+| Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive web surface now consumes live torrent and active-peer views headlessly; production desktop integration, remaining detail feeds, and complete torrent controls do not. | [`client-surfaces`](client-surfaces.md) |
 | Android Compose foreground client | Partial | runtime, AVD, physical | General settings, connectivity policy, and complete torrent controls remain incomplete. | [`client-surfaces`](client-surfaces.md) |
 | Derived progress and bounded diagnostics | Implemented | deterministic, runtime, web, AVD | Scheduler and per-peer facts must grow with the corresponding owners. | [`application-control`](application-control.md) |
 | Offline, loopback-only, and online egress policy | Implemented | deterministic, runtime, web, AVD | Policy is fixed for one service lifetime; Android VPN and metered-network controls are absent. | [`application-control`](application-control.md) |

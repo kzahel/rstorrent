@@ -25,10 +25,11 @@ direction for that shared presentation lives in
 generated TypeScript/schema boundary, authenticated polling client, pure
 reducer, and lifecycle controller. Tactical `034` adds the new responsive
 React inspection application behind an explicit demo route without replacing
-the live browser/Tauri entry or changing Android. Tactical `035` is ready to
-connect that application to live torrent and active-peer views, including
-semantic responsive view selection and recovery after a suspended tab outlives
-its Rust view-set lease.
+the live browser/Tauri entry or changing Android. Tactical `035` connects that
+application to live torrent and active-peer views, including semantic
+responsive view selection and recovery after a suspended tab outlives its
+Rust view-set lease. The live path is proven through the headless browser
+gateway; Android remains intentionally unchanged.
 
 ## Scope
 
@@ -118,9 +119,11 @@ The next presentation is implemented behind an explicit named-demo route as a
 fresh strict-TypeScript React application using component-scoped CSS Modules.
 It preserves JSTorrent's information hierarchy without inheriting its source
 architecture and adapts one library/list/detail model from wide desktop to
-phone-sized browser layouts. The provisional direct-DOM live entry remains in
-place until stable Rust torrent and peer views are mapped through the new
-application adapter. The detailed direction and open choices live in
+phone-sized browser layouts. Stable Rust torrent and peer views are now mapped
+through the new live application adapter. The older direct-DOM surface remains
+only where existing entry compatibility still requires it; it is no longer
+the proof path for new inspection work. The detailed direction and open
+choices live in
 [`web-ui-design.md`](web-ui-design.md).
 
 The initial browser surface may prove the network transport on loopback with
@@ -129,10 +132,10 @@ LAN binding, TLS, pairing, accounts, relay operation, wake-up delivery, remote
 authorization policy, and deployment require later threat models and
 tacticals.
 
-Tactical `035` may also add an explicit unauthenticated development mode for
-initial local UI bring-up. It must be impossible to bind outside loopback,
-retain exact Origin and resource checks, isolate view-set owners, and use a
-temporary or explicitly selected profile. It is a development convenience,
+Tactical `035` also adds an explicit unauthenticated development mode for
+local UI bring-up and headless evidence. It binds only an OS-assigned loopback
+listener, requires one exact configured loopback Origin, retains resource
+checks, and isolates opaque view-set owners. It is a development convenience,
 not a production browser-control posture; the authenticated mode remains.
 
 ## Reactive Views
@@ -237,6 +240,15 @@ accessibility, keyboard, command, and large-collection evidence against that
 adapter. Real adapter tests remain necessary when Rust projections connect;
 demo evidence does not claim engine behavior.
 
+Tactical `035` supplies that real-adapter evidence. The production-built web
+surface connects to a temporary loopback application and controlled
+libtorrent seed, observes active requests through verified completion, and
+removes the peer row after cleanup. A deliberately silent browser client
+outlives a shortened test lease, displays retained state as stale, then opens
+a distinct view set and installs a fresh coherent snapshot. Wide, compact,
+phone, accessibility, payload-hash, process-join, and temporary-cleanup checks
+run without a visible browser or Tauri window.
+
 Android presentation requires separate evidence because it is implemented in
 Compose. Routine automation targets an explicitly owned no-window AVD and
 uses generated-contract, reducer, Compose, and UIAutomator checks. Physical
@@ -289,7 +301,9 @@ future server.
   one persisted root. General root management, root migration, removable
   media policy, and file-selection presentation remain product gaps.
 - The current UI proves one controlled torrent. General multi-torrent
-  scheduling and complete product presentation remain absent.
+  scheduling and complete product presentation remain absent. Peers is the
+  first live detailed table; Swarm, Logs, files, trackers, pieces, disk, speed,
+  and DHT remain truthful scaffolds or later feeds.
 - Diagnostics currently cover application lifecycle, discovery exhaustion,
   network restriction, tracker policy rejection, metadata, storage, piece,
   and integrity edges.
@@ -305,6 +319,8 @@ Tacticals `008` and `009` record the implemented contract, exact controlled
 evidence, and bounded deferrals. Tactical `012` records the completed
 cross-surface observability slice motivated by the first public-magnet desktop
 run. Tactical `013` records explicit product and harness network selection.
+Tacticals `033` through `035` record the leased view-set boundary, responsive
+demo surface, and first live peer projection plus recovery evidence.
 Production remote authorization, dynamic Android network controls, general
 multi-torrent scheduling, and broader desktop lifecycle work remain later
 boundaries.

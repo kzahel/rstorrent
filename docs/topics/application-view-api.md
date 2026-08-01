@@ -7,11 +7,11 @@ generated TypeScript/schema contract, pure reducer, and lifecycle controller
 are implemented by
 [`033-headless-view-set-foundation.md`](../tactical/033-headless-view-set-foundation.md).
 Tactical `034` implements the per-application Zustand store and React
-inspection model against a deterministic adapter. Tactical `035` is ready to
-add stable Rust torrent and active-peer projections, semantic responsive view
-selection, independently reaped leases, and browser-suspension recovery.
-The existing Tactical `008` subscriptions remain compatible adapters. No
-stable public remote wire compatibility is claimed yet.
+inspection model against a deterministic adapter. Tactical `035` adds stable
+Rust torrent and active-peer projections, semantic responsive view selection,
+independently reaped leases, and browser-suspension recovery through the live
+React adapter. The existing Tactical `008` subscriptions remain compatible
+adapters. No stable public remote wire compatibility is claimed yet.
 
 ## Purpose And Scope
 
@@ -150,8 +150,8 @@ state, and wake waiters without requiring another client operation. Only an
 accepted client open, desired-view update, or new update request refreshes
 `last_client_activity`; engine publication, coalescing, queue wakeups, replay,
 and response generation never keep an abandoned set alive. Tactical `035`
-replaces the implemented foundation's current opportunistic pruning with this
-active owner.
+replaced the foundation's opportunistic pruning with this active owner and
+made its cancellation and join part of application shutdown.
 
 Updating the requested specifications changes the existing view set. Added or
 changed view snapshots enter its single ordered update feed; the configuration
@@ -544,17 +544,44 @@ tests additionally cover owner isolation, concurrent-consumer rejection,
 lost-response replay, failed-reduction non-acknowledgement, overflow recovery,
 delivery intervals, expiry, generated drift, and shutdown wakeup.
 
-The implemented expiry proof is opportunistic: a later view-set operation or
-test hook performs pruning. It does not yet destroy a silent set on its own.
-Tactical `035` owns the single joined reaper and the suspended-client recovery
-evidence rather than treating the existing test as full lifecycle closure.
-
 This is a local application boundary and automation seam, not a production
 remote-control security or compatibility claim. Per-view retained histories,
 per-view overflow reset, streaming delivery, a binary codec, Tauri Channel
-migration, stable peer rows, and the Rust-to-React adapter remain later layers.
-The transport-independent Zustand/React presentation foundation and its demo
-adapter are complete in Tactical `034`.
+migration, and stable public compatibility remain later layers. The
+transport-independent Zustand/React presentation foundation and demo adapter
+are complete in Tactical `034`; stable peer rows and the Rust-to-React polling
+adapter are complete in Tactical `035`.
+
+## Live Peer Extension
+
+Tactical `035` implements `torrent_peers` as complete keyed rows for all and
+only active connection generations. The generated Rust/TypeScript/schema
+contract carries direction, transport, lifecycle, endpoint, source,
+capability, request-window, transfer, availability, and cleanup facts without
+placing payloads or peer history on the boundary. The application mapper
+publishes targeted torrent and peer changes without cloning the complete
+torrent collection.
+
+`InspectionApplication` now accepts semantic desired views. The live adapter
+maps them to Rust specifications while responsive navigation can retain only a
+phone detail, a library, or a wide list-plus-detail set. Removed projections
+are evicted rather than becoming an accidental complete engine mirror. Each
+materialization retains the distinct not-requested, loading, ready,
+unavailable, unsupported, and stale states.
+
+One application reaper checks all sets at a bounded interval. Only accepted
+client operations renew `last_client_activity`; engine publications never do.
+The advertised hello lease reflects the configured application lease. A
+headless controlled run held browser operations past a 500 ms test lease,
+observed server expiry and visible stale state, then proved recovery through a
+second view-set identity and fresh epoch. The production default remains five
+minutes with a reaper interval no greater than five seconds.
+
+The development browser gateway can opt into unauthenticated control only on
+an OS-assigned loopback listener with one exact loopback Origin. Opaque owner
+identities still isolate view sets. This mode is an automation and local
+bring-up boundary, not a production remote-access posture; bearer mode remains
+the ordinary gateway configuration.
 
 ## Validation And Evidence
 
@@ -596,16 +623,18 @@ interactive machine.
    in Tactical `033`.
 2. The Zustand store, React shell, frontend inspection model, named demo
    adapter, and virtualized scale fixtures are complete in Tactical `034`.
-3. Tactical `035` adds stable torrent-list and active-peer projections with
-   hostile and scale fixtures, maps them through the controller into the
-   inspection model, and closes lease/suspension lifecycle gaps.
+3. Tactical `035` added stable torrent-list and active-peer projections with
+   hostile and scale fixtures, mapped them through the controller into the
+   inspection model, and closes lease/suspension lifecycle gaps. This step is
+   complete.
 4. Add streaming as an interchangeable delivery adapter only after polling
    behavior and reducer recovery are stable.
 5. Measure update volume, decode/reduce cost, rendering, and memory before
    selecting binary encoding or finer-grained row patches.
 
-Tacticals `033` and `034` completed the first two steps; Tactical `035` is
-ready for the third.
+Tacticals `033`, `034`, and `035` completed the first three steps. The next
+view should follow observed inspection value; streaming and binary encoding
+remain measurement-driven delivery changes rather than prerequisites.
 
 ## References And Deliberate Differences
 

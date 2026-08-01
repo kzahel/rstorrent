@@ -6,9 +6,9 @@ Status: Product, presentation, application-view, and client-store direction
 accepted. Tactical `033` implements the generated contract, polling client,
 lifecycle controller, and pure reducer. Tactical `034` implements the fresh
 React/Zustand/CSS Modules application, adaptive inspection hierarchy, virtual
-tables, and permanent named demo adapter. Tactical `035` is ready to connect
-stable Rust torrent and active-peer projections through semantic responsive
-view selection while retaining the demo adapter and recovering cleanly after
+tables, and permanent named demo adapter. Tactical `035` connects stable Rust
+torrent and active-peer projections through semantic responsive view
+selection while retaining the demo adapter and recovering cleanly after
 browser suspension.
 
 ## Purpose
@@ -271,6 +271,16 @@ latency, long-task or missed-frame evidence, and memory high-water when a slice
 changes table or store behavior. Real torrents remain useful spot checks after
 deterministic presentation evidence passes.
 
+Tactical `035` adds the first live-product evidence through the same
+components. A production Vite build in headless Chrome observed a loopback
+libtorrent peer from active work through verified completion and keyed row
+removal at wide, compact, and phone viewports. It also held browser update
+operations beyond a shortened server lease: the header exposed reconnecting,
+the peer row remained visibly stale, and a fresh view-set snapshot restored
+connected state. Serious and critical axe findings were empty. The demo scale
+measurements above remain the larger rendering-pressure evidence; one live
+peer is interoperability evidence, not a scale profile.
+
 ## Likely Sequencing
 
 1. The accepted view-set contract, generated TypeScript/schema, polling
@@ -282,9 +292,10 @@ deterministic presentation evidence passes.
    are complete in Tactical `034`.
 3. Tactical `035` defines stable Rust torrent and active-peer inspection
    projections, self-expiring leases, semantic view selection, suspension
-   recovery, and the live frontend adapter.
-4. Make peers the first detailed live engine view and integrate the existing
-   categorized logger into the global diagnostics area.
+   recovery, and the live frontend adapter. This step is complete.
+4. Integrate the existing categorized logger into the global diagnostics area
+   or add the registry-backed Swarm view according to immediate debugging
+   value; Peers is already the first detailed live engine view.
 5. Connect remaining detail views according to debugging and product value,
    keeping unsupported scaffolds truthful.
 6. Measure before adding frame-speed streaming, binary encoding, or more
@@ -309,6 +320,8 @@ all stages as one slice.
 
 Tactical `033` completed the headless transport-independent view-set
 foundation. Tactical `034` completed the first visible React and demo-scenario
-foundation. Exact peer-view fields and privacy posture remain the next
-semantic design work; the implemented view-set limits are recorded in
+foundation. Tactical `035` completed the live torrent/peer adapter, exact
+active-row membership, local endpoint posture, semantic view selection, and
+suspension recovery. The implemented view-set limits and remaining delivery
+choices are recorded in
 [`application-view-api.md`](application-view-api.md).

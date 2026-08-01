@@ -104,10 +104,25 @@ slice; Tactical `015` remains the independent paired live-comparison work. See
 Tactical `033` completed the leased view-set, generated contract, polling
 client, and headless application boundary. Tactical `034` completed the fresh
 responsive React/Zustand/CSS Modules inspection surface, virtual torrent and
-peer grids, and permanent deterministic named demo adapter. The next bounded
-product-observability slice is stable Rust torrent and peer projections plus
-the real adapter bridge; see
+peer grids, and permanent deterministic named demo adapter. Tactical `035`
+completed stable Rust torrent and active-peer projections, the semantic live
+adapter, independently reaped view sets, and suspended-client recovery; see
 [`docs/topics/web-ui-design.md`](docs/topics/web-ui-design.md).
+
+Run the controlled production-web peer inspection proof without launching a
+visible browser or Tauri window with:
+
+```bash
+source ~/.profile
+uv run --project tests/interop --locked \
+  python tests/interop/browser_peer_inspection_surface.py
+```
+
+Pass `--screenshot-dir target/headless-evidence/t035-live-peers` to retain
+loopback-only wide, compact, phone, and reconnecting captures. The harness
+creates and removes temporary application, browser, seed, and download state,
+uses the pinned Python libtorrent environment, verifies payload SHA-1, and
+requires every child process to join.
 
 ## Toolchain
 

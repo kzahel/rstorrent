@@ -24,9 +24,10 @@ then installed one complete piece-hash operation boundary without changing
 performance. Tactical `031` measures storage service before returning to peer
 policy and attributes 93--94% of wall time to serialized storage, dominated by
 small writes. Write execution therefore precedes another peer-policy change.
-Tactical `035` is ready to unify coherent active-connection observation across
-the registry, socket-task owner, and content scheduler without changing peer
-policy. Full parole selection, persistent integrity reputation, measured
+Tactical `035` unifies coherent active-connection observation across the
+registry, socket-task owner, and content scheduler without changing peer
+policy, and proves that observation through the live headless Peers surface.
+Full parole selection, persistent integrity reputation, measured
 picker policy, incoming connections, and persistent peer records remain later
 work.
 
@@ -145,13 +146,29 @@ connected records. A UI projection may map these owners coherently but cannot
 become another lifecycle authority.
 
 The current `PeerRegistry`, `PeerSocketSet`, and `SwarmState` remain valid
-subowners with distinct invariants. Their cross-owner membership transitions
-need one torrent-owned coordinator and one shared task-free current-connection
-observation. This removes overlapping diagnostic snapshot nouns without
-folding socket tasks into deterministic registry or scheduler state. Incoming
-listening and uTP execution remain later tacticals, but an incoming accepted
-socket before BitTorrent handshake and a future uTP connection must fit this
-same identity and lifecycle shape.
+subowners with distinct invariants. `TorrentPeerCoordinator` now coordinates
+their cross-owner membership transitions and owns one shared task-free
+current-connection observation in `peer_runtime`. This removes overlapping
+diagnostic snapshot nouns without folding socket tasks into deterministic
+registry or scheduler state. Incoming listening and uTP execution remain later
+tacticals, but an incoming accepted socket before BitTorrent handshake and a
+future uTP connection fit this same identity and lifecycle shape.
+
+Outgoing observation begins before TCP work, advances through transport and
+BitTorrent handshake, keeps one connection generation through metadata-to-
+content handoff, and exposes disconnecting until the socket/worker, scheduler,
+request, payload, and registry owners finish exact cleanup. Stale completions
+cannot mutate a newer generation. The application `torrent_peers` view maps
+that observation rather than independently querying the three subowners; its
+row is removed only after the coordinator removes the generation.
+
+Deterministic engine tests cover representable incoming and uTP vocabulary,
+outbound lifecycle ordering, handoff, stale generation protection, and exact
+removal. Session pressure covers 30 connecting plus 30 connected rows under
+the default queue bound. A controlled libtorrent transfer then observes the
+same active row through the real React surface and its keyed removal after
+verified completion. This is observation evidence, not incoming or uTP
+runtime support and not a change to dial, picker, or request policy.
 
 ## Reference Direction
 

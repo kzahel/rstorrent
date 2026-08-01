@@ -6,9 +6,10 @@ Status: Strategic direction and application-view architecture accepted. The
 headless view-set, polling client, generated contract, and pure reducer are
 implemented by Tactical `033`. Tactical `034` implements the fresh responsive
 frontend, virtual torrent and peer tables, and named deterministic demo
-application. Live peer inspection remains the following bounded connection
-slice; Tactical `035` is ready and records its owner, lifecycle, privacy,
-resource, recovery, and headless-evidence contracts.
+application. Tactical `035` completes the first live bounded cross-section:
+truthful torrent summaries and active peers flow from one coherent engine
+observation through leased semantic views into the responsive React surface,
+with headless recovery and controlled libtorrent evidence.
 
 ## Purpose
 
@@ -108,8 +109,8 @@ surface, not the RSTorrent application-view architecture.
 ## Deliberately Open Design
 
 The view-set, snapshot/diff, polling-to-streaming, generated-type, and Zustand
-architecture is accepted. Tactical `035` now owns the first live torrent and
-active-peer field set, Peers-versus-Swarm membership, and local endpoint
+architecture is accepted. Tactical `035` now implements the first live torrent
+and active-peer field set, Peers-versus-Swarm membership, and local endpoint
 privacy posture. The remaining inspection design includes:
 
 - the division between later swarm, piece, tracker, file, storage,
@@ -143,3 +144,14 @@ foundation described in
 the responsive presentation and permanent named scenario adapter first, so
 the stable peer projection and its adversarial fixtures can connect to a
 tested frontend model rather than defining component architecture indirectly.
+Tactical `035` now completes that connection. The production React build is
+driven headlessly against a controlled peer, displays active request state,
+recovers after its old server view expires, verifies the downloaded payload,
+and removes the connection row after joined cleanup without launching Tauri or
+a visible browser.
+
+The surface is therefore useful for live peer observation, but it is not yet a
+complete debugging console. The existing categorized diagnostics feed is the
+broadest next view candidate; a registry-backed Swarm table is the deeper
+peer-lifecycle candidate. Selection remains an explicit next tactical based on
+real inspection use.

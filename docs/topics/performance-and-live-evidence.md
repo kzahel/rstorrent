@@ -528,10 +528,28 @@ unmeasured**, not as proven bottlenecks:
 
 Tactical `035` removes the full torrent-map clone from targeted high-frequency
 publication before adding live peer cadence, while preserving coherent
-snapshots and legacy consumers. It measures projection time, view-hub lock
-hold, rows and encoded bytes per update, queue/replay high water, encoding
-cost, TypeScript validation/reduction/selector notification, render work,
-browser heap, DOM rows, and view/task counts before and after lease expiry.
+snapshots and legacy consumers. Its deterministic source-rich snapshot uses
+30 connecting plus 30 connected rows. One representative optimized run spent
+479 microseconds publishing the projection and 501 microseconds opening and
+materializing the selected snapshot; its encoded update and queue high-water
+were both 79,230 bytes beneath the 256 KiB default, with zero resets. These
+single-machine timings are observations, not regression thresholds.
+
+The unchanged Tactical `034` 2,000-torrent/10,000-peer scenario remains the
+frontend pressure evidence: at most 100 rendered rows, 840 DOM elements,
+30,727,035 bytes of sampled used JavaScript heap, a 247 ms initial render, a
+50 ms simulated update and paint, and zero observed long tasks. Tactical `035`
+adds controlled live evidence rather than another scale measurement: the
+production web build observed one libtorrent 2.0.13.0 connection, pending
+requests, verified three-piece completion, and row cleanup in 27.7 seconds.
+
+The same controlled run withheld browser client operations past an explicit
+500 ms test lease. It observed the stale/reconnecting presentation, a distinct
+replacement view-set identity and epoch, coherent fresh-snapshot recovery,
+and joined gateway cleanup. The normal five-minute lease and single reaper
+task remain unchanged. More detailed lock-hold, allocation, selector-
+notification, and live multi-peer browser profiles are still unmeasured and
+must not be inferred from these bounded results.
 
 Replay retention remains a deliberate bounded correctness cost. Field masks,
 entity sharding, mutable versioned containers, streaming, animation-frame
