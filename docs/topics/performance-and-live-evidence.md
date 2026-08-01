@@ -307,6 +307,15 @@ about 4.45 MiB/s at termination, reinforcing that useful-peer throughput is no
 longer the broad failure owner. Pinned libtorrent tracker startup and connect
 boost behavior selects initial peer working-set breadth for Tactical `021`.
 
+Bounded tracker fan-out produced two response batches, 14--15 candidates, and
+17--19 dial attempts in every run of the next clean screen. It still reached
+50% in 0/3 at 180 seconds, stopping at 36, 135, and 186 pieces. Five or six
+connections and two or three pending dials exactly filled the former combined
+eight-slot admission check even though two to five candidates remained
+eligible. All terminal samples were receiving roughly 3.2--4.0 MiB/s. This is
+evidence to separate half-open and established capacity and adopt a bounded
+30-peer working set before changing transfer scheduling again.
+
 ## Result Classification
 
 Classify each paired attempt before interpreting speed:

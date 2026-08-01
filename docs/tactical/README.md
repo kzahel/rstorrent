@@ -166,8 +166,9 @@ that scope and its cleanup or compatibility rules explicitly.
   a bounded source-derived per-connection feedback window and classified
   initial peer-source breadth as the remaining 50% boundary.
 - [`021-initial-peer-working-set.md`](021-initial-peer-working-set.md): active;
-  adds bounded initial tracker-operation breadth and verifies that tracker
-  responses become a useful, cleanly owned content-peer working set.
+  adds bounded initial tracker-operation breadth, separates half-open and live
+  peer capacity, and verifies that discovered endpoints become a useful,
+  cleanly owned content-peer working set.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

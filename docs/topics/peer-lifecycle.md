@@ -6,10 +6,11 @@ Status: Tactical `017` completed bounded simultaneous dialing, metadata
 acquisition, live content connections, torrent-owned requests, expiry,
 replacement, and failover. Tactical `020` completed bounded per-connection
 useful-payload feedback and sampled inactivity. Tactical `021` now owns the
-initial tracker/peer working-set boundary. Tracker and DHT observations remain
-live while content runs. Endgame duplicates, integrity reputation, measured
-picker policy, incoming connections, and persistent peer records remain later
-work.
+initial tracker/peer working-set boundary and has installed bounded tracker
+fan-out plus a source-derived 30-peer live set. Tracker and DHT observations
+remain live while content runs. Endgame duplicates, integrity reputation,
+measured picker policy, incoming connections, and persistent peer records
+remain later work.
 
 ## Scope
 
@@ -379,6 +380,16 @@ preceding working-set boundary: bounded initial tracker-operation breadth,
 multi-response registry intake, and prompt bounded dialing. The registry and
 content supervisor remain the owners of candidate history, connection limits,
 replacement, and cleanup; tracker success does not prove peer usefulness.
+
+Tracker fan-out then expanded the clean public runs to 14--15 candidates and
+five or six live connections, but completed 0/3 at 50%. Each terminal state
+had established plus half-open counts equal to the old eight-slot ceiling and
+still retained two to five eligible candidates. Pinned libtorrent defaults an
+individual torrent to unlimited connections beneath a 200-session cap and
+uses a 30-attempt startup boost. RSTorrent now separately bounds eight
+half-open attempts and 30 established peers; a pending handshake no longer
+occupies a live slot, and late successes at the live ceiling still require a
+classified replacement.
 
 Incoming listener ownership and advertised-port updates, measured performance
 selection, peer-ID duplicate resolution, endgame, integrity reputation, PEX,

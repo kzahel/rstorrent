@@ -3,9 +3,10 @@
 Topic: `tracker-discovery`
 
 Status: Tactical `014` replaced the first one-shot operation with a supervised
-scheduled UDP tracker lifecycle. Tactical `021` is active to correct the
-single-operation/first-success startup boundary exposed by sustained live
-downloads. Other transports and metainfo tracker tiers remain unimplemented.
+scheduled UDP tracker lifecycle. Tactical `021` added bounded concurrent
+startup operations and classified the remaining live failure at content-peer
+admission rather than tracker intake. Other transports and metainfo tracker
+tiers remain unimplemented.
 
 ## Scope
 
@@ -197,13 +198,16 @@ manager owns up to eight operations with per-record token caches and joined
 cancellation. Scripted barriers prove true concurrency, the exact ceiling,
 failure-driven admission beyond the ceiling, multi-response peer intake, and
 socket release. Endpoint-free probe totals expose response batches, reported
-peers, and dial attempts. Live evidence is not yet recorded.
+peers, and dial attempts. The first clean live screen received two response
+batches and retained 14--15 candidates in every run, versus four to nine
+before fan-out. Its 0/3 50% result stopped at the downstream combined
+live-plus-pending connection ceiling; tracker startup is no longer the
+classified owner.
 
 ## Current Limits And Next Work
 
-The manager still has one UDP operation at a time and volatile state; the
-single-operation startup limit is the active Tactical `021` owner. It does
-not parse `.torrent` `announce-list` tiers, support HTTP, HTTPS, WebSocket,
+The manager has volatile state and an eight-operation per-torrent ceiling. It
+does not parse `.torrent` `announce-list` tiers, support HTTP, HTTPS, WebSocket,
 authentication, proxying, or BEP 41 URL-data, emit completed/stopped events,
 announce real transfer counters or an actually bound listening port, scrape,
 or share a session-wide tracker-operation budget. It reports 16 KiB left

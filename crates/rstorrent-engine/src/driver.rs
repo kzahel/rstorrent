@@ -3937,6 +3937,18 @@ fn pending_dial_id(attempt: DialAttempt) -> PendingDialId {
     PendingDialId::new(attempt.id().get()).expect("dial attempt identifiers are nonzero")
 }
 
+fn content_dial_slot_available(
+    established: usize,
+    pending: usize,
+    config: SwarmConfig,
+    replacement_available: bool,
+) -> bool {
+    if pending >= config.max_pending_dials {
+        return false;
+    }
+    established < config.max_established_connections || (pending == 0 && replacement_available)
+}
+
 fn fill_content_dials(
     peers: &mut PeerSession,
     sockets: &mut PeerSocketSet,
@@ -3944,18 +3956,12 @@ fn fill_content_dials(
     info_hash: [u8; 20],
 ) -> Result<usize, DownloadError> {
     let mut started = 0;
-    while sockets.pending_len() < state.config().max_pending_dials {
-        let at_capacity = sockets.established_len() >= state.config().max_established_connections;
-        if at_capacity {
-            if sockets.pending_len() != 0 || state.replacement_candidate(peers.elapsed()).is_none()
-            {
-                break;
-            }
-        } else if sockets.established_len() + sockets.pending_len()
-            >= state.config().max_established_connections
-        {
-            break;
-        }
+    while content_dial_slot_available(
+        sockets.established_len(),
+        sockets.pending_len(),
+        state.config(),
+        state.replacement_candidate(peers.elapsed()).is_some(),
+    ) {
         let context = PeerSelectionContext {
             now: peers.elapsed(),
         };
@@ -4805,8 +4811,9 @@ mod tests {
         MAX_RECENT_METADATA_ATTEMPTS, MagnetDownloadConfig, MetadataAcquisitionPhase,
         MetadataPeerStage, PeerConnection, PeerSession, SwarmConfig, TrackerManager,
         UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache,
-        announce_udp_tracker_address, download_magnet, download_magnet_metadata_with_control,
-        download_magnet_metadata_with_dht, download_magnet_with_control, download_verified_piece,
+        announce_udp_tracker_address, content_dial_slot_available, download_magnet,
+        download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
+        download_magnet_with_control, download_verified_piece,
         download_verified_piece_with_control, next_peer_message, retrying_dht_lookup,
         run_content_download, run_magnet_download_with_peers, send_message,
     };
@@ -4856,6 +4863,19 @@ mod tests {
         registry
             .begin_dial(candidate, context)
             .expect("test dial attempt")
+    }
+
+    #[test]
+    fn half_open_dials_do_not_consume_established_connection_slots() {
+        let mut config = SwarmConfig::for_payload_limit(MIN_PAYLOAD_ALLOWANCE);
+        config.max_established_connections = 2;
+        config.max_pending_dials = 2;
+
+        assert!(content_dial_slot_available(1, 1, config, false));
+        assert!(!content_dial_slot_available(1, 2, config, false));
+        assert!(!content_dial_slot_available(2, 0, config, false));
+        assert!(content_dial_slot_available(2, 0, config, true));
+        assert!(!content_dial_slot_available(2, 1, config, true));
     }
 
     #[test]

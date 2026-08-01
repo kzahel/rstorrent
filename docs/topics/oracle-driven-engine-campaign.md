@@ -389,15 +389,22 @@ Last completed evidence:
   retained only four or nine candidates and two connections, while pinned
   libtorrent source showed bounded initial fan-out across not-yet-working
   tracker tiers and a 30-peer connect boost, selecting Tactical `021`'s
-  startup working-set owner.
+  startup working-set owner;
+- commit `f85e2a0` installed eight-operation tracker fan-out with exact task
+  cleanup and endpoint-free discovery totals; and
+- the next clean 50% screen completed 0/3, but expanded every run to two
+  tracker batches, 14--15 candidates, 17--19 dials, and five or six live
+  peers. Established plus pending counts exactly filled the old combined
+  eight-slot check while eligible candidates remained, selecting content-peer
+  admission rather than tracker breadth.
 
 Next executable action:
 
-1. finish workspace gates for the bounded eight-operation tracker owner;
-2. commit the deterministic and controlled checkpoint;
-3. rerun the owner-only 50% screen with response-batch, reported-peer, dial,
-   and current-registry diagnostics; and
-4. retain or adjust only the next source-derived owner before alternating
-   confirmation cohorts.
+1. commit the source-derived 30-established/eight-pending admission checkpoint;
+2. rerun the clean owner-only 50% screen with connection and request-state
+   diagnostics;
+3. require 2/3 success before an alternating paired screen; and
+4. retain or adjust only the next source-derived owner before confirmation
+   cohorts.
 
 Human blocker: **none**.

@@ -8,8 +8,8 @@ use std::time::Duration;
 use rstorrent_protocol::peer_wire::{BlockRequest, MAX_REQUEST_BLOCK_LENGTH};
 use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
 
-pub const DEFAULT_MAX_ESTABLISHED_CONNECTIONS: usize = 8;
-pub const DEFAULT_MAX_PENDING_DIALS: usize = 3;
+pub const DEFAULT_MAX_ESTABLISHED_CONNECTIONS: usize = 30;
+pub const DEFAULT_MAX_PENDING_DIALS: usize = 8;
 pub const DEFAULT_INITIAL_REQUESTS_PER_CONNECTION: usize = 4;
 pub const DEFAULT_MAX_REQUESTS_PER_CONNECTION: usize = 500;
 pub const DEFAULT_MAX_ACTIVE_PIECES: usize = 64;

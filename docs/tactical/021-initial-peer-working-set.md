@@ -46,12 +46,14 @@ is the behavioral completeness oracle. No source or fixture is copied.
   base. RSTorrent already matches those broad bounds except for its smaller
   deliberate per-torrent connection set.
 
-RSTorrent currently shuffles all magnet UDP trackers into one synthetic tier,
-runs one UDP operation at a time, and ends the entire round on the first valid
-response. That response schedules at least five minutes of sleep, even when it
-contains only a few candidates. This tactical preserves the documented
-synthetic-tier compatibility choice while correcting startup operation
-breadth.
+RSTorrent initially shuffled all magnet UDP trackers into one synthetic tier,
+ran one UDP operation at a time, and ended the entire round on the first valid
+response. That response scheduled at least five minutes of sleep, even when it
+contained only a few candidates. After tracker fan-out landed, its live-peer
+limit still counted half-open dials against eight established slots. This
+tactical preserves the documented synthetic-tier compatibility choice while
+correcting both startup operation breadth and the resulting content working
+set.
 
 ## Ownership And Design
 
@@ -76,15 +78,25 @@ records while no success has established the round wait. Cancellation aborts
 and joins every operation before the manager terminates.
 
 The peer registry remains the sole peer-record owner. The content supervisor
-continues to dial at most three pending peers into at most eight established
+may own at most eight half-open dials in addition to 30 established
 connections, replacing only peers already classified replaceable by its
-deterministic state. A tracker result never proves reachability or usefulness.
+deterministic state. Pending handshakes and live connections are distinct
+resource pools: a pending attempt must not consume an established slot, while
+a late successful attempt that finds the live set full is closed unless a
+deterministic replacement exists. The 30-peer bound matches the pinned
+startup-connect quota instead of adopting libtorrent's unlimited per-torrent
+default or its 200-connection session budget. A tracker result never proves
+reachability or usefulness.
 
 ## Invariants And Bounds
 
 - At most eight UDP tracker operations, four queued tracker result batches,
-  200 compact peers per response, 1,000 peer records, three pending dials, and
-  eight established peers exist under current defaults.
+  200 compact peers per response, 1,000 peer records, eight pending dials, and
+  30 established peers exist under current defaults.
+- Pending dials never reserve request payload. Established peers share the
+  existing torrent-wide payload allowance, bounded command/event queues, and
+  per-connection request limit; increasing the peer set does not multiply the
+  payload ceiling.
 - Each tracker record has at most one operation in flight and one returned
   token cache; stale task results cannot mutate another record.
 - Source, transaction, action, stride, endpoint, address-family, and network
@@ -166,20 +178,37 @@ of the obsolete port-zero behavior; its three complete metadata/content runs
 then passed.
 
 At this checkpoint, workspace formatting and warning-denying clippy pass. The
-workspace has 223 passing tests, three changing public-network tests ignored,
-and no failures; the engine library contributes 112 of those passes. The
+workspace has 224 passing tests, three changing public-network tests ignored,
+and no failures; the engine library contributes 113 of those passes. The
 three-run UDP tracker interop, mixed-peer liveness scenario, controlled paired
-publication, and all seven comparator unit tests also pass. The live 50%
-screen remains next; this checkpoint does not claim improved public
-reliability yet.
+publication, and all seven comparator unit tests also pass.
+
+The first clean live 50% screen after fan-out completed 0/3 within 180 seconds.
+It nevertheless proved the tracker change effective: every run received two
+response batches, retained 14--15 candidates, attempted 17--19 dials, and
+ended with five or six established peers rather than the preceding two. The
+terminal registries still had two to five eligible candidates, while the
+established plus pending counts exactly equaled the old eight-slot limit. All
+three runs were receiving 3.2--4.0 MiB/s near termination and had verified 36,
+135, or 186 of 1,055 pieces. This classifies admission, not tracker breadth or
+healthy-peer request rate, as the next owner.
+
+Pinned source confirms the mismatch: libtorrent defaults a torrent to
+unlimited connections under a 200-connection session cap, starts up to 30
+connection attempts immediately after a tracker response, and otherwise
+permits 30 attempts per second. RSTorrent now keeps an explicit smaller bound
+of 30 established peers plus eight half-open attempts. A deterministic truth
+table proves an in-flight handshake cannot consume a live slot, the pending
+ceiling is exact, and replacement probing at a full live set remains limited
+to one attempt.
 
 ## Non-Goals
 
 - HTTP, HTTPS, WebSocket trackers, BEP 12 metainfo tiers, announce-all user
   settings, tracker persistence, proxying, or session-wide budgets
 - DHT, PEX, LSD, incoming connections, NAT traversal, uTP, upload, or seeding
-- raising the eight-peer content limit without evidence that eligible useful
-  peers are rejected at that boundary
+- a session-wide connection allocator beyond the source-derived bounded
+  per-torrent working set
 - request-window, piece-picker, endgame, cancel, hash-failure, storage, UI,
   desktop-launch, or visible-device work
 
