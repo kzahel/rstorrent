@@ -9,7 +9,9 @@ frontend, virtual torrent and peer tables, and named deterministic demo
 application. Tactical `035` completes the first live bounded cross-section:
 truthful torrent summaries and active peers flow from one coherent engine
 observation through leased semantic views into the responsive React surface,
-with headless recovery and controlled libtorrent evidence.
+with headless recovery and controlled libtorrent evidence. Tactical `036`
+adds the one-command production browser launcher needed for maintainer visual
+confirmation before the Tauri entry changes.
 
 ## Purpose
 
@@ -56,6 +58,15 @@ The Tauri application remains the ordinary interactive desktop product, while
 the authenticated loopback gateway remains the headless automation seam for
 the same components. This direction does not make a local socket service or
 remote daemon part of the desktop architecture.
+
+During the transition, `./scripts/webui` is the explicit manual host for the
+new live React surface and `./scripts/desktop` still hosts the legacy surface.
+Once the maintainer confirms the browser path, the next bounded client slice
+should adapt Tauri's in-process commands/views to `InspectionApplication`
+rather than make the gateway a desktop dependency. The following inspection
+slice should prioritize the categorized Logs experience, studying JSTorrent's
+tab while deciding which existing legacy presentation behavior is worth
+migrating rather than copying wholesale.
 
 ## Platform Split
 

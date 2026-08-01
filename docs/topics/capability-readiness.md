@@ -105,26 +105,24 @@ evidence.
 
 ### Now
 
-**Select the next live inspection cross-section.** Tactical
-[`035`](../tactical/035-live-peer-inspection-projection.md) completed active
-Peers end to end. The existing categorized logger offers the broadest next
-debugging value, while a registry-backed Swarm view would expose eligible,
-idle, backed-off, failed, banned, dialing, and connected peer records behind
-the active connection table. Choose one bounded tactical from observed use;
-do not resume general UI breadth implicitly.
+**Confirm the manual live browser surface.** Tactical
+[`036`](../tactical/036-manual-live-webui-launcher.md) packages the production
+React application, online gateway, isolated persistent state, browser opening,
+and joined shutdown behind `./scripts/webui`. Automated no-open lifecycle
+evidence passes. Await maintainer confirmation in the normal browser before
+changing the Tauri entry.
 
 ### Next
 
-1. **Live diagnostics or Swarm depth.** Feed the categorized logger into the
-   global Logs surface or expose the peer registry through Swarm, then select
-   tracker, request, piece, disk, file, or DHT views according to observed
-   debugging value.
-2. **Resume oracle-driven engine work.** Use the connected inspection evidence
+1. **Migrate Tauri to the inspection application.** Add an in-process view-set
+   adapter and make `./scripts/desktop` select the new React surface without
+   turning the loopback gateway into a desktop dependency.
+2. **Design and connect categorized Logs.** Use JSTorrent's Logs tab and the
+   current legacy logger as product references, preserving structured category
+   and severity semantics rather than transplanting the legacy UI.
+3. **Resume oracle-driven engine work.** Use the connected inspection evidence
    to decide whether serialized storage execution, another correctness owner,
    or measured BEP breadth becomes the next engine tactical.
-3. **Measured delivery optimization.** Add the interchangeable view-set stream
-   or a binary codec only after polling, reducer, store, and rendering profiles
-   identify a material latency, CPU, or allocation bottleneck.
 
 ### Later
 

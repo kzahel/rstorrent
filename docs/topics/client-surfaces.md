@@ -30,6 +30,11 @@ application to live torrent and active-peer views, including semantic
 responsive view selection and recovery after a suspended tab outlives its
 Rust view-set lease. The live path is proven through the headless browser
 gateway; Android remains intentionally unchanged.
+Tactical `036` packages that same production-built live browser path behind
+`./scripts/webui`, with isolated persistent state, default online networking,
+normal-browser opening, and joined terminal-owned shutdown. Tauri still
+selects the legacy entry pending maintainer confirmation of the browser
+launcher.
 
 ## Scope
 
@@ -137,6 +142,13 @@ local UI bring-up and headless evidence. It binds only an OS-assigned loopback
 listener, requires one exact configured loopback Origin, retains resource
 checks, and isolates opaque view-set owners. It is a development convenience,
 not a production browser-control posture; the authenticated mode remains.
+
+The manual launcher serves the production bundle rather than the Vite
+development entry and stores its profile beneath ignored `.local/webui` by
+default. It is a maintainer-facing local bridge, not a change to the accepted
+in-process Tauri product architecture. The live React adapter currently
+supports inspection and pause/resume but not add-magnet or the full legacy
+command set.
 
 ## Reactive Views
 

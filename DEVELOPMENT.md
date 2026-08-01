@@ -156,6 +156,33 @@ Later runs reuse installed dependencies and Cargo build output while still
 refreshing the static web assets. The process remains attached to the terminal
 so `Ctrl+C` stops it.
 
+## Launching The Live Web UI
+
+The new React inspection surface can run against a real online application
+service in the normal browser without launching Tauri:
+
+```bash
+./scripts/webui
+```
+
+The launcher installs locked web dependencies when needed, builds production
+web assets and the Rust gateway, starts both servers on loopback, and opens the
+exact live URL in the default browser. It remains attached to the terminal;
+one `Ctrl+C` gracefully stops and joins both servers. The browser tab itself
+may remain open and will reconnect after the next launch.
+
+Web UI state and downloads persist beneath `.local/webui`, which is separate
+from the Tauri application profile and ignored by Git. Override that location
+with `RSTORRENT_WEBUI_DATA_ROOT` or the preview port with
+`RSTORRENT_WEBUI_PORT`. `./scripts/webui --no-open` starts the same servers
+without disturbing the visible browser and is the automation/debug form.
+
+The launcher selects online torrent networking by default. The current live
+React surface supports inspection plus pause/resume; it does not yet contain
+an add-magnet control. Switching Tauri to this surface and deciding how to
+migrate or redesign the categorized Logs view are deliberately gated on the
+maintainer's manual confirmation of this launcher.
+
 ## Exercising The Frontend Headlessly
 
 The named demo adapter drives the responsive React inspection application

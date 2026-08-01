@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repository_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+web_root="$repository_root/clients/web"
+installed_lock="$web_root/node_modules/.package-lock.json"
+data_root="${RSTORRENT_WEBUI_DATA_ROOT:-$repository_root/.local/webui}"
+web_port="${RSTORRENT_WEBUI_PORT:-4177}"
+open_browser=1
+
+usage() {
+    printf '%s\n' \
+        "Usage: ./scripts/webui [--no-open]" \
+        "" \
+        "Build and run the live React inspection UI in a normal browser." \
+        "State defaults to .local/webui and survives launcher restarts." \
+        "" \
+        "Options:" \
+        "  --no-open  Start the servers without opening a browser tab." \
+        "  --help     Show this help."
+}
+
+while (($# > 0)); do
+    case "$1" in
+        --no-open)
+            open_browser=0
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        *)
+            printf 'Unknown argument: %s\n\n' "$1" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
+
+case "$web_port" in
+    ''|*[!0-9]*)
+        printf 'RSTORRENT_WEBUI_PORT must be a numeric TCP port.\n' >&2
+        exit 2
+        ;;
+esac
+if ((web_port < 1024 || web_port > 65535)); then
+    printf 'RSTORRENT_WEBUI_PORT must be within 1024..65535.\n' >&2
+    exit 2
+fi
+
+unset npm_config_recursive NPM_CONFIG_RECURSIVE
+
+for required_command in cargo npm curl mktemp; do
+    if ! command -v "$required_command" >/dev/null 2>&1; then
+        printf 'Required command is unavailable: %s\n' "$required_command" >&2
+        exit 1
+    fi
+done
+
+gateway_pid=""
+web_pid=""
+launcher_started=0
+runtime_root="$(mktemp -d "${TMPDIR:-/tmp}/rstorrent-webui.XXXXXX")"
+gateway_log="$runtime_root/gateway.log"
+
+stop_process() {
+    local process_id="$1"
+    local initial_signal="$2"
+    local label="$3"
+    local attempt
+
+    [[ -n "$process_id" ]] || return 0
+    if kill -0 "$process_id" 2>/dev/null; then
+        kill -s "$initial_signal" "$process_id" 2>/dev/null || true
+        for ((attempt = 0; attempt < 100; attempt++)); do
+            kill -0 "$process_id" 2>/dev/null || break
+            sleep 0.05
+        done
+    fi
+    if kill -0 "$process_id" 2>/dev/null; then
+        printf '%s did not stop promptly; sending TERM.\n' "$label" >&2
+        kill -TERM "$process_id" 2>/dev/null || true
+        for ((attempt = 0; attempt < 40; attempt++)); do
+            kill -0 "$process_id" 2>/dev/null || break
+            sleep 0.05
+        done
+    fi
+    if kill -0 "$process_id" 2>/dev/null; then
+        printf '%s did not join after TERM; sending KILL.\n' "$label" >&2
+        kill -KILL "$process_id" 2>/dev/null || true
+    fi
+    wait "$process_id" 2>/dev/null || true
+}
+
+cleanup() {
+    local status=$?
+    trap - EXIT INT TERM
+    stop_process "$web_pid" TERM "web preview"
+    stop_process "$gateway_pid" INT "application gateway"
+    rm -f -- "$gateway_log"
+    rmdir -- "$runtime_root" 2>/dev/null || true
+    if ((launcher_started == 1)); then
+        printf 'RSTorrent web UI stopped.\n'
+    fi
+    exit "$status"
+}
+
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap cleanup EXIT
+
+mkdir -p -- "$data_root/profile" "$data_root/downloads"
+
+if [[ ! -x "$web_root/node_modules/.bin/vite" ||
+    ! -f "$installed_lock" ||
+    "$web_root/package-lock.json" -nt "$installed_lock" ]]; then
+    printf 'Installing locked web UI dependencies...\n' >&2
+    (
+        cd "$web_root"
+        npm ci --no-audit --no-fund
+    )
+fi
+
+printf 'Building production web UI...\n' >&2
+(
+    cd "$web_root"
+    npm run build
+)
+
+printf 'Building application gateway...\n' >&2
+(
+    cd "$repository_root"
+    cargo build -p rstorrent-gateway --bin rstorrent-gateway
+)
+
+target_root="${CARGO_TARGET_DIR:-$repository_root/target}"
+if [[ "$target_root" != /* ]]; then
+    target_root="$repository_root/$target_root"
+fi
+gateway_binary="$target_root/debug/rstorrent-gateway"
+if [[ ! -x "$gateway_binary" ]]; then
+    printf 'Gateway executable was not produced at %s.\n' "$gateway_binary" >&2
+    exit 1
+fi
+
+origin="http://127.0.0.1:$web_port"
+(
+    export RSTORRENT_PROFILE_ROOT="$data_root/profile"
+    export RSTORRENT_STORAGE_ROOT="$data_root/downloads"
+    export RSTORRENT_GATEWAY_AUTH="unauthenticated_loopback_development"
+    export RSTORRENT_GATEWAY_ORIGIN="$origin"
+    export RSTORRENT_NETWORK_POLICY="${RSTORRENT_NETWORK_POLICY:-online}"
+    unset RSTORRENT_GATEWAY_BIND RSTORRENT_GATEWAY_TOKEN
+    exec "$gateway_binary"
+) >"$gateway_log" 2>&1 &
+gateway_pid=$!
+
+gateway_address=""
+for ((attempt = 0; attempt < 200; attempt++)); do
+    if ! kill -0 "$gateway_pid" 2>/dev/null; then
+        printf 'Application gateway exited during startup.\n' >&2
+        sed -n '1,120p' "$gateway_log" >&2
+        exit 1
+    fi
+    gateway_address="$(sed -n 's/^gateway listening on //p' "$gateway_log" | tail -n 1)"
+    [[ -n "$gateway_address" ]] && break
+    sleep 0.05
+done
+if [[ -z "$gateway_address" ]]; then
+    printf 'Timed out waiting for the application gateway.\n' >&2
+    sed -n '1,120p' "$gateway_log" >&2
+    exit 1
+fi
+
+(
+    cd "$web_root"
+    exec "$web_root/node_modules/.bin/vite" preview \
+        --host 127.0.0.1 \
+        --port "$web_port" \
+        --strictPort
+) &
+web_pid=$!
+
+web_ready=0
+for ((attempt = 0; attempt < 200; attempt++)); do
+    if ! kill -0 "$web_pid" 2>/dev/null; then
+        printf 'Production web preview exited during startup.\n' >&2
+        exit 1
+    fi
+    if curl --silent --show-error --fail --max-time 0.25 "$origin/" >/dev/null 2>&1; then
+        web_ready=1
+        break
+    fi
+    sleep 0.05
+done
+if ((web_ready == 0)); then
+    printf 'Timed out waiting for the production web preview.\n' >&2
+    exit 1
+fi
+
+encoded_gateway="http%3A%2F%2F${gateway_address/:/%3A}"
+live_url="$origin/?live=$encoded_gateway"
+launcher_started=1
+
+printf '\nRSTorrent live web UI is ready.\n'
+printf 'URL: %s\n' "$live_url"
+printf 'Data: %s\n' "$data_root"
+printf 'Press Ctrl+C to stop the web UI and application gateway.\n\n'
+
+if ((open_browser == 1)); then
+    if [[ "$(uname -s)" == "Darwin" ]] && command -v open >/dev/null 2>&1; then
+        if ! open "$live_url"; then
+            printf 'Could not open the browser; open the URL above manually.\n' >&2
+        fi
+    elif command -v xdg-open >/dev/null 2>&1; then
+        if ! xdg-open "$live_url" >/dev/null 2>&1; then
+            printf 'Could not open the browser; open the URL above manually.\n' >&2
+        fi
+    else
+        printf 'No browser opener was found; open the URL above manually.\n' >&2
+    fi
+fi
+
+while true; do
+    if ! kill -0 "$gateway_pid" 2>/dev/null; then
+        wait "$gateway_pid" || gateway_status=$?
+        printf 'Application gateway exited unexpectedly with status %s.\n' \
+            "${gateway_status:-0}" >&2
+        sed -n '1,120p' "$gateway_log" >&2
+        exit 1
+    fi
+    if ! kill -0 "$web_pid" 2>/dev/null; then
+        wait "$web_pid" || web_status=$?
+        printf 'Production web preview exited unexpectedly with status %s.\n' \
+            "${web_status:-0}" >&2
+        exit 1
+    fi
+    sleep 1
+done

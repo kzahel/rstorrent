@@ -14,6 +14,7 @@ local.properties
 *.iml
 
 # Local configuration and secrets
+/.local/
 .env
 .env.*
 !.env.example

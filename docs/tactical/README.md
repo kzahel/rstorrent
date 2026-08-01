@@ -220,6 +220,10 @@ that scope and its cleanup or compatibility rules explicitly.
   torrent/peer views, independently reaps silent view sets, connects semantic
   responsive views to the live React surface, and proves suspended-client
   recovery plus a verified libtorrent transfer entirely headlessly.
+- [`036-manual-live-webui-launcher.md`](036-manual-live-webui-launcher.md):
+  complete; adds one production-built live browser launcher with persistent
+  isolated state, an exact loopback boundary, normal-browser opening, and
+  joined `Ctrl+C` shutdown. Tauri migration awaits maintainer confirmation.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
