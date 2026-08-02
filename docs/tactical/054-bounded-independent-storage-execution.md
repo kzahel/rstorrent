@@ -1,6 +1,6 @@
 # Tactical 054: Bounded Independent Storage Execution
 
-Status: Active on 2026-08-02.
+Status: Complete on 2026-08-02.
 
 Topics: `storage-throughput-architecture`, `download-correctness`,
 `disk-and-piece-inspection`, `performance-and-live-evidence`,
@@ -444,6 +444,54 @@ pieces, four post-metadata durable revisions, exact payload SHA-1, complete
 publication and cleanup. The SQLite-backed application is therefore no longer
 slower than the contemporaneous 0.555-second engine control; the correction
 improves its median by 13.1 times without weakening checkpoint semantics.
+
+## Closing Validation And Result
+
+Fresh controlled gates retained exact content and cleanup across three
+selective wanted/skipped/padding runs, the adverse plus healthy mixed-peer
+run, all nine comparator classification tests and the 79,000-byte paired
+RSTorrent/libtorrent publication fixture. The selected fixture exercised
+part-file reopen and materialization while bounded execution reached two
+simultaneous writes and hashes where work allowed.
+
+The existing 32 MiB forced-restart fixture had become too fast to observe a
+partial durable epoch. The retained harness now crosses the 64 MiB checkpoint
+byte bound with 80 MiB/320 pieces and delays the test-only SQLite callback for
+one second. Three runs killed the child with exactly 256 durable pieces,
+corrupted one claimed piece, retained 255 after recheck and downloaded exactly
+17,039,360 bytes: the corrupt piece plus the remaining 64. All produced exact
+SHA-1 `fd9c7f58abe84c5dde41d6723326352d982fd6ad` and cleanup.
+
+The three explicit 64 MiB crash boundaries also pass. Pre-sync and
+post-sync/pre-commit retain zero pieces and redownload all 67,108,864 bytes.
+The faster post-commit observation retained all 256 pieces and redownloaded
+zero bytes. Every restart produced exact SHA-1
+`645e90d7a71313eb68b0c2c3de0dd165bdcd893c`; the one-sided invariant,
+publication and cleanup held in every case.
+
+Final repository validation passed formatting, warning-denying workspace
+Clippy and all workspace tests: 174 engine tests passed with three opt-in live
+tests ignored. Fresh generated web contracts produced no diff; 106 web tests
+passed with two skipped, followed by strict TypeScript and the production
+build. The session and bundled SQLite cross-compiled at API 28 for x86_64 and
+arm64-v8a.
+
+The authorized headless full-reference Big Buck Bunny pair then reached exact
+complete publication for both clients on changing public peers. RSTorrent
+published 276,445,467 bytes in 1,055 pieces after 29.323 seconds; libtorrent
+published after 36.599 seconds. Their post-metadata payload intervals were
+12.059 and 13.875 seconds. RSTorrent reported zero hash failures, 4,849,664
+redundant bytes, 2.323 seconds summed write service, 1.011 seconds summed hash
+service, exact 16-block/256 KiB batch high waters and successful cleanup.
+This one RSTorrent-first observation is live context, not a stable speed or
+superiority claim.
+
+The tactical's stopping condition is met. Generation-safe independent
+execution, exact shutdown and failure joins, the application projection,
+large-transfer floor, concurrency selection, integrity/restart/crash gates,
+platform builds, controlled libtorrent exchange and public completion all
+pass. Pending-write read-through is not justified by assumption; a later
+tactical must first measure a material page-cache reread cost.
 
 ## Escalation And Next Boundary
 

@@ -31,7 +31,9 @@ seconds. Tactical `054` now adds bounded independent write/hash execution and
 checked scheduler and per-piece indexes whose repeated controlled 10 GiB rows
 all complete below 32 seconds. The final 4 MiB median reaches 96% of
 libtorrent, `4/4` beats the `8/4` finalist, and the retained application
-profile remains before graduation.
+profile now matches its engine control after removing per-block Disk
+projection. Selective, restart, crash, platform, controlled libtorrent and one
+exact public full-download pair all pass; Tactical `054` is complete.
 Tactical `033` now completes the leased application view-set and headless
 polling foundation. Tactical `034` completes the responsive frontend,
 deterministic demo adapter, adaptive inspection hierarchy, and virtual table
@@ -122,24 +124,18 @@ evidence.
 
 ### Now
 
-**Complete Tactical `054`'s throughput graduation.** Independent write/hash
-capacity, explicit generation joins and the large local comparator are now in
-place. Its shared-fixture medians and executable throughput/ratio floors now
-make 10 GiB in 60 seconds the first current-machine optimization gate. Raw
-ceilings, the repeated engine matrix and the concurrency finalists now pass;
-every 10 GiB RSTorrent run completes in at most 31.652 seconds and the selected
-desktop bound remains `4/4`. The retained SQLite-backed 128 MiB application
-profile now completes in a 0.534-second median after removing per-block Disk
-projection, versus its 0.555-second engine control. Complete the closing
-controlled/public evidence before graduating or advancing to read-through
-hashing.
+**Measure before authorizing pending-write read-through.** Tactical `054` is
+complete. Its reproducible gate keeps 10 GiB below 60 seconds at every
+representative piece size; observed runs finish in 9.408--31.652 seconds and
+the selected desktop bound remains `4/4`. The SQLite-backed application median
+is 0.534 seconds versus its 0.555-second engine control, and one changing-swarm
+Big Buck Bunny pair completed exactly for both implementations. Use the large
+matrix and raw-stage probe to determine whether page-cache rereads remain
+material before opening another storage implementation tactical.
 
 ### Next
 
-1. **Measure pending-write read-through only after simpler overlap.** Retain
-   accepted buffers for hashing before final write completion only if the
-   bounded independent queues leave a material page-cache reread cost.
-2. **Deepen peer inspection only if engine selection needs it.** A
+1. **Deepen peer inspection only if engine selection needs it.** A
    registry-backed Swarm view remains the strongest missing inspection
    candidate, but it should not displace a reproducible download correctness
    or storage bottleneck merely to add another tab.

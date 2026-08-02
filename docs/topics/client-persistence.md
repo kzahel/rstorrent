@@ -7,9 +7,10 @@ Status: Tacticals `007` and `009` implemented the first
 profile store, exact magnet metadata retention, durable have checkpoints, and
 conservative restart through both path and Android SAF platform-capability
 storage. Tactical `052` now batches payload synchronization and have commits
-behind hash verification. Tactical `040` adds schema version `4`, durable
-archive state, and an explicit restartable removal job spanning SQLite and
-path or SAF cleanup.
+behind hash verification, and Tactical `054` retains that crash contract under
+independent write/hash execution. Tactical `040` adds schema version `4`,
+durable archive state, and an explicit restartable removal job spanning SQLite
+and path or SAF cleanup.
 
 ## Scope
 
@@ -365,13 +366,14 @@ successful mutation unreadable after upgrade.
   exposes more than its automatically created profile.
 - Whether Android places the database in backed-up or explicitly no-backup
   app-private storage.
-- Tactical `052` is implementing the accepted bounded durability epochs from
-  [`storage-throughput-architecture.md`](storage-throughput-architecture.md);
-  the joined runtime owner, exact batch commit, matched controlled profile and
-  a mid-epoch forced-death resume case now pass. Exact pre-sync and
-  post-sync/pre-commit crashes retain zero false have bits; an exact
-  post-commit crash retains and rechecks five claims while redownloading only
-  the remaining 251 pieces. Broader filesystem failure profiles remain open.
+- The bounded durability epochs from
+  [`storage-throughput-architecture.md`](storage-throughput-architecture.md)
+  are implemented. Tactical `054`'s strengthened 80 MiB forced-death profile
+  retains exactly 256 partial claims, clears one deliberately corrupted claim
+  and downloads precisely the remaining 65 pieces. Fresh exact pre-sync and
+  post-sync/pre-commit crashes retain zero false have bits; the observed
+  post-commit boundary safely retains all 256. Broader filesystem failure
+  profiles remain open.
 - The exact clean-shutdown, storage-generation, and file-observation evidence
   required before a later fast-resume path may skip hashing.
 - How completed payload moved outside the application is deliberately

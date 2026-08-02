@@ -1028,6 +1028,23 @@ then completed three transfers in 0.567, 0.534 and 0.524 seconds: a
 512 pieces, four post-metadata durable revisions, publication and cleanup.
 This is a controlled application-path result rather than a public-swarm claim.
 
+Tactical `054` closed with one authorized headless full-reference Big Buck
+Bunny pair against changing public peers. RSTorrent ran first. Both clients
+published the catalog's exact 276,445,467 bytes, 1,055 pieces and three files
+with successful cleanup:
+
+| Implementation | Metadata | Publication | Post-metadata payload interval |
+| --- | ---: | ---: | ---: |
+| RSTorrent | 17.264 s | 29.323 s | 12.059 s |
+| libtorrent 2.0.13 | 22.723 s | 36.599 s | 13.875 s |
+
+RSTorrent reported zero piece-hash failures, 4,849,664 redundant bytes,
+2.323 seconds summed write service, 1.011 seconds summed hash service and exact
+16-block/256 KiB batch high waters. Libtorrent reported zero failed bytes and
+21,036,611 redundant bytes. The 0.801 publication-time ratio is one
+source-order- and peer-population-dependent observation, not evidence that
+RSTorrent is generally faster or a new public regression threshold.
+
 ## Maintenance Contract
 
 Feature tacticals add measurements only when their owner can report them

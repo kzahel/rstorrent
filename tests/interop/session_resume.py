@@ -37,11 +37,13 @@ from magnet_metadata import (
 PROCESS_TIMEOUT_SECONDS = 45
 POLL_SECONDS = 0.02
 UPLOAD_RATE_LIMIT = 1024 * 1024
-# Keep this scenario longer than the checkpoint owner's two-second maximum age.
-# The former eight-piece fixture could complete before a batched epoch became
-# durable, which tested per-piece persistence timing rather than crash resume.
-RESUME_PAYLOAD_SIZE = 32 * 1024 * 1024
+# Cross the checkpoint owner's 64 MiB byte bound, then hold each SQLite commit
+# long enough for the harness to kill the process after one partial durable
+# epoch. This keeps the restart boundary deterministic even when loopback can
+# finish the former 32 MiB fixture before its two-second age trigger.
+RESUME_PAYLOAD_SIZE = 80 * 1024 * 1024
 RESUME_PIECE_SIZE = 256 * 1024
+FORCED_DEATH_COMMIT_DELAY_MILLIS = 1000
 
 
 @dataclass
@@ -306,7 +308,12 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
             diagnostics,
         )
 
-        process = start_process(binary, profile_root, payload_root)
+        process = start_process(
+            binary,
+            profile_root,
+            payload_root,
+            checkpoint_commit_delay_millis=FORCED_DEATH_COMMIT_DELAY_MILLIS,
+        )
         add = envelope(
             "add",
             {

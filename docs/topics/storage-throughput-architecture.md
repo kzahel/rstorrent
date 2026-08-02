@@ -5,12 +5,12 @@ Topic: `storage-throughput-architecture`
 Status: Accepted by maintainer direction on 2026-08-02. Tacticals
 [`052`](../tactical/052-batched-durability-checkpoints.md) and
 [`053`](../tactical/053-immutable-positional-storage-plans.md) completed the
-durability split and immutable positional-plan foundation. Active Tactical
-[`054`](../tactical/054-bounded-independent-storage-execution.md) has landed
-the bounded generation join plus independent write/hash execution and removed
-three whole-geometry supervisor scaling paths. Raw-stage/concurrency sweeps,
-the retained application profile and broader platform evidence remain before
-that tactical or the end-state architecture graduates.
+durability split and immutable positional-plan foundation. Tactical
+[`054`](../tactical/054-bounded-independent-storage-execution.md) completes
+the bounded generation join, independent write/hash execution, large-transfer
+gate and application-path correction. The accepted end-state still leaves
+measurement of pending-write read-through and session/root fairness as later
+slices.
 
 ## Purpose And Scope
 
@@ -891,5 +891,15 @@ Coalescing ordinary `StorageState` delivery to 100 ms while forcing checkpoint,
 error and terminal observations reduced the repeated application median to
 0.534 seconds (239.7 MiB/s). All three runs retained exact 512-piece state,
 four durable revisions after metadata, payload hash, publication and cleanup.
-The remaining Tactical `054` work is closing controlled/public evidence rather
-than another storage optimization.
+Closing selective, mixed-peer, resume, crash, web, Android and controlled
+libtorrent gates all pass. One headless full-reference Big Buck Bunny pair
+published exact content after 29.323 seconds for RSTorrent and 36.599 seconds
+for libtorrent, with post-metadata payload intervals of 12.059 and 13.875
+seconds. Changing public peers make that one sample contextual rather than a
+parity threshold.
+
+Tactical `054` is complete. Any pending-write read-through slice must first
+show that page-cache rereads remain a material limit under the retained large
+matrix; it is not the default next implementation merely because libtorrent
+supports it. Session/root-aware fairness remains deferred until more than one
+active download can share the owner.

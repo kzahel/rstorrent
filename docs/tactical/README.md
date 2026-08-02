@@ -283,8 +283,9 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; replaces mutable cursor I/O with retained, generation-checked
   positional write and hash plans across wanted and part-file storage.
 - [`054-bounded-independent-storage-execution.md`](054-bounded-independent-storage-execution.md):
-  active; runs immutable write and hash jobs through separate bounded capacity
-  and joins out-of-order results by exact piece generation.
+  complete; runs immutable write and hash jobs through separate bounded
+  capacity, joins out-of-order results by exact piece generation, and retains
+  a repeated 1/10 GiB libtorrent comparison as the first throughput gate.
 - [`055-application-destinations.md`](055-application-destinations.md):
   complete; establishes Library, Transfers, and Workbench as responsive
   top-level destinations, adds truthful bounded clean views and shared

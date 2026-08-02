@@ -6,9 +6,9 @@ Status: Resumed for the accepted maximum-throughput storage campaign by
 maintainer direction on 2026-08-02. The
 paired headless comparator and bounded utility timeline drive metadata,
 first-piece, sustained-transfer, endgame, and full publication parity from
-pinned libtorrent source and tests. Bounded write coalescing is complete;
-serialized storage execution remains the measured owner. Its accepted
-multi-tactical replacement is recorded in
+pinned libtorrent source and tests. The former serialized storage owner has
+been replaced by bounded independent execution, and its accepted
+multi-tactical architecture is recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md).
 Tactical [`052`](../tactical/052-batched-durability-checkpoints.md) has
 completed its checkpoint split and retained performance gate; Tactical
@@ -16,9 +16,10 @@ completed its checkpoint split and retained performance gate; Tactical
 the immutable positional-storage slice. Bounded independent write/hash
 execution, raw ceilings and the repeated large-transfer matrix now pass in
 Tactical [`054`](../tactical/054-bounded-independent-storage-execution.md);
-the SQLite-backed application cohort and closing interoperability evidence
-remain. The intervening desktop inspection and view-set foundations are
-complete enough to expose the new checkpoint stages as the engine evolves.
+its SQLite-backed application, closing interoperability, restart/crash,
+platform and public evidence also pass, so that tactical is complete. The
+intervening desktop inspection and view-set foundations are complete enough to
+expose the new checkpoint stages as the engine evolves.
 High-impact BEP breadth still follows the core common-denominator parity gate.
 
 ## Purpose And Scope
@@ -626,7 +627,14 @@ SQLite-independent engine control. Process evidence identified and removed
 per-block synchronous Disk projection while retaining exact checkpoint state,
 payload, publication and cleanup.
 
-Next executable action: run Tactical `054`'s closing controlled/public
-evidence and workspace gates.
+Its closing selective, mixed-peer, forced-restart, three-boundary crash,
+workspace, web, Android and controlled libtorrent gates pass. One authorized
+full-reference public Big Buck Bunny pair published exact content after
+29.323 seconds for RSTorrent and 36.599 seconds for libtorrent; that changing
+swarm remains contextual evidence.
+
+Next executable action: use Tactical `054`'s retained large matrix and raw
+probe to measure whether page-cache rereads justify a bounded pending-write
+read-through tactical. Do not implement it from architectural analogy alone.
 
 Human blocker: **none**.

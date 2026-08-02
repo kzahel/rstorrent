@@ -36,8 +36,10 @@ proves conservative pre-sync, post-sync/pre-commit and post-commit crash
 outcomes. Tactical `053` moves single-file, wanted-file and part-file writes
 plus mixed hashes onto retained generation-checked positional plans; stale
 routes fail before payload mutation, skipped/padding integrity and
-materialization remain exact, and execution intentionally remains serialized
-until the next piece-generation join tactical.
+materialization remain exact. Tactical `054` adds that piece-generation join
+and independently bounded writes and hashes. Exact selective, mixed-peer,
+controlled publication, partial-epoch restart and all three crash-boundary
+gates pass after the concurrency change.
 Tactical `046` closes a cancellation ownership race in public and
 session-facing wrappers: terminal metadata/content results now follow the
 supervisors' joined cleanup and final empty peer observation.
@@ -315,8 +317,17 @@ before sync, after sync but before SQLite, and immediately after SQLite. The
 first two cases retain zero have bits and redownload all 64 MiB; the third
 retains five rechecked pieces and downloads exactly the remaining 251. Every
 restart matches the external payload hash and cleans all owned artifacts.
-Immutable positional spans and bounded independent write/hash execution remain
-later tacticals. Peer selection and request policy are unchanged.
+
+Tacticals `053` and `054` subsequently installed immutable positional spans,
+piece generations and bounded independent write/hash execution. The retained
+forced-restart smoke now crosses the 64 MiB epoch bound with 80 MiB/320 pieces
+and a deterministic test-only commit hold. Three runs retained exactly 256
+pieces, cleared the one deliberately corrupted claim, redownloaded exactly the
+remaining 65 pieces and published exact content. Fresh crash runs retained
+zero pieces before sync and after sync/before commit, then safely retained all
+256 after the observed post-commit boundary. Selective part-file,
+mixed-source, paired publication and cleanup evidence remain exact. Peer
+selection and request policy are unchanged.
 
 Routine engine validation remains headless; no additional product UI is
 required by that slice.
