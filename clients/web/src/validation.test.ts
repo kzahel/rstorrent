@@ -46,6 +46,30 @@ describe("peer view validation", () => {
       /another torrent/,
     );
   });
+
+  it("accepts typed flags and rejects duplicate flag state", () => {
+    const batch = peerBatch("0".repeat(40));
+    batch.updates[0]!.snapshot.peers[0]!.peer_flags = [
+      "incoming",
+      "extension_protocol",
+      "utp",
+    ];
+    expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
+    batch.updates[0]!.snapshot.peers[0]!.peer_flags = ["incoming", "incoming"];
+    expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
+      /flags contain duplicates/,
+    );
+    batch.updates[0]!.snapshot.peers[0]!.peer_flags = Array(17).fill(
+      "incoming",
+    );
+    expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
+      /flags exceed their bound/,
+    );
+    batch.updates[0]!.snapshot.peers[0]!.peer_flags = ["invented"];
+    expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
+      ContractError,
+    );
+  });
 });
 
 describe("torrent display-name validation", () => {
@@ -386,6 +410,7 @@ function peerBatch(torrentId: string) {
               transport: "tcp",
               lifecycle: "protocol_handshaking",
               role: "metadata",
+              peer_flags: undefined as string[] | undefined,
               lifecycle_age_millis: "5",
               remote_endpoint: "127.0.0.1:6881",
               local_endpoint: null,

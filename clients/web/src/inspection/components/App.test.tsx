@@ -78,6 +78,14 @@ describe("inspection application", () => {
     const peersTab = screen.getByRole("tab", { name: "Peers" });
     const peerCount = peersTab.textContent;
     expect(peerCount).toMatch(/^Peers\d+$/);
+    await user.click(screen.getByRole("button", { name: "Explain Flags" }));
+    const flagLegend = screen.getByRole("dialog", {
+      name: "Flags column help",
+    });
+    expect(within(flagLegend).getByText("Incoming")).toBeVisible();
+    expect(within(flagLegend).getByText("Encrypted")).toBeVisible();
+    await user.keyboard("{Escape}");
+    expect(flagLegend).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "General" }));
     expect(screen.getByText("Selected transfer")).toBeVisible();

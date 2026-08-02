@@ -34,6 +34,9 @@ structured expansion, separate capture and display filters, bottom-follow/
 new-record behavior, local clear, and no sorting or persistence. Tactical `050`
 adds Auto, Light, and Dark to the shared Appearance settings, safely migrates
 the size-only preference, and applies persisted theme before React content.
+Tactical `051` replaces ambiguous peer flag strings with typed Rust semantics,
+one exhaustive React glyph/label table, full cell accessibility, and a
+separate sortable-header help control containing the complete legend.
 
 ## Purpose
 

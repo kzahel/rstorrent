@@ -216,6 +216,14 @@ protocol results, not only that both processes remained alive.
 
 This is distinct from the similarly named libTorrent used by rTorrent.
 
+Tactical `051` used the pinned libtorrent peer-info projection, terminal
+legend, and peer-list/fast-extension tests together with JSTorrent's active
+Peer table formatter and typed incoming direction to define an independently
+authored semantic flag vocabulary. Exact revisions, paths, functions, adopted
+lessons, and deliberate differences are recorded in
+[`peer-flag-vocabulary.md`](topics/peer-flag-vocabulary.md). No reference code,
+fixture, test data, or asset was copied.
+
 ## rqbit And librqbit
 
 Project: [rqbit](https://github.com/ikatson/rqbit)

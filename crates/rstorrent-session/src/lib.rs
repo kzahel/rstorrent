@@ -47,8 +47,8 @@ pub use view_sets::{
 pub use views::{
     ActivePiece, ActivePieceStageView, CapabilityStatus, DeliveryPolicy, DiskPieceStageView,
     DiskPieceView, DiskPipelineView, DiskPressureView, IndexRange, PeerDirection,
-    PeerDisconnectReason, PeerFieldCapabilities, PeerLifecycle, PeerRequestPhase, PeerRole,
-    PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
+    PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerRequestPhase,
+    PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
     ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason, ResetReason,
     SubscriptionError, SubscriptionSpec, SubscriptionStats, TorrentView, VIEW_CONTRACT_VERSION,
     ViewHub, ViewPatch, ViewProjection, ViewSelector, ViewSnapshot, ViewSubscription, ViewUpdate,

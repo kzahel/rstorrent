@@ -19,6 +19,7 @@ const COLUMNS: readonly VirtualColumn<Row>[] = [
     width: 140,
     sortKind: "decimal",
     sortValue: (row) => row.value,
+    headerHelp: <p>Values are exact decimal strings.</p>,
     render: (row) => row.value ?? "—",
   },
   {
@@ -86,6 +87,33 @@ describe("VirtualTable", () => {
     expect(rowIds(container)).toEqual(["ten", "large", "null"]);
     fireEvent.click(value);
     expect(rowIds(container)).toEqual(["large", "ten", "null"]);
+  });
+
+  it("opens column help without sorting and restores focus on Escape", () => {
+    render(
+      <VirtualTable
+        tableId="help-test"
+        label="Column help"
+        rows={[{ id: "one", value: "1" }]}
+        getRowId={(row) => row.id}
+        columns={COLUMNS}
+        interfaceSize="standard"
+        emptyMessage="empty"
+      />,
+    );
+    const help = screen.getByRole("button", { name: "Explain Value" });
+    const header = screen.getByRole("columnheader", { name: "Value" });
+    fireEvent.click(help);
+    expect(header).not.toHaveAttribute("aria-sort");
+    expect(help).toHaveAttribute("aria-expanded", "true");
+    expect(
+      screen.getByRole("dialog", { name: "Value column help" }),
+    ).toHaveTextContent("exact decimal strings");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(
+      screen.queryByRole("dialog", { name: "Value column help" }),
+    ).not.toBeInTheDocument();
+    expect(help).toHaveFocus();
   });
 
   it("hides optional columns by default and exposes persisted controls", () => {

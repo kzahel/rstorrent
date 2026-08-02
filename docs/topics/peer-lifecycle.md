@@ -384,6 +384,13 @@ the provisional tracker announce port does not change that ordering.
 
 ## Current Evidence And Gaps
 
+Tactical `051` keeps lifecycle and compact flags as separate application-view
+dimensions. Connecting, handshaking, connected, stalled, and disconnecting
+remain lifecycle state; incoming direction, transport, negotiated capability,
+and known transfer relationship become typed semantic flags computed from the
+same coherent connection-generation observation. Reserved scheduler and
+integrity flags are not inferred from the current lifecycle vocabulary.
+
 Tactical `006` proved direct `x.pe` resolution, BEP 9 metadata transfer, and
 same-socket content handoff. Tactical `010` replaced the remaining ad hoc
 address loops with one runtime-independent registry and one diagnostic

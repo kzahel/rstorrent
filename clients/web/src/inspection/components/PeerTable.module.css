@@ -34,3 +34,69 @@
   font-family: var(--font-mono);
   font-size: var(--ui-font-small);
 }
+
+.legend {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.8rem;
+}
+
+.legend > strong {
+  font-size: var(--ui-font-body);
+}
+
+.legend p,
+.legend h3,
+.legend dl,
+.legend dd {
+  margin: 0;
+}
+
+.legend > p {
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.legend section {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.legend h3 {
+  color: var(--text-muted);
+  font-size: var(--ui-font-caption);
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.legend dl {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.legendRow {
+  display: grid;
+  grid-template-columns: minmax(8.5rem, 0.8fr) minmax(0, 1.2fr);
+  gap: 0.55rem;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 0.26rem;
+}
+
+.legendRow dt {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  gap: 0.38rem;
+  font-weight: 650;
+}
+
+.legendRow code {
+  color: var(--accent-strong);
+  font-family: var(--font-mono);
+  font-weight: 750;
+  text-align: center;
+}
+
+.legendRow dd {
+  color: var(--text-secondary);
+  line-height: 1.35;
+}

@@ -3,6 +3,13 @@ import { useMemo } from "react";
 import { useInspectionStore } from "../context";
 import { formatBytes, formatProgress, formatRate } from "../format";
 import type { PeerRow, ViewMaterialization } from "../model";
+import {
+  describePeerFlags,
+  formatPeerFlags,
+  PEER_FLAG_DEFINITIONS,
+  PEER_FLAG_ORDER,
+  type PeerFlagGroup,
+} from "../peerFlags";
 import { VirtualTable, type VirtualColumn } from "./VirtualTable";
 import styles from "./PeerTable.module.css";
 
@@ -108,14 +115,68 @@ const COLUMNS: readonly VirtualColumn<PeerRow>[] = [
   {
     id: "flags",
     label: "Flags",
-    width: 68,
+    width: 96,
     minimumViewport: 560,
     align: "center",
     sortable: true,
-    sortValue: (row) => row.flags,
-    render: (row) => <code className={styles.flags}>{row.flags || "—"}</code>,
+    sortValue: (row) => formatPeerFlags(row.flags),
+    headerHelp: <PeerFlagLegend />,
+    render: (row) => {
+      const glyphs = formatPeerFlags(row.flags);
+      const description = describePeerFlags(row.flags);
+      return (
+        <code
+          className={styles.flags}
+          aria-label={description}
+          title={description}
+        >
+          {glyphs || "—"}
+        </code>
+      );
+    },
   },
 ];
+
+const PEER_FLAG_GROUPS: readonly PeerFlagGroup[] = [
+  "Connection",
+  "Transfer",
+  "Protocol",
+  "Scheduler / integrity",
+];
+
+function PeerFlagLegend() {
+  return (
+    <div className={styles.legend}>
+      <strong>Peer flag legend</strong>
+      <p>
+        Flags are case-sensitive and describe current connection state, not
+        discovery. Only known present flags appear; an absent flag may be
+        false or unavailable.
+      </p>
+      {PEER_FLAG_GROUPS.map((group) => (
+        <section key={group}>
+          <h3>{group}</h3>
+          <dl>
+            {PEER_FLAG_ORDER.filter(
+              (flag) => PEER_FLAG_DEFINITIONS[flag].group === group,
+            ).map((flag) => {
+              const definition = PEER_FLAG_DEFINITIONS[flag];
+              return (
+                <div key={flag} className={styles.legendRow}>
+                  <dt>
+                    <code>{definition.glyph}</code>
+                    <span>{definition.label}</span>
+                  </dt>
+                  <dd>{definition.description}</dd>
+                </div>
+              );
+            })}
+          </dl>
+        </section>
+      ))}
+    </div>
+  );
+}
 
 export function PeerTable({ torrentId }: { readonly torrentId: string }) {
   const peerSet = useInspectionStore(

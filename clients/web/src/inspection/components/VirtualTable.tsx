@@ -1,14 +1,16 @@
 import {
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
-  type KeyboardEvent,
-  type PointerEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type UIEvent,
 } from "react";
+import { createPortal } from "react-dom";
 
 import {
   INTERFACE_METRICS,
@@ -29,6 +31,7 @@ export interface VirtualColumn<Row> {
   readonly sortValue?: (row: Row) => string | number | null;
   readonly sortKind?: "text" | "number" | "decimal";
   readonly sortOrder?: readonly string[];
+  readonly headerHelp?: ReactNode;
   readonly render: (row: Row) => ReactNode;
 }
 
@@ -49,6 +52,14 @@ export interface VirtualTableProps<Row> {
 interface SortState {
   readonly columnId: string;
   readonly direction: "asc" | "desc";
+}
+
+interface HeaderHelpState {
+  readonly columnId: string;
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly maximumHeight: number;
 }
 
 const TABLE_CONFIG_VERSION = 1;
@@ -87,6 +98,10 @@ export function VirtualTable<Row>({
   );
   const [columnsOpen, setColumnsOpen] = useState(false);
   const columnsButtonRef = useRef<HTMLButtonElement>(null);
+  const headerHelpIdPrefix = useId().replaceAll(":", "");
+  const headerHelpButtonRef = useRef<HTMLButtonElement>(null);
+  const headerHelpPopoverRef = useRef<HTMLDivElement>(null);
+  const [headerHelp, setHeaderHelp] = useState<HeaderHelpState | null>(null);
   const resizeRef = useRef<{
     readonly columnId: string;
     readonly pointerId: number;
@@ -101,7 +116,26 @@ export function VirtualTable<Row>({
     setSort(loaded?.sort ?? initialSort ?? null);
     setLiveSort(loaded?.liveSort ?? false);
     setFrozenOrder(null);
+    setHeaderHelp(null);
   }, [columns, initialSort, tableId]);
+
+  useEffect(() => {
+    if (headerHelp === null) return;
+    headerHelpPopoverRef.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setHeaderHelp(null);
+      headerHelpButtonRef.current?.focus();
+    };
+    const closeOnResize = () => setHeaderHelp(null);
+    document.addEventListener("keydown", closeOnEscape);
+    globalThis.addEventListener("resize", closeOnResize);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      globalThis.removeEventListener("resize", closeOnResize);
+    };
+  }, [headerHelp]);
 
   useEffect(() => {
     saveTableConfig(tableId, {
@@ -237,7 +271,7 @@ export function VirtualTable<Row>({
   };
 
   const startResize = (
-    event: PointerEvent<HTMLDivElement>,
+    event: ReactPointerEvent<HTMLDivElement>,
     column: VirtualColumn<Row>,
   ) => {
     if (event.button !== 0) return;
@@ -253,7 +287,7 @@ export function VirtualTable<Row>({
   };
 
   const continueResize = (
-    event: PointerEvent<HTMLDivElement>,
+    event: ReactPointerEvent<HTMLDivElement>,
     column: VirtualColumn<Row>,
   ) => {
     const resize = resizeRef.current;
@@ -261,7 +295,7 @@ export function VirtualTable<Row>({
     resizeColumn(column, resize.startWidth + event.clientX - resize.startX);
   };
 
-  const stopResize = (event: PointerEvent<HTMLDivElement>) => {
+  const stopResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (resizeRef.current?.pointerId !== event.pointerId) return;
     resizeRef.current = null;
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
@@ -270,7 +304,7 @@ export function VirtualTable<Row>({
   };
 
   const resizeWithKeyboard = (
-    event: KeyboardEvent<HTMLDivElement>,
+    event: ReactKeyboardEvent<HTMLDivElement>,
     column: VirtualColumn<Row>,
   ) => {
     const current = columnWidths[column.id] ?? column.width;
@@ -293,8 +327,41 @@ export function VirtualTable<Row>({
   const configuredVisibleCount = columns.filter(
     (column) => !hiddenColumns.has(column.id),
   ).length;
+  const headerHelpColumn =
+    headerHelp === null
+      ? undefined
+      : visibleColumns.find((column) => column.id === headerHelp.columnId);
+
+  const toggleHeaderHelp = (
+    trigger: HTMLButtonElement,
+    column: VirtualColumn<Row>,
+  ) => {
+    if (headerHelp?.columnId === column.id) {
+      setHeaderHelp(null);
+      return;
+    }
+    const bounds = trigger.getBoundingClientRect();
+    const viewportWidth = globalThis.innerWidth || 1_024;
+    const viewportHeight = globalThis.innerHeight || 768;
+    const width = Math.min(352, Math.max(0, viewportWidth - 16));
+    const left = Math.max(
+      8,
+      Math.min(bounds.right - width, viewportWidth - width - 8),
+    );
+    const belowTop = bounds.bottom + 6;
+    const top = viewportHeight - belowTop >= 420 ? belowTop : 8;
+    headerHelpButtonRef.current = trigger;
+    setHeaderHelp({
+      columnId: column.id,
+      left,
+      top,
+      width,
+      maximumHeight: Math.max(160, viewportHeight - top - 8),
+    });
+  };
 
   return (
+    <>
     <div className={styles.container} style={tableStyle}>
       <div className={styles.toolbar}>
         <span>{sortedRows.length.toLocaleString()} rows</span>
@@ -429,6 +496,7 @@ export function VirtualTable<Row>({
               data-align={column.align ?? "left"}
             >
               <button
+                className={styles.sortButton}
                 type="button"
                 onClick={() => changeSort(column)}
                 disabled={column.sortable === false || column.sortValue === undefined}
@@ -436,6 +504,26 @@ export function VirtualTable<Row>({
                 <span>{column.label}</span>
                 {sorted ? <span aria-hidden="true">{sort.direction === "asc" ? "▲" : "▼"}</span> : null}
               </button>
+              {column.headerHelp !== undefined ? (
+                <button
+                  className={styles.headerHelpButton}
+                  type="button"
+                  aria-label={`Explain ${column.label}`}
+                  aria-haspopup="dialog"
+                  aria-expanded={headerHelp?.columnId === column.id}
+                  aria-controls={
+                    headerHelp?.columnId === column.id
+                      ? `${headerHelpIdPrefix}-${column.id}-help`
+                      : undefined
+                  }
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) =>
+                    toggleHeaderHelp(event.currentTarget, column)
+                  }
+                >
+                  ?
+                </button>
+              ) : null}
               <div
                 className={styles.resizeHandle}
                 role="separator"
@@ -507,6 +595,34 @@ export function VirtualTable<Row>({
       )}
       </div>
     </div>
+    {headerHelp !== null && headerHelpColumn?.headerHelp !== undefined
+      ? createPortal(
+          <div
+            className={styles.headerHelpLayer}
+            onPointerDown={() => setHeaderHelp(null)}
+          >
+            <div
+              ref={headerHelpPopoverRef}
+              id={`${headerHelpIdPrefix}-${headerHelpColumn.id}-help`}
+              className={styles.headerHelpPopover}
+              role="dialog"
+              aria-label={`${headerHelpColumn.label} column help`}
+              tabIndex={0}
+              style={{
+                left: headerHelp.left,
+                top: headerHelp.top,
+                width: headerHelp.width,
+                maxHeight: headerHelp.maximumHeight,
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              {headerHelpColumn.headerHelp}
+            </div>
+          </div>,
+          document.body,
+        )
+      : null}
+    </>
   );
 }
 

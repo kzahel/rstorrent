@@ -494,6 +494,30 @@ pub enum PeerTransportKind {
     Utp,
 }
 
+#[derive(
+    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, JsonSchema, TS,
+)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PeerFlagView {
+    Incoming,
+    Encrypted,
+    DownloadAllowed,
+    DownloadChoked,
+    UploadAllowed,
+    UploadChoked,
+    ExtensionProtocol,
+    MetadataExtension,
+    Utp,
+    HolePunched,
+    OnParole,
+    OptimisticUnchoke,
+    Snubbed,
+    UploadOnly,
+    Endgame,
+    Seed,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
@@ -571,6 +595,8 @@ pub struct PeerView {
     pub transport: PeerTransportKind,
     pub lifecycle: PeerLifecycle,
     pub role: PeerRole,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub peer_flags: Vec<PeerFlagView>,
     pub lifecycle_age_millis: String,
     pub remote_endpoint: String,
     pub local_endpoint: Option<String>,
@@ -611,7 +637,7 @@ impl PeerView {
         peer: &PeerConnectionObservation,
     ) -> Self {
         let content = peer.content.as_ref();
-        Self {
+        let mut view = Self {
             connection_id: peer.connection_id.get().to_string(),
             torrent_id: torrent_id.to_owned(),
             peer_record_id: peer.record_id.map(|id| id.get().to_string()),
@@ -633,6 +659,7 @@ impl PeerView {
                 PeerConnectionRole::Metadata => PeerRole::Metadata,
                 PeerConnectionRole::Content => PeerRole::Content,
             },
+            peer_flags: Vec::new(),
             lifecycle_age_millis: duration_millis_string(
                 captured_at.saturating_sub(peer.lifecycle_changed_at),
             ),
@@ -695,8 +722,43 @@ impl PeerView {
                 upload: CapabilityStatus::Unsupported,
                 metadata_stage: CapabilityStatus::Unavailable,
             },
+        };
+        view.peer_flags = derive_peer_flags(&view);
+        view
+    }
+}
+
+fn derive_peer_flags(peer: &PeerView) -> Vec<PeerFlagView> {
+    let mut flags = Vec::with_capacity(6);
+
+    if peer.direction == PeerDirection::Incoming {
+        flags.push(PeerFlagView::Incoming);
+    }
+    if peer.local_interested == Some(true) {
+        match peer.remote_choking {
+            Some(false) => flags.push(PeerFlagView::DownloadAllowed),
+            Some(true) => flags.push(PeerFlagView::DownloadChoked),
+            None => {}
         }
     }
+    if peer.remote_interested == Some(true) {
+        match peer.local_choking {
+            Some(false) => flags.push(PeerFlagView::UploadAllowed),
+            Some(true) => flags.push(PeerFlagView::UploadChoked),
+            None => {}
+        }
+    }
+    if peer.supports_extensions == Some(true) {
+        flags.push(PeerFlagView::ExtensionProtocol);
+    }
+    if peer.supports_ut_metadata == Some(true) {
+        flags.push(PeerFlagView::MetadataExtension);
+    }
+    if peer.transport == PeerTransportKind::Utp {
+        flags.push(PeerFlagView::Utp);
+    }
+
+    flags
 }
 
 fn bounded_u32(value: usize) -> u32 {

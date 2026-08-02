@@ -205,6 +205,13 @@ describe("LiveApplication", () => {
     expect(peer?.state).toBe("handshaking");
     expect(peer?.client).toBeNull();
     expect(peer?.downloadRate).toBeNull();
+    expect(peer?.flags).toEqual([
+      "incoming",
+      "download_choked",
+      "extension_protocol",
+      "metadata_extension",
+      "utp",
+    ]);
     expect(initial.viewStatus.peers.status).toBe("ready");
 
     await application.setViews({
@@ -361,6 +368,14 @@ describe("LiveApplication", () => {
     expect(
       recovered.peersByTorrent[TORRENT_ID]?.rows["connection-1"],
     ).toBeUndefined();
+    expect(
+      recovered.peersByTorrent[TORRENT_ID]?.rows["connection-2"]?.flags,
+    ).toEqual([
+      "incoming",
+      "download_allowed",
+      "extension_protocol",
+      "utp",
+    ]);
     await application.close();
   });
 });
@@ -539,21 +554,31 @@ function peer(generation: number): PeerView {
     connection_id: `connection-${generation}`,
     torrent_id: TORRENT_ID,
     peer_record_id: "peer-1",
-    direction: "outgoing",
-    transport: "tcp",
+    direction: "incoming",
+    transport: "utp",
     lifecycle: generation === 1 ? "protocol_handshaking" : "connected",
     role: "content",
+    ...(generation === 1
+      ? {}
+      : {
+          peer_flags: [
+            "incoming",
+            "download_allowed",
+            "extension_protocol",
+            "utp",
+          ] satisfies NonNullable<PeerView["peer_flags"]>,
+        }),
     lifecycle_age_millis: "12",
     remote_endpoint: "127.0.0.1:6881",
     local_endpoint: null,
     sources: ["manual"],
     peer_id: null,
     client_name: null,
-    supports_extensions: null,
-    supports_ut_metadata: null,
-    local_interested: null,
+    supports_extensions: true,
+    supports_ut_metadata: true,
+    local_interested: true,
     remote_interested: null,
-    remote_choking: null,
+    remote_choking: true,
     local_choking: null,
     available_piece_count: null,
     wanted_piece_count: null,

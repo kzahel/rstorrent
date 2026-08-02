@@ -65,6 +65,65 @@ test("detail tab geometry and counts do not change with selection", async ({ pag
   }
 });
 
+test("peer flags expose a complete accessible legend without sorting", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 720 });
+  await openScenario(page, "healthy-download", 42_000);
+
+  const header = page.getByRole("columnheader", { name: "Flags" });
+  const help = page.getByRole("button", { name: "Explain Flags" });
+  await expect(page.getByLabel(/^Peer flags:/).first()).toBeVisible();
+  await expect(header).not.toHaveAttribute("aria-sort");
+  await help.click();
+  const legend = page.getByRole("dialog", { name: "Flags column help" });
+  await expect(legend).toBeVisible();
+  await expect(legend).toBeFocused();
+  await expect(legend.locator("dt code")).toHaveCount(16);
+  await expect(legend.getByText("Incoming", { exact: true })).toBeVisible();
+  await expect(legend.getByText("Encrypted", { exact: true })).toBeVisible();
+  await expect(header).not.toHaveAttribute("aria-sort");
+  expect(
+    (await new AxeBuilder({ page }).analyze()).violations.filter(
+      (violation) =>
+        violation.impact === "serious" || violation.impact === "critical",
+    ),
+  ).toEqual([]);
+  await capture(page, "rstorrent-peer-flags-light.png");
+
+  await page.keyboard.press("Escape");
+  await expect(legend).not.toBeVisible();
+  await expect(help).toBeFocused();
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("radio", { name: /Dark/ }).check();
+  await settings.getByRole("radio", { name: /Compact/ }).check();
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 920, height: 720 });
+  await help.scrollIntoViewIfNeeded();
+  await expect
+    .poll(async () => Math.round((await help.boundingBox())?.width ?? 0))
+    .toBeGreaterThanOrEqual(24);
+  await help.click();
+  await expect(legend).toBeVisible();
+  const legendBounds = await legend.boundingBox();
+  expect(legendBounds).not.toBeNull();
+  expect(legendBounds!.x).toBeGreaterThanOrEqual(0);
+  expect(legendBounds!.x + legendBounds!.width).toBeLessThanOrEqual(920);
+  expect(legendBounds!.y).toBeGreaterThanOrEqual(0);
+  expect(legendBounds!.y + legendBounds!.height).toBeLessThanOrEqual(720);
+  expect(
+    (await new AxeBuilder({ page }).analyze()).violations.filter(
+      (violation) =>
+        violation.impact === "serious" || violation.impact === "critical",
+    ),
+  ).toEqual([]);
+  await capture(page, "rstorrent-peer-flags-dark.png");
+  await page.mouse.click(4, 4);
+  await expect(legend).not.toBeVisible();
+});
+
 test("interface size settings persist and keep geometry coherent", async ({
   page,
 }) => {

@@ -26,6 +26,10 @@ Tactical `049` completes the diagnostics specialization: hierarchical
 categories, structured bounded subjects and fields, capture interest,
 separate source/delivery/local loss semantics, and one ordered console over
 the existing view-set path.
+Tactical `051` adds an optional, defaulted, closed `PeerFlagView` set to active
+peer rows. Rust computes semantic connection state while clients retain
+presentation-only glyph ownership; old v1 producers that omit the field remain
+accepted through a bounded typed-fact fallback.
 
 ## Purpose And Scope
 
@@ -604,6 +608,15 @@ capability, request-window, transfer, availability, and cleanup facts without
 placing payloads or peer history on the boundary. The application mapper
 publishes targeted torrent and peer changes without cloning the complete
 torrent collection.
+
+Tactical `051` replaces the web-only opaque flag string with the generated
+`peer_flags` semantic set. The application projection currently derives only
+incoming direction, uTP transport, negotiated extension facts, and transfer
+choke relationships whose nullable inputs are known. Encryption, parole,
+snubbed, seed, upload-only, hole-punch, optimistic-unchoke, and connection
+endgame values are reserved vocabulary rather than fabricated observations.
+The additive field defaults empty and is omitted when empty, preserving the
+accepted v1 compatibility shape.
 
 `InspectionApplication` now accepts semantic desired views. The live adapter
 maps them to Rust specifications while responsive navigation can retain only a

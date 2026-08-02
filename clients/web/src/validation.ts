@@ -19,6 +19,24 @@ const MAX_FRAME_BYTES = 512 * 1024;
 const MAX_HTTP_RESPONSE_BYTES = 16 * 1024 * 1024;
 const MAX_COLLECTION = 100_000;
 const MAX_ACTIVE_PEERS = 256;
+const PEER_FLAGS = [
+  "incoming",
+  "encrypted",
+  "download_allowed",
+  "download_choked",
+  "upload_allowed",
+  "upload_choked",
+  "extension_protocol",
+  "metadata_extension",
+  "utp",
+  "hole_punched",
+  "on_parole",
+  "optimistic_unchoke",
+  "snubbed",
+  "upload_only",
+  "endgame",
+  "seed",
+] as const;
 const MAX_FILES = 4_096;
 const MAX_TRACKERS = 32;
 const MAX_DISK_PIECES = 16_384;
@@ -587,6 +605,16 @@ function validatePeerView(value: unknown, owningTorrent: string): void {
     "disconnecting",
   ]);
   oneOf(peer.role, "peer role", ["metadata", "content"]);
+  if (peer.peer_flags !== undefined) {
+    const flags = array(peer.peer_flags, "peer flags");
+    if (flags.length > PEER_FLAGS.length) {
+      throw new ContractError("peer flags exceed their bound");
+    }
+    flags.forEach((flag) => oneOf(flag, "peer flag", PEER_FLAGS));
+    if (new Set(flags).size !== flags.length) {
+      throw new ContractError("peer flags contain duplicates");
+    }
+  }
   decimal(peer.lifecycle_age_millis, "peer lifecycle age");
   boundedString(peer.remote_endpoint, "peer remote endpoint", 128);
   optionalString(peer.local_endpoint, "peer local endpoint", 128);

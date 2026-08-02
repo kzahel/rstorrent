@@ -1352,6 +1352,27 @@
       ],
       "type": "object"
     },
+    "PeerFlagView": {
+      "enum": [
+        "incoming",
+        "encrypted",
+        "download_allowed",
+        "download_choked",
+        "upload_allowed",
+        "upload_choked",
+        "extension_protocol",
+        "metadata_extension",
+        "utp",
+        "hole_punched",
+        "on_parole",
+        "optimistic_unchoke",
+        "snubbed",
+        "upload_only",
+        "endgame",
+        "seed"
+      ],
+      "type": "string"
+    },
     "PeerLifecycle": {
       "enum": [
         "transport_connecting",
@@ -1502,6 +1523,12 @@
             "string",
             "null"
           ]
+        },
+        "peer_flags": {
+          "items": {
+            "$ref": "#/$defs/PeerFlagView"
+          },
+          "type": "array"
         },
         "peer_id": {
           "type": [

@@ -1,4 +1,8 @@
-import type { DiagnosticField, DiagnosticSubject } from "../api";
+import type {
+  DiagnosticField,
+  DiagnosticSubject,
+  PeerFlagView,
+} from "../api";
 
 export type TorrentStatus =
   | "metadata"
@@ -15,6 +19,8 @@ export type PeerState =
   | "choked"
   | "stalled"
   | "disconnecting";
+
+export type PeerFlag = PeerFlagView;
 
 export type DetailTab =
   | "general"
@@ -133,7 +139,7 @@ export interface PeerRow {
   readonly uploadedBytes: number | null;
   readonly requestsPending: number | null;
   readonly oldestRequestMs: number | null;
-  readonly flags: string;
+  readonly flags: readonly PeerFlag[];
   readonly useful: boolean;
 }
 

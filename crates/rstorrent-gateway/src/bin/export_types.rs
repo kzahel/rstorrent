@@ -13,8 +13,8 @@ use rstorrent_session::{
     DiagnosticSubject, DiagnosticValue, DiskPieceStageView, DiskPieceView, DiskPipelineView,
     DiskPressureView, ErrorCode, ErrorResponse, FileCatalogState, FileSelectionView, FileView,
     IndexRange, OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
-    PeerDisconnectReason, PeerFieldCapabilities, PeerLifecycle, PeerRequestPhase, PeerRole,
-    PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
+    PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerRequestPhase,
+    PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
     ProgressDisposition, ProgressPhase, ProgressReason, RemovalDataPolicy, RemovalState,
     RequestEnvelope, ResetReason, ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState,
     SubscriptionSpec, TorrentSnapshot, TorrentState, TorrentView, TrackerAnnounceEventView,
@@ -101,6 +101,7 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<CapabilityStatus>(&mut declarations)?;
     append::<PeerDirection>(&mut declarations)?;
     append::<PeerTransportKind>(&mut declarations)?;
+    append::<PeerFlagView>(&mut declarations)?;
     append::<PeerLifecycle>(&mut declarations)?;
     append::<PeerRole>(&mut declarations)?;
     append::<PeerRequestPhase>(&mut declarations)?;

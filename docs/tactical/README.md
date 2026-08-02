@@ -272,6 +272,9 @@ that scope and its cleanup or compatibility rules explicitly.
 - [`050-color-theme-settings.md`](050-color-theme-settings.md): complete; adds
   Auto/Light/Dark selection to the shared Settings surface with safe appearance
   migration, pre-React application, and system-responsive Auto behavior.
+- [`051-typed-peer-flags-and-legend.md`](051-typed-peer-flags-and-legend.md):
+  complete; replaces ambiguous peer flag strings with a typed Rust semantic
+  set, one shared frontend vocabulary, and an accessible column-header legend.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

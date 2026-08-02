@@ -469,7 +469,7 @@ function stalledMetadata(elapsedMs: number): ScenarioContent {
     downloadRate: 0,
     requestsPending: 0,
     useful: false,
-    flags: index < 6 ? "d" : "",
+    flags: index < 6 ? (["download_choked"] as const) : [],
   }));
   return {
     torrents: [
@@ -1041,11 +1041,27 @@ function buildPeers(
       uploadedBytes: connected ? (index * 65_537) % 80_000_000 : 0,
       requestsPending: useful ? 1 + (index % 12) : 0,
       oldestRequestMs: useful ? 45 + ((index * 83) % 2_900) : null,
-      flags: !connected ? "" : choked ? "d" : useful ? "D u" : "d u",
+      flags: demoPeerFlags(index, connected, choked, useful),
       useful,
     });
   }
   return rows;
+}
+
+function demoPeerFlags(
+  index: number,
+  connected: boolean,
+  choked: boolean,
+  useful: boolean,
+): PeerRow["flags"] {
+  if (!connected) return [];
+  return [
+    ...(index % 9 === 0 ? (["incoming"] as const) : []),
+    choked ? "download_choked" : useful ? "download_allowed" : "download_choked",
+    "upload_choked",
+    ...(index % 3 !== 0 ? (["extension_protocol"] as const) : []),
+    ...(index % 5 === 0 ? (["utp"] as const) : []),
+  ];
 }
 
 type TimelineEntry = readonly [

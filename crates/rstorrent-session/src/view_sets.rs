@@ -1935,14 +1935,14 @@ mod tests {
             record_id: None,
             endpoint: "127.0.0.1:6881".parse().expect("endpoint"),
             sources: PeerSources::from_source(PeerSource::Manual),
-            direction: PeerConnectionDirection::Outgoing,
-            transport: PeerTransport::Tcp,
+            direction: PeerConnectionDirection::Incoming,
+            transport: PeerTransport::Utp,
             lifecycle: PeerConnectionLifecycle::TransportConnecting,
             role: PeerConnectionRole::Metadata,
             started_at: Duration::from_millis(5),
             lifecycle_changed_at: Duration::from_millis(5),
             peer_id: None,
-            supports_extensions: None,
+            supports_extensions: Some(true),
             content: None,
             close_reason: None,
         };
@@ -1959,15 +1959,60 @@ mod tests {
                 ..
             }] if upsert.len() == 1
                 && upsert[0].lifecycle == crate::PeerLifecycle::TransportConnecting
+                && upsert[0].peer_flags == [
+                    crate::PeerFlagView::Incoming,
+                    crate::PeerFlagView::ExtensionProtocol,
+                    crate::PeerFlagView::Utp,
+                ]
+                && removed.is_empty()
+        ));
+
+        peer.lifecycle = PeerConnectionLifecycle::Connected;
+        peer.role = PeerConnectionRole::Content;
+        peer.lifecycle_changed_at = Duration::from_millis(12);
+        peer.content = Some(PeerContentActivity {
+            choking: true,
+            wanted_piece_count: 8,
+            pending_requests: 2,
+            target_requests: 4,
+            queued_payload_bytes: 32 * 1_024,
+            useful_payload_bytes: 0,
+            observed_payload_rate: 0,
+            connected_age: Duration::from_millis(3),
+            last_useful_age: None,
+            last_payload_age: None,
+            request_timeout: Duration::from_secs(8),
+            oldest_request_age: Some(Duration::from_millis(2)),
+            request_window_phase: PeerRequestWindowPhase::SlowStart,
+        });
+        hub.record_peer_connections(TORRENT_ID, Duration::from_millis(15), &[peer.clone()])
+            .expect("connected row");
+        let connected = view_set
+            .next_updates(&connecting.cursor, 0)
+            .await
+            .expect("connected patch");
+        assert!(matches!(
+            connected.updates.as_slice(),
+            [ViewSetUpdate::Patch {
+                patch: ViewPatch::Peers { upsert, removed, .. },
+                ..
+            }] if upsert.len() == 1
+                && upsert[0].peer_flags == [
+                    crate::PeerFlagView::Incoming,
+                    crate::PeerFlagView::DownloadChoked,
+                    crate::PeerFlagView::ExtensionProtocol,
+                    crate::PeerFlagView::Utp,
+                ]
                 && removed.is_empty()
         ));
 
         peer.lifecycle = PeerConnectionLifecycle::Disconnecting;
         peer.lifecycle_changed_at = Duration::from_millis(20);
+        peer.content.as_mut().expect("content activity").choking = false;
         hub.record_peer_connections(TORRENT_ID, Duration::from_millis(25), &[peer])
             .expect("disconnecting row");
         let disconnecting = view_set
-            .next_updates(&connecting.cursor, 0)
+            .next_updates(&connected.cursor, 0)
             .await
             .expect("disconnecting patch");
         assert!(matches!(
@@ -1977,6 +2022,7 @@ mod tests {
                 ..
             }] if upsert.len() == 1
                 && upsert[0].lifecycle == crate::PeerLifecycle::Disconnecting
+                && upsert[0].peer_flags.contains(&crate::PeerFlagView::DownloadAllowed)
                 && removed.is_empty()
         ));
 

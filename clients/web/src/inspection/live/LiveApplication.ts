@@ -26,6 +26,7 @@ import type {
   FileRow,
   FileSet,
   LogRow,
+  PeerFlag,
   PeerRow,
   PeerSet,
   PieceMapSet,
@@ -945,15 +946,30 @@ function mapPeer(peer: PeerView): PeerRow {
     uploadedBytes: safeNullableNumber(peer.payload_uploaded_bytes),
     requestsPending: peer.pending_requests,
     oldestRequestMs: safeNullableNumber(peer.oldest_request_age_millis),
-    flags: [
-      peer.supports_extensions === true ? "E" : "",
-      peer.local_interested === true ? "I" : "",
-      peer.remote_choking === true ? "C" : "",
-    ].join(""),
+    flags: mapPeerFlags(peer),
     useful:
       safeNullableNumber(peer.payload_downloaded_bytes) !== null &&
       safeNullableNumber(peer.payload_downloaded_bytes)! > 0,
   };
+}
+
+function mapPeerFlags(peer: PeerView): readonly PeerFlag[] {
+  if (peer.peer_flags !== undefined) return peer.peer_flags;
+
+  const flags: PeerFlag[] = [];
+  if (peer.direction === "incoming") flags.push("incoming");
+  if (peer.local_interested === true) {
+    if (peer.remote_choking === false) flags.push("download_allowed");
+    if (peer.remote_choking === true) flags.push("download_choked");
+  }
+  if (peer.remote_interested === true) {
+    if (peer.local_choking === false) flags.push("upload_allowed");
+    if (peer.local_choking === true) flags.push("upload_choked");
+  }
+  if (peer.supports_extensions === true) flags.push("extension_protocol");
+  if (peer.supports_ut_metadata === true) flags.push("metadata_extension");
+  if (peer.transport === "utp") flags.push("utp");
+  return flags;
 }
 
 function mapPeerSource(sources: readonly PeerSourceView[]): PeerRow["source"] {
