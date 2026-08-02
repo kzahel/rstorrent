@@ -3,6 +3,7 @@
 import "@testing-library/jest-dom/vitest";
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { VirtualTable, type VirtualColumn } from "./VirtualTable";
@@ -205,6 +206,59 @@ describe("VirtualTable", () => {
     expect(root().style.getPropertyValue("--ui-table-header-height")).toBe("44px");
     expect(root().style.getPropertyValue("--ui-table-row-height")).toBe("42px");
     expect(second()).toHaveStyle({ transform: "translateY(42px)" });
+  });
+
+  it("supports checkbox, select-all, and Space multi-selection", () => {
+    function SelectableTable() {
+      const rows = [
+        { id: "one", value: "1" },
+        { id: "two", value: "2" },
+      ];
+      const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
+        new Set(["one"]),
+      );
+      return (
+        <VirtualTable
+          tableId="selection-test"
+          label="Selectable rows"
+          rows={rows}
+          getRowId={(row) => row.id}
+          columns={COLUMNS}
+          interfaceSize="standard"
+          emptyMessage="empty"
+          selection={{
+            selectedIds,
+            getRowLabel: (row) => row.id,
+            onToggle: (row) =>
+              setSelectedIds((current) => {
+                const next = new Set(current);
+                if (next.has(row.id)) next.delete(row.id);
+                else next.add(row.id);
+                return next;
+              }),
+            onSetAll: (selectedRows, selected) =>
+              setSelectedIds(
+                selected ? new Set(selectedRows.map((row) => row.id)) : new Set(),
+              ),
+          }}
+        />
+      );
+    }
+
+    render(<SelectableTable />);
+    const selectAll = screen.getByRole("checkbox", { name: "Select all rows" });
+    expect(selectAll).toHaveProperty("indeterminate", true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select two" }));
+    expect(screen.getByRole("checkbox", { name: "Deselect all rows" })).toBeChecked();
+
+    const firstRow = screen.getByRole("row", { name: /Deselect one/ });
+    firstRow.focus();
+    fireEvent.keyDown(screen.getByRole("grid", { name: "Selectable rows" }), {
+      key: " ",
+    });
+    expect(screen.getByRole("checkbox", { name: "Select one" })).not.toBeChecked();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select all rows" }));
+    expect(screen.getByText("2 selected · 2 rows")).toBeVisible();
   });
 });
 

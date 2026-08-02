@@ -38,7 +38,67 @@ describe("inspection store", () => {
       torrents: { upsert: [], removed: ["second"], order: ["first"] },
     });
     expect(store.getState().presentation.selectedTorrentId).toBe("first");
+    expect(store.getState().presentation.selectedTorrentIds).toEqual(["first"]);
     expect(store.getState().presentation.detailOpen).toBe(false);
+  });
+
+  it("shares bounded multi-selection and repairs it after removals", () => {
+    const store = createInspectionStore(null);
+    store.getState().applyUpdate({
+      type: "snapshot",
+      snapshot: snapshot([
+        row("first", "downloading"),
+        row("second", "paused"),
+        row("third", "complete"),
+      ]),
+    });
+    store.getState().replaceTorrentSelection(["first", "second", "second"]);
+    store.getState().toggleTorrentSelection("third");
+    expect(store.getState().presentation.selectedTorrentIds).toEqual([
+      "first",
+      "second",
+      "third",
+    ]);
+    expect(store.getState().presentation.selectedTorrentId).toBe("third");
+
+    store.getState().applyUpdate({
+      type: "patch",
+      revision: 2,
+      torrents: {
+        upsert: [],
+        removed: ["second", "third"],
+        order: ["first"],
+      },
+    });
+    expect(store.getState().presentation.selectedTorrentIds).toEqual(["first"]);
+    expect(store.getState().presentation.selectedTorrentId).toBe("first");
+  });
+
+  it("keeps destination filters independent and persists navigation", () => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    };
+    const store = createInspectionStore(storage);
+    expect(store.getState().presentation.destination).toBe("transfers");
+
+    store.getState().selectTorrentCategory("paused");
+    store.getState().selectDestination("workbench");
+    store.getState().selectTorrentCategory("errors");
+    store.getState().selectDestination("library");
+    store.getState().selectLibraryCategory("available");
+
+    const presentation = store.getState().presentation;
+    expect(presentation.transfersCategory).toBe("paused");
+    expect(presentation.workbenchCategory).toBe("errors");
+    expect(presentation.libraryCategory).toBe("available");
+    expect(createInspectionStore(storage).getState().presentation).toMatchObject({
+      destination: "library",
+      transfersCategory: "paused",
+      workbenchCategory: "errors",
+      libraryCategory: "available",
+    });
   });
 
   it("bounds retained diagnostic rows and reports drops", () => {
@@ -83,12 +143,10 @@ describe("inspection store", () => {
   });
 
   it("defaults and persists complete appearance presentation state", () => {
-    let appearance: string | null = null;
+    const values = new Map<string, string>();
     const storage = {
-      getItem: () => appearance,
-      setItem: (_key: string, value: string) => {
-        appearance = value;
-      },
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
     };
     const store = createInspectionStore(storage);
     expect(store.getState().presentation.interfaceSize).toBe("standard");
@@ -98,7 +156,9 @@ describe("inspection store", () => {
     store.getState().setInterfaceSize("spacious");
     expect(store.getState().presentation.interfaceSize).toBe("spacious");
     expect(store.getState().presentation.colorTheme).toBe("dark");
-    expect(JSON.parse(appearance ?? "null")).toEqual({
+    expect(
+      JSON.parse(values.get("rstorrent.presentation.appearance") ?? "null"),
+    ).toEqual({
       version: 2,
       interfaceSize: "spacious",
       colorTheme: "dark",

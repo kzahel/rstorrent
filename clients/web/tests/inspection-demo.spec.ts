@@ -6,6 +6,76 @@ import { expect, test, type Page } from "@playwright/test";
 
 const screenshotDirectory = process.env.RSTORRENT_SCREENSHOT_DIR;
 
+test("primary destinations preserve shared source state", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/?demo=healthy-download&at=42000&autoplay=0");
+  await expect(page.getByText("RSTorrent", { exact: true })).toBeVisible();
+
+  const primary = page.getByRole("navigation", { name: "Primary" });
+  const transfers = primary.getByRole("button", { name: "Transfers" });
+  await expect(transfers).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("grid", { name: "Transfer queue" })).toHaveAttribute(
+    "aria-rowcount",
+    "4",
+  );
+  await capture(page, "rstorrent-transfers-wide.png");
+  await page
+    .getByRole("checkbox", { name: "Select Sintel 4K open movie" })
+    .check();
+  await primary.getByRole("button", { name: "Workbench" }).click();
+  await expect(
+    page.getByRole("checkbox", {
+      name: "Deselect Big Buck Bunny 1080p surround",
+    }),
+  ).toBeChecked();
+  await expect(
+    page.getByRole("checkbox", { name: "Deselect Sintel 4K open movie" }),
+  ).toBeChecked();
+
+  await primary.getByRole("button", { name: "Library" }).click();
+  await expect(page.getByRole("list", { name: "Torrent-backed content" })).toBeVisible();
+  await expect(page.getByText(/media details are not connected yet/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Play / })).toHaveCount(0);
+  await capture(page, "rstorrent-library-wide.png");
+  await page
+    .getByRole("button", { name: "Select Sintel 4K open movie in Library" })
+    .click();
+  await page.getByRole("button", { name: "Open in Workbench" }).click();
+  await expect(primary.getByRole("button", { name: "Workbench" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await page.getByRole("tab", { name: "General" }).click();
+  await expect(page.getByText("Selected transfer")).toBeVisible();
+  await expect(page.getByText("Sintel 4K open movie").first()).toBeVisible();
+
+  const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
+    (violation) => violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+  await capture(page, "rstorrent-destinations-wide.png");
+});
+
+test("phone destinations and contextual filters remain reachable", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/?demo=healthy-download&at=42000&autoplay=0");
+  await expect(page.getByRole("grid", { name: "Transfer queue" })).toBeVisible();
+  const primary = page.getByRole("navigation", { name: "Primary" });
+  await primary.getByRole("button", { name: "Library" }).click();
+  await expect(page.getByRole("list", { name: "Torrent-backed content" })).toBeVisible();
+  await page.getByRole("button", { name: "Toggle Library filters" }).click();
+  await expect(page.getByRole("navigation", { name: "Library filters" })).toBeVisible();
+  await page.getByRole("button", { name: "Toggle Library filters" }).click();
+  await capture(page, "rstorrent-library-phone.png");
+
+  await primary.getByRole("button", { name: "Workbench" }).click();
+  await expect(page.getByRole("grid", { name: "Torrent library" })).toBeVisible();
+  const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
+    (violation) => violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+});
+
 test("wide inspection surface is accessible and drivable", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openScenario(page, "healthy-download", 42_000);
@@ -350,7 +420,7 @@ test("compact tracker recovery remains legible", async ({ page }) => {
   await expect
     .poll(async () =>
       page
-        .getByRole("navigation", { name: "Torrent library" })
+        .getByRole("navigation", { name: "Workbench torrent filters" })
         .evaluate((element) => Math.round(element.getBoundingClientRect().right)),
     )
     .toBeLessThanOrEqual(0);
@@ -393,7 +463,7 @@ test("global disk pipeline shows pressure and responsive piece work", async ({
   await expect
     .poll(async () =>
       page
-        .getByRole("navigation", { name: "Torrent library" })
+        .getByRole("navigation", { name: "Workbench torrent filters" })
         .evaluate((element) => Math.round(element.getBoundingClientRect().right)),
     )
     .toBeLessThanOrEqual(0);
@@ -462,7 +532,7 @@ test("piece canvas shows retry truth and bounds a large torrent", async ({
   await expect
     .poll(async () =>
       page
-        .getByRole("navigation", { name: "Torrent library" })
+        .getByRole("navigation", { name: "Workbench torrent filters" })
         .evaluate((element) => Math.round(element.getBoundingClientRect().right)),
     )
     .toBeLessThanOrEqual(0);
@@ -634,6 +704,17 @@ test("large collections retain a bounded virtual DOM", async ({ page }) => {
   }
   expect(initialRenderMs).toBeLessThan(5_000);
   expect(updateRenderMs).toBeLessThan(5_000);
+  const primary = page.getByRole("navigation", { name: "Primary" });
+  await primary.getByRole("button", { name: "Transfers" }).click();
+  const transferQueue = page.getByRole("grid", { name: "Transfer queue" });
+  await expect(transferQueue).toHaveAttribute("aria-rowcount", "2001");
+  expect(await transferQueue.getByRole("row").count()).toBeLessThanOrEqual(100);
+  await primary.getByRole("button", { name: "Library" }).click();
+  const content = page.getByRole("list", { name: "Torrent-backed content" });
+  const contentCards = content.getByRole("listitem");
+  expect(await contentCards.count()).toBeLessThanOrEqual(100);
+  await expect(contentCards.first()).toHaveAttribute("aria-setsize", "2000");
+  expect(await page.locator("*").count()).toBeLessThan(2_000);
   console.log(
     `scale_metrics ${JSON.stringify({ initialRenderMs: Math.round(initialRenderMs), updateRenderMs: Math.round(updateRenderMs), ...browserMetrics })}`,
   );
@@ -702,7 +783,7 @@ test("full file catalog stays virtualized across wide compact and phone layouts"
   await expect
     .poll(async () =>
       page
-        .getByRole("navigation", { name: "Torrent library" })
+        .getByRole("navigation", { name: "Workbench torrent filters" })
         .evaluate((element) => Math.round(element.getBoundingClientRect().right)),
     )
     .toBeLessThanOrEqual(0);
@@ -714,6 +795,10 @@ async function openScenario(page: Page, scenario: string, at: number) {
   await page.goto(`/?demo=${scenario}&at=${at}&autoplay=0`);
   await expect(page.getByText("RSTorrent", { exact: true })).toBeVisible();
   await expect(page.getByText("Demo data", { exact: true })).toBeVisible();
+  await page
+    .getByRole("navigation", { name: "Primary" })
+    .getByRole("button", { name: "Workbench" })
+    .click();
 }
 
 async function tabGeometry(page: Page) {

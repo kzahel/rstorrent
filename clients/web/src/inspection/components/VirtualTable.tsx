@@ -44,9 +44,17 @@ export interface VirtualTableProps<Row> {
   readonly interfaceSize: InterfaceSize;
   readonly overscan?: number;
   readonly selectedId?: string | null;
+  readonly selection?: VirtualTableSelection<Row>;
   readonly onSelect?: (row: Row) => void;
   readonly emptyMessage: string;
   readonly initialSort?: { readonly columnId: string; readonly direction: "asc" | "desc" };
+}
+
+export interface VirtualTableSelection<Row> {
+  readonly selectedIds: ReadonlySet<string>;
+  readonly getRowLabel: (row: Row) => string;
+  readonly onToggle: (row: Row) => void;
+  readonly onSetAll: (rows: readonly Row[], selected: boolean) => void;
 }
 
 interface SortState {
@@ -73,6 +81,7 @@ export function VirtualTable<Row>({
   interfaceSize,
   overscan = 8,
   selectedId = null,
+  selection,
   onSelect,
   emptyMessage,
   initialSort,
@@ -209,10 +218,14 @@ export function VirtualTable<Row>({
     Math.ceil(viewportSize.height / tableRowHeight) + overscan * 2;
   const lastIndex = Math.min(sortedRows.length, firstIndex + visibleCount);
   const renderedRows = sortedRows.slice(firstIndex, lastIndex);
-  const gridTemplateColumns = visibleColumns
-    .map((column) => `${column.width}px`)
-    .join(" ");
-  const minimumWidth = visibleColumns.reduce((sum, column) => sum + column.width, 0);
+  const selectionColumnWidth = selection === undefined ? 0 : 44;
+  const gridTemplateColumns = [
+    ...(selection === undefined ? [] : [`${selectionColumnWidth}px`]),
+    ...visibleColumns.map((column) => `${column.width}px`),
+  ].join(" ");
+  const minimumWidth =
+    selectionColumnWidth +
+    visibleColumns.reduce((sum, column) => sum + column.width, 0);
   const gridStyle = {
     gridTemplateColumns,
     minWidth: `${minimumWidth}px`,
@@ -331,6 +344,14 @@ export function VirtualTable<Row>({
     headerHelp === null
       ? undefined
       : visibleColumns.find((column) => column.id === headerHelp.columnId);
+  const selectedVisibleCount =
+    selection === undefined
+      ? 0
+      : sortedRows.filter((row) =>
+          selection.selectedIds.has(getRowId(row)),
+        ).length;
+  const allVisibleSelected =
+    sortedRows.length > 0 && selectedVisibleCount === sortedRows.length;
 
   const toggleHeaderHelp = (
     trigger: HTMLButtonElement,
@@ -364,7 +385,12 @@ export function VirtualTable<Row>({
     <>
     <div className={styles.container} style={tableStyle}>
       <div className={styles.toolbar}>
-        <span>{sortedRows.length.toLocaleString()} rows</span>
+        <span>
+          {selection !== undefined && selection.selectedIds.size > 0
+            ? `${selection.selectedIds.size.toLocaleString()} selected · `
+            : ""}
+          {sortedRows.length.toLocaleString()} rows
+        </span>
         <button
           ref={columnsButtonRef}
           type="button"
@@ -452,7 +478,8 @@ export function VirtualTable<Row>({
         role="grid"
         aria-label={label}
         aria-rowcount={sortedRows.length + 1}
-        aria-colcount={visibleColumns.length}
+        aria-colcount={visibleColumns.length + (selection === undefined ? 0 : 1)}
+        aria-multiselectable={selection === undefined ? undefined : true}
         onScroll={handleScroll}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown") {
@@ -467,9 +494,19 @@ export function VirtualTable<Row>({
           } else if (event.key === "End") {
             event.preventDefault();
             moveFocus(sortedRows.length - 1);
-          } else if (event.key === "Enter" || event.key === " ") {
+          } else if (event.key === "Enter") {
             const row = sortedRows[focusIndex];
             if (row !== undefined && onSelect !== undefined) {
+              event.preventDefault();
+              onSelect(row);
+            }
+          } else if (event.key === " ") {
+            const row = sortedRows[focusIndex];
+            if (row === undefined) return;
+            if (selection !== undefined) {
+              event.preventDefault();
+              selection.onToggle(row);
+            } else if (onSelect !== undefined) {
               event.preventDefault();
               onSelect(row);
             }
@@ -478,6 +515,24 @@ export function VirtualTable<Row>({
         data-testid="virtual-table"
       >
       <div className={styles.header} role="row" style={gridStyle}>
+        {selection === undefined ? null : (
+          <div
+            className={styles.selectionHeaderCell}
+            role="columnheader"
+            aria-label="Selection"
+          >
+            <SelectionCheckbox
+              checked={allVisibleSelected}
+              indeterminate={selectedVisibleCount > 0 && !allVisibleSelected}
+              label={
+                allVisibleSelected ? "Deselect all rows" : "Select all rows"
+              }
+              onChange={() =>
+                selection.onSetAll(sortedRows, !allVisibleSelected)
+              }
+            />
+          </div>
+        )}
         {visibleColumns.map((column) => {
           const sorted = sort?.columnId === column.id;
           return (
@@ -556,7 +611,10 @@ export function VirtualTable<Row>({
           {renderedRows.map((row, offset) => {
             const index = firstIndex + offset;
             const rowId = getRowId(row);
-            const selected = rowId === selectedId;
+            const selected =
+              selection === undefined
+                ? rowId === selectedId
+                : selection.selectedIds.has(rowId);
             return (
               <div
                 key={rowId}
@@ -578,6 +636,20 @@ export function VirtualTable<Row>({
                   onSelect?.(row);
                 }}
               >
+                {selection === undefined ? null : (
+                  <div
+                    className={styles.selectionCell}
+                    role="gridcell"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <SelectionCheckbox
+                      checked={selected}
+                      indeterminate={false}
+                      label={`${selected ? "Deselect" : "Select"} ${selection.getRowLabel(row)}`}
+                      onChange={() => selection.onToggle(row)}
+                    />
+                  </div>
+                )}
                 {visibleColumns.map((column) => (
                   <div
                     key={column.id}
@@ -623,6 +695,37 @@ export function VirtualTable<Row>({
         )
       : null}
     </>
+  );
+}
+
+function SelectionCheckbox({
+  checked,
+  indeterminate,
+  label,
+  onChange,
+}: {
+  readonly checked: boolean;
+  readonly indeterminate: boolean;
+  readonly label: string;
+  readonly onChange: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (inputRef.current !== null) {
+      inputRef.current.indeterminate = indeterminate;
+    }
+  }, [indeterminate]);
+  return (
+    <input
+      ref={inputRef}
+      className={styles.selectionCheckbox}
+      type="checkbox"
+      checked={checked}
+      aria-label={label}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+      onChange={onChange}
+    />
   );
 }
 

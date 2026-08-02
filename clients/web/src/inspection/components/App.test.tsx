@@ -15,7 +15,10 @@ import type { InspectionApplication } from "../application";
 import { InspectionProvider } from "../context";
 import { InspectionController } from "../controller";
 import { DemoApplication } from "../demo/DemoApplication";
-import { DEMO_PRIMARY_TORRENT_ID } from "../demo/catalog";
+import {
+  DEMO_PRIMARY_TORRENT_ID,
+  buildScenarioSnapshot,
+} from "../demo/catalog";
 import type {
   CommandResult,
   DesiredInspectionViews,
@@ -68,11 +71,19 @@ describe("inspection application", () => {
     const header = screen.getByRole("banner");
     expect(within(header).queryByText("Inspection")).not.toBeInTheDocument();
     expect(within(header).queryByText(/peers/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "Torrent library" })).toBeVisible();
+    const primary = screen.getByRole("navigation", { name: "Primary" });
+    expect(within(primary).getByRole("button", { name: "Transfers" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("navigation", { name: "Transfer filters" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Add demo" })).toBeVisible();
     expect(
       screen.queryByRole("textbox", { name: "Magnet link or torrent URL" }),
     ).not.toBeInTheDocument();
+    expect(screen.getByRole("grid", { name: "Transfer queue" })).toHaveAttribute("aria-rowcount", "4");
+    await user.click(within(primary).getByRole("button", { name: "Workbench" }));
+    expect(screen.getByRole("navigation", { name: "Workbench torrent filters" })).toBeVisible();
     expect(screen.getByRole("grid", { name: "Torrent library" })).toHaveAttribute("aria-rowcount", "4");
     expect(screen.getByRole("grid", { name: "Active peer connections" })).toBeVisible();
     const peersTab = screen.getByRole("tab", { name: "Peers" });
@@ -99,6 +110,7 @@ describe("inspection application", () => {
   it("drives an ordered diagnostic console with separate capture controls", async () => {
     const user = userEvent.setup();
     const rendered = renderScenario("diagnostic-console", 45_000);
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
     await user.click(screen.getByRole("tab", { name: "Logs" }));
 
     const feed = screen.getByRole("log", {
@@ -213,6 +225,7 @@ describe("inspection application", () => {
   it("switches named scenarios and advances the frozen clock", async () => {
     const user = userEvent.setup();
     renderScenario("tracker-recovery", 0);
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
     await user.click(screen.getByRole("tab", { name: "General" }));
     expect(screen.getByText(/retry scheduled in 22 seconds/i)).toBeVisible();
     await user.click(screen.getByRole("button", { name: "+10s" }));
@@ -223,8 +236,18 @@ describe("inspection application", () => {
     expect(screen.getAllByText(/storage failure/i)[0]).toBeVisible();
   });
 
-  it("keeps rendered rows bounded for large logical collections", () => {
+  it("keeps rendered rows and cards bounded for large logical collections", async () => {
+    const user = userEvent.setup();
     renderScenario("large-swarm", 0);
+    const transferGrid = screen.getByRole("grid", { name: "Transfer queue" });
+    expect(transferGrid).toHaveAttribute("aria-rowcount", "2001");
+    expect(within(transferGrid).getAllByRole("row").length).toBeLessThanOrEqual(100);
+
+    await user.click(screen.getByRole("button", { name: "Library" }));
+    const library = screen.getByRole("list", { name: "Torrent-backed content" });
+    expect(within(library).getAllByRole("listitem").length).toBeLessThan(100);
+
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
     const torrentGrid = screen.getByRole("grid", { name: "Torrent library" });
     const peerGrid = screen.getByRole("grid", { name: "Active peer connections" });
     expect(torrentGrid).toHaveAttribute("aria-rowcount", "2001");
@@ -236,6 +259,7 @@ describe("inspection application", () => {
   it("materializes a full file catalog only on the Files tab", async () => {
     const user = userEvent.setup();
     renderScenario("file-progress", 24_000);
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
     expect(screen.queryByRole("grid", { name: "Torrent files" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "Files" }));
     const files = screen.getByRole("grid", { name: "Torrent files" });
@@ -250,6 +274,7 @@ describe("inspection application", () => {
   it("materializes the global disk pipeline only on the Disk tab", async () => {
     const user = userEvent.setup();
     renderScenario("slow-disk-pressure", 20_000);
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
     expect(
       screen.queryByRole("grid", { name: "Active storage pieces" }),
     ).not.toBeInTheDocument();
@@ -265,6 +290,7 @@ describe("inspection application", () => {
   it("renders a bounded accessible canvas for a 250,000-piece torrent", async () => {
     const user = userEvent.setup();
     renderScenario("large-swarm", 0);
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
 
     await user.click(screen.getByRole("tab", { name: "Pieces" }));
 
@@ -281,6 +307,7 @@ describe("inspection application", () => {
   it("resizes the detail pane with pointer and keyboard input", async () => {
     const user = userEvent.setup();
     renderScenario("healthy-download", 42_000);
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
     const splitter = screen.getByRole("separator", {
       name: "Resize torrent details",
     });
@@ -396,10 +423,127 @@ describe("inspection application", () => {
     expect(within(dialog).getByRole("button", { name: "Remove" })).toHaveFocus();
   });
 
-  it("renders truthful empty state without fabricating details", () => {
+  it("renders truthful empty states without fabricating media details", async () => {
+    const user = userEvent.setup();
     renderScenario("empty-library", 0);
-    expect(screen.getByText(/No torrents yet/i)).toBeVisible();
+    expect(screen.getByText(/No transfers yet/i)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Library" }));
+    expect(screen.getByText("No content sources yet")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^Play / })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
     expect(screen.getByText(/Select a torrent to inspect it/i)).toBeVisible();
+  });
+
+  it("shares multi-selection between Transfers and Workbench", async () => {
+    const user = userEvent.setup();
+    renderScenario("healthy-download", 42_000);
+    await user.click(
+      screen.getByRole("checkbox", { name: "Select Sintel 4K open movie" }),
+    );
+    expect(screen.getByText(/2 selected · 3 rows/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    expect(
+      screen.getByRole("checkbox", {
+        name: "Deselect Big Buck Bunny 1080p surround",
+      }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Deselect Sintel 4K open movie" }),
+    ).toBeChecked();
+    expect(screen.getByText(/2 selected · 3 rows/)).toBeVisible();
+  });
+
+  it("runs uniform batch commands sequentially and reports partial failure", async () => {
+    const user = userEvent.setup();
+    const snapshot = {
+      ...buildScenarioSnapshot("healthy-download", 42_000, false, 1),
+      demo: null,
+    };
+    const sintel = Object.values(snapshot.torrents).find(
+      (torrent) => torrent.name === "Sintel 4K open movie",
+    )!;
+    const application = new RecordingLiveApplication(
+      { type: "snapshot", snapshot },
+      sintel.id,
+    );
+    renderApplication(application);
+    await user.click(
+      screen.getByRole("checkbox", { name: "Select Sintel 4K open movie" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Archive" }));
+
+    await waitFor(() =>
+      expect(application.commands).toEqual([
+        { type: "archive", torrentId: DEMO_PRIMARY_TORRENT_ID },
+        { type: "archive", torrentId: sintel.id },
+      ]),
+    );
+    expect(
+      screen.getByText(/Archived 1 of 2; Sintel 4K open movie: rejected for test/),
+    ).toBeVisible();
+  });
+
+  it("selects truthful Library cards and hands their source to Workbench", async () => {
+    const user = userEvent.setup();
+    renderScenario("healthy-download", 42_000);
+    await user.click(screen.getByRole("button", { name: "Library" }));
+    expect(screen.getByText(/media details are not connected yet/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^Play / })).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Select Sintel 4K open movie in Library",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Open in Workbench" }));
+    expect(screen.getByRole("button", { name: "Workbench" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await user.click(screen.getByRole("tab", { name: "General" }));
+    expect(screen.getByText("Selected transfer")).toBeVisible();
+    expect(screen.getAllByText("Sintel 4K open movie").length).toBeGreaterThan(0);
+  });
+
+  it("leases detail views only while Workbench needs them", async () => {
+    const user = userEvent.setup();
+    const snapshot = {
+      ...buildScenarioSnapshot("healthy-download", 42_000, false, 1),
+      demo: null,
+    };
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot,
+    });
+    renderApplication(application);
+    await waitFor(() =>
+      expect(application.views.at(-1)).toEqual({
+        library: true,
+        torrentId: null,
+        detail: null,
+        logCapture: null,
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await waitFor(() =>
+      expect(application.views.at(-1)).toMatchObject({
+        library: true,
+        torrentId: DEMO_PRIMARY_TORRENT_ID,
+        detail: "peers",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Library" }));
+    await waitFor(() =>
+      expect(application.views.at(-1)).toEqual({
+        library: true,
+        torrentId: null,
+        detail: null,
+        logCapture: null,
+      }),
+    );
   });
 
   it("dispatches an exact test magnet through the keyboard submenu", async () => {
@@ -496,15 +640,32 @@ class RecordingLiveApplication implements InspectionApplication {
   readonly kind = "live" as const;
   readonly scenarios = [];
   readonly commands: InspectionCommand[] = [];
+  readonly views: DesiredInspectionViews[] = [];
 
-  subscribe(_listener: (update: InspectionUpdate) => void): () => void {
+  constructor(
+    private readonly initialSnapshot?: InspectionUpdate & {
+      readonly type: "snapshot";
+    },
+    private readonly rejectTorrentId?: string,
+  ) {}
+
+  subscribe(listener: (update: InspectionUpdate) => void): () => void {
+    if (this.initialSnapshot !== undefined) listener(this.initialSnapshot);
     return () => {};
   }
 
-  async setViews(_views: DesiredInspectionViews): Promise<void> {}
+  async setViews(views: DesiredInspectionViews): Promise<void> {
+    this.views.push(views);
+  }
 
   async dispatch(command: InspectionCommand): Promise<CommandResult> {
     this.commands.push(command);
+    if (
+      "torrentId" in command &&
+      command.torrentId === this.rejectTorrentId
+    ) {
+      throw new Error("rejected for test");
+    }
     return { accepted: true, message: "Torrent added" };
   }
 

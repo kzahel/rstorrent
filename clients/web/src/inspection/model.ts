@@ -34,7 +34,15 @@ export type DetailTab =
   | "speed"
   | "dht";
 
+export type ApplicationDestination = "library" | "transfers" | "workbench";
+
 export type LibraryCategory =
+  | "all"
+  | "recent"
+  | "available"
+  | "downloading";
+
+export type TorrentCategory =
   | "all"
   | "active"
   | "downloading"

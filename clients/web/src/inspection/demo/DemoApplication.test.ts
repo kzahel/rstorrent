@@ -39,6 +39,8 @@ describe("DemoApplication", () => {
     });
     const controller = new InspectionController(application);
     controller.start();
+    controller.store.getState().selectDestination("workbench");
+    await Promise.resolve();
     const torrentId = controller.store.getState().torrentOrder[0]!;
     expect(controller.store.getState().peersByTorrent[torrentId]?.order).toHaveLength(0);
     controller.store.getState().selectTab("trackers");
@@ -122,6 +124,8 @@ describe("DemoApplication", () => {
     });
     const controller = new InspectionController(application);
     controller.start();
+    controller.store.getState().selectDestination("workbench");
+    await Promise.resolve();
     const state = controller.store.getState();
     const torrentId = state.torrentOrder[0]!;
     expect(state.torrentOrder).toHaveLength(2_000);

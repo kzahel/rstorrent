@@ -125,6 +125,9 @@ function delay(millis: number, signal: AbortSignal): Promise<void> {
 
 function desiredViewsFor(state: InspectionStore): DesiredInspectionViews {
   const presentation = state.presentation;
+  if (presentation.destination !== "workbench") {
+    return { library: true, torrentId: null, detail: null, logCapture: null };
+  }
   const selected = presentation.selectedTorrentId;
   if (presentation.layout === "phone" && !presentation.detailOpen) {
     return { library: true, torrentId: null, detail: null, logCapture: null };

@@ -3,123 +3,100 @@ import { useMemo } from "react";
 import { useInspectionStore } from "../context";
 import {
   formatBytes,
-  formatEta,
   formatProgress,
   formatRate,
 } from "../format";
 import type { TorrentRow, ViewMaterialization } from "../model";
 import { torrentMatchesCategory } from "../state";
-import { VirtualTable, type VirtualColumn } from "./VirtualTable";
-import styles from "./TorrentTable.module.css";
+import {
+  VirtualTable,
+  type VirtualColumn,
+} from "./VirtualTable";
+import tableStyles from "./TorrentTable.module.css";
 
 const COLUMNS: readonly VirtualColumn<TorrentRow>[] = [
   {
     id: "name",
     label: "Name",
-    width: 330,
+    width: 430,
+    minimumWidth: 210,
     sortable: true,
     sortValue: (row) => row.name,
     render: (row) => (
-      <span className={styles.name} title={row.name}>
-        <span className={styles.stateDot} data-status={row.status} aria-hidden="true" />
+      <span className={tableStyles.name} title={row.name}>
+        <span
+          className={tableStyles.stateDot}
+          data-status={row.status}
+          aria-hidden="true"
+        />
         <span>{row.name}</span>
-      </span>
-    ),
-  },
-  {
-    id: "size",
-    label: "Size",
-    width: 92,
-    minimumViewport: 780,
-    align: "right",
-    sortable: true,
-    sortValue: (row) => row.sizeBytes,
-    render: (row) => formatBytes(row.sizeBytes),
-  },
-  {
-    id: "progress",
-    label: "Done",
-    width: 122,
-    align: "right",
-    sortable: true,
-    sortValue: (row) => row.progress,
-    render: (row) => (
-      <span className={styles.progressCell}>
-        <span className={styles.progressLabel}>{formatProgress(row.progress)}</span>
-        <span className={styles.progressTrack} aria-hidden="true">
-          <span style={{ width: `${Math.round((row.progress ?? 0) * 100)}%` }} />
-        </span>
       </span>
     ),
   },
   {
     id: "status",
     label: "Status",
-    width: 112,
-    minimumViewport: 440,
+    width: 132,
     sortable: true,
     sortValue: (row) => row.status,
     render: (row) => (
-      <span className={styles.status} data-status={row.status}>
-        {row.status}
+      <span className={tableStyles.status} data-status={row.status}>
+        {statusLabel(row)}
       </span>
     ),
   },
   {
-    id: "down",
-    label: "Down",
-    width: 100,
-    minimumViewport: 620,
+    id: "progress",
+    label: "Progress",
+    width: 150,
     align: "right",
     sortable: true,
-    sortValue: (row) => row.downloadRate,
-    render: (row) => formatRate(row.downloadRate),
+    sortValue: (row) => row.progress,
+    render: (row) => (
+      <span className={tableStyles.progressCell}>
+        <span className={tableStyles.progressLabel}>
+          {formatProgress(row.progress)}
+        </span>
+        <span className={tableStyles.progressTrack} aria-hidden="true">
+          <span
+            style={{ width: `${Math.round((row.progress ?? 0) * 100)}%` }}
+          />
+        </span>
+      </span>
+    ),
   },
   {
-    id: "up",
-    label: "Up",
-    width: 92,
-    minimumViewport: 980,
+    id: "rate",
+    label: "Rate",
+    width: 120,
+    minimumViewport: 560,
     align: "right",
     sortable: true,
-    sortValue: (row) => row.uploadRate,
-    render: (row) => formatRate(row.uploadRate),
+    sortValue: (row) => Math.max(row.downloadRate, row.uploadRate ?? 0),
+    render: (row) => transferRate(row),
   },
   {
-    id: "peers",
-    label: "Peers",
-    width: 72,
-    minimumViewport: 860,
+    id: "size",
+    label: "Size",
+    width: 104,
+    minimumViewport: 720,
     align: "right",
     sortable: true,
-    sortValue: (row) => row.peersConnected,
-    render: (row) =>
-      row.peersKnown === null
-        ? row.peersConnected.toLocaleString()
-        : `${row.peersConnected}/${row.peersKnown}`,
-  },
-  {
-    id: "eta",
-    label: "ETA",
-    width: 84,
-    minimumViewport: 700,
-    align: "right",
-    sortable: true,
-    sortValue: (row) => row.etaSeconds,
-    render: (row) => formatEta(row.etaSeconds),
+    sortValue: (row) => row.sizeBytes,
+    render: (row) => formatBytes(row.sizeBytes),
   },
 ];
 
-export function TorrentTable() {
+export function TransferTable() {
   const order = useInspectionStore((state) => state.torrentOrder);
   const torrents = useInspectionStore((state) => state.torrents);
   const category = useInspectionStore(
-    (state) => state.presentation.workbenchCategory,
+    (state) => state.presentation.transfersCategory,
   );
   const selectedIds = useInspectionStore(
     (state) => state.presentation.selectedTorrentIds,
   );
-  const selectTorrent = useInspectionStore((state) => state.selectTorrent);
+  const focusTorrent = useInspectionStore((state) => state.focusTorrent);
   const toggleTorrentSelection = useInspectionStore(
     (state) => state.toggleTorrentSelection,
   );
@@ -127,7 +104,9 @@ export function TorrentTable() {
     (state) => state.replaceTorrentSelection,
   );
   const demo = useInspectionStore((state) => state.demo);
-  const materialization = useInspectionStore((state) => state.viewStatus.library);
+  const materialization = useInspectionStore(
+    (state) => state.viewStatus.library,
+  );
   const interfaceSize = useInspectionStore(
     (state) => state.presentation.interfaceSize,
   );
@@ -143,8 +122,8 @@ export function TorrentTable() {
 
   return (
     <VirtualTable
-      tableId="torrents"
-      label="Torrent library"
+      tableId="transfers"
+      label="Transfer queue"
       rows={rows}
       getRowId={(row) => row.id}
       columns={COLUMNS}
@@ -162,32 +141,43 @@ export function TorrentTable() {
           );
         },
       }}
-      onSelect={(row) => selectTorrent(row.id)}
+      onSelect={(row) => focusTorrent(row.id)}
       emptyMessage={
         materialization.status !== "ready"
           ? materializationMessage(materialization)
           : category === "all" && demo === null
-            ? "No torrents are present in the live engine."
+            ? "No transfers are present in the live engine."
             : category === "all"
-          ? "No torrents yet. Add a generated demo transfer or choose another scenario."
-          : `No torrents in ${category}.`
+              ? "No transfers yet. Add a generated demo transfer or choose another scenario."
+              : `No transfers in ${category}.`
       }
       initialSort={{ columnId: "name", direction: "asc" }}
     />
   );
 }
 
+function transferRate(row: TorrentRow): string {
+  if (row.downloadRate > 0) return formatRate(row.downloadRate);
+  if ((row.uploadRate ?? 0) > 0) return `${formatRate(row.uploadRate)} up`;
+  return "—";
+}
+
+function statusLabel(row: TorrentRow): string {
+  if (row.status === "complete" && (row.uploadRate ?? 0) > 0) return "Complete";
+  return row.status.slice(0, 1).toUpperCase() + row.status.slice(1);
+}
+
 function materializationMessage(materialization: ViewMaterialization): string {
   switch (materialization.status) {
     case "not_requested":
-      return "Torrent library is not requested in this layout.";
+      return "Transfer collection is not requested in this layout.";
     case "loading":
-      return "Loading torrent library…";
+      return "Loading transfers…";
     case "unavailable":
     case "unsupported":
     case "stale":
       return materialization.reason;
     case "ready":
-      return "No torrents are present.";
+      return "No transfers are present.";
   }
 }
