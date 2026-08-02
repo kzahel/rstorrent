@@ -59,7 +59,7 @@ export type IndexRange = { start: number, end_exclusive: number, };
 
 export type ActivePiece = { piece_index: number, piece_length: number, requested: Array<IndexRange>, received: Array<IndexRange>, stored: Array<IndexRange>, };
 
-export type TorrentView = { torrent_id: string, display_name?: string | null, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, requested_bytes: string, received_bytes: string, stored_bytes: string, active_peer_connections: number, payload_download_rate_bytes: string, progress: ProgressAssessment, archived: boolean, removal_state?: RemovalState | null, delete_managed_data_supported: boolean, error?: string | null, };
+export type TorrentView = { torrent_id: string, display_name?: string | null, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, requested_bytes: string, received_bytes: string, stored_bytes: string, active_peer_connections: number, configured_tracker_count?: number | null, payload_download_rate_bytes: string, progress: ProgressAssessment, archived: boolean, removal_state?: RemovalState | null, delete_managed_data_supported: boolean, error?: string | null, };
 
 export type CapabilityStatus = "available" | "unavailable" | "unsupported";
 

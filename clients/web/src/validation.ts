@@ -437,6 +437,11 @@ function validateTorrentView(value: unknown): asserts value is TorrentView {
   decimal(torrent.requested_bytes, "requested bytes");
   decimal(torrent.received_bytes, "received bytes");
   decimal(torrent.stored_bytes, "stored bytes");
+  optionalInteger(
+    torrent.configured_tracker_count,
+    "configured tracker count",
+    MAX_TRACKERS,
+  );
   const progress = asRecord(torrent.progress, "progress assessment");
   oneOf(progress.disposition, "progress disposition", [
     "active",

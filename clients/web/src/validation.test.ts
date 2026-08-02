@@ -59,6 +59,17 @@ describe("torrent display-name validation", () => {
   });
 });
 
+describe("torrent tracker-count validation", () => {
+  it("accepts the bounded summary count and rejects an oversized catalog", () => {
+    const batch = torrentBatch("Verified torrent");
+    expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
+    batch.updates[0]!.snapshot.torrents[0]!.configured_tracker_count = 33;
+    expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
+      /configured tracker count must be an integer in range/,
+    );
+  });
+});
+
 describe("tracker view validation", () => {
   it("accepts bounded state and rejects an oversized retained error", () => {
     const batch = trackerBatch();
@@ -141,6 +152,7 @@ function torrentBatch(displayName: string) {
               received_bytes: "0",
               stored_bytes: "0",
               active_peer_connections: 0,
+              configured_tracker_count: 2,
               payload_download_rate_bytes: "0",
               progress: {
                 disposition: "active",

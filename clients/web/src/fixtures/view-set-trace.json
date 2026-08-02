@@ -38,6 +38,7 @@
                 "received_bytes": "16384",
                 "stored_bytes": "16384",
                 "active_peer_connections": 0,
+                "configured_tracker_count": 2,
                 "payload_download_rate_bytes": "0",
                 "progress": {
                   "disposition": "active",
@@ -81,6 +82,7 @@
                 "received_bytes": "16384",
                 "stored_bytes": "16384",
                 "active_peer_connections": 0,
+                "configured_tracker_count": 2,
                 "payload_download_rate_bytes": "0",
                 "progress": {
                   "disposition": "active",
@@ -127,6 +129,7 @@
                 "received_bytes": "16384",
                 "stored_bytes": "16384",
                 "active_peer_connections": 0,
+                "configured_tracker_count": 2,
                 "payload_download_rate_bytes": "0",
                 "progress": {
                   "disposition": "inactive",

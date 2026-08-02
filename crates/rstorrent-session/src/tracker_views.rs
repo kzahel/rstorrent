@@ -199,6 +199,10 @@ impl TrackerViewModel {
         self.rows.values().cloned().collect()
     }
 
+    pub(crate) fn count(&self) -> u32 {
+        self.rows.len().try_into().unwrap_or(u32::MAX)
+    }
+
     pub(crate) fn row_map(&self) -> &BTreeMap<String, TrackerView> {
         &self.rows
     }

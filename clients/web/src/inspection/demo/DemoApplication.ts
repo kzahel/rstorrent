@@ -373,6 +373,7 @@ function applyOverlays(
       uploadedBytes: 0,
       peersConnected: 4 + index,
       peersKnown: 18 + index * 3,
+      configuredTrackerCount: 0,
       etaSeconds: 540 - index * 22,
       addedAtMs: DEMO_BASE_TIME_MS + source.demo!.elapsedMs,
       archived: false,

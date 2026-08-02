@@ -85,6 +85,7 @@ export interface TorrentRow {
   readonly uploadedBytes: number | null;
   readonly peersConnected: number;
   readonly peersKnown: number | null;
+  readonly configuredTrackerCount: number | null;
   readonly etaSeconds: number | null;
   readonly addedAtMs: number | null;
   readonly archived: boolean | null;

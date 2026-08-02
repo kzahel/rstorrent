@@ -195,6 +195,7 @@ describe("LiveApplication", () => {
 
     const initial = snapshots.at(-1)!;
     expect(initial.torrents[TORRENT_ID]?.name).toBe("movie.mkv");
+    expect(initial.torrents[TORRENT_ID]?.configuredTrackerCount).toBe(2);
     const peer = initial.peersByTorrent[TORRENT_ID]?.rows["connection-1"];
     expect(peer?.state).toBe("handshaking");
     expect(peer?.client).toBeNull();
@@ -435,6 +436,7 @@ function torrent(): TorrentView {
     received_bytes: "16384",
     stored_bytes: "16384",
     active_peer_connections: 1,
+    configured_tracker_count: 2,
     payload_download_rate_bytes: "4096",
     progress: {
       disposition: "active",

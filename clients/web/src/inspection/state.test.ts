@@ -89,6 +89,7 @@ function row(id: string, status: TorrentRow["status"]): TorrentRow {
     uploadedBytes: 0,
     peersConnected: 1,
     peersKnown: 2,
+    configuredTrackerCount: 0,
     etaSeconds: 50,
     addedAtMs: 1,
     archived: false,

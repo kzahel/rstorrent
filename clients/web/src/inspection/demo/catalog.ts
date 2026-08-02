@@ -189,7 +189,7 @@ function healthyDownload(elapsedMs: number): ScenarioContent {
     progress,
     downloadRate: rate,
     uploadRate: complete ? 310_000 : 82_000,
-    peersConnected: peers.filter((peer) => peer.state !== "connecting").length,
+    peersConnected: peers.length,
     peersKnown: 143,
     etaSeconds: progress === null || complete ? null : Math.ceil((276_445_467 * (1 - progress)) / Math.max(1, rate)),
     progressReason: complete ? "All pieces verified" : metadata ? "Requesting metadata from 8 peers" : "Receiving useful blocks from multiple peers",
@@ -366,7 +366,7 @@ function stalledMetadata(elapsedMs: number): ScenarioContent {
         status: "metadata",
         sizeBytes: null,
         progress: null,
-        peersConnected: 6,
+        peersConnected: peers.length,
         peersKnown: 127,
         progressReason: "Candidates available; no metadata request is active",
       }),
@@ -465,8 +465,9 @@ function trackerRecovery(elapsedMs: number): ScenarioContent {
         sizeBytes: metadata ? null : 276_445_467,
         progress,
         downloadRate: rate,
-        peersConnected: peers.filter((peer) => peer.state === "connected").length,
+        peersConnected: peers.length,
         peersKnown: recovered ? 42 : 0,
+        configuredTrackerCount: 2,
         etaSeconds: progress === null || progress === 1 ? null : Math.ceil((276_445_467 * (1 - progress)) / Math.max(1, rate)),
         progressReason: recovered ? (metadata ? "Tracker recovered; negotiating metadata" : "Downloading from recovered tracker cohort") : "UDP tracker retry scheduled in 22 seconds",
       }),
@@ -548,6 +549,9 @@ function largeSwarm(): ScenarioContent {
     );
   }
   const selectedId = torrents[0]?.id ?? fixedId(10_000);
+  if (torrents[0] !== undefined) {
+    torrents[0] = { ...torrents[0], peersConnected: 10_000 };
+  }
   return {
     torrents,
     peers: { [selectedId]: buildPeers(selectedId, 10_000, 17, 0.54) },
@@ -600,6 +604,7 @@ function torrent(input: Partial<TorrentRow> & Pick<TorrentRow, "id" | "name" | "
     uploadedBytes: input.uploadedBytes ?? 0,
     peersConnected: input.peersConnected ?? 0,
     peersKnown: input.peersKnown ?? 0,
+    configuredTrackerCount: input.configuredTrackerCount ?? 0,
     etaSeconds: input.etaSeconds ?? null,
     addedAtMs: input.addedAtMs ?? BASE_TIME_MS - 3_600_000,
     archived: input.archived ?? false,

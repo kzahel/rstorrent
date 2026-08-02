@@ -77,17 +77,6 @@ export function DetailPane() {
       ? undefined
       : state.torrents[state.presentation.selectedTorrentId],
   );
-  const peerCount = useInspectionStore((state) =>
-    state.presentation.selectedTorrentId === null
-      ? 0
-      : (state.peersByTorrent[state.presentation.selectedTorrentId]?.order.length ?? 0),
-  );
-  const trackerCount = useInspectionStore((state) =>
-    state.presentation.selectedTorrentId === null
-      ? 0
-      : (state.trackersByTorrent[state.presentation.selectedTorrentId]?.order
-          .length ?? 0),
-  );
   const activeTab = useInspectionStore((state) => state.presentation.activeTab);
   const layout = useInspectionStore((state) => state.presentation.layout);
   const selectTab = useInspectionStore((state) => state.selectTab);
@@ -134,35 +123,49 @@ export function DetailPane() {
         role="tablist"
         aria-label="Torrent detail views"
       >
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            id={`tab-${tab.id}`}
-            data-tab-id={tab.id}
-            aria-selected={activeTab === tab.id}
-            aria-controls={`panel-${tab.id}`}
-            tabIndex={activeTab === tab.id ? 0 : -1}
-            onClick={() => selectTab(tab.id)}
-            onKeyDown={(event) => {
-              if (event.key === "ArrowLeft") {
-                event.preventDefault();
-                selectAdjacentTab(tab.id, -1);
-              } else if (event.key === "ArrowRight") {
-                event.preventDefault();
-                selectAdjacentTab(tab.id, 1);
-              }
-            }}
-          >
-            {tab.label}
-            {tab.id === "peers" && peerCount > 0 ? (
-              <span>{peerCount.toLocaleString()}</span>
-            ) : tab.id === "trackers" && trackerCount > 0 ? (
-              <span>{trackerCount.toLocaleString()}</span>
-            ) : null}
-          </button>
-        ))}
+        {TABS.map((tab) => {
+          const count =
+            tab.id === "peers"
+              ? (torrent?.peersConnected ?? null)
+              : tab.id === "trackers"
+                ? (torrent?.configuredTrackerCount ?? null)
+                : undefined;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              id={`tab-${tab.id}`}
+              data-tab-id={tab.id}
+              aria-label={tab.label}
+              aria-selected={activeTab === tab.id}
+              aria-controls={`panel-${tab.id}`}
+              tabIndex={activeTab === tab.id ? 0 : -1}
+              onClick={() => selectTab(tab.id)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowLeft") {
+                  event.preventDefault();
+                  selectAdjacentTab(tab.id, -1);
+                } else if (event.key === "ArrowRight") {
+                  event.preventDefault();
+                  selectAdjacentTab(tab.id, 1);
+                }
+              }}
+            >
+              {tab.label}
+              {count === undefined ? null : (
+                <span
+                  className={styles.tabCount}
+                  data-empty={torrent === undefined ? "true" : undefined}
+                  title={count === null ? "Count unavailable" : count.toLocaleString()}
+                  aria-hidden="true"
+                >
+                  {count === null ? "—" : formatTabCount(count)}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
       <div
         className={styles.panel}
@@ -203,6 +206,10 @@ export function DetailPane() {
       </div>
     </section>
   );
+}
+
+function formatTabCount(count: number): string {
+  return count > 99 ? "99+" : count.toLocaleString();
 }
 
 function detailEmptyMessage(

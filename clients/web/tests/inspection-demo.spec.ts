@@ -32,6 +32,39 @@ test("wide inspection surface is accessible and drivable", async ({ page }) => {
   await expect(page.getByText("Sintel 4K open movie").first()).toBeVisible();
 });
 
+test("detail tab geometry and counts do not change with selection", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openScenario(page, "tracker-recovery", 24_000);
+
+  const tabs = page.getByRole("tab");
+  await expect(tabs).toHaveCount(10);
+  await expect(page.getByRole("tab", { name: "Peers" }).locator("span")).toHaveText("14");
+  await expect(page.getByRole("tab", { name: "Trackers" }).locator("span")).toHaveText("2");
+
+  const tabNames = [
+    "General",
+    "Trackers",
+    "Peers",
+    "Swarm",
+    "Files",
+    "Pieces",
+    "Disk",
+    "Logs",
+    "Speed",
+    "DHT",
+  ];
+  for (const width of [1440, 920]) {
+    await page.setViewportSize({ width, height: 900 });
+    const initialGeometry = await tabGeometry(page);
+    for (const name of tabNames) {
+      const tab = page.getByRole("tab", { name });
+      await tab.click();
+      await expect(tab).toHaveAttribute("aria-selected", "true");
+      expect(await tabGeometry(page)).toEqual(initialGeometry);
+    }
+  }
+});
+
 test("compact tracker recovery remains legible", async ({ page }) => {
   await page.setViewportSize({ width: 920, height: 720 });
   await openScenario(page, "tracker-recovery", 24_000);
@@ -257,6 +290,15 @@ async function openScenario(page: Page, scenario: string, at: number) {
   await page.goto(`/?demo=${scenario}&at=${at}&autoplay=0`);
   await expect(page.getByText("RSTorrent", { exact: true })).toBeVisible();
   await expect(page.getByText("Demo data", { exact: true })).toBeVisible();
+}
+
+async function tabGeometry(page: Page) {
+  return page.getByRole("tab").evaluateAll((elements) =>
+    elements.map((element) => ({
+      left: (element as HTMLElement).offsetLeft,
+      width: (element as HTMLElement).offsetWidth,
+    })),
+  );
 }
 
 async function capture(page: Page, filename: string) {

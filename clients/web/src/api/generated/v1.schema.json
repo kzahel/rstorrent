@@ -1456,6 +1456,14 @@
         "archived": {
           "type": "boolean"
         },
+        "configured_tracker_count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "delete_managed_data_supported": {
           "type": "boolean"
         },

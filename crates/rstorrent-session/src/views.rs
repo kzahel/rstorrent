@@ -397,6 +397,8 @@ pub struct TorrentView {
     pub received_bytes: String,
     pub stored_bytes: String,
     pub active_peer_connections: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub configured_tracker_count: Option<u32>,
     pub payload_download_rate_bytes: String,
     pub progress: ProgressAssessment,
     pub archived: bool,
@@ -1044,6 +1046,7 @@ impl ViewHub {
                     model.trackers = old.trackers.clone();
                 }
             }
+            model.view.configured_tracker_count = Some(model.trackers.count());
             next.insert(torrent.torrent_id.clone(), model);
         }
         hub.revision = revision;
@@ -1225,10 +1228,13 @@ impl ViewHub {
         let Some(model) = hub.torrents.get_mut(torrent_id) else {
             return Ok(());
         };
+        let previous_view = model.view.clone();
         let previous = model.trackers.row_map().clone();
         model.trackers.apply_snapshot(snapshot);
+        model.view.configured_tracker_count = Some(model.trackers.count());
+        let next_view = model.view.clone();
         let current = model.trackers.row_map().clone();
-        hub.publish_tracker_changes(torrent_id, &previous, &current)
+        hub.publish_tracker_changes(torrent_id, &previous_view, &next_view, &previous, &current)
     }
 
     pub fn record_diagnostic(
@@ -1586,12 +1592,11 @@ impl HubState {
     fn publish_tracker_changes(
         &mut self,
         torrent_id: &str,
+        previous_view: &TorrentView,
+        next_view: &TorrentView,
         previous: &BTreeMap<String, TrackerView>,
         current: &BTreeMap<String, TrackerView>,
     ) -> Result<(), SubscriptionError> {
-        let Some(patch) = tracker_collection_patch(torrent_id, previous, current) else {
-            return Ok(());
-        };
         let revision = self.revision;
         self.subscribers.retain(|_, weak| weak.strong_count() != 0);
         let subscribers = self
@@ -1600,14 +1605,15 @@ impl HubState {
             .filter_map(Weak::upgrade)
             .collect::<Vec<_>>();
         for subscriber in subscribers {
-            if matches!(
-                (&subscriber.spec.selector, subscriber.spec.projection),
-                (
-                    ViewSelector::Torrent { torrent_id: selected },
-                    ViewProjection::Trackers
-                ) if selected == torrent_id
+            if let Some(patch) = targeted_tracker_patch(
+                &subscriber.spec,
+                torrent_id,
+                previous_view,
+                next_view,
+                previous,
+                current,
             ) {
-                subscriber.enqueue_patch(revision, patch.clone())?;
+                subscriber.enqueue_patch(revision, patch)?;
             }
         }
         self.retain_live_view_sets();
@@ -1615,14 +1621,15 @@ impl HubState {
         for view_set in view_sets {
             for spec in view_set.view_specs()? {
                 let subscription = spec.subscription_spec(DEFAULT_VIEW_SET_QUEUE_BYTES);
-                if matches!(
-                    (&subscription.selector, subscription.projection),
-                    (
-                        ViewSelector::Torrent { torrent_id: selected },
-                        ViewProjection::Trackers
-                    ) if selected == torrent_id
+                if let Some(patch) = targeted_tracker_patch(
+                    &subscription,
+                    torrent_id,
+                    previous_view,
+                    next_view,
+                    previous,
+                    current,
                 ) {
-                    view_set.enqueue_patch(spec.view_id(), patch.clone(), revision)?;
+                    view_set.enqueue_patch(spec.view_id(), patch, revision)?;
                 }
             }
         }
@@ -1672,6 +1679,7 @@ impl TorrentModel {
                 received_bytes: "0".to_owned(),
                 stored_bytes: "0".to_owned(),
                 active_peer_connections: 0,
+                configured_tracker_count: None,
                 payload_download_rate_bytes: "0".to_owned(),
                 progress: assess_progress(snapshot, progress_inputs),
                 archived: snapshot.archived,
@@ -2295,6 +2303,41 @@ fn targeted_peer_patch(
     }
 }
 
+fn targeted_tracker_patch(
+    spec: &SubscriptionSpec,
+    torrent_id: &str,
+    previous_view: &TorrentView,
+    next_view: &TorrentView,
+    previous_trackers: &BTreeMap<String, TrackerView>,
+    next_trackers: &BTreeMap<String, TrackerView>,
+) -> Option<ViewPatch> {
+    match (&spec.selector, spec.projection) {
+        (ViewSelector::TorrentList, ViewProjection::Summary) => {
+            (previous_view != next_view).then(|| ViewPatch::TorrentList {
+                upsert: vec![next_view.clone()],
+                removed: Vec::new(),
+            })
+        }
+        (
+            ViewSelector::Torrent {
+                torrent_id: selected,
+            },
+            ViewProjection::Summary,
+        ) if selected == torrent_id => (previous_view != next_view).then(|| ViewPatch::Torrent {
+            torrent: Some(next_view.clone()),
+        }),
+        (
+            ViewSelector::Torrent {
+                torrent_id: selected,
+            },
+            ViewProjection::Trackers,
+        ) if selected == torrent_id => {
+            tracker_collection_patch(torrent_id, previous_trackers, next_trackers)
+        }
+        _ => None,
+    }
+}
+
 fn peer_collection_patch(
     torrent_id: &str,
     previous: &BTreeMap<String, PeerView>,
@@ -2794,7 +2837,21 @@ mod tests {
                 diagnostics: None,
             })
             .expect("tracker subscription");
+        let summary = hub
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::Torrent {
+                    torrent_id: torrent_id.to_owned(),
+                },
+                projection: ViewProjection::Summary,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 16 * 1024,
+                },
+                diagnostics: None,
+            })
+            .expect("summary subscription");
         let initial = subscription.next_update().await.expect("initial snapshot");
+        summary.next_update().await.expect("initial summary");
         assert!(matches!(
             initial.payload,
             ViewUpdatePayload::Snapshot {
@@ -2815,6 +2872,15 @@ mod tests {
             } if upsert.len() == 1
                 && removed.is_empty()
                 && upsert[0].last_peer_count == Some(9)
+        ));
+        let summary_update = summary.next_update().await.expect("summary count patch");
+        assert!(matches!(
+            summary_update.payload,
+            ViewUpdatePayload::Patch {
+                patch: ViewPatch::Torrent {
+                    torrent: Some(ref torrent)
+                }
+            } if torrent.configured_tracker_count == Some(1)
         ));
 
         hub.record_tracker_state(

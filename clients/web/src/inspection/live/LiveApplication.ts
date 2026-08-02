@@ -564,6 +564,7 @@ function mapTorrent(torrent: TorrentView): TorrentRow {
     uploadedBytes: null,
     peersConnected: torrent.active_peer_connections,
     peersKnown: null,
+    configuredTrackerCount: torrent.configured_tracker_count ?? null,
     etaSeconds: null,
     addedAtMs: null,
     archived: torrent.archived,

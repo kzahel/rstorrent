@@ -639,6 +639,13 @@ history survived. The selected Trackers tab alone requests the view at a
 the delivered deadline to a local wall-clock target once, and the React table
 updates countdown text without backend timer patches.
 
+The torrent summary also carries an additive optional configured-tracker
+count derived from the same bounded tracker model. Navigation can therefore
+show a stable count while the detailed tracker projection is not requested;
+it does not retain evicted tracker rows or create another tracker authority.
+Older v1 producers may omit the field, which remains distinct from a known
+zero configured trackers.
+
 The controlled browser proof observed an intentionally delayed announce in
 flight, accepted exact peer/seeder/leecher counts and a reannounce deadline,
 completed verified content, removed the active peer row, and joined the

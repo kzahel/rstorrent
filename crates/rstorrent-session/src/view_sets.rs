@@ -1353,6 +1353,7 @@ mod tests {
             received_bytes: "0".to_owned(),
             stored_bytes: "0".to_owned(),
             active_peer_connections: 0,
+            configured_tracker_count: Some(2),
             payload_download_rate_bytes: "0".to_owned(),
             progress: ProgressAssessment {
                 disposition: ProgressDisposition::Active,

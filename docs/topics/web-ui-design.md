@@ -129,6 +129,14 @@ click, or a fine pointer. Context menus may complement visible or otherwise
 discoverable actions but cannot be their only access path. Density may adapt
 without removing information or making controls too small to operate.
 
+Torrent-detail tab selection is a paint-only state change. Labels retain the
+same font metrics, the underline is out of layout flow, and bounded count
+badges keep fixed inline geometry. Peers and configured-tracker counts come
+from the selected torrent summary, not the detail collection that is requested
+only while its tab is visible. Selecting or evicting a detail view therefore
+cannot move neighboring tabs or make its navigation count appear only while
+selected.
+
 The responsive web application does not replace the native Android Compose
 product or create automatic UI parity with it. Phone usability applies to the
 shared web surface itself, including small desktop windows and future browser
@@ -333,6 +341,12 @@ metadata, the library and General view retain `Torrent <hash-prefix>`; after
 verified metainfo is durably recorded, the shared torrent row automatically
 uses its bounded name. No view selection, table identity, or local preference
 changes during that transition.
+
+The detail-tab regression suite records each tab's layout offset and width
+while selecting every view. It also keeps peer and tracker badges visible from
+the stable summary throughout those view-set changes; narrow layouts may
+scroll to reveal a clipped active tab, but the tab boxes themselves do not
+reflow.
 
 ## Likely Sequencing
 

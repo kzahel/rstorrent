@@ -54,9 +54,13 @@ describe("inspection application", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByRole("grid", { name: "Torrent library" })).toHaveAttribute("aria-rowcount", "4");
     expect(screen.getByRole("grid", { name: "Active peer connections" })).toBeVisible();
+    const peersTab = screen.getByRole("tab", { name: "Peers" });
+    const peerCount = peersTab.textContent;
+    expect(peerCount).toMatch(/^Peers\d+$/);
 
     await user.click(screen.getByRole("tab", { name: "General" }));
     expect(screen.getByText("Selected transfer")).toBeVisible();
+    expect(peersTab).toHaveTextContent(peerCount!);
     await user.click(screen.getByRole("tab", { name: "Logs" }));
     expect(screen.getByRole("grid", { name: "Diagnostic log" })).toBeVisible();
   });
