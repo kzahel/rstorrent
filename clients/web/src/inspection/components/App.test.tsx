@@ -94,7 +94,7 @@ describe("inspection application", () => {
     });
     expect(feed).toBeVisible();
     expect(rendered.container.querySelectorAll("article").length).toBeLessThan(60);
-    expect(screen.getByText(/retained$/)).toHaveTextContent("220 retained");
+    expect(screen.getByText(/retained$/)).toHaveTextContent("2,048 retained");
 
     const captureScope = screen.getByLabelText("Diagnostic capture scope");
     await user.selectOptions(captureScope, DEMO_PRIMARY_TORRENT_ID);
@@ -114,10 +114,10 @@ describe("inspection application", () => {
       screen.getByLabelText("Displayed torrent scope"),
       "all",
     );
-    expect(screen.getByText(/shown$/)).toHaveTextContent("44 shown");
+    expect(screen.getByText(/shown$/)).toHaveTextContent("410 shown");
 
     await user.type(screen.getByRole("searchbox", { name: "Search diagnostics" }), "watermark");
-    expect(screen.getByText(/shown$/)).toHaveTextContent("6 shown");
+    expect(screen.getByText(/shown$/)).toHaveTextContent("59 shown");
   });
 
   it("opens Settings, changes interface size live, and restores it", async () => {

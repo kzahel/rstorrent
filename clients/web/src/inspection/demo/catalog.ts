@@ -314,7 +314,7 @@ function diagnosticConsole(elapsedMs: number): ScenarioContent {
     "Storage queue crossed its high watermark",
     "Piece hash verification succeeded",
   ] as const;
-  const count = Math.min(220, 28 + Math.floor(elapsedMs / 210));
+  const count = Math.min(10_000, 100 + Math.floor(elapsedMs / 4.5));
   const logs: LogRow[] = Array.from({ length: count }, (_, index) => {
     const category = categories[index % categories.length] ?? "lifecycle.session";
     const torrentId =

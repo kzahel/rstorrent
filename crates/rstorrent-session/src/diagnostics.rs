@@ -664,13 +664,13 @@ mod tests {
     #[test]
     fn store_bounds_history_by_count_and_reports_retained_boundary() {
         let mut store = DiagnosticStore::default();
-        for index in 0..MAX_DIAGNOSTIC_EVENTS + 17 {
+        for index in 0..10_000 {
             store.record(draft(index), index as u128);
         }
         assert_eq!(store.len(), MAX_DIAGNOSTIC_EVENTS);
         assert!(store.encoded_bytes() <= MAX_DIAGNOSTIC_BYTES);
-        assert_eq!(store.retention().source_evicted_count, "17");
-        assert_eq!(store.retention().retained_from_sequence, "18");
+        assert_eq!(store.retention().source_evicted_count, "7952");
+        assert_eq!(store.retention().retained_from_sequence, "7953");
     }
 
     #[test]

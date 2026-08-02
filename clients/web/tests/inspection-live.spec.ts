@@ -289,6 +289,26 @@ test("live peer inspection follows a controlled verified transfer", async ({
   await expect(trackerRow).toContainText("Announce in");
   await capture(page, "live-trackers-wide.png");
 
+  await page.getByRole("tab", { name: "Logs" }).click();
+  const diagnosticFeed = page.getByRole("log", {
+    name: "Chronological diagnostic events",
+  });
+  await expect(diagnosticFeed).toBeVisible();
+  await expect(
+    diagnosticFeed.getByText("UDP tracker announce succeeded", { exact: true }),
+  ).toBeVisible({ timeout: 10_000 });
+  await page
+    .getByRole("button", { name: "Expand tracker_announce_succeeded" })
+    .click();
+  await expect(diagnosticFeed.getByText(trackerUrl!, { exact: true })).toBeVisible();
+  await expect(diagnosticFeed.getByText("announce interval", { exact: true })).toBeVisible();
+  await page.getByLabel("Diagnostic capture profile").selectOption("detailed");
+  await page.getByPlaceholder("Category prefix").fill("tracker");
+  await expect(
+    diagnosticFeed.getByText("UDP tracker announce succeeded", { exact: true }),
+  ).toBeVisible();
+  await capture(page, "live-diagnostic-console-wide.png");
+
   await page.setViewportSize({ width: 390, height: 844 });
   const backToLibrary = page.getByRole("button", {
     name: "Torrents",

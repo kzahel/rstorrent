@@ -48,7 +48,7 @@ describe("inspection store", () => {
       type: "patch",
       revision: 2,
       logs: {
-        append: Array.from({ length: 2_100 }, (_, index) => ({
+        append: Array.from({ length: 10_000 }, (_, index) => ({
           id: String(index),
           timestampMs: index,
           severity: "info" as const,
@@ -67,7 +67,7 @@ describe("inspection store", () => {
     });
     expect(store.getState().logs).toHaveLength(2_048);
     expect(store.getState().logLoss.sourceEvictedCount).toBe(2);
-    expect(store.getState().logLoss.localEvictedCount).toBe(52);
+    expect(store.getState().logLoss.localEvictedCount).toBe(7_952);
   });
 
   it("keeps the detail pane size within its usable range", () => {

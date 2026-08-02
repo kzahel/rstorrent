@@ -344,7 +344,7 @@ test("diagnostic console stays ordered, filtered, and virtualized", async ({
     name: "Chronological diagnostic events",
   });
   await expect(feed).toBeVisible();
-  await expect(page.getByText("220 retained", { exact: true })).toBeVisible();
+  await expect(page.getByText("2,048 retained", { exact: true })).toBeVisible();
   expect(await feed.locator("article").count()).toBeLessThan(60);
 
   await page
@@ -353,9 +353,9 @@ test("diagnostic console stays ordered, filtered, and virtualized", async ({
   await expect(page.getByText("High-volume producer capture")).toBeVisible();
   await page.getByLabel("Minimum displayed severity").selectOption("warning");
   await page.getByLabel("Displayed torrent scope").selectOption("all");
-  await expect(page.getByText("44 shown", { exact: true })).toBeVisible();
+  await expect(page.getByText("410 shown", { exact: true })).toBeVisible();
   await page.getByRole("searchbox", { name: "Search diagnostics" }).fill("watermark");
-  await expect(page.getByText("6 shown", { exact: true })).toBeVisible();
+  await expect(page.getByText("59 shown", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: /^Expand/ }).first().click();
   await expect(page.getByText("event index").first()).toBeVisible();
 
@@ -363,6 +363,21 @@ test("diagnostic console stays ordered, filtered, and virtualized", async ({
     (violation) => violation.impact === "serious" || violation.impact === "critical",
   );
   expect(violations).toEqual([]);
+  const metrics = await page.evaluate(() => {
+    const measuredPerformance = performance as Performance & {
+      memory?: { usedJSHeapSize: number };
+    };
+    return {
+      domElements: document.querySelectorAll("*").length,
+      renderedRecords: document.querySelectorAll('[role="log"] article').length,
+      usedJsHeapBytes: measuredPerformance.memory?.usedJSHeapSize ?? null,
+    };
+  });
+  expect(metrics.domElements).toBeLessThan(1_500);
+  expect(metrics.renderedRecords).toBeLessThan(60);
+  if (metrics.usedJsHeapBytes !== null) {
+    expect(metrics.usedJsHeapBytes).toBeLessThan(256 * 1024 * 1024);
+  }
   await capture(page, "rstorrent-diagnostic-console-wide.png");
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -374,6 +389,7 @@ test("diagnostic console stays ordered, filtered, and virtualized", async ({
   await expect(phoneFeed).toBeVisible();
   expect(await phoneFeed.locator("article").count()).toBeLessThan(60);
   await capture(page, "rstorrent-diagnostic-console-phone.png");
+  console.log(`diagnostic_scale_metrics ${JSON.stringify(metrics)}`);
 });
 
 test("phone navigation opens a full detail surface", async ({ page }) => {
