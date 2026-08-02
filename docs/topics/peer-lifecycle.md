@@ -27,6 +27,9 @@ small writes. Write execution therefore precedes another peer-policy change.
 Tactical `035` unifies coherent active-connection observation across the
 registry, socket-task owner, and content scheduler without changing peer
 policy, and proves that observation through the live headless Peers surface.
+Tactical `046` closes the wrapper-level cancellation race that could drop a
+metadata or content supervisor before it joined those owners and published
+the final empty connection observation.
 Full parole selection, persistent integrity reputation, measured
 picker policy, incoming connections, and persistent peer records remain later
 work.
@@ -44,6 +47,26 @@ durable application persistence. It owns connection-scoped choke and
 availability facts because those determine slot usefulness and request
 eligibility. [`download-correctness.md`](download-correctness.md) owns the
 corresponding torrent-level request and completion invariants.
+
+## Observed Incidents
+
+### OBS-2026-08-02-001: Paused Torrent Retained Peer Rows
+
+- **Environment:** first-party WebUI observing a live torrent through the
+  leased Peers view.
+- **Observation:** after the pause command succeeded, connected peer rows
+  remained visible instead of being removed.
+- **Cause:** session-facing wrappers raced the same cancellation token against
+  metadata/content supervisors with biased outer selects. The wrapper could
+  drop the owner future before its joined cleanup and final empty observation.
+- **Resolution:** Tactical `046` removes those wrapper races, adds terminal
+  owner checks, and makes initial metadata discovery cancellation-aware inside
+  its supervisor.
+- **Closing evidence:** deterministic metadata events reach connected,
+  disconnecting, then empty; a content pause closes its TCP peer before the
+  receipt and the live view set receives the exact removal plus zero current
+  peer aggregates.
+- **Status:** closed on 2026-08-02.
 
 ## Vocabulary
 
@@ -169,6 +192,16 @@ the default queue bound. A controlled libtorrent transfer then observes the
 same active row through the real React surface and its keyed removal after
 verified completion. This is observation evidence, not incoming or uTP
 runtime support and not a change to dial, picker, or request policy.
+
+Tactical `046` adds the missing pause evidence at this same boundary. Public
+operation wrappers now request cancellation and await the supervisor that
+owns socket, metadata/content worker, discovery, scheduler, request, payload,
+and storage cleanup. Deterministic metadata cancellation records connected,
+disconnecting, then an empty current collection; a session content pause
+closes the scripted TCP peer before returning and delivers the keyed removal
+through the existing leased Peers view. A terminal operation also rejects any
+remaining peer connection, metadata worker/dial, storage job, request byte, or
+payload byte instead of silently reporting joined cleanup.
 
 ## Reference Direction
 

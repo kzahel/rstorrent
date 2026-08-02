@@ -1218,6 +1218,7 @@ fn handle_task_outcome(
                 .map_err(|error| error.to_string())
         }
         Err(error) => {
+            let cleanup_failed = matches!(&error, DownloadError::PeerCleanup { .. });
             let detail = error.to_string();
             {
                 let mut store = store
@@ -1251,7 +1252,8 @@ fn handle_task_outcome(
                     "Engine task failed",
                     &[("detail", &detail)],
                 )
-                .map_err(|error| error.to_string())
+                .map_err(|error| error.to_string())?;
+            if cleanup_failed { Err(detail) } else { Ok(()) }
         }
     }
 }
@@ -2104,23 +2106,27 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use rstorrent_engine::dht::BootstrapNode;
-    use rstorrent_engine::{NetworkConfig, NetworkPolicy};
+    use rstorrent_engine::{DownloadError, NetworkConfig, NetworkPolicy};
     use rstorrent_protocol::dht::{
         DhtEndpoint, DhtIp, Message as DhtMessage, NodeId, decode_message as decode_dht,
         encode_response as encode_dht_response,
     };
+    use rstorrent_protocol::peer_wire::{
+        HANDSHAKE_LENGTH, PeerMessage, decode_handshake, encode_handshake, encode_message,
+    };
     use rusqlite::Connection;
     use sha1::{Digest, Sha1};
-    use tokio::net::UdpSocket;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, UdpSocket};
 
-    use super::{ApplicationConfig, ApplicationService};
+    use super::{ApplicationConfig, ApplicationService, handle_task_outcome};
     use crate::{
         CONTROL_VERSION, Command, ConfiguredStorageRoot, DeliveryPolicy, DiagnosticFilter,
         DiagnosticProfile, DiagnosticSeverity, OpenViewSetOptions, OpenViewSetRequest,
         ProgressDisposition, ProgressReason, RemovalDataPolicy, RemovalState, RequestEnvelope,
         ResponseOutcome, SessionStore, SubscriptionSpec, TorrentState, ViewDeliveryPolicy,
-        ViewPatch, ViewProjection, ViewSelector, ViewSetError, ViewSetOwner, ViewSnapshot,
-        ViewSpec, ViewUpdatePayload,
+        ViewPatch, ViewProjection, ViewSelector, ViewSetError, ViewSetOwner, ViewSetUpdate,
+        ViewSnapshot, ViewSpec, ViewUpdatePayload,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -2373,6 +2379,262 @@ mod tests {
         assert_eq!(snapshot.torrents[0].state, TorrentState::Paused);
         reopened.shutdown().await.expect("shutdown reopened");
         drop(reopened);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn pause_joins_content_peer_before_view_set_removal() {
+        let root = test_root("pause-peer-cleanup");
+        let configuration = config(&root);
+        let payload = b"view";
+        let mut raw_info =
+            b"d5:filesld6:lengthi4e4:pathl4:testeee4:name4:root12:piece lengthi4e6:pieces20:"
+                .to_vec();
+        raw_info.extend_from_slice(&Sha1::digest(payload));
+        raw_info.push(b'e');
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind paused content peer");
+        let address = listener.local_addr().expect("content peer address");
+        let peer_task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept content peer");
+            let mut handshake = [0; HANDSHAKE_LENGTH];
+            stream
+                .read_exact(&mut handshake)
+                .await
+                .expect("read content handshake");
+            decode_handshake(&handshake, info_hash).expect("content handshake identity");
+            stream
+                .write_all(&encode_handshake(info_hash, *b"-RS-APP-PAUSE-000000"))
+                .await
+                .expect("send content handshake");
+            stream
+                .write_all(&encode_message(&PeerMessage::Bitfield(vec![0x80])).expect("bitfield"))
+                .await
+                .expect("send content bitfield");
+            let mut buffer = [0; 128];
+            loop {
+                if stream.read(&mut buffer).await.expect("wait for pause") == 0 {
+                    break;
+                }
+            }
+        });
+
+        let mut store = SessionStore::open(
+            &configuration.profile_root,
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open setup store");
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-paused-content".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={address}"),
+                    storage_root: "downloads".to_owned(),
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add content torrent");
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record content metadata");
+        drop(store);
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open content service");
+        let owner = ViewSetOwner::trusted("pause-peer-owner");
+        let opened = service
+            .open_view_set(
+                owner.clone(),
+                OpenViewSetRequest {
+                    views: vec![
+                        ViewSpec::TorrentPeers {
+                            view_id: "peers".to_owned(),
+                            torrent_id: torrent_id.clone(),
+                            delivery: ViewDeliveryPolicy::default(),
+                        },
+                        ViewSpec::TorrentSummary {
+                            view_id: "summary".to_owned(),
+                            torrent_id: torrent_id.clone(),
+                            delivery: ViewDeliveryPolicy::default(),
+                        },
+                    ],
+                    options: OpenViewSetOptions::default(),
+                },
+            )
+            .expect("open peer view set");
+        let view_set = service
+            .view_set(&owner, &opened.view_set_id)
+            .expect("peer view set handle");
+        let mut cursor = opened.initial.cursor.clone();
+        let mut active_peer = opened
+            .initial
+            .updates
+            .iter()
+            .find_map(|update| match update {
+                ViewSetUpdate::Snapshot {
+                    snapshot: ViewSnapshot::Peers { peers, .. },
+                    ..
+                } => peers
+                    .iter()
+                    .find(|peer| peer.lifecycle == crate::PeerLifecycle::Connected)
+                    .map(|peer| peer.connection_id.clone()),
+                _ => None,
+            });
+        if active_peer.is_none() {
+            active_peer = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+                loop {
+                    let batch = view_set
+                        .next_updates(&cursor, 1_000)
+                        .await
+                        .expect("connected peer update");
+                    cursor = batch.cursor.clone();
+                    if let Some(connection_id) =
+                        batch.updates.iter().find_map(|update| match update {
+                            ViewSetUpdate::Snapshot {
+                                snapshot: ViewSnapshot::Peers { peers, .. },
+                                ..
+                            } => peers
+                                .iter()
+                                .find(|peer| peer.lifecycle == crate::PeerLifecycle::Connected)
+                                .map(|peer| peer.connection_id.clone()),
+                            ViewSetUpdate::Patch {
+                                patch: ViewPatch::Peers { upsert, .. },
+                                ..
+                            } => upsert
+                                .iter()
+                                .find(|peer| peer.lifecycle == crate::PeerLifecycle::Connected)
+                                .map(|peer| peer.connection_id.clone()),
+                            _ => None,
+                        })
+                    {
+                        break Some(connection_id);
+                    }
+                }
+            })
+            .await
+            .expect("content peer never became visible");
+        }
+        let active_peer = active_peer.expect("connected content peer row");
+
+        let paused = service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "pause-content".to_owned(),
+                expected_revision: None,
+                command: Command::Pause {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .await
+            .expect("pause content torrent");
+        let ResponseOutcome::Success { snapshot } = paused.outcome else {
+            panic!("pause should succeed");
+        };
+        assert_eq!(snapshot.torrents[0].state, TorrentState::Paused);
+        tokio::time::timeout(std::time::Duration::from_secs(1), peer_task)
+            .await
+            .expect("content peer did not close before pause receipt")
+            .expect("content peer task");
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            let mut removed = false;
+            let mut summary_is_terminal = false;
+            while !removed || !summary_is_terminal {
+                let batch = view_set
+                    .next_updates(&cursor, 1_000)
+                    .await
+                    .expect("terminal peer updates");
+                cursor = batch.cursor.clone();
+                for update in batch.updates {
+                    match update {
+                        ViewSetUpdate::Patch {
+                            patch: ViewPatch::Peers { removed: ids, .. },
+                            ..
+                        } => removed |= ids.contains(&active_peer),
+                        ViewSetUpdate::Patch {
+                            patch:
+                                ViewPatch::Torrent {
+                                    torrent: Some(torrent),
+                                },
+                            ..
+                        }
+                        | ViewSetUpdate::Snapshot {
+                            snapshot:
+                                ViewSnapshot::Torrent {
+                                    torrent: Some(torrent),
+                                },
+                            ..
+                        } => {
+                            summary_is_terminal |= torrent.active_peer_connections == 0
+                                && torrent.payload_download_rate_bytes == "0";
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        })
+        .await
+        .expect("pause did not publish terminal peer views");
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn owner_cleanup_failure_is_not_accepted_as_joined_pause() {
+        let root = test_root("pause-cleanup-failure");
+        let configuration = config(&root);
+        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let mut store = SessionStore::open(
+            &configuration.profile_root,
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open setup store");
+        store
+            .handle_durable(&add_request("add-cleanup-failure", torrent_id))
+            .expect("add cleanup-failure torrent");
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "pause-cleanup-failure".to_owned(),
+                expected_revision: None,
+                command: Command::Pause {
+                    torrent_id: torrent_id.to_owned(),
+                },
+            })
+            .expect("persist paused intent");
+        drop(store);
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open paused service");
+        let result = handle_task_outcome(
+            &service.store,
+            &service.storage_roots,
+            &service.views,
+            torrent_id,
+            Err(DownloadError::PeerCleanup {
+                failure: "download cancelled".to_owned(),
+                cleanup: "one peer connection remains".to_owned(),
+            }),
+        );
+        assert!(
+            result
+                .expect_err("cleanup failure must propagate")
+                .contains("one peer connection remains")
+        );
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
         fs::remove_dir_all(root).expect("remove test root");
     }
 

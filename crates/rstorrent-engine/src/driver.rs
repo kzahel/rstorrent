@@ -2308,8 +2308,12 @@ async fn resume_magnet_owned(
     descriptors: Option<(DescriptorStorage, bool)>,
 ) -> Result<DownloadReport, DownloadError> {
     validate_resumable_magnet_download_config(&config)?;
+    if control.is_cancelled() {
+        return Err(DownloadError::Cancelled);
+    }
     let result =
         run_resumable_magnet_download(config, checkpoints, control.clone(), descriptors).await;
+    let result = require_terminal_owner_cleanup(&control, result);
     control.clear_buffered_payload();
     result
 }
@@ -2329,7 +2333,11 @@ pub async fn download_magnet_metadata_with_dht(
     dht: Option<DhtHandle>,
 ) -> Result<Vec<u8>, DownloadError> {
     validate_network_config(network)?;
+    if control.is_cancelled() {
+        return Err(DownloadError::Cancelled);
+    }
     let result = run_magnet_metadata(magnet, network, control.clone(), dht).await;
+    let result = require_terminal_owner_cleanup(&control, result);
     control.clear_buffered_payload();
     result
 }
@@ -2339,9 +2347,13 @@ pub async fn download_magnet_with_control(
     control: DownloadControl,
 ) -> Result<DownloadReport, DownloadError> {
     validate_magnet_download_config(&config)?;
+    if control.is_cancelled() {
+        return Err(DownloadError::Cancelled);
+    }
     let output_path = config.output_path.clone();
     let staging = staging_path(&output_path).map_err(DownloadError::Storage)?;
     let result = run_magnet_download(config, control.clone()).await;
+    let result = require_terminal_owner_cleanup(&control, result);
     control.clear_buffered_payload();
 
     match result {
@@ -2370,14 +2382,14 @@ pub async fn download_verified_piece_with_control(
     control: DownloadControl,
 ) -> Result<DownloadReport, DownloadError> {
     validate_download_config(&config)?;
+    if control.is_cancelled() {
+        return Err(DownloadError::Cancelled);
+    }
 
     let staging = staging_path(&config.output_path).map_err(DownloadError::Storage)?;
     let output_path = config.output_path.clone();
-    let result = tokio::select! {
-        biased;
-        _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
-        result = run_download(config, control.clone(), None) => result,
-    };
+    let result = run_download(config, control.clone(), None).await;
+    let result = require_terminal_owner_cleanup(&control, result);
     control.clear_buffered_payload();
 
     match result {
@@ -2407,13 +2419,73 @@ pub async fn download_verified_piece_to_descriptors_with_control(
     control: DownloadControl,
 ) -> Result<DownloadReport, DownloadError> {
     validate_download_config(&config)?;
-    let result = tokio::select! {
-        biased;
-        _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
-        result = run_download(config, control.clone(), Some(descriptors)) => result,
-    };
+    if control.is_cancelled() {
+        return Err(DownloadError::Cancelled);
+    }
+    let result = run_download(config, control.clone(), Some(descriptors)).await;
+    let result = require_terminal_owner_cleanup(&control, result);
     control.clear_buffered_payload();
     result
+}
+
+fn require_terminal_owner_cleanup<T>(
+    control: &DownloadControl,
+    result: Result<T, DownloadError>,
+) -> Result<T, DownloadError> {
+    let diagnostics = control.diagnostic_snapshot();
+    let progress = diagnostics.progress;
+    let mut active = Vec::new();
+    if !diagnostics.peer_connections.is_empty() {
+        active.push(format!(
+            "{} peer connection(s)",
+            diagnostics.peer_connections.len()
+        ));
+    }
+    if diagnostics.metadata.pending_dials != 0 {
+        active.push(format!(
+            "{} metadata dial(s)",
+            diagnostics.metadata.pending_dials
+        ));
+    }
+    if diagnostics.metadata.active_workers != 0 {
+        active.push(format!(
+            "{} metadata worker(s)",
+            diagnostics.metadata.active_workers
+        ));
+    }
+    if progress.storage_jobs_pending != 0 {
+        active.push(format!("{} storage job(s)", progress.storage_jobs_pending));
+    }
+    if progress.outstanding_request_bytes != 0 {
+        active.push(format!(
+            "{} outstanding request byte(s)",
+            progress.outstanding_request_bytes
+        ));
+    }
+    if progress.buffered_payload_bytes != 0 {
+        active.push(format!(
+            "{} buffered payload byte(s)",
+            progress.buffered_payload_bytes
+        ));
+    }
+    if active.is_empty() {
+        return result;
+    }
+
+    let cleanup = format!(
+        "download operation returned with active owners: {}",
+        active.join(", ")
+    );
+    match result {
+        Ok(_) => Err(DownloadError::PeerCleanup {
+            failure: "download operation completed before owner cleanup".to_owned(),
+            cleanup,
+        }),
+        Err(error) => Err(DownloadError::PeerCleanup {
+            failure: error.to_string(),
+            cleanup,
+        }),
+    }
 }
 
 fn validate_download_config(config: &DownloadConfig) -> Result<(), DownloadError> {
@@ -3517,10 +3589,16 @@ impl TorrentPeerCoordinator {
     ) -> Result<Self, DownloadError> {
         let mut peers = Self::new(network, control)?;
         peers.dht = dht;
+        if peers.control.is_cancelled() {
+            return Err(DownloadError::Cancelled);
+        }
         if !network.policy.permits_dns() {
             return Err(DownloadError::NetworkDisabled);
         }
         peers.resolve_peer_hints(&magnet.peer_hints).await;
+        if peers.control.is_cancelled() {
+            return Err(DownloadError::Cancelled);
+        }
         if !magnet.udp_trackers.is_empty() {
             peers.tracker = Some(TrackerManager::start(
                 magnet.udp_trackers.clone(),
@@ -3804,7 +3882,14 @@ impl TorrentPeerCoordinator {
             );
 
             if sockets.pending_len() == 0 && workers.is_empty() {
-                self.receive_discovery_peers(info_hash).await?;
+                let cancellation = self.control.inner.cancellation.clone();
+                tokio::select! {
+                    biased;
+                    _ = cancellation.cancelled() => {
+                        return Err(DownloadError::Cancelled);
+                    }
+                    result = self.receive_discovery_peers(info_hash) => result?,
+                }
                 discovery_failed_while_active = false;
                 continue;
             }
@@ -4398,22 +4483,14 @@ async fn run_magnet_download(
     control: DownloadControl,
 ) -> Result<DownloadReport, DownloadError> {
     let magnet = Magnet::parse(&config.magnet).map_err(DownloadError::Magnet)?;
-    let mut peers = tokio::select! {
-        biased;
-        _ = control.inner.cancellation.cancelled() => return Err(DownloadError::Cancelled),
-        peers = TorrentPeerCoordinator::from_magnet(&magnet, config.network, control.clone(), config.dht.clone()) => peers?,
-    };
-    let operation_control = control.clone();
-    let result = tokio::select! {
-        biased;
-        _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
-        result = run_magnet_download_with_peers(
-            config,
-            operation_control,
-            magnet,
-            &mut peers,
-        ) => result,
-    };
+    let mut peers = TorrentPeerCoordinator::from_magnet(
+        &magnet,
+        config.network,
+        control.clone(),
+        config.dht.clone(),
+    )
+    .await?;
+    let result = run_magnet_download_with_peers(config, control, magnet, &mut peers).await;
     merge_tracker_shutdown(result, peers.shutdown_tracker().await)
 }
 
@@ -4441,20 +4518,13 @@ async fn run_magnet_metadata(
     dht: Option<DhtHandle>,
 ) -> Result<Vec<u8>, DownloadError> {
     let magnet = Magnet::parse(&magnet).map_err(DownloadError::Magnet)?;
-    let mut peers = tokio::select! {
-        biased;
-        _ = control.inner.cancellation.cancelled() => return Err(DownloadError::Cancelled),
-        peers = TorrentPeerCoordinator::from_magnet(&magnet, network, control.clone(), dht) => peers?,
-    };
-    let result = tokio::select! {
-        biased;
-        _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
-        result = async {
-            let (raw_info, _) = peers.acquire_metadata(magnet.info_hash).await?;
-            peers.close_current(None)?;
-            Ok(raw_info)
-        } => result,
-    };
+    let mut peers = TorrentPeerCoordinator::from_magnet(&magnet, network, control, dht).await?;
+    let result = async {
+        let (raw_info, _) = peers.acquire_metadata(magnet.info_hash).await?;
+        peers.close_current(None)?;
+        Ok(raw_info)
+    }
+    .await;
     merge_tracker_shutdown(result, peers.shutdown_tracker().await)
 }
 
@@ -4464,7 +4534,11 @@ fn merge_tracker_shutdown<T>(
 ) -> Result<T, DownloadError> {
     match (result, shutdown) {
         (Ok(value), Ok(())) => Ok(value),
-        (Ok(_), Err(error)) | (Err(error), _) => Err(error),
+        (Ok(_), Err(error)) | (Err(error), Ok(())) => Err(error),
+        (Err(error), Err(cleanup)) => Err(DownloadError::PeerCleanup {
+            failure: error.to_string(),
+            cleanup: cleanup.to_string(),
+        }),
     }
 }
 
@@ -4505,11 +4579,13 @@ async fn run_resumable_magnet_download(
         } else {
             dht.clone()
         };
-        let mut peers = tokio::select! {
-            biased;
-            _ = control.inner.cancellation.cancelled() => return Err(DownloadError::Cancelled),
-            peers = TorrentPeerCoordinator::from_magnet(&magnet, config.network, control.clone(), content_dht) => peers?,
-        };
+        let mut peers = TorrentPeerCoordinator::from_magnet(
+            &magnet,
+            config.network,
+            control.clone(),
+            content_dht,
+        )
+        .await?;
         let content_config = ContentDownloadConfig {
             output_path: config.output_path,
             max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
@@ -4517,19 +4593,15 @@ async fn run_resumable_magnet_download(
             skip_files: config.skip_files,
             materialize_files: Vec::new(),
         };
-        let operation_control = control.clone();
-        let result = tokio::select! {
-            biased;
-            _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
-            result = run_content_download(
-                content_config,
-                metainfo,
-                operation_control,
-                descriptors,
-                &mut peers,
-                Some(resume),
-            ) => result,
-        };
+        let result = run_content_download(
+            content_config,
+            metainfo,
+            control,
+            descriptors,
+            &mut peers,
+            Some(resume),
+        )
+        .await;
         return merge_tracker_shutdown(result, peers.shutdown_tracker().await);
     }
 
@@ -4538,39 +4610,32 @@ async fn run_resumable_magnet_download(
             "descriptor storage requires verified metadata".to_owned(),
         ));
     }
-    let mut peers = tokio::select! {
-        biased;
-        _ = control.inner.cancellation.cancelled() => return Err(DownloadError::Cancelled),
-        peers = TorrentPeerCoordinator::from_magnet(&magnet, config.network, control.clone(), dht) => peers?,
-    };
-    let operation_control = control.clone();
-    let result = tokio::select! {
-        biased;
-        _ = control.inner.cancellation.cancelled() => Err(DownloadError::Cancelled),
-        result = async {
-            let (raw_info, metainfo) = peers.acquire_metadata(magnet.info_hash).await?;
-            if let Err(message) = checkpoints.metadata_verified(&raw_info) {
-                peers.close_current(None)?;
-                return Err(DownloadError::Checkpoint(message));
-            }
-            let content_config = ContentDownloadConfig {
-                output_path: config.output_path,
-                max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
-                swarm_config: config.resource_limits.swarm_config(),
-                skip_files: config.skip_files,
-                materialize_files: Vec::new(),
-            };
-            run_content_download(
-                content_config,
-                metainfo,
-                operation_control,
-                None,
-                &mut peers,
-                Some(resume),
-            )
-            .await
-        } => result,
-    };
+    let mut peers =
+        TorrentPeerCoordinator::from_magnet(&magnet, config.network, control.clone(), dht).await?;
+    let result = async {
+        let (raw_info, metainfo) = peers.acquire_metadata(magnet.info_hash).await?;
+        if let Err(message) = checkpoints.metadata_verified(&raw_info) {
+            peers.close_current(None)?;
+            return Err(DownloadError::Checkpoint(message));
+        }
+        let content_config = ContentDownloadConfig {
+            output_path: config.output_path,
+            max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
+            swarm_config: config.resource_limits.swarm_config(),
+            skip_files: config.skip_files,
+            materialize_files: Vec::new(),
+        };
+        run_content_download(
+            content_config,
+            metainfo,
+            control,
+            None,
+            &mut peers,
+            Some(resume),
+        )
+        .await
+    }
+    .await;
     merge_tracker_shutdown(result, peers.shutdown_tracker().await)
 }
 
@@ -7091,6 +7156,7 @@ mod tests {
         DialAttempt, PeerEndpoint, PeerFailure, PeerObservation, PeerPhase, PeerRegistry,
         PeerRegistryConfig, PeerSelectionContext, PeerSelector, PeerSource,
     };
+    use crate::peer_runtime::PeerConnectionLifecycle;
     use crate::selective_storage::{
         SelectiveStorageError, selective_part_path, selective_staging_path,
     };
@@ -12062,6 +12128,82 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
     }
 
     #[tokio::test]
+    async fn metadata_cancellation_publishes_empty_peers_after_joined_cleanup() {
+        let payload = b"cancelled metadata owner".to_vec();
+        let info = single_file_info(&payload);
+        let info_hash: [u8; 20] = Sha1::digest(&info).into();
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind cancelled metadata peer");
+        let address = listener.local_addr().expect("metadata peer address");
+        let peer_task = tokio::spawn(serve_stalled_metadata_peer(listener, info_hash, info.len()));
+        let control = DownloadControl::new();
+        let activity = Arc::new(RecordingActivitySink::default());
+        control.set_activity_sink(activity.clone());
+        let task_control = control.clone();
+        let task = tokio::spawn(download_magnet_metadata_with_control(
+            format!("magnet:?xt=urn:btih:{}&x.pe={address}", hex(&info_hash)),
+            loopback_network(Duration::from_secs(5)),
+            task_control,
+        ));
+
+        timeout(Duration::from_secs(1), async {
+            loop {
+                let diagnostics = control.diagnostic_snapshot();
+                if diagnostics
+                    .peer_connections
+                    .iter()
+                    .any(|peer| peer.lifecycle == PeerConnectionLifecycle::Connected)
+                    && diagnostics.metadata.total_requests_sent > 0
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("metadata peer reached connected state");
+
+        control.cancel();
+        let result = timeout(Duration::from_secs(1), task)
+            .await
+            .expect("metadata cancellation joined")
+            .expect("metadata task");
+        assert!(matches!(result, Err(DownloadError::Cancelled)));
+        timeout(Duration::from_secs(1), peer_task)
+            .await
+            .expect("metadata peer closed before terminal result")
+            .expect("metadata peer task");
+
+        let diagnostics = control.diagnostic_snapshot();
+        assert!(diagnostics.peer_connections.is_empty());
+        assert_eq!(diagnostics.metadata.pending_dials, 0);
+        assert_eq!(diagnostics.metadata.active_workers, 0);
+        let events = activity
+            .events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let peer_snapshots = events
+            .iter()
+            .filter_map(|event| match event {
+                DownloadActivityEvent::PeerConnections { peers, .. } => Some(peers.as_slice()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(peer_snapshots.iter().any(|peers| {
+            peers
+                .iter()
+                .any(|peer| peer.lifecycle == PeerConnectionLifecycle::Connected)
+        }));
+        assert!(peer_snapshots.iter().any(|peers| {
+            peers
+                .iter()
+                .any(|peer| peer.lifecycle == PeerConnectionLifecycle::Disconnecting)
+        }));
+        assert!(peer_snapshots.last().is_some_and(|peers| peers.is_empty()));
+    }
+
+    #[tokio::test]
     async fn metadata_blocks_from_multiple_peers_complete_one_dictionary() {
         let payload = vec![0x5a; 1_700];
         let info = single_file_info_with_piece_length(&payload, 1);
@@ -13141,11 +13283,22 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             .expect("bind scripted peer");
         let address = listener.local_addr().expect("listener address");
         let peer_task = tokio::spawn(async move {
-            let (_stream, _) = listener.accept().await.expect("accept diagnostic");
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            let (mut stream, _) = listener.accept().await.expect("accept diagnostic");
+            let mut handshake = [0; HANDSHAKE_LENGTH];
+            stream
+                .read_exact(&mut handshake)
+                .await
+                .expect("read diagnostic handshake");
+            let mut end = [0; 1];
+            assert_eq!(
+                stream.read(&mut end).await.expect("wait for peer cleanup"),
+                0
+            );
         });
 
         let control = DownloadControl::new();
+        let activity = Arc::new(RecordingActivitySink::default());
+        control.set_activity_sink(activity.clone());
         let download_control = control.clone();
         let download_task = tokio::spawn(download_verified_piece_with_control(
             DownloadConfig {
@@ -13172,6 +13325,21 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         })
         .await
         .expect("engine created owned artifacts");
+        timeout(Duration::from_secs(1), async {
+            loop {
+                if control
+                    .diagnostic_snapshot()
+                    .peer_connections
+                    .iter()
+                    .any(|peer| peer.lifecycle == PeerConnectionLifecycle::ProtocolHandshaking)
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("engine published active diagnostic peer");
 
         control.cancel();
         control.cancel();
@@ -13183,12 +13351,34 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         assert_eq!(progress.requested_bytes, 0);
         assert_eq!(progress.received_bytes, 0);
         assert_eq!(progress.stored_bytes, 0);
+        assert_eq!(progress.storage_jobs_pending, 0);
+        assert_eq!(progress.outstanding_request_bytes, 0);
+        assert!(control.diagnostic_snapshot().peer_connections.is_empty());
         assert!(!tokio::fs::try_exists(&output_path).await.expect("output"));
         assert!(!tokio::fs::try_exists(&staging).await.expect("staging"));
         assert!(!tokio::fs::try_exists(&part).await.expect("part"));
 
-        peer_task.abort();
-        let _ = peer_task.await;
+        timeout(Duration::from_secs(1), peer_task)
+            .await
+            .expect("diagnostic peer joined before terminal result")
+            .expect("diagnostic peer task");
+        let events = activity
+            .events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let peer_snapshots = events
+            .iter()
+            .filter_map(|event| match event {
+                DownloadActivityEvent::PeerConnections { peers, .. } => Some(peers.as_slice()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(peer_snapshots.iter().any(|peers| {
+            peers
+                .iter()
+                .any(|peer| peer.lifecycle == PeerConnectionLifecycle::Disconnecting)
+        }));
+        assert!(peer_snapshots.last().is_some_and(|peers| peers.is_empty()));
         let _ = tokio::fs::remove_file(metainfo_path).await;
     }
 

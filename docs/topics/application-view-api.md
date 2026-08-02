@@ -712,6 +712,15 @@ tracker-only browser run observed `announcing` before a delayed response, then
 one accepted peer, 37 seeds, 11 leeches, and a 30-minute reannounce deadline
 while the same run completed and verified the seeded payload.
 
+Tactical `046` proves Peers removal on pause rather than only completion or
+synthetic replacement. A deterministic application run begins from verified
+multi-file metadata, holds one real content TCP generation connected, then
+pauses through the ordinary command path. The pause receipt follows socket
+EOF; the already-open leased view set receives the exact connection ID in a
+Peers `removed` patch and a complete torrent-summary row with zero active peer
+connections and zero payload rate. No React filter or durable-state refresh
+manufactures the removal.
+
 Public swarms and visible Tauri launch are unnecessary for this foundation.
 The browser gateway, temporary profiles, controlled libtorrent peer, and pure
 fixtures provide higher-signal headless evidence without disturbing the

@@ -31,6 +31,9 @@ selection or request policy. Tactical `039` corrects a separate product-profile
 defect: outstanding requests, received payload, and active-piece selection now
 have distinct byte budgets instead of sharing the former 32 KiB desktop
 allowance.
+Tactical `046` closes a cancellation ownership race in public and
+session-facing wrappers: terminal metadata/content results now follow the
+supervisors' joined cleanup and final empty peer observation.
 
 ## Scope
 
@@ -194,7 +197,7 @@ related unit test exists.
 | DL-C12 | A claimed piece changed on disk before restart | Recheck clears only the bad claim and never publishes it as verified. | Passing controlled corruption and resume evidence. |
 | DL-C13 | Final wanted piece crosses selected and skipped files | Full logical piece is reconstructed, hash-verified, and bytes land in their correct storage classes. | Passing deterministic and controlled libtorrent selective-file evidence. |
 | DL-C14 | Wanted piece contains BEP 47 padding bytes | Synthetic zeros participate in verification without writing a padding file. | Passing deterministic and controlled selective-storage evidence. |
-| DL-C15 | Pause or shutdown occurs during active work | No new work starts, owners cancel and join, durable state stays conservative, and sockets close. | Passing runtime, web, AVD, selected physical, saturated-queue, and multi-peer exact-join evidence. |
+| DL-C15 | Pause or shutdown occurs during active work | No new work starts, owners cancel and join, durable state stays conservative, and sockets close. | Passing runtime, web, AVD, selected physical, saturated-queue, multi-peer exact-join, metadata-worker cancellation, and session content-pause evidence. Tactical `046` specifically proves the pause receipt follows socket close, zero pending owners, and the final empty peer observation. |
 | DL-C16 | All current trackers fail but retain retries | Torrent reports waiting with the next automatic discovery action, not blocked. | Passing deterministic, runtime, web, and AVD evidence. |
 | DL-C17 | Network policy is offline | No DNS or socket work occurs and UI requests network enablement without rewriting torrent intent. | Passing deterministic, runtime, web, and AVD evidence. |
 | DL-C18 | Torrent reaches displayed 100% before publication finishes | State remains incomplete until verified content completes the publication contract. | Passing path and Android SAF publication-state evidence for controlled fixtures. |

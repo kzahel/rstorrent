@@ -249,12 +249,15 @@ that scope and its cleanup or compatibility rules explicitly.
   establishes one bounded authoritative tracker runtime projection, connects
   it to the leased API and responsive Trackers table, and proves the path with
   an isolated tracker-only browser transfer.
-- [`044-global-disk-inspection.md`](044-global-disk-inspection.md): active;
+- [`044-global-disk-inspection.md`](044-global-disk-inspection.md): complete;
   establishes a session-scoped storage pipeline contract, pressure behavior,
   piece-level active work, and the global responsive Disk inspection surface.
-- [`045-piece-map-visualization.md`](045-piece-map-visualization.md): planned
-  after Tactical `044`; generalizes bounded active-piece diffs and implements a
+- [`045-piece-map-visualization.md`](045-piece-map-visualization.md): complete;
+  generalizes bounded active-piece diffs and implements a
   high-DPI, RAF-coalesced, read-only Canvas piece overview.
+- [`046-joined-pause-peer-cleanup.md`](046-joined-pause-peer-cleanup.md): complete;
+  makes pause await metadata/content owner cleanup and the final empty peer
+  observation before its successful receipt.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
