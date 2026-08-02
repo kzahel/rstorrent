@@ -113,23 +113,18 @@ evidence.
 
 ### Now
 
-**Migrate Tauri to the inspection application.** The production browser path
-is usable through `./scripts/webui`, and Tactical
-[`037`](../tactical/037-live-magnet-toolbar-intake.md) gives it bounded magnet
-intake in addition to live inspection and torrent control. Tactical
-[`038`](../tactical/038-curated-test-torrent-menu.md) adds exact shortcuts for
-the retained WebTorrent public catalog without a privileged command path.
-Files, tracker lifecycle, global Disk pressure, and selected-torrent Canvas
-Pieces are now live inspection feeds. Add an in-process view-set adapter and
-make `./scripts/desktop` select the new React surface without turning the
-loopback gateway into a desktop dependency.
+**Implement the structured Log console.** Tactical
+[`048`](../tactical/048-unified-view-delivery-and-tauri-migration.md) now makes
+the React inspection application the in-process Tauri product and gives HTTP
+pull and acknowledged Tauri streaming one leased-view reducer/store path.
+Tactical [`049`](../tactical/049-structured-log-console.md) owns the next
+bounded slice: replace the sortable Logs scaffold with a global ordered
+console, structured expandable context, producer capture interest, honest gap
+semantics, and bounded responsive evidence.
 
 ### Next
 
-1. **Design and connect categorized Logs.** Use JSTorrent's Logs tab and the
-   current legacy logger as product references, preserving structured category
-   and severity semantics rather than transplanting the legacy UI.
-2. **Resume oracle-driven engine work.** Use the connected inspection evidence
+1. **Resume oracle-driven engine work.** Use the connected inspection evidence
    to decide whether serialized storage execution, another correctness owner,
    or measured BEP breadth becomes the next engine tactical.
 

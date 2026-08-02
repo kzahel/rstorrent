@@ -23,6 +23,9 @@ selected-torrent piece overview with controlled live evidence. Tactical `048`
 makes this React surface the ordinary Tauri entry through acknowledged
 in-process leased-view streaming while preserving HTTP polling as its headless
 browser seam.
+Tactical `049` records the next accepted slice: a global Chrome DevTools-like
+ordered Logs console with structured context, deliberate capture interest,
+local filtering, explicit loss, and no persistence.
 
 Tactical `042` makes a magnet's verified metainfo name appear in both the live
 library row and General heading as soon as metadata arrives. The hash-prefix
@@ -77,10 +80,10 @@ remote daemon part of the desktop architecture.
 `./scripts/webui` remains the explicit manual browser host and headless
 automation seam. `./scripts/desktop` now hosts the same React inspection
 surface through Tauri's in-process commands and acknowledged Channel view
-delivery rather than making the gateway a desktop dependency. The next
-inspection slice should prioritize the categorized Logs experience, studying
-JSTorrent's tab while deciding which existing legacy presentation behavior is
-worth migrating rather than copying wholesale.
+delivery rather than making the gateway a desktop dependency. Tactical `049`
+now owns the categorized Logs experience and records the JSTorrent behavior
+worth adapting without inheriting its mixed frontend or arbitrary logger
+arguments.
 
 ## Platform Split
 
@@ -190,6 +193,6 @@ status useful while fully hiding the inactive library pane.
 
 The surface is therefore useful for live peer, file, tracker, piece, and global
 disk observation, but it is not yet a complete debugging console. The
-existing categorized diagnostics feed is the broadest next view candidate; a
-registry-backed Swarm table is the deeper peer-lifecycle candidate. Selection
-remains an explicit next tactical based on real inspection use.
+existing categorized diagnostics feed is the active Tactical `049`; a
+registry-backed Swarm table remains the deeper peer-lifecycle candidate after
+the console is established.

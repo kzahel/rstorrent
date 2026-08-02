@@ -28,7 +28,10 @@ interface sizes, makes readable Standard the default, and keeps virtual-table
 geometry coherent with presentation sizing. Tactical `048` replaces the
 legacy Tauri entry with the same React inspection application using
 acknowledged in-process leased-view streaming; HTTP polling remains the
-browser/headless delivery adapter.
+browser/headless delivery adapter. Tactical `049` records the accepted global
+Logs design: a dedicated virtualized chronological console with structured
+expansion, separate capture and display filters, bottom-follow/new-record
+behavior, local clear, and no sorting or persistence.
 
 ## Purpose
 
@@ -391,10 +394,8 @@ reflow.
    projections, self-expiring leases, semantic view selection, suspension
    recovery, and the live frontend adapter. This step is complete.
 4. Files is complete in Tactical `041`, and the schedule-backed Trackers view
-   is complete in Tactical `043`. Integrate the existing categorized logger
-   into the global diagnostics area or add the registry-backed Swarm view
-   according to immediate debugging value; Peers, Files, and Trackers are the
-   first detailed live engine views.
+   is complete in Tactical `043`. Tactical `049` owns the accepted structured
+   ordered Logs console as the next detailed inspection slice.
 5. Connect remaining detail views according to debugging and product value,
    keeping unsupported scaffolds truthful.
 6. Tauri streaming is complete in Tactical `048`. Measure browser update
@@ -410,8 +411,8 @@ all stages as one slice.
 - inbox, category, label, and queue semantics; archive and removal retention
   semantics are implemented by Tactical `040`;
 - whether later navigation complexity justifies a router or icon dependency;
-- exact columns, row-detail interactions, and further table customization;
-- how session-scoped diagnostics coexist visually with torrent-scoped tabs;
+- exact columns, row-detail interactions, and further table customization
+  outside the non-sortable Logs console;
 - the first supported browser and phone access posture beyond headless and
   local desktop use; and
 - the thresholds and transport shape that would justify low-latency streaming

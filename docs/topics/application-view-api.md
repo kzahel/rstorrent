@@ -22,6 +22,10 @@ controller, reducer, and Zustand transaction. The existing Tactical `008`
 subscriptions remain compatibility adapters. Browser WebSocket delivery and
 binary encoding remain deferred, and no stable public remote wire
 compatibility is claimed yet.
+Tactical `049` records the planned diagnostics specialization: hierarchical
+categories, structured bounded subjects/fields, aggregate capture interest,
+separate source/delivery/local loss semantics, and one ordered console over
+the existing view-set path.
 
 ## Purpose And Scope
 
@@ -359,7 +363,7 @@ Projection rules are:
 | Selected summary or other singleton | Replace the value |
 | Rates, counters, current peer state | Latest value may conflate within the delivery interval |
 | Verified pieces and bounded current piece activity | Typed range or bitmap additions, clears, and replacements |
-| Diagnostics and ordered events | Ordered append with explicit dropped count; never silently latest-value conflated |
+| Diagnostics and ordered events | Ordered append with explicit retained-history and delivery-gap metadata; never silently latest-value conflated |
 | Queue or priority order | Explicit sortable fields; array position is not meaning unless the projection states it |
 
 Within one accumulated collection diff, a later removal wins over an earlier

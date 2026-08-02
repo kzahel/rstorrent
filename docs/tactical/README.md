@@ -265,6 +265,10 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; unifies leased view-set delivery across HTTP polling and
   acknowledged in-process Tauri streaming, then makes the React inspection
   surface the desktop default before categorized Logs work.
+- [`049-structured-log-console.md`](049-structured-log-console.md): planned;
+  replaces the sortable Logs scaffold with a global ordered diagnostic
+  console, structured expandable context, producer capture interest, honest
+  gap semantics, and bounded pull/stream delivery.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

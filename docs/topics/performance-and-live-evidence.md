@@ -549,7 +549,10 @@ unmeasured**, not as proven bottlenecks:
 - the TypeScript view-set reducer clones its keyed view record per batch and
   rebuilds torrent-list arrays; and
 - the inspection reducer clones the selected torrent's peer-row record when a
-  peer patch changes it.
+  peer patch changes it; and
+- diagnostics are independently retained in the view reducer and mapped
+  inspection store, rebuild bounded arrays on append, and currently discard
+  structured context only after paying its decode/retention cost.
 
 Tactical `035` removes the full torrent-map clone from targeted high-frequency
 publication before adding live peer cadence, while preserving coherent
@@ -559,6 +562,12 @@ snapshots and legacy consumers. Its deterministic source-rich snapshot uses
 materializing the selected snapshot; its encoded update and queue high-water
 were both 79,230 bytes beneath the 256 KiB default, with zero resets. These
 single-machine timings are observations, not regression thresholds.
+
+Tactical `049` will measure the diagnostic path while unifying its frontend
+record shape, raising a deliberately bounded console history, batching ordered
+append delivery, and virtualizing visible entries. It must record encoded and
+resident high-water marks before treating additional indexing, binary
+encoding, or frame-coalesced rendering as justified.
 
 The unchanged Tactical `034` 2,000-torrent/10,000-peer scenario remains the
 frontend pressure evidence: at most 100 rendered rows, 840 DOM elements,
