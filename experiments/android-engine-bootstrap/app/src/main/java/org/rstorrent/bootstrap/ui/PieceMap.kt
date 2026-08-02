@@ -1,7 +1,6 @@
 /*
- * Adapted from JSTorrent's MIT-licensed PieceMap.kt at commit
+ * Adapted from the author's earlier JSTorrent PieceMap.kt at commit
  * 0cad4dacf540f5be42ee53c4f1e1da27aa1b3685.
- * See ../../../../../../../../THIRD_PARTY_NOTICES.md.
  */
 package org.rstorrent.bootstrap.ui
 

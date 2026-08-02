@@ -106,13 +106,19 @@ license and architecture decision. The similarly named
 [libTorrent used by rTorrent](https://github.com/rakshasa/libtorrent) is
 GPL-2.0 and is not the managed Rasterbar libtorrent reference.
 
-RSTorrent itself does not yet have a public license. Select one before public
-distribution. The initial Rust and Python lockfiles were audited during
-tactical `000`; all resolved declarations are permissive, and the exact
-package/version/license inventory is recorded in
+RSTorrent is licensed under the MIT License. Bundled third-party material and
+release-distribution considerations are recorded in the repository root
+[`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md). The initial Rust and
+Python lockfiles were audited during tactical `000`; the exact inventory at
+that point is recorded in
 [`tactical/000-first-verified-piece.md`](tactical/000-first-verified-piece.md).
-Repeat the audit when dependency graphs change and add Android and desktop
-inventories when those lockfiles exist.
+
+The current dependency graphs include mostly permissive licenses plus some
+MPL-2.0 components. These do not change the license of RSTorrent's original
+source, but binary distributions must preserve their applicable notices and
+license/source-availability obligations. Repeat the audit whenever dependency
+graphs change and generate notices from each release's exact resolved Android,
+desktop, web, Rust, and Python dependency sets.
 
 ## JSTorrent
 
@@ -145,9 +151,9 @@ Tactical `008` adapted the grid sizing, state layering, and color semantics
 from JSTorrent's
 `android/app/src/main/java/com/jstorrent/app/ui/components/PieceMap.kt` at
 commit `0cad4dacf540f5be42ee53c4f1e1da27aa1b3685`. The RSTorrent file and
-retained MIT permission text are identified in
-`experiments/android-engine-bootstrap/THIRD_PARTY_NOTICES.md`. No other
-JSTorrent source was imported by that tactical.
+JSTorrent source have the same author and copyright holder, so no separate
+third-party license notice is required. No other JSTorrent source was imported
+by that tactical.
 
 ## Client Binding References
 

@@ -23,6 +23,11 @@ local.properties
 __pycache__/
 *.py[cod]
 
+# Local agent and collaboration runtime artifacts
+/.attachments/
+/.claude/
+/.yep/
+
 # Editors and operating systems
 .idea/
 .vscode/

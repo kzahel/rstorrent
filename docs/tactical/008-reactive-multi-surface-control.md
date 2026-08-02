@@ -157,10 +157,11 @@ and presents the same torrent list, summary, and piece/block state as the web
 view. The activity may be recreated or finished while the foreground service
 and controlled download remain active.
 
-Any JSTorrent UI source copied into this repository must be identified in the
-execution record and covered by retained MIT attribution. QuickJS, daemon,
-socket proxy, legacy state payloads, and existing JSTorrent subscription code
-are not imported.
+Any JSTorrent UI source adapted into this repository must be identified in the
+execution record. JSTorrent and RSTorrent have the same author and copyright
+holder, so a separate third-party attribution notice is not required. QuickJS,
+daemon, socket proxy, legacy state payloads, and existing JSTorrent
+subscription code are not imported.
 
 Use app-private path storage for this contract/UI proof. Connecting durable
 session recovery to SAF remains a later storage tactical; Kotlin still carries
@@ -456,9 +457,9 @@ enable Android seeding.
 adapts the grid sizing, state layering, and color semantics from
 JSTorrent's
 `android/app/src/main/java/com/jstorrent/app/ui/components/PieceMap.kt` at
-commit `0cad4dacf540f5be42ee53c4f1e1da27aa1b3685`. The retained MIT text and
-origin are in `experiments/android-engine-bootstrap/THIRD_PARTY_NOTICES.md`.
-No other JSTorrent source was imported.
+commit `0cad4dacf540f5be42ee53c4f1e1da27aa1b3685`. Both projects have the same
+author and copyright holder, so no separate third-party license notice is
+required. No other JSTorrent source was imported.
 
 ## Execution Evidence
 

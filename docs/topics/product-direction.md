@@ -329,7 +329,6 @@ testing evidence justifies it.
   previews before the implementation graduates into JSTorrent.
 - The evidence, compatibility work, and release process required for that
   graduation.
-- The public license.
 - The exact minimum useful BitTorrent feature set.
 - Which JSTorrent fixtures can be reused directly and which should be
   independently recreated.

@@ -90,8 +90,6 @@ accepted defaults and north-star invariants.
 - Adopt an existing torrent engine as the runtime implementation.
 - Support every platform in the first bring-up.
 - Preserve JSTorrent's internal APIs, persistence format, or process topology.
-- Select a public license before the project has considered that decision
-  explicitly.
 
 ## References
 
@@ -155,5 +153,6 @@ provenance policy.
 
 ## License
 
-No public license has been selected. Until one is added, this repository is not
-licensed for redistribution or reuse.
+RSTorrent is licensed under the [MIT License](LICENSE). Third-party components
+and adapted source remain under their respective licenses; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

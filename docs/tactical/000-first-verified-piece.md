@@ -374,9 +374,11 @@ binding source is Boost Software License 1.0, as recorded in the upstream
 license. It runs as a separate test peer. No libtorrent source, fixture, or
 `libsimulator` component was imported or linked.
 
-All resolved third-party declarations are permissive. The two local crates
-remain unpublished and have no license field because RSTorrent still has no
-selected public license.
+At the completion of this tactical, all resolved third-party declarations
+were permissive. The two local crates were unpublished and had no license
+field because RSTorrent had not yet selected a public license. RSTorrent later
+selected MIT; the current package manifests and root `LICENSE` record that
+decision.
 
 ### Validation
 
