@@ -569,8 +569,14 @@ Tactical `052` pre-change evidence now includes:
   median and an exact 514-revision post-metadata amplification on every run,
   proving one have transaction per piece plus two final transitions.
 
-Next executable action: implement `SessionStore::record_pieces` and one
-coherent batched `ViewHub` durable-piece transition, then prove duplicate,
-bounds, revision and rollback behavior before changing the engine task graph.
+`SessionStore::record_pieces`, the de-duplicating application sink and one
+coherent batched `ViewHub` Piece/Files transition now pass exact duplicate,
+bounds, revision and rollback tests. The engine still uses the trait's
+one-piece wrapper, so runtime behavior and the baseline are unchanged.
+
+Next executable action: implement runtime-independent checkpoint epoch
+selection and durability-target de-duplication with exact age, byte, piece and
+large-piece liveness tests before adding filesystem handles or Tokio task
+ownership.
 
 Human blocker: **none**.

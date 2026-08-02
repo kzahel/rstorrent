@@ -1397,26 +1397,38 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
             .map_err(|error| error.to_string())
     }
 
-    fn piece_durable(&self, piece_index: usize) -> Result<(), String> {
+    fn pieces_durable(&self, piece_indices: &[usize]) -> Result<(), String> {
+        if piece_indices.is_empty() {
+            return Err("durable piece batch must be nonempty".to_owned());
+        }
+        let mut durable_indices = piece_indices.to_vec();
+        durable_indices.sort_unstable();
+        durable_indices.dedup();
+        let view_indices = durable_indices
+            .iter()
+            .copied()
+            .map(|piece_index| {
+                u32::try_from(piece_index)
+                    .map_err(|_| "durable piece index overflows u32".to_owned())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let revision = self.store().and_then(|mut store| {
             store
-                .record_piece(&self.torrent_id, piece_index)
+                .record_pieces(&self.torrent_id, &durable_indices)
                 .map_err(|error| error.to_string())
         })?;
-        let piece_index = u32::try_from(piece_index)
-            .map_err(|_| "durable piece index overflows u32".to_owned())?;
         self.views
-            .record_piece_durable(&self.torrent_id, piece_index, revision)
+            .record_pieces_durable(&self.torrent_id, &view_indices, revision)
             .map_err(|error| error.to_string())?;
-        let piece = piece_index.to_string();
+        let piece_count = durable_indices.len().to_string();
         self.views
             .record_diagnostic(
                 DiagnosticSeverity::Debug,
                 category::PIECE_BLOCK,
-                "piece_durable",
+                "pieces_durable",
                 Some(&self.torrent_id),
-                "Verified piece became durable",
-                &[("piece", &piece)],
+                "Verified pieces became durable",
+                &[("piece_count", &piece_count)],
             )
             .map_err(|error| error.to_string())
     }

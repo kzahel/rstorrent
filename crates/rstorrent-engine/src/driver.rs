@@ -194,7 +194,10 @@ pub trait DownloadCheckpointSink: Send + Sync {
     fn metadata_verified(&self, raw_info: &[u8]) -> Result<(), String>;
     fn storage_prepared(&self, storage: ResumedStorage) -> Result<(), String>;
     fn have_rechecked(&self, verified_pieces: &[bool]) -> Result<(), String>;
-    fn piece_durable(&self, piece_index: usize) -> Result<(), String>;
+    fn pieces_durable(&self, piece_indices: &[usize]) -> Result<(), String>;
+    fn piece_durable(&self, piece_index: usize) -> Result<(), String> {
+        self.pieces_durable(&[piece_index])
+    }
     fn descriptor_prepared(&self, files: &[PreparedFileHash]) -> Result<(), String>;
     fn published(&self) -> Result<(), String>;
 }

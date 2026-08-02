@@ -1316,12 +1316,15 @@ impl ViewHub {
         self.record_piece_runtime(torrent_id, &[])
     }
 
-    pub(crate) fn record_piece_durable(
+    pub(crate) fn record_pieces_durable(
         &self,
         torrent_id: &str,
-        piece_index: u32,
+        piece_indices: &[u32],
         revision: u64,
     ) -> Result<(), SubscriptionError> {
+        if piece_indices.is_empty() {
+            return Ok(());
+        }
         let mut hub = self
             .inner
             .lock()
@@ -1332,22 +1335,34 @@ impl ViewHub {
         let previous_view = model.view.clone();
         let previous_verified = model.verified.clone();
         let previous_active = model.active.clone();
-        insert_range(&mut model.verified, piece_index, 1);
-        model.view.verified_piece_count =
-            range_cardinality(&model.verified).min(u64::from(u32::MAX)) as u32;
-        model.snapshot.verified_piece_count = model.view.verified_piece_count;
-        model.view.storage_state = StorageState::Staging;
-        model.snapshot.storage_state = StorageState::Staging;
-        let file_upsert = model
-            .files
-            .as_mut()
-            .map(|files| files.piece_verified(piece_index))
-            .transpose()
-            .map_err(|error| SubscriptionError::Internal(error.to_string()))?
-            .unwrap_or_default();
-        let next_view = model.view.clone();
-        let next_verified = model.verified.clone();
-        let next_active = model.active.clone();
+        let mut next = model.clone();
+        let mut file_upsert = BTreeMap::new();
+        for &piece_index in piece_indices {
+            if piece_index >= next.view.piece_count {
+                return Err(SubscriptionError::Internal(format!(
+                    "durable piece {piece_index} is outside {} pieces",
+                    next.view.piece_count
+                )));
+            }
+            insert_range(&mut next.verified, piece_index, 1);
+            if let Some(files) = next.files.as_mut() {
+                for file in files
+                    .piece_verified(piece_index)
+                    .map_err(|error| SubscriptionError::Internal(error.to_string()))?
+                {
+                    file_upsert.insert(file.file_id.clone(), file);
+                }
+            }
+        }
+        next.view.verified_piece_count =
+            range_cardinality(&next.verified).min(u64::from(u32::MAX)) as u32;
+        next.snapshot.verified_piece_count = next.view.verified_piece_count;
+        next.view.storage_state = StorageState::Staging;
+        next.snapshot.storage_state = StorageState::Staging;
+        let next_view = next.view.clone();
+        let next_verified = next.verified.clone();
+        let next_active = next.active.clone();
+        *model = next;
         hub.revision = revision;
         hub.publish_activity_changes(
             torrent_id,
@@ -1357,7 +1372,7 @@ impl ViewHub {
             &next_verified,
             &previous_active,
             &next_active,
-            &file_upsert,
+            &file_upsert.into_values().collect::<Vec<_>>(),
         )
     }
 
@@ -3797,6 +3812,59 @@ mod tests {
         let serialized = serde_json::to_string(&patch).expect("serialize");
         assert!(serialized.contains("900000"));
         assert!(serialized.contains("33554432"));
+    }
+
+    #[tokio::test]
+    async fn durable_piece_batch_publishes_one_coherent_patch() {
+        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
+        let subscription = hub.subscribe(piece_spec(4096)).expect("subscribe");
+        subscription.next_update().await.expect("snapshot");
+
+        hub.record_pieces_durable(torrent_id, &[3, 1, 1], 1)
+            .expect("record durable batch");
+        let update = subscription.next_update().await.expect("batch patch");
+        assert_eq!(update.revision, "1");
+        let ViewUpdatePayload::Patch {
+            patch:
+                ViewPatch::PieceActivity {
+                    verified,
+                    cleared,
+                    active_upsert,
+                    active_removed,
+                    ..
+                },
+        } = update.payload
+        else {
+            panic!("expected piece batch patch");
+        };
+        assert_eq!(
+            verified,
+            vec![
+                IndexRange {
+                    start: 1,
+                    end_exclusive: 2,
+                },
+                IndexRange {
+                    start: 3,
+                    end_exclusive: 4,
+                },
+            ]
+        );
+        assert!(cleared.is_empty());
+        assert!(active_upsert.is_empty());
+        assert!(active_removed.is_empty());
+        assert_eq!(
+            hub.inner
+                .lock()
+                .expect("hub lock")
+                .torrents
+                .get(torrent_id)
+                .expect("torrent model")
+                .view
+                .verified_piece_count,
+            2
+        );
     }
 
     #[tokio::test]

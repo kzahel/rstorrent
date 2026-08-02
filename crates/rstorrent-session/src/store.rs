@@ -691,12 +691,27 @@ impl SessionStore {
         torrent_id: &str,
         piece_index: usize,
     ) -> Result<u64, StoreError> {
+        self.record_pieces(torrent_id, &[piece_index])
+    }
+
+    pub fn record_pieces(
+        &mut self,
+        torrent_id: &str,
+        piece_indices: &[usize],
+    ) -> Result<u64, StoreError> {
+        if piece_indices.is_empty() {
+            return Err(StoreError::DurableState(
+                "durable piece batch must be nonempty".to_owned(),
+            ));
+        }
         let info_hash = decode_info_hash(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let transaction = self.connection.transaction()?;
         let (piece_count, bytes) = read_have_columns(&transaction, &info_hash)?;
         let mut have = HaveState::decode(&bytes, info_hash, piece_count)?;
-        have.set(piece_index, true)?;
+        for &piece_index in piece_indices {
+            have.set(piece_index, true)?;
+        }
         let revision = increment_revision(&transaction)?;
         let revision_sql = sql_revision(revision)?;
         transaction.execute(
@@ -2602,6 +2617,84 @@ mod tests {
             store.record_metadata(wrong_id, raw_info),
             Err(StoreError::DurableState(_))
         ));
+        drop(store);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn records_piece_batch_in_one_revision_and_rolls_back_invalid_index() {
+        let root = test_root("piece-batch");
+        let configured = configured_root(&root);
+        let mut store =
+            SessionStore::open(&root, "default", &[configured]).expect("open session store");
+        let mut raw_info = b"d6:lengthi12e4:name5:batch12:piece lengthi4e6:pieces60:".to_vec();
+        raw_info.extend_from_slice(&[b'a'; 20]);
+        raw_info.extend_from_slice(&[b'b'; 20]);
+        raw_info.extend_from_slice(&[b'c'; 20]);
+        raw_info.push(b'e');
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = crate::control::encode_info_hash(info_hash);
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-batch".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe=127.0.0.1:1"),
+                    storage_root: "downloads".to_owned(),
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add source");
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record metadata");
+
+        assert_eq!(
+            store
+                .record_pieces(&torrent_id, &[2, 0, 2])
+                .expect("record batch"),
+            3
+        );
+        assert_eq!(store.revision().expect("revision"), 3);
+        assert_eq!(
+            store
+                .load_resume(&torrent_id)
+                .expect("load batch")
+                .have
+                .expect("have state")
+                .pieces(),
+            &[true, false, true]
+        );
+
+        assert!(matches!(
+            store.record_pieces(&torrent_id, &[1, 3]),
+            Err(StoreError::Have(_))
+        ));
+        assert!(matches!(
+            store.record_pieces(&torrent_id, &[]),
+            Err(StoreError::DurableState(_))
+        ));
+        assert_eq!(store.revision().expect("revision after rollback"), 3);
+        assert_eq!(
+            store
+                .load_resume(&torrent_id)
+                .expect("load after rollback")
+                .have
+                .expect("have state")
+                .pieces(),
+            &[true, false, true]
+        );
+        assert_eq!(store.record_piece(&torrent_id, 1).expect("single piece"), 4);
+        assert_eq!(
+            store
+                .load_resume(&torrent_id)
+                .expect("load complete batch")
+                .have
+                .expect("have state")
+                .pieces(),
+            &[true, true, true]
+        );
         drop(store);
         fs::remove_dir_all(root).expect("remove test profile");
     }

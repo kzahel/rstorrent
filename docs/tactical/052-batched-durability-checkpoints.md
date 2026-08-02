@@ -257,6 +257,36 @@ crossing the declared steady window well before completion. Their owned
 processes and temporary roots cleaned exactly. The retained 128 MiB profile is
 large enough to sustain backlog without making a timeout the expected result.
 
+## Implementation Checkpoint 1: Batched Application Commit
+
+`DownloadCheckpointSink` now exposes `pieces_durable`; its one-piece default
+keeps the engine behavior unchanged until the joined checkpoint task lands.
+`StoreCheckpointSink` rejects an empty batch, sorts and de-duplicates indices,
+converts every view index before committing, calls
+`SessionStore::record_pieces`, publishes one coherent Piece/Files transition
+at that revision and emits one bounded diagnostic containing only the batch
+count.
+
+`record_pieces` decodes have state once, applies every index, encodes once and
+advances one transaction/revision. A deterministic three-piece test proves
+that `[2, 0, 2]` commits pieces zero and two at one revision, an empty batch is
+rejected, and `[1, 3]` rolls back piece one and the global revision when the
+later index is invalid. The existing `record_piece` delegates to the batch
+operation. A view test proves `[3, 1, 1]` produces one patch with two exact
+ranges and one aggregate verified count.
+
+Validation at this checkpoint:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test -p rstorrent-session --lib
+```
+
+All 78 session tests pass. The next internal gate is runtime-independent
+checkpoint epoch selection and target de-duplication; payload sync and engine
+task ownership are still unchanged.
+
 ## Stopping Condition
 
 The tactical completes when hash verification, payload sync and SQLite commit
