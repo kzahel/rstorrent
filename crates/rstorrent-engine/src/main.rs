@@ -13,7 +13,7 @@ use rstorrent_engine::{
 use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 15;
-const MAX_TIMEOUT_SECONDS: u64 = 300;
+const MAX_TIMEOUT_SECONDS: u64 = 4 * 60 * 60;
 const MAX_BUFFERED_PAYLOAD_BYTES: usize = 64 * 1024 * 1024;
 const DEFAULT_STORAGE_WRITE_CONCURRENCY: usize = 4;
 const DEFAULT_STORAGE_HASH_CONCURRENCY: usize = 4;
@@ -444,7 +444,7 @@ mod tests {
                 "--output",
                 "c",
                 "--timeout-seconds",
-                "301",
+                "14401",
             ]))
             .is_err()
         );
