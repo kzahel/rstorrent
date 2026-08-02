@@ -123,7 +123,9 @@ evidence.
 
 **Complete Tactical `054`'s throughput graduation.** Independent write/hash
 capacity, explicit generation joins and the large local comparator are now in
-place. Measure raw write/hash ceilings, sweep the declared concurrency points,
+place. Its shared-fixture medians and executable throughput/ratio floors now
+make 10 GiB in 60 seconds the first current-machine optimization gate. Measure
+raw write/hash ceilings, sweep the declared concurrency points,
 repeat the controlled engine cohort, and retain the SQLite-backed application
 profile before choosing final defaults or advancing to read-through hashing.
 

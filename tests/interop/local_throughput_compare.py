@@ -10,6 +10,7 @@ import json
 import os
 import platform
 import shutil
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -63,6 +64,8 @@ class TransferResult:
     order: int
     implementation: str
     version: str
+    write_concurrency: int | None
+    hash_concurrency: int | None
     transfer_seconds: float
     throughput_mib_s: float
     validation_seconds: float
@@ -360,7 +363,12 @@ def run_transfer(
     seed_session = create_session()
     seed_handle: lt.torrent_handle | None = None
     cleanup_succeeded = False
-    output_root = case_root / implementation
+    case_label = (
+        f"rstorrent-w{write_concurrency}-h{hash_concurrency}"
+        if implementation == "rstorrent"
+        else implementation
+    )
+    output_root = case_root / case_label
     output_path = output_root / PAYLOAD_NAME
     try:
         peer_port = wait_for_listener(seed_session, alerts)
@@ -368,7 +376,11 @@ def run_transfer(
         print(
             f"case_start size_bytes={fixture.size_bytes} piece_size={piece_size} "
             f"pieces={info.num_pieces()} run={run} order={order} "
-            f"implementation={implementation}",
+            f"implementation={implementation} "
+            f"write_concurrency="
+            f"{write_concurrency if implementation == 'rstorrent' else 'n/a'} "
+            f"hash_concurrency="
+            f"{hash_concurrency if implementation == 'rstorrent' else 'n/a'}",
             flush=True,
         )
         if implementation == "rstorrent":
@@ -422,6 +434,12 @@ def run_transfer(
             order=order,
             implementation=implementation,
             version=version,
+            write_concurrency=(
+                write_concurrency if implementation == "rstorrent" else None
+            ),
+            hash_concurrency=(
+                hash_concurrency if implementation == "rstorrent" else None
+            ),
             transfer_seconds=transfer_seconds,
             throughput_mib_s=fixture.size_bytes / MIB / transfer_seconds,
             validation_seconds=validation_seconds,
@@ -497,6 +515,32 @@ def bounded_timeout(value: str) -> int:
     return seconds
 
 
+def positive_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("value must be a number") from error
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("value must be greater than zero")
+    return parsed
+
+
+def parse_storage_point(value: str) -> tuple[int, int]:
+    try:
+        write_text, hash_text = value.split("/", maxsplit=1)
+        write_concurrency = int(write_text)
+        hash_concurrency = int(hash_text)
+    except (ValueError, TypeError) as error:
+        raise argparse.ArgumentTypeError(
+            f"storage point {value!r} must have the form WRITE/HASH"
+        ) from error
+    if not 1 <= write_concurrency <= 8 or not 1 <= hash_concurrency <= 8:
+        raise argparse.ArgumentTypeError(
+            f"storage point {value!r} must use values from 1 through 8"
+        )
+    return write_concurrency, hash_concurrency
+
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -521,11 +565,30 @@ def parse_arguments() -> argparse.Namespace:
         default=2 * 60 * 60,
         metavar="SECONDS",
     )
+    parser.add_argument("--write-concurrency", type=int, choices=range(1, 9))
+    parser.add_argument("--hash-concurrency", type=int, choices=range(1, 9))
     parser.add_argument(
-        "--write-concurrency", type=int, choices=range(1, 9), default=4
+        "--storage-points",
+        nargs="+",
+        type=parse_storage_point,
+        metavar="WRITE/HASH",
+        help=(
+            "RSTorrent write/hash concurrency points to compare against one "
+            "libtorrent client run per workload"
+        ),
     )
     parser.add_argument(
-        "--hash-concurrency", type=int, choices=range(1, 9), default=4
+        "--minimum-rstorrent-mib-s",
+        type=positive_float,
+        help="fail when any RSTorrent cohort median is below this throughput",
+    )
+    parser.add_argument(
+        "--minimum-rstorrent-libtorrent-ratio",
+        type=positive_float,
+        help=(
+            "fail when any RSTorrent cohort median throughput divided by the "
+            "matching libtorrent median is below this ratio"
+        ),
     )
     parser.add_argument("--binary", type=Path)
     parser.add_argument("--output", type=Path, help="optional JSON result path")
@@ -538,7 +601,80 @@ def parse_arguments() -> argparse.Namespace:
         arguments.piece_sizes = validate_piece_sizes(arguments.piece_sizes_kib)
     except argparse.ArgumentTypeError as error:
         parser.error(str(error))
+    if arguments.storage_points is not None and (
+        arguments.write_concurrency is not None
+        or arguments.hash_concurrency is not None
+    ):
+        parser.error(
+            "--storage-points cannot be combined with --write-concurrency or "
+            "--hash-concurrency"
+        )
+    if arguments.storage_points is None:
+        arguments.storage_points = [
+            (
+                arguments.write_concurrency or 4,
+                arguments.hash_concurrency or 4,
+            )
+        ]
+    else:
+        arguments.storage_points = list(dict.fromkeys(arguments.storage_points))
     return arguments
+
+
+def summarize_results(results: list[TransferResult]) -> list[dict[str, Any]]:
+    libtorrent_groups: dict[tuple[int, int], list[TransferResult]] = {}
+    rstorrent_groups: dict[tuple[int, int, int, int], list[TransferResult]] = {}
+    for result in results:
+        if result.implementation == "libtorrent":
+            libtorrent_groups.setdefault(
+                (result.size_bytes, result.piece_size), []
+            ).append(result)
+        else:
+            assert result.write_concurrency is not None
+            assert result.hash_concurrency is not None
+            rstorrent_groups.setdefault(
+                (
+                    result.size_bytes,
+                    result.piece_size,
+                    result.write_concurrency,
+                    result.hash_concurrency,
+                ),
+                [],
+            ).append(result)
+
+    summaries: list[dict[str, Any]] = []
+    for key, cohort in sorted(rstorrent_groups.items()):
+        size_bytes, piece_size, write_concurrency, hash_concurrency = key
+        reference = libtorrent_groups[(size_bytes, piece_size)]
+        rstorrent_seconds = statistics.median(
+            result.transfer_seconds for result in cohort
+        )
+        rstorrent_throughput = statistics.median(
+            result.throughput_mib_s for result in cohort
+        )
+        libtorrent_seconds = statistics.median(
+            result.transfer_seconds for result in reference
+        )
+        libtorrent_throughput = statistics.median(
+            result.throughput_mib_s for result in reference
+        )
+        summaries.append(
+            {
+                "size_bytes": size_bytes,
+                "piece_size": piece_size,
+                "runs": len(cohort),
+                "write_concurrency": write_concurrency,
+                "hash_concurrency": hash_concurrency,
+                "rstorrent_median_seconds": rstorrent_seconds,
+                "rstorrent_median_mib_s": rstorrent_throughput,
+                "libtorrent_median_seconds": libtorrent_seconds,
+                "libtorrent_median_mib_s": libtorrent_throughput,
+                "rstorrent_libtorrent_ratio": (
+                    rstorrent_throughput / libtorrent_throughput
+                ),
+            }
+        )
+    return summaries
 
 
 def main() -> int:
@@ -584,16 +720,21 @@ def main() -> int:
                 try:
                     for piece_size in arguments.piece_sizes:
                         for run in range(1, arguments.runs + 1):
+                            client_cases = [
+                                ("rstorrent", write_limit, hash_limit)
+                                for write_limit, hash_limit in arguments.storage_points
+                            ]
+                            client_cases.append(("libtorrent", 0, 0))
+                            rotation = case_ordinal % len(client_cases)
                             owner_order = (
-                                ["rstorrent", "libtorrent"]
-                                if case_ordinal % 2 == 0
-                                else ["libtorrent", "rstorrent"]
+                                client_cases[rotation:] + client_cases[:rotation]
                             )
                             case_root = owned_root / (
                                 f"case-{size_bytes}-{piece_size}-{run}"
                             )
                             case_root.mkdir()
-                            for order, implementation in enumerate(owner_order, start=1):
+                            for order, client_case in enumerate(owner_order, start=1):
+                                implementation, write_limit, hash_limit = client_case
                                 results.append(
                                     run_transfer(
                                         implementation,
@@ -604,8 +745,8 @@ def main() -> int:
                                         order,
                                         case_root,
                                         arguments.timeout_seconds,
-                                        arguments.write_concurrency,
-                                        arguments.hash_concurrency,
+                                        write_limit,
+                                        hash_limit,
                                     )
                                 )
                             case_root.rmdir()
@@ -616,8 +757,36 @@ def main() -> int:
         print(f"throughput comparison failed: {error}", file=sys.stderr)
         return 1
 
+    summaries = summarize_results(results)
+    gate_failures: list[str] = []
+    for summary in summaries:
+        label = (
+            f"size={summary['size_bytes']} piece={summary['piece_size']} "
+            f"storage={summary['write_concurrency']}/"
+            f"{summary['hash_concurrency']}"
+        )
+        minimum_throughput = arguments.minimum_rstorrent_mib_s
+        if (
+            minimum_throughput is not None
+            and summary["rstorrent_median_mib_s"] < minimum_throughput
+        ):
+            gate_failures.append(
+                f"{label} RSTorrent median {summary['rstorrent_median_mib_s']:.3f} "
+                f"MiB/s is below {minimum_throughput:.3f} MiB/s"
+            )
+        minimum_ratio = arguments.minimum_rstorrent_libtorrent_ratio
+        if (
+            minimum_ratio is not None
+            and summary["rstorrent_libtorrent_ratio"] < minimum_ratio
+        ):
+            gate_failures.append(
+                f"{label} RSTorrent/libtorrent median ratio "
+                f"{summary['rstorrent_libtorrent_ratio']:.3f} is below "
+                f"{minimum_ratio:.3f}"
+            )
+
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "scenario": "controlled-single-file-loopback-throughput",
         "environment": environment,
         "config": {
@@ -625,19 +794,37 @@ def main() -> int:
             "piece_sizes_kib": arguments.piece_sizes_kib,
             "runs": arguments.runs,
             "timeout_seconds": arguments.timeout_seconds,
-            "write_concurrency": arguments.write_concurrency,
-            "hash_concurrency": arguments.hash_concurrency,
+            "storage_points": [
+                {
+                    "write_concurrency": write_limit,
+                    "hash_concurrency": hash_limit,
+                }
+                for write_limit, hash_limit in arguments.storage_points
+            ],
             "payload_allowance_bytes": PAYLOAD_ALLOWANCE,
-            "client_order": "alternating-by-case",
+            "client_order": "rotating-by-case",
+            "minimum_rstorrent_mib_s": arguments.minimum_rstorrent_mib_s,
+            "minimum_rstorrent_libtorrent_ratio": (
+                arguments.minimum_rstorrent_libtorrent_ratio
+            ),
         },
         "elapsed_seconds": time.monotonic() - started,
         "results": [asdict(result) for result in results],
+        "summaries": summaries,
+        "gate": {
+            "passed": not gate_failures,
+            "failures": gate_failures,
+        },
     }
     rendered = json.dumps(report, indent=2, sort_keys=True)
     if arguments.output is not None:
         arguments.output.parent.mkdir(parents=True, exist_ok=True)
         arguments.output.write_text(rendered + "\n", encoding="utf-8")
     print(rendered)
+    if gate_failures:
+        for failure in gate_failures:
+            print(f"throughput gate failed: {failure}", file=sys.stderr)
+        return 1
     return 0
 
 

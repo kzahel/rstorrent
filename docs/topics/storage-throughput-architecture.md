@@ -854,3 +854,13 @@ All four 10 GiB RSTorrent piece-size rows finish below 36 seconds with exact
 hashes and cleanup, but 4 MiB and 16 MiB pieces retain material write-service
 gaps. The active slice therefore proceeds to raw-stage/concurrency sweeps and
 repeated engine/application cohorts rather than claiming graduation.
+
+The large comparator now owns the first optimization gate rather than serving
+only as an observational screen. It can rotate several `WRITE/HASH` points
+against one libtorrent observation on a shared fixture, reports cohort medians
+and ratios, and can fail an explicit throughput floor. The current machine's
+retained floor is 170.667 MiB/s, equivalent to 10 GiB in 60 seconds, across
+every representative piece size. A three-run 10 GiB/4 MiB discriminator made
+`8/4` the current candidate at a 16.136-second median versus 23.631 seconds for
+`4/4`, but 15.477--27.850-second individual results keep selection open until
+the full screen and finalist repetitions complete.

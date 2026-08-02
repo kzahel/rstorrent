@@ -199,10 +199,33 @@ independently bounded write/hash executor at the initial `4/4` desktop limits.
 Commit `dd92643` then added
 `tests/interop/local_throughput_compare.py`, a controlled single-file loopback
 comparator with a pinned libtorrent `2.0.13` seeder. It materializes a
-deterministic non-sparse source, alternates client order, excludes fixture and
+deterministic non-sparse source, rotates client order, excludes fixture and
 whole-file validation time from transfer time, requires exact byte counts and
 full-file SHA-1, and removes each output immediately. Its retained matrix is
 1 GiB and 10 GiB at 256 KiB, 1 MiB, 4 MiB and 16 MiB pieces.
+
+This matrix is now the first performance gate for the remainder of the
+tactical. Schema `2` accepts several bounded `WRITE/HASH` storage points
+against one libtorrent client observation per workload, rotates their order
+across repetitions, identifies each point in every raw result and emits cohort
+medians plus RSTorrent/libtorrent ratios. Optional throughput and ratio floors
+turn the measurement into an executable failing gate without imposing this
+machine's hardware target on other environments. On this machine the retained
+large-transfer acceptance command uses three runs and a 170.667 MiB/s
+RSTorrent floor, equivalent to 10 GiB in 60 seconds. No optimization or
+desktop-limit change graduates if any piece-size row misses that floor, exact
+bytes, whole-file SHA-1, publication or cleanup.
+
+```bash
+cd tests/interop
+uv run python local_throughput_compare.py \
+  --sizes-mib 1024 10240 \
+  --piece-sizes-kib 256 1024 4096 16384 \
+  --runs 3 \
+  --storage-points 4/4 \
+  --minimum-rstorrent-mib-s 170.667 \
+  --output /tmp/rstorrent-large-baseline.json
+```
 
 The first 1 GiB/256 KiB RSTorrent case made no useful completion progress in
 more than four minutes while one core remained saturated. A three-second
@@ -267,6 +290,17 @@ and only one active hash, while the 256 KiB case accumulated 75.505 seconds
 of write and 74.252 seconds of hash service. The next Tactical `054` gate is
 therefore the declared raw-stage/concurrency sweep and repeated controlled
 cohort, not a claim that the integrated pipeline is already graduated.
+
+A first shared-fixture three-run discriminator at 10 GiB/4 MiB then compared
+`4/4` and `8/4` in the same process. The `4/4` wall-time median was 23.631
+seconds (433.3 MiB/s) and the `8/4` median was 16.136 seconds (634.6 MiB/s),
+versus libtorrent's 9.627-second median (1,063.6 MiB/s). Individual RSTorrent
+runs still ranged from 15.477 to 27.850 seconds. Median summed write service
+was 76.464 seconds at `4/4` and 71.065 seconds at `8/4`; median hash service was
+13.321 and 12.565 seconds respectively. This makes `8/4` a candidate for the
+full matrix, not a selected default: the retained rotation exposed enough
+cache/order variance that every declared point still needs the common
+piece-size screen and the finalists need repeated cohorts.
 
 Validation at this checkpoint passed all 173 non-live engine library tests
 with three live-network tests ignored, the focused metainfo geometry tests,

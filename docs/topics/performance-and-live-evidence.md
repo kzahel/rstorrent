@@ -912,8 +912,18 @@ Tactical `054` adds
 `tests/interop/local_throughput_compare.py` as the retained large-transfer
 screen. It uses one pinned libtorrent `2.0.13` loopback seeder, a materialized
 deterministic single-file source, one direct peer, no discovery, alternating
-client order, immediate per-output cleanup and exact whole-file SHA-1. Transfer
+client order (rotating when several RSTorrent points are present), immediate
+per-output cleanup and exact whole-file SHA-1. Transfer
 time excludes fixture construction, torrent hashing and final validation.
+
+Schema `2` can run multiple RSTorrent `WRITE/HASH` concurrency points against
+one libtorrent observation per workload while rotating order across
+repetitions. Each raw result carries its point; the report emits medians,
+RSTorrent/libtorrent ratios and an optional executable minimum-throughput or
+minimum-ratio gate. Tactical `054` treats this simple large-transfer matrix as
+the first optimization gate. The current-machine graduation command uses
+three repetitions and a 170.667 MiB/s RSTorrent floor, which is 10 GiB in 60
+seconds; exact bytes, SHA-1, publication and cleanup remain unconditional.
 
 The first 1 GiB/256 KiB RSTorrent run failed to finish in more than four
 minutes because full swarm geometry was recomputed after each event. Two later
@@ -946,6 +956,14 @@ uncontrolled operating-system page cache and only one run per point, so it is
 a baseline and causal scaling result rather than a stable parity or hardware
 ceiling claim. The larger-piece write-service gap remains open for Tactical
 `054`'s raw-stage and concurrency sweeps.
+
+The first common-fixture concurrency discriminator used 10 GiB/4 MiB, three
+runs and `4/4` versus `8/4`. RSTorrent medians were 23.631 seconds (433.3
+MiB/s) and 16.136 seconds (634.6 MiB/s), while libtorrent's median was 9.627
+seconds (1,063.6 MiB/s). The six RSTorrent samples spanned 15.477--27.850
+seconds despite the common fixture. The candidate therefore remains `8/4`,
+but the result also demonstrates why isolated rows cannot select a default;
+the full rotating matrix and repeated finalist cohort remain required.
 
 ## Maintenance Contract
 
