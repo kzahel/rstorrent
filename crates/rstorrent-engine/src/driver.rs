@@ -9472,43 +9472,44 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             .expect("clean record");
         assert_eq!(clean_record.integrity().trust_points, 1);
         assert_eq!(clean_record.integrity().valid_pieces, 1);
-        let events = activity
-            .events
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        assert!(events.iter().any(|event| matches!(
-            event,
-            DownloadActivityEvent::PieceHashFailed {
-                piece_index: 0,
-                contributor_count: 1,
-                failed_bytes: MIN_PAYLOAD_ALLOWANCE,
-            }
-        )));
-        assert_eq!(
-            events
-                .iter()
-                .filter_map(|event| match event {
-                    DownloadActivityEvent::PieceStarted {
-                        piece_index: 0,
-                        attempt,
-                        ..
-                    } => Some(*attempt),
-                    _ => None,
-                })
-                .collect::<Vec<_>>(),
-            vec![1, 2]
-        );
-        assert_eq!(
-            events
-                .iter()
-                .filter(|event| matches!(
-                    event,
-                    DownloadActivityEvent::PieceHashing { piece_index: 0 }
-                ))
-                .count(),
-            2
-        );
-        drop(events);
+        {
+            let events = activity
+                .events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            assert!(events.iter().any(|event| matches!(
+                event,
+                DownloadActivityEvent::PieceHashFailed {
+                    piece_index: 0,
+                    contributor_count: 1,
+                    failed_bytes: MIN_PAYLOAD_ALLOWANCE,
+                }
+            )));
+            assert_eq!(
+                events
+                    .iter()
+                    .filter_map(|event| match event {
+                        DownloadActivityEvent::PieceStarted {
+                            piece_index: 0,
+                            attempt,
+                            ..
+                        } => Some(*attempt),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>(),
+                vec![1, 2]
+            );
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|event| matches!(
+                        event,
+                        DownloadActivityEvent::PieceHashing { piece_index: 0 }
+                    ))
+                    .count(),
+                2
+            );
+        }
         for task in [corrupt_task, clean_task] {
             timeout(Duration::from_secs(1), task)
                 .await
@@ -13362,23 +13363,25 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             .await
             .expect("diagnostic peer joined before terminal result")
             .expect("diagnostic peer task");
-        let events = activity
-            .events
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let peer_snapshots = events
-            .iter()
-            .filter_map(|event| match event {
-                DownloadActivityEvent::PeerConnections { peers, .. } => Some(peers.as_slice()),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        assert!(peer_snapshots.iter().any(|peers| {
-            peers
+        {
+            let events = activity
+                .events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let peer_snapshots = events
                 .iter()
-                .any(|peer| peer.lifecycle == PeerConnectionLifecycle::Disconnecting)
-        }));
-        assert!(peer_snapshots.last().is_some_and(|peers| peers.is_empty()));
+                .filter_map(|event| match event {
+                    DownloadActivityEvent::PeerConnections { peers, .. } => Some(peers.as_slice()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert!(peer_snapshots.iter().any(|peers| {
+                peers
+                    .iter()
+                    .any(|peer| peer.lifecycle == PeerConnectionLifecycle::Disconnecting)
+            }));
+            assert!(peer_snapshots.last().is_some_and(|peers| peers.is_empty()));
+        }
         let _ = tokio::fs::remove_file(metainfo_path).await;
     }
 
