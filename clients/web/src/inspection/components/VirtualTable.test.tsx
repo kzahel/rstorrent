@@ -77,6 +77,7 @@ describe("VirtualTable", () => {
         ]}
         getRowId={(row) => row.id}
         columns={COLUMNS}
+        interfaceSize="standard"
         emptyMessage="empty"
       />,
     );
@@ -95,6 +96,7 @@ describe("VirtualTable", () => {
         rows={[{ id: "one", value: "1" }]}
         getRowId={(row) => row.id}
         columns={COLUMNS}
+        interfaceSize="standard"
         emptyMessage="empty"
       />,
     );
@@ -111,6 +113,7 @@ describe("VirtualTable", () => {
         rows={[{ id: "one", value: "1" }]}
         getRowId={(row) => row.id}
         columns={COLUMNS}
+        interfaceSize="standard"
         emptyMessage="empty"
       />,
     );
@@ -135,6 +138,7 @@ describe("VirtualTable", () => {
         rows={[{ id: "one", value: "1" }]}
         getRowId={(row) => row.id}
         columns={COLUMNS}
+        interfaceSize="standard"
         emptyMessage="empty"
       />,
     );
@@ -143,6 +147,36 @@ describe("VirtualTable", () => {
       "aria-valuenow",
       "720",
     );
+  });
+
+  it("updates absolute row geometry with the selected interface size", () => {
+    const table = (interfaceSize: "compact" | "spacious") => (
+      <VirtualTable
+        tableId="size-test"
+        label="Interface size geometry"
+        rows={[
+          { id: "one", value: "1" },
+          { id: "two", value: "2" },
+          { id: "three", value: "3" },
+        ]}
+        getRowId={(row) => row.id}
+        columns={COLUMNS}
+        interfaceSize={interfaceSize}
+        emptyMessage="empty"
+      />
+    );
+    const rendered = render(table("compact"));
+    const root = () => rendered.container.firstElementChild as HTMLElement;
+    const second = () =>
+      rendered.container.querySelector<HTMLElement>('[data-row-id="two"]');
+    expect(root().style.getPropertyValue("--ui-table-header-height")).toBe("34px");
+    expect(root().style.getPropertyValue("--ui-table-row-height")).toBe("32px");
+    expect(second()).toHaveStyle({ transform: "translateY(32px)" });
+
+    rendered.rerender(table("spacious"));
+    expect(root().style.getPropertyValue("--ui-table-header-height")).toBe("44px");
+    expect(root().style.getPropertyValue("--ui-table-row-height")).toBe("42px");
+    expect(second()).toHaveStyle({ transform: "translateY(42px)" });
   });
 });
 

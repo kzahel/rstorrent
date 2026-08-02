@@ -22,8 +22,10 @@ sorting, persistent table columns and widths, and a 4,096-row named scenario.
 Tactical `043` adds the responsive live Trackers table, local deadline
 countdowns, and a permanent tracker-recovery scenario. Tacticals `044`--`045`
 add the global Disk pipeline and selected-torrent bounded Canvas Pieces
-overview, including responsive and large-torrent fixtures. The Tauri entry
-remains legacy.
+overview, including responsive and large-torrent fixtures. Tactical `047` adds
+the global Settings sheet and versioned Compact, Standard, and Spacious
+interface sizes, makes readable Standard the default, and keeps virtual-table
+geometry coherent with presentation sizing. The Tauri entry remains legacy.
 
 ## Purpose
 
@@ -274,6 +276,17 @@ Browser-local presentation preferences may include sidebar visibility and
 width, density, theme, column configuration, inspector size, dock or focus
 preference, last selected tab, and preserved navigation context.
 
+Tactical `047` establishes the first global presentation preference. The
+user-facing vocabulary is **Interface size** with Compact, Standard, and
+Spacious presets; Standard is the fresh-install and invalid-storage fallback.
+The versioned value is owned by the per-application Zustand store and persisted
+best-effort in browser-local storage. Semantic CSS variables change type,
+controls, icons, tabs, menus, dialogs, and spacing without whole-document zoom.
+The same typed preset definition supplies virtual-table header and row CSS plus
+absolute-row and keyboard-scroll arithmetic. Compact preserves useful desktop
+density but not illegibly small icons, while coarse-pointer controls retain
+44-pixel targets.
+
 Archive state, user labels, and other organization intended to survive a new
 webview or appear in another client are durable application data. Torrent
 activity, queue state, storage, and content retention remain separate engine
@@ -334,6 +347,14 @@ keyboard. Wide, compact, and phone evidence keeps the active tab visible,
 closes the phone drawer fully, and leaves horizontal scrolling available for
 explicit extra columns. Serious and critical axe findings are empty.
 
+Tactical `047` adds wide Compact, Standard, and Spacious geometry assertions,
+reload persistence, desktop and phone Settings-sheet focus containment, and
+serious/critical axe checks. Standard uses 36-pixel controls and table rows,
+Compact retains 30-pixel desktop controls and 32-pixel rows, and Spacious uses
+44-pixel controls and 42-pixel rows. The existing 2,001-torrent and
+10,001-peer scenario remains bounded at 824 DOM elements after the new default;
+this is sampled development evidence rather than a browser-wide ceiling.
+
 The deterministic 4,096-row scenario hides one padding row and rendered 690
 DOM elements with 66,468,705 bytes of sampled JavaScript heap. A complete
 ten-second scenario update and paint took 55 ms. Its hash-failure timeline
@@ -384,8 +405,7 @@ all stages as one slice.
 - inbox, category, label, and queue semantics; archive and removal retention
   semantics are implemented by Tactical `040`;
 - whether later navigation complexity justifies a router or icon dependency;
-- exact columns, row-detail interactions, table customization, and density
-  presets;
+- exact columns, row-detail interactions, and further table customization;
 - how session-scoped diagnostics coexist visually with torrent-scoped tabs;
 - the first supported browser and phone access posture beyond headless and
   local desktop use; and

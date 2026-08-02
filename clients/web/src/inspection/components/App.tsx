@@ -18,9 +18,11 @@ import {
 import type { TestTorrentShortcut } from "../testTorrents";
 import { validateTorrentInput } from "../torrentInput";
 import { DetailPane } from "./DetailPane";
+import { Icon } from "./Icon";
 import { MoreActionsMenu } from "./MoreActionsMenu";
 import { RemoveTorrentDialog } from "./RemoveTorrentDialog";
 import { ScenarioBar } from "./ScenarioBar";
+import { SettingsDialog } from "./SettingsDialog";
 import { Sidebar } from "./Sidebar";
 import { TorrentTable } from "./TorrentTable";
 import styles from "./App.module.css";
@@ -42,11 +44,17 @@ export function App() {
   const detailPanePercent = useInspectionStore(
     (state) => state.presentation.detailPanePercent,
   );
+  const interfaceSize = useInspectionStore(
+    (state) => state.presentation.interfaceSize,
+  );
   const toggleSidebar = useInspectionStore((state) => state.toggleSidebar);
   const closeSidebar = useInspectionStore((state) => state.closeSidebar);
   const setLayout = useInspectionStore((state) => state.setLayout);
   const setDetailPanePercent = useInspectionStore(
     (state) => state.setDetailPanePercent,
+  );
+  const setInterfaceSize = useInspectionStore(
+    (state) => state.setInterfaceSize,
   );
   const dispatch = useInspectionDispatch();
   const [status, setStatus] = useState("");
@@ -54,9 +62,11 @@ export function App() {
   const [inputInvalid, setInputInvalid] = useState(false);
   const [adding, setAdding] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<TorrentRow | undefined>();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [resizingDetail, setResizingDetail] = useState(false);
   const addingRef = useRef(false);
   const removeButtonRef = useRef<HTMLButtonElement>(null);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const mainRef = useRef<HTMLElement>(null);
   const splitterRef = useRef<HTMLDivElement>(null);
   const activeSplitterPointer = useRef<number | null>(null);
@@ -202,12 +212,12 @@ export function App() {
   } as CSSProperties;
 
   return (
-    <>
-      <div
-        className={styles.app}
-        data-detail-open={detailOpen}
-        data-sidebar-open={sidebarOpen}
-      >
+    <div
+      className={styles.app}
+      data-detail-open={detailOpen}
+      data-interface-size={interfaceSize}
+      data-sidebar-open={sidebarOpen}
+    >
       <header className={styles.header}>
         <button
           className={styles.menuButton}
@@ -216,7 +226,7 @@ export function App() {
           aria-expanded={sidebarOpen}
           onClick={toggleSidebar}
         >
-          <span aria-hidden="true">☰</span>
+          <Icon name="menu" />
         </button>
         <div className={styles.brand}>
           <span aria-hidden="true">RS</span>
@@ -236,6 +246,18 @@ export function App() {
           <span aria-hidden="true" />
           {session.connection === "demo" ? "Demo adapter" : session.connection}
         </div>
+        <button
+          ref={settingsButtonRef}
+          className={styles.settingsButton}
+          type="button"
+          aria-label="Settings"
+          aria-haspopup="dialog"
+          aria-expanded={settingsOpen}
+          title="Settings"
+          onClick={() => setSettingsOpen(true)}
+        >
+          <Icon name="settings" />
+        </button>
       </header>
       <ScenarioBar />
       <div className={styles.workspace}>
@@ -288,7 +310,7 @@ export function App() {
               ) : (
                 <>
                   <button type="button" className={styles.primaryAction} onClick={() => void send({ type: "add_demo_torrent" })}>
-                    <span aria-hidden="true">＋</span> Add demo
+                    <Icon name="plus" /> Add demo
                   </button>
                   <span className={styles.divider} aria-hidden="true" />
                 </>
@@ -303,7 +325,7 @@ export function App() {
                 }
                 onClick={() => selected === undefined ? undefined : void send({ type: "resume", torrentId: selected.id })}
               >
-                <span aria-hidden="true">▶</span> Start
+                <Icon name="play" /> Start
               </button>
               <button
                 type="button"
@@ -315,7 +337,7 @@ export function App() {
                 }
                 onClick={() => selected === undefined ? undefined : void send({ type: "pause", torrentId: selected.id })}
               >
-                <span aria-hidden="true">Ⅱ</span> Pause
+                <Icon name="pause" /> Pause
               </button>
               {demo === null ? (
                 <MoreActionsMenu
@@ -339,7 +361,8 @@ export function App() {
                       })
                 }
               >
-                <span aria-hidden="true">□</span> {selected?.archived ? "Restore" : "Archive"}
+                <Icon name={selected?.archived ? "restore" : "archive"} />
+                {selected?.archived ? "Restore" : "Archive"}
               </button>
               <button
                 ref={removeButtonRef}
@@ -350,7 +373,7 @@ export function App() {
                 }
                 onClick={() => setRemoveTarget(selected)}
               >
-                <span aria-hidden="true">×</span> Remove
+                <Icon name="remove" /> Remove
               </button>
               <output
                 id="command-status"
@@ -394,7 +417,6 @@ export function App() {
           <DetailPane />
         </main>
       </div>
-      </div>
       {removeTarget === undefined ? null : (
         <RemoveTorrentDialog
           torrentName={removeTarget.name}
@@ -404,6 +426,14 @@ export function App() {
           onConfirm={removeTorrent}
         />
       )}
-    </>
+      {settingsOpen ? (
+        <SettingsDialog
+          interfaceSize={interfaceSize}
+          returnFocus={settingsButtonRef}
+          onInterfaceSizeChange={setInterfaceSize}
+          onClose={() => setSettingsOpen(false)}
+        />
+      ) : null}
+    </div>
   );
 }

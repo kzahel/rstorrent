@@ -112,6 +112,9 @@ const DISK_COLUMNS: readonly VirtualColumn<DiskPieceRow>[] = [
 export function DiskPanel() {
   const disk = useInspectionStore((state) => state.disk);
   const materialization = useInspectionStore((state) => state.viewStatus.disk);
+  const interfaceSize = useInspectionStore(
+    (state) => state.presentation.interfaceSize,
+  );
   const rows = useMemo(
     () =>
       disk.order
@@ -136,6 +139,7 @@ export function DiskPanel() {
           rows={rows}
           getRowId={(row) => row.id}
           columns={DISK_COLUMNS}
+          interfaceSize={interfaceSize}
           emptyMessage={diskEmptyMessage(materialization)}
           initialSort={{ columnId: "queueAge", direction: "desc" }}
         />

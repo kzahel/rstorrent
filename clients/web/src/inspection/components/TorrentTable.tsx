@@ -120,6 +120,9 @@ export function TorrentTable() {
   const selectTorrent = useInspectionStore((state) => state.selectTorrent);
   const demo = useInspectionStore((state) => state.demo);
   const materialization = useInspectionStore((state) => state.viewStatus.library);
+  const interfaceSize = useInspectionStore(
+    (state) => state.presentation.interfaceSize,
+  );
   const rows = useMemo(
     () =>
       order
@@ -136,6 +139,7 @@ export function TorrentTable() {
       rows={rows}
       getRowId={(row) => row.id}
       columns={COLUMNS}
+      interfaceSize={interfaceSize}
       selectedId={selectedId}
       onSelect={(row) => selectTorrent(row.id)}
       emptyMessage={

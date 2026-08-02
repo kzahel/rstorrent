@@ -13,7 +13,7 @@
   padding: 0.42rem 0.72rem;
   color: var(--text-muted);
   background: var(--surface-primary);
-  font-size: 0.67rem;
+  font-size: var(--ui-font-caption);
 }
 
 .summary span:last-child {

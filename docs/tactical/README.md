@@ -258,6 +258,9 @@ that scope and its cleanup or compatibility rules explicitly.
 - [`046-joined-pause-peer-cleanup.md`](046-joined-pause-peer-cleanup.md): complete;
   makes pause await metadata/content owner cleanup and the final empty peer
   observation before its successful receipt.
+- [`047-interface-size-settings.md`](047-interface-size-settings.md): complete;
+  adds the global Settings surface, a readable Standard default, coordinated
+  Compact/Standard/Spacious metrics, and legible first-party action icons.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

@@ -10,6 +10,10 @@ import {
   type UIEvent,
 } from "react";
 
+import {
+  INTERFACE_METRICS,
+  type InterfaceSize,
+} from "../appearance";
 import styles from "./VirtualTable.module.css";
 
 export interface VirtualColumn<Row> {
@@ -34,7 +38,7 @@ export interface VirtualTableProps<Row> {
   readonly rows: readonly Row[];
   readonly getRowId: (row: Row) => string;
   readonly columns: readonly VirtualColumn<Row>[];
-  readonly rowHeight?: number;
+  readonly interfaceSize: InterfaceSize;
   readonly overscan?: number;
   readonly selectedId?: string | null;
   readonly onSelect?: (row: Row) => void;
@@ -47,7 +51,6 @@ interface SortState {
   readonly direction: "asc" | "desc";
 }
 
-const HEADER_HEIGHT = 34;
 const TABLE_CONFIG_VERSION = 1;
 
 export function VirtualTable<Row>({
@@ -56,13 +59,19 @@ export function VirtualTable<Row>({
   rows,
   getRowId,
   columns,
-  rowHeight = 32,
+  interfaceSize,
   overscan = 8,
   selectedId = null,
   onSelect,
   emptyMessage,
   initialSort,
 }: VirtualTableProps<Row>) {
+  const { tableHeaderHeight, tableRowHeight } =
+    INTERFACE_METRICS[interfaceSize];
+  const tableStyle = {
+    "--ui-table-header-height": `${tableHeaderHeight}px`,
+    "--ui-table-row-height": `${tableRowHeight}px`,
+  } as CSSProperties;
   const viewportRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportSize, setViewportSize] = useState({ width: 960, height: 360 });
@@ -157,9 +166,13 @@ export function VirtualTable<Row>({
     );
   }, [columns, frozenOrder, getRowId, liveSort, rows, sort]);
 
-  const bodyScroll = Math.max(0, scrollTop - HEADER_HEIGHT);
-  const firstIndex = Math.max(0, Math.floor(bodyScroll / rowHeight) - overscan);
-  const visibleCount = Math.ceil(viewportSize.height / rowHeight) + overscan * 2;
+  const bodyScroll = Math.max(0, scrollTop - tableHeaderHeight);
+  const firstIndex = Math.max(
+    0,
+    Math.floor(bodyScroll / tableRowHeight) - overscan,
+  );
+  const visibleCount =
+    Math.ceil(viewportSize.height / tableRowHeight) + overscan * 2;
   const lastIndex = Math.min(sortedRows.length, firstIndex + visibleCount);
   const renderedRows = sortedRows.slice(firstIndex, lastIndex);
   const gridTemplateColumns = visibleColumns
@@ -194,12 +207,16 @@ export function VirtualTable<Row>({
     setFocusIndex(clamped);
     const viewport = viewportRef.current;
     if (viewport !== null) {
-      const fixedHeight = HEADER_HEIGHT;
-      const top = fixedHeight + clamped * rowHeight;
+      const fixedHeight = tableHeaderHeight;
+      const top = fixedHeight + clamped * tableRowHeight;
       if (top < viewport.scrollTop + fixedHeight) {
         viewport.scrollTop = top - fixedHeight;
-      } else if (top + rowHeight > viewport.scrollTop + viewport.clientHeight) {
-        viewport.scrollTop = top + rowHeight - viewport.clientHeight;
+      } else if (
+        top + tableRowHeight >
+        viewport.scrollTop + viewport.clientHeight
+      ) {
+        viewport.scrollTop =
+          top + tableRowHeight - viewport.clientHeight;
       }
       requestAnimationFrame(() => {
         viewport
@@ -278,7 +295,7 @@ export function VirtualTable<Row>({
   ).length;
 
   return (
-    <div className={styles.container}>
+    <div className={styles.container} style={tableStyle}>
       <div className={styles.toolbar}>
         <span>{sortedRows.length.toLocaleString()} rows</span>
         <button
@@ -444,7 +461,7 @@ export function VirtualTable<Row>({
         <div
           className={styles.canvas}
           style={{
-            height: `${sortedRows.length * rowHeight}px`,
+            height: `${sortedRows.length * tableRowHeight}px`,
             minWidth: `${minimumWidth}px`,
           }}
         >
@@ -465,8 +482,7 @@ export function VirtualTable<Row>({
                 data-selected={selected}
                 style={{
                   ...gridStyle,
-                  height: `${rowHeight}px`,
-                  transform: `translateY(${index * rowHeight}px)`,
+                  transform: `translateY(${index * tableRowHeight}px)`,
                 }}
                 onFocus={() => setFocusIndex(index)}
                 onClick={() => {

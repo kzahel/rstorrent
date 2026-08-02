@@ -1,5 +1,11 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
 
+import {
+  loadInterfaceSize,
+  saveInterfaceSize,
+  type AppearanceStorage,
+  type InterfaceSize,
+} from "./appearance";
 import type {
   DetailTab,
   InspectionSnapshot,
@@ -23,6 +29,7 @@ export interface PresentationState {
   readonly detailOpen: boolean;
   readonly sidebarOpen: boolean;
   readonly layout: "wide" | "compact" | "phone";
+  readonly interfaceSize: InterfaceSize;
 }
 
 export interface InspectionState extends InspectionSnapshot {
@@ -40,6 +47,7 @@ export interface InspectionActions {
   readonly toggleSidebar: () => void;
   readonly closeSidebar: () => void;
   readonly setLayout: (layout: PresentationState["layout"]) => void;
+  readonly setInterfaceSize: (interfaceSize: InterfaceSize) => void;
 }
 
 export type InspectionStore = InspectionState & InspectionActions;
@@ -89,12 +97,22 @@ const DEFAULT_PRESENTATION: PresentationState = {
   detailOpen: false,
   sidebarOpen: false,
   layout: "wide",
+  interfaceSize: "standard",
 };
 
-export function createInspectionStore(): InspectionStoreApi {
+export function createInspectionStore(
+  appearanceStorage?: AppearanceStorage | null,
+): InspectionStoreApi {
+  const initialPresentation = {
+    ...DEFAULT_PRESENTATION,
+    interfaceSize:
+      appearanceStorage === undefined
+        ? loadInterfaceSize()
+        : loadInterfaceSize(appearanceStorage),
+  };
   return createStore<InspectionStore>()((set) => ({
     ...EMPTY_SNAPSHOT,
-    presentation: DEFAULT_PRESENTATION,
+    presentation: initialPresentation,
     applyUpdate: (update) => {
       set((state) => reduceInspectionUpdate(state, update));
     },
@@ -156,6 +174,13 @@ export function createInspectionStore(): InspectionStoreApi {
     setLayout: (layout) => {
       set((state) => ({
         presentation: { ...state.presentation, layout },
+      }));
+    },
+    setInterfaceSize: (interfaceSize) => {
+      if (appearanceStorage === undefined) saveInterfaceSize(interfaceSize);
+      else saveInterfaceSize(interfaceSize, appearanceStorage);
+      set((state) => ({
+        presentation: { ...state.presentation, interfaceSize },
       }));
     },
   }));

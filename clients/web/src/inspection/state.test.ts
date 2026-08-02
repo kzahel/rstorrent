@@ -74,6 +74,24 @@ describe("inspection store", () => {
     store.getState().setDetailPanePercent(Number.NaN);
     expect(store.getState().presentation.detailPanePercent).toBe(57);
   });
+
+  it("defaults and persists interface size as presentation state", () => {
+    let appearance: string | null = null;
+    const storage = {
+      getItem: () => appearance,
+      setItem: (_key: string, value: string) => {
+        appearance = value;
+      },
+    };
+    const store = createInspectionStore(storage);
+    expect(store.getState().presentation.interfaceSize).toBe("standard");
+
+    store.getState().setInterfaceSize("spacious");
+    expect(store.getState().presentation.interfaceSize).toBe("spacious");
+    expect(
+      createInspectionStore(storage).getState().presentation.interfaceSize,
+    ).toBe("spacious");
+  });
 });
 
 function row(id: string, status: TorrentRow["status"]): TorrentRow {

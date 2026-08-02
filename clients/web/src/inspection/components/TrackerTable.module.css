@@ -14,7 +14,7 @@
   padding: 0.42rem 0.72rem;
   color: var(--text-muted);
   background: var(--surface-primary);
-  font-size: 0.67rem;
+  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 
@@ -29,7 +29,7 @@
 .url {
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: var(--ui-font-caption);
 }
 
 .error {

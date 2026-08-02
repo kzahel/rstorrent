@@ -1,4 +1,5 @@
 import type { InspectionApplication } from "./application";
+import type { AppearanceStorage } from "./appearance";
 import type {
   DesiredInspectionViews,
   InspectionCommand,
@@ -27,9 +28,12 @@ export class InspectionController {
   private retryMillis = 100;
   private readonly closeSignal = new AbortController();
 
-  constructor(application: InspectionApplication) {
+  constructor(
+    application: InspectionApplication,
+    appearanceStorage?: AppearanceStorage | null,
+  ) {
     this.application = application;
-    this.store = createInspectionStore();
+    this.store = createInspectionStore(appearanceStorage);
   }
 
   start(): void {

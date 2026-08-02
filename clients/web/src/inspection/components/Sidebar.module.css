@@ -9,7 +9,7 @@
 .heading {
   margin: 1rem 0.85rem 0.45rem;
   color: var(--text-muted);
-  font-size: 0.68rem;
+  font-size: var(--ui-font-caption);
   font-weight: 750;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -27,15 +27,15 @@
   display: grid;
   grid-template-columns: 1.45rem 1fr auto;
   align-items: center;
-  gap: 0.35rem;
+  gap: var(--ui-space-xs);
   width: 100%;
   border: 0;
   border-radius: 0.42rem;
-  padding: 0.56rem 0.55rem;
+  padding: var(--ui-space-sm);
   color: var(--text-secondary);
   background: transparent;
   font: inherit;
-  font-size: 0.79rem;
+  font-size: var(--ui-font-body);
   text-align: left;
   cursor: pointer;
 }
@@ -59,14 +59,14 @@
 .symbol {
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 0.9rem;
+  font-size: var(--ui-icon-size);
   text-align: center;
 }
 
 .count {
   min-width: 1.7rem;
   color: var(--text-muted);
-  font-size: 0.7rem;
+  font-size: var(--ui-font-small);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
@@ -79,7 +79,7 @@
   border-top: 1px solid var(--border-soft);
   padding: 0.85rem;
   color: var(--text-secondary);
-  font-size: 0.72rem;
+  font-size: var(--ui-font-small);
 }
 
 .footer span:last-child {
@@ -89,19 +89,19 @@
 
 .footer strong {
   color: var(--text-primary);
-  font-size: 0.72rem;
+  font-size: var(--ui-font-small);
 }
 
 .footer small {
   color: var(--text-muted);
-  font-size: 0.64rem;
+  font-size: var(--ui-font-caption);
 }
 
 .demoMark {
   display: grid;
   flex: 0 0 auto;
   width: 1.65rem;
-  height: 1.65rem;
+  height: var(--ui-control-height);
   place-items: center;
   border-radius: 0.42rem;
   color: #694410;

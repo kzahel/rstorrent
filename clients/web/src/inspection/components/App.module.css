@@ -1,11 +1,63 @@
 .app {
+  --ui-font-caption: 0.75rem;
+  --ui-font-small: 0.8125rem;
+  --ui-font-body: 0.875rem;
+  --ui-font-heading: 1.125rem;
+  --ui-font-display: 1.375rem;
+  --ui-icon-size: 1.125rem;
+  --ui-control-height: 2.25rem;
+  --ui-header-height: 52px;
+  --ui-actionbar-height: 46px;
+  --ui-tab-height: 42px;
+  --ui-table-toolbar-height: 34px;
+  --ui-space-xs: 0.3rem;
+  --ui-space-sm: 0.5rem;
+  --ui-space-md: 0.85rem;
+  --ui-space-lg: 1.15rem;
   display: grid;
-  grid-template-rows: 48px auto minmax(0, 1fr);
+  grid-template-rows: var(--ui-header-height) auto minmax(0, 1fr);
   width: 100vw;
   height: 100dvh;
   overflow: hidden;
   color: var(--text-primary);
   background: var(--surface-primary);
+  font-size: var(--ui-font-body);
+}
+
+.app[data-interface-size="compact"] {
+  --ui-font-caption: 0.6875rem;
+  --ui-font-small: 0.75rem;
+  --ui-font-body: 0.8125rem;
+  --ui-font-heading: 1rem;
+  --ui-font-display: 1.25rem;
+  --ui-icon-size: 1rem;
+  --ui-control-height: 1.875rem;
+  --ui-header-height: 48px;
+  --ui-actionbar-height: 40px;
+  --ui-tab-height: 38px;
+  --ui-table-toolbar-height: 30px;
+  --ui-space-xs: 0.22rem;
+  --ui-space-sm: 0.4rem;
+  --ui-space-md: 0.7rem;
+  --ui-space-lg: 1rem;
+}
+
+.app[data-interface-size="spacious"] {
+  --ui-font-caption: 0.8125rem;
+  --ui-font-small: 0.9375rem;
+  --ui-font-body: 1rem;
+  --ui-font-heading: 1.25rem;
+  --ui-font-display: 1.5rem;
+  --ui-icon-size: 1.25rem;
+  --ui-control-height: 2.75rem;
+  --ui-header-height: 60px;
+  --ui-actionbar-height: 56px;
+  --ui-tab-height: 48px;
+  --ui-table-toolbar-height: 40px;
+  --ui-space-xs: 0.4rem;
+  --ui-space-sm: 0.65rem;
+  --ui-space-md: 1rem;
+  --ui-space-lg: 1.35rem;
 }
 
 .header {
@@ -29,19 +81,19 @@
 
 .brand > span {
   display: grid;
-  width: 1.75rem;
-  height: 1.75rem;
+  width: clamp(1.75rem, calc(var(--ui-control-height) - 0.25rem), 2.25rem);
+  height: clamp(1.75rem, calc(var(--ui-control-height) - 0.25rem), 2.25rem);
   place-items: center;
   border-radius: 0.48rem;
   color: #fff;
   background: #216bb8;
-  font-size: 0.63rem;
+  font-size: var(--ui-font-caption);
   font-weight: 850;
   letter-spacing: -0.02em;
 }
 
 .brand strong {
-  font-size: 0.9rem;
+  font-size: var(--ui-font-body);
   letter-spacing: -0.01em;
 }
 
@@ -49,16 +101,19 @@
   border-left: 1px solid rgb(255 255 255 / 20%);
   padding-left: 0.48rem;
   color: #a9bdd3;
-  font-size: 0.65rem;
+  font-size: var(--ui-font-caption);
 }
 
 .menuButton {
   display: none;
   border: 0;
-  padding: 0.42rem;
+  width: var(--ui-control-height);
+  height: var(--ui-control-height);
+  place-items: center;
+  padding: 0;
   color: #d7e7f8;
   background: transparent;
-  font-size: 1rem;
+  font-size: var(--ui-icon-size);
 }
 
 .sessionStats {
@@ -67,7 +122,7 @@
   gap: 1rem;
   margin-left: auto;
   color: #b8cbe0;
-  font-size: 0.69rem;
+  font-size: var(--ui-font-small);
   font-variant-numeric: tabular-nums;
 }
 
@@ -86,7 +141,7 @@
   border-left: 1px solid rgb(255 255 255 / 16%);
   padding-left: 0.9rem;
   color: #c5d7e9;
-  font-size: 0.65rem;
+  font-size: var(--ui-font-caption);
   font-weight: 650;
 }
 
@@ -101,6 +156,31 @@
 .connection[data-state="demo"] > span {
   background: #f3c46e;
   box-shadow: 0 0 0 3px rgb(243 196 110 / 13%);
+}
+
+.settingsButton {
+  display: grid;
+  width: var(--ui-control-height);
+  height: var(--ui-control-height);
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 0.48rem;
+  padding: 0;
+  color: #c5d7e9;
+  background: transparent;
+  font-size: var(--ui-icon-size);
+  cursor: pointer;
+}
+
+.settingsButton:hover {
+  color: #fff;
+  background: rgb(255 255 255 / 10%);
+}
+
+.settingsButton:focus-visible {
+  outline: 2px solid #79bdff;
+  outline-offset: 1px;
 }
 
 .workspace {
@@ -138,7 +218,7 @@
 
 .collection {
   display: grid;
-  grid-template-rows: 40px minmax(0, 1fr);
+  grid-template-rows: var(--ui-actionbar-height) minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
 }
@@ -146,26 +226,32 @@
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 0.22rem;
+  gap: var(--ui-space-xs);
   border-bottom: 1px solid var(--border-strong);
-  padding: 0 0.48rem;
+  padding: 0 var(--ui-space-sm);
   background: var(--surface-primary);
 }
 
 .toolbar button {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  height: 1.85rem;
+  gap: var(--ui-space-xs);
+  height: var(--ui-control-height);
   border: 1px solid transparent;
   border-radius: 0.38rem;
-  padding: 0 0.55rem;
+  padding: 0 var(--ui-space-sm);
   color: var(--text-secondary);
   background: transparent;
   font: inherit;
-  font-size: 0.71rem;
+  font-size: var(--ui-font-small);
   font-weight: 650;
   cursor: pointer;
+}
+
+.toolbar button > svg {
+  width: var(--ui-icon-size);
+  height: var(--ui-icon-size);
+  flex: 0 0 auto;
 }
 
 .toolbar button:hover:not(:disabled) {
@@ -188,20 +274,20 @@
   max-width: 30rem;
   flex: 1 1 24rem;
   align-items: center;
-  gap: 0.32rem;
+  gap: var(--ui-space-xs);
 }
 
 .addInput {
   min-width: 7rem;
-  height: 1.85rem;
+  height: var(--ui-control-height);
   border: 1px solid var(--border-strong);
   border-radius: 0.38rem;
-  padding: 0 0.58rem;
+  padding: 0 var(--ui-space-sm);
   flex: 1 1 auto;
   color: var(--text-primary);
   background: var(--surface-secondary);
   font: inherit;
-  font-size: 0.72rem;
+  font-size: var(--ui-font-small);
 }
 
 .addInput::placeholder {
@@ -249,7 +335,7 @@
   overflow: hidden;
   margin-left: auto;
   color: var(--text-muted);
-  font-size: 0.65rem;
+  font-size: var(--ui-font-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -311,13 +397,17 @@
 
 @media (max-width: 760px) {
   .menuButton {
-    display: block;
+    display: grid;
   }
 
   .brand small,
   .sessionStats,
   .connection {
     display: none;
+  }
+
+  .settingsButton {
+    margin-left: auto;
   }
 
   .workspace {
@@ -396,6 +486,14 @@
     min-height: 1rem;
     margin-left: 0;
     flex-basis: 100%;
+  }
+}
+
+@media (pointer: coarse) {
+  .app[data-interface-size] {
+    --ui-control-height: 44px;
+    --ui-actionbar-height: 54px;
+    --ui-tab-height: 44px;
   }
 }
 

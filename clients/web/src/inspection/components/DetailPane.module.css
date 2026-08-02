@@ -20,14 +20,14 @@
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 0.35rem;
-  min-height: 38px;
+  gap: var(--ui-space-xs);
+  min-height: var(--ui-tab-height);
   border: 0;
-  padding: 0 0.74rem;
+  padding: 0 var(--ui-space-md);
   color: var(--text-secondary);
   background: transparent;
   font: inherit;
-  font-size: 0.74rem;
+  font-size: var(--ui-font-small);
   font-weight: 600;
   cursor: pointer;
 }
@@ -57,7 +57,7 @@
   padding: 0.08rem 0.36rem;
   color: var(--text-muted);
   background: var(--surface-tertiary);
-  font-size: 0.62rem;
+  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 
@@ -91,35 +91,35 @@
 .general {
   overflow: auto;
   height: 100%;
-  padding: 1.1rem;
+  padding: var(--ui-space-lg);
 }
 
 .summaryCard {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 2rem;
+  gap: calc(var(--ui-space-lg) * 1.5);
   border: 1px solid var(--border-soft);
   border-radius: 0.72rem;
-  padding: 1rem 1.1rem;
+  padding: var(--ui-space-md) var(--ui-space-lg);
   background: var(--surface-secondary);
 }
 
 .summaryCard h2 {
   margin: 0 0 0.38rem;
-  font-size: 1.05rem;
+  font-size: var(--ui-font-heading);
 }
 
 .summaryCard p {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 0.76rem;
+  font-size: var(--ui-font-small);
 }
 
 .eyebrow {
   margin: 0 0 0.25rem !important;
   color: var(--accent-strong) !important;
-  font-size: 0.64rem !important;
+  font-size: var(--ui-font-caption) !important;
   font-weight: 750;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -132,7 +132,7 @@
 }
 
 .largeProgress strong {
-  font-size: 1.25rem;
+  font-size: var(--ui-font-display);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
@@ -179,12 +179,12 @@
 
 .metrics dt {
   color: var(--text-muted);
-  font-size: 0.66rem;
+  font-size: var(--ui-font-caption);
 }
 
 .metrics dd {
   margin: 0;
-  font-size: 0.84rem;
+  font-size: var(--ui-font-body);
   font-weight: 680;
   font-variant-numeric: tabular-nums;
   text-transform: capitalize;
@@ -195,7 +195,7 @@
   grid-template-columns: 6rem minmax(0, 1fr);
   gap: 0.8rem;
   color: var(--text-muted);
-  font-size: 0.7rem;
+  font-size: var(--ui-font-small);
 }
 
 .identity code {
@@ -214,7 +214,7 @@
   padding: 0.75rem;
   color: var(--danger-strong);
   background: var(--danger-soft);
-  font-size: 0.76rem;
+  font-size: var(--ui-font-small);
 }
 
 .logPanel {
@@ -230,7 +230,7 @@
   padding: 0.42rem 0.72rem;
   color: var(--text-muted);
   background: var(--surface-primary);
-  font-size: 0.67rem;
+  font-size: var(--ui-font-caption);
 }
 
 .logSeverity {
@@ -262,12 +262,12 @@
 .empty strong {
   margin-bottom: 0.35rem;
   color: var(--text-primary);
-  font-size: 0.9rem;
+  font-size: var(--ui-font-body);
 }
 
 .empty p {
   margin: 0;
-  font-size: 0.76rem;
+  font-size: var(--ui-font-small);
   line-height: 1.5;
 }
 
@@ -280,7 +280,7 @@
   border-radius: 0.72rem;
   color: var(--accent-strong);
   background: var(--selection);
-  font-size: 1.15rem;
+  font-size: var(--ui-font-heading);
 }
 
 @media (max-width: 900px) {
@@ -320,14 +320,14 @@
     color: var(--accent-strong);
     background: transparent;
     font: inherit;
-    font-size: 0.76rem;
+    font-size: var(--ui-font-small);
     font-weight: 700;
   }
 
   .mobileHeading strong {
     overflow: hidden;
     color: var(--text-primary);
-    font-size: 0.78rem;
+    font-size: var(--ui-font-body);
     text-overflow: ellipsis;
     white-space: nowrap;
   }

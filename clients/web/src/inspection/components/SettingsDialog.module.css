@@ -1,0 +1,175 @@
+.backdrop {
+  position: fixed;
+  z-index: 150;
+  display: flex;
+  inset: 0;
+  justify-content: flex-end;
+  background: rgb(9 20 33 / 52%);
+}
+
+.sheet {
+  display: flex;
+  width: min(23rem, 100%);
+  min-width: 0;
+  height: 100%;
+  flex-direction: column;
+  border-left: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  background: var(--surface-primary);
+  box-shadow: -1rem 0 3rem rgb(8 20 34 / 30%);
+}
+
+.header {
+  display: flex;
+  min-height: var(--ui-header-height);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-space-md);
+  border-bottom: 1px solid var(--border-strong);
+  padding: var(--ui-space-sm) var(--ui-space-md);
+  background: var(--surface-secondary);
+}
+
+.header p,
+.header h2 {
+  margin: 0;
+}
+
+.header p {
+  margin-bottom: 0.1rem;
+  color: var(--text-muted);
+  font-size: var(--ui-font-caption);
+  font-weight: 750;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.header h2 {
+  font-size: var(--ui-font-heading);
+}
+
+.close {
+  display: grid;
+  inline-size: var(--ui-control-height);
+  block-size: var(--ui-control-height);
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 0.48rem;
+  padding: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  font-size: var(--ui-icon-size);
+  cursor: pointer;
+}
+
+.close:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.content {
+  overflow: auto;
+  padding: var(--ui-space-lg) var(--ui-space-md);
+}
+
+.section {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.section legend {
+  width: 100%;
+  border-bottom: 1px solid var(--border-soft);
+  padding: 0 0 var(--ui-space-sm);
+  color: var(--text-muted);
+  font-size: var(--ui-font-caption);
+  font-weight: 750;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.settingHeading {
+  display: grid;
+  gap: 0.18rem;
+  padding: var(--ui-space-md) 0 var(--ui-space-sm);
+}
+
+.settingHeading strong {
+  font-size: var(--ui-font-body);
+}
+
+.settingHeading span {
+  color: var(--text-muted);
+  font-size: var(--ui-font-small);
+}
+
+.options {
+  display: grid;
+  gap: var(--ui-space-xs);
+}
+
+.option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--ui-space-sm);
+  min-height: var(--ui-control-height);
+  align-items: center;
+  border: 1px solid var(--border-soft);
+  border-radius: 0.55rem;
+  padding: var(--ui-space-sm) var(--ui-space-md);
+  background: var(--surface-primary);
+  cursor: pointer;
+}
+
+.option:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.option:has(input:checked) {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--border-strong));
+  background: var(--selection);
+}
+
+.option input {
+  inline-size: 1rem;
+  block-size: 1rem;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.option > span {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.option strong {
+  font-size: var(--ui-font-body);
+}
+
+.option small {
+  color: var(--text-secondary);
+  font-size: var(--ui-font-small);
+  line-height: 1.35;
+}
+
+@media (max-width: 520px) {
+  .sheet {
+    width: 100%;
+    border-left: 0;
+  }
+}
+
+@media (pointer: coarse) {
+  .close,
+  .option {
+    min-height: 44px;
+  }
+
+  .close {
+    min-width: 44px;
+  }
+}

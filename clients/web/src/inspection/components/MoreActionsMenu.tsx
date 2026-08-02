@@ -9,6 +9,7 @@ import {
   WEBTORRENT_TEST_TORRENTS,
   type TestTorrentShortcut,
 } from "../testTorrents";
+import { Icon } from "./Icon";
 import styles from "./MoreActionsMenu.module.css";
 
 export interface MoreActionsMenuProps {
@@ -123,7 +124,7 @@ export function MoreActionsMenu({
           }
         }}
       >
-        More <span aria-hidden="true">▾</span>
+        More <Icon name="chevronDown" />
       </button>
       {open ? (
         <div
@@ -148,7 +149,7 @@ export function MoreActionsMenu({
               aria-expanded={submenuOpen}
               onClick={() => setSubmenuOpen(true)}
             >
-              <span aria-hidden="true">＋</span>
+              <Icon name="plus" />
               <span>Add test torrent</span>
               <span className={styles.submenuArrow} aria-hidden="true">
                 ›

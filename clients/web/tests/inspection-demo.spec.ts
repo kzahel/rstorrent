@@ -65,6 +65,82 @@ test("detail tab geometry and counts do not change with selection", async ({ pag
   }
 });
 
+test("interface size settings persist and keep geometry coherent", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 720 });
+  await openScenario(page, "healthy-download", 42_000);
+
+  const app = page.locator('[data-interface-size]');
+  const library = page.getByRole("grid", { name: "Torrent library" });
+  const firstRow = library.locator("[data-row-id]").first();
+  const archive = page.getByRole("button", { name: "Archive", exact: true });
+  await expect(app).toHaveAttribute("data-interface-size", "standard");
+  await expect.poll(() => elementHeight(firstRow)).toBe(36);
+  await expect.poll(() => elementHeight(archive)).toBe(36);
+  await expect
+    .poll(async () =>
+      Math.round((await archive.locator("svg").boundingBox())?.width ?? 0),
+    )
+    .toBeGreaterThanOrEqual(17);
+
+  const settings = page.getByRole("button", { name: "Settings", exact: true });
+  await settings.click();
+  const dialog = page.getByRole("dialog", { name: "Settings" });
+  const close = dialog.getByRole("button", { name: "Close settings" });
+  await expect(close).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(dialog.getByRole("radio", { name: /Spacious/ })).toBeFocused();
+  await dialog.getByRole("radio", { name: /Standard/ }).check();
+  const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+  await capture(page, "rstorrent-settings-standard.png");
+
+  await dialog.getByRole("radio", { name: /Compact/ }).check();
+  await expect(app).toHaveAttribute("data-interface-size", "compact");
+  await expect.poll(() => elementHeight(firstRow)).toBe(32);
+  await expect.poll(() => elementHeight(archive)).toBe(30);
+  await expect
+    .poll(async () =>
+      Math.round((await archive.locator("svg").boundingBox())?.width ?? 0),
+    )
+    .toBeGreaterThanOrEqual(16);
+  await capture(page, "rstorrent-settings-compact.png");
+
+  await dialog.getByRole("radio", { name: /Spacious/ }).check();
+  await expect(app).toHaveAttribute("data-interface-size", "spacious");
+  await expect.poll(() => elementHeight(firstRow)).toBe(42);
+  await expect.poll(() => elementHeight(archive)).toBe(44);
+  await capture(page, "rstorrent-settings-spacious.png");
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await expect(settings).toBeFocused();
+
+  await page.reload();
+  await expect(page.locator('[data-interface-size]')).toHaveAttribute(
+    "data-interface-size",
+    "spacious",
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const phoneDialog = page.getByRole("dialog", { name: "Settings" });
+  await expect(phoneDialog).toBeVisible();
+  await expect
+    .poll(async () =>
+      Math.round((await phoneDialog.boundingBox())?.width ?? 0),
+    )
+    .toBe(390);
+  const phoneViolations = (await new AxeBuilder({ page }).analyze()).violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(phoneViolations).toEqual([]);
+  await capture(page, "rstorrent-settings-phone.png");
+});
+
 test("compact tracker recovery remains legible", async ({ page }) => {
   await page.setViewportSize({ width: 920, height: 720 });
   await openScenario(page, "tracker-recovery", 24_000);
@@ -414,6 +490,10 @@ async function tabGeometry(page: Page) {
       width: (element as HTMLElement).offsetWidth,
     })),
   );
+}
+
+async function elementHeight(locator: ReturnType<Page["locator"]>) {
+  return Math.round((await locator.boundingBox())?.height ?? 0);
 }
 
 async function capture(page: Page, filename: string) {

@@ -93,6 +93,9 @@ export function DetailPane() {
   const logs = useInspectionStore((state) => state.logs);
   const droppedLogs = useInspectionStore((state) => state.droppedLogs);
   const logsMaterialization = useInspectionStore((state) => state.viewStatus.logs);
+  const interfaceSize = useInspectionStore(
+    (state) => state.presentation.interfaceSize,
+  );
   const selectedLogs = useMemo(
     () => visibleLogs(logs, selectedId),
     [logs, selectedId],
@@ -221,6 +224,7 @@ export function DetailPane() {
               rows={selectedLogs}
               getRowId={(row) => row.id}
               columns={LOG_COLUMNS}
+              interfaceSize={interfaceSize}
               emptyMessage={detailEmptyMessage(logsMaterialization, "diagnostic events")}
               initialSort={{ columnId: "time", direction: "asc" }}
             />

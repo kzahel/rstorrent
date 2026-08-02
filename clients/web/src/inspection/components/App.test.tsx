@@ -7,6 +7,10 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createRef } from "react";
 
+import {
+  APPEARANCE_STORAGE_KEY,
+  type AppearanceStorage,
+} from "../appearance";
 import type { InspectionApplication } from "../application";
 import { InspectionProvider } from "../context";
 import { InspectionController } from "../controller";
@@ -75,6 +79,67 @@ describe("inspection application", () => {
     expect(peersTab).toHaveTextContent(peerCount!);
     await user.click(screen.getByRole("tab", { name: "Logs" }));
     expect(screen.getByRole("grid", { name: "Diagnostic log" })).toBeVisible();
+  });
+
+  it("opens Settings, changes interface size live, and restores it", async () => {
+    const user = userEvent.setup();
+    let storedAppearance: string | null = null;
+    const appearanceStorage: AppearanceStorage = {
+      getItem: (key) =>
+        key === APPEARANCE_STORAGE_KEY ? storedAppearance : null,
+      setItem: (key, value) => {
+        if (key === APPEARANCE_STORAGE_KEY) storedAppearance = value;
+      },
+    };
+    const first = renderScenario(
+      "healthy-download",
+      42_000,
+      appearanceStorage,
+    );
+    const app = first.container.firstElementChild;
+    expect(app).toHaveAttribute("data-interface-size", "standard");
+
+    for (const name of ["Start", "Pause", "Archive", "Remove"]) {
+      expect(
+        screen.getByRole("button", { name }).querySelector("svg"),
+      ).not.toBeNull();
+    }
+
+    const settings = screen.getByRole("button", {
+      name: "Settings",
+    });
+    await user.click(settings);
+    const dialog = screen.getByRole("dialog", { name: "Settings" });
+    const close = within(dialog).getByRole("button", {
+      name: "Close settings",
+    });
+    expect(close).toHaveFocus();
+
+    await user.tab({ shift: true });
+    expect(
+      within(dialog).getByRole("radio", { name: /Spacious/ }),
+    ).toHaveFocus();
+    await user.click(within(dialog).getByRole("radio", { name: /Spacious/ }));
+    expect(app).toHaveAttribute("data-interface-size", "spacious");
+    expect(JSON.parse(storedAppearance ?? "null")).toEqual({
+      version: 1,
+      interfaceSize: "spacious",
+    });
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Settings" })).not.toBeInTheDocument();
+    expect(settings).toHaveFocus();
+
+    first.unmount();
+    const restored = renderScenario(
+      "healthy-download",
+      42_000,
+      appearanceStorage,
+    );
+    expect(restored.container.firstElementChild).toHaveAttribute(
+      "data-interface-size",
+      "spacious",
+    );
   });
 
   it("switches named scenarios and advances the frozen clock", async () => {
@@ -337,14 +402,19 @@ describe("inspection application", () => {
 function renderScenario(
   scenarioId: ConstructorParameters<typeof DemoApplication>[0]["scenarioId"],
   elapsedMs: number,
+  appearanceStorage?: AppearanceStorage | null,
 ) {
   return renderApplication(
     new DemoApplication({ scenarioId, elapsedMs, running: false }),
+    appearanceStorage,
   );
 }
 
-function renderApplication(application: InspectionApplication) {
-  const controller = new InspectionController(application);
+function renderApplication(
+  application: InspectionApplication,
+  appearanceStorage?: AppearanceStorage | null,
+) {
+  const controller = new InspectionController(application, appearanceStorage);
   controllers.push(controller);
   controller.start();
   return render(

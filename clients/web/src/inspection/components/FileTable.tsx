@@ -141,6 +141,9 @@ const COLUMNS: readonly VirtualColumn<FileRow>[] = [
 export function FileTable({ torrentId }: { readonly torrentId: string }) {
   const fileSet = useInspectionStore((state) => state.filesByTorrent[torrentId]);
   const materialization = useInspectionStore((state) => state.viewStatus.files);
+  const interfaceSize = useInspectionStore(
+    (state) => state.presentation.interfaceSize,
+  );
   const rows = useMemo(
     () =>
       (fileSet?.order ?? [])
@@ -170,6 +173,7 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
         rows={rows}
         getRowId={(row) => row.id}
         columns={COLUMNS}
+        interfaceSize={interfaceSize}
         emptyMessage={fileEmptyMessage(materialization, fileSet?.state)}
         initialSort={{ columnId: "index", direction: "asc" }}
       />

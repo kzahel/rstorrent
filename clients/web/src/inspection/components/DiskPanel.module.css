@@ -24,13 +24,13 @@
 .summaryHeading h2,
 .tableHeading h2 {
   margin: 0;
-  font-size: 0.96rem;
+  font-size: var(--ui-font-heading);
 }
 
 .eyebrow {
   margin: 0 0 0.15rem;
   color: var(--accent-strong);
-  font-size: 0.62rem;
+  font-size: var(--ui-font-caption);
   font-weight: 760;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -42,7 +42,7 @@
   align-items: center;
   gap: 0.4rem;
   color: var(--text-secondary);
-  font-size: 0.7rem;
+  font-size: var(--ui-font-small);
   font-weight: 700;
 }
 
@@ -94,11 +94,11 @@
 .tableHeading p,
 .tableHeading > span {
   color: var(--text-muted);
-  font-size: 0.63rem;
+  font-size: var(--ui-font-caption);
 }
 
 .pipeline strong {
-  font-size: 0.78rem;
+  font-size: var(--ui-font-body);
   font-variant-numeric: tabular-nums;
 }
 
@@ -144,7 +144,7 @@
 
 .metrics dd {
   margin: 0;
-  font-size: 0.76rem;
+  font-size: var(--ui-font-small);
   font-weight: 680;
   font-variant-numeric: tabular-nums;
 }
@@ -162,7 +162,7 @@
   padding: 0.55rem 0.7rem;
   color: var(--danger-strong);
   background: var(--danger-soft);
-  font-size: 0.7rem;
+  font-size: var(--ui-font-small);
 }
 
 .tableSection {

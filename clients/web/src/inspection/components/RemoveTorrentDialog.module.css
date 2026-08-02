@@ -20,13 +20,13 @@
 
 .dialog h2 {
   margin: 0 0 0.55rem;
-  font-size: 1.05rem;
+  font-size: var(--ui-font-heading);
 }
 
 .dialog p {
   margin: 0.5rem 0;
   color: var(--text-secondary);
-  font-size: 0.78rem;
+  font-size: var(--ui-font-small);
   line-height: 1.5;
 }
 
@@ -35,7 +35,7 @@
   align-items: center;
   gap: 0.55rem;
   margin: 1rem 0 0.5rem;
-  font-size: 0.8rem;
+  font-size: var(--ui-font-body);
   font-weight: 650;
 }
 
@@ -59,14 +59,14 @@
 }
 
 .actions button {
-  min-height: 2rem;
+  min-height: var(--ui-control-height);
   border: 1px solid var(--border-strong);
   border-radius: 0.4rem;
   padding: 0 0.75rem;
   color: var(--text-primary);
   background: var(--surface-secondary);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--ui-font-small);
   font-weight: 650;
 }
 

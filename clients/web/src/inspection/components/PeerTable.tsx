@@ -126,6 +126,9 @@ export function PeerTable({ torrentId }: { readonly torrentId: string }) {
   );
   const selectPeer = useInspectionStore((state) => state.selectPeer);
   const materialization = useInspectionStore((state) => state.viewStatus.peers);
+  const interfaceSize = useInspectionStore(
+    (state) => state.presentation.interfaceSize,
+  );
   const rows = useMemo(
     () =>
       (peerSet?.order ?? [])
@@ -141,6 +144,7 @@ export function PeerTable({ torrentId }: { readonly torrentId: string }) {
       rows={rows}
       getRowId={(row) => row.connectionId}
       columns={COLUMNS}
+      interfaceSize={interfaceSize}
       selectedId={selectedPeerId}
       onSelect={(row) => selectPeer(row.connectionId)}
       emptyMessage={peerEmptyMessage(materialization)}

@@ -16,6 +16,9 @@ export function TrackerTable({ torrentId }: { readonly torrentId: string }) {
   const materialization = useInspectionStore(
     (state) => state.viewStatus.trackers,
   );
+  const interfaceSize = useInspectionStore(
+    (state) => state.presentation.interfaceSize,
+  );
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -50,6 +53,7 @@ export function TrackerTable({ torrentId }: { readonly torrentId: string }) {
         rows={rows}
         getRowId={(row) => row.id}
         columns={columns}
+        interfaceSize={interfaceSize}
         emptyMessage={trackerEmptyMessage(materialization, trackerSet?.state)}
         initialSort={{ columnId: "tier", direction: "asc" }}
       />
