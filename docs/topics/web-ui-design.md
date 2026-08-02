@@ -71,9 +71,12 @@ testability, accessibility, and bounded rendering.
 ## Information Hierarchy
 
 Preserve JSTorrent's recognizable torrent detail hierarchy: overview,
-trackers, peers, swarm, files, pieces, and disk activity remain torrent-scoped
-views, while logs, transfer speeds, DHT, search, settings, and other session or
-product concerns retain an identifiable global scope.
+trackers, peers, swarm, files, and pieces remain torrent-scoped views. Disk is
+a session concern because its pressure and scheduling capacity are shared even
+when rows retain torrent attribution. Logs, transfer speeds, DHT, Disk, search,
+settings, and other session or product concerns use an identifiable right-side
+global group. The accepted storage and piece split lives in
+[`disk-and-piece-inspection`](disk-and-piece-inspection.md).
 
 Add a library and categorization level above the torrent list. This may expose
 derived views such as all, active, downloading, seeding, completed, paused,

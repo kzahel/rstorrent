@@ -135,8 +135,7 @@ architecture is accepted. Tactical `035` now implements the first live torrent
 and active-peer field set, Peers-versus-Swarm membership, and local endpoint
 privacy posture. The remaining inspection design includes:
 
-- the division between later swarm, piece, tracker, file, storage,
-  protocol-message, and history views;
+- the division between later swarm, protocol-message, and history views;
 - sorting, filtering, selection, and row-detail semantics beyond the first
   active-peer table;
 - concrete update cadence, history retention, overflow, and memory bounds;
@@ -150,6 +149,11 @@ Those choices should follow inspection of the current JSTorrent UI, the
 existing RSTorrent application and diagnostic contracts, and concrete
 interactive debugging needs. They should not be inferred from the public
 comparator schema or prematurely fixed by this strategy document.
+
+The file and tracker divisions are implemented by Tacticals `041` and `043`.
+The accepted global Disk and selected-torrent Canvas Pieces direction is owned
+by [`disk-and-piece-inspection`](disk-and-piece-inspection.md) and Tacticals
+`044`--`045`.
 
 ## Relationship To Engine Work
 

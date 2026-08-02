@@ -516,9 +516,12 @@ The first useful contract progression is:
 4. selected-torrent peers; and
 5. bounded diagnostics.
 
-Pieces, disk activity, speed history, swarm state, and DHT follow through
-named views according to inspection value. Files is implemented by Tactical
-`041` and trackers by Tactical `043`. Unsupported views
+Disk activity is now specified as one global session view by
+[`disk-and-piece-inspection`](disk-and-piece-inspection.md) and Tactical `044`.
+The selected-torrent piece activity contract is generalized and rendered by
+Tactical `045`. Speed history, swarm state, and DHT follow through named views
+according to inspection value. Files is implemented by Tactical `041` and
+trackers by Tactical `043`. Unsupported views
 must report unsupported or unavailable explicitly rather than fabricate empty
 data.
 
