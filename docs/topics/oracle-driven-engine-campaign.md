@@ -325,15 +325,16 @@ reason to stop.
 
 Campaign state: **active by maintainer direction**.
 
-Active tactical: none while the bounded concurrency slice is authored.
+Active tactical:
+[`054-bounded-independent-storage-execution.md`](../tactical/054-bounded-independent-storage-execution.md).
 Most recently completed tactical is
 [`053-immutable-positional-storage-plans.md`](../tactical/053-immutable-positional-storage-plans.md).
 Tacticals `025` through
 [`032-bounded-coalesced-write-batches.md`](../tactical/032-bounded-coalesced-write-batches.md)
 are complete.
 
-Current milestone: define bounded independent write/hash execution and an
-explicit piece-generation join over the completed positional-plan boundary.
+Current milestone: execute bounded independent write/hash jobs and an explicit
+piece-generation join over the completed positional-plan boundary.
 
 Last completed evidence:
 
@@ -617,7 +618,7 @@ write service fell from 30.928--31.979 to 27.131--28.353 seconds. The exact
 SQLite-backed median was 45.594 seconds with 17--18 revisions, unchanged
 checkpoint semantics and exact payload/publication/cleanup.
 
-Next executable action: author Tactical `054` from the pinned libtorrent disk
+Next executable action: execute Tactical `054` from the pinned libtorrent disk
 job/fence and hashing owners, choosing explicit initial write/hash limits and
 a piece-generation completion join before changing execution concurrency.
 
