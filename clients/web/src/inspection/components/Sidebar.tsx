@@ -25,7 +25,6 @@ export function Sidebar() {
   const activeCategory = useInspectionStore(
     (state) => state.presentation.category,
   );
-  const demo = useInspectionStore((state) => state.demo);
   const selectCategory = useInspectionStore((state) => state.selectCategory);
   const rows = useMemo(
     () =>
@@ -60,15 +59,6 @@ export function Sidebar() {
           );
         })}
       </ul>
-      <div className={styles.footer}>
-        <span className={styles.demoMark} aria-hidden="true">
-          {demo === null ? "L" : "D"}
-        </span>
-        <span>
-          <strong>{demo === null ? "Live engine" : "Demo workspace"}</strong>
-          <small>{demo === null ? "Local inspection" : "No network traffic"}</small>
-        </span>
-      </div>
     </nav>
   );
 }

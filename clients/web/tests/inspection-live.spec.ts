@@ -28,7 +28,9 @@ test("live disk inspection observes pressure and exact recovery", async ({
   );
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`/?live=${encodeURIComponent(gateway!)}&poll_ms=100`);
-  await expect(page.getByText("Live engine", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("navigation", { name: "Torrent library" }),
+  ).toBeVisible();
 
   const addForm = page.getByRole("form", { name: "Add torrent" });
   const torrentInput = addForm.getByRole("textbox", {
@@ -90,7 +92,9 @@ test("live piece inspection follows active work through verification", async ({
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`/?live=${encodeURIComponent(gateway!)}&poll_ms=100`);
-  await expect(page.getByText("Live engine", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("navigation", { name: "Torrent library" }),
+  ).toBeVisible();
 
   const input = page
     .getByRole("form", { name: "Add torrent" })
@@ -192,7 +196,9 @@ test("live peer inspection follows a controlled verified transfer", async ({
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`/?live=${encodeURIComponent(gateway!)}&poll_ms=100`);
-  await expect(page.getByText("Live engine", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("navigation", { name: "Torrent library" }),
+  ).toBeVisible();
   await expect
     .poll(async () => {
       const mainBottom = await page
