@@ -578,8 +578,12 @@ and invokes the batch sink outside the supervisor. Its matched three-run
 profile has a 45.221-second median and 16--18 revisions, with exact content and
 cleanup; forced-death resume also passes after 112 durable pieces.
 
-Next executable action: expose fixed checkpoint stages and counters through
-the existing Disk contracts, then add deterministic sync/database delay and
-failure controls before the subprocess crash-boundary matrix.
+The fixed checkpoint stage and counter contract now reaches engine snapshots,
+the application Disk projection, generated clients and the existing Disk
+panel. Hash timing ends at SHA-1; dirty, syncing and committing are distinct,
+with separate sync and SQLite service durations.
+
+Next executable action: add deterministic sync/database delay, failure,
+capacity and final-flush evidence before the subprocess crash-boundary matrix.
 
 Human blocker: **none**.

@@ -45,12 +45,12 @@ pub use view_sets::{
     ViewSet, ViewSetError, ViewSetOwner, ViewSetStats, ViewSetUpdate, ViewSpec,
 };
 pub use views::{
-    ActivePiece, ActivePieceStageView, CapabilityStatus, DeliveryPolicy, DiskPieceStageView,
-    DiskPieceView, DiskPipelineView, DiskPressureView, IndexRange, PeerDirection,
-    PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerRequestPhase,
-    PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
-    ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason, ResetReason,
-    SubscriptionError, SubscriptionSpec, SubscriptionStats, TorrentView, VIEW_CONTRACT_VERSION,
-    ViewHub, ViewPatch, ViewProjection, ViewSelector, ViewSnapshot, ViewSubscription, ViewUpdate,
-    ViewUpdatePayload, assess_progress,
+    ActivePiece, ActivePieceStageView, CapabilityStatus, DeliveryPolicy, DiskCheckpointStageView,
+    DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView, IndexRange,
+    PeerDirection, PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle,
+    PeerRequestPhase, PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction,
+    ProgressAssessment, ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason,
+    ResetReason, SubscriptionError, SubscriptionSpec, SubscriptionStats, TorrentView,
+    VIEW_CONTRACT_VERSION, ViewHub, ViewPatch, ViewProjection, ViewSelector, ViewSnapshot,
+    ViewSubscription, ViewUpdate, ViewUpdatePayload, assess_progress,
 };

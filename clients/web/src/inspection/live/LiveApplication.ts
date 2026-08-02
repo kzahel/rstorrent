@@ -772,6 +772,7 @@ function mapDisk(
   return {
     pipeline: {
       pressure: pipeline.pressure,
+      checkpointStage: pipeline.checkpoint_stage,
       intakeBackpressured: pipeline.intake_backpressured,
       sampleMillis: safeNumber(pipeline.sample_millis),
       residentLimitBytes: safeNumber(pipeline.resident_limit_bytes),
@@ -786,6 +787,46 @@ function mapDisk(
       queuedWriteBytes: safeNumber(pipeline.queued_write_bytes),
       writingBytes: safeNumber(pipeline.writing_bytes),
       hashingBytes: safeNumber(pipeline.hashing_bytes),
+      checkpointDirtyPieces: safeNumber(pipeline.checkpoint_dirty_pieces),
+      checkpointDirtyBytes: safeNumber(pipeline.checkpoint_dirty_bytes),
+      checkpointDirtyPieceHighWater: safeNumber(
+        pipeline.checkpoint_dirty_piece_high_water,
+      ),
+      checkpointDirtyByteHighWater: safeNumber(
+        pipeline.checkpoint_dirty_byte_high_water,
+      ),
+      checkpointOldestDirtyMillis: safeNumber(
+        pipeline.checkpoint_oldest_dirty_millis,
+      ),
+      checkpointBatchesStarted: safeNumber(
+        pipeline.checkpoint_batches_started,
+      ),
+      checkpointBatchesCompleted: safeNumber(
+        pipeline.checkpoint_batches_completed,
+      ),
+      checkpointPiecesCompleted: safeNumber(
+        pipeline.checkpoint_pieces_completed,
+      ),
+      checkpointSyncOperationsCompleted: safeNumber(
+        pipeline.checkpoint_sync_operations_completed,
+      ),
+      checkpointSyncServiceMicros: safeNumber(
+        pipeline.checkpoint_sync_service_micros,
+      ),
+      checkpointSyncServiceMaxMicros: safeNumber(
+        pipeline.checkpoint_sync_service_max_micros,
+      ),
+      checkpointCommitServiceMicros: safeNumber(
+        pipeline.checkpoint_commit_service_micros,
+      ),
+      checkpointCommitServiceMaxMicros: safeNumber(
+        pipeline.checkpoint_commit_service_max_micros,
+      ),
+      checkpointActiveMicros:
+        pipeline.checkpoint_active_micros === undefined ||
+        pipeline.checkpoint_active_micros === null
+          ? null
+          : safeNumber(pipeline.checkpoint_active_micros),
       storageJobsPending: safeNumber(pipeline.storage_jobs_pending),
       receivedBytesTotal: safeNumber(pipeline.received_bytes_total),
       storedBytesTotal: safeNumber(pipeline.stored_bytes_total),

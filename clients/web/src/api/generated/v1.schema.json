@@ -70,6 +70,9 @@
         "received",
         "stored",
         "hashing",
+        "checkpoint_dirty",
+        "checkpoint_syncing",
+        "checkpoint_committing",
         "failed"
       ],
       "type": "string"
@@ -733,6 +736,15 @@
         }
       ]
     },
+    "DiskCheckpointStageView": {
+      "enum": [
+        "idle",
+        "syncing",
+        "committing",
+        "error"
+      ],
+      "type": "string"
+    },
     "DiskPieceStageView": {
       "enum": [
         "receiving",
@@ -740,6 +752,9 @@
         "writing",
         "stored",
         "hashing",
+        "checkpoint_dirty",
+        "checkpoint_syncing",
+        "checkpoint_committing",
         "failed"
       ],
       "type": "string"
@@ -814,6 +829,54 @@
     "DiskPipelineView": {
       "properties": {
         "backpressured_millis_total": {
+          "type": "string"
+        },
+        "checkpoint_active_micros": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "checkpoint_batches_completed": {
+          "type": "string"
+        },
+        "checkpoint_batches_started": {
+          "type": "string"
+        },
+        "checkpoint_commit_service_max_micros": {
+          "type": "string"
+        },
+        "checkpoint_commit_service_micros": {
+          "type": "string"
+        },
+        "checkpoint_dirty_byte_high_water": {
+          "type": "string"
+        },
+        "checkpoint_dirty_bytes": {
+          "type": "string"
+        },
+        "checkpoint_dirty_piece_high_water": {
+          "type": "string"
+        },
+        "checkpoint_dirty_pieces": {
+          "type": "string"
+        },
+        "checkpoint_oldest_dirty_millis": {
+          "type": "string"
+        },
+        "checkpoint_pieces_completed": {
+          "type": "string"
+        },
+        "checkpoint_stage": {
+          "$ref": "#/$defs/DiskCheckpointStageView"
+        },
+        "checkpoint_sync_operations_completed": {
+          "type": "string"
+        },
+        "checkpoint_sync_service_max_micros": {
+          "type": "string"
+        },
+        "checkpoint_sync_service_micros": {
           "type": "string"
         },
         "hash_operations_completed": {
@@ -918,6 +981,7 @@
       },
       "required": [
         "pressure",
+        "checkpoint_stage",
         "intake_backpressured",
         "sample_millis",
         "resident_limit_bytes",
@@ -928,6 +992,19 @@
         "queued_write_bytes",
         "writing_bytes",
         "hashing_bytes",
+        "checkpoint_dirty_pieces",
+        "checkpoint_dirty_bytes",
+        "checkpoint_dirty_piece_high_water",
+        "checkpoint_dirty_byte_high_water",
+        "checkpoint_oldest_dirty_millis",
+        "checkpoint_batches_started",
+        "checkpoint_batches_completed",
+        "checkpoint_pieces_completed",
+        "checkpoint_sync_operations_completed",
+        "checkpoint_sync_service_micros",
+        "checkpoint_sync_service_max_micros",
+        "checkpoint_commit_service_micros",
+        "checkpoint_commit_service_max_micros",
         "storage_jobs_pending",
         "received_bytes_total",
         "stored_bytes_total",

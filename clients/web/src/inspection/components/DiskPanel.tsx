@@ -30,7 +30,17 @@ const DISK_COLUMNS: readonly VirtualColumn<DiskPieceRow>[] = [
     label: "State",
     width: 112,
     sortValue: (row) => row.stage,
-    sortOrder: ["failed", "hashing", "writing", "queued", "receiving", "stored"],
+    sortOrder: [
+      "failed",
+      "checkpoint_committing",
+      "checkpoint_syncing",
+      "checkpoint_dirty",
+      "hashing",
+      "writing",
+      "queued",
+      "receiving",
+      "stored",
+    ],
     render: (row) => (
       <span className={styles.stage} data-stage={row.stage}>
         <span aria-hidden="true" />
@@ -167,6 +177,7 @@ function DiskSummary({
     ["Queued write", pipeline.queuedWriteBytes],
     ["Writing", pipeline.writingBytes],
     ["Hashing", pipeline.hashingBytes],
+    ["Checkpoint dirty", pipeline.checkpointDirtyBytes],
   ] as const;
   const pressureLabel = titleCase(pipeline.pressure);
   return (
@@ -174,7 +185,7 @@ function DiskSummary({
       <div className={styles.summaryHeading}>
         <div>
           <p className={styles.eyebrow}>Session storage</p>
-          <h2 id="disk-pipeline-title">Receive → write → verify</h2>
+          <h2 id="disk-pipeline-title">Receive → write → verify → checkpoint</h2>
         </div>
         <span className={styles.pressure} data-pressure={pipeline.pressure}>
           <span aria-hidden="true" />
@@ -233,6 +244,30 @@ function DiskSummary({
           label="Hash service"
           value={formatMicros(pipeline.hashServiceMaxMicros)}
           detail={`${pipeline.hashOperationsCompleted.toLocaleString()} / ${pipeline.hashOperationsStarted.toLocaleString()} operations`}
+        />
+        <Metric
+          label="Checkpoint backlog"
+          value={`${pipeline.checkpointDirtyPieces.toLocaleString()} pieces · ${formatBytes(pipeline.checkpointDirtyBytes)}`}
+          detail={`oldest ${formatDuration(pipeline.checkpointOldestDirtyMillis)} · high ${pipeline.checkpointDirtyPieceHighWater.toLocaleString()} pieces / ${formatBytes(pipeline.checkpointDirtyByteHighWater)}`}
+        />
+        <Metric
+          label="Checkpoint stage"
+          value={titleCase(pipeline.checkpointStage)}
+          detail={
+            pipeline.checkpointActiveMicros === null
+              ? `${pipeline.checkpointBatchesCompleted.toLocaleString()} / ${pipeline.checkpointBatchesStarted.toLocaleString()} batches`
+              : `${formatMicros(pipeline.checkpointActiveMicros)} active`
+          }
+        />
+        <Metric
+          label="Payload sync"
+          value={formatMicros(pipeline.checkpointSyncServiceMaxMicros)}
+          detail={`${formatMicros(pipeline.checkpointSyncServiceMicros)} cumulative · ${pipeline.checkpointSyncOperationsCompleted.toLocaleString()} targets`}
+        />
+        <Metric
+          label="Checkpoint commit"
+          value={formatMicros(pipeline.checkpointCommitServiceMaxMicros)}
+          detail={`${formatMicros(pipeline.checkpointCommitServiceMicros)} cumulative · ${pipeline.checkpointPiecesCompleted.toLocaleString()} pieces`}
         />
         <Metric
           label="Backpressured"

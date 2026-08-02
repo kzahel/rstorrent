@@ -327,6 +327,36 @@ The next internal gate is fixed checkpoint observability followed by
 deterministic sync/database delay and failure control. Positional writes and
 hash concurrency remain unchanged.
 
+## Implementation Checkpoint 3: Truthful Fixed Observability
+
+`DiskPieceStage::Hashing` now ends at the actual SHA-1 result. Resumable pieces
+then move through `CheckpointDirty`, `CheckpointSyncing` and
+`CheckpointCommitting`; a successful batch removes the active rows, while a
+failed sync or callback marks its rows and the pipeline error state before the
+owner returns the typed failure. Non-resumable pieces still leave the active
+set immediately after a matching hash.
+
+`DownloadProgress`, `DiskRuntimeSnapshot`, the application Disk projection,
+generated Rust/JSON/TypeScript contracts and the web inspection model expose
+one fixed checkpoint stage; current dirty pieces/bytes and oldest age; piece
+and byte high-water marks; started/completed batches; completed pieces and
+unique sync operations; separate cumulative/maximum sync and database service
+time; and current active-stage age. The existing Disk panel adds the
+checkpoint backlog and service rows without adding operation history or a
+block-level table. The selected Pieces map treats the three durability states
+as stored content while the detailed Disk rows retain their exact stage.
+
+One deterministic engine transition test covers dirty, sync, commit and
+terminal counters. The session Disk projection test covers typed aggregation,
+active age and terminal clearing. Warning-denying workspace clippy, 163
+non-live engine tests, 78 session tests, 95 web tests, strict TypeScript and a
+fresh 128 MiB application profile pass; that profile retained exact payload
+and 18 post-metadata revisions. Its single 50.204-second latency sample is a
+correctness smoke, not a replacement performance cohort.
+
+The next internal gate is deterministic delayed sync/callback execution,
+capacity backpressure, failure propagation and forced final flush.
+
 ## Stopping Condition
 
 The tactical completes when hash verification, payload sync and SQLite commit

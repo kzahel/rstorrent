@@ -898,6 +898,12 @@ function validateDiskPipeline(value: unknown): void {
     "draining",
     "error",
   ]);
+  oneOf(pipeline.checkpoint_stage, "disk checkpoint stage", [
+    "idle",
+    "syncing",
+    "committing",
+    "error",
+  ]);
   boolean(pipeline.intake_backpressured, "disk intake backpressure");
   [
     "sample_millis",
@@ -909,6 +915,19 @@ function validateDiskPipeline(value: unknown): void {
     "queued_write_bytes",
     "writing_bytes",
     "hashing_bytes",
+    "checkpoint_dirty_pieces",
+    "checkpoint_dirty_bytes",
+    "checkpoint_dirty_piece_high_water",
+    "checkpoint_dirty_byte_high_water",
+    "checkpoint_oldest_dirty_millis",
+    "checkpoint_batches_started",
+    "checkpoint_batches_completed",
+    "checkpoint_pieces_completed",
+    "checkpoint_sync_operations_completed",
+    "checkpoint_sync_service_micros",
+    "checkpoint_sync_service_max_micros",
+    "checkpoint_commit_service_micros",
+    "checkpoint_commit_service_max_micros",
     "storage_jobs_pending",
     "received_bytes_total",
     "stored_bytes_total",
@@ -931,6 +950,7 @@ function validateDiskPipeline(value: unknown): void {
     "pressure_transition_count",
     "backpressured_millis_total",
   ].forEach((field) => decimal(pipeline[field], `disk ${field}`));
+  optionalDecimal(pipeline.checkpoint_active_micros, "disk checkpoint active time");
   optionalString(pipeline.last_error, "disk error", 256);
 }
 
@@ -953,6 +973,9 @@ function validateDiskPiece(value: unknown): void {
     "writing",
     "stored",
     "hashing",
+    "checkpoint_dirty",
+    "checkpoint_syncing",
+    "checkpoint_committing",
     "failed",
   ]);
   for (const field of ["requested_bytes", "received_bytes", "stored_bytes"]) {

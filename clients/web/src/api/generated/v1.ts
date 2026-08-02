@@ -63,15 +63,17 @@ export type SubscriptionSpec = { selector: ViewSelector, projection: ViewProject
 
 export type IndexRange = { start: number, end_exclusive: number, };
 
-export type ActivePieceStageView = "requested" | "received" | "stored" | "hashing" | "failed";
+export type ActivePieceStageView = "requested" | "received" | "stored" | "hashing" | "checkpoint_dirty" | "checkpoint_syncing" | "checkpoint_committing" | "failed";
 
 export type ActivePiece = { piece_id: string, piece_index: number, attempt: number, piece_length: number, stage: ActivePieceStageView, requested: Array<IndexRange>, received: Array<IndexRange>, stored: Array<IndexRange>, age_millis: string, error?: string | null, };
 
 export type DiskPressureView = "idle" | "normal" | "backpressured" | "draining" | "error";
 
-export type DiskPieceStageView = "receiving" | "queued" | "writing" | "stored" | "hashing" | "failed";
+export type DiskCheckpointStageView = "idle" | "syncing" | "committing" | "error";
 
-export type DiskPipelineView = { pressure: DiskPressureView, intake_backpressured: boolean, sample_millis: string, resident_limit_bytes: string, resident_high_watermark_bytes: string, resident_low_watermark_bytes: string, requested_bytes: string, resident_bytes: string, queued_write_bytes: string, writing_bytes: string, hashing_bytes: string, storage_jobs_pending: string, received_bytes_total: string, stored_bytes_total: string, verified_bytes_total: string, receive_rate_bytes: string, write_rate_bytes: string, hash_rate_bytes: string, write_operations_started: string, write_operations_completed: string, hash_operations_started: string, hash_operations_completed: string, write_queue_wait_micros: string, write_queue_wait_max_micros: string, write_service_micros: string, write_service_max_micros: string, hash_queue_wait_micros: string, hash_queue_wait_max_micros: string, hash_service_micros: string, hash_service_max_micros: string, pressure_transition_count: string, backpressured_millis_total: string, last_error?: string | null, };
+export type DiskPieceStageView = "receiving" | "queued" | "writing" | "stored" | "hashing" | "checkpoint_dirty" | "checkpoint_syncing" | "checkpoint_committing" | "failed";
+
+export type DiskPipelineView = { pressure: DiskPressureView, checkpoint_stage: DiskCheckpointStageView, intake_backpressured: boolean, sample_millis: string, resident_limit_bytes: string, resident_high_watermark_bytes: string, resident_low_watermark_bytes: string, requested_bytes: string, resident_bytes: string, queued_write_bytes: string, writing_bytes: string, hashing_bytes: string, checkpoint_dirty_pieces: string, checkpoint_dirty_bytes: string, checkpoint_dirty_piece_high_water: string, checkpoint_dirty_byte_high_water: string, checkpoint_oldest_dirty_millis: string, checkpoint_batches_started: string, checkpoint_batches_completed: string, checkpoint_pieces_completed: string, checkpoint_sync_operations_completed: string, checkpoint_sync_service_micros: string, checkpoint_sync_service_max_micros: string, checkpoint_commit_service_micros: string, checkpoint_commit_service_max_micros: string, checkpoint_active_micros?: string | null, storage_jobs_pending: string, received_bytes_total: string, stored_bytes_total: string, verified_bytes_total: string, receive_rate_bytes: string, write_rate_bytes: string, hash_rate_bytes: string, write_operations_started: string, write_operations_completed: string, hash_operations_started: string, hash_operations_completed: string, write_queue_wait_micros: string, write_queue_wait_max_micros: string, write_service_micros: string, write_service_max_micros: string, hash_queue_wait_micros: string, hash_queue_wait_max_micros: string, hash_service_micros: string, hash_service_max_micros: string, pressure_transition_count: string, backpressured_millis_total: string, last_error?: string | null, };
 
 export type DiskPieceView = { row_id: string, torrent_id: string, torrent_name: string, piece_index: number, piece_length: number, attempt: number, stage: DiskPieceStageView, requested_bytes: string, received_bytes: string, stored_bytes: string, age_millis: string, stage_age_millis: string, error?: string | null, };
 

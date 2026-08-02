@@ -587,6 +587,21 @@ pub struct DownloadProgress {
     pub storage_hash_service_max_micros: u64,
     pub storage_active_write_micros: Option<u64>,
     pub storage_active_hash_micros: Option<u64>,
+    pub checkpoint_stage: DiskCheckpointStage,
+    pub checkpoint_dirty_pieces: usize,
+    pub checkpoint_dirty_bytes: usize,
+    pub checkpoint_dirty_piece_high_water: usize,
+    pub checkpoint_dirty_byte_high_water: usize,
+    pub checkpoint_oldest_dirty_millis: u64,
+    pub checkpoint_batches_started: usize,
+    pub checkpoint_batches_completed: usize,
+    pub checkpoint_pieces_completed: usize,
+    pub checkpoint_sync_operations_completed: usize,
+    pub checkpoint_sync_service_micros: u64,
+    pub checkpoint_sync_service_max_micros: u64,
+    pub checkpoint_commit_service_micros: u64,
+    pub checkpoint_commit_service_max_micros: u64,
+    pub checkpoint_active_micros: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -599,6 +614,15 @@ pub enum DiskPressure {
     Error,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DiskCheckpointStage {
+    #[default]
+    Idle,
+    Syncing,
+    Committing,
+    Error,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DiskPieceStage {
     Receiving,
@@ -606,6 +630,9 @@ pub enum DiskPieceStage {
     Writing,
     Stored,
     Hashing,
+    CheckpointDirty,
+    CheckpointSyncing,
+    CheckpointCommitting,
     Failed,
 }
 
@@ -636,6 +663,21 @@ pub struct DiskRuntimeSnapshot {
     pub queued_write_bytes: usize,
     pub writing_bytes: usize,
     pub hashing_bytes: usize,
+    pub checkpoint_stage: DiskCheckpointStage,
+    pub checkpoint_dirty_pieces: usize,
+    pub checkpoint_dirty_bytes: usize,
+    pub checkpoint_dirty_piece_high_water: usize,
+    pub checkpoint_dirty_byte_high_water: usize,
+    pub checkpoint_oldest_dirty_millis: u64,
+    pub checkpoint_batches_started: usize,
+    pub checkpoint_batches_completed: usize,
+    pub checkpoint_pieces_completed: usize,
+    pub checkpoint_sync_operations_completed: usize,
+    pub checkpoint_sync_service_micros: u64,
+    pub checkpoint_sync_service_max_micros: u64,
+    pub checkpoint_commit_service_micros: u64,
+    pub checkpoint_commit_service_max_micros: u64,
+    pub checkpoint_active_micros: Option<u64>,
     pub storage_jobs_pending: usize,
     pub received_bytes_total: usize,
     pub stored_bytes_total: usize,
@@ -670,6 +712,20 @@ struct DiskRuntimeState {
     queued_write_bytes: usize,
     writing_bytes: usize,
     hashing_bytes: usize,
+    checkpoint_stage: DiskCheckpointStage,
+    checkpoint_active_started_at: Option<Instant>,
+    checkpoint_dirty_pieces: usize,
+    checkpoint_dirty_bytes: usize,
+    checkpoint_dirty_piece_high_water: usize,
+    checkpoint_dirty_byte_high_water: usize,
+    checkpoint_batches_started: usize,
+    checkpoint_batches_completed: usize,
+    checkpoint_pieces_completed: usize,
+    checkpoint_sync_operations_completed: usize,
+    checkpoint_sync_service: Duration,
+    checkpoint_sync_service_max: Duration,
+    checkpoint_commit_service: Duration,
+    checkpoint_commit_service_max: Duration,
     verified_bytes_total: usize,
     last_error: Option<String>,
     pieces: BTreeMap<u32, DiskPieceRuntimeState>,
@@ -685,7 +741,27 @@ struct DiskPieceRuntimeState {
     stored: Vec<(u32, u32)>,
     started_at: Instant,
     stage_started_at: Instant,
+    checkpoint_dirty_since: Option<Instant>,
     error: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct CheckpointProgressSnapshot {
+    stage: DiskCheckpointStage,
+    dirty_pieces: usize,
+    dirty_bytes: usize,
+    dirty_piece_high_water: usize,
+    dirty_byte_high_water: usize,
+    oldest_dirty_millis: u64,
+    batches_started: usize,
+    batches_completed: usize,
+    pieces_completed: usize,
+    sync_operations_completed: usize,
+    sync_service_micros: u64,
+    sync_service_max_micros: u64,
+    commit_service_micros: u64,
+    commit_service_max_micros: u64,
+    active_micros: Option<u64>,
 }
 
 impl DownloadControl {
@@ -750,6 +826,7 @@ impl DownloadControl {
         let write_timing = &self.inner.storage_write_timing;
         let hash_timing = &self.inner.storage_hash_timing;
         let (storage_active_write_micros, storage_active_hash_micros) = self.storage_active_ages();
+        let checkpoint = self.checkpoint_progress_snapshot(Instant::now());
         DownloadProgress {
             buffered_payload_bytes: self.inner.buffered_payload_bytes.load(Ordering::Acquire),
             payload_high_water: self.inner.payload_high_water.load(Ordering::Acquire),
@@ -808,6 +885,55 @@ impl DownloadControl {
             storage_hash_service_max_micros: hash_timing.service_max_micros.load(Ordering::Acquire),
             storage_active_write_micros,
             storage_active_hash_micros,
+            checkpoint_stage: checkpoint.stage,
+            checkpoint_dirty_pieces: checkpoint.dirty_pieces,
+            checkpoint_dirty_bytes: checkpoint.dirty_bytes,
+            checkpoint_dirty_piece_high_water: checkpoint.dirty_piece_high_water,
+            checkpoint_dirty_byte_high_water: checkpoint.dirty_byte_high_water,
+            checkpoint_oldest_dirty_millis: checkpoint.oldest_dirty_millis,
+            checkpoint_batches_started: checkpoint.batches_started,
+            checkpoint_batches_completed: checkpoint.batches_completed,
+            checkpoint_pieces_completed: checkpoint.pieces_completed,
+            checkpoint_sync_operations_completed: checkpoint.sync_operations_completed,
+            checkpoint_sync_service_micros: checkpoint.sync_service_micros,
+            checkpoint_sync_service_max_micros: checkpoint.sync_service_max_micros,
+            checkpoint_commit_service_micros: checkpoint.commit_service_micros,
+            checkpoint_commit_service_max_micros: checkpoint.commit_service_max_micros,
+            checkpoint_active_micros: checkpoint.active_micros,
+        }
+    }
+
+    fn checkpoint_progress_snapshot(&self, now: Instant) -> CheckpointProgressSnapshot {
+        let state = self
+            .inner
+            .disk_runtime
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let oldest_dirty_millis = state
+            .pieces
+            .values()
+            .filter_map(|piece| piece.checkpoint_dirty_since)
+            .map(|started| duration_millis(now.saturating_duration_since(started)))
+            .max()
+            .unwrap_or(0);
+        CheckpointProgressSnapshot {
+            stage: state.checkpoint_stage,
+            dirty_pieces: state.checkpoint_dirty_pieces,
+            dirty_bytes: state.checkpoint_dirty_bytes,
+            dirty_piece_high_water: state.checkpoint_dirty_piece_high_water,
+            dirty_byte_high_water: state.checkpoint_dirty_byte_high_water,
+            oldest_dirty_millis,
+            batches_started: state.checkpoint_batches_started,
+            batches_completed: state.checkpoint_batches_completed,
+            pieces_completed: state.checkpoint_pieces_completed,
+            sync_operations_completed: state.checkpoint_sync_operations_completed,
+            sync_service_micros: duration_micros(state.checkpoint_sync_service),
+            sync_service_max_micros: duration_micros(state.checkpoint_sync_service_max),
+            commit_service_micros: duration_micros(state.checkpoint_commit_service),
+            commit_service_max_micros: duration_micros(state.checkpoint_commit_service_max),
+            active_micros: state
+                .checkpoint_active_started_at
+                .map(|started| duration_micros(now.saturating_duration_since(started))),
         }
     }
 
@@ -915,6 +1041,21 @@ impl DownloadControl {
             queued_write_bytes: state.queued_write_bytes,
             writing_bytes: state.writing_bytes,
             hashing_bytes: state.hashing_bytes,
+            checkpoint_stage: progress.checkpoint_stage,
+            checkpoint_dirty_pieces: progress.checkpoint_dirty_pieces,
+            checkpoint_dirty_bytes: progress.checkpoint_dirty_bytes,
+            checkpoint_dirty_piece_high_water: progress.checkpoint_dirty_piece_high_water,
+            checkpoint_dirty_byte_high_water: progress.checkpoint_dirty_byte_high_water,
+            checkpoint_oldest_dirty_millis: progress.checkpoint_oldest_dirty_millis,
+            checkpoint_batches_started: progress.checkpoint_batches_started,
+            checkpoint_batches_completed: progress.checkpoint_batches_completed,
+            checkpoint_pieces_completed: progress.checkpoint_pieces_completed,
+            checkpoint_sync_operations_completed: progress.checkpoint_sync_operations_completed,
+            checkpoint_sync_service_micros: progress.checkpoint_sync_service_micros,
+            checkpoint_sync_service_max_micros: progress.checkpoint_sync_service_max_micros,
+            checkpoint_commit_service_micros: progress.checkpoint_commit_service_micros,
+            checkpoint_commit_service_max_micros: progress.checkpoint_commit_service_max_micros,
+            checkpoint_active_micros: progress.checkpoint_active_micros,
             storage_jobs_pending: progress.storage_jobs_pending,
             received_bytes_total: progress.received_bytes,
             stored_bytes_total: progress.stored_bytes,
@@ -1509,6 +1650,7 @@ impl DownloadControl {
                 piece.received.clear();
                 piece.stored.clear();
                 piece.started_at = now;
+                piece.checkpoint_dirty_since = None;
                 piece.error = None;
             }
             let started =
@@ -1563,7 +1705,13 @@ impl DownloadControl {
         self.emit_storage_state();
     }
 
-    fn disk_piece_verified(&self, piece_index: u32, piece_length: u32) {
+    fn disk_piece_hash_verified(
+        &self,
+        piece_index: u32,
+        piece_length: u32,
+        requires_checkpoint: bool,
+    ) {
+        let now = Instant::now();
         let mut state = self
             .inner
             .disk_runtime
@@ -1573,10 +1721,145 @@ impl DownloadControl {
         state.verified_bytes_total = state
             .verified_bytes_total
             .saturating_add(piece_length as usize);
-        state.pieces.remove(&piece_index);
+        if requires_checkpoint {
+            let newly_dirty = state.pieces.get_mut(&piece_index).is_some_and(|piece| {
+                let newly_dirty = piece.checkpoint_dirty_since.is_none();
+                piece.checkpoint_dirty_since.get_or_insert(now);
+                set_disk_piece_stage(piece, DiskPieceStage::CheckpointDirty, now);
+                newly_dirty
+            });
+            if newly_dirty {
+                state.checkpoint_dirty_pieces = state.checkpoint_dirty_pieces.saturating_add(1);
+                state.checkpoint_dirty_bytes = state
+                    .checkpoint_dirty_bytes
+                    .saturating_add(piece_length as usize);
+                state.checkpoint_dirty_piece_high_water = state
+                    .checkpoint_dirty_piece_high_water
+                    .max(state.checkpoint_dirty_pieces);
+                state.checkpoint_dirty_byte_high_water = state
+                    .checkpoint_dirty_byte_high_water
+                    .max(state.checkpoint_dirty_bytes);
+            }
+        } else {
+            state.pieces.remove(&piece_index);
+        }
         let resident = self.inner.buffered_payload_bytes.load(Ordering::Acquire);
         drop(state);
         self.update_disk_pressure(resident);
+        self.emit_storage_state();
+    }
+
+    fn disk_checkpoint_sync_started(&self, batch: &CheckpointBatch) {
+        let now = Instant::now();
+        let mut state = self
+            .inner
+            .disk_runtime
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.checkpoint_stage = DiskCheckpointStage::Syncing;
+        state.checkpoint_active_started_at = Some(now);
+        state.checkpoint_batches_started = state.checkpoint_batches_started.saturating_add(1);
+        for intent in &batch.intents {
+            if let Ok(piece_index) = u32::try_from(intent.piece_index)
+                && let Some(piece) = state.pieces.get_mut(&piece_index)
+            {
+                set_disk_piece_stage(piece, DiskPieceStage::CheckpointSyncing, now);
+            }
+        }
+        drop(state);
+        self.emit_storage_state();
+    }
+
+    fn disk_checkpoint_sync_completed(&self, batch: &CheckpointBatch, elapsed: Duration) {
+        let now = Instant::now();
+        let mut state = self
+            .inner
+            .disk_runtime
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.checkpoint_sync_operations_completed = state
+            .checkpoint_sync_operations_completed
+            .saturating_add(batch.targets.len());
+        state.checkpoint_sync_service = state.checkpoint_sync_service.saturating_add(elapsed);
+        state.checkpoint_sync_service_max = state.checkpoint_sync_service_max.max(elapsed);
+        state.checkpoint_stage = DiskCheckpointStage::Committing;
+        state.checkpoint_active_started_at = Some(now);
+        for intent in &batch.intents {
+            if let Ok(piece_index) = u32::try_from(intent.piece_index)
+                && let Some(piece) = state.pieces.get_mut(&piece_index)
+            {
+                set_disk_piece_stage(piece, DiskPieceStage::CheckpointCommitting, now);
+            }
+        }
+        drop(state);
+        self.emit_storage_state();
+    }
+
+    fn disk_checkpoint_completed(&self, batch: &CheckpointBatch, elapsed: Duration) {
+        let mut state = self
+            .inner
+            .disk_runtime
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.checkpoint_commit_service = state.checkpoint_commit_service.saturating_add(elapsed);
+        state.checkpoint_commit_service_max = state.checkpoint_commit_service_max.max(elapsed);
+        state.checkpoint_batches_completed = state.checkpoint_batches_completed.saturating_add(1);
+        state.checkpoint_pieces_completed = state
+            .checkpoint_pieces_completed
+            .saturating_add(batch.intents.len());
+        state.checkpoint_dirty_pieces = state
+            .checkpoint_dirty_pieces
+            .saturating_sub(batch.intents.len());
+        let batch_bytes = usize::try_from(batch.dirty_bytes).unwrap_or(usize::MAX);
+        state.checkpoint_dirty_bytes = state.checkpoint_dirty_bytes.saturating_sub(batch_bytes);
+        for intent in &batch.intents {
+            if let Ok(piece_index) = u32::try_from(intent.piece_index) {
+                state.pieces.remove(&piece_index);
+            }
+        }
+        state.checkpoint_stage = DiskCheckpointStage::Idle;
+        state.checkpoint_active_started_at = None;
+        let resident = self.inner.buffered_payload_bytes.load(Ordering::Acquire);
+        drop(state);
+        self.update_disk_pressure(resident);
+        self.emit_storage_state();
+    }
+
+    fn disk_checkpoint_failed(&self, batch: &CheckpointBatch, elapsed: Duration, detail: &str) {
+        let now = Instant::now();
+        let mut state = self
+            .inner
+            .disk_runtime
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match state.checkpoint_stage {
+            DiskCheckpointStage::Syncing => {
+                state.checkpoint_sync_service =
+                    state.checkpoint_sync_service.saturating_add(elapsed);
+                state.checkpoint_sync_service_max = state.checkpoint_sync_service_max.max(elapsed);
+            }
+            DiskCheckpointStage::Committing => {
+                state.checkpoint_commit_service =
+                    state.checkpoint_commit_service.saturating_add(elapsed);
+                state.checkpoint_commit_service_max =
+                    state.checkpoint_commit_service_max.max(elapsed);
+            }
+            DiskCheckpointStage::Idle | DiskCheckpointStage::Error => {}
+        }
+        let detail = bounded_diagnostic_detail(detail);
+        state.checkpoint_stage = DiskCheckpointStage::Error;
+        state.checkpoint_active_started_at = None;
+        state.pressure = DiskPressure::Error;
+        state.last_error = Some(detail.clone());
+        for intent in &batch.intents {
+            if let Ok(piece_index) = u32::try_from(intent.piece_index)
+                && let Some(piece) = state.pieces.get_mut(&piece_index)
+            {
+                piece.error = Some(detail.clone());
+                set_disk_piece_stage(piece, DiskPieceStage::Failed, now);
+            }
+        }
+        drop(state);
         self.emit_storage_state();
     }
 
@@ -1637,6 +1920,7 @@ impl DownloadControl {
                 stored: Vec::new(),
                 started_at: now,
                 stage_started_at: now,
+                checkpoint_dirty_since: None,
                 error: None,
             });
         piece.piece_length = piece_length;
@@ -1896,6 +2180,10 @@ impl DownloadControl {
         state.queued_write_bytes = 0;
         state.writing_bytes = 0;
         state.hashing_bytes = 0;
+        state.checkpoint_stage = DiskCheckpointStage::Idle;
+        state.checkpoint_active_started_at = None;
+        state.checkpoint_dirty_pieces = 0;
+        state.checkpoint_dirty_bytes = 0;
         state.pieces.clear();
         state.pressure = DiskPressure::Idle;
         if let Some(started) = state.backpressured_since.take() {
@@ -5169,6 +5457,7 @@ impl ContentCheckpointPipeline {
     fn start(
         handles: BTreeMap<DurabilityTarget, std::fs::File>,
         checkpoints: Arc<dyn DownloadCheckpointSink>,
+        control: DownloadControl,
     ) -> Result<Self, DownloadError> {
         let policy = CheckpointPolicy::new(
             CHECKPOINT_MAX_AGE,
@@ -5197,6 +5486,7 @@ impl ContentCheckpointPipeline {
                 checkpoints,
                 policy,
                 task_started_at,
+                control,
             )
             .await;
             if let Err(error) = &result {
@@ -5288,7 +5578,11 @@ impl ContentStoragePipeline {
                     .checkpoint_handles()
                     .await
                     .map_err(DownloadError::SelectiveStorage)?;
-                Some(ContentCheckpointPipeline::start(handles, checkpoints)?)
+                Some(ContentCheckpointPipeline::start(
+                    handles,
+                    checkpoints,
+                    control.clone(),
+                )?)
             }
             None => None,
         };
@@ -5477,6 +5771,7 @@ async fn run_content_checkpoint_task(
     checkpoints: Arc<dyn DownloadCheckpointSink>,
     policy: CheckpointPolicy,
     started_at: Instant,
+    control: DownloadControl,
 ) -> Result<(), DownloadError> {
     let mut state = CheckpointBatchState::new(policy);
     let mut permits = BTreeMap::new();
@@ -5494,15 +5789,22 @@ async fn run_content_checkpoint_task(
                 match timeout(wait, intents.recv()).await {
                     Ok(intent) => intent,
                     Err(_) => {
-                        flush_content_checkpoint(&mut state, &mut permits, &handles, &checkpoints)
-                            .await?;
+                        flush_content_checkpoint(
+                            &mut state,
+                            &mut permits,
+                            &handles,
+                            &checkpoints,
+                            &control,
+                        )
+                        .await?;
                         continue;
                     }
                 }
             }
         };
         let Some(mut next) = next else {
-            flush_content_checkpoint(&mut state, &mut permits, &handles, &checkpoints).await?;
+            flush_content_checkpoint(&mut state, &mut permits, &handles, &checkpoints, &control)
+                .await?;
             return Ok(());
         };
         let piece_index = next.intent.piece_index;
@@ -5523,10 +5825,24 @@ async fn run_content_checkpoint_task(
                         "checkpoint permit piece is duplicated".to_owned(),
                     ));
                 }
-                flush_content_checkpoint(&mut state, &mut permits, &handles, &checkpoints).await?;
+                flush_content_checkpoint(
+                    &mut state,
+                    &mut permits,
+                    &handles,
+                    &checkpoints,
+                    &control,
+                )
+                .await?;
             }
             CheckpointAdmission::FlushBefore { intent, .. } => {
-                flush_content_checkpoint(&mut state, &mut permits, &handles, &checkpoints).await?;
+                flush_content_checkpoint(
+                    &mut state,
+                    &mut permits,
+                    &handles,
+                    &checkpoints,
+                    &control,
+                )
+                .await?;
                 next.intent = intent;
                 pending = Some(next);
             }
@@ -5539,6 +5855,7 @@ async fn flush_content_checkpoint(
     permits: &mut BTreeMap<usize, CheckpointPermit>,
     handles: &BTreeMap<DurabilityTarget, Arc<std::fs::File>>,
     checkpoints: &Arc<dyn DownloadCheckpointSink>,
+    control: &DownloadControl,
 ) -> Result<(), DownloadError> {
     let expected_dirty_bytes = state.dirty_bytes();
     let Some(batch) = state.take() else {
@@ -5579,12 +5896,25 @@ async fn flush_content_checkpoint(
             "checkpoint permits escaped their batch".to_owned(),
         ));
     }
-    sync_checkpoint_targets(handles, &batch).await?;
+    control.disk_checkpoint_sync_started(&batch);
+    let sync_started = Instant::now();
+    if let Err(error) = sync_checkpoint_targets(handles, &batch).await {
+        control.disk_checkpoint_failed(&batch, sync_started.elapsed(), &error.to_string());
+        return Err(error);
+    }
+    control.disk_checkpoint_sync_completed(&batch, sync_started.elapsed());
+    let commit_started = Instant::now();
     let checkpoints = checkpoints.clone();
-    tokio::task::spawn_blocking(move || checkpoints.pieces_durable(&piece_indices))
-        .await
-        .map_err(|error| DownloadError::StorageTask(error.to_string()))?
-        .map_err(DownloadError::Checkpoint)?;
+    let commit_result =
+        tokio::task::spawn_blocking(move || checkpoints.pieces_durable(&piece_indices))
+            .await
+            .map_err(|error| DownloadError::StorageTask(error.to_string()))
+            .and_then(|result| result.map_err(DownloadError::Checkpoint));
+    if let Err(error) = commit_result {
+        control.disk_checkpoint_failed(&batch, commit_started.elapsed(), &error.to_string());
+        return Err(error);
+    }
+    control.disk_checkpoint_completed(&batch, commit_started.elapsed());
     drop(batch_permits);
     Ok(())
 }
@@ -5965,6 +6295,12 @@ async fn execute_content_storage_verification(
                     .await
                 }
             };
+            if result
+                .as_ref()
+                .is_ok_and(|verification| verification.actual == expected)
+            {
+                control.disk_piece_hash_verified(piece, length, durable);
+            }
             ContentStorageCompletion::Verify {
                 piece,
                 length,
@@ -6290,7 +6626,6 @@ impl<'a> ContentSwarmDownload<'a> {
                     });
                     self.control
                         .emit(DownloadActivityEvent::PieceVerified { piece_index: piece });
-                    self.control.disk_piece_verified(piece, length);
                     ContentMessageDisposition::PieceVerified(contributors)
                 }
             }
@@ -7517,6 +7852,7 @@ mod tests {
         download_verified_piece_with_control, execute_content_storage_writes, next_peer_message,
         retrying_dht_lookup, run_content_download, run_magnet_download_with_peers, send_message,
     };
+    use crate::checkpoint::{CheckpointBatch, CheckpointIntent, DurabilityTarget};
     use crate::dht::{BootstrapNode, DhtConfig, DhtService};
     use crate::network::{NetworkConfig, NetworkPolicy};
     use crate::peer::{
@@ -7532,6 +7868,7 @@ mod tests {
         BlockKey, DEFAULT_INITIAL_REQUESTS_PER_CONNECTION, DEFAULT_MAX_ESTABLISHED_CONNECTIONS,
         DEFAULT_MAX_PENDING_DIALS,
     };
+    use crate::{DiskCheckpointStage, DiskPieceStage};
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -7546,6 +7883,65 @@ mod tests {
         let count = AtomicUsize::new(usize::MAX);
         atomic_saturating_increment(&count);
         assert_eq!(count.load(Ordering::Acquire), usize::MAX);
+    }
+
+    #[test]
+    fn checkpoint_stages_and_fixed_counters_are_exact() {
+        let control = DownloadControl::new();
+        control.configure_disk_runtime(MIN_PAYLOAD_ALLOWANCE);
+        let block = BlockKey {
+            piece: 7,
+            begin: 0,
+            length: 16,
+        };
+        control.disk_block_requested(block, 16);
+        control.disk_block_received(block, 16);
+        control.disk_block_stored(block, 16);
+        control.disk_piece_hashing(7, 16);
+        control.disk_piece_hash_verified(7, 16, true);
+
+        let dirty = control.disk_snapshot();
+        assert_eq!(dirty.hashing_bytes, 0);
+        assert_eq!(dirty.checkpoint_stage, DiskCheckpointStage::Idle);
+        assert_eq!(dirty.checkpoint_dirty_pieces, 1);
+        assert_eq!(dirty.checkpoint_dirty_bytes, 16);
+        assert_eq!(dirty.checkpoint_dirty_piece_high_water, 1);
+        assert_eq!(dirty.checkpoint_dirty_byte_high_water, 16);
+        assert_eq!(dirty.pieces[0].stage, DiskPieceStage::CheckpointDirty);
+
+        let intent = CheckpointIntent::new(7, 16, Duration::ZERO, [DurabilityTarget::PartFile])
+            .expect("checkpoint intent");
+        let batch = CheckpointBatch {
+            intents: vec![intent],
+            dirty_bytes: 16,
+            oldest_verified_at: Duration::ZERO,
+            targets: vec![DurabilityTarget::PartFile],
+        };
+        control.disk_checkpoint_sync_started(&batch);
+        let syncing = control.disk_snapshot();
+        assert_eq!(syncing.checkpoint_stage, DiskCheckpointStage::Syncing);
+        assert_eq!(syncing.checkpoint_batches_started, 1);
+        assert_eq!(syncing.pieces[0].stage, DiskPieceStage::CheckpointSyncing);
+
+        control.disk_checkpoint_sync_completed(&batch, Duration::from_micros(11));
+        let committing = control.disk_snapshot();
+        assert_eq!(committing.checkpoint_stage, DiskCheckpointStage::Committing);
+        assert_eq!(committing.checkpoint_sync_operations_completed, 1);
+        assert_eq!(committing.checkpoint_sync_service_micros, 11);
+        assert_eq!(
+            committing.pieces[0].stage,
+            DiskPieceStage::CheckpointCommitting
+        );
+
+        control.disk_checkpoint_completed(&batch, Duration::from_micros(13));
+        let completed = control.disk_snapshot();
+        assert_eq!(completed.checkpoint_stage, DiskCheckpointStage::Idle);
+        assert_eq!(completed.checkpoint_dirty_pieces, 0);
+        assert_eq!(completed.checkpoint_dirty_bytes, 0);
+        assert_eq!(completed.checkpoint_batches_completed, 1);
+        assert_eq!(completed.checkpoint_pieces_completed, 1);
+        assert_eq!(completed.checkpoint_commit_service_micros, 13);
+        assert!(completed.pieces.is_empty());
     }
 
     #[test]

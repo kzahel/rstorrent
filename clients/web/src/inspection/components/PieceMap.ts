@@ -127,6 +127,9 @@ function stageCellState(stage: PieceLifecycleStage): PieceCellState {
     case "received":
       return PieceCellState.Received;
     case "stored":
+    case "checkpoint_dirty":
+    case "checkpoint_syncing":
+    case "checkpoint_committing":
       return PieceCellState.Stored;
     case "hashing":
       return PieceCellState.Hashing;

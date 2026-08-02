@@ -230,6 +230,7 @@ export interface TrackerSet {
 
 export interface DiskPipeline {
   readonly pressure: "idle" | "normal" | "backpressured" | "draining" | "error";
+  readonly checkpointStage: "idle" | "syncing" | "committing" | "error";
   readonly intakeBackpressured: boolean;
   readonly sampleMillis: number;
   readonly residentLimitBytes: number;
@@ -240,6 +241,20 @@ export interface DiskPipeline {
   readonly queuedWriteBytes: number;
   readonly writingBytes: number;
   readonly hashingBytes: number;
+  readonly checkpointDirtyPieces: number;
+  readonly checkpointDirtyBytes: number;
+  readonly checkpointDirtyPieceHighWater: number;
+  readonly checkpointDirtyByteHighWater: number;
+  readonly checkpointOldestDirtyMillis: number;
+  readonly checkpointBatchesStarted: number;
+  readonly checkpointBatchesCompleted: number;
+  readonly checkpointPiecesCompleted: number;
+  readonly checkpointSyncOperationsCompleted: number;
+  readonly checkpointSyncServiceMicros: number;
+  readonly checkpointSyncServiceMaxMicros: number;
+  readonly checkpointCommitServiceMicros: number;
+  readonly checkpointCommitServiceMaxMicros: number;
+  readonly checkpointActiveMicros: number | null;
   readonly storageJobsPending: number;
   readonly receivedBytesTotal: number;
   readonly storedBytesTotal: number;
@@ -271,7 +286,16 @@ export interface DiskPieceRow {
   readonly pieceIndex: number;
   readonly pieceLength: number;
   readonly attempt: number;
-  readonly stage: "receiving" | "queued" | "writing" | "stored" | "hashing" | "failed";
+  readonly stage:
+    | "receiving"
+    | "queued"
+    | "writing"
+    | "stored"
+    | "hashing"
+    | "checkpoint_dirty"
+    | "checkpoint_syncing"
+    | "checkpoint_committing"
+    | "failed";
   readonly requestedBytes: number;
   readonly receivedBytes: number;
   readonly storedBytes: number;
@@ -291,6 +315,9 @@ export type PieceLifecycleStage =
   | "received"
   | "stored"
   | "hashing"
+  | "checkpoint_dirty"
+  | "checkpoint_syncing"
+  | "checkpoint_committing"
   | "failed";
 
 export interface ActivePieceSummary {

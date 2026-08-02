@@ -17,11 +17,12 @@ pub mod swarm;
 mod tracker;
 
 pub use driver::{
-    ContentPeerActivitySnapshot, ContentRequestWindowPhase, DiskPieceRuntimeSnapshot,
-    DiskPieceStage, DiskPressure, DiskRuntimeSnapshot, DownloadActivityEvent, DownloadActivitySink,
-    DownloadCheckpointSink, DownloadConfig, DownloadControl, DownloadDiagnosticSnapshot,
-    DownloadError, DownloadProgress, DownloadReport, DownloadResourceLimits, MagnetDownloadConfig,
-    MetadataAcquisitionPhase, MetadataAcquisitionSnapshot, MetadataPeerSnapshot, MetadataPeerStage,
+    ContentPeerActivitySnapshot, ContentRequestWindowPhase, DiskCheckpointStage,
+    DiskPieceRuntimeSnapshot, DiskPieceStage, DiskPressure, DiskRuntimeSnapshot,
+    DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink, DownloadConfig,
+    DownloadControl, DownloadDiagnosticSnapshot, DownloadError, DownloadProgress, DownloadReport,
+    DownloadResourceLimits, MagnetDownloadConfig, MetadataAcquisitionPhase,
+    MetadataAcquisitionSnapshot, MetadataPeerSnapshot, MetadataPeerStage,
     ResumableMagnetDownloadConfig, SwarmActivitySnapshot, download_magnet,
     download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
     download_magnet_with_control, download_verified_piece,

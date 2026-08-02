@@ -254,7 +254,7 @@ describe("inspection application", () => {
       screen.queryByRole("grid", { name: "Active storage pieces" }),
     ).not.toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "Disk" }));
-    expect(screen.getByText("Receive → write → verify")).toBeVisible();
+    expect(screen.getByText("Receive → write → verify → checkpoint")).toBeVisible();
     expect(screen.getByLabelText("Disk pressure Backpressured")).toBeVisible();
     const pieces = screen.getByRole("grid", { name: "Active storage pieces" });
     expect(pieces).toHaveAttribute("aria-rowcount", "65");

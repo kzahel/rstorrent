@@ -13,9 +13,10 @@ use ts_rs::TS;
 
 use rstorrent_engine::peer::{PeerFailure, PeerSource, PeerSources};
 use rstorrent_engine::{
-    DiskPieceRuntimeSnapshot, DiskPieceStage, DiskPressure, DiskRuntimeSnapshot,
-    PeerConnectionDirection, PeerConnectionLifecycle, PeerConnectionObservation,
-    PeerConnectionRole, PeerRequestWindowPhase, PeerTransport, TrackerRuntimeSnapshot,
+    DiskCheckpointStage, DiskPieceRuntimeSnapshot, DiskPieceStage, DiskPressure,
+    DiskRuntimeSnapshot, PeerConnectionDirection, PeerConnectionLifecycle,
+    PeerConnectionObservation, PeerConnectionRole, PeerRequestWindowPhase, PeerTransport,
+    TrackerRuntimeSnapshot,
 };
 
 use crate::control::{RemovalState, ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState};
@@ -317,6 +318,9 @@ pub enum ActivePieceStageView {
     Received,
     Stored,
     Hashing,
+    CheckpointDirty,
+    CheckpointSyncing,
+    CheckpointCommitting,
     Failed,
 }
 
@@ -341,13 +345,27 @@ pub enum DiskPieceStageView {
     Writing,
     Stored,
     Hashing,
+    CheckpointDirty,
+    CheckpointSyncing,
+    CheckpointCommitting,
     Failed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum DiskCheckpointStageView {
+    Idle,
+    Syncing,
+    Committing,
+    Error,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct DiskPipelineView {
     pub pressure: DiskPressureView,
+    pub checkpoint_stage: DiskCheckpointStageView,
     pub intake_backpressured: bool,
     pub sample_millis: String,
     pub resident_limit_bytes: String,
@@ -358,6 +376,21 @@ pub struct DiskPipelineView {
     pub queued_write_bytes: String,
     pub writing_bytes: String,
     pub hashing_bytes: String,
+    pub checkpoint_dirty_pieces: String,
+    pub checkpoint_dirty_bytes: String,
+    pub checkpoint_dirty_piece_high_water: String,
+    pub checkpoint_dirty_byte_high_water: String,
+    pub checkpoint_oldest_dirty_millis: String,
+    pub checkpoint_batches_started: String,
+    pub checkpoint_batches_completed: String,
+    pub checkpoint_pieces_completed: String,
+    pub checkpoint_sync_operations_completed: String,
+    pub checkpoint_sync_service_micros: String,
+    pub checkpoint_sync_service_max_micros: String,
+    pub checkpoint_commit_service_micros: String,
+    pub checkpoint_commit_service_max_micros: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoint_active_micros: Option<String>,
     pub storage_jobs_pending: String,
     pub received_bytes_total: String,
     pub stored_bytes_total: String,
@@ -387,6 +420,7 @@ impl Default for DiskPipelineView {
     fn default() -> Self {
         Self {
             pressure: DiskPressureView::Idle,
+            checkpoint_stage: DiskCheckpointStageView::Idle,
             intake_backpressured: false,
             sample_millis: "0".to_owned(),
             resident_limit_bytes: "0".to_owned(),
@@ -397,6 +431,20 @@ impl Default for DiskPipelineView {
             queued_write_bytes: "0".to_owned(),
             writing_bytes: "0".to_owned(),
             hashing_bytes: "0".to_owned(),
+            checkpoint_dirty_pieces: "0".to_owned(),
+            checkpoint_dirty_bytes: "0".to_owned(),
+            checkpoint_dirty_piece_high_water: "0".to_owned(),
+            checkpoint_dirty_byte_high_water: "0".to_owned(),
+            checkpoint_oldest_dirty_millis: "0".to_owned(),
+            checkpoint_batches_started: "0".to_owned(),
+            checkpoint_batches_completed: "0".to_owned(),
+            checkpoint_pieces_completed: "0".to_owned(),
+            checkpoint_sync_operations_completed: "0".to_owned(),
+            checkpoint_sync_service_micros: "0".to_owned(),
+            checkpoint_sync_service_max_micros: "0".to_owned(),
+            checkpoint_commit_service_micros: "0".to_owned(),
+            checkpoint_commit_service_max_micros: "0".to_owned(),
+            checkpoint_active_micros: None,
             storage_jobs_pending: "0".to_owned(),
             received_bytes_total: "0".to_owned(),
             stored_bytes_total: "0".to_owned(),
@@ -2228,12 +2276,19 @@ impl DiskSessionModel {
     fn view(&self, torrents: &BTreeMap<String, TorrentModel>) -> DiskSessionView {
         let mut view = DiskSessionView::default();
         let mut pressure_rank = 0_u8;
+        let mut checkpoint_rank = 0_u8;
         for (torrent_id, runtime) in &self.torrents {
             let snapshot = &runtime.snapshot;
             let rank = disk_pressure_rank(snapshot.pressure);
             if rank >= pressure_rank {
                 pressure_rank = rank;
                 view.pipeline.pressure = map_disk_pressure(snapshot.pressure);
+            }
+            let rank = disk_checkpoint_rank(snapshot.checkpoint_stage);
+            if rank >= checkpoint_rank {
+                checkpoint_rank = rank;
+                view.pipeline.checkpoint_stage =
+                    map_disk_checkpoint_stage(snapshot.checkpoint_stage);
             }
             view.pipeline.intake_backpressured |= snapshot.intake_backpressured;
             view.pipeline.sample_millis =
@@ -2270,6 +2325,67 @@ impl DiskSessionModel {
                 &mut view.pipeline.hashing_bytes,
                 usize_to_u64(snapshot.hashing_bytes),
             );
+            add_decimal(
+                &mut view.pipeline.checkpoint_dirty_pieces,
+                usize_to_u64(snapshot.checkpoint_dirty_pieces),
+            );
+            add_decimal(
+                &mut view.pipeline.checkpoint_dirty_bytes,
+                usize_to_u64(snapshot.checkpoint_dirty_bytes),
+            );
+            add_decimal(
+                &mut view.pipeline.checkpoint_dirty_piece_high_water,
+                usize_to_u64(snapshot.checkpoint_dirty_piece_high_water),
+            );
+            add_decimal(
+                &mut view.pipeline.checkpoint_dirty_byte_high_water,
+                usize_to_u64(snapshot.checkpoint_dirty_byte_high_water),
+            );
+            view.pipeline.checkpoint_oldest_dirty_millis = max_decimal(
+                &view.pipeline.checkpoint_oldest_dirty_millis,
+                snapshot.checkpoint_oldest_dirty_millis,
+            );
+            add_decimal(
+                &mut view.pipeline.checkpoint_batches_started,
+                usize_to_u64(snapshot.checkpoint_batches_started),
+            );
+            add_decimal(
+                &mut view.pipeline.checkpoint_batches_completed,
+                usize_to_u64(snapshot.checkpoint_batches_completed),
+            );
+            add_decimal(
+                &mut view.pipeline.checkpoint_pieces_completed,
+                usize_to_u64(snapshot.checkpoint_pieces_completed),
+            );
+            add_decimal(
+                &mut view.pipeline.checkpoint_sync_operations_completed,
+                usize_to_u64(snapshot.checkpoint_sync_operations_completed),
+            );
+            add_decimal(
+                &mut view.pipeline.checkpoint_sync_service_micros,
+                snapshot.checkpoint_sync_service_micros,
+            );
+            view.pipeline.checkpoint_sync_service_max_micros = max_decimal(
+                &view.pipeline.checkpoint_sync_service_max_micros,
+                snapshot.checkpoint_sync_service_max_micros,
+            );
+            add_decimal(
+                &mut view.pipeline.checkpoint_commit_service_micros,
+                snapshot.checkpoint_commit_service_micros,
+            );
+            view.pipeline.checkpoint_commit_service_max_micros = max_decimal(
+                &view.pipeline.checkpoint_commit_service_max_micros,
+                snapshot.checkpoint_commit_service_max_micros,
+            );
+            if let Some(active) = snapshot.checkpoint_active_micros {
+                view.pipeline.checkpoint_active_micros = Some(max_decimal(
+                    view.pipeline
+                        .checkpoint_active_micros
+                        .as_deref()
+                        .unwrap_or("0"),
+                    active,
+                ));
+            }
             add_decimal(
                 &mut view.pipeline.storage_jobs_pending,
                 usize_to_u64(snapshot.storage_jobs_pending),
@@ -2421,6 +2537,15 @@ const fn disk_pressure_rank(pressure: DiskPressure) -> u8 {
     }
 }
 
+const fn disk_checkpoint_rank(stage: DiskCheckpointStage) -> u8 {
+    match stage {
+        DiskCheckpointStage::Idle => 0,
+        DiskCheckpointStage::Syncing => 1,
+        DiskCheckpointStage::Committing => 2,
+        DiskCheckpointStage::Error => 3,
+    }
+}
+
 const fn map_disk_pressure(pressure: DiskPressure) -> DiskPressureView {
     match pressure {
         DiskPressure::Idle => DiskPressureView::Idle,
@@ -2438,7 +2563,19 @@ const fn map_disk_piece_stage(stage: DiskPieceStage) -> DiskPieceStageView {
         DiskPieceStage::Writing => DiskPieceStageView::Writing,
         DiskPieceStage::Stored => DiskPieceStageView::Stored,
         DiskPieceStage::Hashing => DiskPieceStageView::Hashing,
+        DiskPieceStage::CheckpointDirty => DiskPieceStageView::CheckpointDirty,
+        DiskPieceStage::CheckpointSyncing => DiskPieceStageView::CheckpointSyncing,
+        DiskPieceStage::CheckpointCommitting => DiskPieceStageView::CheckpointCommitting,
         DiskPieceStage::Failed => DiskPieceStageView::Failed,
+    }
+}
+
+const fn map_disk_checkpoint_stage(stage: DiskCheckpointStage) -> DiskCheckpointStageView {
+    match stage {
+        DiskCheckpointStage::Idle => DiskCheckpointStageView::Idle,
+        DiskCheckpointStage::Syncing => DiskCheckpointStageView::Syncing,
+        DiskCheckpointStage::Committing => DiskCheckpointStageView::Committing,
+        DiskCheckpointStage::Error => DiskCheckpointStageView::Error,
     }
 }
 
@@ -2473,6 +2610,9 @@ const fn active_stage_from_runtime(runtime: &DiskPieceRuntimeSnapshot) -> Active
         DiskPieceStage::Queued | DiskPieceStage::Writing => ActivePieceStageView::Received,
         DiskPieceStage::Stored => ActivePieceStageView::Stored,
         DiskPieceStage::Hashing => ActivePieceStageView::Hashing,
+        DiskPieceStage::CheckpointDirty => ActivePieceStageView::CheckpointDirty,
+        DiskPieceStage::CheckpointSyncing => ActivePieceStageView::CheckpointSyncing,
+        DiskPieceStage::CheckpointCommitting => ActivePieceStageView::CheckpointCommitting,
         DiskPieceStage::Failed => ActivePieceStageView::Failed,
     }
 }
@@ -3494,9 +3634,9 @@ mod tests {
     use std::time::Duration;
 
     use rstorrent_engine::{
-        DiskPieceRuntimeSnapshot, DiskPieceStage, DiskPressure, DiskRuntimeSnapshot,
-        TrackerNextAction, TrackerRuntimeRecordSnapshot, TrackerRuntimeSnapshot,
-        TrackerRuntimeStatus, TrackerSource, TrackerTransport,
+        DiskCheckpointStage, DiskPieceRuntimeSnapshot, DiskPieceStage, DiskPressure,
+        DiskRuntimeSnapshot, TrackerNextAction, TrackerRuntimeRecordSnapshot,
+        TrackerRuntimeSnapshot, TrackerRuntimeStatus, TrackerSource, TrackerTransport,
     };
 
     use super::{
@@ -3591,6 +3731,21 @@ mod tests {
             queued_write_bytes: 24 * 1024 * 1024,
             writing_bytes: 256 * 1024,
             hashing_bytes: 0,
+            checkpoint_stage: DiskCheckpointStage::Syncing,
+            checkpoint_dirty_pieces: 3,
+            checkpoint_dirty_bytes: 3 * 16 * 1024,
+            checkpoint_dirty_piece_high_water: 5,
+            checkpoint_dirty_byte_high_water: 5 * 16 * 1024,
+            checkpoint_oldest_dirty_millis: 750,
+            checkpoint_batches_started: 2,
+            checkpoint_batches_completed: 1,
+            checkpoint_pieces_completed: 4,
+            checkpoint_sync_operations_completed: 2,
+            checkpoint_sync_service_micros: 600,
+            checkpoint_sync_service_max_micros: 400,
+            checkpoint_commit_service_micros: 300,
+            checkpoint_commit_service_max_micros: 300,
+            checkpoint_active_micros: Some(200),
             storage_jobs_pending: 96,
             received_bytes_total: received,
             stored_bytes_total: received.saturating_sub(1024),
@@ -3645,7 +3800,9 @@ mod tests {
             initial.payload,
             ViewUpdatePayload::Snapshot {
                 snapshot: ViewSnapshot::SessionDisk { ref pieces, ref pipeline }
-            } if pieces.is_empty() && pipeline.pressure == super::DiskPressureView::Idle
+            } if pieces.is_empty()
+                && pipeline.pressure == super::DiskPressureView::Idle
+                && pipeline.checkpoint_stage == super::DiskCheckpointStageView::Idle
         ));
 
         hub.record_disk_runtime(torrent_id, &disk_snapshot(1_000, 4_096))
@@ -3656,6 +3813,11 @@ mod tests {
             ViewUpdatePayload::Patch {
                 patch: ViewPatch::SessionDisk { ref pipeline, ref upsert, ref removed }
             } if pipeline.intake_backpressured
+                && pipeline.checkpoint_stage == super::DiskCheckpointStageView::Syncing
+                && pipeline.checkpoint_dirty_pieces == "3"
+                && pipeline.checkpoint_dirty_bytes == (3 * 16 * 1024).to_string()
+                && pipeline.checkpoint_sync_service_micros == "600"
+                && pipeline.checkpoint_active_micros.as_deref() == Some("200")
                 && pipeline.receive_rate_bytes == "0"
                 && upsert.len() == 1
                 && removed.is_empty()
@@ -3664,6 +3826,11 @@ mod tests {
         let mut next = disk_snapshot(2_000, 8_192);
         next.pressure = DiskPressure::Draining;
         next.intake_backpressured = false;
+        next.checkpoint_stage = DiskCheckpointStage::Idle;
+        next.checkpoint_dirty_pieces = 0;
+        next.checkpoint_dirty_bytes = 0;
+        next.checkpoint_batches_completed = 2;
+        next.checkpoint_active_micros = None;
         next.pieces.clear();
         hub.record_disk_runtime(torrent_id, &next)
             .expect("second disk sample");
@@ -3673,6 +3840,10 @@ mod tests {
             ViewUpdatePayload::Patch {
                 patch: ViewPatch::SessionDisk { ref pipeline, ref upsert, ref removed }
             } if pipeline.pressure == super::DiskPressureView::Draining
+                && pipeline.checkpoint_stage == super::DiskCheckpointStageView::Idle
+                && pipeline.checkpoint_dirty_pieces == "0"
+                && pipeline.checkpoint_batches_completed == "2"
+                && pipeline.checkpoint_active_micros.is_none()
                 && pipeline.receive_rate_bytes == "4096"
                 && upsert.is_empty()
                 && removed == &[format!("{torrent_id}:3:1")]

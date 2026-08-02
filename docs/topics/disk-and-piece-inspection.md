@@ -46,24 +46,30 @@ The storage pipeline uses these nouns consistently:
 4. **writing**: a storage write operation currently executing;
 5. **stored**: accepted content persisted to its staging destination;
 6. **hashing**: a complete piece being verified from storage;
-7. **verified**: content whose piece hash is accepted and durable have state is
-   eligible to advance in the currently implemented aggregate contract.
+7. **checkpoint dirty**: hash-verified content admitted to the bounded
+   durability owner but not yet included in a durable epoch;
+8. **checkpoint syncing**: an epoch synchronizing its unique payload
+   destinations;
+9. **checkpoint committing**: synchronized payload whose batched have state is
+   being committed; and
+10. **verified**: content whose piece hash is accepted; durable checkpoint
+    completion is tracked separately.
 
 `requested` is not memory consumption. `received` is a cumulative counter while
 `resident` is a gauge. `stored` is not `verified`. Every exposed quantity must
 identify itself as a current gauge, configured limit, cumulative counter,
 duration, or sampled rate.
 
-The proposed throughput architecture splits that final aggregate into hash
-passed, write/hash joined, checkpoint dirty, checkpoint syncing, and durably
-checkpointed. A future implementation tactical must evolve the typed view
-contract with the engine state instead of relabeling checkpoint wait as SHA-1
-work.
+Tactical `052` implements the first throughput split: hash service ends at the
+SHA-1 result, and checkpoint dirty, syncing and committing are distinct typed
+stages. The later positional and concurrent execution tacticals still need to
+split write/hash ownership and expose their resulting queue shape.
 
 The finest Disk table identity is one piece attempt. The UI never receives one
 row per 16 KiB block and never receives payload buffers. A piece attempt may
-move through receiving, queued, writing, hashing, verified, failed, or cancelled
-states. Individual block ownership remains inside the engine.
+move through receiving, queued, writing, hashing, checkpoint dirty, syncing,
+committing, failed, or terminal verified states. Individual block ownership
+remains inside the engine.
 
 The Pieces view materializes a compact piece-state array in the client from one
 coherent snapshot and typed changes. It must not fetch or replace the entire
@@ -243,6 +249,13 @@ download displayed active work, recovered after deliberate view-set lease
 expiry, reached exact 17/17 verification, matched external SHA-1, and cleaned
 up every owner. Android continues to use its distinct bounded Canvas while
 reducing the same active-piece collection.
+
+Tactical `052` now ends the hashing stage at the actual SHA-1 result and carries
+bounded checkpoint backlog, high-water marks, active stage/age, batch and
+target counts, and separate sync/SQLite service durations through the engine,
+application projection, generated contracts and existing Disk panel. Exact
+engine/session transition tests plus the full web contract suite pass. Delay,
+failure and crash-boundary evidence remains owned by the active tactical.
 
 ## Known Gaps After This Sequence
 
