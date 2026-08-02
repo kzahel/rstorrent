@@ -241,16 +241,10 @@ export function App() {
         <div className={styles.brand}>
           <span aria-hidden="true">RS</span>
           <strong>RSTorrent</strong>
-          <small>Inspection</small>
         </div>
         <div className={styles.sessionStats} aria-label="Session transfer rates">
           <span><b aria-hidden="true">↓</b> {formatRate(session.downloadRate)}</span>
           <span><b aria-hidden="true">↑</b> {formatRate(session.uploadRate)}</span>
-          <span className={styles.peerTotal}>
-            {session.knownPeers === null
-              ? "Peers unavailable"
-              : `${session.knownPeers.toLocaleString()} peers`}
-          </span>
         </div>
         <div className={styles.connection} data-state={session.connection}>
           <span aria-hidden="true" />

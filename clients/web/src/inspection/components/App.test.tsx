@@ -65,6 +65,9 @@ describe("inspection application", () => {
   it("renders the responsive hierarchy and changes detail tabs", async () => {
     const user = userEvent.setup();
     renderScenario("healthy-download", 42_000);
+    const header = screen.getByRole("banner");
+    expect(within(header).queryByText("Inspection")).not.toBeInTheDocument();
+    expect(within(header).queryByText(/peers/i)).not.toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Torrent library" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Add demo" })).toBeVisible();
     expect(
