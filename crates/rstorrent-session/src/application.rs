@@ -1646,6 +1646,26 @@ impl DownloadActivitySink for ViewActivitySink {
 }
 
 impl ViewActivitySink {
+    fn record_structured(
+        &self,
+        severity: DiagnosticSeverity,
+        category: &'static str,
+        code: &'static str,
+        message: &'static str,
+        subjects: Vec<DiagnosticSubject>,
+        fields: Vec<DiagnosticField>,
+    ) {
+        let _ = self.views.record_structured_diagnostic(DiagnosticDraft {
+            severity,
+            category: DiagnosticCategory::from_static(category),
+            code: code.to_owned(),
+            torrent_id: Some(self.torrent_id.clone()),
+            message: message.to_owned(),
+            subjects,
+            fields,
+        });
+    }
+
     fn record_discovery_event(&self, event: DownloadActivityEvent) {
         match event {
             DownloadActivityEvent::MetadataVerified {
@@ -1654,21 +1674,23 @@ impl ViewActivitySink {
                 piece_count,
                 file_count,
             } => {
-                let total_length = total_length.to_string();
-                let piece_length = piece_length.to_string();
-                let piece_count = piece_count.to_string();
-                let file_count = file_count.to_string();
-                let _ = self.views.record_diagnostic(
+                self.record_structured(
                     DiagnosticSeverity::Info,
-                    category::PEER_PROTOCOL,
+                    category::METADATA_EXCHANGE,
                     "metadata_verified",
-                    Some(&self.torrent_id),
                     "Torrent metadata verified",
-                    &[
-                        ("total_length", &total_length),
-                        ("piece_length", &piece_length),
-                        ("piece_count", &piece_count),
-                        ("file_count", &file_count),
+                    Vec::new(),
+                    vec![
+                        DiagnosticField::bytes("total_length", total_length),
+                        DiagnosticField::bytes("piece_length", u64::from(piece_length)),
+                        DiagnosticField::count(
+                            "piece_count",
+                            u64::try_from(piece_count).unwrap_or(u64::MAX),
+                        ),
+                        DiagnosticField::count(
+                            "file_count",
+                            u64::try_from(file_count).unwrap_or(u64::MAX),
+                        ),
                     ],
                 );
             }
@@ -1681,20 +1703,19 @@ impl ViewActivitySink {
                 let _ = self
                     .views
                     .set_discovery_activity(&self.torrent_id, true, false);
-                let tier = tier.to_string();
-                let attempt = attempt.to_string();
                 let announce_event = format!("{event:?}").to_ascii_lowercase();
-                let _ = self.views.record_diagnostic(
+                self.record_structured(
                     DiagnosticSeverity::Info,
                     category::TRACKER_ANNOUNCE,
                     "tracker_announce_started",
-                    Some(&self.torrent_id),
                     "Contacting UDP tracker",
-                    &[
-                        ("tracker", &tracker),
-                        ("tier", &tier),
-                        ("attempt", &attempt),
-                        ("event", &announce_event),
+                    vec![DiagnosticSubject::Tracker {
+                        tracker_id: tracker,
+                    }],
+                    vec![
+                        DiagnosticField::count("tier", u64::from(tier)),
+                        DiagnosticField::count("attempt", u64::from(attempt)),
+                        DiagnosticField::text("event", announce_event),
                     ],
                 );
             }
@@ -1714,19 +1735,21 @@ impl ViewActivitySink {
                 retry_in_seconds,
                 detail,
             } => {
-                let failures = failures.to_string();
-                let retry = retry_in_seconds.to_string();
-                let _ = self.views.record_diagnostic(
+                self.record_structured(
                     DiagnosticSeverity::Warning,
                     category::TRACKER_ANNOUNCE,
                     "tracker_announce_failed",
-                    Some(&self.torrent_id),
                     "UDP tracker announce failed temporarily",
-                    &[
-                        ("tracker", &tracker),
-                        ("failures", &failures),
-                        ("retry_seconds", &retry),
-                        ("detail", &detail),
+                    vec![DiagnosticSubject::Tracker {
+                        tracker_id: tracker,
+                    }],
+                    vec![
+                        DiagnosticField::count("failures", u64::from(failures)),
+                        DiagnosticField::duration_millis(
+                            "retry_in",
+                            retry_in_seconds.saturating_mul(1_000),
+                        ),
+                        DiagnosticField::text("detail", detail),
                     ],
                 );
             }
@@ -1777,18 +1800,20 @@ impl ViewActivitySink {
                 peer_count,
                 interval_seconds,
             } => {
-                let peers = peer_count.to_string();
-                let interval = interval_seconds.to_string();
-                let _ = self.views.record_diagnostic(
+                self.record_structured(
                     DiagnosticSeverity::Info,
                     category::TRACKER_ANNOUNCE,
                     "tracker_announce_succeeded",
-                    Some(&self.torrent_id),
                     "UDP tracker announce succeeded",
-                    &[
-                        ("tracker", &tracker),
-                        ("peers", &peers),
-                        ("interval_seconds", &interval),
+                    vec![DiagnosticSubject::Tracker {
+                        tracker_id: tracker,
+                    }],
+                    vec![
+                        DiagnosticField::count("peers", u64::from(peer_count)),
+                        DiagnosticField::duration_millis(
+                            "announce_interval",
+                            interval_seconds.saturating_mul(1_000),
+                        ),
                     ],
                 );
             }
