@@ -20,6 +20,9 @@ The inspection contract must describe a performant storage architecture rather
 than freeze today's implementation into the UI. In particular, it must remain
 valid when the current torrent-local storage owner becomes one input to a
 session-wide scheduler with controlled concurrency and fairness.
+[`storage-throughput-architecture.md`](storage-throughput-architecture.md)
+defines that proposed execution architecture. This topic owns its inspection
+contract and must not imply that the proposed stages are implemented early.
 
 ## Accepted Information Hierarchy
 
@@ -44,12 +47,18 @@ The storage pipeline uses these nouns consistently:
 5. **stored**: accepted content persisted to its staging destination;
 6. **hashing**: a complete piece being verified from storage;
 7. **verified**: content whose piece hash is accepted and durable have state is
-   eligible to advance.
+   eligible to advance in the currently implemented aggregate contract.
 
 `requested` is not memory consumption. `received` is a cumulative counter while
 `resident` is a gauge. `stored` is not `verified`. Every exposed quantity must
 identify itself as a current gauge, configured limit, cumulative counter,
 duration, or sampled rate.
+
+The proposed throughput architecture splits that final aggregate into hash
+passed, write/hash joined, checkpoint dirty, checkpoint syncing, and durably
+checkpointed. A future implementation tactical must evolve the typed view
+contract with the engine state instead of relabeling checkpoint wait as SHA-1
+work.
 
 The finest Disk table identity is one piece attempt. The UI never receives one
 row per 16 KiB block and never receives payload buffers. A piece attempt may
@@ -90,9 +99,11 @@ peer/scheduler owners       storage owner(s)       piece verifier/checkpoints
   thread count, or storage backend architecture.
 
 RSTorrent already hashes a complete v1 piece incrementally from storage rather
-than assembling one contiguous piece allocation. Pending write buffers may be
-consumed directly by the hash path when available. The inspection work must
-preserve that no-full-piece-copy direction and make any remaining bounded
+than assembling one contiguous piece allocation. The current engine rereads
+that content from storage after writes complete; it does not yet read through
+pending write buffers. The proposed architecture may add that bounded path
+after independent positional write and hash queues are measured. Inspection
+must preserve the no-full-piece-copy direction and make any remaining bounded
 copies measurable rather than introduce a UI-shaped piece buffer.
 
 ## Disk View Contract
@@ -235,7 +246,9 @@ reducing the same active-piece collection.
 
 ## Known Gaps After This Sequence
 
-- a session-wide multi-torrent storage scheduler and measured fair concurrency;
+- the proposed session-wide multi-torrent storage scheduler and measured fair
+  concurrency in
+  [`storage-throughput-architecture.md`](storage-throughput-architecture.md);
 - platform-specific filesystem throughput, cache, direct-I/O, and memory policy;
 - durable or long-window rate history in the Speed view;
 - piece priorities, piece selection commands, and interactive piece details;

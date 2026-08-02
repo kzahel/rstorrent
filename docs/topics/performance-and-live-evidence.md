@@ -818,6 +818,13 @@ pieces with zero piece-hash failures and successful cleanup. Each reduced
 serialized storage service at 93.0--94.2%. This is a structural batching claim,
 not a latency, functional-parity, or protocol claim.
 
+[`storage-throughput-architecture.md`](storage-throughput-architecture.md)
+now records the source-derived end-state needed to test the next causal slices:
+batched durability outside hash service, immutable positional spans,
+independent bounded write/hash queues, optional pending-write read-through,
+and eventual session/root fairness. The proposal does not convert this evidence
+into an implementation or speed claim.
+
 ## Maintenance Contract
 
 Feature tacticals add measurements only when their owner can report them

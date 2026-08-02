@@ -113,17 +113,20 @@ evidence.
 
 ### Now
 
-**Select the next oracle-driven engine slice.** Tactical
-[`049`](../tactical/049-structured-log-console.md) completes the global ordered
-console, structured expandable context, producer capture interest, honest gap
-semantics, and bounded responsive/live evidence. Use the connected peer, file,
-tracker, piece, disk, and diagnostic surfaces together with the retained
-comparator evidence to choose one bounded owner-level correctness or
-performance tactical.
+**Review the proposed maximum-throughput storage architecture.**
+[`storage-throughput-architecture.md`](storage-throughput-architecture.md)
+uses the retained duration evidence and pinned libtorrent behavior to define
+positional non-overlapping writes, independent hash work, targeted exceptional
+fences, part-file coordination, batched durability, and session/root fairness.
+Reviewing the proposal does not activate an implementation tactical.
 
 ### Next
 
-1. **Deepen peer inspection only if engine selection needs it.** A
+1. **If the architecture is accepted, open only its first bounded tactical.**
+   Decouple hash verification from durability, batch payload synchronization
+   and SQLite have updates, and expose the separated stages before adding
+   positional worker concurrency.
+2. **Deepen peer inspection only if engine selection needs it.** A
    registry-backed Swarm view remains the strongest missing inspection
    candidate, but it should not displace a reproducible download correctness
    or storage bottleneck merely to add another tab.
@@ -198,7 +201,7 @@ does not.
 | Multi-file mapping and selective files | Implemented | deterministic, runtime, interop | General product selection changes and priority scheduling are absent. | [`client-persistence`](client-persistence.md) |
 | Cross-file, skipped-file, and padding storage | Implemented | deterministic, runtime, interop | BEP 47 symlinks are deliberately rejected. | [`client-persistence`](client-persistence.md) |
 | Path-backed staging and publication | Implemented | runtime, interop | Disk-space policy, relocation, and broad filesystem failure profiles remain incomplete. | [`client-persistence`](client-persistence.md) |
-| Bounded asynchronous content storage | Implemented | deterministic, runtime, interop, live | One torrent-local owner serializes writes and hashes with exact join; live duration evidence attributes about 88% of wall time to 16 KiB writes, so write execution is the active performance gap and this is not a session-wide disk scheduler. | [`download-correctness`](download-correctness.md) |
+| Bounded asynchronous content storage | Implemented | deterministic, runtime, interop, live | One torrent-local owner serializes writes, hashes, payload sync, and per-piece checkpoints; live duration evidence attributes 93--94% of wall time to the combined service, and the proposed replacement is not implemented. | [`storage-throughput-architecture`](storage-throughput-architecture.md) |
 | Android SAF storage and publication | Implemented | runtime, AVD, physical | General root management, removable-media policy, and migration remain absent. | [`client-persistence`](client-persistence.md) |
 | Durable have state and conservative recheck | Implemented | deterministic, runtime, interop, AVD, physical | It rehashes claimed pieces rather than providing optimized fast resume. | [`client-persistence`](client-persistence.md) |
 | Recovery after content hash failure | Implemented | deterministic, runtime | Sole corrupt and ambiguous multi-source generations retry cleanly with bounded exact-generation attribution. | [`download-correctness`](download-correctness.md) |

@@ -294,10 +294,13 @@ write/hash service still consumed 93.0--94.2% of wall time. Zero hash failures
 and successful cleanup held.
 
 No next stopping condition is active while the campaign is paused for
-maintainer review. The retained candidate is source-derived bounded positional
-storage concurrency with per-piece verification fences. Peer selection and
-request policy remain unchanged unless a future authorized tactical records a
-different evidence-backed owner.
+maintainer review. The source-derived candidate is now specified holistically
+in
+[`storage-throughput-architecture.md`](storage-throughput-architecture.md):
+decouple hash verification from batched durability first, then establish
+immutable positional spans and bounded independent write/hash execution. Peer
+selection and request policy remain unchanged unless a future authorized
+tactical records a different evidence-backed owner.
 
 Routine engine validation remains headless; no additional product UI is
 required by that slice.

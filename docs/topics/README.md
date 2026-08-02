@@ -49,6 +49,10 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`performance-and-live-evidence.md`](performance-and-live-evidence.md):
   headless libtorrent comparison, public-smoke classification, performance
   measurement, and artifact-safety policy.
+- [`storage-throughput-architecture.md`](storage-throughput-architecture.md):
+  proposed maximum-throughput receive-to-storage pipeline, positional I/O,
+  write/hash joins, part-file coordination, batched durability, and
+  session/root scheduling.
 - [`oracle-driven-engine-campaign.md`](oracle-driven-engine-campaign.md):
   source-first libtorrent-oracle runbook, parity gates, autonomous restart
   checkpoint, milestone sequence, and transition to measured BEP breadth.

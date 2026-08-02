@@ -6,7 +6,10 @@ Status: Paused after completed Tactical `032` by maintainer direction. The
 paired headless comparator and bounded utility timeline drive metadata,
 first-piece, sustained-transfer, endgame, and full publication parity from
 pinned libtorrent source and tests. Bounded write coalescing is complete;
-serialized storage execution remains the measured owner. Product direction
+serialized storage execution remains the measured owner. Its proposed
+multi-tactical replacement is recorded in
+[`storage-throughput-architecture.md`](storage-throughput-architecture.md),
+but no implementation tactical is active. Product direction
 has moved temporarily to the detailed desktop inspection surface recorded in
 [`desktop-inspection-surface.md`](desktop-inspection-surface.md). Its view-set
 application boundary is accepted in
@@ -326,8 +329,10 @@ Tacticals `025` through
 are complete.
 
 Current milestone: Tactical `032` closed bounded write coalescing without a
-speed claim. Review its neutral controlled result and retained public storage
-attribution before authorizing another implementation slice.
+speed claim. The proposed maximum-throughput storage topic now reconciles its
+neutral controlled result, retained public attribution, current ownership,
+file selection and part-file behavior, and pinned libtorrent source/tests.
+Review that architecture before authorizing its first implementation slice.
 
 Last completed evidence:
 

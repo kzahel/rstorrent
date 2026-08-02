@@ -363,8 +363,9 @@ successful mutation unreadable after upgrade.
   exposes more than its automatically created profile.
 - Whether Android places the database in backed-up or explicitly no-backup
   app-private storage.
-- Whether later scheduling evidence justifies batching the implemented
-  per-piece durability transactions.
+- Whether maintainer review accepts the batched durability epochs proposed by
+  [`storage-throughput-architecture.md`](storage-throughput-architecture.md)
+  to replace the implemented per-piece payload sync and SQLite transaction.
 - The exact clean-shutdown, storage-generation, and file-observation evidence
   required before a later fast-resume path may skip hashing.
 - How completed payload moved outside the application is deliberately

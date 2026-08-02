@@ -141,6 +141,10 @@ provenance policy.
   feature campaign, including privacy, resource, and warm-restart boundaries.
 - [Performance and live evidence](docs/topics/performance-and-live-evidence.md)
   defines the headless libtorrent comparator and public-smoke evidence policy.
+- [Maximum-throughput storage architecture](docs/topics/storage-throughput-architecture.md)
+  defines the proposed positional write, independent hash, part-file,
+  checkpoint, and session-scheduling direction for removing the measured
+  serialized storage bottleneck.
 - [Oracle-driven engine campaign](docs/topics/oracle-driven-engine-campaign.md)
   is the compaction-safe source-first runbook and current execution checkpoint.
 - [Topics](docs/topics/README.md) hold living truth for continuing concerns.
