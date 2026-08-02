@@ -79,7 +79,7 @@ pub struct StagingFile {
 #[derive(Clone, Debug)]
 struct StagingWritePlan {
     begin: u64,
-    payload: Arc<[u8]>,
+    payload: Arc<Vec<u8>>,
     routing_generation: u64,
 }
 
@@ -147,7 +147,7 @@ impl StagingFile {
         debug_assert!(end <= self.file_length);
         Ok(StagingWritePlan {
             begin,
-            payload: Arc::from(bytes),
+            payload: Arc::new(bytes),
             routing_generation: self.routing_generation,
         })
     }

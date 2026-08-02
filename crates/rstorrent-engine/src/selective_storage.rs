@@ -4,6 +4,7 @@ use std::ffi::OsString;
 use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use rstorrent_protocol::metainfo::Metainfo;
 use rstorrent_protocol::storage_layout::{
@@ -14,7 +15,8 @@ use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 
 use crate::checkpoint::DurabilityTarget;
-use crate::part_file::{PartFile, PartFileError, PartFileIdentity};
+use crate::part_file::{PartFile, PartFileError, PartFileIdentity, PartFileSpan};
+use crate::positional_io::{read_exact_at, write_all_at};
 use crate::storage::VERIFICATION_CHUNK_LENGTH;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -103,6 +105,9 @@ pub enum SelectiveStorageError {
     MissingWantedFile {
         file_index: usize,
     },
+    StaleWriteRoute {
+        file_index: usize,
+    },
     InvalidDescriptorManifest {
         role: &'static str,
         file_index: usize,
@@ -183,6 +188,9 @@ impl fmt::Display for SelectiveStorageError {
             Self::PartFile(error) => write!(formatter, "part file: {error}"),
             Self::MissingWantedFile { file_index } => {
                 write!(formatter, "wanted file {file_index} is not open")
+            }
+            Self::StaleWriteRoute { file_index } => {
+                write!(formatter, "wanted file {file_index} write route is stale")
             }
             Self::InvalidDescriptorManifest {
                 role,
@@ -278,10 +286,65 @@ pub struct SelectiveStorage {
     identity: PartFileIdentity,
     layout: TorrentLayout,
     selection: FileSelection,
-    files: Vec<Option<File>>,
+    files: Vec<Option<RetainedFile>>,
     part_file: Option<PartFile>,
     verified: Vec<bool>,
     published: bool,
+}
+
+#[derive(Debug)]
+struct RetainedFile {
+    control: File,
+    positional: Arc<std::fs::File>,
+    routing_generation: u64,
+}
+
+impl RetainedFile {
+    async fn new(control: File, operation: &'static str) -> Result<Self, SelectiveStorageError> {
+        let positional = control
+            .try_clone()
+            .await
+            .map_err(|source| SelectiveStorageError::Io { operation, source })?
+            .into_std()
+            .await;
+        Ok(Self {
+            control,
+            positional: Arc::new(positional),
+            routing_generation: 0,
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+struct SelectiveWritePlan {
+    payload: Arc<Vec<u8>>,
+    spans: Vec<SelectiveWriteSpan>,
+    stats: SelectiveWriteStats,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SelectiveWriteSpan {
+    destination: SelectiveWriteDestination,
+    block_offset: usize,
+    length: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SelectiveWriteDestination {
+    WantedFile {
+        file_index: usize,
+        file_offset: u64,
+        routing_generation: u64,
+    },
+    PartFile(PartFileSpan),
+}
+
+#[derive(Debug)]
+struct ExecutableWriteSpan {
+    file: Arc<std::fs::File>,
+    file_offset: u64,
+    block_offset: usize,
+    length: usize,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -295,16 +358,19 @@ struct SelectiveHashIoStats {
 
 #[derive(Debug)]
 struct BlockingHashPlan {
-    files: Vec<std::fs::File>,
     spans: Vec<BlockingHashSpan>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 enum BlockingHashSpan {
     WantedFile {
-        file_slot: usize,
+        file: Arc<std::fs::File>,
         file_offset: u64,
         length: usize,
+    },
+    PartFile {
+        file: Arc<std::fs::File>,
+        span: PartFileSpan,
     },
     Padding {
         length: usize,
@@ -314,11 +380,10 @@ enum BlockingHashSpan {
 type BlockingHashResult = Result<([u8; 20], SelectiveHashIoStats), SelectiveStorageError>;
 
 impl BlockingHashPlan {
-    fn hash(mut self) -> BlockingHashResult {
+    fn hash(self) -> BlockingHashResult {
         let mut hasher = Sha1::new();
         let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
         let mut stats = SelectiveHashIoStats {
-            wanted_file_duplicates: self.files.len(),
             blocking_jobs: 1,
             ..SelectiveHashIoStats::default()
         };
@@ -326,15 +391,10 @@ impl BlockingHashPlan {
             let mut consumed = 0_usize;
             match span {
                 BlockingHashSpan::WantedFile {
-                    file_slot,
+                    file,
                     file_offset,
                     length: span_length,
                 } => {
-                    let file = self.files.get_mut(file_slot).ok_or(
-                        SelectiveStorageError::InvalidStorageOperation(
-                            "blocking hash file slot is absent",
-                        ),
-                    )?;
                     while consumed < span_length {
                         let length = (span_length - consumed).min(buffer.len());
                         let offset = file_offset
@@ -344,7 +404,7 @@ impl BlockingHashPlan {
                             .ok_or(SelectiveStorageError::Layout(
                                 LayoutError::ArithmeticOverflow,
                             ))?;
-                        read_exact_at(file, &mut buffer[..length], offset).map_err(|source| {
+                        read_exact_at(&file, &mut buffer[..length], offset).map_err(|source| {
                             SelectiveStorageError::Io {
                                 operation:
                                     "read selected staging range in blocking verification job",
@@ -352,6 +412,28 @@ impl BlockingHashPlan {
                             }
                         })?;
                         stats.wanted_file_reads = stats.wanted_file_reads.saturating_add(1);
+                        hasher.update(&buffer[..length]);
+                        consumed += length;
+                    }
+                }
+                BlockingHashSpan::PartFile { file, span } => {
+                    while consumed < span.length {
+                        let length = (span.length - consumed).min(buffer.len());
+                        let offset = span
+                            .file_offset
+                            .checked_add(u64::try_from(consumed).map_err(|_| {
+                                SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow)
+                            })?)
+                            .ok_or(SelectiveStorageError::Layout(
+                                LayoutError::ArithmeticOverflow,
+                            ))?;
+                        read_exact_at(&file, &mut buffer[..length], offset).map_err(|source| {
+                            SelectiveStorageError::Io {
+                                operation: "read part-file range in blocking verification job",
+                                source,
+                            }
+                        })?;
+                        stats.part_file_reads = stats.part_file_reads.saturating_add(1);
                         hasher.update(&buffer[..length]);
                         consumed += length;
                     }
@@ -379,54 +461,6 @@ async fn await_blocking_hash(
         operation: "join selected piece blocking verification job",
         source: io::Error::other(source),
     })?
-}
-
-fn read_exact_at(
-    file: &mut std::fs::File,
-    mut bytes: &mut [u8],
-    mut offset: u64,
-) -> io::Result<()> {
-    while !bytes.is_empty() {
-        match positional_read(file, bytes, offset) {
-            Ok(0) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "selected staging file ended during piece verification",
-                ));
-            }
-            Ok(read) => {
-                offset = offset
-                    .checked_add(read as u64)
-                    .ok_or_else(|| io::Error::other("positional read offset overflow"))?;
-                bytes = &mut bytes[read..];
-            }
-            Err(source) if source.kind() == io::ErrorKind::Interrupted => {}
-            Err(source) => return Err(source),
-        }
-    }
-    Ok(())
-}
-
-#[cfg(unix)]
-fn positional_read(file: &mut std::fs::File, bytes: &mut [u8], offset: u64) -> io::Result<usize> {
-    use std::os::unix::fs::FileExt;
-
-    file.read_at(bytes, offset)
-}
-
-#[cfg(windows)]
-fn positional_read(file: &mut std::fs::File, bytes: &mut [u8], offset: u64) -> io::Result<usize> {
-    use std::os::windows::fs::FileExt;
-
-    file.seek_read(bytes, offset)
-}
-
-#[cfg(not(any(unix, windows)))]
-fn positional_read(file: &mut std::fs::File, bytes: &mut [u8], offset: u64) -> io::Result<usize> {
-    use std::io::{Read, Seek, SeekFrom};
-
-    file.seek(SeekFrom::Start(offset))?;
-    file.read(bytes)
 }
 
 impl SelectiveStorage {
@@ -487,7 +521,9 @@ impl SelectiveStorage {
                     source,
                 }
             })?;
-            files.push(Some(file));
+            files.push(Some(
+                RetainedFile::new(file, "retain selected staging file").await?,
+            ));
         }
 
         let identity = PartFileIdentity {
@@ -537,11 +573,15 @@ impl SelectiveStorage {
             match (expected, provided) {
                 (true, Some(file)) => {
                     files.push(Some(
-                        initialize_descriptor_file(
-                            file,
-                            "wanted",
-                            file_index,
-                            metainfo_file.length,
+                        RetainedFile::new(
+                            initialize_descriptor_file(
+                                file,
+                                "wanted",
+                                file_index,
+                                metainfo_file.length,
+                            )
+                            .await?,
+                            "retain selected descriptor",
                         )
                         .await?,
                     ));
@@ -677,7 +717,12 @@ impl SelectiveStorage {
             match (expected, provided) {
                 (true, Some(file)) => {
                     files.push(Some(
-                        validate_descriptor_length(file, file_index, metainfo_file.length).await?,
+                        RetainedFile::new(
+                            validate_descriptor_length(file, file_index, metainfo_file.length)
+                                .await?,
+                            "retain resumed selected descriptor",
+                        )
+                        .await?,
                     ));
                 }
                 (true, None) => {
@@ -797,15 +842,19 @@ impl SelectiveStorage {
                 });
             }
             files.push(Some(
-                OpenOptions::new()
-                    .read(true)
-                    .write(true)
-                    .open(&path)
-                    .await
-                    .map_err(|source| SelectiveStorageError::Io {
-                        operation: "open resumable selected file",
-                        source,
-                    })?,
+                RetainedFile::new(
+                    OpenOptions::new()
+                        .read(true)
+                        .write(true)
+                        .open(&path)
+                        .await
+                        .map_err(|source| SelectiveStorageError::Io {
+                            operation: "open resumable selected file",
+                            source,
+                        })?,
+                    "retain resumable selected file",
+                )
+                .await?,
             ));
         }
 
@@ -887,47 +936,119 @@ impl SelectiveStorage {
         begin: u32,
         bytes: Vec<u8>,
     ) -> Result<SelectiveWriteStats, SelectiveStorageError> {
-        let (segments, stats) = self.plan_write(piece_index, begin, bytes.len())?;
+        let (segments, stats) = self.plan_layout_write(piece_index, begin, bytes.len())?;
+        let piece_index_usize = usize::try_from(piece_index)
+            .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
+        let payload = Arc::new(bytes);
+        let mut spans = Vec::with_capacity(segments.len());
         for segment in segments {
-            let segment_bytes = &bytes[segment.block_offset..segment.block_offset + segment.length];
-            match segment.target {
+            let destination = match segment.target {
                 SegmentTarget::WantedFile {
                     file_index,
                     file_offset,
                 } => {
                     let file = self.files[file_index]
-                        .as_mut()
+                        .as_ref()
                         .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?;
-                    file.seek(SeekFrom::Start(file_offset))
-                        .await
-                        .map_err(|source| SelectiveStorageError::Io {
-                            operation: "seek selected staging file for write",
-                            source,
-                        })?;
-                    file.write_all(segment_bytes).await.map_err(|source| {
-                        SelectiveStorageError::Io {
-                            operation: "write selected staging range",
-                            source,
-                        }
-                    })?;
+                    SelectiveWriteDestination::WantedFile {
+                        file_index,
+                        file_offset,
+                        routing_generation: file.routing_generation,
+                    }
                 }
-                SegmentTarget::SkippedFile { .. } => {
+                SegmentTarget::SkippedFile { .. } => SelectiveWriteDestination::PartFile(
                     self.part_file_mut()?
-                        .write_piece_range(
-                            usize::try_from(piece_index).map_err(|_| {
-                                SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow)
-                            })?,
+                        .plan_write_piece_range(
+                            piece_index_usize,
                             segment.piece_offset,
-                            segment_bytes,
+                            segment.length,
                         )
-                        .await?;
-                }
+                        .await?,
+                ),
                 SegmentTarget::Padding => {
                     unreachable!("padding was rejected while planning the write");
                 }
-            }
+            };
+            spans.push(SelectiveWriteSpan {
+                destination,
+                block_offset: segment.block_offset,
+                length: segment.length,
+            });
         }
-        Ok(stats)
+        let plan = SelectiveWritePlan {
+            payload,
+            spans,
+            stats,
+        };
+        self.execute_write_plan(plan).await
+    }
+
+    async fn execute_write_plan(
+        &self,
+        plan: SelectiveWritePlan,
+    ) -> Result<SelectiveWriteStats, SelectiveStorageError> {
+        let mut executable = Vec::with_capacity(plan.spans.len());
+        for span in &plan.spans {
+            let end = span
+                .block_offset
+                .checked_add(span.length)
+                .filter(|end| *end <= plan.payload.len())
+                .ok_or(SelectiveStorageError::Layout(
+                    LayoutError::ArithmeticOverflow,
+                ))?;
+            debug_assert!(end <= plan.payload.len());
+            let (file, file_offset) = match span.destination {
+                SelectiveWriteDestination::WantedFile {
+                    file_index,
+                    file_offset,
+                    routing_generation,
+                } => {
+                    let file = self.files[file_index]
+                        .as_ref()
+                        .ok_or(SelectiveStorageError::StaleWriteRoute { file_index })?;
+                    if file.routing_generation != routing_generation {
+                        return Err(SelectiveStorageError::StaleWriteRoute { file_index });
+                    }
+                    (file.positional.clone(), file_offset)
+                }
+                SelectiveWriteDestination::PartFile(part_span) => {
+                    let part_file = self
+                        .part_file
+                        .as_ref()
+                        .ok_or(SelectiveStorageError::NotPublished)?;
+                    part_file.validate_span(part_span)?;
+                    (part_file.positional_handle(), part_span.file_offset)
+                }
+            };
+            executable.push(ExecutableWriteSpan {
+                file,
+                file_offset,
+                block_offset: span.block_offset,
+                length: span.length,
+            });
+        }
+
+        let payload = plan.payload;
+        tokio::task::spawn_blocking(move || {
+            for span in executable {
+                write_all_at(
+                    &span.file,
+                    &payload[span.block_offset..span.block_offset + span.length],
+                    span.file_offset,
+                )?;
+            }
+            Ok::<(), io::Error>(())
+        })
+        .await
+        .map_err(|source| SelectiveStorageError::Io {
+            operation: "join positional selected write",
+            source: io::Error::other(source),
+        })?
+        .map_err(|source| SelectiveStorageError::Io {
+            operation: "write positional selected range",
+            source,
+        })?;
+        Ok(plan.stats)
     }
 
     pub(crate) fn write_stats(
@@ -936,11 +1057,11 @@ impl SelectiveStorage {
         begin: u32,
         length: usize,
     ) -> Result<SelectiveWriteStats, SelectiveStorageError> {
-        self.plan_write(piece_index, begin, length)
+        self.plan_layout_write(piece_index, begin, length)
             .map(|(_, stats)| stats)
     }
 
-    fn plan_write(
+    fn plan_layout_write(
         &self,
         piece_index: u32,
         begin: u32,
@@ -977,19 +1098,11 @@ impl SelectiveStorage {
             .map(|(hash, _stats)| hash)
     }
 
-    async fn prepare_blocking_hash_plan(
+    fn prepare_blocking_hash_plan(
         &self,
+        piece_index: usize,
         segments: &[LayoutSegment],
-    ) -> Result<Option<BlockingHashPlan>, SelectiveStorageError> {
-        if segments
-            .iter()
-            .any(|segment| matches!(segment.target, SegmentTarget::SkippedFile { .. }))
-        {
-            return Ok(None);
-        }
-
-        let mut file_indices = Vec::new();
-        let mut files = Vec::new();
+    ) -> Result<BlockingHashPlan, SelectiveStorageError> {
         let mut spans = Vec::with_capacity(segments.len());
         for segment in segments {
             match segment.target {
@@ -997,31 +1110,11 @@ impl SelectiveStorage {
                     file_index,
                     file_offset,
                 } => {
-                    let file_slot = if let Some(slot) = file_indices
-                        .iter()
-                        .position(|existing| *existing == file_index)
-                    {
-                        slot
-                    } else {
-                        let file = self.files[file_index]
-                            .as_ref()
-                            .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?
-                            .try_clone()
-                            .await
-                            .map_err(|source| SelectiveStorageError::Io {
-                                operation:
-                                    "duplicate selected staging file for blocking verification",
-                                source,
-                            })?
-                            .into_std()
-                            .await;
-                        let slot = files.len();
-                        file_indices.push(file_index);
-                        files.push(file);
-                        slot
-                    };
+                    let file = self.files[file_index]
+                        .as_ref()
+                        .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?;
                     spans.push(BlockingHashSpan::WantedFile {
-                        file_slot,
+                        file: file.positional.clone(),
                         file_offset,
                         length: segment.length,
                     });
@@ -1030,13 +1123,24 @@ impl SelectiveStorage {
                     length: segment.length,
                 }),
                 SegmentTarget::SkippedFile { .. } => {
-                    return Err(SelectiveStorageError::InvalidStorageOperation(
-                        "skipped segment entered all-wanted blocking hash plan",
-                    ));
+                    let part_file = self
+                        .part_file
+                        .as_ref()
+                        .ok_or(SelectiveStorageError::NotPublished)?;
+                    let span = part_file.plan_read_piece_range(
+                        piece_index,
+                        segment.piece_offset,
+                        segment.length,
+                    )?;
+                    part_file.validate_span(span)?;
+                    spans.push(BlockingHashSpan::PartFile {
+                        file: part_file.positional_handle(),
+                        span,
+                    });
                 }
             }
         }
-        Ok(Some(BlockingHashPlan { files, spans }))
+        Ok(BlockingHashPlan { spans })
     }
 
     async fn hash_piece_with_stats(
@@ -1047,74 +1151,10 @@ impl SelectiveStorage {
         let segments = self
             .layout
             .segments(piece_index, 0, piece_length, &self.selection)?;
-        if let Some(plan) = self.prepare_blocking_hash_plan(&segments).await? {
-            return await_blocking_hash(tokio::task::spawn_blocking(move || plan.hash())).await;
-        }
-
-        let mut hasher = Sha1::new();
-        let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
-        let mut stats = SelectiveHashIoStats::default();
-        for segment in segments {
-            let mut consumed = 0_usize;
-            match segment.target {
-                SegmentTarget::WantedFile {
-                    file_index,
-                    file_offset,
-                } => {
-                    let file = self.files[file_index]
-                        .as_mut()
-                        .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?;
-                    file.seek(SeekFrom::Start(file_offset))
-                        .await
-                        .map_err(|source| SelectiveStorageError::Io {
-                            operation: "seek selected staging file for verification",
-                            source,
-                        })?;
-                    stats.wanted_file_seeks = stats.wanted_file_seeks.saturating_add(1);
-                    while consumed < segment.length {
-                        let length = (segment.length - consumed).min(buffer.len());
-                        file.read_exact(&mut buffer[..length])
-                            .await
-                            .map_err(|source| SelectiveStorageError::Io {
-                                operation: "read selected staging range for verification",
-                                source,
-                            })?;
-                        stats.wanted_file_reads = stats.wanted_file_reads.saturating_add(1);
-                        hasher.update(&buffer[..length]);
-                        consumed += length;
-                    }
-                }
-                SegmentTarget::SkippedFile { .. } => {
-                    let piece = usize::try_from(piece_index).map_err(|_| {
-                        SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow)
-                    })?;
-                    while consumed < segment.length {
-                        let length = (segment.length - consumed).min(buffer.len());
-                        let consumed_u32 = u32::try_from(consumed).map_err(|_| {
-                            SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow)
-                        })?;
-                        let begin = segment.piece_offset.checked_add(consumed_u32).ok_or(
-                            SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow),
-                        )?;
-                        self.part_file_mut()?
-                            .read_piece_range(piece, begin, &mut buffer[..length])
-                            .await?;
-                        stats.part_file_reads = stats.part_file_reads.saturating_add(1);
-                        hasher.update(&buffer[..length]);
-                        consumed += length;
-                    }
-                }
-                SegmentTarget::Padding => {
-                    buffer.fill(0);
-                    while consumed < segment.length {
-                        let length = (segment.length - consumed).min(buffer.len());
-                        hasher.update(&buffer[..length]);
-                        consumed += length;
-                    }
-                }
-            }
-        }
-        Ok((hasher.finalize().into(), stats))
+        let piece_index = usize::try_from(piece_index)
+            .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
+        let plan = self.prepare_blocking_hash_plan(piece_index, &segments)?;
+        await_blocking_hash(tokio::task::spawn_blocking(move || plan.hash())).await
     }
 
     pub fn record_verified(&mut self, piece_index: usize) -> Result<(), SelectiveStorageError> {
@@ -1153,15 +1193,13 @@ impl SelectiveStorage {
             let Some(file) = file else {
                 continue;
             };
-            let handle = file
-                .try_clone()
-                .await
-                .map_err(|source| SelectiveStorageError::Io {
-                    operation: "duplicate selected file for durability checkpoint",
-                    source,
-                })?
-                .into_std()
-                .await;
+            let handle =
+                file.positional
+                    .try_clone()
+                    .map_err(|source| SelectiveStorageError::Io {
+                        operation: "duplicate selected file for durability checkpoint",
+                        source,
+                    })?;
             handles.insert(DurabilityTarget::WantedFile(file_index), handle);
         }
         let part_file = self
@@ -1210,6 +1248,7 @@ impl SelectiveStorage {
             self.files[file_index]
                 .as_ref()
                 .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?
+                .control
                 .sync_data()
                 .await
                 .map_err(|source| SelectiveStorageError::Io {
@@ -1284,7 +1323,8 @@ impl SelectiveStorage {
         }
 
         for file in self.files.iter().flatten() {
-            file.sync_data()
+            file.control
+                .sync_data()
                 .await
                 .map_err(|source| SelectiveStorageError::Io {
                     operation: "flush selected staging file",
@@ -1467,7 +1507,8 @@ impl SelectiveStorage {
                 }
             }
             None => {
-                self.files[file_index] = Some(output);
+                self.files[file_index] =
+                    Some(RetainedFile::new(output, "retain materialized descriptor").await?);
             }
         }
 
@@ -1513,7 +1554,8 @@ impl SelectiveStorage {
             let file = self.files[file_index]
                 .as_mut()
                 .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?;
-            file.seek(SeekFrom::Start(0))
+            file.control
+                .seek(SeekFrom::Start(0))
                 .await
                 .map_err(|source| SelectiveStorageError::Io {
                     operation: "seek prepared descriptor for hashing",
@@ -1524,7 +1566,8 @@ impl SelectiveStorage {
             while remaining != 0 {
                 let length = usize::try_from(remaining.min(buffer.len() as u64))
                     .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
-                file.read_exact(&mut buffer[..length])
+                file.control
+                    .read_exact(&mut buffer[..length])
                     .await
                     .map_err(|source| SelectiveStorageError::Io {
                         operation: "read prepared descriptor for hashing",
@@ -1861,6 +1904,7 @@ pub async fn remove_selective_part_if_present(output_root: &Path) -> Result<(), 
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
+    use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use rstorrent_protocol::metainfo::{Metainfo, MetainfoFile, MetainfoMode};
@@ -1869,7 +1913,8 @@ mod tests {
 
     use super::{
         BlockingHashResult, DescriptorFile, DescriptorStorage, PreparedFileHash, ResumedStorage,
-        SelectiveStorage, SelectiveStorageError, VERIFICATION_CHUNK_LENGTH, await_blocking_hash,
+        SelectiveStorage, SelectiveStorageError, SelectiveWriteDestination, SelectiveWritePlan,
+        SelectiveWriteSpan, SelectiveWriteStats, VERIFICATION_CHUNK_LENGTH, await_blocking_hash,
         collect_descriptors, materialization_path, remove_selective_part_if_present,
         remove_selective_staging_if_present, selective_part_path, selective_staging_path,
         verify_prepared_descriptors,
@@ -1991,8 +2036,68 @@ mod tests {
             bytes.len().div_ceil(VERIFICATION_CHUNK_LENGTH)
         );
         assert_eq!(stats.part_file_reads, 0);
-        assert_eq!(stats.wanted_file_duplicates, 1);
+        assert_eq!(stats.wanted_file_duplicates, 0);
         assert_eq!(stats.blocking_jobs, 1);
+        clean(&output).await;
+    }
+
+    #[tokio::test]
+    async fn validates_every_write_route_before_mutating_any_destination() {
+        let output = test_path("stale-write-route");
+        clean(&output).await;
+        let metainfo = fixture();
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[]).expect("selection");
+        let storage = SelectiveStorage::create(output.clone(), &metainfo, layout, selection)
+            .await
+            .expect("create storage");
+        let route = storage.files[0]
+            .as_ref()
+            .expect("first wanted file")
+            .routing_generation;
+        let plan = SelectiveWritePlan {
+            payload: Arc::new(Vec::from(&b"abcdefgh"[..])),
+            spans: vec![
+                SelectiveWriteSpan {
+                    destination: SelectiveWriteDestination::WantedFile {
+                        file_index: 0,
+                        file_offset: 0,
+                        routing_generation: route,
+                    },
+                    block_offset: 0,
+                    length: 4,
+                },
+                SelectiveWriteSpan {
+                    destination: SelectiveWriteDestination::WantedFile {
+                        file_index: 0,
+                        file_offset: 4,
+                        routing_generation: route.wrapping_add(1),
+                    },
+                    block_offset: 4,
+                    length: 4,
+                },
+            ],
+            stats: SelectiveWriteStats {
+                wanted_bytes: 8,
+                skipped_bytes: 0,
+            },
+        };
+
+        assert!(matches!(
+            storage.execute_write_plan(plan).await,
+            Err(SelectiveStorageError::StaleWriteRoute { file_index: 0 })
+        ));
+        let mut bytes = [1_u8; 8];
+        crate::positional_io::read_exact_at(
+            &storage.files[0]
+                .as_ref()
+                .expect("first wanted file")
+                .positional,
+            &mut bytes,
+            0,
+        )
+        .expect("read untouched file");
+        assert_eq!(bytes, [0; 8]);
         clean(&output).await;
     }
 
@@ -2061,7 +2166,7 @@ mod tests {
             .expect("hash cross-file piece");
         assert_eq!(actual, expected);
         assert_eq!(stats.wanted_file_seeks, 0);
-        assert_eq!(stats.wanted_file_duplicates, 2);
+        assert_eq!(stats.wanted_file_duplicates, 0);
         assert_eq!(stats.blocking_jobs, 1);
         assert_eq!(
             stats.wanted_file_reads,
@@ -2106,6 +2211,7 @@ mod tests {
         storage.files[0]
             .as_ref()
             .expect("wanted file")
+            .control
             .set_len(16_384)
             .await
             .expect("truncate staging file");
@@ -2282,9 +2388,9 @@ mod tests {
                 .expect("mixed hash");
             assert_eq!(actual, expected);
             if piece_index == 0 {
-                assert_eq!(stats.blocking_jobs, 0);
+                assert_eq!(stats.blocking_jobs, 1);
                 assert_eq!(stats.wanted_file_duplicates, 0);
-                assert!(stats.wanted_file_seeks > 0);
+                assert_eq!(stats.wanted_file_seeks, 0);
                 assert!(stats.part_file_reads > 0);
             }
             storage

@@ -3,10 +3,13 @@ use std::error::Error;
 use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use rstorrent_protocol::metainfo::MAX_PIECE_LENGTH;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
+
+use crate::positional_io::{read_exact_at, write_all_at};
 
 const MAGIC: &[u8; 8] = b"RSPART01";
 const VERSION: u32 = 1;
@@ -56,6 +59,9 @@ pub enum PartFileError {
         piece_length: u32,
     },
     MissingSlot {
+        piece_index: usize,
+    },
+    StaleSpan {
         piece_index: usize,
     },
     OffsetOverflow,
@@ -125,6 +131,9 @@ impl fmt::Display for PartFileError {
             Self::MissingSlot { piece_index } => {
                 write!(formatter, "piece {piece_index} has no part-file slot")
             }
+            Self::StaleSpan { piece_index } => {
+                write!(formatter, "piece {piece_index} part-file span is stale")
+            }
             Self::OffsetOverflow => write!(formatter, "part-file offset overflow"),
             Self::TruncatedPayload {
                 piece_index,
@@ -151,10 +160,21 @@ impl Error for PartFileError {
 #[derive(Debug)]
 pub struct PartFile {
     file: File,
+    positional: Arc<std::fs::File>,
     path: Option<PathBuf>,
     identity: PartFileIdentity,
     header_length: u64,
     slots: Vec<Option<u32>>,
+    mapping_generations: Vec<u64>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct PartFileSpan {
+    pub(crate) piece_index: usize,
+    pub(crate) slot: u32,
+    pub(crate) mapping_generation: u64,
+    pub(crate) file_offset: u64,
+    pub(crate) length: usize,
 }
 
 impl PartFile {
@@ -245,13 +265,16 @@ impl PartFile {
             operation: "flush part-file header",
             source,
         })?;
+        let positional = retained_positional_handle(&file).await?;
 
         Ok(Self {
             file,
+            positional,
             path,
             identity,
             header_length,
             slots: vec![None; identity.piece_count],
+            mapping_generations: vec![0; identity.piece_count],
         })
     }
 
@@ -390,12 +413,15 @@ impl PartFile {
             slots.push(Some(slot));
         }
 
+        let positional = retained_positional_handle(&file).await?;
         Ok(Self {
             file,
+            positional,
             path,
             identity: expected,
             header_length: expected_header_length,
             slots,
+            mapping_generations: vec![0; expected.piece_count],
         })
     }
 
@@ -418,19 +444,18 @@ impl PartFile {
         offset: u32,
         bytes: &[u8],
     ) -> Result<(), PartFileError> {
-        self.validate_piece_range(piece_index, offset, bytes.len())?;
-        let slot = self.ensure_slot(piece_index).await?;
-        let file_offset = self.payload_offset(slot, offset, bytes.len())?;
-        self.file
-            .seek(SeekFrom::Start(file_offset))
+        let span = self
+            .plan_write_piece_range(piece_index, offset, bytes.len())
+            .await?;
+        self.validate_span(span)?;
+        let file = self.positional.clone();
+        let payload: Arc<[u8]> = Arc::from(bytes);
+        tokio::task::spawn_blocking(move || write_all_at(&file, &payload, span.file_offset))
             .await
             .map_err(|source| PartFileError::Io {
-                operation: "seek part file for write",
-                source,
-            })?;
-        self.file
-            .write_all(bytes)
-            .await
+                operation: "join positional part-file write",
+                source: io::Error::other(source),
+            })?
             .map_err(|source| PartFileError::Io {
                 operation: "write part-file payload",
                 source,
@@ -438,15 +463,14 @@ impl PartFile {
     }
 
     pub async fn read_piece_range(
-        &mut self,
+        &self,
         piece_index: usize,
         offset: u32,
         bytes: &mut [u8],
     ) -> Result<(), PartFileError> {
-        self.validate_piece_range(piece_index, offset, bytes.len())?;
-        let slot = self.slots[piece_index].ok_or(PartFileError::MissingSlot { piece_index })?;
-        let file_offset = self.payload_offset(slot, offset, bytes.len())?;
-        let expected_end = file_offset
+        let span = self.plan_read_piece_range(piece_index, offset, bytes.len())?;
+        let expected_end = span
+            .file_offset
             .checked_add(bytes.len() as u64)
             .ok_or(PartFileError::OffsetOverflow)?;
         let file_length = self
@@ -465,21 +489,24 @@ impl PartFile {
                 file_length,
             });
         }
-        self.file
-            .seek(SeekFrom::Start(file_offset))
-            .await
-            .map_err(|source| PartFileError::Io {
-                operation: "seek part file for read",
-                source,
-            })?;
-        self.file
-            .read_exact(bytes)
-            .await
-            .map(|_| ())
-            .map_err(|source| PartFileError::Io {
-                operation: "read part-file payload",
-                source,
-            })
+        let file = self.positional.clone();
+        let length = bytes.len();
+        let result = tokio::task::spawn_blocking(move || {
+            let mut payload = vec![0_u8; length];
+            read_exact_at(&file, &mut payload, span.file_offset)?;
+            Ok::<Vec<u8>, io::Error>(payload)
+        })
+        .await
+        .map_err(|source| PartFileError::Io {
+            operation: "join positional part-file read",
+            source: io::Error::other(source),
+        })?
+        .map_err(|source| PartFileError::Io {
+            operation: "read part-file payload",
+            source,
+        })?;
+        bytes.copy_from_slice(&result);
+        Ok(())
     }
 
     pub async fn release_piece(&mut self, piece_index: usize) -> Result<bool, PartFileError> {
@@ -488,7 +515,15 @@ impl PartFile {
             return Ok(false);
         }
         self.write_slot_entry(piece_index, None).await?;
+        self.file
+            .sync_data()
+            .await
+            .map_err(|source| PartFileError::Io {
+                operation: "flush released part-file slot entry",
+                source,
+            })?;
         self.slots[piece_index] = None;
+        self.bump_mapping_generation(piece_index);
         Ok(true)
     }
 
@@ -503,15 +538,62 @@ impl PartFile {
     }
 
     pub(crate) async fn duplicate_for_checkpoint(&self) -> Result<std::fs::File, PartFileError> {
-        let file = self
-            .file
+        self.positional
             .try_clone()
-            .await
             .map_err(|source| PartFileError::Io {
                 operation: "duplicate part file for durability checkpoint",
                 source,
-            })?;
-        Ok(file.into_std().await)
+            })
+    }
+
+    pub(crate) async fn plan_write_piece_range(
+        &mut self,
+        piece_index: usize,
+        offset: u32,
+        length: usize,
+    ) -> Result<PartFileSpan, PartFileError> {
+        self.validate_piece_range(piece_index, offset, length)?;
+        let slot = self.ensure_slot(piece_index).await?;
+        self.span(piece_index, slot, offset, length)
+    }
+
+    pub(crate) fn plan_read_piece_range(
+        &self,
+        piece_index: usize,
+        offset: u32,
+        length: usize,
+    ) -> Result<PartFileSpan, PartFileError> {
+        self.validate_piece_range(piece_index, offset, length)?;
+        let slot = self.slots[piece_index].ok_or(PartFileError::MissingSlot { piece_index })?;
+        self.span(piece_index, slot, offset, length)
+    }
+
+    pub(crate) fn validate_span(&self, span: PartFileSpan) -> Result<(), PartFileError> {
+        self.validate_piece_index(span.piece_index)?;
+        if self.slots[span.piece_index] != Some(span.slot)
+            || self.mapping_generations[span.piece_index] != span.mapping_generation
+        {
+            return Err(PartFileError::StaleSpan {
+                piece_index: span.piece_index,
+            });
+        }
+        let piece_offset = span
+            .file_offset
+            .checked_sub(self.payload_offset(span.slot, 0, 0)?)
+            .ok_or(PartFileError::OffsetOverflow)?;
+        let piece_offset =
+            u32::try_from(piece_offset).map_err(|_| PartFileError::OffsetOverflow)?;
+        self.validate_piece_range(span.piece_index, piece_offset, span.length)?;
+        if self.payload_offset(span.slot, piece_offset, span.length)? != span.file_offset {
+            return Err(PartFileError::StaleSpan {
+                piece_index: span.piece_index,
+            });
+        }
+        Ok(())
+    }
+
+    pub(crate) fn positional_handle(&self) -> Arc<std::fs::File> {
+        self.positional.clone()
     }
 
     async fn ensure_slot(&mut self, piece_index: usize) -> Result<u32, PartFileError> {
@@ -550,11 +632,12 @@ impl PartFile {
         }
         self.write_slot_entry(piece_index, Some(slot)).await?;
         self.slots[piece_index] = Some(slot);
+        self.bump_mapping_generation(piece_index);
         Ok(slot)
     }
 
     async fn write_slot_entry(
-        &mut self,
+        &self,
         piece_index: usize,
         slot: Option<u32>,
     ) -> Result<(), PartFileError> {
@@ -564,27 +647,39 @@ impl PartFile {
             Some(slot) => i32::try_from(slot).map_err(|_| PartFileError::OffsetOverflow)?,
             None => MISSING_SLOT,
         };
-        self.file
-            .seek(SeekFrom::Start(offset))
+        let file = self.positional.clone();
+        let bytes = value.to_be_bytes();
+        tokio::task::spawn_blocking(move || write_all_at(&file, &bytes, offset))
             .await
             .map_err(|source| PartFileError::Io {
-                operation: "seek part-file slot entry",
-                source,
-            })?;
-        self.file
-            .write_all(&value.to_be_bytes())
-            .await
+                operation: "join positional part-file slot write",
+                source: io::Error::other(source),
+            })?
             .map_err(|source| PartFileError::Io {
                 operation: "write part-file slot entry",
                 source,
-            })?;
-        self.file
-            .sync_data()
-            .await
-            .map_err(|source| PartFileError::Io {
-                operation: "flush part-file slot entry",
-                source,
             })
+    }
+
+    fn span(
+        &self,
+        piece_index: usize,
+        slot: u32,
+        offset: u32,
+        length: usize,
+    ) -> Result<PartFileSpan, PartFileError> {
+        Ok(PartFileSpan {
+            piece_index,
+            slot,
+            mapping_generation: self.mapping_generations[piece_index],
+            file_offset: self.payload_offset(slot, offset, length)?,
+            length,
+        })
+    }
+
+    fn bump_mapping_generation(&mut self, piece_index: usize) {
+        self.mapping_generations[piece_index] =
+            self.mapping_generations[piece_index].wrapping_add(1);
     }
 
     fn payload_offset(
@@ -654,6 +749,19 @@ impl PartFile {
         u32::try_from(remaining.min(u64::from(self.identity.piece_length)))
             .map_err(|_| PartFileError::OffsetOverflow)
     }
+}
+
+async fn retained_positional_handle(file: &File) -> Result<Arc<std::fs::File>, PartFileError> {
+    let positional = file
+        .try_clone()
+        .await
+        .map_err(|source| PartFileError::Io {
+            operation: "retain part file for positional access",
+            source,
+        })?
+        .into_std()
+        .await;
+    Ok(Arc::new(positional))
 }
 
 fn validate_identity(identity: PartFileIdentity) -> Result<u64, PartFileError> {
@@ -848,7 +956,7 @@ mod tests {
             .write(true)
             .open(&path)
             .expect("independently reopen descriptor file");
-        let mut reopened = PartFile::open_preopened(reopen, identity())
+        let reopened = PartFile::open_preopened(reopen, identity())
             .await
             .expect("validate descriptor part file");
         let mut bytes = [0_u8; 10];
@@ -1085,6 +1193,37 @@ mod tests {
             part.read_piece_range(0, 101, &mut byte).await,
             Err(PartFileError::TruncatedPayload { piece_index: 0, .. })
         ));
+        clean(&path).await;
+    }
+
+    #[tokio::test]
+    async fn rejects_a_plan_after_its_slot_is_released_and_reused() {
+        let path = test_path("stale-plan");
+        clean(&path).await;
+        let mut part = PartFile::create(path.clone(), identity())
+            .await
+            .expect("create part file");
+        part.write_piece_range(0, 0, b"first")
+            .await
+            .expect("write first mapping");
+        let stale = part
+            .plan_write_piece_range(0, 0, 5)
+            .await
+            .expect("plan first mapping");
+
+        assert!(part.release_piece(0).await.expect("release first mapping"));
+        part.write_piece_range(1, 0, b"other")
+            .await
+            .expect("reuse physical slot");
+        assert!(matches!(
+            part.validate_span(stale),
+            Err(PartFileError::StaleSpan { piece_index: 0 })
+        ));
+        let mut reused = [0_u8; 5];
+        part.read_piece_range(1, 0, &mut reused)
+            .await
+            .expect("read reused slot");
+        assert_eq!(&reused, b"other");
         clean(&path).await;
     }
 
