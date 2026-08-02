@@ -2,10 +2,10 @@
 
 Topic: `storage-throughput-architecture`
 
-Status: Proposed end-state architecture for maintainer review. This topic
-selects the retained storage-execution problem and defines the intended
-multi-tactical direction; it does not authorize an implementation tactical or
-claim that the current engine has this architecture.
+Status: Accepted by maintainer direction on 2026-08-02. Tactical
+[`052`](../tactical/052-batched-durability-checkpoints.md) is active as the
+first bounded implementation slice. The current engine does not yet have the
+end-state architecture described here.
 
 ## Purpose And Scope
 
@@ -823,10 +823,9 @@ must not land an unmeasured general disk framework in one change.
 - promising identical concurrency on desktop paths and every Android document
   provider.
 
-## Recommended Next Decision
+## Active Execution
 
-Review and accept or revise the invariants and multi-tactical sequence above.
-If accepted, open one decision-complete tactical for **decoupling hash
-verification from batched durability checkpoints**. It should retain the
-current positional-concurrency work as its explicit next boundary rather than
-trying to implement the entire architecture at once.
+Tactical [`052`](../tactical/052-batched-durability-checkpoints.md) owns the
+first slice: decouple hash verification from bounded batched payload and
+SQLite durability. Immutable positional storage plans remain its explicit
+next boundary rather than being mixed into the checkpoint state transition.

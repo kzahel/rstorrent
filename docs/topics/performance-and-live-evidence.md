@@ -825,6 +825,25 @@ independent bounded write/hash queues, optional pending-write read-through,
 and eventual session/root fairness. The proposal does not convert this evidence
 into an implementation or speed claim.
 
+## Batched-Checkpoint Pre-Change Evidence: 2026-08-02
+
+Tactical `052` adds two retained 128 MiB loopback profiles before changing
+behavior. The three-file engine-only profile uses 512 256 KiB pieces and
+8,192 blocks and completed three exact runs in 36.564--38.896 seconds, with a
+37.594-second median. Its serialized write service consumed
+31.108--34.088 seconds while 8,192 logical blocks became 542--546 physical
+writes. It retains the current execution baseline independently from SQLite.
+
+The application-service profile runs a separate 512-piece multi-file torrent
+through the path-backed session and `synchronous=FULL` SQLite checkpoint sink.
+Three exact publication runs completed in 12.707--13.370 seconds, with a
+13.346-second median. Each metadata checkpoint was observed before any piece
+became durable, and every final database was exactly 514 revisions later: 512
+per-piece have transactions plus two final state transitions. Payload hashes,
+raw info, complete have geometry, publication and cleanup all matched. The
+revision amplification is a structural baseline; the latency remains a
+single-machine development observation rather than a product threshold.
+
 ## Maintenance Contract
 
 Feature tacticals add measurements only when their owner can report them

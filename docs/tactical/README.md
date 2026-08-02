@@ -275,6 +275,10 @@ that scope and its cleanup or compatibility rules explicitly.
 - [`051-typed-peer-flags-and-legend.md`](051-typed-peer-flags-and-legend.md):
   complete; replaces ambiguous peer flag strings with a typed Rust semantic
   set, one shared frontend vocabulary, and an accessible column-header legend.
+- [`052-batched-durability-checkpoints.md`](052-batched-durability-checkpoints.md):
+  active; separates hash verification from bounded payload/SQLite durability
+  epochs, moves checkpoint work off the content supervisor, and establishes a
+  steady controlled storage profile for the throughput campaign.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

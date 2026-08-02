@@ -1,0 +1,293 @@
+# Tactical 052: Batched Durability Checkpoints
+
+Status: Active on 2026-08-02.
+
+Topics: `storage-throughput-architecture`, `download-correctness`,
+`client-persistence`, `disk-and-piece-inspection`,
+`performance-and-live-evidence`, `oracle-driven-engine-campaign`
+
+## Motivation And Outcome
+
+Tacticals `031` and `032` attribute 93--94% of retained public wall time to
+one serialized write/hash service. After write coalescing reduced 5,648--5,740
+logical blocks to 500--509 physical writes, write service fell to
+51.4--54.9% while the operation still labeled hash service rose to
+39.1--41.6%. The current verify operation includes `sync_data` on every file
+touched by each verified selective piece, and its completion synchronously
+calls `StoreCheckpointSink::piece_durable` on the content supervisor. That
+method locks the shared `SessionStore`, rewrites the full have bitmap and
+commits one `synchronous=FULL` SQLite transaction per piece.
+
+Separate integrity from crash durability. A piece whose complete SHA-1 hash
+matches and whose writes succeeded becomes verified for in-process scheduling
+without waiting for payload synchronization or SQLite. One bounded, joined
+checkpoint owner batches those verified-dirty pieces, synchronizes each
+touched destination once per epoch, commits the batch through one have-bitmap
+transaction, and then publishes durable progress. Hash, sync and database time
+become distinct observable stages.
+
+This tactical also establishes a repeatable controlled storage profile before
+and after the behavior change. It is the first implementation slice of the
+accepted maximum-throughput storage campaign; it does not add positional write
+workers yet.
+
+## Stable Scenarios
+
+- Hundreds of small pieces may hash-verify while an older checkpoint epoch is
+  synchronizing, without later writes or hashes waiting behind that epoch.
+- A verify command clears the active hashing stage when SHA-1 finishes. Pieces
+  awaiting durability appear as checkpoint-dirty, syncing or committing, not
+  hashing.
+- A payload sync or database failure never creates durable have state and
+  fails the owned download with every task joined.
+- Graceful completion, publication, pause and shutdown flush already verified
+  dirty pieces before returning their owned storage or reporting a completed
+  receipt.
+- A process stopped after hash verification but before the epoch commit may
+  redownload or conservatively recheck the piece; it cannot trust a false have
+  bit.
+- One epoch touching many pieces in one file calls payload sync once and
+  updates the have bitmap in one SQLite transaction.
+- A mixed selected/skipped epoch synchronizes every touched wanted file and
+  the part payload before its database commit.
+- The controlled profile is long enough to measure steady-state overlap and
+  reports exact content, cleanup, queue bounds, stage service and checkpoint
+  amortization.
+
+## Normative And Reference Dossier
+
+No reference source, fixture or resume format is copied.
+
+- Pinned BEP 3 at `reference/bittorrent.org/beps/bep_0003.rst` makes the
+  complete piece hash the integrity authority; it does not require stable
+  storage or resume persistence before a client may use an in-process piece.
+- Pinned libtorrent `2.0.13` at
+  `7d7fc38fac61177fa5e02148f791b2f65250b09d` separates the hash result from
+  final write callbacks in `src/torrent.cpp::{verify_piece,on_piece_verified}`
+  and `test/test_piece_picker.cpp::{piece_passed,
+  set_piece_priority_passed_hash_check}`. A piece joins those facts rather than
+  imposing a per-piece durable-storage barrier.
+- `src/mmap_disk_io.cpp::{async_write,do_write,do_hash}` retains queued
+  accepted blocks for hash read-through and treats disk jobs as session-owned
+  asynchronous work. `test/test_storage.cpp::{
+  mmap_unaligned_read_both_store_buffer,
+  posix_unaligned_read_both_store_buffer}` covers queued/completed read
+  consistency.
+- Libtorrent exposes resume state asynchronously through
+  `torrent_handle::save_resume_data` and `save_resume_data_alert`; its caller
+  owns persistence. `test/test_resume.cpp::resume_data_have_pieces` covers
+  have-state snapshot content. RSTorrent retains its typed SQLite authority
+  rather than adopting libtorrent's resume BLOB.
+- `src/part_file.cpp::{write,flush_metadata}` protects mapping allocation but
+  performs positional payload I/O separately and flushes dirty mapping state
+  as a distinct operation. RSTorrent defers changing its part-file mapping
+  format and current per-slot metadata sync to Tactical `053`.
+- JSTorrent at `9895410beeed6aff554053769bd006a3fbd373ef` supplies product
+  history through `packages/engine/src/core/disk-queue.ts` and the native
+  batching queues: work and bytes are bounded separately, completions remain
+  owned, and batching amortizes platform calls only under backlog.
+
+## Accepted Owner, Task, And Data Flow
+
+```text
+content storage task
+  write -> hash -> hash/write join -> checkpoint intent
+                                      |
+                                      v
+joined checkpoint task       fixed target-handle registry
+  bounded time/bytes/pieces -> sync unique destinations
+                            -> one batched checkpoint callback
+                                      |
+                                      v
+StoreCheckpointSink -> SessionStore::record_pieces -> one view batch
+```
+
+`run_content_storage_task` remains the only mutable `ContentStorage` owner and
+continues to own cursor-based writes and hashes. It no longer calls
+`SelectiveStorage::sync_piece`. At pipeline creation, resumable selective
+storage duplicates one stable sync-only handle for each wanted file and the
+part file. The cloned handles have no cursor operations and are moved into one
+checkpoint task.
+
+After a successful hash, the storage completion identifies the piece, length
+and touched durability-target IDs. The supervisor reserves bounded dirty-byte
+and item capacity, queues the intent, marks the piece verified in `SwarmState`
+and continues ordinary intake. Waiting for capacity is allowed only when the
+declared dirty checkpoint bound is genuinely full.
+
+The checkpoint task owns batching, target de-duplication, payload sync,
+database callback, metrics, failure and termination. It uses bounded blocking
+work for filesystem sync and the synchronous SQLite callback. The application
+service remains the SQLite owner; `DownloadCheckpointSink::pieces_durable`
+receives a nonempty de-duplicated batch and `StoreCheckpointSink` commits it
+with `SessionStore::record_pieces` before publishing one coherent view change.
+
+Closing the checkpoint sender forces the current and queued dirty state. The
+storage pipeline does not return its `ContentStorage` until both storage and
+checkpoint tasks join. Publication therefore begins only after every verified
+piece from that run is durably checkpointed. Cancellation stops new storage
+admission but still flushes already hash-verified intents; unchecked or
+unwritten work remains absent from the checkpoint.
+
+Dependency direction remains inward: deterministic target selection and batch
+state contain no Tokio, file, SQLite, view or application types. The engine
+defines the checkpoint-sink contract and owns filesystem durability; the
+session crate implements the concrete database and view commit.
+
+## Initial Bounds
+
+- checkpoint maximum age: 2 seconds from the oldest dirty piece;
+- checkpoint maximum dirty payload: 64 MiB, with one individually valid
+  larger piece admitted alone for liveness;
+- checkpoint maximum pieces per epoch: 256;
+- pending checkpoint channel: 256 intents;
+- sync concurrency: at most four unique destinations per epoch;
+- one stable extra sync-only handle per wanted file plus the part file, bounded
+  by validated metainfo or the descriptor manifest;
+- one SQLite writer and one transaction/revision per nonempty epoch;
+- no new payload copy, piece-sized allocation, command history or unbounded
+  metric collection.
+
+Dirty bytes remain charged until the corresponding database callback succeeds.
+The sender blocks only at the byte/item bounds. Exact constants may tighten
+within 1--5 seconds and 16--64 MiB if deterministic or controlled evidence
+finds a correctness, memory or latency problem; expanding them requires
+recorded evidence.
+
+## Integrity And Crash Invariants
+
+- `hash_verified` requires a matching trusted hash and all generation writes
+  successful; neither sync nor SQLite establishes content integrity.
+- A database have bit is committed only after every captured destination sync
+  succeeds.
+- Pieces written or synchronized after an epoch snapshot may be physically
+  ahead of metadata and remain safe false negatives.
+- A checkpoint callback is all-or-nothing for its batch. An invalid index,
+  SQLite error, view error, sync error or task panic fails the owner and does
+  not report a partial durable completion.
+- Existing restart rehashes every claimed piece before presenting it as
+  verified.
+- Part-slot metadata already synchronized by the current format remains
+  conservative; batching or changing that metadata is explicitly deferred.
+- Hash failure never enters the checkpoint queue. A later write failure cannot
+  occur in this tactical because hashing still starts only after every write
+  completion for that piece.
+
+## Observability Contract
+
+Extend the existing fixed `DownloadControl`, `DownloadProgress`,
+`DiskRuntimeSnapshot`, application Disk view and generated client contracts.
+At minimum expose:
+
+- checkpoint-dirty piece count and bytes plus oldest age;
+- checkpoint batches, pieces and unique sync operations;
+- sync and database callback service duration separately;
+- one active checkpoint stage; and
+- piece stages for checkpoint dirty, syncing and committing.
+
+The existing `storage_hash_*` fields stop timing before checkpoint work.
+Counters remain saturating and history-free. One batch view update represents
+all pieces committed at one SQLite revision; diagnostics do not become state.
+
+## Staged Implementation And Gates
+
+1. Add `SessionStore::record_pieces` and a batched `ViewHub` durable-piece
+   transition. Prove one decode/encode, revision and transaction for many
+   pieces, duplicate handling, rollback and bounds.
+2. Add pure checkpoint batch selection and target de-duplication with exact
+   time, byte, piece and large-piece behavior.
+3. Add sync-only storage-handle registration and the joined checkpoint task.
+   Remove per-piece `sync_piece` from verification and move the batch callback
+   off the supervisor.
+4. Split Disk stages and fixed metrics; update generated schemas, TypeScript,
+   fixtures and frontend stage presentation without changing layout policy.
+5. Add deterministic delayed-sync and delayed-checkpoint controls. Prove writes
+   and hashes advance during each delay, true bound backpressure, exact task
+   joins, forced final flush and typed failure propagation.
+6. Add subprocess crash fixtures at pre-sync, post-sync/pre-commit and
+   post-commit boundaries. Restart must recheck committed bits and safely miss
+   uncommitted bits.
+7. Add a configurable controlled storage-throughput profile with a quick smoke
+   and a steady-state size calibrated to roughly 30--60 seconds under a hard
+   4 GiB payload and temporary-disk cap. Retain the 32 MiB historical profile.
+8. Pass formatting, warning-denying clippy, workspace tests, selective and
+   mixed-source interop, paired controlled publication, generated-contract
+   checks, and both Android Rust target checks.
+9. Run the steady controlled cohort. Run the headless product Big Buck Bunny
+   comparator only after controlled attribution is causal. Public speed remains
+   a distribution, not the tactical's correctness oracle.
+
+## Pre-Change Controlled Baseline
+
+The first evidence checkpoint retained two complementary loopback profiles on
+the same development machine and pre-change engine binary:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/selective_hash_profile.py --profile quick --runs 1
+uv run --project tests/interop --locked \
+  python tests/interop/selective_hash_profile.py --profile steady --runs 3 \
+  --binary target/debug/rstorrent-download-piece
+uv run --project tests/interop --locked \
+  python tests/interop/session_checkpoint_profile.py --runs 3 \
+  --binary target/debug/rstorrent-session
+```
+
+The historical 32 MiB quick profile remained exact at 2.005 seconds. The new
+128 MiB engine-only steady profile contains 512 256 KiB pieces and 8,192
+blocks across three unaligned wanted files. It completed at 36.564--38.896
+seconds with a 37.594-second median. Every run reached the 16-block/256 KiB
+write-batch caps, performed 542--546 physical writes, spent
+31.108--34.088 seconds in serialized write service, matched all three file
+hashes and cleaned up. This profile does not instantiate SQLite; it is the
+stable baseline for later positional and concurrent execution slices.
+
+The new application-service profile downloads a separate deterministic
+128 MiB/512-piece multi-file torrent through the loopback seed, path-backed
+session service, `synchronous=FULL` SQLite store and ordinary publication.
+Three runs completed at 12.707--13.370 seconds with a 13.346-second median.
+The metadata checkpoint was observed before any verified piece on every run;
+the final SQLite torrent revision was exactly 514 revisions later: one for
+each of 512 per-piece checkpoints and two final storage/state transitions.
+Every run retained exact raw info, full have geometry, the same payload SHA-1,
+verified publication and exact owner/artifact cleanup.
+
+Larger 256 MiB and 768 MiB engine-only calibration attempts were stopped after
+crossing the declared steady window well before completion. Their owned
+processes and temporary roots cleaned exactly. The retained 128 MiB profile is
+large enough to sustain backlog without making a timeout the expected result.
+
+## Stopping Condition
+
+The tactical completes when hash verification, payload sync and SQLite commit
+are separate owned stages; ordinary writes/hashes demonstrably advance during
+checkpoint delay; one bounded epoch amortizes sync and database work across
+many pieces; restart and failure cases remain conservative; all owners join;
+and the controlled profile records an honest before/after result.
+
+No speed claim is required to retain the correctness-preserving state split.
+Claim a checkpoint-path improvement only if the steady controlled cohort shows
+materially lower hash-stage service and supervisor stall without a throughput,
+memory, integrity or tail-latency regression. The next boundary is immutable
+positional storage plans and part-file metadata ownership in Tactical `053`.
+
+## Non-Goals
+
+- concurrent writes or hashes, pending-write hash reads, a session-wide disk
+  pool, multi-torrent fairness or adaptive worker counts;
+- changing part-file format or removing its current per-slot metadata sync;
+- fast resume that trusts un-rehashed bytes;
+- direct I/O, memory mapping, `io_uring`, unsafe code or a new dependency;
+- peer, picker, request-window, discovery, protocol or public UI layout policy;
+  or
+- physical-device interaction without the repository's separate explicit
+  authorization process.
+
+## Escalation Contract
+
+No routine implementation input is required. Internal refactoring, generated
+contract updates, deterministic failure controls, bounded temporary fixtures,
+headless public cohorts and reasonable commits are authorized. Stop only for a
+new dependency or compatibility break, materially different crash semantics,
+destructive user-data action, visible/physical-device interaction, or evidence
+that requires abandoning the accepted storage-throughput architecture.

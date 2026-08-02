@@ -86,6 +86,9 @@ def start_process(
     binary: Path,
     profile_root: Path,
     payload_root: Path,
+    *,
+    timeout_seconds: int = PROCESS_TIMEOUT_SECONDS,
+    payload_allowance: int = DEFAULT_PAYLOAD_ALLOWANCE,
 ) -> subprocess.Popen[str]:
     return subprocess.Popen(
         [
@@ -97,9 +100,9 @@ def start_process(
             "--storage-root",
             f"downloads={payload_root}",
             "--timeout-seconds",
-            str(PROCESS_TIMEOUT_SECONDS),
+            str(timeout_seconds),
             "--max-buffered-payload-bytes",
-            str(DEFAULT_PAYLOAD_ALLOWANCE),
+            str(payload_allowance),
         ],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -206,8 +209,9 @@ def wait_for_complete(
     process: subprocess.Popen[str],
     fixture: Fixture,
     minimum_revision: int = 0,
+    timeout_seconds: int = PROCESS_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
-    deadline = time.monotonic() + PROCESS_TIMEOUT_SECONDS
+    deadline = time.monotonic() + timeout_seconds
     request_number = 0
     while time.monotonic() < deadline:
         response = exchange(

@@ -2,20 +2,18 @@
 
 Topic: `oracle-driven-engine-campaign`
 
-Status: Paused after completed Tactical `032` by maintainer direction. The
+Status: Resumed for the accepted maximum-throughput storage campaign by
+maintainer direction on 2026-08-02. The
 paired headless comparator and bounded utility timeline drive metadata,
 first-piece, sustained-transfer, endgame, and full publication parity from
 pinned libtorrent source and tests. Bounded write coalescing is complete;
-serialized storage execution remains the measured owner. Its proposed
+serialized storage execution remains the measured owner. Its accepted
 multi-tactical replacement is recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
-but no implementation tactical is active. Product direction
-has moved temporarily to the detailed desktop inspection surface recorded in
-[`desktop-inspection-surface.md`](desktop-inspection-surface.md). Its view-set
-application boundary is accepted in
-[`application-view-api.md`](application-view-api.md), and product work now
-owns that headless contract foundation. High-impact BEP breadth still follows
-the core common-denominator parity gate.
+and Tactical [`052`](../tactical/052-batched-durability-checkpoints.md) is
+active. The intervening desktop inspection and view-set foundations are
+complete enough to expose the new checkpoint stages as the engine evolves.
+High-impact BEP breadth still follows the core common-denominator parity gate.
 
 ## Purpose And Scope
 
@@ -321,18 +319,17 @@ reason to stop.
 
 ## Current Checkpoint
 
-Campaign state: **paused after a completed slice by maintainer direction**.
+Campaign state: **active by maintainer direction**.
 
-Active tactical: **none**.
+Active tactical:
+[`052-batched-durability-checkpoints.md`](../tactical/052-batched-durability-checkpoints.md).
 Tacticals `025` through
 [`032-bounded-coalesced-write-batches.md`](../tactical/032-bounded-coalesced-write-batches.md)
 are complete.
 
-Current milestone: Tactical `032` closed bounded write coalescing without a
-speed claim. The proposed maximum-throughput storage topic now reconciles its
-neutral controlled result, retained public attribution, current ownership,
-file selection and part-file behavior, and pinned libtorrent source/tests.
-Review that architecture before authorizing its first implementation slice.
+Current milestone: decouple hash verification from payload/SQLite durability,
+move checkpoint work off the content supervisor, and establish a repeatable
+steady-state storage profile before positional-write concurrency.
 
 Last completed evidence:
 
@@ -563,10 +560,17 @@ Last completed evidence:
   time with zero hash failures and successful cleanup. This selects serialized
   storage execution without opening its concurrency design.
 
-Next executable action: **none in this campaign until explicit maintainer
-authorization**. The product queue now owns the accepted desktop view-set
-contract foundation. The recorded engine candidate remains a source-first
-study of bounded positional storage concurrency with per-piece verification
-fences, not an approved tactical.
+Tactical `052` pre-change evidence now includes:
 
-Human blocker: **intentional maintainer review before more implementation**.
+- a 128 MiB engine-only steady profile with 512 pieces, a 37.594-second
+  three-run median, 542--546 physical writes and 31.108--34.088 seconds of
+  serialized write service; and
+- a separate SQLite-backed 512-piece session profile with a 13.346-second
+  median and an exact 514-revision post-metadata amplification on every run,
+  proving one have transaction per piece plus two final transitions.
+
+Next executable action: implement `SessionStore::record_pieces` and one
+coherent batched `ViewHub` durable-piece transition, then prove duplicate,
+bounds, revision and rollback behavior before changing the engine task graph.
+
+Human blocker: **none**.

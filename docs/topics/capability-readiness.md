@@ -22,7 +22,9 @@ again stayed neutral. The duration slice attributed 93--94% of public wall
 time to serialized storage service. Bounded coalesced batches now reduce
 roughly 5,700 logical blocks to about 500 physical writes, but controlled wall
 time stayed neutral and public write plus hash service still consumed 93--94%.
-The engine campaign is paused before any bounded storage-concurrency tactical.
+The engine campaign has resumed with Tactical `052`, which first separates
+hash verification from bounded batched durability before positional storage
+and bounded concurrency.
 Tactical `033` now completes the leased application view-set and headless
 polling foundation. Tactical `034` completes the responsive frontend,
 deterministic demo adapter, adaptive inspection hierarchy, and virtual table
@@ -113,19 +115,17 @@ evidence.
 
 ### Now
 
-**Review the proposed maximum-throughput storage architecture.**
-[`storage-throughput-architecture.md`](storage-throughput-architecture.md)
-uses the retained duration evidence and pinned libtorrent behavior to define
-positional non-overlapping writes, independent hash work, targeted exceptional
-fences, part-file coordination, batched durability, and session/root fairness.
-Reviewing the proposal does not activate an implementation tactical.
+**Decouple verification from bounded durability checkpoints.** Tactical
+[`052`](../tactical/052-batched-durability-checkpoints.md) moves per-piece
+payload sync and SQLite work out of hash service and the content supervisor,
+batches durable progress, splits Disk stages, and establishes the controlled
+steady-state storage profile for the accepted throughput campaign.
 
 ### Next
 
-1. **If the architecture is accepted, open only its first bounded tactical.**
-   Decouple hash verification from durability, batch payload synchronization
-   and SQLite have updates, and expose the separated stages before adding
-   positional worker concurrency.
+1. **Establish immutable positional storage plans.** After Tactical `052`
+   graduates, remove mutable-cursor ownership from wanted-file and part-file
+   payload operations before adding worker concurrency.
 2. **Deepen peer inspection only if engine selection needs it.** A
    registry-backed Swarm view remains the strongest missing inspection
    candidate, but it should not displace a reproducible download correctness

@@ -132,8 +132,9 @@ store. The accepted contract lives in
 Android remains a first-party product but no longer has a default obligation
 to mirror desktop tabs or diagnostic density. Engine and application
 semantics remain shared; presentation parity is decided per feature. The
-oracle-driven engine campaign is paused while the desktop application-view API
-and inspection direction are discussed.
+desktop application-view API and initial inspection direction are now
+established, and the oracle-driven engine campaign has resumed for the
+accepted maximum-throughput storage sequence.
 
 ### Bounded implementation tacticals
 

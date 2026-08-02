@@ -263,6 +263,23 @@ uv run --project tests/interop --locked \
   python tests/interop/selective_hash_profile.py --runs 3
 ```
 
+Use its 128 MiB, 512-piece steady preset when startup would dominate the
+historical smoke:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/selective_hash_profile.py --profile steady --runs 3
+```
+
+The application-service checkpoint profile exercises the same piece count
+through SQLite-backed durable resume and reports the durable revision
+amplification from metadata checkpoint to verified publication:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/session_checkpoint_profile.py --runs 3
+```
+
 The controlled DHT profile obtains peers from an independent KRPC router,
 downloads metadata and content from libtorrent, and then probes RSTorrent's
 incoming query and token-authenticated announcement behavior:

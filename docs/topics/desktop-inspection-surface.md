@@ -166,12 +166,11 @@ by [`disk-and-piece-inspection`](disk-and-piece-inspection.md) and Tacticals
 
 ## Relationship To Engine Work
 
-The oracle-driven campaign is paused, not abandoned. Its comparator, source
-discipline, correctness ledger, and retained storage bottleneck remain valid.
-Once the inspection surface supports useful real-time observation, maintainers
-can decide whether to resume the recorded storage-execution candidate, select
-a different engine owner from interactive evidence, or fill another detail
-view first.
+The oracle-driven campaign resumed on 2026-08-02 for the accepted
+maximum-throughput storage sequence. Its comparator, source discipline,
+correctness ledger and retained bottleneck remain valid, while the implemented
+Disk and Pieces views provide the typed inspection surface needed to split
+hash, checkpoint-sync and commit stages as that architecture lands.
 
 Tactical `033` completed the bounded view-set contract and headless client
 foundation described in

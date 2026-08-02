@@ -293,14 +293,14 @@ roughly 5,700 logical blocks became about 500 writes, yet combined serialized
 write/hash service still consumed 93.0--94.2% of wall time. Zero hash failures
 and successful cleanup held.
 
-No next stopping condition is active while the campaign is paused for
-maintainer review. The source-derived candidate is now specified holistically
-in
-[`storage-throughput-architecture.md`](storage-throughput-architecture.md):
-decouple hash verification from batched durability first, then establish
-immutable positional spans and bounded independent write/hash execution. Peer
-selection and request policy remain unchanged unless a future authorized
-tactical records a different evidence-backed owner.
+Tactical `052` is now active by maintainer direction. It decouples hash
+verification from bounded batched durability while retaining the one-sided
+crash invariant, conservative restart recheck, exact cancellation and joined
+publication. Its pre-change session profile observes zero durable pieces at
+the metadata checkpoint and then exactly 514 SQLite revisions for a
+512-piece completion, directly capturing the per-piece checkpoint policy.
+Immutable positional spans and bounded independent write/hash execution remain
+later tacticals. Peer selection and request policy are unchanged.
 
 Routine engine validation remains headless; no additional product UI is
 required by that slice.
