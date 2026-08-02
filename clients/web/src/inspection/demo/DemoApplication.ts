@@ -3,6 +3,7 @@ import type {
   CommandResult,
   DesiredInspectionViews,
   DemoScenarioId,
+  DiskSet,
   InspectionCommand,
   InspectionSnapshot,
   InspectionUpdate,
@@ -13,6 +14,7 @@ import type {
   TorrentRow,
   TrackerRow,
 } from "../model";
+import { emptyDiskSet } from "../state";
 import {
   buildScenarioSnapshot,
   DEMO_BASE_TIME_MS,
@@ -302,6 +304,7 @@ function materializeDemoViews(
     peersByTorrent,
     filesByTorrent,
     trackersByTorrent,
+    disk: desired.detail === "disk" ? source.disk : emptyDiskSet(),
     logs: desired.detail === "logs" ? source.logs : [],
     droppedLogs: desired.detail === "logs" ? source.droppedLogs : 0,
     viewStatus: {
@@ -324,6 +327,10 @@ function materializeDemoViews(
           : { status: "not_requested" },
       trackers:
         desired.detail === "trackers"
+          ? { status: "ready" }
+          : { status: "not_requested" },
+      disk:
+        desired.detail === "disk"
           ? { status: "ready" }
           : { status: "not_requested" },
       logs:
@@ -562,6 +569,7 @@ function diffSnapshots(
     ...(peerPatches.length === 0 ? {} : { peers: peerPatches }),
     ...(filePatches.length === 0 ? {} : { files: filePatches }),
     ...(trackerPatches.length === 0 ? {} : { trackers: trackerPatches }),
+    ...(!sameDisk(previous.disk, next.disk) ? { disk: next.disk } : {}),
     ...(appendedLogs.length === 0
       ? {}
       : {
@@ -571,6 +579,15 @@ function diffSnapshots(
           },
         }),
   };
+}
+
+function sameDisk(left: DiskSet, right: DiskSet): boolean {
+  if (!shallowEqual(left.pipeline, right.pipeline)) return false;
+  if (!arraysEqual(left.order, right.order)) return false;
+  return right.order.every((id) => {
+    const row = right.rows[id];
+    return row !== undefined && shallowEqual(left.rows[id], row);
+  });
 }
 
 function shallowEqual<T extends object>(left: T | undefined, right: T): boolean {

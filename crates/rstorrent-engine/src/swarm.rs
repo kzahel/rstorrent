@@ -891,6 +891,33 @@ impl SwarmState {
         Ok(expired)
     }
 
+    pub fn defer_peer_deadlines(&mut self, delay: Duration) {
+        if delay.is_zero() {
+            return;
+        }
+        for block in self.blocks.values_mut() {
+            for attempt in &mut block.attempts {
+                if attempt.disposition.is_active() {
+                    attempt.issued_at = attempt.issued_at.saturating_add(delay);
+                }
+            }
+        }
+        for connection in self.connections.values_mut() {
+            connection.connected_at = connection.connected_at.saturating_add(delay);
+            connection.last_useful_at = connection
+                .last_useful_at
+                .map(|instant| instant.saturating_add(delay));
+            connection.request_window.sample_started_at = connection
+                .request_window
+                .sample_started_at
+                .saturating_add(delay);
+            connection.request_window.last_payload_at = connection
+                .request_window
+                .last_payload_at
+                .map(|instant| instant.saturating_add(delay));
+        }
+    }
+
     pub fn receive_block(
         &mut self,
         connection: ConnectionId,
@@ -2422,6 +2449,26 @@ mod tests {
                 .outstanding_request_bytes,
             0
         );
+    }
+
+    #[test]
+    fn storage_gating_defers_request_and_replacement_deadlines() {
+        let mut state = state(1, vec![plan(0, 1)], 1);
+        add_peer(&mut state, connection(1), &[0], false);
+        let request = state.schedule(Duration::ZERO).expect("schedule")[0];
+        state.defer_peer_deadlines(Duration::from_secs(20));
+        assert!(
+            state
+                .expire_requests(Duration::from_secs(30))
+                .expect("deferred request remains live")
+                .is_empty()
+        );
+        let snapshot = state.snapshot(Duration::from_secs(30));
+        assert_eq!(snapshot.oldest_request_age, Some(Duration::from_secs(10)));
+        let expired = state
+            .expire_requests(Duration::from_secs(50))
+            .expect("deferred request expires");
+        assert_eq!(expired[0].attempt, request.attempt);
     }
 
     #[test]

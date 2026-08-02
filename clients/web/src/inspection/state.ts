@@ -6,6 +6,7 @@ import type {
   InspectionUpdate,
   LibraryCategory,
   LogRow,
+  DiskSet,
   FileSet,
   PeerSet,
   TrackerSet,
@@ -62,6 +63,7 @@ const EMPTY_SNAPSHOT: InspectionSnapshot = {
   peersByTorrent: {},
   filesByTorrent: {},
   trackersByTorrent: {},
+  disk: emptyDiskSet(),
   logs: [],
   droppedLogs: 0,
   viewStatus: {
@@ -70,6 +72,7 @@ const EMPTY_SNAPSHOT: InspectionSnapshot = {
     peers: { status: "not_requested" },
     files: { status: "not_requested" },
     trackers: { status: "not_requested" },
+    disk: { status: "not_requested" },
     logs: { status: "not_requested" },
   },
 };
@@ -182,6 +185,7 @@ export function reduceInspectionUpdate(
   let peersByTorrent = state.peersByTorrent;
   let filesByTorrent = state.filesByTorrent;
   let trackersByTorrent = state.trackersByTorrent;
+  let disk = state.disk;
   let logs = state.logs;
   let droppedLogs = state.droppedLogs;
 
@@ -261,6 +265,10 @@ export function reduceInspectionUpdate(
     trackersByTorrent = nextTrackerSets;
   }
 
+  if (update.disk !== undefined) {
+    disk = update.disk;
+  }
+
   if (update.logs !== undefined) {
     const combined = [...state.logs, ...update.logs.append];
     const overflow = Math.max(0, combined.length - 256);
@@ -283,6 +291,7 @@ export function reduceInspectionUpdate(
     peersByTorrent,
     filesByTorrent,
     trackersByTorrent,
+    disk,
     logs,
     droppedLogs,
     presentation: {
@@ -343,6 +352,48 @@ const EMPTY_TRACKER_SET: TrackerSet = {
   order: [],
   rows: {},
 };
+
+export function emptyDiskSet(): DiskSet {
+  return {
+    pipeline: {
+      pressure: "idle",
+      intakeBackpressured: false,
+      sampleMillis: 0,
+      residentLimitBytes: 0,
+      residentHighWatermarkBytes: 0,
+      residentLowWatermarkBytes: 0,
+      requestedBytes: 0,
+      residentBytes: 0,
+      queuedWriteBytes: 0,
+      writingBytes: 0,
+      hashingBytes: 0,
+      storageJobsPending: 0,
+      receivedBytesTotal: 0,
+      storedBytesTotal: 0,
+      verifiedBytesTotal: 0,
+      receiveRateBytes: 0,
+      writeRateBytes: 0,
+      hashRateBytes: 0,
+      writeOperationsStarted: 0,
+      writeOperationsCompleted: 0,
+      hashOperationsStarted: 0,
+      hashOperationsCompleted: 0,
+      writeQueueWaitMicros: 0,
+      writeQueueWaitMaxMicros: 0,
+      writeServiceMicros: 0,
+      writeServiceMaxMicros: 0,
+      hashQueueWaitMicros: 0,
+      hashQueueWaitMaxMicros: 0,
+      hashServiceMicros: 0,
+      hashServiceMaxMicros: 0,
+      pressureTransitionCount: 0,
+      backpressuredMillisTotal: 0,
+      lastError: null,
+    },
+    order: [],
+    rows: {},
+  };
+}
 
 export function visibleLogs(
   logs: readonly LogRow[],

@@ -106,6 +106,49 @@ test("compact tracker recovery remains legible", async ({ page }) => {
   await capture(page, "rstorrent-trackers-phone.png");
 });
 
+test("global disk pipeline shows pressure and responsive piece work", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openScenario(page, "slow-disk-pressure", 20_000);
+  await page.getByRole("tab", { name: "Disk" }).click();
+  await expect(page.getByText("Receive → write → verify")).toBeVisible();
+  await expect(page.getByLabel("Disk pressure Backpressured")).toBeVisible();
+  await expect(page.getByText("intake paused now")).toBeVisible();
+  const pieces = page.getByRole("grid", { name: "Active storage pieces" });
+  await expect(pieces).toHaveAttribute("aria-rowcount", "65");
+  expect(await pieces.getByRole("row").count()).toBeLessThanOrEqual(100);
+  const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+  await capture(page, "rstorrent-disk-wide.png");
+
+  await page.setViewportSize({ width: 920, height: 720 });
+  await expect(pieces).toBeVisible();
+  await capture(page, "rstorrent-disk-compact.png");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page
+    .getByRole("grid", { name: "Torrent library" })
+    .getByRole("row")
+    .filter({ hasText: "Big Buck Bunny" })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Torrents", exact: true }),
+  ).toBeVisible();
+  await expect(pieces).toBeVisible();
+  await expect
+    .poll(async () =>
+      page
+        .getByRole("navigation", { name: "Torrent library" })
+        .evaluate((element) => Math.round(element.getBoundingClientRect().right)),
+    )
+    .toBeLessThanOrEqual(0);
+  await capture(page, "rstorrent-disk-phone.png");
+});
+
 test("removal keeps data by default and exposes destructive intent", async ({
   page,
 }) => {

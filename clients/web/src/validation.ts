@@ -21,6 +21,7 @@ const MAX_COLLECTION = 100_000;
 const MAX_ACTIVE_PEERS = 256;
 const MAX_FILES = 4_096;
 const MAX_TRACKERS = 32;
+const MAX_DISK_PIECES = 16_384;
 const MAX_U32 = 4_294_967_295;
 const DECIMAL = /^(0|[1-9][0-9]*)$/;
 const IDENTIFIER = /^[A-Za-z0-9._-]{1,128}$/;
@@ -298,6 +299,15 @@ function validateViewSnapshot(value: unknown): void {
       validateActivePiece(snapshot.active, pieceCount);
       break;
     }
+    case "session_disk": {
+      validateDiskPipeline(snapshot.pipeline);
+      const pieces = array(snapshot.pieces, "active disk pieces");
+      if (pieces.length > MAX_DISK_PIECES) {
+        throw new ContractError("disk piece view exceeds its row bound");
+      }
+      pieces.forEach(validateDiskPiece);
+      break;
+    }
     case "peers": {
       const owningTorrent = string(snapshot.torrent_id, "peer-view torrent ID");
       torrentId(owningTorrent);
@@ -374,6 +384,18 @@ function validateViewPatch(value: unknown): void {
       validateRanges(patch.verified, pieceCount, "verified pieces");
       validateRanges(patch.cleared, pieceCount, "cleared pieces");
       validateActivePiece(patch.active, pieceCount);
+      break;
+    }
+    case "session_disk": {
+      validateDiskPipeline(patch.pipeline);
+      const upserts = array(patch.upsert, "active disk piece upserts");
+      if (upserts.length > MAX_DISK_PIECES) {
+        throw new ContractError("disk piece patch exceeds its row bound");
+      }
+      upserts.forEach(validateDiskPiece);
+      array(patch.removed, "active disk piece removals").forEach((rowId) =>
+        boundedString(rowId, "disk piece row ID", 256),
+      );
       break;
     }
     case "peers": {
@@ -682,6 +704,83 @@ function validateActivePiece(
   validateRanges(active.requested, pieceLength, "requested blocks");
   validateRanges(active.received, pieceLength, "received blocks");
   validateRanges(active.stored, pieceLength, "stored blocks");
+}
+
+function validateDiskPipeline(value: unknown): void {
+  const pipeline = asRecord(value, "disk pipeline");
+  oneOf(pipeline.pressure, "disk pressure", [
+    "idle",
+    "normal",
+    "backpressured",
+    "draining",
+    "error",
+  ]);
+  boolean(pipeline.intake_backpressured, "disk intake backpressure");
+  [
+    "sample_millis",
+    "resident_limit_bytes",
+    "resident_high_watermark_bytes",
+    "resident_low_watermark_bytes",
+    "requested_bytes",
+    "resident_bytes",
+    "queued_write_bytes",
+    "writing_bytes",
+    "hashing_bytes",
+    "storage_jobs_pending",
+    "received_bytes_total",
+    "stored_bytes_total",
+    "verified_bytes_total",
+    "receive_rate_bytes",
+    "write_rate_bytes",
+    "hash_rate_bytes",
+    "write_operations_started",
+    "write_operations_completed",
+    "hash_operations_started",
+    "hash_operations_completed",
+    "write_queue_wait_micros",
+    "write_queue_wait_max_micros",
+    "write_service_micros",
+    "write_service_max_micros",
+    "hash_queue_wait_micros",
+    "hash_queue_wait_max_micros",
+    "hash_service_micros",
+    "hash_service_max_micros",
+    "pressure_transition_count",
+    "backpressured_millis_total",
+  ].forEach((field) => decimal(pipeline[field], `disk ${field}`));
+  optionalString(pipeline.last_error, "disk error", 256);
+}
+
+function validateDiskPiece(value: unknown): void {
+  const piece = asRecord(value, "active disk piece");
+  boundedString(piece.row_id, "disk piece row ID", 256);
+  torrentId(piece.torrent_id);
+  boundedString(piece.torrent_name, "disk piece torrent name", 255);
+  boundedInteger(piece.piece_index, "disk piece index", 0, MAX_U32);
+  const pieceLength = boundedInteger(
+    piece.piece_length,
+    "disk piece length",
+    1,
+    MAX_U32,
+  );
+  boundedInteger(piece.attempt, "disk piece attempt", 1, MAX_U32);
+  oneOf(piece.stage, "disk piece stage", [
+    "receiving",
+    "queued",
+    "writing",
+    "stored",
+    "hashing",
+    "failed",
+  ]);
+  for (const field of ["requested_bytes", "received_bytes", "stored_bytes"]) {
+    const bytes = decimal(piece[field], `disk piece ${field}`);
+    if (BigInt(bytes) > BigInt(pieceLength)) {
+      throw new ContractError(`disk piece ${field} exceeds the piece length`);
+    }
+  }
+  decimal(piece.age_millis, "disk piece age");
+  decimal(piece.stage_age_millis, "disk piece stage age");
+  optionalString(piece.error, "disk piece error", 256);
 }
 
 function validateRanges(

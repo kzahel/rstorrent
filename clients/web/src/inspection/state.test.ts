@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { InspectionSnapshot, TorrentRow } from "./model";
-import { createInspectionStore } from "./state";
+import { createInspectionStore, emptyDiskSet } from "./state";
 
 describe("inspection store", () => {
   it("preserves unrelated row references across keyed patches", () => {
@@ -117,6 +117,7 @@ function snapshot(rows: readonly TorrentRow[]): InspectionSnapshot {
     peersByTorrent: {},
     filesByTorrent: {},
     trackersByTorrent: {},
+    disk: emptyDiskSet(),
     logs: [],
     droppedLogs: 0,
     viewStatus: {
@@ -125,6 +126,7 @@ function snapshot(rows: readonly TorrentRow[]): InspectionSnapshot {
       peers: { status: "not_requested" },
       files: { status: "not_requested" },
       trackers: { status: "not_requested" },
+      disk: { status: "not_requested" },
       logs: { status: "not_requested" },
     },
   };

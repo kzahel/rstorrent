@@ -2,8 +2,8 @@
 
 Topic: `disk-and-piece-inspection`
 
-Status: Accepted direction; implementation is owned by Tacticals `044` and
-`045`.
+Status: Disk implemented by Tactical `044`; Pieces implementation is owned by
+Tactical `045`.
 
 ## Scope
 
@@ -211,6 +211,17 @@ source, asset, or fixture is copied.
 
 This ordering is deliberate: storage ownership, pressure, and the shared piece
 lifecycle vocabulary are proven before a visualization depends on them.
+
+## Current Evidence
+
+Tactical `044` implements the session Disk contract end to end. Deterministic
+engine tests prove high/low hysteresis, bounded resident payload, deadline
+deferral, exact piece-attempt accounting, and cleanup. The headless web
+scenario proves responsive and accessible statistics/table presentation. A
+controlled libtorrent loopback seed plus bounded test-only delay drove a real
+17-piece transfer through backpressure, resumed to exact verified completion,
+and returned the global view to idle with no active rows. See the tactical for
+the precise limits and command evidence.
 
 ## Known Gaps After This Sequence
 

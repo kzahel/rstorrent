@@ -238,6 +238,7 @@ pub enum DownloadActivityEvent {
         contributor_count: usize,
         failed_bytes: usize,
     },
+    StorageState(Box<DiskRuntimeSnapshot>),
     TrackerAnnounceStarted {
         tracker: String,
         tier: u8,
@@ -481,6 +482,7 @@ struct DownloadControlInner {
     storage_write_batch_bytes_high_water: AtomicUsize,
     storage_active_operation: AtomicUsize,
     storage_active_started_micros: AtomicU64,
+    disk_runtime: Mutex<DiskRuntimeState>,
     activity_sink: Mutex<Option<Arc<dyn DownloadActivitySink>>>,
     last_swarm_activity: Mutex<Option<SwarmActivitySnapshot>>,
     last_content_peers: Mutex<(Option<Duration>, Vec<ContentPeerActivitySnapshot>)>,
@@ -570,6 +572,105 @@ pub struct DownloadProgress {
     pub storage_active_hash_micros: Option<u64>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DiskPressure {
+    #[default]
+    Idle,
+    Normal,
+    Backpressured,
+    Draining,
+    Error,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DiskPieceStage {
+    Receiving,
+    Queued,
+    Writing,
+    Stored,
+    Hashing,
+    Failed,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DiskPieceRuntimeSnapshot {
+    pub piece_index: u32,
+    pub piece_length: u32,
+    pub attempt: u32,
+    pub stage: DiskPieceStage,
+    pub requested_bytes: u32,
+    pub received_bytes: u32,
+    pub stored_bytes: u32,
+    pub age_millis: u64,
+    pub stage_age_millis: u64,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct DiskRuntimeSnapshot {
+    pub captured_at_millis: u64,
+    pub pressure: DiskPressure,
+    pub intake_backpressured: bool,
+    pub resident_limit_bytes: usize,
+    pub resident_high_watermark_bytes: usize,
+    pub resident_low_watermark_bytes: usize,
+    pub requested_bytes: usize,
+    pub resident_bytes: usize,
+    pub queued_write_bytes: usize,
+    pub writing_bytes: usize,
+    pub hashing_bytes: usize,
+    pub storage_jobs_pending: usize,
+    pub received_bytes_total: usize,
+    pub stored_bytes_total: usize,
+    pub verified_bytes_total: usize,
+    pub write_operations_started: usize,
+    pub write_operations_completed: usize,
+    pub hash_operations_started: usize,
+    pub hash_operations_completed: usize,
+    pub write_queue_wait_micros: u64,
+    pub write_queue_wait_max_micros: u64,
+    pub write_service_micros: u64,
+    pub write_service_max_micros: u64,
+    pub hash_queue_wait_micros: u64,
+    pub hash_queue_wait_max_micros: u64,
+    pub hash_service_micros: u64,
+    pub hash_service_max_micros: u64,
+    pub pressure_transition_count: u64,
+    pub backpressured_millis_total: u64,
+    pub last_error: Option<String>,
+    pub pieces: Vec<DiskPieceRuntimeSnapshot>,
+}
+
+#[derive(Debug, Default)]
+struct DiskRuntimeState {
+    resident_limit_bytes: usize,
+    high_watermark_bytes: usize,
+    low_watermark_bytes: usize,
+    pressure: DiskPressure,
+    pressure_transition_count: u64,
+    backpressured_since: Option<Instant>,
+    backpressured_total: Duration,
+    queued_write_bytes: usize,
+    writing_bytes: usize,
+    hashing_bytes: usize,
+    verified_bytes_total: usize,
+    last_error: Option<String>,
+    pieces: BTreeMap<u32, DiskPieceRuntimeState>,
+}
+
+#[derive(Debug)]
+struct DiskPieceRuntimeState {
+    piece_length: u32,
+    attempt: u32,
+    stage: DiskPieceStage,
+    requested: Vec<(u32, u32)>,
+    received: Vec<(u32, u32)>,
+    stored: Vec<(u32, u32)>,
+    started_at: Instant,
+    stage_started_at: Instant,
+    error: Option<String>,
+}
+
 impl DownloadControl {
     pub fn new() -> Self {
         Self {
@@ -598,6 +699,7 @@ impl DownloadControl {
                 storage_write_batch_bytes_high_water: AtomicUsize::new(0),
                 storage_active_operation: AtomicUsize::new(0),
                 storage_active_started_micros: AtomicU64::new(0),
+                disk_runtime: Mutex::new(DiskRuntimeState::default()),
                 activity_sink: Mutex::new(None),
                 last_swarm_activity: Mutex::new(None),
                 last_content_peers: Mutex::new((None, Vec::new())),
@@ -752,6 +854,74 @@ impl DownloadControl {
             content_registry,
             peer_connections,
             metadata,
+        }
+    }
+
+    pub fn disk_snapshot(&self) -> DiskRuntimeSnapshot {
+        let now = Instant::now();
+        let progress = self.snapshot();
+        let state = self
+            .inner
+            .disk_runtime
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let active_backpressure = state.backpressured_since.map_or(Duration::ZERO, |started| {
+            now.saturating_duration_since(started)
+        });
+        let pieces = state
+            .pieces
+            .iter()
+            .map(|(&piece_index, piece)| DiskPieceRuntimeSnapshot {
+                piece_index,
+                piece_length: piece.piece_length,
+                attempt: piece.attempt,
+                stage: piece.stage,
+                requested_bytes: range_bytes(&piece.requested),
+                received_bytes: range_bytes(&piece.received),
+                stored_bytes: range_bytes(&piece.stored),
+                age_millis: duration_millis(now.saturating_duration_since(piece.started_at)),
+                stage_age_millis: duration_millis(
+                    now.saturating_duration_since(piece.stage_started_at),
+                ),
+                error: piece.error.clone(),
+            })
+            .collect();
+        DiskRuntimeSnapshot {
+            captured_at_millis: duration_millis(self.inner.started_at.elapsed()),
+            pressure: state.pressure,
+            intake_backpressured: state.backpressured_since.is_some(),
+            resident_limit_bytes: state.resident_limit_bytes,
+            resident_high_watermark_bytes: state.high_watermark_bytes,
+            resident_low_watermark_bytes: state.low_watermark_bytes,
+            requested_bytes: progress.outstanding_request_bytes,
+            resident_bytes: progress.buffered_payload_bytes,
+            queued_write_bytes: state.queued_write_bytes,
+            writing_bytes: state.writing_bytes,
+            hashing_bytes: state.hashing_bytes,
+            storage_jobs_pending: progress.storage_jobs_pending,
+            received_bytes_total: progress.received_bytes,
+            stored_bytes_total: progress.stored_bytes,
+            verified_bytes_total: state.verified_bytes_total,
+            write_operations_started: progress.storage_write_operations_started,
+            write_operations_completed: progress.storage_write_operations_completed,
+            hash_operations_started: progress.storage_hash_operations_started,
+            hash_operations_completed: progress.storage_hash_operations_completed,
+            write_queue_wait_micros: progress.storage_write_queue_wait_micros,
+            write_queue_wait_max_micros: progress.storage_write_queue_wait_max_micros,
+            write_service_micros: progress.storage_write_service_micros,
+            write_service_max_micros: progress.storage_write_service_max_micros,
+            hash_queue_wait_micros: progress.storage_hash_queue_wait_micros,
+            hash_queue_wait_max_micros: progress.storage_hash_queue_wait_max_micros,
+            hash_service_micros: progress.storage_hash_service_micros,
+            hash_service_max_micros: progress.storage_hash_service_max_micros,
+            pressure_transition_count: state.pressure_transition_count,
+            backpressured_millis_total: duration_millis(
+                state
+                    .backpressured_total
+                    .saturating_add(active_backpressure),
+            ),
+            last_error: state.last_error.clone(),
+            pieces,
         }
     }
 
@@ -1248,8 +1418,241 @@ impl DownloadControl {
         }
     }
 
-    fn record_stored(&self, bytes: usize) {
-        self.inner.stored_bytes.fetch_add(bytes, Ordering::AcqRel);
+    fn configure_disk_runtime(&self, resident_limit_bytes: usize) {
+        let mut state = self
+            .inner
+            .disk_runtime
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.resident_limit_bytes = resident_limit_bytes;
+        state.high_watermark_bytes = resident_limit_bytes
+            .saturating_mul(3)
+            .checked_div(4)
+            .unwrap_or(resident_limit_bytes)
+            .max(1);
+        state.low_watermark_bytes = resident_limit_bytes.checked_div(2).unwrap_or_default();
+        state.pressure = DiskPressure::Normal;
+        drop(state);
+        self.emit_storage_state();
+    }
+
+    fn storage_backpressured(&self) -> bool {
+        self.inner
+            .disk_runtime
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .backpressured_since
+            .is_some()
+    }
+
+    fn update_disk_pressure(&self, resident_bytes: usize) {
+        let now = Instant::now();
+        let mut state = self
+            .inner
+            .disk_runtime
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if state.resident_limit_bytes == 0 || state.pressure == DiskPressure::Error {
+            return;
+        }
+        let was_backpressured = state.backpressured_since.is_some();
+        if !was_backpressured && resident_bytes >= state.high_watermark_bytes {
+            state.backpressured_since = Some(now);
+            state.pressure = DiskPressure::Backpressured;
+            state.pressure_transition_count = state.pressure_transition_count.saturating_add(1);
+        } else if was_backpressured && resident_bytes <= state.low_watermark_bytes {
+            if let Some(started) = state.backpressured_since.take() {
+                state.backpressured_total = state
+                    .backpressured_total
+                    .saturating_add(now.saturating_duration_since(started));
+            }
+            state.pressure = if resident_bytes == 0 && state.pieces.is_empty() {
+                DiskPressure::Idle
+            } else {
+                DiskPressure::Draining
+            };
+            state.pressure_transition_count = state.pressure_transition_count.saturating_add(1);
+        } else if !was_backpressured {
+            state.pressure = if resident_bytes == 0 && state.pieces.is_empty() {
+                DiskPressure::Idle
+            } else {
+                DiskPressure::Normal
+            };
+        }
+    }
+
+    fn disk_block_requested(&self, block: BlockKey, piece_length: u32) {
+        self.inner
+            .requested_bytes
+            .fetch_add(block.length as usize, Ordering::AcqRel);
+        self.mutate_disk_piece(block.piece, piece_length, |piece, now| {
+            if piece.stage == DiskPieceStage::Failed {
+                piece.attempt = piece.attempt.saturating_add(1);
+                piece.requested.clear();
+                piece.received.clear();
+                piece.stored.clear();
+                piece.started_at = now;
+                piece.error = None;
+            }
+            insert_disk_range(&mut piece.requested, block.begin, block.length);
+            set_disk_piece_stage(piece, DiskPieceStage::Receiving, now);
+        });
+        self.emit_storage_state();
+    }
+
+    fn disk_block_received(&self, block: BlockKey, piece_length: u32) {
+        self.inner
+            .received_bytes
+            .fetch_add(block.length as usize, Ordering::AcqRel);
+        self.mutate_disk_piece(block.piece, piece_length, |piece, now| {
+            insert_disk_range(&mut piece.received, block.begin, block.length);
+            set_disk_piece_stage(piece, DiskPieceStage::Queued, now);
+        });
+        self.emit_storage_state();
+    }
+
+    fn disk_block_stored(&self, block: BlockKey, piece_length: u32) {
+        self.inner
+            .stored_bytes
+            .fetch_add(block.length as usize, Ordering::AcqRel);
+        self.mutate_disk_piece(block.piece, piece_length, |piece, now| {
+            insert_disk_range(&mut piece.stored, block.begin, block.length);
+            let stage = if range_bytes(&piece.stored) >= piece.piece_length {
+                DiskPieceStage::Stored
+            } else {
+                DiskPieceStage::Receiving
+            };
+            set_disk_piece_stage(piece, stage, now);
+        });
+        self.emit_storage_state();
+    }
+
+    fn disk_piece_hashing(&self, piece_index: u32, piece_length: u32) {
+        {
+            let mut state = self
+                .inner
+                .disk_runtime
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state.hashing_bytes = piece_length as usize;
+        }
+        self.mutate_disk_piece(piece_index, piece_length, |piece, now| {
+            set_disk_piece_stage(piece, DiskPieceStage::Hashing, now);
+        });
+        self.emit_storage_state();
+    }
+
+    fn disk_piece_verified(&self, piece_index: u32, piece_length: u32) {
+        let mut state = self
+            .inner
+            .disk_runtime
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.hashing_bytes = 0;
+        state.verified_bytes_total = state
+            .verified_bytes_total
+            .saturating_add(piece_length as usize);
+        state.pieces.remove(&piece_index);
+        let resident = self.inner.buffered_payload_bytes.load(Ordering::Acquire);
+        drop(state);
+        self.update_disk_pressure(resident);
+        self.emit_storage_state();
+    }
+
+    fn disk_piece_failed(&self, piece_index: u32, piece_length: u32, detail: &str) {
+        {
+            let mut state = self
+                .inner
+                .disk_runtime
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state.hashing_bytes = 0;
+        }
+        self.mutate_disk_piece(piece_index, piece_length, |piece, now| {
+            piece.error = Some(bounded_diagnostic_detail(detail));
+            set_disk_piece_stage(piece, DiskPieceStage::Failed, now);
+        });
+        self.emit_storage_state();
+    }
+
+    fn disk_storage_error(&self, detail: &str) {
+        let mut state = self
+            .inner
+            .disk_runtime
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.pressure = DiskPressure::Error;
+        state.last_error = Some(bounded_diagnostic_detail(detail));
+        if let Some(started) = state.backpressured_since.take() {
+            state.backpressured_total = state
+                .backpressured_total
+                .saturating_add(Instant::now().saturating_duration_since(started));
+        }
+        drop(state);
+        self.emit_storage_state();
+    }
+
+    fn mutate_disk_piece(
+        &self,
+        piece_index: u32,
+        piece_length: u32,
+        update: impl FnOnce(&mut DiskPieceRuntimeState, Instant),
+    ) {
+        let now = Instant::now();
+        let mut state = self
+            .inner
+            .disk_runtime
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let piece = state
+            .pieces
+            .entry(piece_index)
+            .or_insert_with(|| DiskPieceRuntimeState {
+                piece_length,
+                attempt: 1,
+                stage: DiskPieceStage::Receiving,
+                requested: Vec::new(),
+                received: Vec::new(),
+                stored: Vec::new(),
+                started_at: now,
+                stage_started_at: now,
+                error: None,
+            });
+        piece.piece_length = piece_length;
+        update(piece, now);
+    }
+
+    fn disk_write_batch_started(&self, blocks: &[BlockKey], bytes: usize) {
+        let now = Instant::now();
+        let mut state = self
+            .inner
+            .disk_runtime
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.queued_write_bytes = state.queued_write_bytes.saturating_sub(bytes);
+        state.writing_bytes = bytes;
+        for block in blocks {
+            if let Some(piece) = state.pieces.get_mut(&block.piece) {
+                set_disk_piece_stage(piece, DiskPieceStage::Writing, now);
+            }
+        }
+        drop(state);
+        self.emit_storage_state();
+    }
+
+    fn disk_write_batch_completed(&self) {
+        self.inner
+            .disk_runtime
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .writing_bytes = 0;
+        self.emit_storage_state();
+    }
+
+    fn emit_storage_state(&self) {
+        self.emit(DownloadActivityEvent::StorageState(Box::new(
+            self.disk_snapshot(),
+        )));
     }
 
     fn storage_job_started(&self) {
@@ -1294,6 +1697,16 @@ impl DownloadControl {
                     self.inner
                         .payload_high_water
                         .fetch_max(next, Ordering::AcqRel);
+                    {
+                        let mut state = self
+                            .inner
+                            .disk_runtime
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner());
+                        state.queued_write_bytes = state.queued_write_bytes.saturating_add(bytes);
+                    }
+                    self.update_disk_pressure(next);
+                    self.emit_storage_state();
                     return true;
                 }
                 Err(actual) => current = actual,
@@ -1307,6 +1720,20 @@ impl DownloadControl {
             .buffered_payload_bytes
             .fetch_sub(bytes, Ordering::AcqRel);
         debug_assert!(previous >= bytes);
+        self.update_disk_pressure(previous.saturating_sub(bytes));
+        self.emit_storage_state();
+    }
+
+    fn abandon_queued_payload(&self, bytes: usize) {
+        {
+            let mut state = self
+                .inner
+                .disk_runtime
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state.queued_write_bytes = state.queued_write_bytes.saturating_sub(bytes);
+        }
+        self.release_buffered_payload(bytes);
     }
 
     fn observe_storage_command_queue(&self, depth: usize) {
@@ -1375,17 +1802,18 @@ impl DownloadControl {
         &self,
         enqueued_at: Instant,
         started_at: Instant,
-        blocks: usize,
+        blocks: &[BlockKey],
         bytes: usize,
     ) {
         self.storage_command_started(StorageCommandKind::Write, enqueued_at, started_at);
-        atomic_saturating_add_usize(&self.inner.storage_write_blocks_started, blocks);
+        atomic_saturating_add_usize(&self.inner.storage_write_blocks_started, blocks.len());
         self.inner
             .storage_write_batch_blocks_high_water
-            .fetch_max(blocks, Ordering::AcqRel);
+            .fetch_max(blocks.len(), Ordering::AcqRel);
         self.inner
             .storage_write_batch_bytes_high_water
             .fetch_max(bytes, Ordering::AcqRel);
+        self.disk_write_batch_started(blocks, bytes);
     }
 
     fn storage_write_batch_completed(
@@ -1396,6 +1824,7 @@ impl DownloadControl {
     ) {
         atomic_saturating_add_usize(&self.inner.storage_write_blocks_completed, blocks);
         self.storage_command_completed(StorageCommandKind::Write, started_at, completed_at);
+        self.disk_write_batch_completed();
     }
 
     fn storage_timing(&self, kind: StorageCommandKind) -> &StorageCommandTiming {
@@ -1438,22 +1867,31 @@ impl DownloadControl {
     fn clear_storage_jobs(&self) {
         self.inner.storage_jobs_pending.store(0, Ordering::Release);
         self.clear_storage_active_operation();
-    }
-
-    fn record_requested(&self, bytes: usize) {
-        self.inner
-            .requested_bytes
-            .fetch_add(bytes, Ordering::AcqRel);
-    }
-
-    fn record_received(&self, bytes: usize) {
-        self.inner.received_bytes.fetch_add(bytes, Ordering::AcqRel);
+        let mut state = self
+            .inner
+            .disk_runtime
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.queued_write_bytes = 0;
+        state.writing_bytes = 0;
+        state.hashing_bytes = 0;
+        state.pieces.clear();
+        state.pressure = DiskPressure::Idle;
+        if let Some(started) = state.backpressured_since.take() {
+            state.backpressured_total = state
+                .backpressured_total
+                .saturating_add(Instant::now().saturating_duration_since(started));
+        }
+        drop(state);
+        self.emit_storage_state();
     }
 
     fn clear_buffered_payload(&self) {
         self.inner
             .buffered_payload_bytes
             .store(0, Ordering::Release);
+        self.update_disk_pressure(0);
+        self.emit_storage_state();
     }
 
     fn clear_outstanding_requests(&self) {
@@ -1485,6 +1923,40 @@ impl DownloadControl {
 
 fn duration_micros(duration: Duration) -> u64 {
     duration.as_micros().try_into().unwrap_or(u64::MAX)
+}
+
+fn duration_millis(duration: Duration) -> u64 {
+    duration.as_millis().try_into().unwrap_or(u64::MAX)
+}
+
+fn set_disk_piece_stage(piece: &mut DiskPieceRuntimeState, stage: DiskPieceStage, now: Instant) {
+    if piece.stage != stage {
+        piece.stage = stage;
+        piece.stage_started_at = now;
+    }
+}
+
+fn insert_disk_range(ranges: &mut Vec<(u32, u32)>, begin: u32, length: u32) {
+    let Some(mut end) = begin.checked_add(length) else {
+        return;
+    };
+    let mut start = begin;
+    let mut index = 0;
+    while index < ranges.len() && ranges[index].1 < start {
+        index += 1;
+    }
+    while index < ranges.len() && ranges[index].0 <= end {
+        start = start.min(ranges[index].0);
+        end = end.max(ranges[index].1);
+        ranges.remove(index);
+    }
+    ranges.insert(index, (start, end));
+}
+
+fn range_bytes(ranges: &[(u32, u32)]) -> u32 {
+    ranges.iter().fold(0_u32, |total, (start, end)| {
+        total.saturating_add(end.saturating_sub(*start))
+    })
 }
 
 fn atomic_saturating_add(value: &AtomicU64, amount: u64) {
@@ -4600,6 +5072,7 @@ impl ContentStoragePipeline {
         control: &DownloadControl,
         max_buffered_payload_bytes: usize,
     ) -> Self {
+        control.configure_disk_runtime(max_buffered_payload_bytes);
         let job_limit = content_storage_job_limit(max_buffered_payload_bytes);
         debug_assert_ne!(job_limit, 0);
         let queue_capacity = job_limit;
@@ -4645,7 +5118,7 @@ impl ContentStoragePipeline {
         if !self.pending_commands.is_empty() {
             if self.pending_commands.len() >= CONTENT_STORAGE_PENDING_QUEUE {
                 if let Some(bytes) = buffered_bytes {
-                    self.control.release_buffered_payload(bytes);
+                    self.control.abandon_queued_payload(bytes);
                 }
                 return Err(DownloadError::Swarm(SwarmError::Invariant(
                     "storage pending-command bound exceeded",
@@ -4659,7 +5132,7 @@ impl ContentStoragePipeline {
         let Some(sender) = &self.commands else {
             self.control.storage_job_finished();
             if let Some(bytes) = buffered_bytes {
-                self.control.release_buffered_payload(bytes);
+                self.control.abandon_queued_payload(bytes);
             }
             return Err(DownloadError::StorageTask(
                 "storage command owner is stopped".to_owned(),
@@ -4679,7 +5152,7 @@ impl ContentStoragePipeline {
             Err(mpsc::error::TrySendError::Closed(_)) => {
                 self.control.storage_job_finished();
                 if let Some(bytes) = buffered_bytes {
-                    self.control.release_buffered_payload(bytes);
+                    self.control.abandon_queued_payload(bytes);
                 }
                 Err(DownloadError::StorageTask(
                     "storage command channel closed".to_owned(),
@@ -4718,7 +5191,9 @@ impl ContentStoragePipeline {
     }
 
     fn is_backpressured(&self) -> bool {
-        !self.pending_commands.is_empty() || self.control.storage_jobs_at_limit(self.job_limit)
+        self.control.storage_backpressured()
+            || !self.pending_commands.is_empty()
+            || self.control.storage_jobs_at_limit(self.job_limit)
     }
 
     async fn next_completion(&mut self) -> Result<ContentStorageCompletion, DownloadError> {
@@ -4774,18 +5249,28 @@ async fn run_content_storage_task(
         let completions_to_send = if command.command.write_bytes().is_some() {
             let batch = collect_content_write_batch(command, &mut commands, &mut deferred);
             let blocks = batch.len();
+            let block_keys = batch
+                .iter()
+                .filter_map(|command| match &command.command {
+                    ContentStorageCommand::Write { block, .. } => Some(*block),
+                    ContentStorageCommand::Verify { .. } => None,
+                })
+                .collect::<Vec<_>>();
             let bytes = batch.iter().fold(0_usize, |total, command| {
                 total.saturating_add(command.command.write_bytes().unwrap_or(0))
             });
             let enqueued_at = batch[0].enqueued_at;
             let started_at = Instant::now();
-            control.storage_write_batch_started(enqueued_at, started_at, blocks, bytes);
+            control.storage_write_batch_started(enqueued_at, started_at, &block_keys, bytes);
             let completed = execute_content_storage_writes(&mut storage, batch, &control).await;
             control.storage_write_batch_completed(started_at, Instant::now(), blocks);
             completed
         } else {
             let kind = command.command.kind();
             debug_assert_eq!(kind, StorageCommandKind::Hash);
+            if let ContentStorageCommand::Verify { piece, length, .. } = &command.command {
+                control.disk_piece_hashing(*piece, *length);
+            }
             let started_at = Instant::now();
             control.storage_command_started(kind, command.enqueued_at, started_at);
             let completion =
@@ -5220,7 +5705,11 @@ impl<'a> ContentSwarmDownload<'a> {
                                 )
                                 .await;
                         }
-                        self.control.record_received(block.len());
+                        let piece_length = self
+                            .layout
+                            .piece_length_at(index)
+                            .map_err(DownloadError::Layout)?;
+                        self.control.disk_block_received(key, piece_length);
                         self.control.emit(DownloadActivityEvent::BlockReceived {
                             piece_index: index,
                             begin,
@@ -5277,6 +5766,7 @@ impl<'a> ContentSwarmDownload<'a> {
                 let stats = match result {
                     Ok(stats) => stats,
                     Err(error) => {
+                        self.control.disk_storage_error(&error.to_string());
                         self.state
                             .finish_write(block, false, now)
                             .map_err(DownloadError::Swarm)?;
@@ -5291,7 +5781,11 @@ impl<'a> ContentSwarmDownload<'a> {
                     .selected_written_bytes
                     .saturating_add(stats.selected_bytes);
                 self.part_written_bytes = self.part_written_bytes.saturating_add(stats.part_bytes);
-                self.control.record_stored(block.length as usize);
+                let piece_length = self
+                    .layout
+                    .piece_length_at(block.piece)
+                    .map_err(DownloadError::Layout)?;
+                self.control.disk_block_stored(block, piece_length);
                 self.control.emit(DownloadActivityEvent::BlockStored {
                     piece_index: block.piece,
                     begin: block.begin,
@@ -5341,6 +5835,8 @@ impl<'a> ContentSwarmDownload<'a> {
                         contributor_count: failure.contributors.len(),
                         failed_bytes: failure.failed_bytes,
                     });
+                    self.control
+                        .disk_piece_failed(piece, length, "piece hash failed; retrying");
                     ContentMessageDisposition::PieceHashFailed(failure)
                 } else {
                     if let Some(resume) = self.resume {
@@ -5360,6 +5856,7 @@ impl<'a> ContentSwarmDownload<'a> {
                     });
                     self.control
                         .emit(DownloadActivityEvent::PieceVerified { piece_index: piece });
+                    self.control.disk_piece_verified(piece, length);
                     ContentMessageDisposition::PieceVerified(contributors)
                 }
             }
@@ -5764,6 +6261,7 @@ async fn run_selective_swarm_loop(
     download: &mut ContentSwarmDownload<'_>,
 ) -> Result<(), DownloadError> {
     let mut next_owner = ContentSupervisorOwner::Storage;
+    let mut storage_pressure_started = None;
     if let Some(connection) = peers.connection.take() {
         let attempt = connection.attempt();
         peers.handoff_to_content(attempt)?;
@@ -5791,20 +6289,35 @@ async fn run_selective_swarm_loop(
     loop {
         let now = peers.elapsed();
         let storage_ready = download.flush_pending_storage()?;
+        let storage_backpressured = download.storage_is_backpressured();
+        match (storage_pressure_started, storage_backpressured) {
+            (None, true) => storage_pressure_started = Some(now),
+            (Some(started), false) => {
+                download
+                    .state
+                    .defer_peer_deadlines(now.saturating_sub(started));
+                storage_pressure_started = None;
+            }
+            _ => {}
+        }
         download
             .control
             .observe_content_registry(&peers.registry, now);
-        let expired = download
-            .state
-            .expire_requests(now)
-            .map_err(DownloadError::Swarm)?;
+        let expired = if storage_backpressured {
+            Vec::new()
+        } else {
+            download
+                .state
+                .expire_requests(now)
+                .map_err(DownloadError::Swarm)?
+        };
         for request in expired {
             let _ = request;
         }
         download.control.observe_swarm(&download.state, now);
         peers.observe_content_peers(&download.state)?;
 
-        let assignments = if storage_ready {
+        let assignments = if storage_ready && !storage_backpressured {
             download.state.schedule(now).map_err(DownloadError::Swarm)?
         } else {
             Vec::new()
@@ -5822,9 +6335,13 @@ async fn run_selective_swarm_loop(
                 failed_connections.insert(assignment.connection);
                 continue;
             }
+            let piece_length = download
+                .layout
+                .piece_length_at(assignment.block.piece)
+                .map_err(DownloadError::Layout)?;
             download
                 .control
-                .record_requested(assignment.block.length as usize);
+                .disk_block_requested(assignment.block, piece_length);
             download
                 .control
                 .emit(DownloadActivityEvent::BlockRequested {
@@ -5851,12 +6368,14 @@ async fn run_selective_swarm_loop(
             return Ok(());
         }
 
-        fill_content_dials(
-            peers,
-            sockets,
-            &mut download.state,
-            download.metainfo.info_hash,
-        )?;
+        if !storage_backpressured {
+            fill_content_dials(
+                peers,
+                sockets,
+                &mut download.state,
+                download.metainfo.info_hash,
+            )?;
+        }
         if sockets.established_len() == 0
             && sockets.pending_len() == 0
             && !discovery.is_active()
@@ -5878,13 +6397,16 @@ async fn run_selective_swarm_loop(
                 },
             )
             .and(snapshot.next_replacement_at);
-        let next_deadline = [snapshot.next_request_expiry, replacement_deadline]
-            .into_iter()
-            .flatten()
-            .min();
+        let next_deadline = (!storage_backpressured)
+            .then(|| {
+                [snapshot.next_request_expiry, replacement_deadline]
+                    .into_iter()
+                    .flatten()
+                    .min()
+            })
+            .flatten();
         let until_expiry = next_deadline.map(|deadline| deadline.saturating_sub(peers.elapsed()));
         let cancellation = peers.control.inner.cancellation.clone();
-        let storage_backpressured = download.storage_is_backpressured();
         let event = {
             let storage = download.storage_pipeline_mut()?;
             next_content_supervisor_event(
@@ -6538,16 +7060,16 @@ mod tests {
         CLIENT_PEER_ID, CONTENT_STORAGE_WRITE_BATCH_BLOCKS, CONTENT_STORAGE_WRITE_BATCH_BYTES,
         CoalescedContentWrite, ContentDownloadConfig, ContentStorage, ContentStorageCommand,
         ContentStorageCompletion, ContentSupervisorOwner, ContentWriteStats,
-        DEFAULT_ADVERTISED_PEER_PORT, DhtRetryTiming, DownloadActivityEvent, DownloadActivitySink,
-        DownloadConfig, DownloadControl, DownloadError, DownloadResourceLimits,
-        MAX_DIAGNOSTIC_ERROR_LENGTH, MAX_METADATA_PEERS, MAX_RECENT_METADATA_ATTEMPTS,
-        MagnetDownloadConfig, MetadataAcquisitionPhase, MetadataPeerStage, PeerConnection,
-        PreparedContentWrite, QueuedContentStorageCommand, SwarmConfig, TorrentPeerCoordinator,
-        TrackerManager, UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming,
-        UdpTrackerTokenCache, announce_udp_tracker_address, atomic_saturating_add,
-        atomic_saturating_increment, coalesce_content_writes, collect_content_write_batch,
-        content_dial_slot_available, content_storage_job_limit, download_magnet,
-        download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
+        DEFAULT_ADVERTISED_PEER_PORT, DhtRetryTiming, DiskPressure, DownloadActivityEvent,
+        DownloadActivitySink, DownloadConfig, DownloadControl, DownloadError,
+        DownloadResourceLimits, MAX_DIAGNOSTIC_ERROR_LENGTH, MAX_METADATA_PEERS,
+        MAX_RECENT_METADATA_ATTEMPTS, MagnetDownloadConfig, MetadataAcquisitionPhase,
+        MetadataPeerStage, PeerConnection, PreparedContentWrite, QueuedContentStorageCommand,
+        SwarmConfig, TorrentPeerCoordinator, TrackerManager, UdpTrackerAnnounce,
+        UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache, announce_udp_tracker_address,
+        atomic_saturating_add, atomic_saturating_increment, coalesce_content_writes,
+        collect_content_write_batch, content_dial_slot_available, content_storage_job_limit,
+        download_magnet, download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
         download_magnet_with_control, download_verified_piece,
         download_verified_piece_with_control, execute_content_storage_writes, next_peer_message,
         retrying_dht_lookup, run_content_download, run_magnet_download_with_peers, send_message,
@@ -6580,6 +7102,70 @@ mod tests {
         let count = AtomicUsize::new(usize::MAX);
         atomic_saturating_increment(&count);
         assert_eq!(count.load(Ordering::Acquire), usize::MAX);
+    }
+
+    #[test]
+    fn disk_pressure_uses_distinct_high_and_low_watermarks() {
+        let control = DownloadControl::new();
+        let limit = 4 * MIN_PAYLOAD_ALLOWANCE;
+        control.configure_disk_runtime(limit);
+        assert!(control.try_buffer_payload(2 * MIN_PAYLOAD_ALLOWANCE, limit));
+        assert!(!control.disk_snapshot().intake_backpressured);
+        assert!(control.try_buffer_payload(MIN_PAYLOAD_ALLOWANCE, limit));
+        let high = control.disk_snapshot();
+        assert_eq!(high.pressure, DiskPressure::Backpressured);
+        assert!(high.intake_backpressured);
+        assert_eq!(
+            high.resident_high_watermark_bytes,
+            3 * MIN_PAYLOAD_ALLOWANCE
+        );
+        assert_eq!(high.resident_low_watermark_bytes, 2 * MIN_PAYLOAD_ALLOWANCE);
+
+        control.release_buffered_payload(MIN_PAYLOAD_ALLOWANCE / 2);
+        assert!(control.disk_snapshot().intake_backpressured);
+        control.release_buffered_payload(MIN_PAYLOAD_ALLOWANCE / 2);
+        let recovered = control.disk_snapshot();
+        assert_eq!(recovered.pressure, DiskPressure::Draining);
+        assert!(!recovered.intake_backpressured);
+        assert_eq!(recovered.pressure_transition_count, 2);
+    }
+
+    #[test]
+    fn disk_piece_snapshot_counts_unique_ranges_and_retries() {
+        let control = DownloadControl::new();
+        control.configure_disk_runtime(8 * MIN_PAYLOAD_ALLOWANCE);
+        let first = BlockKey::new(7, 0, MIN_PAYLOAD_ALLOWANCE as u32).expect("first block");
+        control.disk_block_requested(first, 2 * MIN_PAYLOAD_ALLOWANCE as u32);
+        control.disk_block_requested(first, 2 * MIN_PAYLOAD_ALLOWANCE as u32);
+        control.disk_block_received(first, 2 * MIN_PAYLOAD_ALLOWANCE as u32);
+        let active = control.disk_snapshot();
+        assert_eq!(active.pieces.len(), 1);
+        assert_eq!(
+            active.pieces[0].requested_bytes,
+            MIN_PAYLOAD_ALLOWANCE as u32
+        );
+        assert_eq!(
+            active.pieces[0].received_bytes,
+            MIN_PAYLOAD_ALLOWANCE as u32
+        );
+        assert_eq!(active.pieces[0].attempt, 1);
+
+        control.disk_piece_failed(7, 2 * MIN_PAYLOAD_ALLOWANCE as u32, "piece hash failed");
+        let second = BlockKey::new(
+            7,
+            MIN_PAYLOAD_ALLOWANCE as u32,
+            MIN_PAYLOAD_ALLOWANCE as u32,
+        )
+        .expect("second block");
+        control.disk_block_requested(second, 2 * MIN_PAYLOAD_ALLOWANCE as u32);
+        let retry = control.disk_snapshot();
+        assert_eq!(retry.pieces[0].attempt, 2);
+        assert_eq!(
+            retry.pieces[0].requested_bytes,
+            MIN_PAYLOAD_ALLOWANCE as u32
+        );
+        assert_eq!(retry.pieces[0].received_bytes, 0);
+        assert_eq!(retry.pieces[0].error, None);
     }
 
     fn prepared_write(piece: u32, begin: u32, bytes: &[u8]) -> PreparedContentWrite {
@@ -8558,10 +9144,8 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
 
         timeout(Duration::from_secs(2), async {
             loop {
-                let progress = control.snapshot();
-                if progress.storage_jobs_high_water >= job_limit
-                    && progress.storage_jobs_pending >= job_limit
-                {
+                let disk = control.disk_snapshot();
+                if disk.intake_backpressured {
                     break;
                 }
                 tokio::task::yield_now().await;
@@ -8597,9 +9181,14 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         );
         let progress = control.snapshot();
         assert_eq!(progress.storage_jobs_pending, 0);
-        assert_eq!(progress.storage_jobs_high_water, job_limit);
+        assert!(progress.storage_jobs_high_water <= job_limit);
+        assert!(progress.storage_jobs_high_water > 0);
         assert!(progress.storage_command_queue_high_water <= job_limit);
         assert!(progress.storage_command_queue_high_water > 0);
+        let disk = control.disk_snapshot();
+        assert_eq!(disk.pressure, DiskPressure::Idle);
+        assert!(!disk.intake_backpressured);
+        assert!(disk.pressure_transition_count >= 2);
         let discovered = peers
             .registry
             .find_endpoint(PeerEndpoint::new(discovered_address).expect("DHT endpoint"))

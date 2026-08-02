@@ -18,6 +18,8 @@ import type { InspectionApplication } from "../application";
 import type {
   CommandResult,
   DesiredInspectionViews,
+  DiskPieceRow,
+  DiskSet,
   InspectionCommand,
   InspectionSnapshot,
   InspectionUpdate,
@@ -31,12 +33,14 @@ import type {
   TrackerSet,
   ViewMaterialization,
 } from "../model";
+import { emptyDiskSet } from "../state";
 
 const LIBRARY_VIEW_ID = "library";
 const SUMMARY_VIEW_ID = "torrent-summary";
 const PEERS_VIEW_ID = "torrent-peers";
 const FILES_VIEW_ID = "torrent-files";
 const TRACKERS_VIEW_ID = "torrent-trackers";
+const DISK_VIEW_ID = "session-disk";
 const LOGS_VIEW_ID = "logs";
 
 export interface LiveApplicationOptions extends ViewControllerOptions {
@@ -254,6 +258,7 @@ export class LiveApplication implements InspectionApplication {
           this.snapshot.viewStatus.trackers,
           error,
         ),
+        disk: staleIfMaterialized(this.snapshot.viewStatus.disk, error),
         logs: staleIfMaterialized(this.snapshot.viewStatus.logs, error),
       },
     };
@@ -318,6 +323,13 @@ export class LiveApplication implements InspectionApplication {
         delivery: { min_interval_millis: 250 },
       });
     }
+    if (views.detail === "disk" && capabilities.has("session_disk")) {
+      specs.push({
+        type: "session_disk",
+        view_id: DISK_VIEW_ID,
+        delivery: { min_interval_millis: 100 },
+      });
+    }
     if (views.detail === "logs" && capabilities.has("diagnostics")) {
       specs.push({
         type: "diagnostics",
@@ -364,6 +376,7 @@ function mapViewState(
   const peers = projection(state, PEERS_VIEW_ID, "peers");
   const files = projection(state, FILES_VIEW_ID, "files");
   const trackers = projection(state, TRACKERS_VIEW_ID, "trackers");
+  const disk = projection(state, DISK_VIEW_ID, "session_disk");
   const diagnostics = projection(state, LOGS_VIEW_ID, "diagnostics");
   const torrentRows = new Map<string, TorrentRow>();
   if (library !== null) {
@@ -417,6 +430,7 @@ function mapViewState(
     peersByTorrent,
     filesByTorrent,
     trackersByTorrent,
+    disk: disk === null ? emptyDiskSet() : mapDisk(disk),
     logs,
     droppedLogs: diagnostics === null ? 0 : safeNumber(diagnostics.dropped_count),
     viewStatus: {
@@ -449,6 +463,12 @@ function mapViewState(
         capabilities.has("torrent_trackers"),
         trackers?.torrent_id === desired.torrentId,
         "Tracker inspection is unavailable",
+      ),
+      disk: materialization(
+        desired.detail === "disk",
+        capabilities.has("session_disk"),
+        disk !== null,
+        "Disk inspection is unavailable",
       ),
       logs: materialization(
         desired.detail === "logs",
@@ -506,6 +526,7 @@ function transitionSnapshot(
     peersByTorrent: {},
     filesByTorrent: {},
     trackersByTorrent: {},
+    disk: current.disk,
     logs: [],
     droppedLogs: 0,
     viewStatus: {
@@ -529,6 +550,11 @@ function transitionSnapshot(
       trackers: transitionStatus(
         desired.detail === "trackers",
         capabilities.has("torrent_trackers"),
+      ),
+      disk: transitionStatus(
+        desired.detail === "disk",
+        capabilities.has("session_disk"),
+        current.viewStatus.disk,
       ),
       logs: transitionStatus(
         desired.detail === "logs",
@@ -639,6 +665,76 @@ function mapFiles(
     filesystemContentBase: snapshot.filesystem_content_base,
     order: rows.map((file) => file.id),
     rows: Object.fromEntries(rows.map((file) => [file.id, file])),
+  };
+}
+
+function mapDisk(
+  snapshot: Extract<ViewSnapshot, { type: "session_disk" }>,
+): DiskSet {
+  const rows = snapshot.pieces.map(
+    (piece): DiskPieceRow => ({
+      id: piece.row_id,
+      torrentId: piece.torrent_id,
+      torrentName: piece.torrent_name,
+      pieceIndex: piece.piece_index,
+      pieceLength: piece.piece_length,
+      attempt: piece.attempt,
+      stage: piece.stage,
+      requestedBytes: safeNumber(piece.requested_bytes),
+      receivedBytes: safeNumber(piece.received_bytes),
+      storedBytes: safeNumber(piece.stored_bytes),
+      ageMillis: safeNumber(piece.age_millis),
+      stageAgeMillis: safeNumber(piece.stage_age_millis),
+      error: piece.error ?? null,
+    }),
+  );
+  const pipeline = snapshot.pipeline;
+  return {
+    pipeline: {
+      pressure: pipeline.pressure,
+      intakeBackpressured: pipeline.intake_backpressured,
+      sampleMillis: safeNumber(pipeline.sample_millis),
+      residentLimitBytes: safeNumber(pipeline.resident_limit_bytes),
+      residentHighWatermarkBytes: safeNumber(
+        pipeline.resident_high_watermark_bytes,
+      ),
+      residentLowWatermarkBytes: safeNumber(
+        pipeline.resident_low_watermark_bytes,
+      ),
+      requestedBytes: safeNumber(pipeline.requested_bytes),
+      residentBytes: safeNumber(pipeline.resident_bytes),
+      queuedWriteBytes: safeNumber(pipeline.queued_write_bytes),
+      writingBytes: safeNumber(pipeline.writing_bytes),
+      hashingBytes: safeNumber(pipeline.hashing_bytes),
+      storageJobsPending: safeNumber(pipeline.storage_jobs_pending),
+      receivedBytesTotal: safeNumber(pipeline.received_bytes_total),
+      storedBytesTotal: safeNumber(pipeline.stored_bytes_total),
+      verifiedBytesTotal: safeNumber(pipeline.verified_bytes_total),
+      receiveRateBytes: safeNumber(pipeline.receive_rate_bytes),
+      writeRateBytes: safeNumber(pipeline.write_rate_bytes),
+      hashRateBytes: safeNumber(pipeline.hash_rate_bytes),
+      writeOperationsStarted: safeNumber(pipeline.write_operations_started),
+      writeOperationsCompleted: safeNumber(pipeline.write_operations_completed),
+      hashOperationsStarted: safeNumber(pipeline.hash_operations_started),
+      hashOperationsCompleted: safeNumber(pipeline.hash_operations_completed),
+      writeQueueWaitMicros: safeNumber(pipeline.write_queue_wait_micros),
+      writeQueueWaitMaxMicros: safeNumber(pipeline.write_queue_wait_max_micros),
+      writeServiceMicros: safeNumber(pipeline.write_service_micros),
+      writeServiceMaxMicros: safeNumber(pipeline.write_service_max_micros),
+      hashQueueWaitMicros: safeNumber(pipeline.hash_queue_wait_micros),
+      hashQueueWaitMaxMicros: safeNumber(pipeline.hash_queue_wait_max_micros),
+      hashServiceMicros: safeNumber(pipeline.hash_service_micros),
+      hashServiceMaxMicros: safeNumber(pipeline.hash_service_max_micros),
+      pressureTransitionCount: safeNumber(
+        pipeline.pressure_transition_count,
+      ),
+      backpressuredMillisTotal: safeNumber(
+        pipeline.backpressured_millis_total,
+      ),
+      lastError: pipeline.last_error ?? null,
+    },
+    order: rows.map((row) => row.id),
+    rows: Object.fromEntries(rows.map((row) => [row.id, row])),
   };
 }
 
@@ -844,6 +940,7 @@ function emptyLiveSnapshot(
     peersByTorrent: {},
     filesByTorrent: {},
     trackersByTorrent: {},
+    disk: emptyDiskSet(),
     logs: [],
     droppedLogs: 0,
     viewStatus: {
@@ -856,6 +953,7 @@ function emptyLiveSnapshot(
         desired.detail === "trackers"
           ? { status: "loading" }
           : { status: "not_requested" },
+      disk: desired.detail === "disk" ? { status: "loading" } : { status: "not_requested" },
       logs: desired.detail === "logs" ? { status: "loading" } : { status: "not_requested" },
     },
   };

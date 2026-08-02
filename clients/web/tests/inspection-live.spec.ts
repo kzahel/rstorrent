@@ -11,6 +11,62 @@ const torrentName = process.env.RSTORRENT_LIVE_TORRENT_NAME;
 const fileCount = process.env.RSTORRENT_LIVE_FILE_COUNT;
 const trackerUrl = process.env.RSTORRENT_LIVE_TRACKER_URL;
 const screenshotDirectory = process.env.RSTORRENT_SCREENSHOT_DIR;
+const expectDiskPressure = process.env.RSTORRENT_LIVE_EXPECT_DISK_PRESSURE === "1";
+
+test("live disk inspection observes pressure and exact recovery", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  test.skip(
+    !expectDiskPressure ||
+      gateway === undefined ||
+      magnet === undefined ||
+      torrentId === undefined ||
+      torrentName === undefined,
+    "controlled slow-storage gateway is opt-in",
+  );
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`/?live=${encodeURIComponent(gateway!)}&poll_ms=100`);
+  await expect(page.getByText("Live engine", { exact: true })).toBeVisible();
+
+  const addForm = page.getByRole("form", { name: "Add torrent" });
+  const torrentInput = addForm.getByRole("textbox", {
+    name: "Magnet link or torrent URL",
+  });
+  await torrentInput.fill(magnet!);
+  await torrentInput.press("Enter");
+  await expect(page.getByText("Torrent added", { exact: true })).toBeVisible();
+
+  const torrentRow = page
+    .getByRole("grid", { name: "Torrent library" })
+    .locator(`[data-row-id="${torrentId!}"]`);
+  await expect(torrentRow).toBeVisible({ timeout: 10_000 });
+  await page.getByRole("tab", { name: "Disk" }).click();
+  const pieces = page.getByRole("grid", { name: "Active storage pieces" });
+  await expect(page.getByLabel("Disk pressure Backpressured")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.getByText("intake paused now", { exact: true })).toBeVisible();
+  await expect
+    .poll(async () => Number(await pieces.getAttribute("aria-rowcount")))
+    .toBeGreaterThan(1);
+  await capture(page, "live-disk-backpressured-wide.png");
+
+  const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+
+  await expect(torrentRow).toContainText("complete", { timeout: 60_000 });
+  await expect(page.getByLabel("Disk pressure Idle")).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect(pieces).toHaveAttribute("aria-rowcount", "1");
+  await expect(page.getByText("intake is open", { exact: true })).toBeVisible();
+  await capture(page, "live-disk-recovered-wide.png");
+  console.log("disk_live_milestones pressure=backpressured completion=verified recovery=idle");
+});
 
 test("live peer inspection follows a controlled verified transfer", async ({
   page,

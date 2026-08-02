@@ -12,20 +12,25 @@ import { visibleLogs } from "../state";
 import { PeerTable } from "./PeerTable";
 import { FileTable } from "./FileTable";
 import { TrackerTable } from "./TrackerTable";
+import { DiskPanel } from "./DiskPanel";
 import { VirtualTable, type VirtualColumn } from "./VirtualTable";
 import styles from "./DetailPane.module.css";
 
-const TABS: readonly { readonly id: DetailTab; readonly label: string }[] = [
-  { id: "general", label: "General" },
-  { id: "trackers", label: "Trackers" },
-  { id: "peers", label: "Peers" },
-  { id: "swarm", label: "Swarm" },
-  { id: "files", label: "Files" },
-  { id: "pieces", label: "Pieces" },
-  { id: "disk", label: "Disk" },
-  { id: "logs", label: "Logs" },
-  { id: "speed", label: "Speed" },
-  { id: "dht", label: "DHT" },
+const TABS: readonly {
+  readonly id: DetailTab;
+  readonly label: string;
+  readonly scope: "torrent" | "session";
+}[] = [
+  { id: "general", label: "General", scope: "torrent" },
+  { id: "trackers", label: "Trackers", scope: "torrent" },
+  { id: "peers", label: "Peers", scope: "torrent" },
+  { id: "swarm", label: "Swarm", scope: "torrent" },
+  { id: "files", label: "Files", scope: "torrent" },
+  { id: "pieces", label: "Pieces", scope: "torrent" },
+  { id: "disk", label: "Disk", scope: "session" },
+  { id: "logs", label: "Logs", scope: "session" },
+  { id: "speed", label: "Speed", scope: "session" },
+  { id: "dht", label: "DHT", scope: "session" },
 ];
 
 const LOG_COLUMNS: readonly VirtualColumn<LogRow>[] = [
@@ -137,6 +142,7 @@ export function DetailPane() {
               role="tab"
               id={`tab-${tab.id}`}
               data-tab-id={tab.id}
+              data-tab-scope={tab.scope}
               aria-label={tab.label}
               aria-selected={activeTab === tab.id}
               aria-controls={`panel-${tab.id}`}
@@ -173,7 +179,7 @@ export function DetailPane() {
         role="tabpanel"
         aria-labelledby={`tab-${activeTab}`}
       >
-        {torrent === undefined && activeTab !== "logs" ? (
+        {torrent === undefined && activeTab !== "logs" && activeTab !== "disk" ? (
           <EmptyDetail />
         ) : activeTab === "peers" && selectedId !== null ? (
           <PeerTable torrentId={selectedId} />
@@ -181,6 +187,8 @@ export function DetailPane() {
           <TrackerTable torrentId={selectedId} />
         ) : activeTab === "files" && selectedId !== null ? (
           <FileTable torrentId={selectedId} />
+        ) : activeTab === "disk" ? (
+          <DiskPanel />
         ) : activeTab === "general" && torrent !== undefined ? (
           <GeneralDetail torrent={torrent} />
         ) : activeTab === "logs" ? (

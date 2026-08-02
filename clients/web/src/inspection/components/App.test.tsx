@@ -102,6 +102,21 @@ describe("inspection application", () => {
     expect(within(files).getByRole("columnheader", { name: /Storage Path/ })).toBeVisible();
   });
 
+  it("materializes the global disk pipeline only on the Disk tab", async () => {
+    const user = userEvent.setup();
+    renderScenario("slow-disk-pressure", 20_000);
+    expect(
+      screen.queryByRole("grid", { name: "Active storage pieces" }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Disk" }));
+    expect(screen.getByText("Receive → write → verify")).toBeVisible();
+    expect(screen.getByLabelText("Disk pressure Backpressured")).toBeVisible();
+    const pieces = screen.getByRole("grid", { name: "Active storage pieces" });
+    expect(pieces).toHaveAttribute("aria-rowcount", "65");
+    expect(within(pieces).getAllByRole("row").length).toBeLessThanOrEqual(100);
+    expect(screen.getByText("intake paused now")).toBeVisible();
+  });
+
   it("resizes the detail pane with pointer and keyboard input", async () => {
     const user = userEvent.setup();
     renderScenario("healthy-download", 42_000);

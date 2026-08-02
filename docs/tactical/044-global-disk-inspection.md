@@ -1,6 +1,6 @@
 # Global Disk Inspection
 
-Status: Active.
+Status: Complete (2026-08-02).
 
 Topics: `disk-and-piece-inspection`, `download-correctness`,
 `application-view-api`, `web-ui-design`, `desktop-inspection-surface`,
@@ -298,3 +298,52 @@ parallel disk executor, session scheduler, persistence migration, public
 authentication policy, new chart/table dependency, public-swarm traffic,
 visible app launch, destructive data action, or architecture beyond the shared
 topic.
+
+## Implementation And Evidence
+
+The engine now owns an immutable bounded storage-runtime snapshot alongside
+its existing scheduler and storage facts. Resident payload uses distinct 75%
+high and 50% low watermarks. Entering pressure stops new request assignment;
+recovery shifts request and replacement deadlines by the gated duration so a
+slow storage owner does not manufacture a peer stall. Piece-attempt rows retain
+only canonical byte ranges and aggregate at piece granularity. Integrity
+failure remains a piece-attempt failure, while filesystem failure alone sets
+the session storage-error state.
+
+`ViewHub` aggregates active torrent samples into one `session_disk` projection
+with decimal-string counters, keyed piece patches, exact reset behavior, and
+at most the existing view-set delivery cadence. Task completion and
+cancellation explicitly remove their sample, producing an idle pipeline and
+empty active set instead of retaining a ghost terminal owner. The gateway's
+bounded `RSTORRENT_TEST_*` delay and resident-limit controls are accepted only
+by unauthenticated loopback development mode and exist solely for controlled
+evidence.
+
+The React surface requests Disk independently of torrent selection, separates
+session tabs from torrent tabs, and renders a statistics-first pressure panel
+plus a virtual piece-attempt table. The permanent `slow-disk-pressure`
+scenario passed wide, compact, and phone geometry, keyed 64-row scale, and an
+axe serious/critical scan with no findings.
+
+The controlled production-web proof used libtorrent `2.0.13.0` as a loopback
+seed for a 4 MiB payload plus a 7,000-byte prefix in 17 pieces. With a 128 KiB
+resident limit and 150 ms injected write delay, the browser observed
+`Backpressured`, 96 KiB resident at the 96 KiB high watermark, queued
+piece-level work, and paused intake. It then observed exact verified
+completion, idle pressure, zero active rows, joined gateway/browser/seed
+owners, and external SHA-1 equality. No public network or visible client was
+used.
+
+Validation passed:
+
+- all 155 non-ignored engine unit tests and all 67 session unit tests;
+- workspace compilation including the Rust Android adapter;
+- generated TypeScript/schema regeneration with no hand-edited contract;
+- 59 web unit tests, TypeScript checking, and the production Vite build;
+- the focused deterministic Playwright accessibility/responsive scenario; and
+- the isolated controlled slow-storage browser proof above.
+
+Full workspace clippy and tests are recorded with the closing commit. The
+deliberate deferrals remain a session-wide storage scheduler, parallel I/O,
+long-window Speed history, native Android presentation, and broader storage
+failure policy. Tactical `045` owns the next selected-torrent Pieces canvas.

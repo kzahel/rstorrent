@@ -50,6 +50,8 @@ pub struct ApplicationConfig {
     pub dht: DhtConfig,
     pub view_set_lease: Duration,
     pub view_set_reaper_interval: Duration,
+    #[doc(hidden)]
+    pub storage_write_delay_for_testing: Duration,
 }
 
 impl ApplicationConfig {
@@ -69,6 +71,7 @@ impl ApplicationConfig {
             dht,
             view_set_lease: Duration::from_millis(crate::view_sets::VIEW_SET_LEASE_MILLIS),
             view_set_reaper_interval: Duration::from_millis(VIEW_SET_REAPER_INTERVAL_MILLIS),
+            storage_write_delay_for_testing: Duration::ZERO,
         }
     }
 }
@@ -100,6 +103,7 @@ pub struct ApplicationService {
     storage_roots: Arc<BTreeMap<String, StorageRootLocation>>,
     network: NetworkConfig,
     download_resource_limits: DownloadResourceLimits,
+    storage_write_delay_for_testing: Duration,
     active: Option<ActiveDownload>,
     dht: Option<DhtService>,
     views: ViewHub,
@@ -125,6 +129,11 @@ impl ApplicationService {
             return Err(ApplicationError::Configuration(
                 "view-set lease timing must be nonzero and the reaper interval cannot exceed the lease"
                     .to_owned(),
+            ));
+        }
+        if config.storage_write_delay_for_testing > Duration::from_secs(10) {
+            return Err(ApplicationError::Configuration(
+                "test storage write delay cannot exceed ten seconds".to_owned(),
             ));
         }
         let mut storage_roots = BTreeMap::new();
@@ -167,6 +176,7 @@ impl ApplicationService {
             storage_roots: Arc::new(storage_roots),
             network: config.network,
             download_resource_limits: config.download_resource_limits,
+            storage_write_delay_for_testing: config.storage_write_delay_for_testing,
             active: None,
             dht: Some(dht),
             views,
@@ -939,6 +949,7 @@ impl ApplicationService {
 
     fn download_control(&self, torrent_id: &str) -> DownloadControl {
         let control = DownloadControl::new();
+        control.set_storage_write_delay(self.storage_write_delay_for_testing);
         control.set_activity_sink(Arc::new(ViewActivitySink {
             torrent_id: torrent_id.to_owned(),
             views: self.views.clone(),
@@ -1110,6 +1121,9 @@ fn handle_task_outcome(
     torrent_id: &str,
     outcome: Result<ApplicationTaskReport, DownloadError>,
 ) -> Result<(), String> {
+    views
+        .clear_disk_runtime(torrent_id)
+        .map_err(|error| error.to_string())?;
     match outcome {
         Ok(report) => {
             views
@@ -1458,6 +1472,10 @@ impl DownloadActivitySink for ViewActivitySink {
         }
         if let DownloadActivityEvent::TrackerState(snapshot) = &event {
             let _ = self.views.record_tracker_state(&self.torrent_id, snapshot);
+            return;
+        }
+        if let DownloadActivityEvent::StorageState(snapshot) = &event {
+            let _ = self.views.record_disk_runtime(&self.torrent_id, snapshot);
             return;
         }
         let piece_activity = match &event {
@@ -1867,6 +1885,9 @@ impl ViewActivitySink {
             }
             DownloadActivityEvent::TrackerState(_) => {
                 unreachable!("tracker projections are handled before diagnostic events")
+            }
+            DownloadActivityEvent::StorageState(_) => {
+                unreachable!("disk projections are handled before diagnostic events")
             }
         }
     }

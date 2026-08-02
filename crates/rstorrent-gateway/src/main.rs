@@ -7,7 +7,8 @@ use std::time::Duration;
 
 use rstorrent_gateway::{GatewayAuthentication, GatewayConfig, bind};
 use rstorrent_session::{
-    ApplicationConfig, ApplicationService, ConfiguredStorageRoot, NetworkConfig, NetworkPolicy,
+    ApplicationConfig, ApplicationService, ConfiguredStorageRoot, DownloadResourceLimits,
+    NetworkConfig, NetworkPolicy,
 };
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
@@ -51,19 +52,37 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .ok()
         .map(|value| value.parse::<u64>())
         .transpose()?;
-    if test_view_set_lease.is_some()
+    let test_storage_write_delay = env::var("RSTORRENT_TEST_STORAGE_WRITE_DELAY_MILLIS")
+        .ok()
+        .map(|value| value.parse::<u64>())
+        .transpose()?;
+    let test_buffered_payload_bytes = env::var("RSTORRENT_TEST_BUFFERED_PAYLOAD_BYTES")
+        .ok()
+        .map(|value| value.parse::<usize>())
+        .transpose()?;
+    if (test_view_set_lease.is_some()
+        || test_storage_write_delay.is_some()
+        || test_buffered_payload_bytes.is_some())
         && !matches!(
             authentication,
             GatewayAuthentication::UnauthenticatedLoopbackDevelopment
         )
     {
         return Err(
-            "RSTORRENT_TEST_VIEW_SET_LEASE_MILLIS is accepted only in unauthenticated development mode"
+            "RSTORRENT_TEST_* controls are accepted only in unauthenticated development mode"
                 .into(),
         );
     }
     if test_view_set_lease.is_some_and(|millis| !(250..=60_000).contains(&millis)) {
         return Err("test view-set lease must be within 250..=60000 milliseconds".into());
+    }
+    if test_storage_write_delay.is_some_and(|millis| millis > 10_000) {
+        return Err("test storage write delay cannot exceed 10000 milliseconds".into());
+    }
+    if test_buffered_payload_bytes
+        .is_some_and(|bytes| !(16 * 1024..=32 * 1024 * 1024).contains(&bytes))
+    {
+        return Err("test buffered payload limit must be within 16384..=33554432 bytes".into());
     }
     let network_policy = match env::var("RSTORRENT_NETWORK_POLICY")
         .unwrap_or_else(|_| "loopback_only".to_owned())
@@ -94,6 +113,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
         application_config.view_set_lease = Duration::from_millis(lease_millis);
         application_config.view_set_reaper_interval =
             Duration::from_millis((lease_millis / 5).clamp(10, 100));
+    }
+    if let Some(delay_millis) = test_storage_write_delay {
+        application_config.storage_write_delay_for_testing = Duration::from_millis(delay_millis);
+    }
+    if let Some(buffered_bytes) = test_buffered_payload_bytes {
+        application_config.download_resource_limits = DownloadResourceLimits::new(
+            buffered_bytes.saturating_mul(8),
+            buffered_bytes,
+            buffered_bytes.saturating_mul(8),
+        );
     }
     let application = ApplicationService::open(application_config).await?;
     let application = Arc::new(Mutex::new(application));

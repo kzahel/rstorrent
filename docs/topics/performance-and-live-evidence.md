@@ -643,6 +643,28 @@ deadline. It completed and hash-verified the same 40,000-byte payload. This
 run validates state delivery and presentation; its seeded transfer timing is
 not a throughput comparison.
 
+### Disk Projection Evidence: 2026-08-02
+
+Tactical `044` adds a global session projection composed from bounded
+torrent-owner snapshots. Engine emission may occur at block transitions, but
+view-set delivery coalesces semantic replacements at the requested cadence and
+the browser receives piece-attempt rows rather than 16 KiB jobs or payload.
+The generic Rust projection currently rebuilds the small active-piece vector
+and the TypeScript reducer rebuilds its keyed array on a patch. Those costs are
+bounded by active working-set limits but remain unprofiled for future
+concurrent multi-torrent scheduling; do not infer that the current one-active-
+download application proves aggregate scalability.
+
+The deterministic `slow-disk-pressure` fixture retained 64 active piece rows,
+mounted fewer than 100 virtual grid rows, and passed serious/critical axe
+checks at wide, compact, and phone sizes. A controlled production-web proof
+used a libtorrent `2.0.13.0` loopback seed, a 4 MiB payload plus a 7,000-byte
+prefix, 17 pieces, a 128 KiB resident cap, and a 150 ms test-only write delay.
+It observed pressure exactly at 96 KiB, paused intake, then exact verified
+completion, idle recovery, empty active rows, matching external SHA-1, and
+joined cleanup. This is backpressure and inspection evidence, not a disk
+throughput benchmark.
+
 ## Result Classification
 
 Classify each paired attempt before interpreting speed:

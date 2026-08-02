@@ -516,8 +516,10 @@ The first useful contract progression is:
 4. selected-torrent peers; and
 5. bounded diagnostics.
 
-Disk activity is now specified as one global session view by
-[`disk-and-piece-inspection`](disk-and-piece-inspection.md) and Tactical `044`.
+Disk activity is implemented as one global `session_disk` view by
+[`disk-and-piece-inspection`](disk-and-piece-inspection.md) and Tactical `044`,
+including bounded pipeline state, keyed active piece attempts, lease recovery,
+and terminal owner cleanup.
 The selected-torrent piece activity contract is generalized and rendered by
 Tactical `045`. Speed history, swarm state, and DHT follow through named views
 according to inspection value. Files is implemented by Tactical `041` and

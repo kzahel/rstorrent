@@ -91,6 +91,7 @@ impl Default for ApiHello {
                 "torrent_peers".to_owned(),
                 "torrent_files".to_owned(),
                 "torrent_trackers".to_owned(),
+                "session_disk".to_owned(),
                 "piece_activity".to_owned(),
                 "diagnostics".to_owned(),
             ],
@@ -135,6 +136,11 @@ pub enum ViewSpec {
         #[serde(default)]
         delivery: ViewDeliveryPolicy,
     },
+    SessionDisk {
+        view_id: String,
+        #[serde(default)]
+        delivery: ViewDeliveryPolicy,
+    },
     TorrentPeers {
         view_id: String,
         torrent_id: String,
@@ -170,6 +176,7 @@ impl ViewSpec {
             Self::TorrentList { view_id, .. }
             | Self::TorrentSummary { view_id, .. }
             | Self::PieceActivity { view_id, .. }
+            | Self::SessionDisk { view_id, .. }
             | Self::TorrentPeers { view_id, .. }
             | Self::TorrentFiles { view_id, .. }
             | Self::TorrentTrackers { view_id, .. }
@@ -182,6 +189,7 @@ impl ViewSpec {
             Self::TorrentList { delivery, .. }
             | Self::TorrentSummary { delivery, .. }
             | Self::PieceActivity { delivery, .. }
+            | Self::SessionDisk { delivery, .. }
             | Self::TorrentPeers { delivery, .. }
             | Self::TorrentFiles { delivery, .. }
             | Self::TorrentTrackers { delivery, .. }
@@ -206,6 +214,7 @@ impl ViewSpec {
                 ViewProjection::PieceActivity,
                 None,
             ),
+            Self::SessionDisk { .. } => (ViewSelector::TorrentList, ViewProjection::Disk, None),
             Self::TorrentPeers { torrent_id, .. } => (
                 ViewSelector::Torrent {
                     torrent_id: torrent_id.clone(),

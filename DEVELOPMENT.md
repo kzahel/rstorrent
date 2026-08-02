@@ -127,6 +127,12 @@ The harness creates and removes temporary application, browser, seed, and
 download state, uses the pinned Python libtorrent environment, verifies
 payload SHA-1, and requires every child process to join.
 
+Add `--disk-pressure` to run the isolated Tactical `044` storage proof. It
+uses only loopback traffic, injects a bounded slow-write profile into the
+unauthenticated development gateway, verifies high/low pressure recovery and
+exact output, and can retain Disk screenshots through the same
+`--screenshot-dir` option.
+
 ## Toolchain
 
 On the maintainer's configured development machines, load installed Rust,

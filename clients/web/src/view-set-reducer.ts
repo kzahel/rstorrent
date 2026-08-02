@@ -105,6 +105,12 @@ function cloneSnapshot(snapshot: ViewSnapshot): ViewSnapshot {
       return { ...snapshot };
     case "piece_activity":
       return { ...snapshot, verified: [...snapshot.verified] };
+    case "session_disk":
+      return {
+        ...snapshot,
+        pipeline: { ...snapshot.pipeline },
+        pieces: [...snapshot.pieces],
+      };
     case "peers":
       return { ...snapshot, peers: [...snapshot.peers] };
     case "files":
@@ -145,6 +151,19 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
         piece_count: patch.piece_count,
         verified,
         active: patch.active,
+      };
+    }
+    case "session_disk": {
+      if (snapshot.type !== "session_disk") throw new Error("unreachable");
+      const pieces = new Map(
+        snapshot.pieces.map((piece) => [piece.row_id, piece]),
+      );
+      for (const rowId of patch.removed) pieces.delete(rowId);
+      for (const piece of patch.upsert) pieces.set(piece.row_id, piece);
+      return {
+        type: "session_disk",
+        pipeline: patch.pipeline,
+        pieces: [...pieces.values()],
       };
     }
     case "peers": {

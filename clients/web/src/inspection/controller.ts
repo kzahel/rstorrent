@@ -126,7 +126,9 @@ function desiredViewsFor(state: InspectionStore): DesiredInspectionViews {
   }
   const torrentId = selected;
   const detail =
-    torrentId === null
+    presentation.activeTab === "disk"
+      ? "disk"
+      : torrentId === null
       ? null
       : presentation.activeTab === "peers" ||
           presentation.activeTab === "trackers" ||

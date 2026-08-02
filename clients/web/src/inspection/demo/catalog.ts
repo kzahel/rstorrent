@@ -1,6 +1,8 @@
 import type {
   DemoScenarioId,
   DemoScenarioSummary,
+  DiskPieceRow,
+  DiskSet,
   FileRow,
   FileSet,
   InspectionSnapshot,
@@ -10,6 +12,7 @@ import type {
   TrackerRow,
   TrackerSet,
 } from "../model";
+import { emptyDiskSet } from "../state";
 
 const BASE_TIME_MS = Date.UTC(2026, 7, 1, 8, 0, 0);
 const BUNNY_ID = "a962f460b83861cfb5faa1d7ad7da9c3f3cc2fc4";
@@ -60,6 +63,13 @@ export const DEMO_SCENARIOS: readonly DemoScenarioSummary[] = [
     autoplay: true,
   },
   {
+    id: "slow-disk-pressure",
+    title: "Slow disk pressure",
+    description: "Receive buffers fill, intake pauses, drains, and resumes.",
+    durationMs: 70_000,
+    autoplay: true,
+  },
+  {
     id: "disk-error",
     title: "Disk error",
     description: "A storage write fails and leaves an actionable stopped state.",
@@ -106,6 +116,7 @@ export function buildScenarioSnapshot(
   );
   const filesByTorrent = content.files ?? {};
   const trackersByTorrent = content.trackers ?? {};
+  const disk = content.disk ?? emptyDiskSet();
   const active = content.torrents.filter(
     (torrent) => torrent.status === "downloading" || torrent.status === "metadata",
   );
@@ -129,6 +140,7 @@ export function buildScenarioSnapshot(
     peersByTorrent,
     filesByTorrent,
     trackersByTorrent,
+    disk,
     logs: content.logs.slice(-256),
     droppedLogs: Math.max(0, content.logs.length - 256),
     viewStatus: {
@@ -137,6 +149,7 @@ export function buildScenarioSnapshot(
       peers: { status: "ready" },
       files: { status: "ready" },
       trackers: { status: "ready" },
+      disk: { status: "ready" },
       logs: { status: "ready" },
     },
   };
@@ -147,6 +160,7 @@ interface ScenarioContent {
   readonly peers: Readonly<Record<string, readonly PeerRow[]>>;
   readonly files?: Readonly<Record<string, FileSet>>;
   readonly trackers?: Readonly<Record<string, TrackerSet>>;
+  readonly disk?: DiskSet;
   readonly logs: readonly LogRow[];
 }
 
@@ -167,6 +181,8 @@ function buildScenarioContent(
       return largeSwarm();
     case "file-progress":
       return fileProgress(elapsedMs);
+    case "slow-disk-pressure":
+      return slowDiskPressure(elapsedMs);
     case "disk-error":
       return diskError(elapsedMs);
     case "empty-library":
@@ -580,12 +596,166 @@ function diskError(elapsedMs: number): ScenarioContent {
       }),
     ],
     peers: { [BUNNY_ID]: failed ? [] : buildPeers(BUNNY_ID, 12, elapsedMs / 1000, 0.341) },
+    disk: demoDiskSet({
+      elapsedMs,
+      pressure: failed ? "error" : "normal",
+      residentBytes: failed ? 0 : 8 * 1024 * 1024,
+      queuedWriteBytes: failed ? 0 : 6 * 1024 * 1024,
+      writingBytes: failed ? 0 : 256 * 1024,
+      pieceCount: failed ? 1 : 18,
+      error: failed ? "Write failed: destination has no free space" : null,
+    }),
     logs: timelineLogs(BUNNY_ID, [
       [0, "info", "storage", "Opened staging files"],
       [5, "warning", "storage", "Write latency exceeded 2 seconds"],
       [7, "error", "storage", "Write failed: no free space on destination"],
       [7, "info", "lifecycle", "Content peers stopped; torrent intent retained"],
     ], elapsedMs),
+  };
+}
+
+function slowDiskPressure(elapsedMs: number): ScenarioContent {
+  const seconds = elapsedMs / 1_000;
+  const pressure =
+    seconds < 10
+      ? "normal"
+      : seconds < 36
+        ? "backpressured"
+        : seconds < 52
+          ? "draining"
+          : "normal";
+  const residentBytes =
+    pressure === "backpressured"
+      ? 29 * 1024 * 1024
+      : pressure === "draining"
+        ? Math.max(4 * 1024 * 1024, (29 - (seconds - 36) * 1.4) * 1024 * 1024)
+        : seconds >= 52
+          ? 3 * 1024 * 1024
+          : (4 + seconds * 2.1) * 1024 * 1024;
+  const pieceCount = pressure === "backpressured" ? 64 : pressure === "draining" ? 30 : 12;
+  const progress = clamp(0.21 + elapsedMs / 180_000, 0, 0.61);
+  return {
+    torrents: [
+      torrent({
+        id: BUNNY_ID,
+        name: "Big Buck Bunny — slow storage",
+        status: "downloading",
+        sizeBytes: 276_445_467,
+        progress,
+        downloadRate: pressure === "backpressured" ? 0 : 12_400_000,
+        peersConnected: 22,
+        peersKnown: 109,
+        progressReason:
+          pressure === "backpressured"
+            ? "Disk high watermark paused new payload assignment"
+            : pressure === "draining"
+              ? "Disk queue draining below the low watermark"
+              : "Storage intake and peer requests are flowing",
+      }),
+    ],
+    peers: { [BUNNY_ID]: buildPeers(BUNNY_ID, 22, seconds, progress) },
+    disk: demoDiskSet({
+      elapsedMs,
+      pressure,
+      residentBytes,
+      queuedWriteBytes:
+        pressure === "backpressured" ? 23 * 1024 * 1024 : residentBytes * 0.65,
+      writingBytes: 256 * 1024,
+      pieceCount,
+      error: null,
+    }),
+    logs: timelineLogs(BUNNY_ID, [
+      [0, "info", "storage", "Storage pipeline opened with a 32 MiB resident limit"],
+      [10, "warning", "storage", "Resident payload crossed the high watermark; intake paused"],
+      [36, "info", "storage", "Resident payload fell below the low watermark; intake resumed"],
+      [52, "info", "storage", "Storage pipeline returned to normal pressure"],
+    ], elapsedMs),
+  };
+}
+
+function demoDiskSet(input: {
+  readonly elapsedMs: number;
+  readonly pressure: DiskSet["pipeline"]["pressure"];
+  readonly residentBytes: number;
+  readonly queuedWriteBytes: number;
+  readonly writingBytes: number;
+  readonly pieceCount: number;
+  readonly error: string | null;
+}): DiskSet {
+  const pieces: DiskPieceRow[] = Array.from({ length: input.pieceCount }, (_, index) => {
+    const stage: DiskPieceRow["stage"] =
+      input.error !== null
+        ? "failed"
+        : index % 9 === 0
+          ? "hashing"
+          : index % 3 === 0
+            ? "writing"
+            : index % 3 === 1
+              ? "queued"
+              : "receiving";
+    const length = 256 * 1024;
+    const stored = stage === "hashing" ? length : Math.min(length, (index % 8) * 32 * 1024);
+    return {
+      id: `${BUNNY_ID}:${220 + index}:1`,
+      torrentId: BUNNY_ID,
+      torrentName: "Big Buck Bunny — slow storage",
+      pieceIndex: 220 + index,
+      pieceLength: length,
+      attempt: 1,
+      stage,
+      requestedBytes: length,
+      receivedBytes: Math.min(length, stored + 64 * 1024),
+      storedBytes: stored,
+      ageMillis: 1_200 + index * 37,
+      stageAgeMillis: 90 + index * 19,
+      error: input.error,
+    };
+  });
+  const received = 58 * 1024 * 1024 + input.elapsedMs * 8_000;
+  const stored = 52 * 1024 * 1024 + input.elapsedMs * 4_500;
+  return {
+    pipeline: {
+      pressure: input.pressure,
+      intakeBackpressured: input.pressure === "backpressured",
+      sampleMillis: 1_000,
+      residentLimitBytes: 32 * 1024 * 1024,
+      residentHighWatermarkBytes: 24 * 1024 * 1024,
+      residentLowWatermarkBytes: 16 * 1024 * 1024,
+      requestedBytes:
+        input.pressure === "backpressured" ? 18 * 1024 * 1024 : 42 * 1024 * 1024,
+      residentBytes: Math.round(input.residentBytes),
+      queuedWriteBytes: Math.round(input.queuedWriteBytes),
+      writingBytes: input.writingBytes,
+      hashingBytes: 256 * 1024,
+      storageJobsPending: input.pieceCount * 6,
+      receivedBytesTotal: received,
+      storedBytesTotal: stored,
+      verifiedBytesTotal: Math.max(0, stored - 2 * 1024 * 1024),
+      receiveRateBytes: input.pressure === "backpressured" ? 0 : 12_400_000,
+      writeRateBytes: 4_500_000,
+      hashRateBytes: 4_200_000,
+      writeOperationsStarted: 820 + Math.floor(input.elapsedMs / 90),
+      writeOperationsCompleted: 819 + Math.floor(input.elapsedMs / 90),
+      hashOperationsStarted: 220 + Math.floor(input.elapsedMs / 700),
+      hashOperationsCompleted: 219 + Math.floor(input.elapsedMs / 700),
+      writeQueueWaitMicros: 9_800_000,
+      writeQueueWaitMaxMicros:
+        input.pressure === "backpressured" ? 2_800_000 : 180_000,
+      writeServiceMicros: 25_600_000,
+      writeServiceMaxMicros: 1_900_000,
+      hashQueueWaitMicros: 1_100_000,
+      hashQueueWaitMaxMicros: 90_000,
+      hashServiceMicros: 7_400_000,
+      hashServiceMaxMicros: 240_000,
+      pressureTransitionCount: input.pressure === "normal" ? 2 : 1,
+      backpressuredMillisTotal: Math.max(
+        0,
+        Math.min(input.elapsedMs - 10_000, 26_000),
+      ),
+      lastError: input.error,
+    },
+    order: pieces.map((piece) => piece.id),
+    rows: Object.fromEntries(pieces.map((piece) => [piece.id, piece])),
   };
 }
 

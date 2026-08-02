@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::error::Error;
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -13,8 +13,9 @@ use ts_rs::TS;
 
 use rstorrent_engine::peer::{PeerFailure, PeerSource, PeerSources};
 use rstorrent_engine::{
-    PeerConnectionDirection, PeerConnectionLifecycle, PeerConnectionObservation,
-    PeerConnectionRole, PeerRequestWindowPhase, PeerTransport, TrackerRuntimeSnapshot,
+    DiskPieceStage, DiskPressure, DiskRuntimeSnapshot, PeerConnectionDirection,
+    PeerConnectionLifecycle, PeerConnectionObservation, PeerConnectionRole, PeerRequestWindowPhase,
+    PeerTransport, TrackerRuntimeSnapshot,
 };
 
 use crate::control::{RemovalState, ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState};
@@ -49,6 +50,7 @@ pub enum ViewSelector {
 pub enum ViewProjection {
     Summary,
     PieceActivity,
+    Disk,
     Peers,
     Files,
     Trackers,
@@ -382,6 +384,128 @@ pub struct ActivePiece {
     pub stored: Vec<IndexRange>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum DiskPressureView {
+    #[default]
+    Idle,
+    Normal,
+    Backpressured,
+    Draining,
+    Error,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum DiskPieceStageView {
+    Receiving,
+    Queued,
+    Writing,
+    Stored,
+    Hashing,
+    Failed,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct DiskPipelineView {
+    pub pressure: DiskPressureView,
+    pub intake_backpressured: bool,
+    pub sample_millis: String,
+    pub resident_limit_bytes: String,
+    pub resident_high_watermark_bytes: String,
+    pub resident_low_watermark_bytes: String,
+    pub requested_bytes: String,
+    pub resident_bytes: String,
+    pub queued_write_bytes: String,
+    pub writing_bytes: String,
+    pub hashing_bytes: String,
+    pub storage_jobs_pending: String,
+    pub received_bytes_total: String,
+    pub stored_bytes_total: String,
+    pub verified_bytes_total: String,
+    pub receive_rate_bytes: String,
+    pub write_rate_bytes: String,
+    pub hash_rate_bytes: String,
+    pub write_operations_started: String,
+    pub write_operations_completed: String,
+    pub hash_operations_started: String,
+    pub hash_operations_completed: String,
+    pub write_queue_wait_micros: String,
+    pub write_queue_wait_max_micros: String,
+    pub write_service_micros: String,
+    pub write_service_max_micros: String,
+    pub hash_queue_wait_micros: String,
+    pub hash_queue_wait_max_micros: String,
+    pub hash_service_micros: String,
+    pub hash_service_max_micros: String,
+    pub pressure_transition_count: String,
+    pub backpressured_millis_total: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+}
+
+impl Default for DiskPipelineView {
+    fn default() -> Self {
+        Self {
+            pressure: DiskPressureView::Idle,
+            intake_backpressured: false,
+            sample_millis: "0".to_owned(),
+            resident_limit_bytes: "0".to_owned(),
+            resident_high_watermark_bytes: "0".to_owned(),
+            resident_low_watermark_bytes: "0".to_owned(),
+            requested_bytes: "0".to_owned(),
+            resident_bytes: "0".to_owned(),
+            queued_write_bytes: "0".to_owned(),
+            writing_bytes: "0".to_owned(),
+            hashing_bytes: "0".to_owned(),
+            storage_jobs_pending: "0".to_owned(),
+            received_bytes_total: "0".to_owned(),
+            stored_bytes_total: "0".to_owned(),
+            verified_bytes_total: "0".to_owned(),
+            receive_rate_bytes: "0".to_owned(),
+            write_rate_bytes: "0".to_owned(),
+            hash_rate_bytes: "0".to_owned(),
+            write_operations_started: "0".to_owned(),
+            write_operations_completed: "0".to_owned(),
+            hash_operations_started: "0".to_owned(),
+            hash_operations_completed: "0".to_owned(),
+            write_queue_wait_micros: "0".to_owned(),
+            write_queue_wait_max_micros: "0".to_owned(),
+            write_service_micros: "0".to_owned(),
+            write_service_max_micros: "0".to_owned(),
+            hash_queue_wait_micros: "0".to_owned(),
+            hash_queue_wait_max_micros: "0".to_owned(),
+            hash_service_micros: "0".to_owned(),
+            hash_service_max_micros: "0".to_owned(),
+            pressure_transition_count: "0".to_owned(),
+            backpressured_millis_total: "0".to_owned(),
+            last_error: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct DiskPieceView {
+    pub row_id: String,
+    pub torrent_id: String,
+    pub torrent_name: String,
+    pub piece_index: u32,
+    pub piece_length: u32,
+    pub attempt: u32,
+    pub stage: DiskPieceStageView,
+    pub requested_bytes: String,
+    pub received_bytes: String,
+    pub stored_bytes: String,
+    pub age_millis: String,
+    pub stage_age_millis: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct TorrentView {
@@ -675,6 +799,9 @@ fn peer_sources(sources: PeerSources) -> Vec<PeerSourceView> {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+// UniFFI does not lower boxed record fields. These DTO variants are bounded
+// transport values, not retained hot-path engine state.
+#[allow(clippy::large_enum_variant)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ViewSnapshot {
     TorrentList {
@@ -688,6 +815,10 @@ pub enum ViewSnapshot {
         piece_count: u32,
         verified: Vec<IndexRange>,
         active: Option<ActivePiece>,
+    },
+    SessionDisk {
+        pipeline: DiskPipelineView,
+        pieces: Vec<DiskPieceView>,
     },
     Peers {
         torrent_id: String,
@@ -712,6 +843,9 @@ pub enum ViewSnapshot {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+// Keep this wire enum aligned with ViewSnapshot; UniFFI cannot lower a boxed
+// DiskPipelineView field.
+#[allow(clippy::large_enum_variant)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ViewPatch {
     TorrentList {
@@ -727,6 +861,11 @@ pub enum ViewPatch {
         verified: Vec<IndexRange>,
         cleared: Vec<IndexRange>,
         active: Option<ActivePiece>,
+    },
+    SessionDisk {
+        pipeline: DiskPipelineView,
+        upsert: Vec<DiskPieceView>,
+        removed: Vec<String>,
     },
     Peers {
         torrent_id: String,
@@ -797,6 +936,7 @@ pub(crate) struct HubState {
     pub(crate) epoch: u64,
     pub(crate) revision: u64,
     torrents: BTreeMap<String, TorrentModel>,
+    disk: DiskSessionModel,
     diagnostics: VecDeque<StoredDiagnostic>,
     diagnostic_bytes: usize,
     diagnostic_dropped: u64,
@@ -817,6 +957,26 @@ struct TorrentModel {
     peers: BTreeMap<String, PeerView>,
     files: Option<FileProgressModel>,
     trackers: TrackerViewModel,
+}
+
+#[derive(Clone, Debug, Default)]
+struct DiskSessionModel {
+    torrents: BTreeMap<String, DiskTorrentRuntime>,
+}
+
+#[derive(Clone, Debug)]
+struct DiskTorrentRuntime {
+    snapshot: DiskRuntimeSnapshot,
+    sample_millis: u64,
+    receive_rate_bytes: u64,
+    write_rate_bytes: u64,
+    hash_rate_bytes: u64,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct DiskSessionView {
+    pipeline: DiskPipelineView,
+    pieces: BTreeMap<String, DiskPieceView>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -941,6 +1101,7 @@ impl ViewHub {
                         )
                     })
                     .collect(),
+                disk: DiskSessionModel::default(),
                 diagnostics: VecDeque::new(),
                 diagnostic_bytes: 0,
                 diagnostic_dropped: 0,
@@ -1008,6 +1169,7 @@ impl ViewHub {
             .lock()
             .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
         let previous = hub.torrents.clone();
+        let previous_disk = hub.disk.view(&hub.torrents);
         let mut next = BTreeMap::new();
         for torrent in &snapshot.torrents {
             let mut model = TorrentModel::from_snapshot(torrent);
@@ -1051,7 +1213,14 @@ impl ViewHub {
         }
         hub.revision = revision;
         hub.torrents = next;
-        hub.publish_changes(&previous)
+        let current_torrent_ids = hub.torrents.keys().cloned().collect::<BTreeSet<_>>();
+        hub.disk.retain(&current_torrent_ids);
+        let current_disk = hub.disk.view(&hub.torrents);
+        hub.publish_changes(&previous)?;
+        if previous_disk != current_disk {
+            hub.publish_disk_changes(&previous_disk, &current_disk)?;
+        }
+        Ok(())
     }
 
     pub(crate) fn record_activity(
@@ -1085,6 +1254,41 @@ impl ViewHub {
             &next_active,
             &file_upsert,
         )
+    }
+
+    pub(crate) fn record_disk_runtime(
+        &self,
+        torrent_id: &str,
+        snapshot: &DiskRuntimeSnapshot,
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        if !hub.torrents.contains_key(torrent_id) {
+            return Ok(());
+        }
+        let previous = hub.disk.view(&hub.torrents);
+        hub.disk.update(torrent_id, snapshot);
+        let current = hub.disk.view(&hub.torrents);
+        if previous != current {
+            hub.publish_disk_changes(&previous, &current)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn clear_disk_runtime(&self, torrent_id: &str) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let previous = hub.disk.view(&hub.torrents);
+        hub.disk.torrents.remove(torrent_id);
+        let current = hub.disk.view(&hub.torrents);
+        if previous != current {
+            hub.publish_disk_changes(&previous, &current)?;
+        }
+        Ok(())
     }
 
     pub(crate) fn record_piece_durable(
@@ -1320,6 +1524,13 @@ impl HubState {
                     active: torrent.and_then(|torrent| torrent.active.clone()),
                 }
             }
+            (ViewSelector::TorrentList, ViewProjection::Disk) => {
+                let disk = self.disk.view(&self.torrents);
+                ViewSnapshot::SessionDisk {
+                    pipeline: disk.pipeline,
+                    pieces: disk.pieces.into_values().collect(),
+                }
+            }
             (ViewSelector::Torrent { torrent_id }, ViewProjection::Peers) => ViewSnapshot::Peers {
                 torrent_id: torrent_id.clone(),
                 peers: self
@@ -1392,6 +1603,9 @@ impl HubState {
             ) => {
                 unreachable!("invalid projection is rejected before snapshot construction")
             }
+            (ViewSelector::Torrent { .. }, ViewProjection::Disk) => {
+                unreachable!("invalid projection is rejected before snapshot construction")
+            }
         }
     }
 
@@ -1432,6 +1646,38 @@ impl HubState {
                 }
                 if let Some(patch) = patch_for(&subscription, previous, current) {
                     view_set.enqueue_patch(spec.view_id(), patch, revision)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn publish_disk_changes(
+        &mut self,
+        previous: &DiskSessionView,
+        current: &DiskSessionView,
+    ) -> Result<(), SubscriptionError> {
+        let Some(patch) = disk_patch(previous, current) else {
+            return Ok(());
+        };
+        let revision = self.revision;
+        self.subscribers.retain(|_, weak| weak.strong_count() != 0);
+        let subscribers = self
+            .subscribers
+            .values()
+            .filter_map(Weak::upgrade)
+            .collect::<Vec<_>>();
+        for subscriber in subscribers {
+            if subscriber.spec.projection == ViewProjection::Disk {
+                subscriber.enqueue_patch(revision, patch.clone())?;
+            }
+        }
+        self.retain_live_view_sets();
+        let view_sets = self.view_sets.values().cloned().collect::<Vec<_>>();
+        for view_set in view_sets {
+            for spec in view_set.view_specs()? {
+                if matches!(spec, crate::ViewSpec::SessionDisk { .. }) {
+                    view_set.enqueue_patch(spec.view_id(), patch.clone(), revision)?;
                 }
             }
         }
@@ -1780,6 +2026,271 @@ impl TorrentModel {
     }
 }
 
+impl DiskSessionModel {
+    fn update(&mut self, torrent_id: &str, snapshot: &DiskRuntimeSnapshot) {
+        let (sample_millis, receive_rate_bytes, write_rate_bytes, hash_rate_bytes) = self
+            .torrents
+            .get(torrent_id)
+            .and_then(|previous| {
+                let elapsed = snapshot
+                    .captured_at_millis
+                    .checked_sub(previous.snapshot.captured_at_millis)?;
+                (elapsed != 0).then(|| {
+                    (
+                        elapsed,
+                        sampled_rate(
+                            snapshot.received_bytes_total,
+                            previous.snapshot.received_bytes_total,
+                            elapsed,
+                        ),
+                        sampled_rate(
+                            snapshot.stored_bytes_total,
+                            previous.snapshot.stored_bytes_total,
+                            elapsed,
+                        ),
+                        sampled_rate(
+                            snapshot.verified_bytes_total,
+                            previous.snapshot.verified_bytes_total,
+                            elapsed,
+                        ),
+                    )
+                })
+            })
+            .unwrap_or_default();
+        self.torrents.insert(
+            torrent_id.to_owned(),
+            DiskTorrentRuntime {
+                snapshot: snapshot.clone(),
+                sample_millis,
+                receive_rate_bytes,
+                write_rate_bytes,
+                hash_rate_bytes,
+            },
+        );
+    }
+
+    fn retain(&mut self, torrent_ids: &BTreeSet<String>) {
+        self.torrents
+            .retain(|torrent_id, _| torrent_ids.contains(torrent_id));
+    }
+
+    fn view(&self, torrents: &BTreeMap<String, TorrentModel>) -> DiskSessionView {
+        let mut view = DiskSessionView::default();
+        let mut pressure_rank = 0_u8;
+        for (torrent_id, runtime) in &self.torrents {
+            let snapshot = &runtime.snapshot;
+            let rank = disk_pressure_rank(snapshot.pressure);
+            if rank >= pressure_rank {
+                pressure_rank = rank;
+                view.pipeline.pressure = map_disk_pressure(snapshot.pressure);
+            }
+            view.pipeline.intake_backpressured |= snapshot.intake_backpressured;
+            view.pipeline.sample_millis =
+                max_decimal(&view.pipeline.sample_millis, runtime.sample_millis);
+            add_decimal(
+                &mut view.pipeline.resident_limit_bytes,
+                usize_to_u64(snapshot.resident_limit_bytes),
+            );
+            add_decimal(
+                &mut view.pipeline.resident_high_watermark_bytes,
+                usize_to_u64(snapshot.resident_high_watermark_bytes),
+            );
+            add_decimal(
+                &mut view.pipeline.resident_low_watermark_bytes,
+                usize_to_u64(snapshot.resident_low_watermark_bytes),
+            );
+            add_decimal(
+                &mut view.pipeline.requested_bytes,
+                usize_to_u64(snapshot.requested_bytes),
+            );
+            add_decimal(
+                &mut view.pipeline.resident_bytes,
+                usize_to_u64(snapshot.resident_bytes),
+            );
+            add_decimal(
+                &mut view.pipeline.queued_write_bytes,
+                usize_to_u64(snapshot.queued_write_bytes),
+            );
+            add_decimal(
+                &mut view.pipeline.writing_bytes,
+                usize_to_u64(snapshot.writing_bytes),
+            );
+            add_decimal(
+                &mut view.pipeline.hashing_bytes,
+                usize_to_u64(snapshot.hashing_bytes),
+            );
+            add_decimal(
+                &mut view.pipeline.storage_jobs_pending,
+                usize_to_u64(snapshot.storage_jobs_pending),
+            );
+            add_decimal(
+                &mut view.pipeline.received_bytes_total,
+                usize_to_u64(snapshot.received_bytes_total),
+            );
+            add_decimal(
+                &mut view.pipeline.stored_bytes_total,
+                usize_to_u64(snapshot.stored_bytes_total),
+            );
+            add_decimal(
+                &mut view.pipeline.verified_bytes_total,
+                usize_to_u64(snapshot.verified_bytes_total),
+            );
+            add_decimal(
+                &mut view.pipeline.receive_rate_bytes,
+                runtime.receive_rate_bytes,
+            );
+            add_decimal(
+                &mut view.pipeline.write_rate_bytes,
+                runtime.write_rate_bytes,
+            );
+            add_decimal(&mut view.pipeline.hash_rate_bytes, runtime.hash_rate_bytes);
+            add_decimal(
+                &mut view.pipeline.write_operations_started,
+                usize_to_u64(snapshot.write_operations_started),
+            );
+            add_decimal(
+                &mut view.pipeline.write_operations_completed,
+                usize_to_u64(snapshot.write_operations_completed),
+            );
+            add_decimal(
+                &mut view.pipeline.hash_operations_started,
+                usize_to_u64(snapshot.hash_operations_started),
+            );
+            add_decimal(
+                &mut view.pipeline.hash_operations_completed,
+                usize_to_u64(snapshot.hash_operations_completed),
+            );
+            add_decimal(
+                &mut view.pipeline.write_queue_wait_micros,
+                snapshot.write_queue_wait_micros,
+            );
+            view.pipeline.write_queue_wait_max_micros = max_decimal(
+                &view.pipeline.write_queue_wait_max_micros,
+                snapshot.write_queue_wait_max_micros,
+            );
+            add_decimal(
+                &mut view.pipeline.write_service_micros,
+                snapshot.write_service_micros,
+            );
+            view.pipeline.write_service_max_micros = max_decimal(
+                &view.pipeline.write_service_max_micros,
+                snapshot.write_service_max_micros,
+            );
+            add_decimal(
+                &mut view.pipeline.hash_queue_wait_micros,
+                snapshot.hash_queue_wait_micros,
+            );
+            view.pipeline.hash_queue_wait_max_micros = max_decimal(
+                &view.pipeline.hash_queue_wait_max_micros,
+                snapshot.hash_queue_wait_max_micros,
+            );
+            add_decimal(
+                &mut view.pipeline.hash_service_micros,
+                snapshot.hash_service_micros,
+            );
+            view.pipeline.hash_service_max_micros = max_decimal(
+                &view.pipeline.hash_service_max_micros,
+                snapshot.hash_service_max_micros,
+            );
+            add_decimal(
+                &mut view.pipeline.pressure_transition_count,
+                snapshot.pressure_transition_count,
+            );
+            add_decimal(
+                &mut view.pipeline.backpressured_millis_total,
+                snapshot.backpressured_millis_total,
+            );
+            if snapshot.last_error.is_some() {
+                view.pipeline.last_error = snapshot.last_error.clone();
+            }
+
+            let torrent_name = torrents
+                .get(torrent_id)
+                .and_then(|torrent| torrent.view.display_name.clone())
+                .unwrap_or_else(|| format!("Torrent {}", &torrent_id[..torrent_id.len().min(12)]));
+            for piece in &snapshot.pieces {
+                let row_id = format!("{torrent_id}:{}:{}", piece.piece_index, piece.attempt);
+                view.pieces.insert(
+                    row_id.clone(),
+                    DiskPieceView {
+                        row_id,
+                        torrent_id: torrent_id.clone(),
+                        torrent_name: torrent_name.clone(),
+                        piece_index: piece.piece_index,
+                        piece_length: piece.piece_length,
+                        attempt: piece.attempt,
+                        stage: map_disk_piece_stage(piece.stage),
+                        requested_bytes: piece.requested_bytes.to_string(),
+                        received_bytes: piece.received_bytes.to_string(),
+                        stored_bytes: piece.stored_bytes.to_string(),
+                        age_millis: piece.age_millis.to_string(),
+                        stage_age_millis: piece.stage_age_millis.to_string(),
+                        error: piece.error.clone(),
+                    },
+                );
+            }
+        }
+        view
+    }
+}
+
+fn sampled_rate(current: usize, previous: usize, elapsed_millis: u64) -> u64 {
+    let bytes = current.saturating_sub(previous) as u128;
+    let rate = bytes
+        .saturating_mul(1_000)
+        .checked_div(u128::from(elapsed_millis))
+        .unwrap_or_default();
+    u64::try_from(rate).unwrap_or(u64::MAX)
+}
+
+fn usize_to_u64(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
+fn add_decimal(value: &mut String, amount: u64) {
+    let current = value.parse::<u64>().unwrap_or_default();
+    *value = current.saturating_add(amount).to_string();
+}
+
+fn max_decimal(value: &str, candidate: u64) -> String {
+    value
+        .parse::<u64>()
+        .unwrap_or_default()
+        .max(candidate)
+        .to_string()
+}
+
+const fn disk_pressure_rank(pressure: DiskPressure) -> u8 {
+    match pressure {
+        DiskPressure::Idle => 0,
+        DiskPressure::Normal => 1,
+        DiskPressure::Draining => 2,
+        DiskPressure::Backpressured => 3,
+        DiskPressure::Error => 4,
+    }
+}
+
+const fn map_disk_pressure(pressure: DiskPressure) -> DiskPressureView {
+    match pressure {
+        DiskPressure::Idle => DiskPressureView::Idle,
+        DiskPressure::Normal => DiskPressureView::Normal,
+        DiskPressure::Backpressured => DiskPressureView::Backpressured,
+        DiskPressure::Draining => DiskPressureView::Draining,
+        DiskPressure::Error => DiskPressureView::Error,
+    }
+}
+
+const fn map_disk_piece_stage(stage: DiskPieceStage) -> DiskPieceStageView {
+    match stage {
+        DiskPieceStage::Receiving => DiskPieceStageView::Receiving,
+        DiskPieceStage::Queued => DiskPieceStageView::Queued,
+        DiskPieceStage::Writing => DiskPieceStageView::Writing,
+        DiskPieceStage::Stored => DiskPieceStageView::Stored,
+        DiskPieceStage::Hashing => DiskPieceStageView::Hashing,
+        DiskPieceStage::Failed => DiskPieceStageView::Failed,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum TorrentActivity {
     PieceStarted {
@@ -2032,6 +2543,11 @@ pub(crate) fn validate_spec(spec: &SubscriptionSpec) -> Result<(), SubscriptionE
     {
         return Err(SubscriptionError::InvalidProjection);
     }
+    if matches!(spec.selector, ViewSelector::Torrent { .. })
+        && spec.projection == ViewProjection::Disk
+    {
+        return Err(SubscriptionError::InvalidProjection);
+    }
     if spec.projection != ViewProjection::Diagnostics && spec.diagnostics.is_some() {
         return Err(SubscriptionError::InvalidProjection);
     }
@@ -2179,6 +2695,7 @@ fn patch_for(
             | ViewProjection::Files
             | ViewProjection::Trackers,
         ) => None,
+        (_, ViewProjection::Disk) => None,
         (_, ViewProjection::Diagnostics) => None,
     }
 }
@@ -2382,6 +2899,28 @@ fn tracker_collection_patch(
     })
 }
 
+fn disk_patch(previous: &DiskSessionView, current: &DiskSessionView) -> Option<ViewPatch> {
+    let upsert = current
+        .pieces
+        .iter()
+        .filter(|(id, piece)| previous.pieces.get(*id) != Some(*piece))
+        .map(|(_, piece)| piece.clone())
+        .collect::<Vec<_>>();
+    let removed = previous
+        .pieces
+        .keys()
+        .filter(|id| !current.pieces.contains_key(*id))
+        .cloned()
+        .collect::<Vec<_>>();
+    (previous.pipeline != current.pipeline || !upsert.is_empty() || !removed.is_empty()).then(
+        || ViewPatch::SessionDisk {
+            pipeline: current.pipeline.clone(),
+            upsert,
+            removed,
+        },
+    )
+}
+
 fn coalesce(update: &mut ViewUpdate, next: &ViewUpdatePayload) -> bool {
     let (ViewUpdatePayload::Patch { patch: current }, ViewUpdatePayload::Patch { patch: next }) =
         (&mut update.payload, next)
@@ -2449,6 +2988,38 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
             }
             *piece_count = *next_piece_count;
             *active = next_active.clone();
+            true
+        }
+        (
+            ViewPatch::SessionDisk {
+                pipeline,
+                upsert,
+                removed,
+            },
+            ViewPatch::SessionDisk {
+                pipeline: next_pipeline,
+                upsert: next_upsert,
+                removed: next_removed,
+            },
+        ) => {
+            let mut values = upsert
+                .drain(..)
+                .map(|piece| (piece.row_id.clone(), piece))
+                .collect::<BTreeMap<_, _>>();
+            for id in next_removed {
+                values.remove(id);
+            }
+            for piece in next_upsert {
+                values.insert(piece.row_id.clone(), piece.clone());
+            }
+            let mut removed_ids = removed.drain(..).collect::<BTreeSet<_>>();
+            for piece in next_upsert {
+                removed_ids.remove(&piece.row_id);
+            }
+            removed_ids.extend(next_removed.iter().cloned());
+            *pipeline = next_pipeline.clone();
+            *upsert = values.into_values().collect();
+            *removed = removed_ids.into_iter().collect();
             true
         }
         (
@@ -2740,6 +3311,7 @@ mod tests {
     use std::time::Duration;
 
     use rstorrent_engine::{
+        DiskPieceRuntimeSnapshot, DiskPieceStage, DiskPressure, DiskRuntimeSnapshot,
         TrackerNextAction, TrackerRuntimeRecordSnapshot, TrackerRuntimeSnapshot,
         TrackerRuntimeStatus, TrackerSource, TrackerTransport,
     };
@@ -2818,6 +3390,122 @@ mod tests {
                 last_error: None,
             }],
         }
+    }
+
+    fn disk_snapshot(captured_at_millis: u64, received: usize) -> DiskRuntimeSnapshot {
+        DiskRuntimeSnapshot {
+            captured_at_millis,
+            pressure: DiskPressure::Backpressured,
+            intake_backpressured: true,
+            resident_limit_bytes: 32 * 1024 * 1024,
+            resident_high_watermark_bytes: 24 * 1024 * 1024,
+            resident_low_watermark_bytes: 16 * 1024 * 1024,
+            requested_bytes: 4 * 1024 * 1024,
+            resident_bytes: 25 * 1024 * 1024,
+            queued_write_bytes: 24 * 1024 * 1024,
+            writing_bytes: 256 * 1024,
+            hashing_bytes: 0,
+            storage_jobs_pending: 96,
+            received_bytes_total: received,
+            stored_bytes_total: received.saturating_sub(1024),
+            verified_bytes_total: received.saturating_sub(2048),
+            write_operations_started: 10,
+            write_operations_completed: 9,
+            hash_operations_started: 2,
+            hash_operations_completed: 2,
+            write_queue_wait_micros: 4_000,
+            write_queue_wait_max_micros: 2_000,
+            write_service_micros: 8_000,
+            write_service_max_micros: 3_000,
+            hash_queue_wait_micros: 500,
+            hash_queue_wait_max_micros: 400,
+            hash_service_micros: 1_200,
+            hash_service_max_micros: 800,
+            pressure_transition_count: 1,
+            backpressured_millis_total: 900,
+            last_error: None,
+            pieces: vec![DiskPieceRuntimeSnapshot {
+                piece_index: 3,
+                piece_length: 16 * 1024,
+                attempt: 1,
+                stage: DiskPieceStage::Writing,
+                requested_bytes: 16 * 1024,
+                received_bytes: 16 * 1024,
+                stored_bytes: 0,
+                age_millis: 100,
+                stage_age_millis: 20,
+                error: None,
+            }],
+        }
+    }
+
+    #[tokio::test]
+    async fn session_disk_view_publishes_pipeline_rates_and_keyed_piece_changes() {
+        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
+        let subscription = hub
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::TorrentList,
+                projection: ViewProjection::Disk,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 64 * 1024,
+                },
+                diagnostics: None,
+            })
+            .expect("disk subscription");
+        let initial = subscription.next_update().await.expect("initial disk");
+        assert!(matches!(
+            initial.payload,
+            ViewUpdatePayload::Snapshot {
+                snapshot: ViewSnapshot::SessionDisk { ref pieces, ref pipeline }
+            } if pieces.is_empty() && pipeline.pressure == super::DiskPressureView::Idle
+        ));
+
+        hub.record_disk_runtime(torrent_id, &disk_snapshot(1_000, 4_096))
+            .expect("first disk sample");
+        let first = subscription.next_update().await.expect("first disk patch");
+        assert!(matches!(
+            first.payload,
+            ViewUpdatePayload::Patch {
+                patch: ViewPatch::SessionDisk { ref pipeline, ref upsert, ref removed }
+            } if pipeline.intake_backpressured
+                && pipeline.receive_rate_bytes == "0"
+                && upsert.len() == 1
+                && removed.is_empty()
+        ));
+
+        let mut next = disk_snapshot(2_000, 8_192);
+        next.pressure = DiskPressure::Draining;
+        next.intake_backpressured = false;
+        next.pieces.clear();
+        hub.record_disk_runtime(torrent_id, &next)
+            .expect("second disk sample");
+        let second = subscription.next_update().await.expect("second disk patch");
+        assert!(matches!(
+            second.payload,
+            ViewUpdatePayload::Patch {
+                patch: ViewPatch::SessionDisk { ref pipeline, ref upsert, ref removed }
+            } if pipeline.pressure == super::DiskPressureView::Draining
+                && pipeline.receive_rate_bytes == "4096"
+                && upsert.is_empty()
+                && removed == &[format!("{torrent_id}:3:1")]
+        ));
+
+        hub.clear_disk_runtime(torrent_id)
+            .expect("clear terminal disk runtime");
+        let terminal = subscription
+            .next_update()
+            .await
+            .expect("terminal disk patch");
+        assert!(matches!(
+            terminal.payload,
+            ViewUpdatePayload::Patch {
+                patch: ViewPatch::SessionDisk { ref pipeline, ref upsert, ref removed }
+            } if pipeline.pressure == super::DiskPressureView::Idle
+                && upsert.is_empty()
+                && removed.is_empty()
+        ));
     }
 
     #[tokio::test]

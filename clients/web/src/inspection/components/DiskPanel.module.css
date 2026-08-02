@@ -1,0 +1,231 @@
+.panel {
+  display: grid;
+  grid-template-rows: auto minmax(18rem, 1fr);
+  overflow: auto;
+  height: 100%;
+  background: var(--surface-primary);
+}
+
+.summary {
+  display: grid;
+  gap: 0.9rem;
+  border-bottom: 1px solid var(--border-strong);
+  padding: 1rem;
+}
+
+.summaryHeading,
+.tableHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.summaryHeading h2,
+.tableHeading h2 {
+  margin: 0;
+  font-size: 0.96rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.15rem;
+  color: var(--accent-strong);
+  font-size: 0.62rem;
+  font-weight: 760;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.pressure,
+.stage {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.pressure > span,
+.stage > span {
+  inline-size: 0.55rem;
+  block-size: 0.55rem;
+  border: 1px solid currentcolor;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.pressure[data-pressure="backpressured"] > span,
+.pressure[data-pressure="draining"] > span,
+.stage[data-stage="queued"] > span,
+.stage[data-stage="writing"] > span {
+  background: var(--warning);
+}
+
+.pressure[data-pressure="error"] > span,
+.stage[data-stage="failed"] > span {
+  background: var(--danger);
+}
+
+.stage[data-stage="hashing"] > span {
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+.pipeline {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(7.5rem, 1fr));
+  gap: 0.6rem;
+}
+
+.pipeline > div {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 0.55rem;
+  padding: 0.55rem 0.65rem;
+  background: var(--surface-secondary);
+}
+
+.pipeline span,
+.metrics dt,
+.metrics small,
+.tableHeading p,
+.tableHeading > span {
+  color: var(--text-muted);
+  font-size: 0.63rem;
+}
+
+.pipeline strong {
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.bar {
+  display: block;
+  overflow: hidden;
+  height: 0.28rem;
+  border-radius: 999px;
+  background: var(--progress-track);
+}
+
+.bar > span {
+  display: block;
+  width: var(--disk-fill);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(9rem, 1fr));
+  margin: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 0.6rem;
+}
+
+.metrics > div {
+  display: grid;
+  gap: 0.18rem;
+  border-right: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+  padding: 0.58rem 0.68rem;
+}
+
+.metrics > div:nth-child(4n) {
+  border-right: 0;
+}
+
+.metrics > div:nth-last-child(-n + 4) {
+  border-bottom: 0;
+}
+
+.metrics dd {
+  margin: 0;
+  font-size: 0.76rem;
+  font-weight: 680;
+  font-variant-numeric: tabular-nums;
+}
+
+.metrics dd span,
+.metrics dd small {
+  display: block;
+}
+
+.error {
+  display: flex;
+  gap: 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border-soft));
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  color: var(--danger-strong);
+  background: var(--danger-soft);
+  font-size: 0.7rem;
+}
+
+.tableSection {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 18rem;
+}
+
+.tableHeading {
+  border-bottom: 1px solid var(--border-soft);
+  padding: 0.65rem 0.85rem;
+  background: var(--surface-secondary);
+}
+
+.tableHeading p {
+  margin: 0.18rem 0 0;
+}
+
+@media (max-width: 820px) {
+  .pipeline {
+    grid-template-columns: repeat(3, minmax(7rem, 1fr));
+  }
+
+  .metrics {
+    grid-template-columns: repeat(2, minmax(8rem, 1fr));
+  }
+
+  .metrics > div:nth-child(4n) {
+    border-right: 1px solid var(--border-soft);
+  }
+
+  .metrics > div:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .metrics > div:nth-last-child(-n + 4) {
+    border-bottom: 1px solid var(--border-soft);
+  }
+
+  .metrics > div:nth-last-child(-n + 2) {
+    border-bottom: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .summary {
+    padding: 0.75rem;
+  }
+
+  .pipeline {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .pipeline > div:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .summaryHeading,
+  .tableHeading {
+    align-items: flex-start;
+  }
+
+  .tableHeading p {
+    display: none;
+  }
+}

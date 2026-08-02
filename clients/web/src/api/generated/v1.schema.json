@@ -478,6 +478,235 @@
       ],
       "type": "string"
     },
+    "DiskPieceStageView": {
+      "enum": [
+        "receiving",
+        "queued",
+        "writing",
+        "stored",
+        "hashing",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "DiskPieceView": {
+      "properties": {
+        "age_millis": {
+          "type": "string"
+        },
+        "attempt": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "piece_index": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "piece_length": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "received_bytes": {
+          "type": "string"
+        },
+        "requested_bytes": {
+          "type": "string"
+        },
+        "row_id": {
+          "type": "string"
+        },
+        "stage": {
+          "$ref": "#/$defs/DiskPieceStageView"
+        },
+        "stage_age_millis": {
+          "type": "string"
+        },
+        "stored_bytes": {
+          "type": "string"
+        },
+        "torrent_id": {
+          "type": "string"
+        },
+        "torrent_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "row_id",
+        "torrent_id",
+        "torrent_name",
+        "piece_index",
+        "piece_length",
+        "attempt",
+        "stage",
+        "requested_bytes",
+        "received_bytes",
+        "stored_bytes",
+        "age_millis",
+        "stage_age_millis"
+      ],
+      "type": "object"
+    },
+    "DiskPipelineView": {
+      "properties": {
+        "backpressured_millis_total": {
+          "type": "string"
+        },
+        "hash_operations_completed": {
+          "type": "string"
+        },
+        "hash_operations_started": {
+          "type": "string"
+        },
+        "hash_queue_wait_max_micros": {
+          "type": "string"
+        },
+        "hash_queue_wait_micros": {
+          "type": "string"
+        },
+        "hash_rate_bytes": {
+          "type": "string"
+        },
+        "hash_service_max_micros": {
+          "type": "string"
+        },
+        "hash_service_micros": {
+          "type": "string"
+        },
+        "hashing_bytes": {
+          "type": "string"
+        },
+        "intake_backpressured": {
+          "type": "boolean"
+        },
+        "last_error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pressure": {
+          "$ref": "#/$defs/DiskPressureView"
+        },
+        "pressure_transition_count": {
+          "type": "string"
+        },
+        "queued_write_bytes": {
+          "type": "string"
+        },
+        "receive_rate_bytes": {
+          "type": "string"
+        },
+        "received_bytes_total": {
+          "type": "string"
+        },
+        "requested_bytes": {
+          "type": "string"
+        },
+        "resident_bytes": {
+          "type": "string"
+        },
+        "resident_high_watermark_bytes": {
+          "type": "string"
+        },
+        "resident_limit_bytes": {
+          "type": "string"
+        },
+        "resident_low_watermark_bytes": {
+          "type": "string"
+        },
+        "sample_millis": {
+          "type": "string"
+        },
+        "storage_jobs_pending": {
+          "type": "string"
+        },
+        "stored_bytes_total": {
+          "type": "string"
+        },
+        "verified_bytes_total": {
+          "type": "string"
+        },
+        "write_operations_completed": {
+          "type": "string"
+        },
+        "write_operations_started": {
+          "type": "string"
+        },
+        "write_queue_wait_max_micros": {
+          "type": "string"
+        },
+        "write_queue_wait_micros": {
+          "type": "string"
+        },
+        "write_rate_bytes": {
+          "type": "string"
+        },
+        "write_service_max_micros": {
+          "type": "string"
+        },
+        "write_service_micros": {
+          "type": "string"
+        },
+        "writing_bytes": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "pressure",
+        "intake_backpressured",
+        "sample_millis",
+        "resident_limit_bytes",
+        "resident_high_watermark_bytes",
+        "resident_low_watermark_bytes",
+        "requested_bytes",
+        "resident_bytes",
+        "queued_write_bytes",
+        "writing_bytes",
+        "hashing_bytes",
+        "storage_jobs_pending",
+        "received_bytes_total",
+        "stored_bytes_total",
+        "verified_bytes_total",
+        "receive_rate_bytes",
+        "write_rate_bytes",
+        "hash_rate_bytes",
+        "write_operations_started",
+        "write_operations_completed",
+        "hash_operations_started",
+        "hash_operations_completed",
+        "write_queue_wait_micros",
+        "write_queue_wait_max_micros",
+        "write_service_micros",
+        "write_service_max_micros",
+        "hash_queue_wait_micros",
+        "hash_queue_wait_max_micros",
+        "hash_service_micros",
+        "hash_service_max_micros",
+        "pressure_transition_count",
+        "backpressured_millis_total"
+      ],
+      "type": "object"
+    },
+    "DiskPressureView": {
+      "enum": [
+        "idle",
+        "normal",
+        "backpressured",
+        "draining",
+        "error"
+      ],
+      "type": "string"
+    },
     "ErrorCode": {
       "enum": [
         "invalid_version",
@@ -1874,6 +2103,36 @@
         },
         {
           "properties": {
+            "pipeline": {
+              "$ref": "#/$defs/DiskPipelineView"
+            },
+            "removed": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": {
+              "const": "session_disk",
+              "type": "string"
+            },
+            "upsert": {
+              "items": {
+                "$ref": "#/$defs/DiskPieceView"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "type",
+            "pipeline",
+            "upsert",
+            "removed"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "removed": {
               "items": {
                 "type": "string"
@@ -2153,6 +2412,29 @@
         },
         {
           "properties": {
+            "pieces": {
+              "items": {
+                "$ref": "#/$defs/DiskPieceView"
+              },
+              "type": "array"
+            },
+            "pipeline": {
+              "$ref": "#/$defs/DiskPipelineView"
+            },
+            "type": {
+              "const": "session_disk",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "pipeline",
+            "pieces"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "peers": {
               "items": {
                 "$ref": "#/$defs/PeerView"
@@ -2332,6 +2614,28 @@
             "type",
             "view_id",
             "torrent_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "delivery": {
+              "$ref": "#/$defs/ViewDeliveryPolicy",
+              "default": {
+                "min_interval_millis": 0
+              }
+            },
+            "type": {
+              "const": "session_disk",
+              "type": "string"
+            },
+            "view_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "view_id"
           ],
           "type": "object"
         },

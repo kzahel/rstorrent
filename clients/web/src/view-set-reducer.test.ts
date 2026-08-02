@@ -135,6 +135,42 @@ describe("view-set reducer", () => {
     });
   });
 
+  it("replaces disk pipeline state and applies keyed piece changes", () => {
+    const pipeline = diskPipeline("normal");
+    const first = diskPiece("torrent-a:3:1", 3, "receiving");
+    let state = reduceUpdateBatch(
+      undefined,
+      batch("0", "1", [
+        {
+          type: "snapshot",
+          view_id: "disk",
+          snapshot: { type: "session_disk", pipeline, pieces: [first] },
+        },
+      ]),
+    );
+    const replacement = diskPiece("torrent-a:4:1", 4, "writing");
+    state = reduceUpdateBatch(
+      state,
+      batch("1", "2", [
+        {
+          type: "patch",
+          view_id: "disk",
+          patch: {
+            type: "session_disk",
+            pipeline: diskPipeline("backpressured"),
+            upsert: [replacement],
+            removed: [first.row_id],
+          },
+        },
+      ]),
+    );
+    expect(state.views.disk).toMatchObject({
+      type: "session_disk",
+      pipeline: { pressure: "backpressured", intake_backpressured: true },
+      pieces: [{ row_id: "torrent-a:4:1", piece_index: 4, stage: "writing" }],
+    });
+  });
+
   it("reduces snapshots, keyed patches, removals, and later upserts", () => {
     let state = reduceUpdateBatch(
       undefined,
@@ -253,3 +289,61 @@ describe("view-set reducer", () => {
     ).toThrow(ViewSetContinuityError);
   });
 });
+
+function diskPipeline(pressure: "normal" | "backpressured") {
+  return {
+    pressure,
+    intake_backpressured: pressure === "backpressured",
+    sample_millis: "1000",
+    resident_limit_bytes: "1048576",
+    resident_high_watermark_bytes: "786432",
+    resident_low_watermark_bytes: "524288",
+    requested_bytes: "65536",
+    resident_bytes: "32768",
+    queued_write_bytes: "16384",
+    writing_bytes: "16384",
+    hashing_bytes: "0",
+    storage_jobs_pending: "1",
+    received_bytes_total: "32768",
+    stored_bytes_total: "16384",
+    verified_bytes_total: "0",
+    receive_rate_bytes: "32768",
+    write_rate_bytes: "16384",
+    hash_rate_bytes: "0",
+    write_operations_started: "1",
+    write_operations_completed: "0",
+    hash_operations_started: "0",
+    hash_operations_completed: "0",
+    write_queue_wait_micros: "100",
+    write_queue_wait_max_micros: "100",
+    write_service_micros: "0",
+    write_service_max_micros: "0",
+    hash_queue_wait_micros: "0",
+    hash_queue_wait_max_micros: "0",
+    hash_service_micros: "0",
+    hash_service_max_micros: "0",
+    pressure_transition_count: pressure === "backpressured" ? "1" : "0",
+    backpressured_millis_total: "0",
+  };
+}
+
+function diskPiece(
+  rowId: string,
+  pieceIndex: number,
+  stage: "receiving" | "writing",
+) {
+  return {
+    row_id: rowId,
+    torrent_id: torrentId,
+    torrent_name: "Test torrent",
+    piece_index: pieceIndex,
+    piece_length: 262144,
+    attempt: 1,
+    stage,
+    requested_bytes: "16384",
+    received_bytes: "16384",
+    stored_bytes: "0",
+    stage_age_millis: "10",
+    age_millis: "20",
+  };
+}

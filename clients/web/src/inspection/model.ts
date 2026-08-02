@@ -57,13 +57,21 @@ export interface InspectionViewStatus {
   readonly peers: ViewMaterialization;
   readonly files: ViewMaterialization;
   readonly trackers: ViewMaterialization;
+  readonly disk: ViewMaterialization;
   readonly logs: ViewMaterialization;
 }
 
 export interface DesiredInspectionViews {
   readonly library: boolean;
   readonly torrentId: string | null;
-  readonly detail: "general" | "trackers" | "peers" | "files" | "logs" | null;
+  readonly detail:
+    | "general"
+    | "trackers"
+    | "peers"
+    | "files"
+    | "disk"
+    | "logs"
+    | null;
 }
 
 export interface DemoState {
@@ -195,6 +203,64 @@ export interface TrackerSet {
   readonly rows: Readonly<Record<string, TrackerRow>>;
 }
 
+export interface DiskPipeline {
+  readonly pressure: "idle" | "normal" | "backpressured" | "draining" | "error";
+  readonly intakeBackpressured: boolean;
+  readonly sampleMillis: number;
+  readonly residentLimitBytes: number;
+  readonly residentHighWatermarkBytes: number;
+  readonly residentLowWatermarkBytes: number;
+  readonly requestedBytes: number;
+  readonly residentBytes: number;
+  readonly queuedWriteBytes: number;
+  readonly writingBytes: number;
+  readonly hashingBytes: number;
+  readonly storageJobsPending: number;
+  readonly receivedBytesTotal: number;
+  readonly storedBytesTotal: number;
+  readonly verifiedBytesTotal: number;
+  readonly receiveRateBytes: number;
+  readonly writeRateBytes: number;
+  readonly hashRateBytes: number;
+  readonly writeOperationsStarted: number;
+  readonly writeOperationsCompleted: number;
+  readonly hashOperationsStarted: number;
+  readonly hashOperationsCompleted: number;
+  readonly writeQueueWaitMicros: number;
+  readonly writeQueueWaitMaxMicros: number;
+  readonly writeServiceMicros: number;
+  readonly writeServiceMaxMicros: number;
+  readonly hashQueueWaitMicros: number;
+  readonly hashQueueWaitMaxMicros: number;
+  readonly hashServiceMicros: number;
+  readonly hashServiceMaxMicros: number;
+  readonly pressureTransitionCount: number;
+  readonly backpressuredMillisTotal: number;
+  readonly lastError: string | null;
+}
+
+export interface DiskPieceRow {
+  readonly id: string;
+  readonly torrentId: string;
+  readonly torrentName: string;
+  readonly pieceIndex: number;
+  readonly pieceLength: number;
+  readonly attempt: number;
+  readonly stage: "receiving" | "queued" | "writing" | "stored" | "hashing" | "failed";
+  readonly requestedBytes: number;
+  readonly receivedBytes: number;
+  readonly storedBytes: number;
+  readonly ageMillis: number;
+  readonly stageAgeMillis: number;
+  readonly error: string | null;
+}
+
+export interface DiskSet {
+  readonly pipeline: DiskPipeline;
+  readonly order: readonly string[];
+  readonly rows: Readonly<Record<string, DiskPieceRow>>;
+}
+
 export interface InspectionSnapshot {
   readonly revision: number;
   readonly session: SessionSummary;
@@ -204,6 +270,7 @@ export interface InspectionSnapshot {
   readonly peersByTorrent: Readonly<Record<string, PeerSet>>;
   readonly filesByTorrent: Readonly<Record<string, FileSet>>;
   readonly trackersByTorrent: Readonly<Record<string, TrackerSet>>;
+  readonly disk: DiskSet;
   readonly logs: readonly LogRow[];
   readonly droppedLogs: number;
   readonly viewStatus: InspectionViewStatus;
@@ -239,6 +306,7 @@ export type InspectionUpdate =
         readonly state?: TrackerSet["state"];
         readonly order?: readonly string[];
       })[];
+      readonly disk?: DiskSet;
       readonly logs?: {
         readonly append: readonly LogRow[];
         readonly dropped: number;
@@ -270,6 +338,7 @@ export type DemoScenarioId =
   | "large-swarm"
   | "file-progress"
   | "disk-error"
+  | "slow-disk-pressure"
   | "empty-library";
 
 export interface DemoScenarioSummary {

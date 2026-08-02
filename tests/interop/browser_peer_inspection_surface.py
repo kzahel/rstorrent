@@ -27,7 +27,7 @@ from first_verified_piece import (
     wait_for_listener,
 )
 from gateway_reactive_surface import build_gateway, verify_payload
-from magnet_metadata import ROOT_NAME, create_fixture
+from magnet_metadata import ROOT_NAME, create_fixture, magnet_uri
 from udp_tracker_magnet import OneShotUdpTracker, tracker_magnet
 
 
@@ -42,6 +42,11 @@ def parse_arguments() -> argparse.Namespace:
         type=Path,
         help="retain redacted loopback-only wide, compact, and phone PNGs",
     )
+    parser.add_argument(
+        "--disk-pressure",
+        action="store_true",
+        help="run the bounded slow-storage Disk view proof",
+    )
     return parser.parse_args()
 
 
@@ -50,6 +55,8 @@ def start_development_gateway(
     profile: Path,
     storage: Path,
     origin: str,
+    *,
+    disk_pressure: bool,
 ) -> tuple[subprocess.Popen[str], str]:
     profile.mkdir()
     storage.mkdir()
@@ -66,6 +73,9 @@ def start_development_gateway(
     )
     environment.pop("RSTORRENT_GATEWAY_BIND", None)
     environment.pop("RSTORRENT_GATEWAY_TOKEN", None)
+    if disk_pressure:
+        environment["RSTORRENT_TEST_STORAGE_WRITE_DELAY_MILLIS"] = "150"
+        environment["RSTORRENT_TEST_BUFFERED_PAYLOAD_BYTES"] = str(128 * 1024)
     process = subprocess.Popen(
         [str(binary)],
         stdout=subprocess.PIPE,
@@ -127,6 +137,8 @@ def run_playwright(
     file_count: int,
     tracker_url: str,
     screenshot_directory: Path | None,
+    *,
+    disk_pressure: bool,
 ) -> str:
     environment = os.environ.copy()
     environment.update(
@@ -143,6 +155,8 @@ def run_playwright(
     if screenshot_directory is not None:
         screenshot_directory.mkdir(parents=True, exist_ok=True)
         environment["RSTORRENT_SCREENSHOT_DIR"] = str(screenshot_directory)
+    if disk_pressure:
+        environment["RSTORRENT_LIVE_EXPECT_DISK_PRESSURE"] = "1"
     completed = subprocess.run(
         [
             "npm",
@@ -152,7 +166,7 @@ def run_playwright(
             "clients/web",
             "--",
             "--grep",
-            "live peer inspection",
+            "live disk inspection" if disk_pressure else "live peer inspection",
         ],
         cwd=repository,
         capture_output=True,
@@ -171,13 +185,16 @@ def run_playwright(
         (line.strip() for line in completed.stdout.splitlines() if "passed" in line),
         "playwright=passed",
     )
+    milestone_prefix = (
+        "disk_live_milestones " if disk_pressure else "file_live_milestones "
+    )
     milestones = next(
         (
             line.strip()
             for line in completed.stdout.splitlines()
-            if line.startswith("file_live_milestones ")
+            if line.startswith(milestone_prefix)
         ),
-        "file_live_milestones=unavailable",
+        f"{milestone_prefix.strip()}=unavailable",
     )
     return f"{passed} {milestones}"
 
@@ -229,7 +246,7 @@ def build_and_start_production_web(
     raise ScenarioFailure("production web preview did not start")
 
 
-def run(screenshot_directory: Path | None) -> None:
+def run(screenshot_directory: Path | None, *, disk_pressure: bool) -> None:
     repository = Path(__file__).resolve().parents[2]
     run_path = Path(tempfile.mkdtemp(prefix="rstorrent-browser-peer-inspection-"))
     session: lt.session | None = None
@@ -240,9 +257,15 @@ def run(screenshot_directory: Path | None) -> None:
     diagnostics: list[str] = []
     failure: BaseException | None = None
     try:
-        fixture = create_fixture(run_path, prefix_payload_size=BROWSER_PREFIX_SIZE)
+        fixture = create_fixture(
+            run_path,
+            payload_size=4 * 1024 * 1024 if disk_pressure else 40_000,
+            piece_size=256 * 1024 if disk_pressure else 16 * 1024,
+            prefix_payload_size=BROWSER_PREFIX_SIZE,
+        )
         session = create_session()
-        session.apply_settings({"upload_rate_limit": 4 * 1024})
+        if not disk_pressure:
+            session.apply_settings({"upload_rate_limit": 4 * 1024})
         port = wait_for_listener(session, diagnostics)
         handle = add_seed(
             session,
@@ -250,15 +273,17 @@ def run(screenshot_directory: Path | None) -> None:
             fixture.seed_directory,
             diagnostics,
         )
-        handle.set_upload_limit(4 * 1024)
-        tracker = OneShotUdpTracker(
-            fixture.info_hash,
-            port,
-            response_delay_seconds=3,
-            seeders=37,
-            leechers=11,
-        )
-        tracker.start()
+        if not disk_pressure:
+            handle.set_upload_limit(4 * 1024)
+        if not disk_pressure:
+            tracker = OneShotUdpTracker(
+                fixture.info_hash,
+                port,
+                response_delay_seconds=3,
+                seeders=37,
+                leechers=11,
+            )
+            tracker.start()
         vite_port = reserve_loopback_port()
         origin = f"http://127.0.0.1:{vite_port}"
         storage = run_path / "downloads"
@@ -267,19 +292,26 @@ def run(screenshot_directory: Path | None) -> None:
             run_path / "profile",
             storage,
             origin,
+            disk_pressure=disk_pressure,
         )
         vite = build_and_start_production_web(repository, origin, vite_port)
         result = run_playwright(
             repository,
             origin,
             address,
-            tracker_magnet(fixture.info_hash, tracker.port),
+            (
+                magnet_uri(fixture.info_hash, f"127.0.0.1:{port}")
+                if disk_pressure
+                else tracker_magnet(fixture.info_hash, tracker.port)
+            ),
             fixture.info_hash,
             len(fixture.files),
-            f"udp://127.0.0.1:{tracker.port}",
+            "" if disk_pressure else f"udp://127.0.0.1:{tracker.port}",
             screenshot_directory,
+            disk_pressure=disk_pressure,
         )
-        tracker.join()
+        if tracker is not None:
+            tracker.join()
         verify_payload(storage, fixture.info_hash, fixture.payload_hash)
         compare_payloads(
             fixture.seed_directory / ROOT_NAME / BROWSER_PREFIX_PATH,
@@ -291,9 +323,10 @@ def run(screenshot_directory: Path | None) -> None:
         gateway = None
         print(
             f"{result} info_hash={fixture.info_hash} metadata_size={len(fixture.info_bytes)} "
-            f"pieces=3 files={len(fixture.files)} boundary_file_bytes={BROWSER_PREFIX_SIZE} "
+            f"pieces={fixture.torrent_info.num_pieces()} files={len(fixture.files)} "
+            f"boundary_file_bytes={BROWSER_PREFIX_SIZE} "
             f"payload_sha1={fixture.payload_hash} responsive=wide,compact,phone "
-            "tracker_counts=peers:1,seeds:37,leeches:11 tracker_requests=2 "
+            f"tracker_requests={0 if disk_pressure else 2} "
             "peer_removal=ok gateway_shutdown=joined cleanup=ok"
         )
     except BaseException as error:
@@ -338,7 +371,8 @@ def main() -> int:
         run(
             arguments.screenshot_dir.resolve()
             if arguments.screenshot_dir is not None
-            else None
+            else None,
+            disk_pressure=arguments.disk_pressure,
         )
     except (ScenarioFailure, OSError, subprocess.SubprocessError) as error:
         print(error, file=sys.stderr)
