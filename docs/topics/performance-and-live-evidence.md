@@ -965,6 +965,24 @@ seconds despite the common fixture. The candidate therefore remains `8/4`,
 but the result also demonstrates why isolated rows cannot select a default;
 the full rotating matrix and repeated finalist cohort remain required.
 
+The retained raw comparator now consists of the
+`rstorrent-storage-stage-profile` diagnostic and
+`tests/interop/storage_stage_profile.py`. Its default 10 GiB/4 MiB workload
+uses a deterministic bijection to permute every 256 KiB positional write, a
+bounded write-complete-per-piece hash queue, the engine's 16 KiB positional
+hash reads, full allocation, exact piece hashes and cleanup. Sync is measured
+after and separately from the transfer-like interval; file hashes are labeled
+warm-cache observations.
+
+The first one-run five-point screen measured combined throughput of 1,017.4,
+1,008.0, 2,020.9, 1,987.3 and 2,237.1 MiB/s at `1/1`, `2/2`, `4/4`, `8/4`
+and `8/8`. Raw writes were 3,369.9--4,018.5 MiB/s; warm file SHA-1 scaled from
+1,278.7 MiB/s at one worker to 8,051.7 MiB/s at eight. Every stage used exact
+operation counts and hashes and cleaned both materialized 10 GiB files. The
+integrated 10 GiB/4 MiB `4/4` median is therefore only 21.4% of its raw
+combined point. SHA-1 hardware capacity is not the current owner; integrated
+write-service inflation and scheduling remain to be profiled.
+
 ## Maintenance Contract
 
 Feature tacticals add measurements only when their owner can report them

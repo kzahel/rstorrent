@@ -302,6 +302,59 @@ full matrix, not a selected default: the retained rotation exposed enough
 cache/order variance that every declared point still needs the common
 piece-size screen and the finalists need repeated cohorts.
 
+## Raw Storage Ceiling Checkpoint
+
+`rstorrent-storage-stage-profile` and
+`tests/interop/storage_stage_profile.py` now retain the hardware-ceiling side
+of the graduation contract. The Rust probe reuses the engine's exact
+positional I/O helper, 16 KiB hash reads and SHA-1 implementation. It measures
+raw writes, warm file-backed hashing, in-memory hashing and a bounded combined
+pipeline that dispatches a piece hash only after all of that piece's writes
+complete. The Python driver rotates declared worker points, fingerprints the
+executable, emits cohort medians and requires exact operation counts, full
+allocation, matching hashes, bounded ready backlog and complete cleanup.
+
+The default raw workload deliberately permutes all 256 KiB write spans across
+the 10 GiB file with a deterministic bijection. This is a harder and more
+representative positional workload than contiguous file construction. The
+ready channel capacity is `write + hash`; reported backlog additionally counts
+at most one blocked completion per writer, so its checked high-water bound is
+`2 * write + hash`. Sync runs after the transfer-like wall interval and is
+reported separately. The profile labels its reads as warm OS-page-cache
+observations; it does not claim an unmeasured cold-cache result.
+
+```bash
+cd tests/interop
+uv run python storage_stage_profile.py \
+  --size-mib 10240 \
+  --piece-size-kib 4096 \
+  --write-chunk-kib 256 \
+  --write-order permuted \
+  --storage-points 1/1 2/2 4/4 8/4 8/8 \
+  --output /tmp/rstorrent-storage-stage-profile.json
+```
+
+The first bounded 10 GiB/4 MiB/256 KiB-write observation used raw-profile
+executable SHA-256
+`2b82632cdbb2869f6d68ed82bf0247ed59316645365e4c7b4f6e95e48af65f31`:
+
+| Point | Raw write MiB/s | Warm file SHA-1 MiB/s | Memory SHA-1 MiB/s | Combined MiB/s |
+| --- | ---: | ---: | ---: | ---: |
+| `1/1` | 4,018.5 | 1,278.7 | 1,386.6 | 1,017.4 |
+| `2/2` | 3,647.7 | 2,385.9 | 2,679.3 | 1,008.0 |
+| `4/4` | 3,447.6 | 4,515.1 | 5,217.5 | 2,020.9 |
+| `8/4` | 3,373.1 | 4,510.1 | 5,216.9 | 1,987.3 |
+| `8/8` | 3,369.9 | 8,051.7 | 10,305.8 | 2,237.1 |
+
+Every row materialized both 10 GiB files, executed 40,960 writes and 2,560
+hashes per hash stage, matched every expected piece hash, respected its ready
+bound and removed both files. This falsifies raw SHA-1 capacity as the current
+bottleneck. The shared integrated 10 GiB/4 MiB `4/4` median of 433.3 MiB/s is
+only 21.4% of the equivalent raw combined observation; even the isolated
+650.2 MiB/s `8/4` row is 32.7% of its raw point. The next action is repeated
+raw-finalist evidence plus an integrated process profile that explains the
+large write-service inflation before selecting a desktop default.
+
 Validation at this checkpoint passed all 173 non-live engine library tests
 with three live-network tests ignored, the focused metainfo geometry tests,
 warning-denying Clippy for protocol and engine, and the comparator's exact

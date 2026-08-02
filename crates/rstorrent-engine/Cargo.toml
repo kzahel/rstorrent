@@ -10,6 +10,10 @@ publish = false
 name = "rstorrent-download-piece"
 path = "src/main.rs"
 
+[[bin]]
+name = "rstorrent-storage-stage-profile"
+path = "src/storage_stage_profile_main.rs"
+
 [dependencies]
 getrandom = { workspace = true }
 rstorrent-protocol = { path = "../rstorrent-protocol" }

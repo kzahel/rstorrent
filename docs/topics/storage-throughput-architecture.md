@@ -864,3 +864,20 @@ every representative piece size. A three-run 10 GiB/4 MiB discriminator made
 `8/4` the current candidate at a 16.136-second median versus 23.631 seconds for
 `4/4`, but 15.477--27.850-second individual results keep selection open until
 the full screen and finalist repetitions complete.
+
+The raw-ceiling side is now executable too. The engine diagnostic uses the
+same positional helper, 16 KiB hash reads and SHA-1 implementation as the
+download path; its driver rotates worker points and proves operation counts,
+full allocation, piece hashes, ready-backlog bounds and cleanup. Its default
+10 GiB/4 MiB workload permutes all 256 KiB write spans with a deterministic
+bijection, hashes a piece only after its writes finish, bounds the ready
+channel at `write + hash`, and reports post-interval sync separately.
+
+The initial full raw sweep reached 2,020.9 MiB/s combined at `4/4`, 1,987.3 at
+`8/4` and 2,237.1 at `8/8`. Warm file SHA-1 alone reached 4,515.1 MiB/s at
+four workers and 8,051.7 MiB/s at eight; raw positional writes remained above
+3,369 MiB/s at every point. All exactness and cleanup gates passed. Against
+that adversarial bounded workload, the integrated 10 GiB/4 MiB `4/4` median
+uses only 21.4% of raw combined capacity. The architecture owner therefore
+remains the integrated scheduling/write-service boundary, not hashing compute
+or a need to raise the worker cap blindly.
