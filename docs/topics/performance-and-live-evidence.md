@@ -1013,6 +1013,21 @@ measured `4/4` at 1,074.1 MiB/s, `8/4` at 1,028.6 MiB/s and libtorrent at
 1,061.4 MiB/s. The retained desktop selection is therefore `4/4`; the former
 `8/4` advantage disappeared with the scheduling correction.
 
+The selected point's SQLite-backed application profile initially remained far
+slower than its engine control: three 128 MiB transfers took 6.894, 7.006 and
+7.044 seconds, while the SQLite-independent steady median was 0.555 seconds.
+A process sample attributed the application gap to synchronous full Disk view
+projection on nearly every block transition, not payload sync, SQLite or
+SHA-1. Ordinary storage observations are now coalesced to 100 ms while
+checkpoint transitions, errors and terminal state force immediate delivery.
+
+The source-fingerprinted application executable
+`b7ab993953f760219b35d9f00cabf3d71cb6877ed7fd1108f11e4853fa081516`
+then completed three transfers in 0.567, 0.534 and 0.524 seconds: a
+0.534-second median, or 239.7 MiB/s. Each run retained exact payload SHA-1,
+512 pieces, four post-metadata durable revisions, publication and cleanup.
+This is a controlled application-path result rather than a public-swarm claim.
+
 ## Maintenance Contract
 
 Feature tacticals add measurements only when their owner can report them

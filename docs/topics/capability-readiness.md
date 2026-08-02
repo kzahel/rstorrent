@@ -128,9 +128,11 @@ place. Its shared-fixture medians and executable throughput/ratio floors now
 make 10 GiB in 60 seconds the first current-machine optimization gate. Raw
 ceilings, the repeated engine matrix and the concurrency finalists now pass;
 every 10 GiB RSTorrent run completes in at most 31.652 seconds and the selected
-desktop bound remains `4/4`. Retain the SQLite-backed application profile and
-complete the controlled/public evidence before graduating or advancing to
-read-through hashing.
+desktop bound remains `4/4`. The retained SQLite-backed 128 MiB application
+profile now completes in a 0.534-second median after removing per-block Disk
+projection, versus its 0.555-second engine control. Complete the closing
+controlled/public evidence before graduating or advancing to read-through
+hashing.
 
 ### Next
 

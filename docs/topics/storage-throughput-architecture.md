@@ -882,5 +882,14 @@ initially used only 21.4% of raw combined capacity. Removing the checked-index
 hot path raised the final integrated median to 1,031.6 MiB/s, or 51.0% of the
 raw combined observation, without increasing concurrency. The remaining
 small- and large-piece gaps are now bounded optimization questions rather than
-a throughput gate failure; the next required evidence is the retained
-SQLite-backed application cohort.
+a throughput gate failure.
+
+The retained SQLite-backed application cohort then isolated a separate
+observation barrier: synchronous full Disk projection on nearly every block
+event produced a 7.006-second median despite the 0.555-second engine control.
+Coalescing ordinary `StorageState` delivery to 100 ms while forcing checkpoint,
+error and terminal observations reduced the repeated application median to
+0.534 seconds (239.7 MiB/s). All three runs retained exact 512-piece state,
+four durable revisions after metadata, payload hash, publication and cleanup.
+The remaining Tactical `054` work is closing controlled/public evidence rather
+than another storage optimization.

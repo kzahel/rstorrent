@@ -411,6 +411,40 @@ integrity, publication, resource-accounting and cleanup assertions. The
 SQLite-backed application and closing interoperability gates remain before
 graduation.
 
+## Application Observation Checkpoint
+
+The selected `4/4` bound initially completed the SQLite-independent 128 MiB
+steady profile in a 0.555-second median, but the matching application-service
+profile still took 7.006 seconds. Three immediate application observations
+were 6.894, 7.006 and 7.044 seconds even though checkpoint revision count,
+payload hash, publication and cleanup were exact. This separated the remaining
+delay from write execution, SHA-1 and SQLite durability.
+
+A process sample found the supervisor spending most runnable time in
+`DownloadControl::emit_storage_state`, then the synchronous application
+`ViewActivitySink::record` path. Each block transition built a complete
+`DiskRuntimeSnapshot`; `ViewHub::record_disk_runtime` then rebuilt retained
+piece maps and formatted their view fields. The 128 MiB/256 KiB profile has
+8,192 blocks, so an inspection projection intended for human-scale updates
+had become the application hot path.
+
+Authoritative disk counters and piece stages still update on every transition,
+but ordinary `StorageState` observations are now coalesced to the existing
+100 ms supervisor maintenance cadence. Checkpoint stage transitions, storage
+errors, failed pieces, clearing and terminal completion force an immediate
+latest snapshot. A deterministic sink test proves several hot mutations emit
+one observation inside the interval and that a forced flush contains the
+exact latest byte totals and piece stage.
+
+With application executable SHA-256
+`b7ab993953f760219b35d9f00cabf3d71cb6877ed7fd1108f11e4853fa081516`,
+the repeated transfer times are 0.567, 0.534 and 0.524 seconds, for a
+0.534-second median (239.7 MiB/s). Every run reports 512 pieces, zero baseline
+pieces, four post-metadata durable revisions, exact payload SHA-1, complete
+publication and cleanup. The SQLite-backed application is therefore no longer
+slower than the contemporaneous 0.555-second engine control; the correction
+improves its median by 13.1 times without weakening checkpoint semantics.
+
 ## Escalation And Next Boundary
 
 Ordinary refactoring, internal naming, tests, concurrency selection within the

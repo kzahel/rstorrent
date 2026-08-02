@@ -105,6 +105,7 @@ const DHT_SUCCESS_REQUERY_DELAY: Duration = Duration::from_secs(60);
 const CONTENT_SWARM_MAINTENANCE_INTERVAL: Duration = Duration::from_millis(100);
 const CONTENT_PEER_DIAGNOSTIC_INTERVAL: Duration = Duration::from_secs(1);
 const PEER_OBSERVATION_INTERVAL: Duration = Duration::from_millis(100);
+const STORAGE_OBSERVATION_INTERVAL: Duration = Duration::from_millis(100);
 const MAX_METADATA_PEERS: usize = 8;
 const METADATA_SCHEDULER_TICK: Duration = Duration::from_millis(100);
 const MAX_RECENT_METADATA_ATTEMPTS: usize = 64;
@@ -510,6 +511,7 @@ struct DownloadControlInner {
     storage_write_batch_bytes_high_water: AtomicUsize,
     storage_active: Mutex<StorageActiveOperations>,
     disk_runtime: Mutex<DiskRuntimeState>,
+    last_storage_emitted_at: Mutex<Option<Instant>>,
     activity_sink: Mutex<Option<Arc<dyn DownloadActivitySink>>>,
     last_swarm_activity: Mutex<Option<SwarmActivitySnapshot>>,
     last_content_peers: Mutex<(Option<Duration>, Vec<ContentPeerActivitySnapshot>)>,
@@ -820,6 +822,7 @@ impl DownloadControl {
                 storage_write_batch_bytes_high_water: AtomicUsize::new(0),
                 storage_active: Mutex::new(StorageActiveOperations::default()),
                 disk_runtime: Mutex::new(DiskRuntimeState::default()),
+                last_storage_emitted_at: Mutex::new(None),
                 activity_sink: Mutex::new(None),
                 last_swarm_activity: Mutex::new(None),
                 last_content_peers: Mutex::new((None, Vec::new())),
@@ -1676,7 +1679,7 @@ impl DownloadControl {
         state.low_watermark_bytes = resident_limit_bytes.checked_div(2).unwrap_or_default();
         state.pressure = DiskPressure::Normal;
         drop(state);
-        self.emit_storage_state();
+        self.emit_storage_state_force();
     }
 
     fn storage_backpressured(&self) -> bool {
@@ -1854,7 +1857,7 @@ impl DownloadControl {
             }
         }
         drop(state);
-        self.emit_storage_state();
+        self.emit_storage_state_force();
     }
 
     fn disk_checkpoint_sync_completed(&self, batch: &CheckpointBatch, elapsed: Duration) {
@@ -1879,7 +1882,7 @@ impl DownloadControl {
             }
         }
         drop(state);
-        self.emit_storage_state();
+        self.emit_storage_state_force();
     }
 
     fn disk_checkpoint_completed(&self, batch: &CheckpointBatch, elapsed: Duration) {
@@ -1909,7 +1912,7 @@ impl DownloadControl {
         let resident = self.inner.buffered_payload_bytes.load(Ordering::Acquire);
         drop(state);
         self.update_disk_pressure(resident);
-        self.emit_storage_state();
+        self.emit_storage_state_force();
     }
 
     fn disk_checkpoint_failed(&self, batch: &CheckpointBatch, elapsed: Duration, detail: &str) {
@@ -1947,7 +1950,7 @@ impl DownloadControl {
             }
         }
         drop(state);
-        self.emit_storage_state();
+        self.emit_storage_state_force();
     }
 
     fn disk_piece_failed(&self, piece_index: u32, piece_length: u32, detail: &str) {
@@ -1963,7 +1966,7 @@ impl DownloadControl {
             piece.error = Some(bounded_diagnostic_detail(detail));
             set_disk_piece_stage(piece, DiskPieceStage::Failed, now);
         });
-        self.emit_storage_state();
+        self.emit_storage_state_force();
     }
 
     fn disk_storage_error(&self, detail: &str) {
@@ -1980,7 +1983,7 @@ impl DownloadControl {
                 .saturating_add(Instant::now().saturating_duration_since(started));
         }
         drop(state);
-        self.emit_storage_state();
+        self.emit_storage_state_force();
     }
 
     fn mutate_disk_piece<T>(
@@ -2057,6 +2060,28 @@ impl DownloadControl {
     }
 
     fn emit_storage_state(&self) {
+        self.emit_storage_state_inner(false);
+    }
+
+    fn emit_storage_state_force(&self) {
+        self.emit_storage_state_inner(true);
+    }
+
+    fn emit_storage_state_inner(&self, force: bool) {
+        let now = Instant::now();
+        let mut last_emitted_at = self
+            .inner
+            .last_storage_emitted_at
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !force
+            && last_emitted_at.is_some_and(|previous| {
+                now.saturating_duration_since(previous) < STORAGE_OBSERVATION_INTERVAL
+            })
+        {
+            return;
+        }
+        *last_emitted_at = Some(now);
         self.emit(DownloadActivityEvent::StorageState(Box::new(
             self.disk_snapshot(),
         )));
@@ -2320,7 +2345,7 @@ impl DownloadControl {
                 .saturating_add(Instant::now().saturating_duration_since(started));
         }
         drop(state);
-        self.emit_storage_state();
+        self.emit_storage_state_force();
     }
 
     fn clear_buffered_payload(&self) {
@@ -2328,7 +2353,7 @@ impl DownloadControl {
             .buffered_payload_bytes
             .store(0, Ordering::Release);
         self.update_disk_pressure(0);
-        self.emit_storage_state();
+        self.emit_storage_state_force();
     }
 
     fn clear_outstanding_requests(&self) {
@@ -7718,6 +7743,7 @@ async fn run_selective_swarm_loop(
                     .map_err(DownloadError::Swarm)?;
             }
             download.control.observe_swarm(&download.state, now);
+            download.control.emit_storage_state();
             peers.observe_content_peers(&download.state)?;
             next_maintenance_at = now.saturating_add(CONTENT_SWARM_MAINTENANCE_INTERVAL);
         }
@@ -7775,6 +7801,7 @@ async fn run_selective_swarm_loop(
         if download.is_complete() {
             let now = peers.elapsed();
             download.control.observe_swarm(&download.state, now);
+            download.control.emit_storage_state_force();
             peers.observe_content_peers(&download.state)?;
             return Ok(());
         }
@@ -13369,6 +13396,56 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .push(event);
         }
+    }
+
+    #[test]
+    fn storage_state_emission_coalesces_hot_updates_and_force_flushes_latest() {
+        let control = DownloadControl::new();
+        let activity = Arc::new(RecordingActivitySink::default());
+        control.set_activity_sink(activity.clone());
+        control.configure_disk_runtime(MIN_PAYLOAD_ALLOWANCE);
+
+        let block = BlockKey {
+            piece: 7,
+            begin: 0,
+            length: 16,
+        };
+        control.disk_block_requested(block, 16);
+        control.disk_block_received(block, 16);
+        control.disk_block_stored(block, 16);
+
+        {
+            let events = activity
+                .events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|event| matches!(event, DownloadActivityEvent::StorageState(_)))
+                    .count(),
+                1,
+                "hot mutations inside the observation interval stay coalesced"
+            );
+        }
+
+        control.emit_storage_state_force();
+
+        let events = activity
+            .events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let snapshots = events.iter().filter_map(|event| match event {
+            DownloadActivityEvent::StorageState(snapshot) => Some(snapshot.as_ref()),
+            _ => None,
+        });
+        assert_eq!(snapshots.clone().count(), 2);
+        let latest = snapshots.last().expect("forced latest storage snapshot");
+        assert_eq!(latest.received_bytes_total, 16);
+        assert_eq!(latest.stored_bytes_total, 16);
+        assert_eq!(latest.pieces.len(), 1);
+        assert_eq!(latest.pieces[0].requested_bytes, 16);
+        assert_eq!(latest.pieces[0].stage, DiskPieceStage::Stored);
     }
 
     async fn serve_empty_udp_tracker(socket: UdpSocket) {

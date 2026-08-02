@@ -267,6 +267,16 @@ positional hash job, but one FIFO storage owner still leaves queued verifies
 as `Stored` until hashing begins. Its retained engine profile lowers write
 service without inventing a new stage or treating queued time as SHA-1 work.
 
+Tactical `054` replaces that FIFO with independently bounded write and hash
+execution while retaining the same stage vocabulary. Its application profile
+also found that synchronously projecting a complete Disk snapshot on every
+16 KiB block transition dominated the supervisor. Authoritative counters and
+stages remain exact at transition time, while ordinary `StorageState`
+observations are now coalesced to a 100 ms cadence and checkpoint transitions,
+errors, clearing and terminal completion force the latest state immediately.
+This moved the SQLite-backed 128 MiB median from 7.006 to 0.534 seconds without
+turning inspection state into storage policy.
+
 ## Known Gaps After This Sequence
 
 - the proposed session-wide multi-torrent storage scheduler and measured fair

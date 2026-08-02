@@ -620,8 +620,13 @@ write service fell from 30.928--31.979 to 27.131--28.353 seconds. The exact
 SQLite-backed median was 45.594 seconds with 17--18 revisions, unchanged
 checkpoint semantics and exact payload/publication/cleanup.
 
-Next executable action: retain Tactical `054`'s SQLite-backed application
-cohort at the selected `4/4` bound, then run its closing controlled/public
+Tactical `054`'s retained SQLite-backed application cohort now completes in a
+0.534-second median at the selected `4/4` bound, versus a 0.555-second
+SQLite-independent engine control. Process evidence identified and removed
+per-block synchronous Disk projection while retaining exact checkpoint state,
+payload, publication and cleanup.
+
+Next executable action: run Tactical `054`'s closing controlled/public
 evidence and workspace gates.
 
 Human blocker: **none**.
