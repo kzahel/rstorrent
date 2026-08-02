@@ -597,6 +597,9 @@ struct BlockState {
 struct PieceState {
     blocks: Vec<BlockKey>,
     working_set_bytes: usize,
+    missing_blocks: usize,
+    active_blocks: usize,
+    first_missing_block: usize,
     storage: PieceStorageJoin,
 }
 
@@ -817,6 +820,9 @@ impl SwarmState {
                 plan.index,
                 PieceState {
                     storage: PieceStorageJoin::new(plan.blocks.len()),
+                    missing_blocks: plan.blocks.len(),
+                    active_blocks: 0,
+                    first_missing_block: 0,
                     blocks: plan.blocks,
                     working_set_bytes,
                 },
@@ -1302,6 +1308,7 @@ impl SwarmState {
                 .missing_blocks
                 .checked_add(1)
                 .ok_or(SwarmError::ArithmeticOverflow("missing block count"))?;
+            self.note_piece_block_became_missing(block)?;
             self.release_unverified_contribution(source)?;
             self.deactivate_piece_if_idle(block.piece)?;
             self.refresh_requestable_piece(block.piece)?;
@@ -1340,15 +1347,7 @@ impl SwarmState {
             .pieces
             .get(&piece)
             .ok_or(SwarmError::UnknownPiece(piece))?;
-        let blocks_ready = piece.blocks.iter().all(|block| {
-            self.blocks.get(block).is_some_and(|block| {
-                matches!(
-                    block.phase,
-                    BlockPhase::Received { .. } | BlockPhase::Verified
-                )
-            })
-        });
-        Ok(blocks_ready && piece.storage.hash_eligible(generation)?)
+        piece.storage.hash_eligible(generation)
     }
 
     pub fn begin_piece_hash(
@@ -1428,6 +1427,15 @@ impl SwarmState {
             .into_iter()
             .collect();
         let block_count = blocks.len();
+        let piece_state = self
+            .pieces
+            .get(&piece)
+            .ok_or(SwarmError::UnknownPiece(piece))?;
+        if piece_state.missing_blocks != 0 || piece_state.active_blocks != block_count {
+            return Err(SwarmError::Invariant(
+                "verified piece block counters do not match received blocks",
+            ));
+        }
         for block in blocks {
             self.blocks
                 .get_mut(&block)
@@ -1442,6 +1450,12 @@ impl SwarmState {
             .verified_blocks
             .checked_add(block_count)
             .ok_or(SwarmError::ArithmeticOverflow("verified block count"))?;
+        let piece_state = self
+            .pieces
+            .get_mut(&piece)
+            .ok_or(SwarmError::UnknownPiece(piece))?;
+        piece_state.active_blocks = 0;
+        piece_state.first_missing_block = piece_state.blocks.len();
         for source in contributor_sources {
             self.release_unverified_contribution(source)?;
         }
@@ -1507,6 +1521,15 @@ impl SwarmState {
                 .ok_or(SwarmError::ArithmeticOverflow("failed piece bytes"))
         })?;
         let block_count = blocks.len();
+        let piece_state = self
+            .pieces
+            .get(&piece)
+            .ok_or(SwarmError::UnknownPiece(piece))?;
+        if piece_state.missing_blocks != 0 || piece_state.active_blocks != block_count {
+            return Err(SwarmError::Invariant(
+                "failed piece block counters do not match received blocks",
+            ));
+        }
         for block in blocks {
             self.blocks
                 .get_mut(&block)
@@ -1521,6 +1544,13 @@ impl SwarmState {
             .missing_blocks
             .checked_add(block_count)
             .ok_or(SwarmError::ArithmeticOverflow("missing block count"))?;
+        let piece_state = self
+            .pieces
+            .get_mut(&piece)
+            .ok_or(SwarmError::UnknownPiece(piece))?;
+        piece_state.missing_blocks = block_count;
+        piece_state.active_blocks = 0;
+        piece_state.first_missing_block = 0;
         for source in contributor_sources {
             self.release_unverified_contribution(source)?;
         }
@@ -1609,6 +1639,7 @@ impl SwarmState {
                 .missing_blocks
                 .checked_add(1)
                 .ok_or(SwarmError::ArithmeticOverflow("missing block count"))?;
+            self.note_piece_block_became_missing(block)?;
             self.release_unverified_contribution(source)?;
         }
         self.active_pieces.clear();
@@ -1941,16 +1972,8 @@ impl SwarmState {
     }
 
     fn first_missing_block(&self, piece: u32) -> Option<BlockKey> {
-        self.pieces
-            .get(&piece)?
-            .blocks
-            .iter()
-            .copied()
-            .find(|block| {
-                self.blocks
-                    .get(block)
-                    .is_some_and(|block| matches!(block.phase, BlockPhase::Missing))
-            })
+        let piece = self.pieces.get(&piece)?;
+        piece.blocks.get(piece.first_missing_block).copied()
     }
 
     fn piece_working_set_bytes(&self, piece: usize) -> usize {
@@ -2030,6 +2053,7 @@ impl SwarmState {
                 .requested_blocks
                 .checked_add(1)
                 .ok_or(SwarmError::ArithmeticOverflow("requested block count"))?;
+            self.note_piece_block_assigned(block)?;
             self.activate_piece(block.piece)?;
         }
         let attempt = RequestAttempt {
@@ -2123,6 +2147,7 @@ impl SwarmState {
                 .missing_blocks
                 .checked_add(1)
                 .ok_or(SwarmError::ArithmeticOverflow("missing block count"))?;
+            self.note_piece_block_became_missing(block)?;
             self.deactivate_piece_if_idle(block.piece)?;
             self.refresh_requestable_piece(block.piece)?;
         }
@@ -2234,7 +2259,13 @@ impl SwarmState {
     fn refresh_requestable_piece(&mut self, piece: u32) -> Result<(), SwarmError> {
         let index =
             usize::try_from(piece).map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
-        if self.active_pieces.contains(&index) && self.first_missing_block(piece).is_some() {
+        let has_missing = self
+            .pieces
+            .get(&piece)
+            .ok_or(SwarmError::UnknownPiece(piece))?
+            .missing_blocks
+            != 0;
+        if self.active_pieces.contains(&index) && has_missing {
             self.requestable_active_pieces.insert(index);
         } else {
             self.requestable_active_pieces.remove(&index);
@@ -2243,25 +2274,87 @@ impl SwarmState {
     }
 
     fn deactivate_piece_if_idle(&mut self, piece: u32) -> Result<(), SwarmError> {
-        let active = self
+        let active_blocks = self
             .pieces
             .get(&piece)
             .ok_or(SwarmError::UnknownPiece(piece))?
-            .blocks
-            .iter()
-            .any(|block| {
-                self.blocks.get(block).is_some_and(|block| {
-                    matches!(
-                        block.phase,
-                        BlockPhase::Requested
-                            | BlockPhase::Writing { .. }
-                            | BlockPhase::Received { .. }
-                    )
-                })
-            });
-        if !active {
+            .active_blocks;
+        if active_blocks == 0 {
             self.deactivate_piece(piece)?;
         }
+        Ok(())
+    }
+
+    fn note_piece_block_assigned(&mut self, block: BlockKey) -> Result<(), SwarmError> {
+        let piece = self
+            .pieces
+            .get(&block.piece)
+            .ok_or(SwarmError::UnknownPiece(block.piece))?;
+        let position = piece
+            .blocks
+            .binary_search(&block)
+            .map_err(|_| SwarmError::UnknownBlock(block))?;
+        if position != piece.first_missing_block {
+            return Err(SwarmError::Invariant(
+                "assigned block is not the cached first missing block",
+            ));
+        }
+        let missing_blocks = piece
+            .missing_blocks
+            .checked_sub(1)
+            .ok_or(SwarmError::Invariant("piece missing block count underflow"))?;
+        let first_missing_block = if missing_blocks == 0 {
+            piece.blocks.len()
+        } else {
+            piece
+                .blocks
+                .iter()
+                .enumerate()
+                .skip(position + 1)
+                .find_map(|(index, candidate)| {
+                    self.blocks
+                        .get(candidate)
+                        .is_some_and(|state| matches!(state.phase, BlockPhase::Missing))
+                        .then_some(index)
+                })
+                .ok_or(SwarmError::Invariant(
+                    "piece missing block cursor has no missing block",
+                ))?
+        };
+        let piece = self
+            .pieces
+            .get_mut(&block.piece)
+            .ok_or(SwarmError::UnknownPiece(block.piece))?;
+        piece.missing_blocks = piece
+            .missing_blocks
+            .checked_sub(1)
+            .ok_or(SwarmError::Invariant("piece missing block count underflow"))?;
+        piece.active_blocks = piece
+            .active_blocks
+            .checked_add(1)
+            .ok_or(SwarmError::ArithmeticOverflow("piece active block count"))?;
+        piece.first_missing_block = first_missing_block;
+        Ok(())
+    }
+
+    fn note_piece_block_became_missing(&mut self, block: BlockKey) -> Result<(), SwarmError> {
+        let piece = self
+            .pieces
+            .get_mut(&block.piece)
+            .ok_or(SwarmError::UnknownPiece(block.piece))?;
+        let position = piece
+            .blocks
+            .binary_search(&block)
+            .map_err(|_| SwarmError::UnknownBlock(block))?;
+        piece.active_blocks = piece
+            .active_blocks
+            .checked_sub(1)
+            .ok_or(SwarmError::Invariant("piece active block count underflow"))?;
+        piece.missing_blocks = piece
+            .missing_blocks
+            .checked_add(1)
+            .ok_or(SwarmError::ArithmeticOverflow("piece missing block count"))?;
+        piece.first_missing_block = piece.first_missing_block.min(position);
         Ok(())
     }
 
@@ -2545,6 +2638,26 @@ mod tests {
                 connection.active_request_count,
                 connection_requests.get(id).copied().unwrap_or(0)
             );
+        }
+        for piece_state in state.pieces.values() {
+            let mut missing_blocks = 0;
+            let mut active_blocks = 0;
+            let mut first_missing_block = piece_state.blocks.len();
+            for (index, block) in piece_state.blocks.iter().enumerate() {
+                match state.blocks.get(block).expect("planned block").phase {
+                    BlockPhase::Missing => {
+                        missing_blocks += 1;
+                        first_missing_block = first_missing_block.min(index);
+                    }
+                    BlockPhase::Requested
+                    | BlockPhase::Writing { .. }
+                    | BlockPhase::Received { .. } => active_blocks += 1,
+                    BlockPhase::Verified => {}
+                }
+            }
+            assert_eq!(piece_state.missing_blocks, missing_blocks);
+            assert_eq!(piece_state.active_blocks, active_blocks);
+            assert_eq!(piece_state.first_missing_block, first_missing_block);
         }
 
         let incomplete_pieces = state

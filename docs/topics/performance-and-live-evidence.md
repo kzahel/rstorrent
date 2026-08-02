@@ -983,6 +983,36 @@ integrated 10 GiB/4 MiB `4/4` median is therefore only 21.4% of its raw
 combined point. SHA-1 hardware capacity is not the current owner; integrated
 write-service inflation and scheduling remain to be profiled.
 
+The resulting five-second integrated process sample found that the supervisor
+still scanned all blocks in a piece to locate the first missing request,
+refresh requestability, detect idleness and confirm hash eligibility. Checked
+per-piece missing/active counts and a retry-safe first-missing cursor now make
+those hot decisions scalar. The existing generation join already proves one
+successful write completion for every planned block before hashing; test-only
+recomputation independently validates the cached values from block phases.
+
+With executable SHA-256
+`7bf6b1f3f129dff1e5e3eba5c5cc802680db12120743003428d6c1119db32ac7`,
+the final three-run `4/4` medians are:
+
+| Size | Piece | RSTorrent MiB/s | libtorrent MiB/s | RST/libtorrent |
+| --- | ---: | ---: | ---: | ---: |
+| 1 GiB | 256 KiB | 506.3 | 481.6 | 105.1% |
+| 1 GiB | 1 MiB | 699.3 | 497.5 | 140.6% |
+| 1 GiB | 4 MiB | 757.6 | 515.3 | 147.0% |
+| 1 GiB | 16 MiB | 715.3 | 491.4 | 145.6% |
+| 10 GiB | 256 KiB | 336.2 | 471.5 | 71.3% |
+| 10 GiB | 1 MiB | 804.4 | 559.2 | 143.8% |
+| 10 GiB | 4 MiB | 1,031.6 | 1,074.4 | 96.0% |
+| 10 GiB | 16 MiB | 720.3 | 1,031.8 | 69.8% |
+
+All 24 RSTorrent observations passed exact-byte, whole-file SHA-1, zero
+failed/redundant payload, publication and cleanup checks. Every 10 GiB run
+finished in 9.408--31.652 seconds. A final 10 GiB/4 MiB concurrency cohort
+measured `4/4` at 1,074.1 MiB/s, `8/4` at 1,028.6 MiB/s and libtorrent at
+1,061.4 MiB/s. The retained desktop selection is therefore `4/4`; the former
+`8/4` advantage disappeared with the scheduling correction.
+
 ## Maintenance Contract
 
 Feature tacticals add measurements only when their owner can report them

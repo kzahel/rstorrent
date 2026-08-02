@@ -28,9 +28,10 @@ durability, cuts the retained SQLite-backed cohort median by 7.4%, and reduces
 per-piece-handle barriers through retained generation-checked positional plans;
 its engine median improves 5.9% and write service falls by roughly four
 seconds. Tactical `054` now adds bounded independent write/hash execution and
-checked scheduler indexes whose controlled 10 GiB rows all complete below
-36 seconds; raw-stage/concurrency sweeps and the retained application profile
-remain before graduation.
+checked scheduler and per-piece indexes whose repeated controlled 10 GiB rows
+all complete below 32 seconds. The final 4 MiB median reaches 96% of
+libtorrent, `4/4` beats the `8/4` finalist, and the retained application
+profile remains before graduation.
 Tactical `033` now completes the leased application view-set and headless
 polling foundation. Tactical `034` completes the responsive frontend,
 deterministic demo adapter, adaptive inspection hierarchy, and virtual table
@@ -124,12 +125,12 @@ evidence.
 **Complete Tactical `054`'s throughput graduation.** Independent write/hash
 capacity, explicit generation joins and the large local comparator are now in
 place. Its shared-fixture medians and executable throughput/ratio floors now
-make 10 GiB in 60 seconds the first current-machine optimization gate. Measure
-raw write/hash ceilings, sweep the declared concurrency points, repeat the
-controlled engine cohort, and retain the SQLite-backed application profile
-before choosing final defaults or advancing to read-through hashing. The first
-bounded permuted raw sweep now proves SHA-1 and positional hardware capacity
-far above the integrated pipeline; explain its write-service inflation next.
+make 10 GiB in 60 seconds the first current-machine optimization gate. Raw
+ceilings, the repeated engine matrix and the concurrency finalists now pass;
+every 10 GiB RSTorrent run completes in at most 31.652 seconds and the selected
+desktop bound remains `4/4`. Retain the SQLite-backed application profile and
+complete the controlled/public evidence before graduating or advancing to
+read-through hashing.
 
 ### Next
 

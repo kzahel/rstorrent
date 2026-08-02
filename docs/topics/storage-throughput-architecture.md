@@ -846,24 +846,24 @@ now runs independently bounded write and hash jobs with an explicit
 piece-generation join. Its large local baseline additionally replaced
 per-event whole-swarm snapshots, per-piece whole-block contributor scans and
 active-piece scans that included fully requested work with checked incremental
-indexes. A controlled 10 GiB/256 KiB transfer now completes in 30.042 seconds
-at 340.9 MiB/s versus pinned libtorrent's 28.243 seconds and 362.6 MiB/s; the
-same row took 119.525 seconds immediately before the requestable-piece index
-and failed to finish in more than four minutes before the first scaling fix.
-All four 10 GiB RSTorrent piece-size rows finish below 36 seconds with exact
-hashes and cleanup, but 4 MiB and 16 MiB pieces retain material write-service
-gaps. The active slice therefore proceeds to raw-stage/concurrency sweeps and
-repeated engine/application cohorts rather than claiming graduation.
+indexes. A later process profile exposed repeated per-block scans within each
+piece; checked missing/active counters and a first-missing cursor now remove
+those geometry costs while the generation join remains the hash-integrity
+authority. The repeated 10 GiB matrix finishes every RSTorrent observation in
+9.408--31.652 seconds with exact hashes and cleanup.
 
 The large comparator now owns the first optimization gate rather than serving
 only as an observational screen. It can rotate several `WRITE/HASH` points
 against one libtorrent observation on a shared fixture, reports cohort medians
 and ratios, and can fail an explicit throughput floor. The current machine's
 retained floor is 170.667 MiB/s, equivalent to 10 GiB in 60 seconds, across
-every representative piece size. A three-run 10 GiB/4 MiB discriminator made
-`8/4` the current candidate at a 16.136-second median versus 23.631 seconds for
-`4/4`, but 15.477--27.850-second individual results keep selection open until
-the full screen and finalist repetitions complete.
+every representative piece size. The final three-run 10 GiB medians are
+336.2, 804.4, 1,031.6 and 720.3 MiB/s at 256 KiB, 1 MiB, 4 MiB and 16 MiB
+pieces. Pinned libtorrent reaches 471.5, 559.2, 1,074.4 and 1,031.8 MiB/s in
+the matching cohorts. A current-code finalist gives `4/4` a 1,074.1 MiB/s
+median versus 1,028.6 MiB/s for `8/4`, so the selected desktop bound remains
+`4/4` rather than spending twice the write-job capacity without a measured
+gain.
 
 The raw-ceiling side is now executable too. The engine diagnostic uses the
 same positional helper, 16 KiB hash reads and SHA-1 implementation as the
@@ -878,6 +878,9 @@ The initial full raw sweep reached 2,020.9 MiB/s combined at `4/4`, 1,987.3 at
 four workers and 8,051.7 MiB/s at eight; raw positional writes remained above
 3,369 MiB/s at every point. All exactness and cleanup gates passed. Against
 that adversarial bounded workload, the integrated 10 GiB/4 MiB `4/4` median
-uses only 21.4% of raw combined capacity. The architecture owner therefore
-remains the integrated scheduling/write-service boundary, not hashing compute
-or a need to raise the worker cap blindly.
+initially used only 21.4% of raw combined capacity. Removing the checked-index
+hot path raised the final integrated median to 1,031.6 MiB/s, or 51.0% of the
+raw combined observation, without increasing concurrency. The remaining
+small- and large-piece gaps are now bounded optimization questions rather than
+a throughput gate failure; the next required evidence is the retained
+SQLite-backed application cohort.

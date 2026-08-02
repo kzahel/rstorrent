@@ -14,9 +14,11 @@ Tactical [`052`](../tactical/052-batched-durability-checkpoints.md) has
 completed its checkpoint split and retained performance gate; Tactical
 [`053`](../tactical/053-immutable-positional-storage-plans.md) has completed
 the immutable positional-storage slice. Bounded independent write/hash
-execution is the next source-first slice. The intervening desktop inspection and
-view-set foundations are complete enough to expose the new checkpoint stages
-as the engine evolves.
+execution, raw ceilings and the repeated large-transfer matrix now pass in
+Tactical [`054`](../tactical/054-bounded-independent-storage-execution.md);
+the SQLite-backed application cohort and closing interoperability evidence
+remain. The intervening desktop inspection and view-set foundations are
+complete enough to expose the new checkpoint stages as the engine evolves.
 High-impact BEP breadth still follows the core common-denominator parity gate.
 
 ## Purpose And Scope
@@ -618,8 +620,8 @@ write service fell from 30.928--31.979 to 27.131--28.353 seconds. The exact
 SQLite-backed median was 45.594 seconds with 17--18 revisions, unchanged
 checkpoint semantics and exact payload/publication/cleanup.
 
-Next executable action: execute Tactical `054` from the pinned libtorrent disk
-job/fence and hashing owners, choosing explicit initial write/hash limits and
-a piece-generation completion join before changing execution concurrency.
+Next executable action: retain Tactical `054`'s SQLite-backed application
+cohort at the selected `4/4` bound, then run its closing controlled/public
+evidence and workspace gates.
 
 Human blocker: **none**.

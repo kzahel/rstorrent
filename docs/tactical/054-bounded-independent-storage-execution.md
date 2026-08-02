@@ -351,14 +351,64 @@ hashes per hash stage, matched every expected piece hash, respected its ready
 bound and removed both files. This falsifies raw SHA-1 capacity as the current
 bottleneck. The shared integrated 10 GiB/4 MiB `4/4` median of 433.3 MiB/s is
 only 21.4% of the equivalent raw combined observation; even the isolated
-650.2 MiB/s `8/4` row is 32.7% of its raw point. The next action is repeated
-raw-finalist evidence plus an integrated process profile that explains the
-large write-service inflation before selecting a desktop default.
+650.2 MiB/s `8/4` row is 32.7% of its raw point.
 
-Validation at this checkpoint passed all 173 non-live engine library tests
-with three live-network tests ignored, the focused metainfo geometry tests,
-warning-denying Clippy for protocol and engine, and the comparator's exact
-integrity and cleanup assertions. Full workspace gates remain required before
+## Checked Piece-Index Checkpoint
+
+A five-second process sample of a controlled 10 GiB/4 MiB `4/4` run separated
+the remaining integrated gap from raw storage. The transfer completed in
+16.162 seconds at 633.6 MiB/s versus libtorrent's 9.458 seconds and 1,082.7
+MiB/s. SHA-1 compression and positional writes were the expected worker hot
+paths, but the single supervisor also repeatedly walked every block in a
+piece to find the first missing request, refresh requestability, decide
+whether a piece was idle and confirm hash readiness. That cost grows from 16
+blocks at 256 KiB pieces to 1,024 blocks at 16 MiB pieces.
+
+`PieceState` now owns checked missing/active block counts and a first-missing
+cursor. Ordinary assignment advances the cursor, retry transitions move it
+back when necessary, and hash pass/failure update the whole-piece counters in
+one checked transition. Hash eligibility reads the existing generation join:
+exactly one successful write completion is required for every planned block,
+so a second phase scan supplied no additional integrity fact. Test-only
+recomputation derives every new scalar and cursor from block phases across
+assignment, retry, cancellation, hash failure and verification.
+
+The final retained comparator executable has SHA-256
+`7bf6b1f3f129dff1e5e3eba5c5cc802680db12120743003428d6c1119db32ac7`.
+Three-run `4/4` medians are:
+
+| Size | Piece | RSTorrent time | RSTorrent MiB/s | libtorrent time | libtorrent MiB/s | RST/libtorrent |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 GiB | 256 KiB | 2.023 s | 506.3 | 2.126 s | 481.6 | 105.1% |
+| 1 GiB | 1 MiB | 1.464 s | 699.3 | 2.058 s | 497.5 | 140.6% |
+| 1 GiB | 4 MiB | 1.352 s | 757.6 | 1.987 s | 515.3 | 147.0% |
+| 1 GiB | 16 MiB | 1.432 s | 715.3 | 2.084 s | 491.4 | 145.6% |
+| 10 GiB | 256 KiB | 30.454 s | 336.2 | 21.718 s | 471.5 | 71.3% |
+| 10 GiB | 1 MiB | 12.731 s | 804.4 | 18.312 s | 559.2 | 143.8% |
+| 10 GiB | 4 MiB | 9.927 s | 1,031.6 | 9.531 s | 1,074.4 | 96.0% |
+| 10 GiB | 16 MiB | 14.216 s | 720.3 | 9.924 s | 1,031.8 | 69.8% |
+
+All 24 RSTorrent observations reported exact payload bytes, zero failed and
+redundant bytes, the expected whole-file SHA-1, complete publication and
+successful cleanup. Every 10 GiB observation finished in at most 31.652
+seconds, leaving nearly a twofold margin against the 60-second gate even for
+the 256 KiB geometry. The 4 MiB median moved from 23.631 seconds before this
+index slice to 9.927 seconds; 16 MiB moved from the earlier 35.451-second
+single observation to a 14.216-second median.
+
+A final common-fixture 10 GiB/4 MiB cohort re-ran the former concurrency
+finalists after the correction. `4/4` reached a 9.534-second median (1,074.1
+MiB/s), `8/4` reached 9.956 seconds (1,028.6 MiB/s), and libtorrent reached
+9.647 seconds (1,061.4 MiB/s). Doubling writers no longer improves this
+workload and raises summed write service and blocking-job occupancy. The
+selected desktop default therefore remains the smaller `4/4` bound.
+
+Validation at this checkpoint passed formatting, warning-denying Clippy for
+the full workspace and `cargo test --workspace`, including all 173 non-live
+engine library tests with three live-network tests ignored. The repeated
+large comparator additionally passed its explicit throughput floor, exact
+integrity, publication, resource-accounting and cleanup assertions. The
+SQLite-backed application and closing interoperability gates remain before
 graduation.
 
 ## Escalation And Next Boundary
