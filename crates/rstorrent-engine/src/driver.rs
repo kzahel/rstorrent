@@ -7674,9 +7674,8 @@ async fn run_selective_download(
         selected_written_bytes,
         part_written_bytes,
         outstanding_request_high_water,
-        last_piece,
     ) = if plans.is_empty() {
-        (0, 0, 0, 0, 0, None)
+        (0, 0, 0, 0, 0)
     } else {
         let download = ContentSwarmDownload::new(
             config.swarm_config,
@@ -7701,7 +7700,6 @@ async fn run_selective_download(
                 .state
                 .snapshot(peers.elapsed())
                 .outstanding_request_high_water,
-            completed.last_piece,
         );
         let returned_storage = completed.take_storage()?;
         drop(completed);
@@ -7768,7 +7766,10 @@ async fn run_selective_download(
     }
     Ok(DownloadReport {
         info_hash: metainfo.info_hash,
-        piece_hash: last_piece.map_or(metainfo.piece_hashes[last_wanted_piece], |piece| piece.hash),
+        // Selective pieces may complete in any order. Keep the diagnostic
+        // report stable by naming the highest-index wanted piece rather than
+        // whichever verification completion happened to arrive last.
+        piece_hash: metainfo.piece_hashes[last_wanted_piece],
         bytes_written: total_bytes,
         block_count: total_blocks,
         payload_limit: config.max_buffered_payload_bytes,
