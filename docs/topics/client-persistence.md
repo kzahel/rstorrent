@@ -366,9 +366,10 @@ successful mutation unreadable after upgrade.
 - Tactical `052` is implementing the accepted bounded durability epochs from
   [`storage-throughput-architecture.md`](storage-throughput-architecture.md);
   the joined runtime owner, exact batch commit, matched controlled profile and
-  a mid-epoch forced-death resume case now pass. Explicit pre-sync,
-  post-sync/pre-commit and post-commit crash fixtures remain open until that
-  tactical graduates.
+  a mid-epoch forced-death resume case now pass. Exact pre-sync and
+  post-sync/pre-commit crashes retain zero false have bits; an exact
+  post-commit crash retains and rechecks five claims while redownloading only
+  the remaining 251 pieces. Broader filesystem failure profiles remain open.
 - The exact clean-shutdown, storage-generation, and file-observation evidence
   required before a later fast-resume path may skip hashing.
 - How completed payload moved outside the application is deliberately

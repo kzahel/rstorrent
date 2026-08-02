@@ -302,6 +302,11 @@ to 16--18 revisions and a 45.221-second median from 50.085 seconds. A
 forced-death run persisted 112 of 128 pieces, detected one deliberately
 corrupted claimed piece on restart, retained the other 111 and downloaded
 exactly the corrupt plus missing payload before exact completion.
+The exact checkpoint crash matrix additionally kills the diagnostic child
+before sync, after sync but before SQLite, and immediately after SQLite. The
+first two cases retain zero have bits and redownload all 64 MiB; the third
+retains five rechecked pieces and downloads exactly the remaining 251. Every
+restart matches the external payload hash and cleans all owned artifacts.
 Immutable positional spans and bounded independent write/hash execution remain
 later tacticals. Peer selection and request policy are unchanged.
 

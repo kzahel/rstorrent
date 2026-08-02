@@ -583,7 +583,13 @@ the application Disk projection, generated clients and the existing Disk
 panel. Hash timing ends at SHA-1; dirty, syncing and committing are distinct,
 with separate sync and SQLite service durations.
 
-Next executable action: add deterministic sync/database delay, failure,
-capacity and final-flush evidence before the subprocess crash-boundary matrix.
+Deterministic delay, true byte-bound backpressure, forced partial flush, typed
+sync/callback failure, supervisor notification and exact task join tests now
+pass. The three-case subprocess matrix also proves zero have bits before the
+SQLite boundary and exact retained/redownloaded pieces after it.
+
+Next executable action: run the full workspace, generated-contract,
+controlled interop and Android target matrix, then retain the steady cohort and
+optional headless product comparator before graduating Tactical `052`.
 
 Human blocker: **none**.

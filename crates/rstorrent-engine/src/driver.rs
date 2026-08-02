@@ -490,6 +490,9 @@ struct DownloadControlInner {
     storage_completion_queue_high_water: AtomicUsize,
     storage_write_delay_millis: AtomicU64,
     storage_hash_delay_millis: AtomicU64,
+    checkpoint_sync_delay_millis: AtomicU64,
+    checkpoint_commit_delay_millis: AtomicU64,
+    checkpoint_sync_failures: AtomicUsize,
     storage_hashes_started: AtomicUsize,
     storage_write_timing: StorageCommandTiming,
     storage_hash_timing: StorageCommandTiming,
@@ -783,6 +786,9 @@ impl DownloadControl {
                 storage_completion_queue_high_water: AtomicUsize::new(0),
                 storage_write_delay_millis: AtomicU64::new(0),
                 storage_hash_delay_millis: AtomicU64::new(0),
+                checkpoint_sync_delay_millis: AtomicU64::new(0),
+                checkpoint_commit_delay_millis: AtomicU64::new(0),
+                checkpoint_sync_failures: AtomicUsize::new(0),
                 storage_hashes_started: AtomicUsize::new(0),
                 storage_write_timing: StorageCommandTiming::default(),
                 storage_hash_timing: StorageCommandTiming::default(),
@@ -1096,6 +1102,27 @@ impl DownloadControl {
         self.inner
             .storage_hash_delay_millis
             .store(millis, Ordering::Release);
+    }
+
+    #[doc(hidden)]
+    pub fn set_checkpoint_sync_delay_for_testing(&self, delay: Duration) {
+        let millis = delay.as_millis().try_into().unwrap_or(u64::MAX);
+        self.inner
+            .checkpoint_sync_delay_millis
+            .store(millis, Ordering::Release);
+    }
+
+    #[doc(hidden)]
+    pub fn set_checkpoint_commit_delay_for_testing(&self, delay: Duration) {
+        let millis = delay.as_millis().try_into().unwrap_or(u64::MAX);
+        self.inner
+            .checkpoint_commit_delay_millis
+            .store(millis, Ordering::Release);
+    }
+
+    #[cfg(test)]
+    fn fail_next_checkpoint_sync(&self) {
+        atomic_saturating_increment(&self.inner.checkpoint_sync_failures);
     }
 
     fn enter_safe_cancel_critical(&self) -> Result<SafeCancelGuard, DownloadError> {
@@ -2227,6 +2254,35 @@ impl DownloadControl {
         if millis != 0 {
             tokio::time::sleep(Duration::from_millis(millis)).await;
         }
+    }
+
+    async fn wait_before_checkpoint_sync(&self) {
+        let millis = self
+            .inner
+            .checkpoint_sync_delay_millis
+            .load(Ordering::Acquire);
+        if millis != 0 {
+            tokio::time::sleep(Duration::from_millis(millis)).await;
+        }
+    }
+
+    async fn wait_before_checkpoint_commit(&self) {
+        let millis = self
+            .inner
+            .checkpoint_commit_delay_millis
+            .load(Ordering::Acquire);
+        if millis != 0 {
+            tokio::time::sleep(Duration::from_millis(millis)).await;
+        }
+    }
+
+    fn take_checkpoint_sync_failure(&self) -> bool {
+        self.inner
+            .checkpoint_sync_failures
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |failures| {
+                failures.checked_sub(1)
+            })
+            .is_ok()
     }
 }
 
@@ -5898,12 +5954,21 @@ async fn flush_content_checkpoint(
     }
     control.disk_checkpoint_sync_started(&batch);
     let sync_started = Instant::now();
-    if let Err(error) = sync_checkpoint_targets(handles, &batch).await {
+    control.wait_before_checkpoint_sync().await;
+    let sync_result = if control.take_checkpoint_sync_failure() {
+        Err(DownloadError::Checkpoint(
+            "injected checkpoint sync failure".to_owned(),
+        ))
+    } else {
+        sync_checkpoint_targets(handles, &batch).await
+    };
+    if let Err(error) = sync_result {
         control.disk_checkpoint_failed(&batch, sync_started.elapsed(), &error.to_string());
         return Err(error);
     }
     control.disk_checkpoint_sync_completed(&batch, sync_started.elapsed());
     let commit_started = Instant::now();
+    control.wait_before_checkpoint_commit().await;
     let checkpoints = checkpoints.clone();
     let commit_result =
         tokio::task::spawn_blocking(move || checkpoints.pieces_durable(&piece_indices))
@@ -7805,6 +7870,7 @@ fn download_peer_set_error(error: PeerSetError) -> DownloadError {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::net::{IpAddr, SocketAddr};
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -7836,8 +7902,8 @@ mod tests {
 
     use super::{
         CLIENT_PEER_ID, CONTENT_STORAGE_WRITE_BATCH_BLOCKS, CONTENT_STORAGE_WRITE_BATCH_BYTES,
-        CoalescedContentWrite, ContentDownloadConfig, ContentStorage, ContentStorageCommand,
-        ContentStorageCompletion, ContentSupervisorOwner, ContentWriteStats,
+        CoalescedContentWrite, ContentCheckpointPipeline, ContentDownloadConfig, ContentStorage,
+        ContentStorageCommand, ContentStorageCompletion, ContentSupervisorOwner, ContentWriteStats,
         DEFAULT_ADVERTISED_PEER_PORT, DhtRetryTiming, DiskPressure, DownloadActivityEvent,
         DownloadActivitySink, DownloadConfig, DownloadControl, DownloadError,
         DownloadResourceLimits, MAX_DIAGNOSTIC_ERROR_LENGTH, MAX_METADATA_PEERS,
@@ -7849,8 +7915,9 @@ mod tests {
         collect_content_write_batch, content_dial_slot_available, content_storage_job_limit,
         download_magnet, download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
         download_magnet_with_control, download_verified_piece,
-        download_verified_piece_with_control, execute_content_storage_writes, next_peer_message,
-        retrying_dht_lookup, run_content_download, run_magnet_download_with_peers, send_message,
+        download_verified_piece_with_control, execute_content_storage_verification,
+        execute_content_storage_writes, next_peer_message, retrying_dht_lookup,
+        run_content_download, run_magnet_download_with_peers, send_message,
     };
     use crate::checkpoint::{CheckpointBatch, CheckpointIntent, DurabilityTarget};
     use crate::dht::{BootstrapNode, DhtConfig, DhtService};
@@ -7871,6 +7938,62 @@ mod tests {
     use crate::{DiskCheckpointStage, DiskPieceStage};
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    #[derive(Default)]
+    struct RecordingCheckpointSink {
+        batches: Mutex<Vec<Vec<usize>>>,
+        failure: Mutex<Option<String>>,
+    }
+
+    impl RecordingCheckpointSink {
+        fn failing(detail: &str) -> Self {
+            Self {
+                batches: Mutex::new(Vec::new()),
+                failure: Mutex::new(Some(detail.to_owned())),
+            }
+        }
+
+        fn batches(&self) -> Vec<Vec<usize>> {
+            self.batches
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone()
+        }
+    }
+
+    impl super::DownloadCheckpointSink for RecordingCheckpointSink {
+        fn metadata_verified(&self, _raw_info: &[u8]) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn storage_prepared(&self, _storage: super::ResumedStorage) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn have_rechecked(&self, _verified_pieces: &[bool]) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn pieces_durable(&self, piece_indices: &[usize]) -> Result<(), String> {
+            self.batches
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(piece_indices.to_vec());
+            self.failure
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take()
+                .map_or(Ok(()), Err)
+        }
+
+        fn descriptor_prepared(&self, _files: &[super::PreparedFileHash]) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn published(&self) -> Result<(), String> {
+            Ok(())
+        }
+    }
 
     #[test]
     fn storage_duration_counter_saturates() {
@@ -7942,6 +8065,199 @@ mod tests {
         assert_eq!(completed.checkpoint_pieces_completed, 1);
         assert_eq!(completed.checkpoint_commit_service_micros, 13);
         assert!(completed.pieces.is_empty());
+    }
+
+    async fn wait_for_checkpoint_stage(control: &DownloadControl, expected: DiskCheckpointStage) {
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if control.disk_snapshot().checkpoint_stage == expected {
+                    return;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("checkpoint reached expected stage");
+    }
+
+    fn checkpoint_sync_handle(name: &str) -> (PathBuf, BTreeMap<DurabilityTarget, std::fs::File>) {
+        let path = test_path(name);
+        let file = std::fs::OpenOptions::new()
+            .create_new(true)
+            .read(true)
+            .write(true)
+            .open(&path)
+            .expect("create checkpoint sync target");
+        (path, BTreeMap::from([(DurabilityTarget::PartFile, file)]))
+    }
+
+    #[tokio::test]
+    async fn checkpoint_delays_preserve_storage_progress_bounds_and_final_flush() {
+        let control = DownloadControl::new();
+        control.configure_disk_runtime(MIN_PAYLOAD_ALLOWANCE);
+        control.set_checkpoint_sync_delay_for_testing(Duration::from_millis(350));
+        control.set_checkpoint_commit_delay_for_testing(Duration::from_millis(350));
+        let sink = Arc::new(RecordingCheckpointSink::default());
+        let (sync_path, handles) = checkpoint_sync_handle("checkpoint-delays.bin");
+        let mut pipeline = ContentCheckpointPipeline::start(handles, sink.clone(), control.clone())
+            .expect("start checkpoint pipeline");
+        let full_epoch_length =
+            u32::try_from(super::CHECKPOINT_MAX_DIRTY_BYTES).expect("checkpoint byte bound");
+        control.disk_piece_hashing(7, full_epoch_length);
+        control.disk_piece_hash_verified(7, full_epoch_length, true);
+        pipeline
+            .enqueue(7, full_epoch_length, vec![DurabilityTarget::PartFile])
+            .await
+            .expect("enqueue full checkpoint epoch");
+        wait_for_checkpoint_stage(&control, DiskCheckpointStage::Syncing).await;
+
+        let output = test_path("checkpoint-overlap-storage.bin");
+        let staged = staging_path(&output).expect("staging path");
+        let mut storage = ContentStorage::Single(
+            StagingFile::create(output, 16)
+                .await
+                .expect("create overlap staging file"),
+        );
+        let writes =
+            execute_content_storage_writes(&mut storage, vec![queued_write(0, 0, 16)], &control)
+                .await;
+        assert!(matches!(
+            writes.as_slice(),
+            [ContentStorageCompletion::Write { result: Ok(_), .. }]
+        ));
+        let expected: [u8; 20] = Sha1::digest([0_u8; 16]).into();
+        control.disk_piece_hashing(0, 16);
+        let verification = execute_content_storage_verification(
+            &mut storage,
+            ContentStorageCommand::Verify {
+                piece: 0,
+                offset: 0,
+                length: 16,
+                expected,
+                durable: false,
+            },
+            &control,
+        )
+        .await;
+        assert!(matches!(
+            verification,
+            ContentStorageCompletion::Verify { result: Ok(_), .. }
+        ));
+        assert_eq!(
+            control.disk_snapshot().checkpoint_stage,
+            DiskCheckpointStage::Syncing
+        );
+        drop(storage);
+        let _ = tokio::fs::remove_file(staged).await;
+
+        wait_for_checkpoint_stage(&control, DiskCheckpointStage::Committing).await;
+        assert!(
+            timeout(
+                Duration::from_millis(30),
+                pipeline.enqueue(8, 16, vec![DurabilityTarget::PartFile]),
+            )
+            .await
+            .is_err(),
+            "dirty-byte permits remain charged through the database callback"
+        );
+        timeout(Duration::from_secs(2), async {
+            while control.disk_snapshot().checkpoint_batches_completed != 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("full epoch completed");
+
+        control.disk_piece_hashing(8, 16);
+        control.disk_piece_hash_verified(8, 16, true);
+        pipeline
+            .enqueue(8, 16, vec![DurabilityTarget::PartFile])
+            .await
+            .expect("capacity reopened after commit");
+        pipeline.intents.take();
+        pipeline
+            .task
+            .await
+            .expect("checkpoint task joined")
+            .expect("final close flushed checkpoint");
+        assert_eq!(sink.batches(), vec![vec![7], vec![8]]);
+        let completed = control.disk_snapshot();
+        assert_eq!(completed.checkpoint_batches_completed, 2);
+        assert_eq!(completed.checkpoint_pieces_completed, 2);
+        assert_eq!(completed.checkpoint_dirty_pieces, 0);
+        assert_eq!(completed.checkpoint_dirty_bytes, 0);
+        assert!(completed.checkpoint_sync_service_micros >= 700_000);
+        assert!(completed.checkpoint_commit_service_micros >= 700_000);
+        std::fs::remove_file(sync_path).expect("remove checkpoint sync target");
+    }
+
+    #[tokio::test]
+    async fn checkpoint_sync_and_commit_failures_are_typed_and_joined() {
+        let control = DownloadControl::new();
+        control.configure_disk_runtime(MIN_PAYLOAD_ALLOWANCE);
+        control.fail_next_checkpoint_sync();
+        let sync_sink = Arc::new(RecordingCheckpointSink::default());
+        let (sync_path, handles) = checkpoint_sync_handle("checkpoint-sync-failure.bin");
+        let mut pipeline =
+            ContentCheckpointPipeline::start(handles, sync_sink.clone(), control.clone())
+                .expect("start sync-failure pipeline");
+        let full_epoch_length =
+            u32::try_from(super::CHECKPOINT_MAX_DIRTY_BYTES).expect("checkpoint byte bound");
+        control.disk_piece_hashing(1, full_epoch_length);
+        control.disk_piece_hash_verified(1, full_epoch_length, true);
+        pipeline
+            .enqueue(1, full_epoch_length, vec![DurabilityTarget::PartFile])
+            .await
+            .expect("enqueue sync failure");
+        pipeline.intents.take();
+        let reported = timeout(Duration::from_secs(1), pipeline.failures.recv())
+            .await
+            .expect("sync failure reached supervisor channel")
+            .expect("sync failure detail");
+        assert!(reported.contains("injected"));
+        let error = pipeline
+            .task
+            .await
+            .expect("sync-failure task joined")
+            .expect_err("sync failure is terminal");
+        assert!(
+            matches!(error, DownloadError::Checkpoint(ref detail) if detail.contains("injected"))
+        );
+        assert!(sync_sink.batches().is_empty());
+        let failed = control.disk_snapshot();
+        assert_eq!(failed.checkpoint_stage, DiskCheckpointStage::Error);
+        assert_eq!(failed.pieces[0].stage, DiskPieceStage::Failed);
+        std::fs::remove_file(sync_path).expect("remove sync-failure target");
+
+        let control = DownloadControl::new();
+        control.configure_disk_runtime(MIN_PAYLOAD_ALLOWANCE);
+        let commit_sink = Arc::new(RecordingCheckpointSink::failing("injected commit failure"));
+        let (commit_path, handles) = checkpoint_sync_handle("checkpoint-commit-failure.bin");
+        let mut pipeline =
+            ContentCheckpointPipeline::start(handles, commit_sink.clone(), control.clone())
+                .expect("start commit-failure pipeline");
+        control.disk_piece_hashing(2, full_epoch_length);
+        control.disk_piece_hash_verified(2, full_epoch_length, true);
+        pipeline
+            .enqueue(2, full_epoch_length, vec![DurabilityTarget::PartFile])
+            .await
+            .expect("enqueue commit failure");
+        pipeline.intents.take();
+        let error = pipeline
+            .task
+            .await
+            .expect("commit-failure task joined")
+            .expect_err("commit failure is terminal");
+        assert!(
+            matches!(error, DownloadError::Checkpoint(ref detail) if detail.contains("commit"))
+        );
+        assert_eq!(commit_sink.batches(), vec![vec![2]]);
+        let failed = control.disk_snapshot();
+        assert_eq!(failed.checkpoint_stage, DiskCheckpointStage::Error);
+        assert_eq!(failed.checkpoint_sync_operations_completed, 1);
+        assert_eq!(failed.checkpoint_batches_completed, 0);
+        assert_eq!(failed.pieces[0].stage, DiskPieceStage::Failed);
+        std::fs::remove_file(commit_path).expect("remove commit-failure target");
     }
 
     #[test]

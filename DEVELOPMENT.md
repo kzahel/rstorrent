@@ -280,6 +280,16 @@ uv run --project tests/interop --locked \
   python tests/interop/session_checkpoint_profile.py --runs 3
 ```
 
+The checkpoint crash matrix pauses the diagnostic child at the exact
+pre-sync, post-sync/pre-commit, and post-commit boundaries. It kills only that
+owned child, verifies SQLite have state, restarts, checks exact retained versus
+redownloaded payload, and removes every temporary artifact:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/session_checkpoint_crash.py --scenario all
+```
+
 The controlled DHT profile obtains peers from an independent KRPC router,
 downloads metadata and content from libtorrent, and then probes RSTorrent's
 incoming query and token-authenticated announcement behavior:

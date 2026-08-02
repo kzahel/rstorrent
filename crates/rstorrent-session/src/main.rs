@@ -104,6 +104,9 @@ fn parse_arguments(
     let mut storage_roots = Vec::new();
     let mut timeout = Duration::from_secs(120);
     let mut download_resource_limits = DownloadResourceLimits::DESKTOP;
+    let mut checkpoint_sync_delay = Duration::ZERO;
+    let mut checkpoint_commit_delay = Duration::ZERO;
+    let mut trace_checkpoint_stages = false;
     let mut index = 0;
     while index < arguments.len() {
         let name = arguments[index]
@@ -150,6 +153,23 @@ fn parse_arguments(
                         DiagnosticError::Arguments("payload allowance exceeds usize".to_owned())
                     })?;
             }
+            "--checkpoint-sync-delay-millis" => {
+                checkpoint_sync_delay = Duration::from_millis(parse_positive_u64(value, name)?);
+            }
+            "--checkpoint-commit-delay-millis" => {
+                checkpoint_commit_delay = Duration::from_millis(parse_positive_u64(value, name)?);
+            }
+            "--trace-checkpoint-stages" => {
+                trace_checkpoint_stages = match value.to_str() {
+                    Some("true") => true,
+                    Some("false") => false,
+                    _ => {
+                        return Err(DiagnosticError::Arguments(
+                            "--trace-checkpoint-stages must be true or false".to_owned(),
+                        ));
+                    }
+                };
+            }
             _ => {
                 return Err(DiagnosticError::Arguments(format!(
                     "unknown diagnostic argument {name}"
@@ -171,6 +191,9 @@ fn parse_arguments(
         NetworkConfig::new(NetworkPolicy::LoopbackOnly, timeout, timeout),
     );
     config.download_resource_limits = download_resource_limits;
+    config.checkpoint_sync_delay_for_testing = checkpoint_sync_delay;
+    config.checkpoint_commit_delay_for_testing = checkpoint_commit_delay;
+    config.checkpoint_stage_trace_for_testing = trace_checkpoint_stages;
     Ok(config)
 }
 

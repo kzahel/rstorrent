@@ -8,12 +8,12 @@ use std::time::Duration;
 
 use rstorrent_engine::dht::{DhtConfig, DhtError, DhtService};
 use rstorrent_engine::{
-    DescriptorFile, DescriptorStorage, DescriptorStoragePlan, DownloadActivityEvent,
-    DownloadActivitySink, DownloadCheckpointSink, DownloadControl, DownloadError,
-    DownloadResourceLimits, NetworkConfig, PreparedFileHash, ResumableMagnetDownloadConfig,
-    ResumedStorage, download_magnet_metadata_with_dht, plan_descriptor_storage,
-    resume_magnet_to_descriptors_with_control, resume_magnet_with_control, selective_part_path,
-    selective_staging_path, verify_prepared_descriptors,
+    DescriptorFile, DescriptorStorage, DescriptorStoragePlan, DiskCheckpointStage,
+    DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink, DownloadControl,
+    DownloadError, DownloadResourceLimits, NetworkConfig, PreparedFileHash,
+    ResumableMagnetDownloadConfig, ResumedStorage, download_magnet_metadata_with_dht,
+    plan_descriptor_storage, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
+    selective_part_path, selective_staging_path, verify_prepared_descriptors,
 };
 use rstorrent_protocol::metainfo::Metainfo;
 use tokio::task::JoinHandle;
@@ -55,6 +55,12 @@ pub struct ApplicationConfig {
     pub view_set_reaper_interval: Duration,
     #[doc(hidden)]
     pub storage_write_delay_for_testing: Duration,
+    #[doc(hidden)]
+    pub checkpoint_sync_delay_for_testing: Duration,
+    #[doc(hidden)]
+    pub checkpoint_commit_delay_for_testing: Duration,
+    #[doc(hidden)]
+    pub checkpoint_stage_trace_for_testing: bool,
 }
 
 impl ApplicationConfig {
@@ -75,6 +81,9 @@ impl ApplicationConfig {
             view_set_lease: Duration::from_millis(crate::view_sets::VIEW_SET_LEASE_MILLIS),
             view_set_reaper_interval: Duration::from_millis(VIEW_SET_REAPER_INTERVAL_MILLIS),
             storage_write_delay_for_testing: Duration::ZERO,
+            checkpoint_sync_delay_for_testing: Duration::ZERO,
+            checkpoint_commit_delay_for_testing: Duration::ZERO,
+            checkpoint_stage_trace_for_testing: false,
         }
     }
 }
@@ -107,6 +116,9 @@ pub struct ApplicationService {
     network: NetworkConfig,
     download_resource_limits: DownloadResourceLimits,
     storage_write_delay_for_testing: Duration,
+    checkpoint_sync_delay_for_testing: Duration,
+    checkpoint_commit_delay_for_testing: Duration,
+    checkpoint_stage_trace_for_testing: bool,
     active: Option<ActiveDownload>,
     dht: Option<DhtService>,
     views: ViewHub,
@@ -134,9 +146,12 @@ impl ApplicationService {
                     .to_owned(),
             ));
         }
-        if config.storage_write_delay_for_testing > Duration::from_secs(10) {
+        if config.storage_write_delay_for_testing > Duration::from_secs(10)
+            || config.checkpoint_sync_delay_for_testing > Duration::from_secs(60)
+            || config.checkpoint_commit_delay_for_testing > Duration::from_secs(60)
+        {
             return Err(ApplicationError::Configuration(
-                "test storage write delay cannot exceed ten seconds".to_owned(),
+                "test storage delay exceeds its fixed maximum".to_owned(),
             ));
         }
         let mut storage_roots = BTreeMap::new();
@@ -180,6 +195,9 @@ impl ApplicationService {
             network: config.network,
             download_resource_limits: config.download_resource_limits,
             storage_write_delay_for_testing: config.storage_write_delay_for_testing,
+            checkpoint_sync_delay_for_testing: config.checkpoint_sync_delay_for_testing,
+            checkpoint_commit_delay_for_testing: config.checkpoint_commit_delay_for_testing,
+            checkpoint_stage_trace_for_testing: config.checkpoint_stage_trace_for_testing,
             active: None,
             dht: Some(dht),
             views,
@@ -953,9 +971,13 @@ impl ApplicationService {
     fn download_control(&self, torrent_id: &str) -> DownloadControl {
         let control = DownloadControl::new();
         control.set_storage_write_delay(self.storage_write_delay_for_testing);
+        control.set_checkpoint_sync_delay_for_testing(self.checkpoint_sync_delay_for_testing);
+        control.set_checkpoint_commit_delay_for_testing(self.checkpoint_commit_delay_for_testing);
         control.set_activity_sink(Arc::new(ViewActivitySink {
             torrent_id: torrent_id.to_owned(),
             views: self.views.clone(),
+            trace_checkpoint_stages: self.checkpoint_stage_trace_for_testing,
+            last_checkpoint_stage: Mutex::new(None),
         }));
         control
     }
@@ -1478,6 +1500,17 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
 struct ViewActivitySink {
     torrent_id: String,
     views: ViewHub,
+    trace_checkpoint_stages: bool,
+    last_checkpoint_stage: Mutex<Option<DiskCheckpointStage>>,
+}
+
+const fn checkpoint_stage_name(stage: DiskCheckpointStage) -> &'static str {
+    match stage {
+        DiskCheckpointStage::Idle => "idle",
+        DiskCheckpointStage::Syncing => "syncing",
+        DiskCheckpointStage::Committing => "committing",
+        DiskCheckpointStage::Error => "error",
+    }
 }
 
 fn piece_diagnostic_context(
@@ -1535,6 +1568,22 @@ impl DownloadActivitySink for ViewActivitySink {
             return;
         }
         if let DownloadActivityEvent::StorageState(snapshot) = &event {
+            if self.trace_checkpoint_stages {
+                let mut previous = self
+                    .last_checkpoint_stage
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                if *previous != Some(snapshot.checkpoint_stage) {
+                    *previous = Some(snapshot.checkpoint_stage);
+                    eprintln!(
+                        "checkpoint_stage={} dirty_pieces={} dirty_bytes={} batches_completed={}",
+                        checkpoint_stage_name(snapshot.checkpoint_stage),
+                        snapshot.checkpoint_dirty_pieces,
+                        snapshot.checkpoint_dirty_bytes,
+                        snapshot.checkpoint_batches_completed,
+                    );
+                }
+            }
             let _ = self.views.record_disk_runtime(&self.torrent_id, snapshot);
             let _ = self
                 .views

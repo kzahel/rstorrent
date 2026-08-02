@@ -92,21 +92,35 @@ def start_process(
     *,
     timeout_seconds: int = PROCESS_TIMEOUT_SECONDS,
     payload_allowance: int = DEFAULT_PAYLOAD_ALLOWANCE,
+    checkpoint_sync_delay_millis: int = 0,
+    checkpoint_commit_delay_millis: int = 0,
+    trace_checkpoint_stages: bool = False,
 ) -> subprocess.Popen[str]:
+    command = [
+        str(binary),
+        "--profile-root",
+        str(profile_root),
+        "--profile-id",
+        "interop",
+        "--storage-root",
+        f"downloads={payload_root}",
+        "--timeout-seconds",
+        str(timeout_seconds),
+        "--max-buffered-payload-bytes",
+        str(payload_allowance),
+    ]
+    if checkpoint_sync_delay_millis > 0:
+        command.extend(
+            ["--checkpoint-sync-delay-millis", str(checkpoint_sync_delay_millis)]
+        )
+    if checkpoint_commit_delay_millis > 0:
+        command.extend(
+            ["--checkpoint-commit-delay-millis", str(checkpoint_commit_delay_millis)]
+        )
+    if trace_checkpoint_stages:
+        command.extend(["--trace-checkpoint-stages", "true"])
     return subprocess.Popen(
-        [
-            str(binary),
-            "--profile-root",
-            str(profile_root),
-            "--profile-id",
-            "interop",
-            "--storage-root",
-            f"downloads={payload_root}",
-            "--timeout-seconds",
-            str(timeout_seconds),
-            "--max-buffered-payload-bytes",
-            str(payload_allowance),
-        ],
+        command,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

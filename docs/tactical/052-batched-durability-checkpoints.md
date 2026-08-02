@@ -357,6 +357,43 @@ correctness smoke, not a replacement performance cohort.
 The next internal gate is deterministic delayed sync/callback execution,
 capacity backpressure, failure propagation and forced final flush.
 
+## Implementation Checkpoint 4: Adversarial Delay, Failure, And Crash
+
+Bounded test controls now delay payload sync and the checkpoint callback
+independently. One task-level test holds an exact 64 MiB epoch through 350 ms
+of each delay, completes a real staging write and SHA-1 read while sync remains
+active, and proves the next dirty piece blocks only while the byte semaphore is
+truly full. Capacity reopens after the callback, closing the sender forces a
+second partial epoch, the sink observes exact batches `[7]` then `[8]`, every
+task joins, and dirty gauges return to zero. Separate injected sync and sink
+failures reach the supervisor failure channel, preserve zero completed batches
+for the failed epoch, mark its rows and global stage as error, and join with
+typed checkpoint failures.
+
+The session diagnostic accepts bounded hidden sync/commit delays and an
+explicit checkpoint-stage trace only for controlled evidence. The new 64 MiB,
+256-piece subprocess matrix kills that owned child at three exact markers and
+restarts the same profile:
+
+- pre-sync crashed at revision 3 with zero durable pieces, then uploaded all
+  67,108,864 bytes on restart;
+- post-sync/pre-commit also crashed at revision 3 with zero durable pieces and
+  uploaded all 67,108,864 bytes; and
+- post-commit crashed at revision 4 with five durable pieces, retained those
+  exact claims after recheck, and uploaded 65,798,144 bytes: precisely the
+  remaining 251 pieces.
+
+All three restarts produced SHA-1
+`645e90d7a71313eb68b0c2c3de0dd165bdcd893c`, reached complete durable have
+state, joined, and removed their profile, payload, seed and process artifacts.
+The first calibration also demonstrated that while a small age-triggered epoch
+was held in sync, later hashes advanced until the declared global 64 MiB/256
+piece dirty bound—not an unbounded queue—became full.
+
+The next internal gate is the full workspace, generated-contract, controlled
+interop and Android target matrix, followed by the retained steady cohort and
+optional headless public comparator.
+
 ## Stopping Condition
 
 The tactical completes when hash verification, payload sync and SQLite commit
