@@ -305,6 +305,8 @@ describe("view-set reducer", () => {
     expect(reset.views.library).toBeUndefined();
     expect(reset.views.pieces?.type).toBe("piece_activity");
     expect(reset.cursor).toBe("3");
+    expect(reset.deliveryResetCount).toBe(1);
+    expect(reset.lastDeliveryResetReason).toBe("queue_overflow");
   });
 
   it("rejects gaps, wrong identities, and patches without snapshots", () => {
@@ -314,6 +316,8 @@ describe("view-set reducer", () => {
       cursor: "1",
       durableRevision: "1",
       views: {},
+      deliveryResetCount: 0,
+      lastDeliveryResetReason: null,
     };
     expect(() =>
       reduceUpdateBatch(state, batch("2", "3", [])),

@@ -52,6 +52,7 @@ export class DemoApplication implements InspectionApplication {
     library: true,
     torrentId: null,
     detail: null,
+    logCapture: null,
   };
 
   constructor(options: DemoApplicationOptions) {
@@ -202,7 +203,7 @@ export class DemoApplication implements InspectionApplication {
 
   private addCommandLog(
     category: string,
-    summary: string,
+    message: string,
     torrentId: string | null,
   ): void {
     this.commandLogs.push({
@@ -210,8 +211,11 @@ export class DemoApplication implements InspectionApplication {
       timestampMs: DEMO_BASE_TIME_MS + this.elapsedMs,
       severity: "info",
       category,
-      summary,
+      code: "user_command",
+      message,
       torrentId,
+      subjects: [],
+      fields: [],
     });
   }
 
@@ -253,7 +257,9 @@ function sameDesiredViews(
   return (
     left.library === right.library &&
     left.torrentId === right.torrentId &&
-    left.detail === right.detail
+    left.detail === right.detail &&
+    left.logCapture?.profile === right.logCapture?.profile &&
+    left.logCapture?.torrentId === right.logCapture?.torrentId
   );
 }
 
@@ -316,7 +322,16 @@ function materializeDemoViews(
     piecesByTorrent,
     disk: desired.detail === "disk" ? source.disk : emptyDiskSet(),
     logs: desired.detail === "logs" ? source.logs : [],
-    droppedLogs: desired.detail === "logs" ? source.droppedLogs : 0,
+    logLoss:
+      desired.detail === "logs"
+        ? source.logLoss
+        : {
+            sourceEvictedCount: 0,
+            retainedFromSequence: "1",
+            localEvictedCount: 0,
+            deliveryResetCount: 0,
+            lastDeliveryResetReason: null,
+          },
     viewStatus: {
       library: desired.library
         ? { status: "ready" }
@@ -412,7 +427,11 @@ function applyOverlays(
   );
   const logs = [...source.logs, ...commandLogs]
     .sort((left, right) => left.timestampMs - right.timestampMs)
-    .slice(-256);
+    .slice(-2_048);
+  const localOverflow = Math.max(
+    0,
+    source.logs.length + commandLogs.length - 2_048,
+  );
   return {
     ...source,
     session: {
@@ -440,7 +459,11 @@ function applyOverlays(
       ),
     ),
     logs,
-    droppedLogs: source.droppedLogs + Math.max(0, source.logs.length + commandLogs.length - 256),
+    logLoss: {
+      ...source.logLoss,
+      retainedFromSequence: logs[0]?.id ?? source.logLoss.retainedFromSequence,
+      localEvictedCount: source.logLoss.localEvictedCount + localOverflow,
+    },
   };
 }
 
@@ -597,7 +620,10 @@ function diffSnapshots(
       : {
           logs: {
             append: appendedLogs,
-            dropped: Math.max(0, next.droppedLogs - previous.droppedLogs),
+            sourceEvictedCount: next.logLoss.sourceEvictedCount,
+            retainedFromSequence: next.logLoss.retainedFromSequence,
+            deliveryResetCount: next.logLoss.deliveryResetCount,
+            lastDeliveryResetReason: next.logLoss.lastDeliveryResetReason,
           },
         }),
   };

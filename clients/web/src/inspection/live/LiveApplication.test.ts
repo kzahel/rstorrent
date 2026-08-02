@@ -186,7 +186,12 @@ describe("LiveApplication", () => {
   it("maps active peer state and evicts obsolete responsive views", async () => {
     const client = new FakeLiveClient();
     const application = await LiveApplication.open(client, {
-      initialViews: { library: true, torrentId: TORRENT_ID, detail: "peers" },
+      initialViews: {
+        library: true,
+        torrentId: TORRENT_ID,
+        detail: "peers",
+        logCapture: null,
+      },
     });
     const snapshots: InspectionSnapshot[] = [];
     application.subscribe((update) => {
@@ -206,11 +211,28 @@ describe("LiveApplication", () => {
       library: false,
       torrentId: TORRENT_ID,
       detail: "logs",
+      logCapture: { profile: "normal", torrentId: null },
     });
     expect(client.updates.at(-1)?.views.map((view) => view.type)).toEqual([
       "torrent_summary",
       "diagnostics",
     ]);
+    expect(client.updates.at(-1)?.views.at(-1)).toMatchObject({
+      type: "diagnostics",
+      torrent_id: null,
+      filter: { profile: "normal", minimum_severity: "info" },
+    });
+    await application.setViews({
+      library: false,
+      torrentId: TORRENT_ID,
+      detail: "logs",
+      logCapture: { profile: "trace", torrentId: TORRENT_ID },
+    });
+    expect(client.updates.at(-1)?.views.at(-1)).toMatchObject({
+      type: "diagnostics",
+      torrent_id: TORRENT_ID,
+      filter: { profile: "trace", minimum_severity: "trace" },
+    });
     const transition = snapshots.at(-1)!;
     expect(transition.torrentOrder).toEqual([]);
     expect(transition.peersByTorrent).toEqual({});
@@ -222,7 +244,12 @@ describe("LiveApplication", () => {
   it("subscribes to files only while requested and maps exact byte strings", async () => {
     const client = new FakeLiveClient();
     const application = await LiveApplication.open(client, {
-      initialViews: { library: false, torrentId: TORRENT_ID, detail: "files" },
+      initialViews: {
+        library: false,
+        torrentId: TORRENT_ID,
+        detail: "files",
+        logCapture: null,
+      },
     });
     const snapshots: InspectionSnapshot[] = [];
     application.subscribe((update) => {
@@ -244,6 +271,7 @@ describe("LiveApplication", () => {
       library: true,
       torrentId: TORRENT_ID,
       detail: "general",
+      logCapture: null,
     });
     expect(client.updates.at(-1)?.views.map((view) => view.type)).toEqual([
       "torrent_list",
@@ -260,6 +288,7 @@ describe("LiveApplication", () => {
         library: false,
         torrentId: TORRENT_ID,
         detail: "trackers",
+        logCapture: null,
       },
     });
     const snapshots: InspectionSnapshot[] = [];
@@ -288,6 +317,7 @@ describe("LiveApplication", () => {
       library: true,
       torrentId: TORRENT_ID,
       detail: "general",
+      logCapture: null,
     });
     expect(snapshots.at(-1)?.trackersByTorrent).toEqual({});
     expect(snapshots.at(-1)?.viewStatus.trackers.status).toBe(
@@ -299,7 +329,12 @@ describe("LiveApplication", () => {
   it("marks stale state then atomically installs a fresh view-set epoch", async () => {
     const client = new FakeLiveClient();
     const application = await LiveApplication.open(client, {
-      initialViews: { library: true, torrentId: TORRENT_ID, detail: "peers" },
+      initialViews: {
+        library: true,
+        torrentId: TORRENT_ID,
+        detail: "peers",
+        logCapture: null,
+      },
       retryBaseMillis: 1,
       retryMaximumMillis: 2,
     });

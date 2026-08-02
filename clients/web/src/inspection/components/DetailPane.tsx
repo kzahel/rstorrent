@@ -1,20 +1,18 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 
 import { useInspectionStore } from "../context";
 import {
   formatBytes,
   formatProgress,
   formatRate,
-  formatTime,
 } from "../format";
-import type { DetailTab, LogRow, ViewMaterialization } from "../model";
-import { visibleLogs } from "../state";
+import type { DetailTab } from "../model";
 import { PeerTable } from "./PeerTable";
 import { FileTable } from "./FileTable";
 import { TrackerTable } from "./TrackerTable";
 import { DiskPanel } from "./DiskPanel";
 import { PieceMapPanel } from "./PieceMapPanel";
-import { VirtualTable, type VirtualColumn } from "./VirtualTable";
+import { LogConsole } from "./LogConsole";
 import styles from "./DetailPane.module.css";
 
 const TABS: readonly {
@@ -34,46 +32,6 @@ const TABS: readonly {
   { id: "dht", label: "DHT", scope: "session" },
 ];
 
-const LOG_COLUMNS: readonly VirtualColumn<LogRow>[] = [
-  {
-    id: "time",
-    label: "Time",
-    width: 86,
-    sortable: true,
-    sortValue: (row) => row.timestampMs,
-    render: (row) => <time>{formatTime(row.timestampMs)}</time>,
-  },
-  {
-    id: "severity",
-    label: "Level",
-    width: 82,
-    sortable: true,
-    sortValue: (row) => row.severity,
-    render: (row) => (
-      <span className={styles.logSeverity} data-severity={row.severity}>
-        {row.severity}
-      </span>
-    ),
-  },
-  {
-    id: "category",
-    label: "Category",
-    width: 104,
-    minimumViewport: 520,
-    sortable: true,
-    sortValue: (row) => row.category,
-    render: (row) => <code>{row.category}</code>,
-  },
-  {
-    id: "summary",
-    label: "Message",
-    width: 680,
-    sortable: true,
-    sortValue: (row) => row.summary,
-    render: (row) => <span title={row.summary}>{row.summary}</span>,
-  },
-];
-
 export function DetailPane() {
   const selectedId = useInspectionStore(
     (state) => state.presentation.selectedTorrentId,
@@ -90,16 +48,6 @@ export function DetailPane() {
   );
   const selectTab = useInspectionStore((state) => state.selectTab);
   const closeDetail = useInspectionStore((state) => state.closeDetail);
-  const logs = useInspectionStore((state) => state.logs);
-  const droppedLogs = useInspectionStore((state) => state.droppedLogs);
-  const logsMaterialization = useInspectionStore((state) => state.viewStatus.logs);
-  const interfaceSize = useInspectionStore(
-    (state) => state.presentation.interfaceSize,
-  );
-  const selectedLogs = useMemo(
-    () => visibleLogs(logs, selectedId),
-    [logs, selectedId],
-  );
   const tabsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -212,23 +160,7 @@ export function DetailPane() {
         ) : activeTab === "general" && torrent !== undefined ? (
           <GeneralDetail torrent={torrent} />
         ) : activeTab === "logs" ? (
-          <div className={styles.logPanel}>
-            <div className={styles.logSummary}>
-              <span>{selectedLogs.length.toLocaleString()} shown</span>
-              <span>{droppedLogs.toLocaleString()} dropped</span>
-              <span>Selected torrent + session</span>
-            </div>
-            <VirtualTable
-              tableId="logs"
-              label="Diagnostic log"
-              rows={selectedLogs}
-              getRowId={(row) => row.id}
-              columns={LOG_COLUMNS}
-              interfaceSize={interfaceSize}
-              emptyMessage={detailEmptyMessage(logsMaterialization, "diagnostic events")}
-              initialSort={{ columnId: "time", direction: "asc" }}
-            />
-          </div>
+          <LogConsole />
         ) : (
           <UnavailableDetail tab={activeTab} />
         )}
@@ -239,24 +171,6 @@ export function DetailPane() {
 
 function formatTabCount(count: number): string {
   return count > 99 ? "99+" : count.toLocaleString();
-}
-
-function detailEmptyMessage(
-  materialization: ViewMaterialization,
-  noun: string,
-): string {
-  switch (materialization.status) {
-    case "not_requested":
-      return `${titleCase(noun)} are not requested.`;
-    case "loading":
-      return `Loading ${noun}…`;
-    case "unavailable":
-    case "unsupported":
-    case "stale":
-      return materialization.reason;
-    case "ready":
-      return `No ${noun} are currently available.`;
-  }
 }
 
 function GeneralDetail({

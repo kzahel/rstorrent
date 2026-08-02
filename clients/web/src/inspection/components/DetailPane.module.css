@@ -217,36 +217,6 @@
   font-size: var(--ui-font-small);
 }
 
-.logPanel {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  height: 100%;
-}
-
-.logSummary {
-  display: flex;
-  gap: 1rem;
-  border-bottom: 1px solid var(--border-soft);
-  padding: 0.42rem 0.72rem;
-  color: var(--text-muted);
-  background: var(--surface-primary);
-  font-size: var(--ui-font-caption);
-}
-
-.logSeverity {
-  color: var(--text-secondary);
-  font-weight: 650;
-  text-transform: capitalize;
-}
-
-.logSeverity[data-severity="warning"] {
-  color: var(--warning-strong);
-}
-
-.logSeverity[data-severity="error"] {
-  color: var(--danger-strong);
-}
-
 .empty {
   display: grid;
   height: 100%;

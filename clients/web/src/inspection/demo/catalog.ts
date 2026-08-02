@@ -85,6 +85,13 @@ export const DEMO_SCENARIOS: readonly DemoScenarioSummary[] = [
     autoplay: false,
   },
   {
+    id: "diagnostic-console",
+    title: "Diagnostic console",
+    description: "Mixed structured records, scopes, severities, and a busy ordered feed.",
+    durationMs: 45_000,
+    autoplay: true,
+  },
+  {
     id: "empty-library",
     title: "Empty library",
     description: "A clean first-run library with no active torrents.",
@@ -151,8 +158,14 @@ export function buildScenarioSnapshot(
     trackersByTorrent,
     piecesByTorrent,
     disk,
-    logs: content.logs.slice(-256),
-    droppedLogs: Math.max(0, content.logs.length - 256),
+    logs: content.logs.slice(-2_048),
+    logLoss: {
+      sourceEvictedCount: 0,
+      retainedFromSequence: content.logs.at(-2_048)?.id ?? "1",
+      localEvictedCount: Math.max(0, content.logs.length - 2_048),
+      deliveryResetCount: 0,
+      lastDeliveryResetReason: null,
+    },
     viewStatus: {
       library: { status: "ready" },
       torrentSummary: { status: "ready" },
@@ -200,6 +213,8 @@ function buildScenarioContent(
       return slowDiskPressure(elapsedMs);
     case "disk-error":
       return diskError(elapsedMs);
+    case "diagnostic-console":
+      return diagnosticConsole(elapsedMs);
     case "empty-library":
       return { torrents: [], peers: {}, logs: [] };
     }
@@ -273,6 +288,68 @@ function healthyDownload(elapsedMs: number): ScenarioContent {
       [99, "info", "storage", "Published 3 files"],
     ], elapsedMs),
   };
+}
+
+function diagnosticConsole(elapsedMs: number): ScenarioContent {
+  const base = healthyDownload(45_000);
+  const categories = [
+    "lifecycle.session",
+    "tracker.announce",
+    "discovery.dht",
+    "peer.connection",
+    "metadata.exchange",
+    "scheduler.request",
+    "piece.block",
+    "storage.io",
+    "integrity.hash",
+    "performance.backpressure",
+  ] as const;
+  const severities = ["info", "debug", "trace", "info", "warning"] as const;
+  const messages = [
+    "Application profile opened",
+    "Tracker announce completed with fresh peers",
+    "DHT lookup returned candidate endpoints",
+    "Peer extension handshake completed",
+    "Piece request window advanced",
+    "Storage queue crossed its high watermark",
+    "Piece hash verification succeeded",
+  ] as const;
+  const count = Math.min(220, 28 + Math.floor(elapsedMs / 210));
+  const logs: LogRow[] = Array.from({ length: count }, (_, index) => {
+    const category = categories[index % categories.length] ?? "lifecycle.session";
+    const torrentId =
+      index % 11 === 0 ? null : index % 5 === 0 ? SINTEL_ID : BUNNY_ID;
+    const pieceIndex = (index * 17) % 1_055;
+    return {
+      id: String(index + 1),
+      timestampMs: BASE_TIME_MS + index * 210,
+      severity: severities[index % severities.length] ?? "info",
+      category,
+      code: `${category.replaceAll(".", "_")}_${index % 4}`,
+      message: messages[index % messages.length] ?? "Diagnostic activity observed",
+      torrentId,
+      subjects:
+        torrentId === null
+          ? []
+          : category === "piece.block" || category === "integrity.hash"
+            ? [{ type: "piece", piece_index: pieceIndex, attempt: 1 + (index % 3) }]
+            : category === "tracker.announce"
+              ? [{ type: "tracker", tracker_id: "udp://tracker.example:6969/announce" }]
+              : [],
+      fields: [
+        { key: "event_index", value: { type: "count", value: String(index) } },
+        ...(category === "storage.io"
+          ? [
+              {
+                key: "queued_bytes",
+                value: { type: "bytes" as const, value: String(524_288 + index * 16_384) },
+              },
+            ]
+          : []),
+      ],
+    };
+  });
+  return { ...base, logs };
 }
 
 function fileProgress(elapsedMs: number): ScenarioContent {
@@ -975,7 +1052,7 @@ type TimelineEntry = readonly [
   second: number,
   severity: LogRow["severity"],
   category: string,
-  summary: string,
+  message: string,
 ];
 
 function timelineLogs(
@@ -985,13 +1062,16 @@ function timelineLogs(
 ): LogRow[] {
   return entries
     .filter(([second]) => second * 1000 <= elapsedMs)
-    .map(([second, severity, category, summary], index) => ({
-      id: `${torrentId.slice(0, 8)}-${second}-${index}`,
+    .map(([second, severity, category, message], index) => ({
+      id: String(second * 100 + index + 1),
       timestampMs: BASE_TIME_MS + second * 1000,
       severity,
       category,
-      summary,
+      code: `${category.replaceAll(".", "_")}_event`,
+      message,
       torrentId,
+      subjects: [],
+      fields: [],
     }));
 }
 

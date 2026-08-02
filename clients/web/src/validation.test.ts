@@ -105,6 +105,65 @@ describe("piece activity validation", () => {
   });
 });
 
+describe("diagnostic validation", () => {
+  it("accepts structured records and rejects invalid hierarchy and typed values", () => {
+    const batch = diagnosticBatch();
+    expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
+    batch.updates[0]!.snapshot.events[0]!.category = "Peer.Connection";
+    expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(ContractError);
+
+    const invalidValue = diagnosticBatch();
+    invalidValue.updates[0]!.snapshot.events[0]!.fields[0]!.value.value = "12ms";
+    expect(() => decodeUpdateBatch(JSON.stringify(invalidValue))).toThrow(
+      ContractError,
+    );
+  });
+});
+
+function diagnosticBatch() {
+  return {
+    api_version: 1,
+    view_set_id: "vs_000102030405060708090a0b0c0d0e0f",
+    epoch: "1",
+    base_cursor: "0",
+    cursor: "1",
+    durable_revision: "1",
+    updates: [
+      {
+        type: "snapshot" as const,
+        view_id: "logs",
+        snapshot: {
+          type: "diagnostics" as const,
+          events: [
+            {
+              sequence: "1",
+              timestamp_millis: "1",
+              severity: "debug",
+              category: "peer.connection",
+              code: "handshake_completed",
+              torrent_id: "0".repeat(40),
+              message: "Peer extension handshake completed",
+              subjects: [
+                { type: "peer_connection", connection_id: "connection-1" },
+              ],
+              fields: [
+                {
+                  key: "elapsed",
+                  value: { type: "duration_millis", value: "12" },
+                },
+              ],
+            },
+          ],
+          retention: {
+            source_evicted_count: "0",
+            retained_from_sequence: "1",
+          },
+        },
+      },
+    ],
+  };
+}
+
 function pieceBatch() {
   return {
     api_version: 1,

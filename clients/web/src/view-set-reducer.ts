@@ -13,6 +13,8 @@ export interface ViewSetState {
   cursor: string;
   durableRevision: string;
   views: Record<string, ViewSnapshot>;
+  deliveryResetCount: number;
+  lastDeliveryResetReason: string | null;
 }
 
 export class ViewSetContinuityError extends Error {}
@@ -60,12 +62,20 @@ export function reduceUpdateBatch(
     }
   }
 
+  const deliveryResets = batch.updates.filter(
+    (update) => update.type === "reset_required",
+  );
   const next: ViewSetState = {
     viewSetId: batch.view_set_id,
     epoch: batch.epoch,
     cursor: batch.cursor,
     durableRevision: batch.durable_revision,
     views: state?.epoch === batch.epoch ? { ...state.views } : {},
+    deliveryResetCount:
+      (state?.deliveryResetCount ?? 0) +
+      deliveryResets.length,
+    lastDeliveryResetReason:
+      deliveryResets.at(-1)?.reason ?? state?.lastDeliveryResetReason ?? null,
   };
   for (const update of batch.updates) {
     switch (update.type) {
@@ -122,7 +132,11 @@ function cloneSnapshot(snapshot: ViewSnapshot): ViewSnapshot {
     case "trackers":
       return { ...snapshot, trackers: [...snapshot.trackers] };
     case "diagnostics":
-      return { ...snapshot, events: [...snapshot.events] };
+      return {
+        ...snapshot,
+        events: [...snapshot.events],
+        retention: { ...snapshot.retention },
+      };
   }
 }
 

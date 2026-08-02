@@ -85,6 +85,7 @@ export class LiveApplication implements InspectionApplication {
       library: true,
       torrentId: null,
       detail: null,
+      logCapture: null,
     };
     const application = new LiveApplication(client, desired);
     application.hello = await client.hello();
@@ -367,13 +368,22 @@ export class LiveApplication implements InspectionApplication {
       });
     }
     if (views.detail === "logs" && capabilities.has("diagnostics")) {
+      const capture = views.logCapture ?? {
+        profile: "normal" as const,
+        torrentId: null,
+      };
       specs.push({
         type: "diagnostics",
         view_id: LOGS_VIEW_ID,
-        torrent_id: views.torrentId,
+        torrent_id: capture.torrentId,
         filter: {
-          profile: "detailed",
-          minimum_severity: "debug",
+          profile: capture.profile,
+          minimum_severity:
+            capture.profile === "trace"
+              ? "trace"
+              : capture.profile === "detailed"
+                ? "debug"
+                : "info",
           categories: [],
         },
         delivery: { min_interval_millis: 100 },
@@ -477,10 +487,17 @@ function mapViewState(
     piecesByTorrent,
     disk: disk === null ? emptyDiskSet() : mapDisk(disk),
     logs,
-    droppedLogs:
-      diagnostics === null
-        ? 0
-        : safeNumber(diagnostics.retention.source_evicted_count),
+    logLoss: {
+      sourceEvictedCount:
+        diagnostics === null
+          ? 0
+          : safeNumber(diagnostics.retention.source_evicted_count),
+      retainedFromSequence:
+        diagnostics?.retention.retained_from_sequence ?? "1",
+      localEvictedCount: 0,
+      deliveryResetCount: state.deliveryResetCount,
+      lastDeliveryResetReason: state.lastDeliveryResetReason,
+    },
     viewStatus: {
       library: materialization(
         desired.library,
@@ -583,7 +600,10 @@ function transitionSnapshot(
     piecesByTorrent: {},
     disk: current.disk,
     logs: [],
-    droppedLogs: 0,
+    logLoss: {
+      ...current.logLoss,
+      localEvictedCount: 0,
+    },
     viewStatus: {
       library: transitionStatus(
         desired.library,
@@ -952,8 +972,11 @@ function mapLog(event: DiagnosticEvent): LogRow {
     timestampMs: safeNumber(event.timestamp_millis),
     severity: event.severity,
     category: event.category,
-    summary: event.message,
+    code: event.code,
+    message: event.message,
     torrentId: event.torrent_id ?? null,
+    subjects: event.subjects,
+    fields: event.fields,
   };
 }
 
@@ -1002,7 +1025,13 @@ function emptyLiveSnapshot(
     piecesByTorrent: {},
     disk: emptyDiskSet(),
     logs: [],
-    droppedLogs: 0,
+    logLoss: {
+      sourceEvictedCount: 0,
+      retainedFromSequence: "1",
+      localEvictedCount: 0,
+      deliveryResetCount: 0,
+      lastDeliveryResetReason: null,
+    },
     viewStatus: {
       library: desired.library ? { status: "loading" } : { status: "not_requested" },
       torrentSummary:
@@ -1030,7 +1059,9 @@ function sameViews(
   return (
     left.library === right.library &&
     left.torrentId === right.torrentId &&
-    left.detail === right.detail
+    left.detail === right.detail &&
+    left.logCapture?.profile === right.logCapture?.profile &&
+    left.logCapture?.torrentId === right.logCapture?.torrentId
   );
 }
 

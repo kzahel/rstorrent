@@ -1,0 +1,330 @@
+.console {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 10rem;
+  color: var(--text-primary);
+  background: var(--surface-primary);
+}
+
+.captureBar,
+.filterBar {
+  display: flex;
+  min-height: var(--ui-table-toolbar-height);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  border-bottom: 1px solid var(--border-soft);
+  padding: 0.32rem 0.55rem;
+  color: var(--text-muted);
+  background: var(--surface-secondary);
+  font-size: var(--ui-font-caption);
+}
+
+.filterBar {
+  background: var(--surface-primary);
+}
+
+.captureBar label,
+.filterBar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+}
+
+.captureBar select,
+.filterBar select,
+.filterBar input,
+.filterBar button {
+  min-height: var(--ui-control-height);
+  border: 1px solid var(--border-soft);
+  border-radius: 0.35rem;
+  padding: 0.15rem 0.42rem;
+  color: var(--text-primary);
+  background: var(--surface-primary);
+  font: inherit;
+}
+
+.filterBar button {
+  cursor: pointer;
+}
+
+.filterBar button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.toolbarLabel {
+  color: var(--text-secondary);
+  font-weight: 750;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.searchLabel {
+  min-width: min(18rem, 38vw);
+  flex: 1 1 12rem;
+}
+
+.searchLabel input,
+.categoryLabel input {
+  width: 100%;
+}
+
+.categoryLabel {
+  width: min(11rem, 24vw);
+}
+
+.captureCount,
+.shownCount {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.traceNotice {
+  border-radius: 999px;
+  padding: 0.18rem 0.45rem;
+  color: color-mix(in srgb, var(--warning-strong) 78%, var(--text-primary));
+  background: color-mix(in srgb, var(--warning-strong) 10%, transparent);
+  font-weight: 650;
+}
+
+.viewport {
+  position: relative;
+  min-height: 0;
+  overflow: auto;
+  outline: none;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.viewport:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
+
+.canvas {
+  position: relative;
+  min-width: 48rem;
+}
+
+.entry {
+  position: absolute;
+  inset: 0 0 auto;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border-soft);
+  border-left: 3px solid transparent;
+  background: var(--surface-primary);
+  font-size: var(--ui-font-small);
+}
+
+.entry:hover,
+.entry[data-expanded] {
+  background: var(--surface-hover);
+}
+
+.entry[data-severity="warning"] {
+  border-left-color: var(--warning-strong);
+}
+
+.entry[data-severity="error"] {
+  border-left-color: var(--danger-strong);
+}
+
+.entryLine {
+  display: grid;
+  height: 34px;
+  grid-template-columns: 1.65rem 7.2rem 6.5rem minmax(8.5rem, 0.65fr) minmax(7rem, 0.55fr) minmax(18rem, 2fr);
+  align-items: center;
+}
+
+.entryLine > * {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 0.42rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entryLine time {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.disclosure {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.disclosure:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.severity {
+  color: var(--text-secondary);
+  font-weight: 720;
+  text-transform: uppercase;
+}
+
+.severity[data-severity="trace"],
+.severity[data-severity="debug"] {
+  color: var(--text-muted);
+}
+
+.severity[data-severity="warning"] {
+  color: color-mix(in srgb, var(--warning-strong) 78%, var(--text-primary));
+}
+
+.severity[data-severity="error"] {
+  color: var(--danger-strong);
+}
+
+.category {
+  color: var(--accent-strong);
+  font-family: var(--font-mono);
+}
+
+.subjectChip {
+  margin: 0 0.35rem;
+  border-radius: 999px;
+  padding: 0.14rem 0.48rem !important;
+  color: var(--text-secondary);
+  background: var(--surface-tertiary);
+}
+
+.message {
+  user-select: text;
+}
+
+.details {
+  display: grid;
+  height: calc(100% - 34px);
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0.4rem;
+  overflow: auto;
+  padding: 0.45rem 0.7rem 0.55rem 2.1rem;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--surface-secondary) 72%, transparent);
+}
+
+.details dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(10rem, 1fr));
+  align-content: start;
+  gap: 0.25rem 0.9rem;
+  margin: 0;
+}
+
+.details dl > div {
+  display: grid;
+  grid-template-columns: minmax(5.5rem, auto) minmax(0, 1fr);
+  gap: 0.45rem;
+}
+
+.details dt {
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.details dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.entryActions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.entryActions button,
+.newEvents {
+  border: 1px solid var(--border-soft);
+  border-radius: 0.36rem;
+  padding: 0.2rem 0.5rem;
+  color: var(--text-secondary);
+  background: var(--surface-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.lossMarker {
+  position: absolute;
+  inset: 0 0 auto;
+  display: flex;
+  height: 38px;
+  align-items: center;
+  gap: 0.7rem;
+  border-bottom: 1px solid var(--warning-strong);
+  padding: 0 0.75rem;
+  color: color-mix(in srgb, var(--warning-strong) 78%, var(--text-primary));
+  background: color-mix(in srgb, var(--warning-strong) 8%, var(--surface-primary));
+  font-size: var(--ui-font-caption);
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.newEvents {
+  position: absolute;
+  right: 1rem;
+  bottom: 0.8rem;
+  z-index: 5;
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  box-shadow: 0 0.4rem 1rem rgb(0 0 0 / 18%);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .captureBar label > span:not(.srOnly) {
+    display: none;
+  }
+
+  .captureCount,
+  .shownCount {
+    margin-left: 0;
+  }
+
+  .categoryLabel {
+    display: none !important;
+  }
+
+  .canvas {
+    min-width: 0;
+  }
+
+  .entryLine {
+    grid-template-columns: 1.5rem 6.8rem 5.7rem minmax(7.5rem, 0.7fr) minmax(12rem, 2fr);
+  }
+
+  .subjectChip {
+    display: none;
+  }
+
+  .details dl {
+    grid-template-columns: 1fr;
+  }
+}

@@ -334,6 +334,48 @@ test("removal keeps data by default and exposes destructive intent", async ({
   await expect(page.getByText("Torrent removed", { exact: true })).toBeVisible();
 });
 
+test("diagnostic console stays ordered, filtered, and virtualized", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openScenario(page, "diagnostic-console", 45_000);
+  await page.getByRole("tab", { name: "Logs" }).click();
+  const feed = page.getByRole("log", {
+    name: "Chronological diagnostic events",
+  });
+  await expect(feed).toBeVisible();
+  await expect(page.getByText("220 retained", { exact: true })).toBeVisible();
+  expect(await feed.locator("article").count()).toBeLessThan(60);
+
+  await page
+    .getByLabel("Diagnostic capture profile")
+    .selectOption("trace");
+  await expect(page.getByText("High-volume producer capture")).toBeVisible();
+  await page.getByLabel("Minimum displayed severity").selectOption("warning");
+  await page.getByLabel("Displayed torrent scope").selectOption("all");
+  await expect(page.getByText("44 shown", { exact: true })).toBeVisible();
+  await page.getByRole("searchbox", { name: "Search diagnostics" }).fill("watermark");
+  await expect(page.getByText("6 shown", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /^Expand/ }).first().click();
+  await expect(page.getByText("event index").first()).toBeVisible();
+
+  const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
+    (violation) => violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+  await capture(page, "rstorrent-diagnostic-console-wide.png");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("row", { name: /Big Buck Bunny/ }).click();
+  await page.getByRole("tab", { name: "Logs" }).click();
+  const phoneFeed = page.getByRole("log", {
+    name: "Chronological diagnostic events",
+  });
+  await expect(phoneFeed).toBeVisible();
+  expect(await phoneFeed.locator("article").count()).toBeLessThan(60);
+  await capture(page, "rstorrent-diagnostic-console-phone.png");
+});
+
 test("phone navigation opens a full detail surface", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openScenario(page, "healthy-download", 42_000);

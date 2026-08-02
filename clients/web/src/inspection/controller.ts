@@ -21,6 +21,7 @@ export class InspectionController {
     library: true,
     torrentId: null,
     detail: null,
+    logCapture: null,
   };
   private desiredVersion = 0;
   private syncedVersion = -1;
@@ -126,19 +127,18 @@ function desiredViewsFor(state: InspectionStore): DesiredInspectionViews {
   const presentation = state.presentation;
   const selected = presentation.selectedTorrentId;
   if (presentation.layout === "phone" && !presentation.detailOpen) {
-    return { library: true, torrentId: null, detail: null };
+    return { library: true, torrentId: null, detail: null, logCapture: null };
   }
   const torrentId = selected;
   const detail =
-    presentation.activeTab === "disk"
-      ? "disk"
+    presentation.activeTab === "disk" || presentation.activeTab === "logs"
+      ? presentation.activeTab
       : torrentId === null
       ? null
       : presentation.activeTab === "peers" ||
           presentation.activeTab === "trackers" ||
           presentation.activeTab === "files" ||
           presentation.activeTab === "pieces" ||
-          presentation.activeTab === "logs" ||
           presentation.activeTab === "general"
         ? presentation.activeTab
         : null;
@@ -146,6 +146,13 @@ function desiredViewsFor(state: InspectionStore): DesiredInspectionViews {
     library: presentation.layout !== "phone",
     torrentId,
     detail,
+    logCapture:
+      detail === "logs"
+        ? {
+            profile: presentation.logCaptureProfile,
+            torrentId: presentation.logCaptureTorrentId,
+          }
+        : null,
   };
 }
 
@@ -156,6 +163,8 @@ function sameViews(
   return (
     left.library === right.library &&
     left.torrentId === right.torrentId &&
-    left.detail === right.detail
+    left.detail === right.detail &&
+    left.logCapture?.profile === right.logCapture?.profile &&
+    left.logCapture?.torrentId === right.logCapture?.torrentId
   );
 }

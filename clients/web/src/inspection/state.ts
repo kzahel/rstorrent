@@ -30,6 +30,15 @@ export interface PresentationState {
   readonly sidebarOpen: boolean;
   readonly layout: "wide" | "compact" | "phone";
   readonly interfaceSize: InterfaceSize;
+  readonly logCaptureProfile: "normal" | "detailed" | "trace";
+  readonly logCaptureTorrentId: string | null;
+  readonly logMinimumSeverity: LogRow["severity"];
+  readonly logCategoryPrefix: string;
+  readonly logSearch: string;
+  readonly logDisplayScope: "all" | "selected";
+  readonly logExpandedIds: readonly string[];
+  readonly logClearThroughSequence: string | null;
+  readonly logFollowing: boolean;
 }
 
 export interface InspectionState extends InspectionSnapshot {
@@ -48,6 +57,17 @@ export interface InspectionActions {
   readonly closeSidebar: () => void;
   readonly setLayout: (layout: PresentationState["layout"]) => void;
   readonly setInterfaceSize: (interfaceSize: InterfaceSize) => void;
+  readonly setLogCaptureProfile: (
+    profile: PresentationState["logCaptureProfile"],
+  ) => void;
+  readonly setLogCaptureTorrent: (torrentId: string | null) => void;
+  readonly setLogMinimumSeverity: (severity: LogRow["severity"]) => void;
+  readonly setLogCategoryPrefix: (prefix: string) => void;
+  readonly setLogSearch: (search: string) => void;
+  readonly setLogDisplayScope: (scope: "all" | "selected") => void;
+  readonly toggleLogExpanded: (sequence: string) => void;
+  readonly clearVisibleLogs: () => void;
+  readonly setLogFollowing: (following: boolean) => void;
 }
 
 export type InspectionStore = InspectionState & InspectionActions;
@@ -75,7 +95,13 @@ const EMPTY_SNAPSHOT: InspectionSnapshot = {
   piecesByTorrent: {},
   disk: emptyDiskSet(),
   logs: [],
-  droppedLogs: 0,
+  logLoss: {
+    sourceEvictedCount: 0,
+    retainedFromSequence: "1",
+    localEvictedCount: 0,
+    deliveryResetCount: 0,
+    lastDeliveryResetReason: null,
+  },
   viewStatus: {
     library: { status: "not_requested" },
     torrentSummary: { status: "not_requested" },
@@ -98,6 +124,15 @@ const DEFAULT_PRESENTATION: PresentationState = {
   sidebarOpen: false,
   layout: "wide",
   interfaceSize: "standard",
+  logCaptureProfile: "normal",
+  logCaptureTorrentId: null,
+  logMinimumSeverity: "info",
+  logCategoryPrefix: "",
+  logSearch: "",
+  logDisplayScope: "selected",
+  logExpandedIds: [],
+  logClearThroughSequence: null,
+  logFollowing: true,
 };
 
 export function createInspectionStore(
@@ -183,6 +218,63 @@ export function createInspectionStore(
         presentation: { ...state.presentation, interfaceSize },
       }));
     },
+    setLogCaptureProfile: (logCaptureProfile) => {
+      set((state) => ({
+        presentation: { ...state.presentation, logCaptureProfile },
+      }));
+    },
+    setLogCaptureTorrent: (logCaptureTorrentId) => {
+      set((state) => ({
+        presentation: { ...state.presentation, logCaptureTorrentId },
+      }));
+    },
+    setLogMinimumSeverity: (logMinimumSeverity) => {
+      set((state) => ({
+        presentation: { ...state.presentation, logMinimumSeverity },
+      }));
+    },
+    setLogCategoryPrefix: (logCategoryPrefix) => {
+      set((state) => ({
+        presentation: { ...state.presentation, logCategoryPrefix },
+      }));
+    },
+    setLogSearch: (logSearch) => {
+      set((state) => ({
+        presentation: { ...state.presentation, logSearch },
+      }));
+    },
+    setLogDisplayScope: (logDisplayScope) => {
+      set((state) => ({
+        presentation: { ...state.presentation, logDisplayScope },
+      }));
+    },
+    toggleLogExpanded: (sequence) => {
+      set((state) => {
+        const expanded = state.presentation.logExpandedIds.includes(sequence);
+        return {
+          presentation: {
+            ...state.presentation,
+            logExpandedIds: expanded
+              ? state.presentation.logExpandedIds.filter((id) => id !== sequence)
+              : [...state.presentation.logExpandedIds, sequence],
+          },
+        };
+      });
+    },
+    clearVisibleLogs: () => {
+      set((state) => ({
+        presentation: {
+          ...state.presentation,
+          logClearThroughSequence: state.logs.at(-1)?.id ?? null,
+          logExpandedIds: [],
+        },
+      }));
+    },
+    setLogFollowing: (logFollowing) => {
+      set((state) => ({
+        presentation: { ...state.presentation, logFollowing },
+      }));
+    },
   }));
 }
 
@@ -216,7 +308,7 @@ export function reduceInspectionUpdate(
   let piecesByTorrent = state.piecesByTorrent;
   let disk = state.disk;
   let logs = state.logs;
-  let droppedLogs = state.droppedLogs;
+  let logLoss = state.logLoss;
 
   if (update.torrents !== undefined) {
     torrents = applyRows(
@@ -304,9 +396,15 @@ export function reduceInspectionUpdate(
 
   if (update.logs !== undefined) {
     const combined = [...state.logs, ...update.logs.append];
-    const overflow = Math.max(0, combined.length - 256);
+    const overflow = Math.max(0, combined.length - 2_048);
     logs = overflow === 0 ? combined : combined.slice(overflow);
-    droppedLogs = state.droppedLogs + update.logs.dropped + overflow;
+    logLoss = {
+      sourceEvictedCount: update.logs.sourceEvictedCount,
+      retainedFromSequence: update.logs.retainedFromSequence,
+      localEvictedCount: state.logLoss.localEvictedCount + overflow,
+      deliveryResetCount: update.logs.deliveryResetCount,
+      lastDeliveryResetReason: update.logs.lastDeliveryResetReason,
+    };
   }
 
   const selectedId = state.presentation.selectedTorrentId;
@@ -327,7 +425,7 @@ export function reduceInspectionUpdate(
     piecesByTorrent,
     disk,
     logs,
-    droppedLogs,
+    logLoss,
     presentation: {
       ...state.presentation,
       selectedTorrentId: nextSelected,
@@ -437,15 +535,6 @@ export function emptyPieceMapSet(torrentId: string): PieceMapSet {
     active: [],
     revision: 0,
   };
-}
-
-export function visibleLogs(
-  logs: readonly LogRow[],
-  torrentId: string | null,
-): readonly LogRow[] {
-  return logs.filter(
-    (row) => row.torrentId === null || row.torrentId === torrentId,
-  );
 }
 
 function clampDetailPanePercent(percent: number): number {

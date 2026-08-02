@@ -1,3 +1,5 @@
+import type { DiagnosticField, DiagnosticSubject } from "../api";
+
 export type TorrentStatus =
   | "metadata"
   | "downloading"
@@ -74,6 +76,10 @@ export interface DesiredInspectionViews {
     | "disk"
     | "logs"
     | null;
+  readonly logCapture: {
+    readonly profile: "normal" | "detailed" | "trace";
+    readonly torrentId: string | null;
+  } | null;
 }
 
 export interface DemoState {
@@ -136,8 +142,19 @@ export interface LogRow {
   readonly timestampMs: number;
   readonly severity: "trace" | "debug" | "info" | "warning" | "error";
   readonly category: string;
-  readonly summary: string;
+  readonly code: string;
+  readonly message: string;
   readonly torrentId: string | null;
+  readonly subjects: readonly DiagnosticSubject[];
+  readonly fields: readonly DiagnosticField[];
+}
+
+export interface LogLoss {
+  readonly sourceEvictedCount: number;
+  readonly retainedFromSequence: string;
+  readonly localEvictedCount: number;
+  readonly deliveryResetCount: number;
+  readonly lastDeliveryResetReason: string | null;
 }
 
 export interface PeerSet {
@@ -303,7 +320,7 @@ export interface InspectionSnapshot {
   readonly piecesByTorrent: Readonly<Record<string, PieceMapSet>>;
   readonly disk: DiskSet;
   readonly logs: readonly LogRow[];
-  readonly droppedLogs: number;
+  readonly logLoss: LogLoss;
   readonly viewStatus: InspectionViewStatus;
 }
 
@@ -341,7 +358,10 @@ export type InspectionUpdate =
       readonly disk?: DiskSet;
       readonly logs?: {
         readonly append: readonly LogRow[];
-        readonly dropped: number;
+        readonly sourceEvictedCount: number;
+        readonly retainedFromSequence: string;
+        readonly deliveryResetCount: number;
+        readonly lastDeliveryResetReason: string | null;
       };
     };
 
@@ -372,6 +392,7 @@ export type DemoScenarioId =
   | "file-progress"
   | "disk-error"
   | "slow-disk-pressure"
+  | "diagnostic-console"
   | "empty-library";
 
 export interface DemoScenarioSummary {

@@ -48,19 +48,26 @@ describe("inspection store", () => {
       type: "patch",
       revision: 2,
       logs: {
-        append: Array.from({ length: 300 }, (_, index) => ({
+        append: Array.from({ length: 2_100 }, (_, index) => ({
           id: String(index),
           timestampMs: index,
           severity: "info" as const,
           category: "test",
-          summary: "bounded",
+          code: "bounded",
+          message: "bounded",
           torrentId: null,
+          subjects: [],
+          fields: [],
         })),
-        dropped: 2,
+        sourceEvictedCount: 2,
+        retainedFromSequence: "1",
+        deliveryResetCount: 0,
+        lastDeliveryResetReason: null,
       },
     });
-    expect(store.getState().logs).toHaveLength(256);
-    expect(store.getState().droppedLogs).toBe(46);
+    expect(store.getState().logs).toHaveLength(2_048);
+    expect(store.getState().logLoss.sourceEvictedCount).toBe(2);
+    expect(store.getState().logLoss.localEvictedCount).toBe(52);
   });
 
   it("keeps the detail pane size within its usable range", () => {
@@ -138,7 +145,13 @@ function snapshot(rows: readonly TorrentRow[]): InspectionSnapshot {
     piecesByTorrent: {},
     disk: emptyDiskSet(),
     logs: [],
-    droppedLogs: 0,
+    logLoss: {
+      sourceEvictedCount: 0,
+      retainedFromSequence: "1",
+      localEvictedCount: 0,
+      deliveryResetCount: 0,
+      lastDeliveryResetReason: null,
+    },
     viewStatus: {
       library: { status: "ready" },
       torrentSummary: { status: "not_requested" },

@@ -15,6 +15,7 @@ import type { InspectionApplication } from "../application";
 import { InspectionProvider } from "../context";
 import { InspectionController } from "../controller";
 import { DemoApplication } from "../demo/DemoApplication";
+import { DEMO_PRIMARY_TORRENT_ID } from "../demo/catalog";
 import type {
   CommandResult,
   DesiredInspectionViews,
@@ -78,7 +79,45 @@ describe("inspection application", () => {
     expect(screen.getByText("Selected transfer")).toBeVisible();
     expect(peersTab).toHaveTextContent(peerCount!);
     await user.click(screen.getByRole("tab", { name: "Logs" }));
-    expect(screen.getByRole("grid", { name: "Diagnostic log" })).toBeVisible();
+    expect(
+      screen.getByRole("log", { name: "Chronological diagnostic events" }),
+    ).toBeVisible();
+  });
+
+  it("drives an ordered diagnostic console with separate capture controls", async () => {
+    const user = userEvent.setup();
+    const rendered = renderScenario("diagnostic-console", 45_000);
+    await user.click(screen.getByRole("tab", { name: "Logs" }));
+
+    const feed = screen.getByRole("log", {
+      name: "Chronological diagnostic events",
+    });
+    expect(feed).toBeVisible();
+    expect(rendered.container.querySelectorAll("article").length).toBeLessThan(60);
+    expect(screen.getByText(/retained$/)).toHaveTextContent("220 retained");
+
+    const captureScope = screen.getByLabelText("Diagnostic capture scope");
+    await user.selectOptions(captureScope, DEMO_PRIMARY_TORRENT_ID);
+    await user.click(screen.getByRole("row", { name: /Sintel 4K open movie/ }));
+    expect(captureScope).toHaveValue(DEMO_PRIMARY_TORRENT_ID);
+
+    await user.selectOptions(
+      screen.getByLabelText("Diagnostic capture profile"),
+      "trace",
+    );
+    expect(screen.getByText("High-volume producer capture")).toBeVisible();
+    await user.selectOptions(
+      screen.getByLabelText("Minimum displayed severity"),
+      "warning",
+    );
+    await user.selectOptions(
+      screen.getByLabelText("Displayed torrent scope"),
+      "all",
+    );
+    expect(screen.getByText(/shown$/)).toHaveTextContent("44 shown");
+
+    await user.type(screen.getByRole("searchbox", { name: "Search diagnostics" }), "watermark");
+    expect(screen.getByText(/shown$/)).toHaveTextContent("6 shown");
   });
 
   it("opens Settings, changes interface size live, and restores it", async () => {
