@@ -563,11 +563,11 @@ materializing the selected snapshot; its encoded update and queue high-water
 were both 79,230 bytes beneath the 256 KiB default, with zero resets. These
 single-machine timings are observations, not regression thresholds.
 
-Tactical `049` will measure the diagnostic path while unifying its frontend
-record shape, raising a deliberately bounded console history, batching ordered
-append delivery, and virtualizing visible entries. It must record encoded and
-resident high-water marks before treating additional indexing, binary
-encoding, or frame-coalesced rendering as justified.
+Tactical `049` measures the diagnostic path while unifying its frontend record
+shape, raising a deliberately bounded console history, batching ordered append
+delivery, and virtualizing visible entries. Its results are recorded below;
+they do not justify additional indexing, binary encoding, or frame-coalesced
+rendering.
 
 The unchanged Tactical `034` 2,000-torrent/10,000-peer scenario remains the
 frontend pressure evidence: at most 100 rendered rows, 840 DOM elements,
@@ -589,6 +589,27 @@ Replay retention remains a deliberate bounded correctness cost. Field masks,
 entity sharding, mutable versioned containers, streaming, animation-frame
 delivery, and binary codecs remain later measured responses rather than
 assumed fixes.
+
+### Diagnostic Console Evidence: 2026-08-02
+
+Tactical `049` attempted 10,000 deterministic diagnostic records through both
+source and browser pressure fixtures. The Rust ring retained the newest 2,048,
+reported 7,952 source evictions, and occupied 733,185 encoded bytes, below its
+2 MiB ceiling. The Zustand projection independently retained 2,048 and
+reported 7,952 local evictions. The wide browser viewport mounted 500 DOM
+elements including 24 virtualized records and sampled 26,019,809 bytes of used
+JavaScript heap. Deterministic browser checks retain ceilings of 1,500 DOM
+elements, 60 rendered records, and 256 MiB sampled heap. These are bounded
+development observations, not whole-product memory guarantees.
+
+The controlled libtorrent 2.0.13.0 run observed a real successful UDP tracker
+record, expanded its exact URL and announce interval, and changed producer
+capture and display-category controls while the verified transfer continued.
+The 122-file, three-piece payload showed first Done at 9,036 ms and first
+Verified at 9,041 ms, and the browser proof completed in 34.1 seconds with
+joined cleanup. Its first invocation hit the already-recorded one-shot UDP
+tracker timing transient; the unchanged rerun passed. This proves bounded live
+inspection and structured context, not public-swarm throughput.
 
 ### File Projection Evidence: 2026-08-01
 

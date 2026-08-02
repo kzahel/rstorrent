@@ -1,6 +1,6 @@
 # Structured Log Console
 
-Status: Planned.
+Status: Completed 2026-08-02.
 
 Topics: `desktop-inspection-surface`, `web-ui-design`,
 `application-view-api`, `application-control`, `client-surfaces`,
@@ -585,4 +585,78 @@ beyond this console slice.
 
 ## Implementation And Evidence
 
-Pending.
+The completed slice keeps one application-owned diagnostic authority while
+making its record contract explicitly semantic. `DiagnosticCategory` is now a
+validated hierarchical string, events retain a stable code and optional
+torrent identity, and bounded subjects and typed fields carry deliberately
+projected tracker, peer, piece, file, task, count, byte, duration, endpoint,
+and error context. Record construction sanitizes hostile text and rejects or
+truncates invalid producer shapes before retention. Representative tracker,
+metadata, peer, piece, and lifecycle emitters now use that context rather than
+requiring message parsing.
+
+Normal remains the intrinsic all-torrent baseline. Each diagnostics view may
+request Normal, Detailed, or Trace capture together with minimum severity,
+category prefixes, and an optional pinned torrent. The owner cheaply tests
+interest before constructing optional high-volume piece records. A selected-
+torrent delivery still includes relevant session-global records, but global
+records do not accidentally enable expensive torrent-scoped capture.
+Replacement, close, lease expiry, and application shutdown remove the view's
+interest with the existing view-set owner; no diagnostic-specific task or
+transport was added.
+
+The application ring now retains at most 2,048 records and 2 MiB, with a 4 KiB
+record ceiling. Diagnostics patches stop at 128 records or 128 KiB before
+entering the existing bounded view-set queue. Snapshot retention reports the
+oldest retained sequence and cumulative source eviction separately from
+delivery reset metadata. The pure TypeScript reducer deduplicates by sequence,
+preserves trace and structured fields, and the Zustand store independently
+caps local materialization at 2,048 while recording local eviction. The same
+generated records and reducer are used by HTTP pulls and acknowledged Tauri
+Channel delivery.
+
+The React Logs tab is now a session-global `LogConsole`, not a sortable table.
+It provides explicit producer capture controls, local severity/category/text/
+torrent filters, pinned capture scope, structured expansion and copy actions,
+a local clear watermark, bottom-follow behavior, and an `N new` return action.
+Only a bounded visible range plus overscan enters the DOM. Wide and phone
+layouts preserve the ordered feed and accessible controls, and the permanent
+`diagnostic-console` scenario exercises mixed global/torrent records and all
+loss distinctions without persisting console state.
+
+Pressure evidence attempted 10,000 records. The Rust source retained exactly
+2,048, reported 7,952 source evictions, and occupied 733,185 encoded bytes in
+the deterministic fixture. The browser retained 2,048 semantic records,
+reported 7,952 local evictions, and rendered 24 record elements inside 500
+total DOM elements. Chromium sampled 26,019,809 bytes of used JavaScript heap.
+The latter is a single-machine observation rather than a browser-wide memory
+guarantee; the deterministic tests enforce the 1,500-element, 60-record, and
+256 MiB development ceilings.
+
+The controlled loopback proof used the real application service and a
+libtorrent 2.0.13.0 seed. The console observed and expanded the real
+`tracker_announce_succeeded` record, including its exact tracker URL and
+announce interval, then changed capture profile and category filtering while
+the transfer continued. The 122-file, three-piece payload completed and
+verified; first Done and Verified appeared at 9,036 ms and 9,041 ms, and the
+run completed in 34.1 seconds with joined gateway and child cleanup. The first
+invocation encountered the already-recorded one-shot UDP tracker timing
+transient; an unchanged rerun passed. This is interoperability and inspection
+evidence, not a throughput comparison.
+
+Validation completed without opening Tauri or a visible browser:
+
+- generated TypeScript/schema drift check, TypeScript typecheck, production
+  Vite build, 88 frontend test passes with two opt-in skips, and the full
+  Playwright suite with 11 passes and three opt-in skips;
+- `cargo fmt --all -- --check`, Clippy over all workspace targets with warnings
+  denied, and `cargo test --workspace --no-fail-fast`;
+- the clean Android bootstrap build for both supported ABIs, generated UniFFI
+  Kotlin bindings, debug APK assembly, and Android unit tests;
+- the controlled headless libtorrent/browser transfer and payload comparison;
+  and
+- `tauri build --no-bundle`, which built
+  `target/release/rstorrent-desktop` without launching a window.
+
+Logical implementation commits are `f023829`, `adc75ef`, `d8966b9`,
+`4cc7ebb`, `6a7f0fb`, and `54a3ada`; `a6c70ff` records the tactical design.

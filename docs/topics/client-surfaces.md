@@ -40,7 +40,11 @@ mutation to the new surface: bounded magnet intake through the semantic
 command boundary. Tactical `038`
 adds five curated public test-torrent shortcuts without adding a debug backend
 command or bypassing application policy. Android remains intentionally
-unchanged.
+unchanged. Tactical `049` replaces the React product's generic Logs table with
+the structured ordered console through both browser polling and Tauri Channel
+delivery. Shared generated Rust/TypeScript/Kotlin semantic artifacts continue
+to compile, but Android presentation intentionally does not mirror this dense
+desktop diagnostic surface.
 
 ## Scope
 
@@ -287,14 +291,16 @@ even though its engine permits routed peers and trackers. Android likewise
 runs the online engine inside its foreground service rather than through a
 socket proxy.
 
-## Diagnostics Parity
+## Diagnostics Surfaces
 
-Tactical `012` gives the shared web/Tauri surface and Android Compose the same
-semantic progress dispositions, reason codes, diagnostic categories,
-severity filters, default profiles, dropped-event indication, and bounded
-copy behavior. The web surface uses a desktop timeline region and Compose
-uses a phone/tablet-appropriate section with a latest-event summary; they are
-semantically equivalent rather than pixel-identical.
+Tactical `012` gave the original shared web/Tauri surface and Android Compose
+the same semantic progress dispositions, reason codes, diagnostic categories,
+severity filters, default profiles, dropped-event indication, and bounded copy
+behavior. Tactical `049` now gives desktop/web a richer global ordered console
+with structured expansion, producer capture controls, and explicit source,
+delivery, and local loss. Android retains its smaller product-appropriate
+summary and shares compatible generated record types; detailed presentation
+parity is deliberately not required.
 
 Progress assessment remains a deliberate product view. Diagnostic records are
 a separate bounded timeline and are never scraped to decide torrent state or

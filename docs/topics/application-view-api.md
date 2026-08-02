@@ -22,8 +22,8 @@ controller, reducer, and Zustand transaction. The existing Tactical `008`
 subscriptions remain compatibility adapters. Browser WebSocket delivery and
 binary encoding remain deferred, and no stable public remote wire
 compatibility is claimed yet.
-Tactical `049` records the planned diagnostics specialization: hierarchical
-categories, structured bounded subjects/fields, aggregate capture interest,
+Tactical `049` completes the diagnostics specialization: hierarchical
+categories, structured bounded subjects and fields, capture interest,
 separate source/delivery/local loss semantics, and one ordered console over
 the existing view-set path.
 
@@ -259,7 +259,11 @@ type ViewSpec = {
   | { type: "torrent_detail"; torrent_id: TorrentId }
   | { type: "torrent_peers"; torrent_id: TorrentId }
   | { type: "torrent_files"; torrent_id: TorrentId }
-  | { type: "diagnostics"; torrent_id?: TorrentId }
+  | {
+      type: "diagnostics";
+      torrent_id?: TorrentId;
+      filter: DiagnosticFilter;
+    }
 );
 
 interface OpenViewsOptions {
@@ -365,6 +369,21 @@ Projection rules are:
 | Verified pieces and bounded current piece activity | Typed range or bitmap additions, clears, and replacements |
 | Diagnostics and ordered events | Ordered append with explicit retained-history and delivery-gap metadata; never silently latest-value conflated |
 | Queue or priority order | Explicit sortable fields; array position is not meaning unless the projection states it |
+
+Tactical `049` specializes the diagnostics row without creating a second
+delivery system. Records carry monotonic decimal sequence, bounded wall-clock
+timestamp, severity, forward-compatible hierarchical category, stable code,
+optional torrent identity, human message, bounded subjects, and bounded typed
+fields. A diagnostics view's profile, severity, category prefixes, and
+optional pinned torrent are producer capture and delivery interest. Display
+search and filtering remain client presentation state.
+
+The application history is bounded to 2,048 records and 2 MiB; one record is
+at most 4 KiB and one append patch at most 128 records or 128 KiB. Snapshot
+retention identifies source eviction, view-set reset identifies delivery loss,
+and the client separately reports local eviction. These meanings are not
+collapsed into a generic dropped count. The generated validator and pure
+reducer preserve this structure identically for polling and Tauri streaming.
 
 Within one accumulated collection diff, a later removal wins over an earlier
 upsert; a still-later upsert may represent a genuinely new lifecycle only when

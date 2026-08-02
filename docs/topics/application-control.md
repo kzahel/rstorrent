@@ -19,7 +19,10 @@ observation. Tactical `048` adapts the same commands and leased view sets to
 the in-process Tauri product without introducing a local server. The live web
 adapter now gives each application instance a random request-ID namespace so
 durable receipts do not conflict across reloads or tabs. No stable public
-remote wire format is accepted yet.
+remote wire format is accepted yet. Tactical `049` evolves diagnostics into
+hierarchical structured records with explicit capture interest and distinct
+source, delivery, and local loss while keeping them separate from commands and
+product-state authority.
 
 ## Scope
 
@@ -74,10 +77,12 @@ without rewriting torrent intent.
 
 Typed diagnostics use a separate bounded reactive projection. They may explain
 the facts behind a progress assessment, but clients do not parse diagnostic
-text to determine torrent state, available actions, or correctness. A
-subscriber begins from bounded recent history, filters before its transport
+text to determine torrent state, available actions, or correctness. A view
+begins from bounded recent history, filters capture before its transport
 queue, detects overflow or sequence loss, and can resynchronize independently
-from product-state views.
+from product-state views. Hierarchical categories and typed subjects/fields
+are deliberately projected application semantics rather than arbitrary Rust
+debug values.
 
 Detailed clients aggregate their currently relevant named projections into a
 leased view set. One view set owns an epoch, opaque cursor, bounded diff

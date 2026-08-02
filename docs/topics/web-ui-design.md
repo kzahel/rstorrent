@@ -28,10 +28,10 @@ interface sizes, makes readable Standard the default, and keeps virtual-table
 geometry coherent with presentation sizing. Tactical `048` replaces the
 legacy Tauri entry with the same React inspection application using
 acknowledged in-process leased-view streaming; HTTP polling remains the
-browser/headless delivery adapter. Tactical `049` records the accepted global
-Logs design: a dedicated virtualized chronological console with structured
-expansion, separate capture and display filters, bottom-follow/new-record
-behavior, local clear, and no sorting or persistence.
+browser/headless delivery adapter. Tactical `049` completes the accepted
+global Logs design: a dedicated virtualized chronological console with
+structured expansion, separate capture and display filters, bottom-follow/
+new-record behavior, local clear, and no sorting or persistence.
 
 ## Purpose
 
@@ -381,6 +381,22 @@ the stable summary throughout those view-set changes; narrow layouts may
 scroll to reveal a clipped active tab, but the tab boxes themselves do not
 reflow.
 
+Tactical `049` replaces the generic Logs table with a dedicated ordered
+console. Opening Logs does not require a selected torrent. Capture profile,
+category prefixes, and pinned torrent scope alter the desired diagnostics
+view; text, severity, category, and torrent display filters operate over the
+already retained local history. Expanded entries show deliberately typed
+context and provide copy actions. Local clear advances a sequence watermark,
+and scrolling away from the bottom exposes a new-record action without
+stopping bounded ingestion.
+
+The permanent 10,000-record scenario retains 2,048 semantic records and
+renders only 24 record elements in the sampled wide viewport. Wide and phone
+screens pass serious/critical accessibility checks, retain keyboard-operable
+controls, and do not make the continuously changing feed an `aria-live`
+stream. Console state remains one application-lifetime presentation concern;
+no diagnostic history or filters are written to browser storage.
+
 ## Likely Sequencing
 
 1. The accepted view-set contract, generated TypeScript/schema, polling
@@ -393,9 +409,9 @@ reflow.
 3. Tactical `035` defines stable Rust torrent and active-peer inspection
    projections, self-expiring leases, semantic view selection, suspension
    recovery, and the live frontend adapter. This step is complete.
-4. Files is complete in Tactical `041`, and the schedule-backed Trackers view
-   is complete in Tactical `043`. Tactical `049` owns the accepted structured
-   ordered Logs console as the next detailed inspection slice.
+4. Files is complete in Tactical `041`, the schedule-backed Trackers view is
+   complete in Tactical `043`, and the structured ordered Logs console is
+   complete in Tactical `049`.
 5. Connect remaining detail views according to debugging and product value,
    keeping unsupported scaffolds truthful.
 6. Tauri streaming is complete in Tactical `048`. Measure browser update

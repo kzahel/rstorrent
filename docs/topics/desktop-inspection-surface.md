@@ -22,10 +22,9 @@ Tacticals `044`--`045` add global receive/write/hash pressure and a bounded
 selected-torrent piece overview with controlled live evidence. Tactical `048`
 makes this React surface the ordinary Tauri entry through acknowledged
 in-process leased-view streaming while preserving HTTP polling as its headless
-browser seam.
-Tactical `049` records the next accepted slice: a global Chrome DevTools-like
-ordered Logs console with structured context, deliberate capture interest,
-local filtering, explicit loss, and no persistence.
+browser seam. Tactical `049` completes a global Chrome DevTools-like ordered
+Logs console with structured context, deliberate capture interest, local
+filtering, explicit loss, bounded virtualization, and no persistence.
 
 Tactical `042` makes a magnet's verified metainfo name appear in both the live
 library row and General heading as soon as metadata arrives. The hash-prefix
@@ -81,9 +80,10 @@ remote daemon part of the desktop architecture.
 automation seam. `./scripts/desktop` now hosts the same React inspection
 surface through Tauri's in-process commands and acknowledged Channel view
 delivery rather than making the gateway a desktop dependency. Tactical `049`
-now owns the categorized Logs experience and records the JSTorrent behavior
-worth adapting without inheriting its mixed frontend or arbitrary logger
-arguments.
+completes the categorized Logs experience without inheriting JSTorrent's
+mixed frontend or arbitrary logger arguments. The feed is global, strictly
+chronological, and virtualized; capture interest and local display filters are
+intentionally separate.
 
 ## Platform Split
 
@@ -191,8 +191,9 @@ columns and widths share the existing versioned preferences, exact sorting,
 and optional live re-sorting behavior. The phone detail keeps the URL and
 status useful while fully hiding the inactive library pane.
 
-The surface is therefore useful for live peer, file, tracker, piece, and global
-disk observation, but it is not yet a complete debugging console. The
-existing categorized diagnostics feed is the active Tactical `049`; a
-registry-backed Swarm table remains the deeper peer-lifecycle candidate after
-the console is established.
+The surface is therefore useful for live peer, file, tracker, piece, global
+disk, and structured diagnostic observation. A controlled libtorrent transfer
+proved real tracker context through the same console and shared pull/stream
+reducer without launching a visible client. A registry-backed Swarm table
+remains a deeper peer-lifecycle inspection candidate; the existing oracle
+campaign remains the source for the next engine-correctness slice.

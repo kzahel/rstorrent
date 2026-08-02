@@ -113,20 +113,20 @@ evidence.
 
 ### Now
 
-**Implement the structured Log console.** Tactical
-[`048`](../tactical/048-unified-view-delivery-and-tauri-migration.md) now makes
-the React inspection application the in-process Tauri product and gives HTTP
-pull and acknowledged Tauri streaming one leased-view reducer/store path.
-Tactical [`049`](../tactical/049-structured-log-console.md) owns the next
-bounded slice: replace the sortable Logs scaffold with a global ordered
+**Select the next oracle-driven engine slice.** Tactical
+[`049`](../tactical/049-structured-log-console.md) completes the global ordered
 console, structured expandable context, producer capture interest, honest gap
-semantics, and bounded responsive evidence.
+semantics, and bounded responsive/live evidence. Use the connected peer, file,
+tracker, piece, disk, and diagnostic surfaces together with the retained
+comparator evidence to choose one bounded owner-level correctness or
+performance tactical.
 
 ### Next
 
-1. **Resume oracle-driven engine work.** Use the connected inspection evidence
-   to decide whether serialized storage execution, another correctness owner,
-   or measured BEP breadth becomes the next engine tactical.
+1. **Deepen peer inspection only if engine selection needs it.** A
+   registry-backed Swarm view remains the strongest missing inspection
+   candidate, but it should not displace a reproducible download correctness
+   or storage bottleneck merely to add another tab.
 
 ### Later
 
@@ -208,10 +208,10 @@ does not.
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
 | Durable semantic application control | Implemented | deterministic, runtime, web, AVD, physical | Archive and fenced keep/delete removal are implemented; stable public compatibility and general multi-torrent scheduling remain absent. | [`application-control`](application-control.md) |
-| Leased application view sets and polling client | Implemented | deterministic, runtime, interop, web | Named summary, piece, diagnostic, active-peer, complete-file, tracker-lifecycle, and global Disk views have bounded replay/reset, independent lease expiry, and fresh-snapshot recovery; swarm views, streaming, Tauri migration, and stable public compatibility remain absent. | [`application-view-api`](application-view-api.md) |
+| Leased application view sets and delivery clients | Implemented | deterministic, runtime, interop, web, Tauri | Named summary, piece, structured diagnostic, active-peer, complete-file, tracker-lifecycle, and global Disk views have bounded replay/reset, independent lease expiry, fresh-snapshot recovery, polling, and acknowledged in-process streaming; swarm views, browser WebSocket delivery, and stable public compatibility remain absent. | [`application-view-api`](application-view-api.md) |
 | Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive web surface adds magnets, archives, guarded removal, live peer/file/tracker inspection, global Disk pressure, and bounded Canvas Pieces; production desktop integration, `.torrent` file intake, and remaining detail feeds are incomplete. | [`client-surfaces`](client-surfaces.md) |
 | Android Compose foreground client | Partial | runtime, AVD, physical | General settings, connectivity policy, and complete torrent controls remain incomplete. | [`client-surfaces`](client-surfaces.md) |
-| Derived progress and bounded diagnostics | Implemented | deterministic, runtime, web, AVD | Scheduler and per-peer facts must grow with the corresponding owners. | [`application-control`](application-control.md) |
+| Derived progress and bounded diagnostics | Implemented | deterministic, runtime, interop, web, AVD | Structured hierarchical records, typed context, capture interest, explicit source/delivery/local loss, and the global ordered console are complete; scheduler and per-peer facts must grow with their corresponding owners. | [`application-control`](application-control.md) |
 | Offline, loopback-only, and online egress policy | Implemented | deterministic, runtime, web, AVD | Policy is fixed for one service lifetime; Android VPN and metered-network controls are absent. | [`application-control`](application-control.md) |
 | Headless product validation | Implemented | web, AVD | Physical devices and visible desktop automation still require explicit authorization. | [`client-surfaces`](client-surfaces.md) |
 | Comparative live performance harness | Implemented | deterministic, interop, live | The headless catalog comparator is repeatable and pinned, but public speed remains a distribution rather than a CI threshold. | [`performance-and-live-evidence`](performance-and-live-evidence.md) |
