@@ -82,7 +82,7 @@ describe("inspection store", () => {
     expect(store.getState().presentation.detailPanePercent).toBe(57);
   });
 
-  it("defaults and persists interface size as presentation state", () => {
+  it("defaults and persists complete appearance presentation state", () => {
     let appearance: string | null = null;
     const storage = {
       getItem: () => appearance,
@@ -92,12 +92,20 @@ describe("inspection store", () => {
     };
     const store = createInspectionStore(storage);
     expect(store.getState().presentation.interfaceSize).toBe("standard");
+    expect(store.getState().presentation.colorTheme).toBe("auto");
 
+    store.getState().setColorTheme("dark");
     store.getState().setInterfaceSize("spacious");
     expect(store.getState().presentation.interfaceSize).toBe("spacious");
-    expect(
-      createInspectionStore(storage).getState().presentation.interfaceSize,
-    ).toBe("spacious");
+    expect(store.getState().presentation.colorTheme).toBe("dark");
+    expect(JSON.parse(appearance ?? "null")).toEqual({
+      version: 2,
+      interfaceSize: "spacious",
+      colorTheme: "dark",
+    });
+    const restored = createInspectionStore(storage).getState().presentation;
+    expect(restored.interfaceSize).toBe("spacious");
+    expect(restored.colorTheme).toBe("dark");
   });
 });
 

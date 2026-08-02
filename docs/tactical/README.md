@@ -269,6 +269,9 @@ that scope and its cleanup or compatibility rules explicitly.
   replaces the sortable Logs scaffold with a global ordered diagnostic
   console, structured expandable context, producer capture interest, honest
   gap semantics, and bounded pull/stream delivery with headless live evidence.
+- [`050-color-theme-settings.md`](050-color-theme-settings.md): complete; adds
+  Auto/Light/Dark selection to the shared Settings surface with safe appearance
+  migration, pre-React application, and system-responsive Auto behavior.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

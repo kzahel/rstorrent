@@ -25,6 +25,9 @@ in-process leased-view streaming while preserving HTTP polling as its headless
 browser seam. Tactical `049` completes a global Chrome DevTools-like ordered
 Logs console with structured context, deliberate capture interest, local
 filtering, explicit loss, bounded virtualization, and no persistence.
+Tactical `050` extends the shared React Settings surface with browser-local
+Auto, Light, and Dark themes, preserving Interface size and applying persisted
+appearance before React content.
 
 Tactical `042` makes a magnet's verified metainfo name appear in both the live
 library row and General heading as soon as metadata arrives. The hash-prefix

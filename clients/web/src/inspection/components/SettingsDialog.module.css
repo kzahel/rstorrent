@@ -97,6 +97,10 @@
   padding: var(--ui-space-md) 0 var(--ui-space-sm);
 }
 
+.settingGroup + .settingGroup {
+  margin-top: var(--ui-space-md);
+}
+
 .settingHeading strong {
   font-size: var(--ui-font-body);
 }

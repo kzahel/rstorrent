@@ -1,9 +1,12 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
 
 import {
-  loadInterfaceSize,
-  saveInterfaceSize,
+  DEFAULT_COLOR_THEME,
+  DEFAULT_INTERFACE_SIZE,
+  loadAppearancePreferences,
+  saveAppearancePreferences,
   type AppearanceStorage,
+  type ColorTheme,
   type InterfaceSize,
 } from "./appearance";
 import type {
@@ -30,6 +33,7 @@ export interface PresentationState {
   readonly sidebarOpen: boolean;
   readonly layout: "wide" | "compact" | "phone";
   readonly interfaceSize: InterfaceSize;
+  readonly colorTheme: ColorTheme;
   readonly logCaptureProfile: "normal" | "detailed" | "trace";
   readonly logCaptureTorrentId: string | null;
   readonly logMinimumSeverity: LogRow["severity"];
@@ -57,6 +61,7 @@ export interface InspectionActions {
   readonly closeSidebar: () => void;
   readonly setLayout: (layout: PresentationState["layout"]) => void;
   readonly setInterfaceSize: (interfaceSize: InterfaceSize) => void;
+  readonly setColorTheme: (colorTheme: ColorTheme) => void;
   readonly setLogCaptureProfile: (
     profile: PresentationState["logCaptureProfile"],
   ) => void;
@@ -123,7 +128,8 @@ const DEFAULT_PRESENTATION: PresentationState = {
   detailOpen: false,
   sidebarOpen: false,
   layout: "wide",
-  interfaceSize: "standard",
+  interfaceSize: DEFAULT_INTERFACE_SIZE,
+  colorTheme: DEFAULT_COLOR_THEME,
   logCaptureProfile: "normal",
   logCaptureTorrentId: null,
   logMinimumSeverity: "info",
@@ -138,12 +144,20 @@ const DEFAULT_PRESENTATION: PresentationState = {
 export function createInspectionStore(
   appearanceStorage?: AppearanceStorage | null,
 ): InspectionStoreApi {
+  const appearance =
+    appearanceStorage === undefined
+      ? loadAppearancePreferences()
+      : loadAppearancePreferences(appearanceStorage);
   const initialPresentation = {
     ...DEFAULT_PRESENTATION,
-    interfaceSize:
-      appearanceStorage === undefined
-        ? loadInterfaceSize()
-        : loadInterfaceSize(appearanceStorage),
+    ...appearance,
+  };
+  const persistAppearance = (preferences: {
+    readonly interfaceSize: InterfaceSize;
+    readonly colorTheme: ColorTheme;
+  }) => {
+    if (appearanceStorage === undefined) saveAppearancePreferences(preferences);
+    else saveAppearancePreferences(preferences, appearanceStorage);
   };
   return createStore<InspectionStore>()((set) => ({
     ...EMPTY_SNAPSHOT,
@@ -212,11 +226,26 @@ export function createInspectionStore(
       }));
     },
     setInterfaceSize: (interfaceSize) => {
-      if (appearanceStorage === undefined) saveInterfaceSize(interfaceSize);
-      else saveInterfaceSize(interfaceSize, appearanceStorage);
-      set((state) => ({
-        presentation: { ...state.presentation, interfaceSize },
-      }));
+      set((state) => {
+        persistAppearance({
+          interfaceSize,
+          colorTheme: state.presentation.colorTheme,
+        });
+        return {
+          presentation: { ...state.presentation, interfaceSize },
+        };
+      });
+    },
+    setColorTheme: (colorTheme) => {
+      set((state) => {
+        persistAppearance({
+          interfaceSize: state.presentation.interfaceSize,
+          colorTheme,
+        });
+        return {
+          presentation: { ...state.presentation, colorTheme },
+        };
+      });
     },
     setLogCaptureProfile: (logCaptureProfile) => {
       set((state) => ({

@@ -316,12 +316,12 @@
 
 .toolbar .primaryAction {
   color: #fff;
-  background: var(--accent);
+  background: var(--accent-action);
 }
 
 .toolbar .primaryAction:hover:not(:disabled) {
   color: #fff;
-  background: var(--accent-strong);
+  background: var(--accent-action-hover);
 }
 
 .divider {

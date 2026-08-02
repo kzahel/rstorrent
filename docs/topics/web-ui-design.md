@@ -31,7 +31,9 @@ acknowledged in-process leased-view streaming; HTTP polling remains the
 browser/headless delivery adapter. Tactical `049` completes the accepted
 global Logs design: a dedicated virtualized chronological console with
 structured expansion, separate capture and display filters, bottom-follow/
-new-record behavior, local clear, and no sorting or persistence.
+new-record behavior, local clear, and no sorting or persistence. Tactical `050`
+adds Auto, Light, and Dark to the shared Appearance settings, safely migrates
+the size-only preference, and applies persisted theme before React content.
 
 ## Purpose
 
@@ -294,6 +296,15 @@ absolute-row and keyboard-scroll arithmetic. Compact preserves useful desktop
 density but not illegibly small icons, while coarse-pointer controls retain
 44-pixel targets.
 
+Tactical `050` extends that same versioned appearance owner instead of adding a
+competing setting. Version 2 persists Interface size with **Color theme** as
+Auto, Light, or Dark; version-1 sizes migrate intact with Auto. Auto follows
+live `prefers-color-scheme` changes in CSS, while explicit choices override the
+system. The validated root attribute is installed before the inspection
+bundle's dynamic React import and synchronized from presentation state after
+live changes. The legacy UI retains its existing Dark-only browser declaration
+and does not interpret the React appearance record.
+
 Archive state, user labels, and other organization intended to survive a new
 webview or appear in another client are durable application data. Torrent
 activity, queue state, storage, and content retention remain separate engine
@@ -361,6 +372,14 @@ Compact retains 30-pixel desktop controls and 32-pixel rows, and Spacious uses
 44-pixel controls and 42-pixel rows. The existing 2,001-torrent and
 10,001-peer scenario remains bounded at 824 DOM elements after the new default;
 this is sampled development evidence rather than a browser-wide ceiling.
+
+Tactical `050` adds browser assertions for Auto under both system schemes and
+through a live media change, explicit Light under system Dark, explicit Dark
+under system Light, complete size/theme reload persistence, and the persisted
+attribute already present at first React content. Explicit Light and Dark
+Settings/application scans have no serious or critical axe findings. The new
+dark scan also moved the demo strip and primary action from hard-coded light
+colors to palette-specific semantic tokens after exposing contrast failures.
 
 The deterministic 4,096-row scenario hides one padding row and rendered 690
 DOM elements with 66,468,705 bytes of sampled JavaScript heap. A complete

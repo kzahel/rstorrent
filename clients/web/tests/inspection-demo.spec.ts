@@ -141,6 +141,122 @@ test("interface size settings persist and keep geometry coherent", async ({
   await capture(page, "rstorrent-settings-phone.png");
 });
 
+test("color themes follow or override system appearance and persist", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 720 });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await openScenario(page, "healthy-download", 42_000);
+
+  const root = page.locator("html");
+  await expect(page.locator('meta[name="color-scheme"]')).toHaveAttribute(
+    "content",
+    "light dark",
+  );
+  await expect(root).toHaveAttribute("data-color-theme", "auto");
+  await expect.poll(() => themeMetrics(page)).toEqual({
+    colorScheme: "dark",
+    background: "rgb(21, 27, 34)",
+  });
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Settings" });
+  await expect(dialog.getByRole("radio", { name: /Auto/ })).toBeChecked();
+  await capture(page, "rstorrent-settings-auto-dark.png");
+
+  await dialog.getByRole("radio", { name: /Light/ }).check();
+  await expect(root).toHaveAttribute("data-color-theme", "light");
+  await expect.poll(() => themeMetrics(page)).toEqual({
+    colorScheme: "light",
+    background: "rgb(255, 255, 255)",
+  });
+  const lightViolations = (
+    await new AxeBuilder({ page }).analyze()
+  ).violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(lightViolations).toEqual([]);
+  await capture(page, "rstorrent-settings-explicit-light.png");
+
+  await dialog.getByRole("radio", { name: /Dark/ }).check();
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(root).toHaveAttribute("data-color-theme", "dark");
+  await expect.poll(() => themeMetrics(page)).toEqual({
+    colorScheme: "dark",
+    background: "rgb(21, 27, 34)",
+  });
+  const darkViolations = (
+    await new AxeBuilder({ page }).analyze()
+  ).violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(darkViolations).toEqual([]);
+  await capture(page, "rstorrent-settings-explicit-dark.png");
+
+  await dialog.getByRole("radio", { name: /Auto/ }).check();
+  await expect.poll(() => themeMetrics(page)).toEqual({
+    colorScheme: "light",
+    background: "rgb(255, 255, 255)",
+  });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect.poll(() => themeMetrics(page)).toEqual({
+    colorScheme: "dark",
+    background: "rgb(21, 27, 34)",
+  });
+
+  await dialog.getByRole("radio", { name: /Dark/ }).check();
+  expect(
+    await page.evaluate(() =>
+      JSON.parse(
+        localStorage.getItem("rstorrent.presentation.appearance") ?? "null",
+      ),
+    ),
+  ).toEqual({
+    version: 2,
+    interfaceSize: "standard",
+    colorTheme: "dark",
+  });
+  await page.addInitScript(() => {
+    const observer = new MutationObserver(() => {
+      if (document.querySelector("#app")?.firstElementChild) {
+        sessionStorage.setItem(
+          "rstorrent.theme-at-first-content",
+          document.documentElement.dataset.colorTheme ?? "",
+        );
+        observer.disconnect();
+      }
+    });
+    document.addEventListener(
+      "readystatechange",
+      () =>
+        observer.observe(document.documentElement, {
+          childList: true,
+          subtree: true,
+        }),
+      { once: true },
+    );
+  });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.reload();
+  await expect(page.getByText("RSTorrent", { exact: true })).toBeVisible();
+  await expect(root).toHaveAttribute("data-color-theme", "dark");
+  await expect(page.locator('meta[name="color-scheme"]')).toHaveAttribute(
+    "content",
+    "dark",
+  );
+  await expect.poll(() => themeMetrics(page)).toEqual({
+    colorScheme: "dark",
+    background: "rgb(21, 27, 34)",
+  });
+  expect(
+    await page.evaluate(() =>
+      sessionStorage.getItem("rstorrent.theme-at-first-content"),
+    ),
+  ).toBe("dark");
+});
+
 test("compact tracker recovery remains legible", async ({ page }) => {
   await page.setViewportSize({ width: 920, height: 720 });
   await openScenario(page, "tracker-recovery", 24_000);
@@ -552,6 +668,16 @@ async function tabGeometry(page: Page) {
 
 async function elementHeight(locator: ReturnType<Page["locator"]>) {
   return Math.round((await locator.boundingBox())?.height ?? 0);
+}
+
+async function themeMetrics(page: Page) {
+  return page.evaluate(() => {
+    const rootStyle = getComputedStyle(document.documentElement);
+    return {
+      colorScheme: rootStyle.colorScheme,
+      background: getComputedStyle(document.body).backgroundColor,
+    };
+  });
 }
 
 async function capture(page: Page, filename: string) {

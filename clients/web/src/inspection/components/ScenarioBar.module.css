@@ -4,9 +4,9 @@
   gap: 0.7rem;
   min-width: 0;
   min-height: var(--ui-actionbar-height);
-  border-bottom: 1px solid #e4c48b;
+  border-bottom: 1px solid var(--demo-border);
   padding: 0.36rem 0.75rem;
-  color: #5f441e;
+  color: var(--demo-text);
   background: var(--demo-soft);
   font-size: var(--ui-font-small);
 }
@@ -15,7 +15,7 @@
   flex: 0 0 auto;
   border-radius: 999px;
   padding: 0.22rem 0.52rem;
-  color: #5b3b0b;
+  color: var(--demo-strong);
   background: var(--demo);
   font-size: var(--ui-font-caption);
   font-weight: 800;
@@ -34,18 +34,18 @@
 .bar select {
   width: min(15rem, 30vw);
   height: var(--ui-control-height);
-  border: 1px solid #d8b97e;
+  border: 1px solid var(--demo-control-border);
   border-radius: 0.38rem;
   padding: 0 1.8rem 0 0.5rem;
-  color: #4c3514;
-  background: #fffaf0;
+  color: var(--demo-control-text);
+  background: var(--demo-control);
   font: inherit;
 }
 
 .clock {
   display: flex;
   gap: 0.28rem;
-  color: #72542a;
+  color: var(--demo-muted);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
@@ -60,24 +60,24 @@
   align-items: center;
   gap: 0.3rem;
   height: var(--ui-control-height);
-  border: 1px solid #d8b97e;
+  border: 1px solid var(--demo-control-border);
   border-radius: 0.38rem;
   padding: 0 0.55rem;
-  color: #5f441e;
-  background: #fffaf0;
+  color: var(--demo-text);
+  background: var(--demo-control);
   font: inherit;
   font-weight: 650;
   cursor: pointer;
 }
 
 .actions button:hover {
-  background: #fff4d8;
+  background: var(--demo-control-hover);
 }
 
 .message {
   overflow: hidden;
   margin-left: auto;
-  color: #816232;
+  color: var(--demo-message);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

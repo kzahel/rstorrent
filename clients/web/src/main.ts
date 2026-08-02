@@ -1,4 +1,22 @@
+import { applyStoredColorTheme } from "./inspection/appearance";
+
 const parameters = new URLSearchParams(window.location.search);
+const inspectionRequested =
+  parameters.has("demo") ||
+  parameters.has("live") ||
+  "__TAURI_INTERNALS__" in window;
+
+if (inspectionRequested) {
+  const appearance = applyStoredColorTheme();
+  document
+    .querySelector<HTMLMetaElement>('meta[name="color-scheme"]')
+    ?.setAttribute(
+      "content",
+      appearance.colorTheme === "auto"
+        ? "light dark"
+        : appearance.colorTheme,
+    );
+}
 
 if (parameters.has("demo")) {
   void import("./inspection/bootstrap").then(({ startDemoInspection }) => {

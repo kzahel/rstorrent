@@ -54,6 +54,7 @@ const controllers: InspectionController[] = [];
 
 afterEach(async () => {
   cleanup();
+  document.documentElement.removeAttribute("data-color-theme");
   if (typeof globalThis.localStorage?.clear === "function") {
     globalThis.localStorage.clear();
   }
@@ -120,7 +121,7 @@ describe("inspection application", () => {
     expect(screen.getByText(/shown$/)).toHaveTextContent("59 shown");
   });
 
-  it("opens Settings, changes interface size live, and restores it", async () => {
+  it("changes and restores complete appearance settings", async () => {
     const user = userEvent.setup();
     let storedAppearance: string | null = null;
     const appearanceStorage: AppearanceStorage = {
@@ -137,6 +138,10 @@ describe("inspection application", () => {
     );
     const app = first.container.firstElementChild;
     expect(app).toHaveAttribute("data-interface-size", "standard");
+    expect(document.documentElement).toHaveAttribute(
+      "data-color-theme",
+      "auto",
+    );
 
     for (const name of ["Start", "Pause", "Archive", "Remove"]) {
       expect(
@@ -153,16 +158,25 @@ describe("inspection application", () => {
       name: "Close settings",
     });
     expect(close).toHaveFocus();
+    expect(
+      within(dialog).getByRole("radio", { name: /Auto/ }),
+    ).toBeChecked();
 
     await user.tab({ shift: true });
     expect(
       within(dialog).getByRole("radio", { name: /Spacious/ }),
     ).toHaveFocus();
+    await user.click(within(dialog).getByRole("radio", { name: /Dark/ }));
+    expect(document.documentElement).toHaveAttribute(
+      "data-color-theme",
+      "dark",
+    );
     await user.click(within(dialog).getByRole("radio", { name: /Spacious/ }));
     expect(app).toHaveAttribute("data-interface-size", "spacious");
     expect(JSON.parse(storedAppearance ?? "null")).toEqual({
-      version: 1,
+      version: 2,
       interfaceSize: "spacious",
+      colorTheme: "dark",
     });
 
     await user.keyboard("{Escape}");
@@ -178,6 +192,10 @@ describe("inspection application", () => {
     expect(restored.container.firstElementChild).toHaveAttribute(
       "data-interface-size",
       "spacious",
+    );
+    expect(document.documentElement).toHaveAttribute(
+      "data-color-theme",
+      "dark",
     );
   });
 

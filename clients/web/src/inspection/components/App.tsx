@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -8,6 +9,7 @@ import {
   type PointerEvent,
 } from "react";
 
+import { applyColorTheme } from "../appearance";
 import { useInspectionDispatch, useInspectionStore } from "../context";
 import { formatRate } from "../format";
 import type { TorrentRow } from "../model";
@@ -47,6 +49,9 @@ export function App() {
   const interfaceSize = useInspectionStore(
     (state) => state.presentation.interfaceSize,
   );
+  const colorTheme = useInspectionStore(
+    (state) => state.presentation.colorTheme,
+  );
   const toggleSidebar = useInspectionStore((state) => state.toggleSidebar);
   const closeSidebar = useInspectionStore((state) => state.closeSidebar);
   const setLayout = useInspectionStore((state) => state.setLayout);
@@ -56,6 +61,7 @@ export function App() {
   const setInterfaceSize = useInspectionStore(
     (state) => state.setInterfaceSize,
   );
+  const setColorTheme = useInspectionStore((state) => state.setColorTheme);
   const dispatch = useInspectionDispatch();
   const [status, setStatus] = useState("");
   const [torrentInput, setTorrentInput] = useState("");
@@ -70,6 +76,10 @@ export function App() {
   const mainRef = useRef<HTMLElement>(null);
   const splitterRef = useRef<HTMLDivElement>(null);
   const activeSplitterPointer = useRef<number | null>(null);
+
+  useLayoutEffect(() => {
+    applyColorTheme(colorTheme);
+  }, [colorTheme]);
 
   useEffect(() => {
     const update = () => {
@@ -428,8 +438,10 @@ export function App() {
       )}
       {settingsOpen ? (
         <SettingsDialog
+          colorTheme={colorTheme}
           interfaceSize={interfaceSize}
           returnFocus={settingsButtonRef}
+          onColorThemeChange={setColorTheme}
           onInterfaceSizeChange={setInterfaceSize}
           onClose={() => setSettingsOpen(false)}
         />
