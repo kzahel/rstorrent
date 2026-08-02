@@ -8,6 +8,7 @@ import { isDemoScenarioId } from "./demo/catalog";
 import { LiveApplication } from "./live/LiveApplication";
 import type { DemoScenarioId } from "./model";
 import { HttpApplicationClient } from "../api/client";
+import { TauriApplicationViewClient } from "../tauri-view-client";
 import "./global.css";
 
 export function startDemoInspection(parameters: URLSearchParams): void {
@@ -41,6 +42,14 @@ export async function startLiveInspection(
   const application = await LiveApplication.open(client, {
     ...(waitMillis === undefined ? {} : { waitMillis }),
   });
+  application.installBrowserWakeHints(window, document);
+  renderInspection(new InspectionController(application));
+}
+
+export async function startTauriInspection(): Promise<void> {
+  const application = await LiveApplication.open(
+    new TauriApplicationViewClient(),
+  );
   application.installBrowserWakeHints(window, document);
   renderInspection(new InspectionController(application));
 }

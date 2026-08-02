@@ -10,8 +10,11 @@ import type {
   UpdateViewSetRequest,
   ViewSpec,
 } from "./api";
-import type { ApplicationViewClient } from "./api/client";
-import { HttpApiError } from "./api/client";
+import type {
+  ApplicationUpdateStream,
+  ApplicationViewClient,
+} from "./api/client";
+import { ApplicationViewError, HttpApiError } from "./api/client";
 import { ViewController } from "./view-controller";
 import { ViewSetContinuityError } from "./view-set-reducer";
 
@@ -117,6 +120,80 @@ class FakeClient implements ApplicationViewClient {
   public async close(): Promise<void> {}
 }
 
+class FakeStreamClient extends FakeClient {
+  public readonly acknowledgements: string[] = [];
+  public readonly trace: string[] = [];
+  public readonly streams: FakeUpdateStream[] = [];
+  public streamPlans: Array<Array<UpdateBatch | Error>> = [];
+
+  public async streamUpdates(
+    _viewSetId: string,
+    after: string,
+    signal?: AbortSignal,
+  ): Promise<ApplicationUpdateStream> {
+    this.trace.push(`attach:${after}`);
+    const stream = new FakeUpdateStream(
+      this.streamPlans.shift() ?? [],
+      this.acknowledgements,
+      this.trace,
+      signal,
+    );
+    this.streams.push(stream);
+    return stream;
+  }
+}
+
+class FakeUpdateStream implements ApplicationUpdateStream {
+  private closed = false;
+  private previousCursor: string | null = null;
+  private pending: ((result: IteratorResult<UpdateBatch>) => void) | null = null;
+
+  public constructor(
+    private readonly plan: Array<UpdateBatch | Error>,
+    private readonly acknowledgements: string[],
+    private readonly trace: string[],
+    signal?: AbortSignal,
+  ) {
+    signal?.addEventListener("abort", () => void this.close(), { once: true });
+  }
+
+  public [Symbol.asyncIterator](): AsyncIterator<UpdateBatch> {
+    return {
+      next: () => this.next(),
+      return: async () => {
+        await this.close();
+        return { done: true, value: undefined };
+      },
+    };
+  }
+
+  public async close(): Promise<void> {
+    if (this.closed) return;
+    this.closed = true;
+    this.trace.push("stream:close");
+    this.pending?.({ done: true, value: undefined });
+    this.pending = null;
+  }
+
+  private async next(): Promise<IteratorResult<UpdateBatch>> {
+    if (this.closed) return { done: true, value: undefined };
+    if (this.previousCursor !== null) {
+      this.acknowledgements.push(this.previousCursor);
+      this.trace.push(`ack:${this.previousCursor}`);
+      this.previousCursor = null;
+    }
+    const item = this.plan.shift();
+    if (item instanceof Error) throw item;
+    if (item !== undefined) {
+      this.previousCursor = item.cursor;
+      return { done: false, value: item };
+    }
+    return new Promise((resolve) => {
+      this.pending = resolve;
+    });
+  }
+}
+
 describe("view controller", () => {
   it("keeps one poll in flight and acknowledges only reduced state", async () => {
     const client = new FakeClient();
@@ -187,6 +264,108 @@ describe("view controller", () => {
     await waitUntil(() => client.openCount === 2);
     await controller.close();
     expect(client.active).toBe(0);
+  });
+
+  it("acknowledges streamed batches only after applying their state", async () => {
+    const client = new FakeStreamClient();
+    client.streamPlans.push([
+      batch("1", "2", [
+        {
+          type: "patch",
+          view_id: "library",
+          patch: { type: "torrent_list", upsert: [], removed: [] },
+        },
+      ]),
+    ]);
+    const applied = promiseWithResolvers<void>();
+    const controller = await ViewController.open(client, [listView], (state) => {
+      if (state.cursor === "2") {
+        client.trace.push("apply:2");
+        applied.resolve();
+      }
+    });
+
+    await applied.promise;
+    await waitUntil(() => client.acknowledgements.length === 1);
+    expect(client.trace.slice(0, 3)).toEqual([
+      "attach:1",
+      "apply:2",
+      "ack:2",
+    ]);
+    expect(controller.current().cursor).toBe("2");
+
+    await controller.close();
+    expect(client.trace.at(-1)).toBe("stream:close");
+  });
+
+  it("does not acknowledge a streamed batch rejected by continuity", async () => {
+    const client = new FakeStreamClient();
+    client.streamPlans.push([batch("9", "10", [])]);
+    const failed = promiseWithResolvers<Error>();
+    const controller = await ViewController.open(
+      client,
+      [listView],
+      () => {},
+      (error) => failed.resolve(error),
+    );
+
+    expect(await failed.promise).toBeInstanceOf(ViewSetContinuityError);
+    expect(client.acknowledgements).toEqual([]);
+    expect(controller.current().cursor).toBe("1");
+    await controller.close();
+  });
+
+  it("does not acknowledge a stream batch when the state callback fails", async () => {
+    const client = new FakeStreamClient();
+    client.streamPlans.push([
+      batch("1", "2", [
+        {
+          type: "patch",
+          view_id: "library",
+          patch: { type: "torrent_list", upsert: [], removed: [] },
+        },
+      ]),
+    ]);
+    const failed = promiseWithResolvers<Error>();
+    const controller = await ViewController.open(
+      client,
+      [listView],
+      (state) => {
+        if (state.cursor === "2") throw new Error("state callback failed");
+      },
+      (error) => failed.resolve(error),
+    );
+
+    expect((await failed.promise).message).toBe("state callback failed");
+    expect(client.acknowledgements).toEqual([]);
+    expect(controller.current().cursor).toBe("1");
+    await controller.close();
+  });
+
+  it("reopens an expired streamed view set and reattaches at its fresh cursor", async () => {
+    const client = new FakeStreamClient();
+    client.streamPlans.push(
+      [
+        new ApplicationViewError(
+          "unknown_view_set",
+          "streamed view-set lease expired",
+        ),
+      ],
+      [],
+    );
+    const recovered = promiseWithResolvers<void>();
+    const controller = await ViewController.open(client, [listView], (state) => {
+      if (state.viewSetId.startsWith("vs_111")) recovered.resolve();
+    });
+
+    await recovered.promise;
+    await waitUntil(() => client.streams.length === 2);
+    expect(client.openCount).toBe(2);
+    expect(client.trace.filter((item) => item.startsWith("attach:"))).toEqual([
+      "attach:1",
+      "attach:1",
+    ]);
+    await controller.close();
   });
 });
 

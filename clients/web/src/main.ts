@@ -10,6 +10,12 @@ if (parameters.has("demo")) {
       void startLiveInspection(parameters).catch(renderBootstrapError);
     },
   );
+} else if ("__TAURI_INTERNALS__" in window) {
+  void import("./inspection/bootstrap").then(
+    ({ startTauriInspection, renderBootstrapError }) => {
+      void startTauriInspection().catch(renderBootstrapError);
+    },
+  );
 } else {
   void import("./legacy-main");
 }

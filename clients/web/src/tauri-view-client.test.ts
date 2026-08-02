@@ -1,0 +1,262 @@
+import { describe, expect, it } from "vitest";
+
+import type {
+  ApiHello,
+  OpenViewSetResponse,
+  UpdateBatch,
+  ViewSpec,
+} from "./api";
+import { ApplicationViewError } from "./api/client";
+import { ContractError } from "./validation";
+import {
+  TauriApplicationViewClient,
+  type TauriViewBridge,
+} from "./tauri-view-client";
+
+const viewSetId = "vs_000102030405060708090a0b0c0d0e0f";
+const listView: ViewSpec = {
+  type: "torrent_list",
+  view_id: "library",
+  delivery: { min_interval_millis: 0 },
+};
+
+class FakeChannel<T> {
+  public onmessage: (message: T) => void = () => {};
+
+  public emit(message: T): void {
+    this.onmessage(message);
+  }
+}
+
+class FakeBridge implements TauriViewBridge {
+  public readonly calls: Array<{
+    command: string;
+    arguments_: Record<string, unknown> | undefined;
+  }> = [];
+  public channel: FakeChannel<unknown> | undefined;
+  public handler: (
+    command: string,
+    arguments_: Record<string, unknown> | undefined,
+  ) => unknown | Promise<unknown> = () => undefined;
+
+  public async invoke<T>(
+    command: string,
+    arguments_?: Record<string, unknown>,
+  ): Promise<T> {
+    this.calls.push({ command, arguments_ });
+    return (await this.handler(command, arguments_)) as T;
+  }
+
+  public createChannel<T>(): { onmessage: (message: T) => void } {
+    const channel = new FakeChannel<unknown>();
+    this.channel = channel;
+    return channel as FakeChannel<T>;
+  }
+}
+
+describe("Tauri leased view-set adapter", () => {
+  it("validates hello and coherent open values from structured IPC", async () => {
+    const bridge = new FakeBridge();
+    bridge.handler = (command) => {
+      if (command === "application_view_hello") return hello();
+      if (command === "application_view_open") return opened();
+      throw new Error(`unexpected command ${command}`);
+    };
+    const client = new TauriApplicationViewClient(bridge);
+
+    await expect(client.hello()).resolves.toMatchObject({
+      deliveries: ["stream"],
+      encodings: ["json"],
+    });
+    await expect(
+      client.openViewSet({ views: [listView], options: {} }),
+    ).resolves.toMatchObject({ view_set_id: viewSetId });
+    await client.close();
+  });
+
+  it("accepts an early channel batch and acknowledges it on the next pull", async () => {
+    const bridge = new FakeBridge();
+    const acknowledgements: string[] = [];
+    bridge.handler = (command, arguments_) => {
+      if (command === "application_view_stream") {
+        bridge.channel?.emit({ type: "batch", batch: batch("1", "2") });
+        return "tauri-stream-1";
+      }
+      if (command === "application_view_stream_ack") {
+        const cursor = String(arguments_?.cursor);
+        acknowledgements.push(cursor);
+        bridge.channel?.emit({ type: "batch", batch: batch("2", "3") });
+        return undefined;
+      }
+      if (command === "application_view_stream_close") return undefined;
+      throw new Error(`unexpected command ${command}`);
+    };
+    const client = new TauriApplicationViewClient(bridge);
+    const stream = await client.streamUpdates(viewSetId, "1");
+    const iterator = stream[Symbol.asyncIterator]();
+
+    await expect(iterator.next()).resolves.toMatchObject({
+      done: false,
+      value: { base_cursor: "1", cursor: "2" },
+    });
+    expect(acknowledgements).toEqual([]);
+    await expect(iterator.next()).resolves.toMatchObject({
+      done: false,
+      value: { base_cursor: "2", cursor: "3" },
+    });
+    expect(acknowledgements).toEqual(["2"]);
+
+    await stream.close();
+    await client.close();
+    expect(
+      bridge.calls.filter(
+        ({ command }) => command === "application_view_stream_close",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("rejects a malformed channel batch without acknowledging it", async () => {
+    const bridge = new FakeBridge();
+    bridge.handler = (command) => {
+      if (command === "application_view_stream") {
+        bridge.channel?.emit({
+          type: "batch",
+          batch: { ...batch("1", "2"), epoch: "not-decimal" },
+        });
+        return "tauri-stream-2";
+      }
+      if (command === "application_view_stream_close") return undefined;
+      throw new Error(`unexpected command ${command}`);
+    };
+    const client = new TauriApplicationViewClient(bridge);
+    const stream = await client.streamUpdates(viewSetId, "1");
+
+    await expect(stream[Symbol.asyncIterator]().next()).rejects.toBeInstanceOf(
+      ContractError,
+    );
+    expect(
+      bridge.calls.filter(
+        ({ command }) => command === "application_view_stream_ack",
+      ),
+    ).toHaveLength(0);
+    await stream.close();
+    await client.close();
+  });
+
+  it("maps structured native errors to transport-neutral recovery errors", async () => {
+    const bridge = new FakeBridge();
+    bridge.handler = (command) => {
+      if (command === "application_view_stream") {
+        throw {
+          code: "unknown_view_set",
+          message: "view set is unavailable",
+        };
+      }
+      throw new Error(`unexpected command ${command}`);
+    };
+    const client = new TauriApplicationViewClient(bridge);
+
+    const failure = await client
+      .streamUpdates(viewSetId, "1")
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ApplicationViewError);
+    expect((failure as ApplicationViewError).code).toBe("unknown_view_set");
+    await client.close();
+  });
+
+  it("closes a stream attached after its abort signal fired", async () => {
+    const bridge = new FakeBridge();
+    const release = promiseWithResolvers<string>();
+    bridge.handler = (command) => {
+      if (command === "application_view_stream") return release.promise;
+      if (command === "application_view_stream_close") return undefined;
+      throw new Error(`unexpected command ${command}`);
+    };
+    const client = new TauriApplicationViewClient(bridge);
+    const cancellation = new AbortController();
+    const opening = client.streamUpdates(viewSetId, "1", cancellation.signal);
+    cancellation.abort();
+    release.resolve("tauri-stream-late");
+
+    await expect(opening).rejects.toThrow("aborted");
+    expect(
+      bridge.calls.filter(
+        ({ command }) => command === "application_view_stream_close",
+      ),
+    ).toHaveLength(1);
+    await client.close();
+  });
+});
+
+function hello(): ApiHello {
+  return {
+    api: { current: 1, minimum: 1 },
+    encodings: ["json"],
+    deliveries: ["stream"],
+    capabilities: ["torrent_list"],
+    limits: {
+      max_view_sets_per_owner: 8,
+      max_views_per_set: 16,
+      max_view_id_bytes: 64,
+      min_queue_bytes: 16_384,
+      default_queue_bytes: 262_144,
+      max_queue_bytes: 524_288,
+      max_snapshot_bytes: 16_777_216,
+      max_wait_millis: 20_000,
+      lease_millis: "300000",
+    },
+  };
+}
+
+function opened(): OpenViewSetResponse {
+  return {
+    view_set_id: viewSetId,
+    lease_millis: "300000",
+    effective_queue_bytes: 262_144,
+    effective_views: [listView],
+    initial: {
+      api_version: 1,
+      view_set_id: viewSetId,
+      epoch: "1",
+      base_cursor: "0",
+      cursor: "1",
+      durable_revision: "0",
+      updates: [
+        {
+          type: "snapshot",
+          view_id: "library",
+          snapshot: { type: "torrent_list", torrents: [] },
+        },
+      ],
+    },
+  };
+}
+
+function batch(baseCursor: string, cursor: string): UpdateBatch {
+  return {
+    api_version: 1,
+    view_set_id: viewSetId,
+    epoch: "1",
+    base_cursor: baseCursor,
+    cursor,
+    durable_revision: cursor,
+    updates: [
+      {
+        type: "patch",
+        view_id: "library",
+        patch: { type: "torrent_list", upsert: [], removed: [] },
+      },
+    ],
+  };
+}
+
+function promiseWithResolvers<T>(): {
+  promise: Promise<T>;
+  resolve(value: T): void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolved) => {
+    resolve = resolved;
+  });
+  return { promise, resolve };
+}

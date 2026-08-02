@@ -2,10 +2,15 @@ import type {
   OpenViewSetRequest,
   RequestEnvelope,
   ResponseEnvelope,
+  UpdateBatch,
   UpdateViewSetRequest,
   ViewSpec,
 } from "./api";
-import { HttpApiError, type ApplicationViewClient } from "./api/client";
+import {
+  ApplicationViewError,
+  type ApplicationUpdateStream,
+  type ApplicationViewClient,
+} from "./api/client";
 import {
   reduceOpenViewSet,
   reduceUpdateBatch,
@@ -29,7 +34,8 @@ export class ViewController {
   private readonly retryMaximumMillis: number;
   private state: ViewSetState;
   private inFlight: AbortController | undefined;
-  private polling: Promise<void> | undefined;
+  private activeStream: ApplicationUpdateStream | undefined;
+  private consuming: Promise<void> | undefined;
   private reopening: Promise<void> | undefined;
   private readonly lifetime = new AbortController();
   private closed = false;
@@ -74,7 +80,7 @@ export class ViewController {
       await client.closeViewSet(response.view_set_id);
       throw error;
     }
-    controller.polling = controller.poll();
+    controller.consuming = controller.consume();
     return controller;
   }
 
@@ -118,7 +124,8 @@ export class ViewController {
     this.closed = true;
     this.lifetime.abort("view controller closed");
     this.inFlight?.abort("view controller closed");
-    await this.polling;
+    await this.activeStream?.close().catch(() => {});
+    await this.consuming;
     await this.reopening?.catch(() => {});
     try {
       await this.client.closeViewSet(this.state.viewSetId);
@@ -127,27 +134,22 @@ export class ViewController {
     }
   }
 
-  private async poll(): Promise<void> {
+  private async consume(): Promise<void> {
     let retryMillis = this.retryBaseMillis;
     while (!this.closed) {
-      const request = new AbortController();
-      this.inFlight = request;
       try {
-        const batch = await this.client.nextUpdates(
-          this.state.viewSetId,
-          this.state.cursor,
-          this.waitMillis,
-          request.signal,
-        );
-        if (request.signal.aborted) continue;
-        const next = reduceUpdateBatch(this.state, batch);
-        if (next !== this.state) {
-          this.onState(next);
-          this.state = next;
+        if (this.client.streamUpdates === undefined) {
+          await this.pullOnce();
+        } else {
+          const streamingViewSet = this.state.viewSetId;
+          await this.streamOnce();
+          if (!this.closed && this.state.viewSetId === streamingViewSet) {
+            throw new Error("application update stream closed");
+          }
         }
         retryMillis = this.retryBaseMillis;
       } catch (error) {
-        if (request.signal.aborted) continue;
+        if (this.closed || this.lifetime.signal.aborted) continue;
         const failure = asError(error);
         this.onError(failure);
         if (isUnavailableViewSet(failure)) {
@@ -156,7 +158,7 @@ export class ViewController {
             retryMillis = this.retryBaseMillis;
             continue;
           } catch (reopenError) {
-            if (request.signal.aborted) continue;
+            if (this.closed || this.lifetime.signal.aborted) continue;
             this.onError(asError(reopenError));
           }
         }
@@ -166,12 +168,68 @@ export class ViewController {
         ) {
           break;
         }
-        await abortableDelay(retryMillis, request.signal);
+        await abortableDelay(retryMillis, this.lifetime.signal);
         retryMillis = Math.min(retryMillis * 2, this.retryMaximumMillis);
-      } finally {
-        if (this.inFlight === request) this.inFlight = undefined;
       }
     }
+  }
+
+  private async pullOnce(): Promise<void> {
+    const nextUpdates = this.client.nextUpdates;
+    if (nextUpdates === undefined) {
+      throw new Error("application client has no update delivery mechanism");
+    }
+    const request = new AbortController();
+    this.inFlight = request;
+    try {
+      let batch: UpdateBatch;
+      try {
+        batch = await nextUpdates.call(
+          this.client,
+          this.state.viewSetId,
+          this.state.cursor,
+          this.waitMillis,
+          request.signal,
+        );
+      } catch (error) {
+        if (request.signal.aborted) return;
+        throw error;
+      }
+      if (request.signal.aborted) return;
+      this.applyBatch(batch);
+    } finally {
+      if (this.inFlight === request) this.inFlight = undefined;
+    }
+  }
+
+  private async streamOnce(): Promise<void> {
+    const openStream = this.client.streamUpdates;
+    if (openStream === undefined) {
+      throw new Error("application client has no streaming delivery");
+    }
+    const stream = await openStream.call(
+      this.client,
+      this.state.viewSetId,
+      this.state.cursor,
+      this.lifetime.signal,
+    );
+    this.activeStream = stream;
+    try {
+      for await (const batch of stream) {
+        if (this.closed) break;
+        this.applyBatch(batch);
+      }
+    } finally {
+      if (this.activeStream === stream) this.activeStream = undefined;
+      await stream.close().catch(() => {});
+    }
+  }
+
+  private applyBatch(batch: UpdateBatch): void {
+    const next = reduceUpdateBatch(this.state, batch);
+    if (next === this.state) return;
+    this.onState(next);
+    this.state = next;
   }
 
   private wake(): void {
@@ -181,6 +239,8 @@ export class ViewController {
   private async reopen(): Promise<void> {
     if (this.reopening !== undefined) return this.reopening;
     const reopening = (async () => {
+      this.inFlight?.abort("reopening view set");
+      await this.activeStream?.close().catch(() => {});
       const response = await this.client.openViewSet(
         { views: this.views, options: {} },
         this.lifetime.signal,
@@ -212,7 +272,7 @@ export class ViewController {
 
 function isUnavailableViewSet(error: Error): boolean {
   return (
-    error instanceof HttpApiError &&
+    error instanceof ApplicationViewError &&
     (error.code === "unknown_view_set" || error.code === "view_set_closed")
   );
 }

@@ -14,6 +14,7 @@ tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
 rstorrent-session = { path = "../../../crates/rstorrent-session" }
+serde = { workspace = true }
 tauri = { version = "2.11.5", features = [] }
 tokio = { workspace = true, features = ["rt", "sync"] }
 tokio-util = { workspace = true }

@@ -8,6 +8,7 @@ use std::time::Duration;
 use rstorrent_session::{
     ApplicationConfig, ApplicationService, ConfiguredStorageRoot, NetworkConfig, NetworkPolicy,
     RequestEnvelope, ResponseEnvelope, SubscriptionSpec, ViewSubscription, ViewUpdate,
+    application_error_response,
 };
 #[cfg(target_os = "macos")]
 use tauri::WebviewWindowBuilder;
@@ -16,6 +17,14 @@ use tauri::{AppHandle, Manager, RunEvent, State, WebviewWindow, WindowEvent};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
+mod view_delivery;
+
+use view_delivery::{
+    DesktopViewResources, application_view_close, application_view_hello, application_view_open,
+    application_view_stream, application_view_stream_ack, application_view_stream_close,
+    application_view_update,
+};
+
 const MAIN_WINDOW_LABEL: &str = "main";
 const PEER_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const PEER_IO_TIMEOUT: Duration = Duration::from_secs(60);
@@ -23,6 +32,7 @@ const PEER_IO_TIMEOUT: Duration = Duration::from_secs(60);
 struct DesktopState {
     service: Arc<Mutex<ApplicationService>>,
     subscriptions: Arc<Mutex<BTreeMap<(String, String), DesktopSubscription>>>,
+    view_resources: Arc<DesktopViewResources>,
     window_generation: AtomicU64,
     allow_exit: AtomicBool,
 }
@@ -39,13 +49,14 @@ async fn application_dispatch(
     state: State<'_, DesktopState>,
     request: RequestEnvelope,
 ) -> Result<ResponseEnvelope, String> {
-    state
-        .service
-        .lock()
-        .await
-        .dispatch(request)
-        .await
-        .map_err(|error| error.to_string())
+    let request_id = request.request_id.clone();
+    let mut service = state.service.lock().await;
+    Ok(match service.dispatch(request).await {
+        Ok(response) => response,
+        Err(error) => {
+            application_error_response(request_id, service.revision().unwrap_or(0), &error)
+        }
+    })
 }
 
 #[tauri::command]
@@ -142,6 +153,7 @@ async fn application_shutdown(
     for (_, subscription) in subscriptions {
         stop_subscription(subscription).await;
     }
+    state.view_resources.close_all().await;
     state
         .service
         .lock()
@@ -184,16 +196,23 @@ async fn close_window_subscriptions(
 
 fn observe_window_destruction(
     window: &WebviewWindow,
+    service: Arc<Mutex<ApplicationService>>,
     subscriptions: Arc<Mutex<BTreeMap<(String, String), DesktopSubscription>>>,
+    view_resources: Arc<DesktopViewResources>,
     window_generation: u64,
 ) {
     let label = window.label().to_owned();
     window.on_window_event(move |event| {
         if matches!(event, WindowEvent::Destroyed) {
+            let service = service.clone();
             let subscriptions = subscriptions.clone();
+            let view_resources = view_resources.clone();
             let label = label.clone();
             tauri::async_runtime::spawn(async move {
-                close_window_subscriptions(subscriptions, label, window_generation).await;
+                close_window_subscriptions(subscriptions, label.clone(), window_generation).await;
+                view_resources
+                    .close_window(service, label, window_generation)
+                    .await;
             });
         }
     });
@@ -218,7 +237,13 @@ fn restore_main_window(app: &AppHandle) -> Result<(), String> {
             .map_err(|error| format!("configure main webview window: {error}"))?
             .build()
             .map_err(|error| format!("recreate main webview window: {error}"))?;
-        observe_window_destruction(&window, state.subscriptions.clone(), window_generation);
+        observe_window_destruction(
+            &window,
+            state.service.clone(),
+            state.subscriptions.clone(),
+            state.view_resources.clone(),
+            window_generation,
+        );
         window
     };
     window
@@ -246,19 +271,29 @@ pub fn run() {
             let state = DesktopState {
                 service: Arc::new(Mutex::new(service)),
                 subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
+                view_resources: Arc::new(DesktopViewResources::new()),
                 window_generation: AtomicU64::new(1),
                 allow_exit: AtomicBool::new(false),
             };
+            let service = state.service.clone();
             let subscriptions = state.subscriptions.clone();
+            let view_resources = state.view_resources.clone();
             let window = app
                 .get_webview_window(MAIN_WINDOW_LABEL)
                 .ok_or_else(|| "main webview window was not created".to_owned())?;
-            observe_window_destruction(&window, subscriptions, 1);
+            observe_window_destruction(&window, service, subscriptions, view_resources, 1);
             app.manage(state);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             application_dispatch,
+            application_view_hello,
+            application_view_open,
+            application_view_update,
+            application_view_stream,
+            application_view_stream_ack,
+            application_view_stream_close,
+            application_view_close,
             application_subscribe,
             application_resync,
             application_unsubscribe,

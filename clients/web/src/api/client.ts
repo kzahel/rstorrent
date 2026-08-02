@@ -33,13 +33,22 @@ export interface ApplicationViewClient {
     request: UpdateViewSetRequest,
     signal?: AbortSignal,
   ): Promise<void>;
-  nextUpdates(
+  nextUpdates?(
     viewSetId: string,
     after: string,
     waitMillis: number,
     signal?: AbortSignal,
   ): Promise<UpdateBatch>;
+  streamUpdates?(
+    viewSetId: string,
+    after: string,
+    signal?: AbortSignal,
+  ): Promise<ApplicationUpdateStream>;
   closeViewSet(viewSetId: string, signal?: AbortSignal): Promise<void>;
+  close(): Promise<void>;
+}
+
+export interface ApplicationUpdateStream extends AsyncIterable<UpdateBatch> {
   close(): Promise<void>;
 }
 
@@ -48,13 +57,22 @@ export type FetchImplementation = (
   init?: RequestInit,
 ) => Promise<Response>;
 
-export class HttpApiError extends Error {
+export class ApplicationViewError extends Error {
   public constructor(
-    public readonly status: number,
     public readonly code: string,
     message: string,
   ) {
     super(`${code}: ${message}`);
+  }
+}
+
+export class HttpApiError extends ApplicationViewError {
+  public constructor(
+    public readonly status: number,
+    code: string,
+    message: string,
+  ) {
+    super(code, message);
   }
 }
 

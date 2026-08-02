@@ -2716,6 +2716,7 @@ name = "rstorrent-desktop"
 version = "0.1.0"
 dependencies = [
  "rstorrent-session",
+ "serde",
  "tauri",
  "tauri-build",
  "tokio",
