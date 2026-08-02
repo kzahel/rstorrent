@@ -11,6 +11,7 @@ mod part_file;
 pub mod peer;
 mod peer_runtime;
 mod peer_socket;
+mod positional_io;
 mod selective_storage;
 mod storage;
 pub mod swarm;
