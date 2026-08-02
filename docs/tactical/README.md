@@ -276,9 +276,18 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; replaces ambiguous peer flag strings with a typed Rust semantic
   set, one shared frontend vocabulary, and an accessible column-header legend.
 - [`052-batched-durability-checkpoints.md`](052-batched-durability-checkpoints.md):
-  active; separates hash verification from bounded payload/SQLite durability
+  complete; separates hash verification from bounded payload/SQLite durability
   epochs, moves checkpoint work off the content supervisor, and establishes a
   steady controlled storage profile for the throughput campaign.
+- [`053-immutable-positional-storage-plans.md`](053-immutable-positional-storage-plans.md):
+  complete; replaces mutable cursor I/O with retained, generation-checked
+  positional write and hash plans across wanted and part-file storage.
+- [`054-bounded-independent-storage-execution.md`](054-bounded-independent-storage-execution.md):
+  active; runs immutable write and hash jobs through separate bounded capacity
+  and joins out-of-order results by exact piece generation.
+- [`055-application-destinations.md`](055-application-destinations.md): active;
+  establishes Library, Transfers, and Workbench as responsive top-level
+  destinations while preserving the existing dense surface as Workbench.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
