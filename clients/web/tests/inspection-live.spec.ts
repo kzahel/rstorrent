@@ -12,6 +12,7 @@ const fileCount = process.env.RSTORRENT_LIVE_FILE_COUNT;
 const trackerUrl = process.env.RSTORRENT_LIVE_TRACKER_URL;
 const screenshotDirectory = process.env.RSTORRENT_SCREENSHOT_DIR;
 const expectDiskPressure = process.env.RSTORRENT_LIVE_EXPECT_DISK_PRESSURE === "1";
+const expectPieces = process.env.RSTORRENT_LIVE_EXPECT_PIECES === "1";
 
 test("live disk inspection observes pressure and exact recovery", async ({
   page,
@@ -66,6 +67,79 @@ test("live disk inspection observes pressure and exact recovery", async ({
   await expect(page.getByText("intake is open", { exact: true })).toBeVisible();
   await capture(page, "live-disk-recovered-wide.png");
   console.log("disk_live_milestones pressure=backpressured completion=verified recovery=idle");
+});
+
+test("live piece inspection follows active work through verification", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  test.skip(
+    !expectPieces ||
+      gateway === undefined ||
+      magnet === undefined ||
+      torrentId === undefined ||
+      torrentName === undefined,
+    "controlled piece-map gateway is opt-in",
+  );
+  let suspendUpdates = false;
+  let releaseUpdates = () => {};
+  let updatesReleased = Promise.resolve();
+  await page.route("**/api/v1/view-sets/*/updates?**", async (route) => {
+    if (suspendUpdates) await updatesReleased;
+    await route.continue();
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`/?live=${encodeURIComponent(gateway!)}&poll_ms=100`);
+  await expect(page.getByText("Live engine", { exact: true })).toBeVisible();
+
+  const input = page
+    .getByRole("form", { name: "Add torrent" })
+    .getByRole("textbox", { name: "Magnet link or torrent URL" });
+  const startedAt = performance.now();
+  await input.fill(magnet!);
+  await input.press("Enter");
+  await expect(page.getByText("Torrent added", { exact: true })).toBeVisible();
+
+  const torrentRow = page
+    .getByRole("grid", { name: "Torrent library" })
+    .locator(`[data-row-id="${torrentId!}"]`);
+  await expect(torrentRow).toBeVisible({ timeout: 10_000 });
+  await torrentRow.click();
+  await page.getByRole("tab", { name: "Pieces" }).click();
+  const pieceMap = page.getByRole("img", { name: /pieces:/ });
+  await expect(pieceMap).toBeVisible({ timeout: 20_000 });
+  await expect
+    .poll(async () => pieceMap.getAttribute("aria-label"), { timeout: 20_000 })
+    .toMatch(/pieces: [\d,]+ verified, [1-9][\d,]* active/);
+  const firstActiveMs = Math.round(performance.now() - startedAt);
+  await capture(page, "live-pieces-active-wide.png");
+
+  updatesReleased = new Promise<void>((resolve) => {
+    releaseUpdates = resolve;
+  });
+  suspendUpdates = true;
+  await new Promise((resolve) => setTimeout(resolve, 1_000));
+  suspendUpdates = false;
+  releaseUpdates();
+  await expect(page.getByText("reconnecting", { exact: true })).toBeVisible();
+  await expect(page.getByText("connected", { exact: true })).toBeVisible();
+  await expect(pieceMap).toBeVisible();
+
+  const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+
+  await expect(torrentRow).toContainText("complete", { timeout: 60_000 });
+  await expect
+    .poll(async () => pieceMap.getAttribute("aria-label"), { timeout: 10_000 })
+    .toMatch(/^17 pieces: 17 verified, 0 active$/);
+  const completeMs = Math.round(performance.now() - startedAt);
+  await capture(page, "live-pieces-complete-wide.png");
+  console.log(
+    `piece_live_milestones ${JSON.stringify({ firstActiveMs, completeMs, pieces: 17 })}`,
+  );
 });
 
 test("live peer inspection follows a controlled verified transfer", async ({

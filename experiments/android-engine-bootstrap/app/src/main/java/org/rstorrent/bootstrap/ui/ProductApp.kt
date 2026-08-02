@@ -187,9 +187,13 @@ private fun ProductContent(
                         Column(modifier = Modifier.padding(12.dp)) {
                             Text("Piece activity", fontWeight = FontWeight.SemiBold)
                             Text(
-                                pieces.active?.let {
-                                    "Active piece ${it.pieceIndex} · ${it.pieceLength} bytes"
-                                } ?: "No active piece",
+                                pieces.active.firstOrNull()?.let {
+                                    if (pieces.active.size == 1) {
+                                        "Active piece ${it.pieceIndex} · ${it.pieceLength} bytes"
+                                    } else {
+                                        "${pieces.active.size} active pieces"
+                                    }
+                                } ?: "No active pieces",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodySmall,
                             )

@@ -17,8 +17,10 @@ boundary. Tactical `038` adds responsive curated test-torrent shortcuts under
 More for the interactive inspection loop. Tactical `041` adds complete live
 file geometry and stored/verified progress through the same headless browser
 surface. Tactical `043` adds authoritative live tracker lifecycle, response
-counts, retry/reannounce timing, and failure context through that surface. The
-Tauri entry has not changed.
+counts, retry/reannounce timing, and failure context through that surface.
+Tacticals `044`--`045` add global receive/write/hash pressure and a bounded
+selected-torrent piece overview with controlled live evidence. The Tauri entry
+has not changed.
 
 Tactical `042` makes a magnet's verified metainfo name appear in both the live
 library row and General heading as soon as metadata arrives. The hash-prefix

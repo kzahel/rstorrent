@@ -448,7 +448,7 @@ class ProductEngineService : Service() {
         val torrent =
             selectedTorrent?.let(product.torrents::get)
                 ?: product.torrents.values.firstOrNull()
-        val active = selectedTorrent?.let(product.pieces::get)?.active
+        val active = selectedTorrent?.let(product.pieces::get)?.active?.firstOrNull()
         Log.i(
             TAG,
             "view_update stream=${update.streamId} sequence=${update.sequence} " +

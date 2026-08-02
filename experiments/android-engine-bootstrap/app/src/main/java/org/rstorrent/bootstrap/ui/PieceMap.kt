@@ -26,7 +26,7 @@ import org.rstorrent.session.uniffi.IndexRange
 fun PieceMap(
     piecesTotal: UInt,
     verified: List<IndexRange>,
-    active: ActivePiece?,
+    active: List<ActivePiece>,
     modifier: Modifier = Modifier,
 ) {
     val verifiedColor = MaterialTheme.colorScheme.primary
@@ -77,14 +77,15 @@ fun PieceMap(
                     range.start.toULong() < end &&
                     range.endExclusive.toULong() > start
             val activeInBucket =
-                active != null &&
-                    active.pieceIndex.toULong() >= start &&
-                    active.pieceIndex.toULong() < end
+                active.firstOrNull {
+                    it.pieceIndex.toULong() >= start &&
+                        it.pieceIndex.toULong() < end
+                }
             val activeColor =
                 when {
-                    active == null || !activeInBucket -> null
-                    active.received.isNotEmpty() -> respondedColor
-                    active.requested.isNotEmpty() -> requestedColor
+                    activeInBucket == null -> null
+                    activeInBucket.received.isNotEmpty() -> respondedColor
+                    activeInBucket.requested.isNotEmpty() -> requestedColor
                     else -> partialColor
                 }
             val color = activeColor ?: if (hasVerified) verifiedColor else emptyColor

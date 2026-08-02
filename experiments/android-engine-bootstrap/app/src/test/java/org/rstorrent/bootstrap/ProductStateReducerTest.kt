@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.rstorrent.session.uniffi.ActivePiece
+import org.rstorrent.session.uniffi.ActivePieceStageView
 import org.rstorrent.session.uniffi.DiagnosticCategory
 import org.rstorrent.session.uniffi.DiagnosticEvent
 import org.rstorrent.session.uniffi.DiagnosticSeverity
@@ -119,12 +120,19 @@ class ProductStateReducerTest {
                             TORRENT_ID,
                             100_000U,
                             listOf(IndexRange(65_534U, 65_537U)),
-                            ActivePiece(
-                                90_000U,
-                                16_384U,
-                                listOf(IndexRange(0U, 16_384U)),
-                                listOf(IndexRange(0U, 8_192U)),
-                                emptyList(),
+                            listOf(
+                                ActivePiece(
+                                    "90000:1",
+                                    90_000U,
+                                    1U,
+                                    16_384U,
+                                    ActivePieceStageView.RECEIVED,
+                                    listOf(IndexRange(0U, 16_384U)),
+                                    listOf(IndexRange(0U, 8_192U)),
+                                    emptyList(),
+                                    "10",
+                                    null,
+                                ),
                             ),
                         ),
                     ),
@@ -141,7 +149,8 @@ class ProductStateReducerTest {
                             100_000U,
                             listOf(IndexRange(99_998U, 100_000U)),
                             listOf(IndexRange(65_535U, 65_536U)),
-                            null,
+                            emptyList(),
+                            listOf("90000:1"),
                         ),
                     ),
             )
@@ -161,6 +170,7 @@ class ProductStateReducerTest {
             state.pieces.getValue(TORRENT_ID).verified,
         )
         assertEquals(100_000U, state.pieces.getValue(TORRENT_ID).pieceCount)
+        assertEquals(emptyList<ActivePiece>(), state.pieces.getValue(TORRENT_ID).active)
     }
 
     @Test

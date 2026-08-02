@@ -133,6 +133,12 @@ unauthenticated development gateway, verifies high/low pressure recovery and
 exact output, and can retain Disk screenshots through the same
 `--screenshot-dir` option.
 
+Add `--piece-map` to run the isolated Tactical `045` Pieces proof. A bounded
+loopback seed drives a 17-piece transfer through active work, deliberate
+view-set lease expiry, fresh-snapshot recovery, exact verified completion, and
+external payload comparison. The option can retain active and complete Canvas
+screenshots without launching a visible client.
+
 ## Toolchain
 
 On the maintainer's configured development machines, load installed Rust,

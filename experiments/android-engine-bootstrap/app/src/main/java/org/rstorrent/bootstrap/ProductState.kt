@@ -13,7 +13,7 @@ data class PieceActivityState(
     val torrentId: String,
     val pieceCount: UInt,
     val verified: List<IndexRange>,
-    val active: ActivePiece?,
+    val active: List<ActivePiece>,
 )
 
 data class ProductState(
@@ -115,6 +115,7 @@ internal object ProductStateReducer {
                             ),
                 )
             is ViewSnapshot.Peers -> state
+            is ViewSnapshot.SessionDisk -> state
             is ViewSnapshot.Files -> state
             is ViewSnapshot.Trackers -> state
             is ViewSnapshot.Diagnostics ->
@@ -147,6 +148,13 @@ internal object ProductStateReducer {
                 var verified = state.pieces[patch.torrentId]?.verified.orEmpty()
                 patch.cleared.forEach { verified = removeRange(verified, it) }
                 patch.verified.forEach { verified = insertRange(verified, it) }
+                val active =
+                    state.pieces[patch.torrentId]
+                        ?.active
+                        .orEmpty()
+                        .associateByTo(mutableMapOf(), ActivePiece::pieceId)
+                patch.activeRemoved.forEach(active::remove)
+                patch.activeUpsert.forEach { active[it.pieceId] = it }
                 state.copy(
                     pieces =
                         state.pieces +
@@ -156,12 +164,16 @@ internal object ProductStateReducer {
                                         patch.torrentId,
                                         patch.pieceCount,
                                         verified,
-                                        patch.active,
+                                        active.values.sortedWith(
+                                            compareBy(ActivePiece::pieceIndex)
+                                                .thenBy(ActivePiece::attempt),
+                                        ),
                                     )
                             ),
                 )
             }
             is ViewPatch.Peers -> state
+            is ViewPatch.SessionDisk -> state
             is ViewPatch.Files -> state
             is ViewPatch.Trackers -> state
             is ViewPatch.Diagnostics -> {

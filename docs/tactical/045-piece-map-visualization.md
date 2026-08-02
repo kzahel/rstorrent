@@ -1,6 +1,6 @@
 # Piece Map Visualization
 
-Status: Planned after Tactical `044`.
+Status: Complete (2026-08-02).
 
 Topics: `disk-and-piece-inspection`, `download-correctness`,
 `application-view-api`, `web-ui-design`, `desktop-inspection-surface`,
@@ -226,3 +226,66 @@ direction if evidence requires piece commands, picker policy changes, a new
 rendering dependency, a stable public API compatibility promise, Android UI
 redesign, public swarm traffic, visible app launch, or scope outside the shared
 topic.
+
+## Implementation And Evidence
+
+The engine now emits `PieceStarted` only after the first request for that
+attempt is successfully sent, includes the attempt generation, and emits an
+explicit hashing transition. The application retains simultaneous attempts in
+a keyed map and reconciles stage, age, failure, retry, and cleanup from the
+same bounded storage-runtime facts used by Disk. A corrupt-source test proves
+attempts `1` and `2` have separate start/hash lifecycles, and session tests
+prove interleaved attempts do not overwrite one another.
+
+The `piece_activity` contract now carries a sparse active vector in snapshots
+and keyed upserts/removals in patches. Verified state remains canonical piece
+ranges. Rust and TypeScript validation reject bad indices, identities,
+cross-state overlaps, and excess active work. The web replica expands
+verified ranges into one `Uint8Array`, updates that same allocation within a
+view-set epoch, and rebuilds it after an epoch replacement. Android retains
+its distinct native Canvas but now reduces the same active collection; it
+explicitly ignores the global Disk presentation until that screen is
+authorized.
+
+The web Pieces tab uses one Canvas 2D surface. Geometry is resize-aware,
+clamps device scale at 3, never exceeds 16,384 visual cells or the 1,024 CSS
+pixel hard limit, and currently targets a 320-pixel overview for very large
+torrents. Aggregated cells distinguish complete from mixed buckets; sparse
+requested, received, stored, hashing, and failed states override their bucket
+without per-piece DOM. Mixed and failed states have patterns in addition to
+color, while aggregate text and a DOM legend provide the accessible
+description. The phone tab strip now recenters the active tab after its hidden
+detail surface reopens.
+
+Permanent named fixtures cover ordinary progress, metadata pending, endgame,
+hash failure and clean retry, empty state, and a 250,000-piece torrent. The
+large browser proof painted a 718 by 320 CSS-pixel canvas with 527 total DOM
+elements and six sparse active attempts. Wide, compact, and phone captures
+passed an axe serious/critical scan with no findings.
+
+The controlled production-web proof used libtorrent `2.0.13.0` as a loopback
+seed for a 4 MiB payload plus a 7,000-byte cross-file prefix: 122 files and 17
+pieces. At a 256 KiB/s seed limit, the browser observed active piece work in
+1.4 seconds, deliberately lost its 500 ms view-set lease, recovered from a
+fresh epoch, and reached exactly 17 verified pieces with zero active attempts
+in 18.3 seconds. External SHA-1 comparison passed and every browser, gateway,
+seed, and application owner joined. No public traffic or visible client was
+used.
+
+Validation passed:
+
+- generated TypeScript/schema and Kotlin/UniFFI regeneration;
+- workspace format, warning-denying Clippy, and tests: 155 engine tests plus
+  three ignored live probes, 68 session tests, six gateway tests, 63 protocol
+  tests, six Rust Android tests, and the remaining workspace targets;
+- 68 web unit tests plus two intentionally skipped opt-in cases, TypeScript
+  checking, and the production Vite build;
+- all nine deterministic demo Playwright tests, including accessibility,
+  responsive screenshots, retry truth, and bounded scale;
+- the controlled live piece/lease-recovery proof above; and
+- Android `x86_64` and `arm64-v8a` native builds plus `assembleDebug` and
+  `testDebugUnitTest`.
+
+The deliberate deferrals remain piece interaction and priority commands,
+picker internals, detailed block presentation, Android UI redesign, binary or
+streaming transport, and changes to scheduling/storage policy.

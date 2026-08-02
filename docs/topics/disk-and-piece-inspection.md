@@ -2,8 +2,7 @@
 
 Topic: `disk-and-piece-inspection`
 
-Status: Disk implemented by Tactical `044`; Pieces implementation is owned by
-Tactical `045`.
+Status: Disk and Pieces are implemented by Tacticals `044` and `045`.
 
 ## Scope
 
@@ -222,6 +221,17 @@ controlled libtorrent loopback seed plus bounded test-only delay drove a real
 17-piece transfer through backpressure, resumed to exact verified completion,
 and returned the global view to idle with no active rows. See the tactical for
 the precise limits and command evidence.
+
+Tactical `045` generalizes the selected-torrent projection from one optional
+piece to simultaneous keyed attempts, keeps verified state compact on the
+wire, and maintains one epoch-scoped typed bitmap in the web client. The
+responsive Pieces tab paints one bounded Canvas with categorical active
+overlays and truthful mixed buckets; a 250,000-piece fixture used 527 DOM
+elements and a 718 by 320 CSS-pixel canvas. A controlled 17-piece loopback
+download displayed active work, recovered after deliberate view-set lease
+expiry, reached exact 17/17 verification, matched external SHA-1, and cleaned
+up every owner. Android continues to use its distinct bounded Canvas while
+reducing the same active-piece collection.
 
 ## Known Gaps After This Sequence
 

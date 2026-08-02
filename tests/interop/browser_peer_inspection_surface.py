@@ -47,7 +47,15 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="run the bounded slow-storage Disk view proof",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--piece-map",
+        action="store_true",
+        help="run the selected-torrent Pieces canvas proof",
+    )
+    arguments = parser.parse_args()
+    if arguments.disk_pressure and arguments.piece_map:
+        parser.error("--disk-pressure and --piece-map are mutually exclusive")
+    return arguments
 
 
 def start_development_gateway(
@@ -139,6 +147,7 @@ def run_playwright(
     screenshot_directory: Path | None,
     *,
     disk_pressure: bool,
+    piece_map: bool,
 ) -> str:
     environment = os.environ.copy()
     environment.update(
@@ -157,6 +166,15 @@ def run_playwright(
         environment["RSTORRENT_SCREENSHOT_DIR"] = str(screenshot_directory)
     if disk_pressure:
         environment["RSTORRENT_LIVE_EXPECT_DISK_PRESSURE"] = "1"
+    if piece_map:
+        environment["RSTORRENT_LIVE_EXPECT_PIECES"] = "1"
+    test_name = (
+        "live disk inspection"
+        if disk_pressure
+        else "live piece inspection"
+        if piece_map
+        else "live peer inspection"
+    )
     completed = subprocess.run(
         [
             "npm",
@@ -166,13 +184,13 @@ def run_playwright(
             "clients/web",
             "--",
             "--grep",
-            "live disk inspection" if disk_pressure else "live peer inspection",
+            test_name,
         ],
         cwd=repository,
         capture_output=True,
         text=True,
         env=environment,
-        timeout=90,
+        timeout=120,
         check=False,
     )
     if completed.returncode != 0:
@@ -186,7 +204,11 @@ def run_playwright(
         "playwright=passed",
     )
     milestone_prefix = (
-        "disk_live_milestones " if disk_pressure else "file_live_milestones "
+        "disk_live_milestones "
+        if disk_pressure
+        else "piece_live_milestones "
+        if piece_map
+        else "file_live_milestones "
     )
     milestones = next(
         (
@@ -246,7 +268,12 @@ def build_and_start_production_web(
     raise ScenarioFailure("production web preview did not start")
 
 
-def run(screenshot_directory: Path | None, *, disk_pressure: bool) -> None:
+def run(
+    screenshot_directory: Path | None,
+    *,
+    disk_pressure: bool,
+    piece_map: bool,
+) -> None:
     repository = Path(__file__).resolve().parents[2]
     run_path = Path(tempfile.mkdtemp(prefix="rstorrent-browser-peer-inspection-"))
     session: lt.session | None = None
@@ -257,15 +284,18 @@ def run(screenshot_directory: Path | None, *, disk_pressure: bool) -> None:
     diagnostics: list[str] = []
     failure: BaseException | None = None
     try:
+        direct_peer = disk_pressure or piece_map
         fixture = create_fixture(
             run_path,
-            payload_size=4 * 1024 * 1024 if disk_pressure else 40_000,
-            piece_size=256 * 1024 if disk_pressure else 16 * 1024,
+            payload_size=4 * 1024 * 1024 if direct_peer else 40_000,
+            piece_size=256 * 1024 if direct_peer else 16 * 1024,
             prefix_payload_size=BROWSER_PREFIX_SIZE,
         )
         session = create_session()
-        if not disk_pressure:
+        if not direct_peer:
             session.apply_settings({"upload_rate_limit": 4 * 1024})
+        elif piece_map:
+            session.apply_settings({"upload_rate_limit": 256 * 1024})
         port = wait_for_listener(session, diagnostics)
         handle = add_seed(
             session,
@@ -273,9 +303,11 @@ def run(screenshot_directory: Path | None, *, disk_pressure: bool) -> None:
             fixture.seed_directory,
             diagnostics,
         )
-        if not disk_pressure:
+        if not direct_peer:
             handle.set_upload_limit(4 * 1024)
-        if not disk_pressure:
+        elif piece_map:
+            handle.set_upload_limit(256 * 1024)
+        if not direct_peer:
             tracker = OneShotUdpTracker(
                 fixture.info_hash,
                 port,
@@ -301,14 +333,15 @@ def run(screenshot_directory: Path | None, *, disk_pressure: bool) -> None:
             address,
             (
                 magnet_uri(fixture.info_hash, f"127.0.0.1:{port}")
-                if disk_pressure
+                if direct_peer
                 else tracker_magnet(fixture.info_hash, tracker.port)
             ),
             fixture.info_hash,
             len(fixture.files),
-            "" if disk_pressure else f"udp://127.0.0.1:{tracker.port}",
+            "" if direct_peer else f"udp://127.0.0.1:{tracker.port}",
             screenshot_directory,
             disk_pressure=disk_pressure,
+            piece_map=piece_map,
         )
         if tracker is not None:
             tracker.join()
@@ -325,8 +358,9 @@ def run(screenshot_directory: Path | None, *, disk_pressure: bool) -> None:
             f"{result} info_hash={fixture.info_hash} metadata_size={len(fixture.info_bytes)} "
             f"pieces={fixture.torrent_info.num_pieces()} files={len(fixture.files)} "
             f"boundary_file_bytes={BROWSER_PREFIX_SIZE} "
-            f"payload_sha1={fixture.payload_hash} responsive=wide,compact,phone "
-            f"tracker_requests={0 if disk_pressure else 2} "
+            f"payload_sha1={fixture.payload_hash} "
+            f"responsive={'wide' if direct_peer else 'wide,compact,phone'} "
+            f"tracker_requests={0 if direct_peer else 2} "
             "peer_removal=ok gateway_shutdown=joined cleanup=ok"
         )
     except BaseException as error:
@@ -373,6 +407,7 @@ def main() -> int:
             if arguments.screenshot_dir is not None
             else None,
             disk_pressure=arguments.disk_pressure,
+            piece_map=arguments.piece_map,
         )
     except (ScenarioFailure, OSError, subprocess.SubprocessError) as error:
         print(error, file=sys.stderr)

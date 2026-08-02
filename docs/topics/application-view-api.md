@@ -13,9 +13,11 @@ independently reaped leases, and browser-suspension recovery through the live
 React adapter. Tactical `041` adds the complete selected-torrent file catalog,
 distinct stored and verified progress, and a separately bounded large-snapshot
 path. Tactical `043` adds the selected torrent's authoritative tracker
-lifecycle as bounded keyed rows. The existing Tactical `008` subscriptions
-remain compatible adapters. No stable public remote wire compatibility is
-claimed yet.
+lifecycle as bounded keyed rows. Tacticals `044`--`045` add global storage
+pressure and selected-torrent verified/active piece views, including keyed
+attempt diffs and fresh-epoch bitmap replacement. The existing Tactical `008`
+subscriptions remain compatible adapters. No stable public remote wire
+compatibility is claimed yet.
 
 ## Purpose And Scope
 

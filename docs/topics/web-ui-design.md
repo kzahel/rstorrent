@@ -20,8 +20,10 @@ default. The docked detail inspector is now bounded and resizable by pointer,
 touch, or keyboard. Tactical `041` adds the first live Files surface, exact
 sorting, persistent table columns and widths, and a 4,096-row named scenario.
 Tactical `043` adds the responsive live Trackers table, local deadline
-countdowns, and a permanent tracker-recovery scenario. The Tauri entry remains
-legacy.
+countdowns, and a permanent tracker-recovery scenario. Tacticals `044`--`045`
+add the global Disk pipeline and selected-torrent bounded Canvas Pieces
+overview, including responsive and large-torrent fixtures. The Tauri entry
+remains legacy.
 
 ## Purpose
 

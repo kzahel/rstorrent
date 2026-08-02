@@ -119,9 +119,10 @@ is usable through `./scripts/webui`, and Tactical
 intake in addition to live inspection and torrent control. Tactical
 [`038`](../tactical/038-curated-test-torrent-menu.md) adds exact shortcuts for
 the retained WebTorrent public catalog without a privileged command path.
-Files and tracker lifecycle are now live inspection feeds. Add
-an in-process view-set adapter and make `./scripts/desktop` select the new React
-surface without turning the loopback gateway into a desktop dependency.
+Files, tracker lifecycle, global Disk pressure, and selected-torrent Canvas
+Pieces are now live inspection feeds. Add an in-process view-set adapter and
+make `./scripts/desktop` select the new React surface without turning the
+loopback gateway into a desktop dependency.
 
 ### Next
 
@@ -213,7 +214,7 @@ does not.
 | --- | --- | --- | --- | --- |
 | Durable semantic application control | Implemented | deterministic, runtime, web, AVD, physical | Archive and fenced keep/delete removal are implemented; stable public compatibility and general multi-torrent scheduling remain absent. | [`application-control`](application-control.md) |
 | Leased application view sets and polling client | Implemented | deterministic, runtime, interop, web | Named summary, piece, diagnostic, active-peer, complete-file, tracker-lifecycle, and global Disk views have bounded replay/reset, independent lease expiry, and fresh-snapshot recovery; swarm views, streaming, Tauri migration, and stable public compatibility remain absent. | [`application-view-api`](application-view-api.md) |
-| Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive web surface adds magnets, archives, guarded removal, live peer/file/tracker inspection, and global Disk pressure; production desktop integration, `.torrent` file intake, and remaining detail feeds are incomplete. | [`client-surfaces`](client-surfaces.md) |
+| Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive web surface adds magnets, archives, guarded removal, live peer/file/tracker inspection, global Disk pressure, and bounded Canvas Pieces; production desktop integration, `.torrent` file intake, and remaining detail feeds are incomplete. | [`client-surfaces`](client-surfaces.md) |
 | Android Compose foreground client | Partial | runtime, AVD, physical | General settings, connectivity policy, and complete torrent controls remain incomplete. | [`client-surfaces`](client-surfaces.md) |
 | Derived progress and bounded diagnostics | Implemented | deterministic, runtime, web, AVD | Scheduler and per-peer facts must grow with the corresponding owners. | [`application-control`](application-control.md) |
 | Offline, loopback-only, and online egress policy | Implemented | deterministic, runtime, web, AVD | Policy is fixed for one service lifetime; Android VPN and metered-network controls are absent. | [`application-control`](application-control.md) |
