@@ -2,12 +2,14 @@
 
 Topic: `application-interface-direction`
 
-Status: The desktop/web product-navigation direction is accepted from the
-maintainer-selected mockup. Library, Transfers, and Workbench are distinct
-top-level destinations. Workbench preserves the current dense inspection
-surface as a first-class interface rather than hiding it behind an advanced
-setting. No implementation tactical is active, and media catalog, metadata,
-and playback behavior remain unimplemented.
+Status: The desktop/web product-navigation direction is accepted and its
+initial presentation cross-section is implemented by Tactical `055`. Library,
+Transfers, and Workbench are distinct responsive top-level destinations.
+Workbench preserves the dense inspection surface as a first-class interface;
+Transfers is the fresh-install default; and browser-local state restores the
+last destination and each destination's filter. Library currently presents
+truthful torrent-backed content sources only. Media catalog, metadata,
+artwork, and playback behavior remain unimplemented.
 
 ## Purpose And Scope
 
@@ -61,6 +63,12 @@ playback-oriented scheduling, or the future verified-range HTTP playback data
 plane described in [`client-surfaces.md`](client-surfaces.md). The product must
 not display content as playable until the responsible owner can establish that
 truthfully.
+
+Tactical `055` therefore starts with All content, Recently added, Available
+offline, and Downloading filters derived only from torrent summary facts. Its
+cards use generated gradients and initials, report actual size and transfer
+progress, and can open their source torrent in Workbench. They do not display
+Play, duration, resolution, media type, watched state, or external artwork.
 
 ### Transfers
 
@@ -132,9 +140,31 @@ The presentation should preserve useful continuity:
 - returning to a destination restores its useful local context rather than
   resetting the whole application.
 
-The default fresh-install destination and last-destination restoration policy
-remain open. Power users must be able to live in Workbench without repeatedly
-opting into it.
+Fresh installations open Transfers. Best-effort browser-local preferences
+restore the last destination and each destination's independent filter, so a
+power user can remain in Workbench without repeatedly opting into it. Primary
+selection is shared by all three destinations, while multi-selection is shared
+by Transfers and Workbench and repaired exactly when torrents disappear.
+
+## Implemented Initial Cross-Section
+
+Tactical `055` implements the application shell without changing Rust views,
+commands, generated contracts, or durable data:
+
+- labeled primary navigation at wide widths and icon-plus-accessible-name
+  navigation at phone widths;
+- contextual Library, Transfers, and Workbench sidebars;
+- a clean virtualized Transfers queue with shared checkbox, select-all, and
+  keyboard-Space multi-selection;
+- sequential Start, Pause, and uniform Archive or Restore over existing
+  one-torrent commands, while removal remains deliberately single-torrent;
+- a virtualized torrent-backed Library with an explicit Open in Workbench
+  handoff; and
+- collection-only view leasing in Library and Transfers, with the existing
+  responsive detail leases retained only by Workbench.
+
+The initial slice deliberately leaves lightweight clean-view inspectors,
+media enrichment, playback, routes, and multi-remove policy open.
 
 ## Adaptive And Platform Direction
 
@@ -200,7 +230,6 @@ commit accidentally.
 
 ## Open Decisions
 
-- The fresh-install destination and last-destination restoration policy.
 - The durable media-catalog owner and relationship between torrents, files,
   playable media, and user organization.
 - Metadata, artwork, watched-state, privacy, cache, and offline behavior.
@@ -218,18 +247,10 @@ commit accidentally.
 
 ## Recommended Next Work
 
-Before changing the application shell, open one bounded tactical that:
-
-1. preserves the current interface intact as Workbench;
-2. adds the top-level destination and contextual-sidebar state model without
-   duplicating application views;
-3. proves selection, focus, responsive navigation, and preference restoration;
-4. keeps Library and Transfers truthful if their first states are incomplete;
-   and
-5. records which additional application projections are actually required
-   before a useful Library or clean Transfers surface can graduate.
-
-Media catalog and playback work should follow a separate source- and
-edge-case-driven tactical because it introduces integrity, storage,
-persistence, metadata, privacy, and platform-lifecycle questions beyond shell
-navigation.
+Use the implemented shell for product discussion before opening another
+interface tactical. The next bounded slice should choose one actual user need:
+a lightweight Library/Transfers inspector, richer durable content identity,
+or playback foundations. Media catalog and playback work require a separate
+source- and edge-case-driven tactical because they introduce integrity,
+storage, persistence, metadata, privacy, and platform-lifecycle questions
+beyond presentation navigation.

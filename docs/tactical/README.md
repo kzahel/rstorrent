@@ -285,9 +285,10 @@ that scope and its cleanup or compatibility rules explicitly.
 - [`054-bounded-independent-storage-execution.md`](054-bounded-independent-storage-execution.md):
   active; runs immutable write and hash jobs through separate bounded capacity
   and joins out-of-order results by exact piece generation.
-- [`055-application-destinations.md`](055-application-destinations.md): active;
-  establishes Library, Transfers, and Workbench as responsive top-level
-  destinations while preserving the existing dense surface as Workbench.
+- [`055-application-destinations.md`](055-application-destinations.md):
+  complete; establishes Library, Transfers, and Workbench as responsive
+  top-level destinations, adds truthful bounded clean views and shared
+  multi-selection, and preserves the existing dense surface as Workbench.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

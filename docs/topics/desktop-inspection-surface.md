@@ -29,10 +29,11 @@ Tactical `050` extends the shared React Settings surface with browser-local
 Auto, Light, and Dark themes, preserving Interface size and applying persisted
 appearance before React content.
 
-The accepted application-interface direction now preserves this entire dense
-surface as the first-class Workbench destination alongside a content-centric
-Library and clean Transfers queue. Workbench is not hidden behind an advanced
-setting. See
+Tactical `055` implements the accepted application-interface direction and
+preserves this entire dense surface as the first-class Workbench destination
+alongside a truthful torrent-backed Library and clean Transfers queue.
+Workbench is not hidden behind an advanced setting, and only Workbench leases
+selected-torrent detail projections. See
 [`application-interface-direction.md`](application-interface-direction.md).
 
 Tactical `042` makes a magnet's verified metainfo name appear in both the live

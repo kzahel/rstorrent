@@ -37,8 +37,11 @@ the size-only preference, and applies persisted theme before React content.
 Tactical `051` replaces ambiguous peer flag strings with typed Rust semantics,
 one exhaustive React glyph/label table, full cell accessibility, and a
 separate sortable-header help control containing the complete legend.
-The accepted product information architecture now retains this detailed
-surface as Workbench beside distinct Library and Transfers destinations, as
+Tactical `055` implements the accepted product information architecture:
+responsive Library, Transfers, and Workbench destinations; contextual
+sidebars; shared bounded multi-selection; a clean transfer queue; a truthful
+torrent-backed content grid; and collection-only application-view leasing
+outside Workbench. The detailed surface remains intact as Workbench, as
 recorded in
 [`application-interface-direction.md`](application-interface-direction.md).
 
@@ -323,6 +326,14 @@ bundle's dynamic React import and synchronized from presentation state after
 live changes. The legacy UI retains its existing Dark-only browser declaration
 and does not interpret the React appearance record.
 
+Tactical `055` adds a separate versioned navigation preference for the active
+Library, Transfers, or Workbench destination and each destination's local
+filter. Transfers is the fresh and invalid-storage fallback. The preference
+contains presentation values only and tolerates absent, malformed, future, or
+denied storage. Primary and multi-selection remain ephemeral application-store
+state and are repaired against every materialized torrent collection rather
+than persisted.
+
 Archive state, user labels, and other organization intended to survive a new
 webview or appear in another client are durable application data. Torrent
 activity, queue state, storage, and content retention remain separate engine
@@ -398,6 +409,16 @@ attribute already present at first React content. Explicit Light and Dark
 Settings/application scans have no serious or critical axe findings. The new
 dark scan also moved the demo strip and primary action from hard-coded light
 colors to palette-specific semantic tokens after exposing contrast failures.
+
+Tactical `055` adds deterministic navigation, storage-denial, selection
+repair, destination-local filter, view-leasing, command, and component tests.
+The headless browser suite covers wide and phone destination navigation,
+contextual drawers, Library-to-Workbench handoff, shared selection, keyboard
+operation, and empty serious/critical axe findings. Its 2,000-torrent scenario
+keeps Workbench and Transfers below 100 rendered rows, keeps Library below 100
+rendered cards, and retains fewer than 2,000 total DOM elements after changing
+destinations. These are bounded development assertions rather than a general
+browser performance guarantee.
 
 The deterministic 4,096-row scenario hides one padding row and rendered 690
 DOM elements with 66,468,705 bytes of sampled JavaScript heap. A complete

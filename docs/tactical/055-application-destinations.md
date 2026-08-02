@@ -1,6 +1,6 @@
 # Tactical 055: Application Destinations
 
-Status: Active on 2026-08-02.
+Status: Complete on 2026-08-02.
 
 Topics: `application-interface-direction`, `web-ui-design`,
 `desktop-inspection-surface`, `application-view-api`, `client-surfaces`
@@ -260,4 +260,42 @@ access, or a visible/physical client.
 
 ## Implementation And Evidence
 
-Pending.
+The implementation remains entirely inside the shared web presentation and
+its living documentation:
+
+- `navigation.ts` owns validated versioned destination and independent-filter
+  persistence with Transfers as the fresh fallback.
+- The per-instance store owns destination, primary selection, and shared
+  multi-selection; snapshot and keyed-removal reduction repair selection
+  without stale or duplicate torrent IDs.
+- The header and contextual Sidebar expose the three destinations across wide
+  and phone layouts. The prior interface is preserved as Workbench.
+- `TransferTable` and the Workbench torrent table share generic virtual-table
+  checkbox, select-all, and keyboard-Space selection. `TorrentActions`
+  composes the existing add/remove UI and applies eligible Start, Pause, and
+  uniform Archive or Restore commands sequentially. Removal remains enabled
+  only for one selected torrent.
+- `LibraryView` virtualizes torrent-backed cards with deterministic generated
+  placeholders, actual summary facts, and an explicit source handoff to
+  Workbench. It makes no media or playback claim.
+- Destination-aware desired views retain only the torrent collection for
+  Library and Transfers and preserve the prior responsive detail logic for
+  Workbench.
+
+Validation on 2026-08-02:
+
+- `npm run typecheck` passes.
+- `npm test` passes all 106 executed tests with 2 expected skips.
+- `npm run build` passes the production Vite build.
+- `npm run test:e2e` passes all 15 deterministic browser tests with 3
+  live-engine tests deliberately skipped. Wide and phone destination flows
+  have no serious or critical axe findings.
+- The 2,000-torrent browser scenario retains fewer than 100 Workbench rows,
+  100 Transfer rows, and 100 Library cards, with fewer than 2,000 total DOM
+  elements after destination changes.
+- Wide Transfers, Library, and Workbench plus phone Library screenshots were
+  inspected from a temporary directory and were not added to the repository.
+- `cargo fmt --all -- --check` and `git diff --check` pass.
+
+No generated contract, Rust engine, Android, dependency, media asset, or
+mockup image changed in this tactical.
