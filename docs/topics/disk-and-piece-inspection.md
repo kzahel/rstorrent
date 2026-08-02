@@ -254,8 +254,10 @@ Tactical `052` now ends the hashing stage at the actual SHA-1 result and carries
 bounded checkpoint backlog, high-water marks, active stage/age, batch and
 target counts, and separate sync/SQLite service durations through the engine,
 application projection, generated contracts and existing Disk panel. Exact
-engine/session transition tests plus the full web contract suite pass. Delay,
-failure and crash-boundary evidence remains owned by the active tactical.
+engine/session transition tests plus the full web contract suite pass. Its
+completed delay, failure and three-boundary crash matrix proves stage truth,
+bounded backlog and conservative restart; the retained application cohort
+uses 18 revisions for 512 pieces rather than 514.
 
 ## Known Gaps After This Sequence
 

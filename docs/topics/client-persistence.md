@@ -4,10 +4,12 @@ Topic: `client-persistence`
 
 Status: Tacticals `007` and `009` implemented the first
 `rstorrent-session` application/engine boundary, instance-scoped SQLite
-profile store, exact magnet metadata retention, per-piece checkpoints, and
+profile store, exact magnet metadata retention, durable have checkpoints, and
 conservative restart through both path and Android SAF platform-capability
-storage. Tactical `040` adds schema version `4`, durable archive state, and an
-explicit restartable removal job spanning SQLite and path or SAF cleanup.
+storage. Tactical `052` now batches payload synchronization and have commits
+behind hash verification. Tactical `040` adds schema version `4`, durable
+archive state, and an explicit restartable removal job spanning SQLite and
+path or SAF cleanup.
 
 ## Scope
 

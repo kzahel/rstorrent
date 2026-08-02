@@ -1,6 +1,6 @@
 # Tactical 052: Batched Durability Checkpoints
 
-Status: Active on 2026-08-02.
+Status: Complete on 2026-08-02.
 
 Topics: `storage-throughput-architecture`, `download-correctness`,
 `client-persistence`, `disk-and-piece-inspection`,
@@ -390,9 +390,56 @@ The first calibration also demonstrated that while a small age-triggered epoch
 was held in sync, later hashes advanced until the declared global 64 MiB/256
 piece dirty bound—not an unbounded queue—became full.
 
-The next internal gate is the full workspace, generated-contract, controlled
-interop and Android target matrix, followed by the retained steady cohort and
-optional headless public comparator.
+## Final Validation And Result
+
+The complete repository gate passed formatting, warning-denying workspace
+clippy and all workspace tests. Fresh generated web contracts produced no
+diff; 95 web tests passed with two skipped, followed by strict TypeScript and
+the production build. Bundled SQLite and the session library cross-compiled
+through the installed NDK for both `x86_64` and `arm64-v8a` at API 28.
+
+Controlled validation retained exact content and cleanup across three
+selective-file runs, the adverse plus healthy mixed-source run, all nine
+comparator classification tests and the 79,000-byte paired publication
+fixture. The selective gate exposed one unrelated diagnostic instability:
+the report named whichever piece happened to verify last while the contract
+expected the highest wanted piece. Commit `311dbb9` makes that diagnostic
+deterministic without changing scheduling or storage behavior; all three
+reruns then passed.
+
+The final 128 MiB SQLite-backed cohort used executable SHA-256
+`b0aa5215db00ee32243a241c12f50bc68f0b1942fba88a4326958d70eb04de63`.
+Its three exact transfer times were 45.740, 46.735 and 46.380 seconds, for a
+46.380-second median. That is 7.4% below the exact 50.085-second pre-change
+median. Every run used exactly 18 post-metadata revisions instead of 514, a
+28.6x reduction, while raw info, all 512 pieces, payload SHA-1
+`9224038c2041d03f6f8eb46a7f618fc32cf34e67`, publication and cleanup matched.
+Together with the earlier independent 45.221-second current cohort, the
+throughput improvement survives two source-fingerprinted observations.
+
+One SQLite-independent engine cohort initially produced a noisy
+41.959-second median against its historical 37.594-second median. It was not
+accepted as a regression: an isolated rebuild of exact pre-change commit
+`e618d2b` immediately ran the same profile at a 36.530-second median, followed
+by the current binary at 36.326 seconds. Exact hashes, batch geometry and
+cleanup held throughout. This contemporaneous control shows no persistent
+raw write/hash regression and records the discarded noisy cohort rather than
+silently selecting a favorable result.
+
+The optional public Big Buck Bunny comparator was deliberately not used to
+attribute this slice. Its RSTorrent adapter invokes the non-resumable
+`rstorrent-public-probe`, which has no SQLite sink or checkpoint owner, so it
+cannot exercise the behavior Tactical `052` changed. The controlled product
+profile is the causal result. Public full-download comparison remains useful
+after positional and concurrent execution change the shared engine hot path.
+
+The stopping condition is met: integrity, payload durability and durable have
+state are separate bounded joined stages; delay tests prove unrelated writes
+and hashes advance; all three crash boundaries are conservative; failure and
+shutdown join exactly; checkpoint amplification falls by 28.6x; and the
+retained product-path cohort improves without a persistent storage-control,
+memory, integrity, cleanup or tail-latency regression. Immutable positional
+storage plans are the next boundary in Tactical `053`.
 
 ## Stopping Condition
 

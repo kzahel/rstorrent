@@ -22,9 +22,10 @@ again stayed neutral. The duration slice attributed 93--94% of public wall
 time to serialized storage service. Bounded coalesced batches now reduce
 roughly 5,700 logical blocks to about 500 physical writes, but controlled wall
 time stayed neutral and public write plus hash service still consumed 93--94%.
-The engine campaign has resumed with Tactical `052`, which first separates
-hash verification from bounded batched durability before positional storage
-and bounded concurrency.
+Tactical `052` now separates hash verification from bounded batched
+durability, cuts the retained SQLite-backed cohort median by 7.4%, and reduces
+514 post-metadata revisions to 18. The engine campaign now advances to
+immutable positional storage plans before bounded concurrency.
 Tactical `033` now completes the leased application view-set and headless
 polling foundation. Tactical `034` completes the responsive frontend,
 deterministic demo adapter, adaptive inspection hierarchy, and virtual table
@@ -115,17 +116,17 @@ evidence.
 
 ### Now
 
-**Decouple verification from bounded durability checkpoints.** Tactical
-[`052`](../tactical/052-batched-durability-checkpoints.md) moves per-piece
-payload sync and SQLite work out of hash service and the content supervisor,
-batches durable progress, splits Disk stages, and establishes the controlled
-steady-state storage profile for the accepted throughput campaign.
+**Establish immutable positional storage plans.** With Tactical
+[`052`](../tactical/052-batched-durability-checkpoints.md) complete, remove
+mutable-cursor ownership from wanted-file and part-file payload operations,
+separate part-slot metadata ownership, and retain one executing write until
+the positional foundation passes exact cross-file and restart gates.
 
 ### Next
 
-1. **Establish immutable positional storage plans.** After Tactical `052`
-   graduates, remove mutable-cursor ownership from wanted-file and part-file
-   payload operations before adding worker concurrency.
+1. **Add bounded independent write and hash execution.** After positional
+   ownership is proven, introduce measured root-aware write capacity and a
+   separate hash-ready queue without weakening per-piece generation joins.
 2. **Deepen peer inspection only if engine selection needs it.** A
    registry-backed Swarm view remains the strongest missing inspection
    candidate, but it should not displace a reproducible download correctness

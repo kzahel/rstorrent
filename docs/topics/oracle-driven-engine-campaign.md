@@ -9,10 +9,12 @@ first-piece, sustained-transfer, endgame, and full publication parity from
 pinned libtorrent source and tests. Bounded write coalescing is complete;
 serialized storage execution remains the measured owner. Its accepted
 multi-tactical replacement is recorded in
-[`storage-throughput-architecture.md`](storage-throughput-architecture.md),
-and Tactical [`052`](../tactical/052-batched-durability-checkpoints.md) is
-active. The intervening desktop inspection and view-set foundations are
-complete enough to expose the new checkpoint stages as the engine evolves.
+[`storage-throughput-architecture.md`](storage-throughput-architecture.md).
+Tactical [`052`](../tactical/052-batched-durability-checkpoints.md) has
+completed its checkpoint split and retained performance gate; immutable
+positional storage plans are now the next executable slice. The intervening
+desktop inspection and view-set foundations are complete enough to expose the
+new checkpoint stages as the engine evolves.
 High-impact BEP breadth still follows the core common-denominator parity gate.
 
 ## Purpose And Scope
@@ -321,15 +323,15 @@ reason to stop.
 
 Campaign state: **active by maintainer direction**.
 
-Active tactical:
+Most recently completed tactical:
 [`052-batched-durability-checkpoints.md`](../tactical/052-batched-durability-checkpoints.md).
 Tacticals `025` through
 [`032-bounded-coalesced-write-batches.md`](../tactical/032-bounded-coalesced-write-batches.md)
 are complete.
 
-Current milestone: decouple hash verification from payload/SQLite durability,
-move checkpoint work off the content supervisor, and establish a repeatable
-steady-state storage profile before positional-write concurrency.
+Current milestone: author Tactical `053` from exact pinned source and tests,
+then establish immutable positional wanted-file and part-file payload plans
+without adding worker concurrency.
 
 Last completed evidence:
 
@@ -588,8 +590,19 @@ sync/callback failure, supervisor notification and exact task join tests now
 pass. The three-case subprocess matrix also proves zero have bits before the
 SQLite boundary and exact retained/redownloaded pieces after it.
 
-Next executable action: run the full workspace, generated-contract,
-controlled interop and Android target matrix, then retain the steady cohort and
-optional headless product comparator before graduating Tactical `052`.
+The complete Tactical `052` gate now passes workspace, generated-contract,
+controlled interop, paired publication, Android cross-build, adversarial
+delay/failure and crash validation. Its final source-fingerprinted session
+cohort has a 46.380-second median versus 50.085 seconds before, with exactly 18
+rather than 514 post-metadata revisions and exact payload/publication/cleanup.
+A contemporaneous SQLite-independent control ran exact pre-change commit
+`e618d2b` at a 36.530-second median and the current binary immediately after
+at 36.326 seconds, rejecting an earlier noisy cohort as a persistent
+regression. The public comparator is not causal for this slice because its
+RSTorrent adapter bypasses the session checkpoint path.
+
+Next executable action: inspect the exact positional I/O, part-file ownership
+and fence cases in the pinned libtorrent tests plus JSTorrent and rqbit, record
+Tactical `053`, then implement its one-writer positional foundation.
 
 Human blocker: **none**.

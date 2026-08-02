@@ -853,6 +853,25 @@ complete have geometry, publication and cleanup matched in all six retained
 runs. Latency remains a single-machine development observation rather than a
 product threshold; positional and concurrent storage work is still pending.
 
+The final graduation cohort used current executable SHA-256
+`b0aa5215db00ee32243a241c12f50bc68f0b1942fba88a4326958d70eb04de63`.
+It completed at 45.740, 46.735 and 46.380 seconds, for a 46.380-second median
+and exactly 18 post-metadata revisions every time. This remains 7.4% below the
+exact pre-change median with a 28.6x revision reduction. All three runs matched
+the 512-piece have geometry, exact payload SHA-1, raw info, publication and
+cleanup.
+
+The contemporaneous engine-only control also records an intentionally rejected
+noisy cohort. Current code first measured a 41.959-second median, but an
+isolated rebuild of exact pre-change commit `e618d2b` then measured 36.530
+seconds and the current binary immediately followed at 36.326 seconds. Exact
+content and batch geometry held, so there is no persistent raw write/hash
+regression attributable to the checkpoint split. The public comparator is not
+causal for this tactical because its RSTorrent owner is the non-resumable
+engine probe and never instantiates the SQLite checkpoint path; public
+full-download comparison resumes when later slices change that shared hot
+path.
+
 ## Maintenance Contract
 
 Feature tacticals add measurements only when their owner can report them

@@ -293,12 +293,13 @@ roughly 5,700 logical blocks became about 500 writes, yet combined serialized
 write/hash service still consumed 93.0--94.2% of wall time. Zero hash failures
 and successful cleanup held.
 
-Tactical `052` is now active by maintainer direction. It decouples hash
+Tactical `052` is complete. It decouples hash
 verification from bounded batched durability while retaining the one-sided
 crash invariant, conservative restart recheck, exact cancellation and joined
 publication. Its exact pre-change session profile advances 514 SQLite
 revisions for a 512-piece completion; the joined checkpoint owner reduces that
-to 16--18 revisions and a 45.221-second median from 50.085 seconds. A
+to exactly 18 revisions in the final retained cohort and a 46.380-second median
+from 50.085 seconds. A
 forced-death run persisted 112 of 128 pieces, detected one deliberately
 corrupted claimed piece on restart, retained the other 111 and downloaded
 exactly the corrupt plus missing payload before exact completion.
