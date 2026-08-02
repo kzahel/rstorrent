@@ -4,9 +4,10 @@ Topic: `storage-throughput-architecture`
 
 Status: Accepted by maintainer direction on 2026-08-02. Tactical
 [`052`](../tactical/052-batched-durability-checkpoints.md) completed the first
-bounded implementation slice; immutable positional storage plans are next.
-The current engine does not yet have the end-state architecture described
-here.
+bounded implementation slice; Tactical
+[`053`](../tactical/053-immutable-positional-storage-plans.md) now owns
+immutable positional storage plans. The current engine does not yet have the
+end-state architecture described here.
 
 ## Purpose And Scope
 
@@ -831,5 +832,7 @@ the first slice: hash verification now precedes bounded batched payload and
 SQLite durability in separate joined stages. Its final SQLite-backed cohort
 reduced the median from 50.085 to 46.380 seconds and post-metadata revisions
 from 514 to 18 without a persistent raw storage-control regression. The next
-slice establishes immutable positional plans and part-file metadata ownership
-with one executing write before any worker concurrency is introduced.
+slice is Tactical
+[`053`](../tactical/053-immutable-positional-storage-plans.md): it establishes
+immutable positional plans and part-file metadata ownership with one executing
+write before any worker concurrency is introduced.

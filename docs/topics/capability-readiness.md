@@ -116,10 +116,10 @@ evidence.
 
 ### Now
 
-**Establish immutable positional storage plans.** With Tactical
-[`052`](../tactical/052-batched-durability-checkpoints.md) complete, remove
+**Establish immutable positional storage plans.** Tactical
+[`053`](../tactical/053-immutable-positional-storage-plans.md) removes
 mutable-cursor ownership from wanted-file and part-file payload operations,
-separate part-slot metadata ownership, and retain one executing write until
+separates part-slot metadata ownership, and retains one executing write until
 the positional foundation passes exact cross-file and restart gates.
 
 ### Next

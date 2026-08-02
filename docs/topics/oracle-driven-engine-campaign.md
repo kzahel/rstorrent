@@ -11,10 +11,11 @@ serialized storage execution remains the measured owner. Its accepted
 multi-tactical replacement is recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md).
 Tactical [`052`](../tactical/052-batched-durability-checkpoints.md) has
-completed its checkpoint split and retained performance gate; immutable
-positional storage plans are now the next executable slice. The intervening
-desktop inspection and view-set foundations are complete enough to expose the
-new checkpoint stages as the engine evolves.
+completed its checkpoint split and retained performance gate; Tactical
+[`053`](../tactical/053-immutable-positional-storage-plans.md) now owns the
+immutable positional-storage slice. The intervening desktop inspection and
+view-set foundations are complete enough to expose the new checkpoint stages
+as the engine evolves.
 High-impact BEP breadth still follows the core common-denominator parity gate.
 
 ## Purpose And Scope
@@ -323,15 +324,16 @@ reason to stop.
 
 Campaign state: **active by maintainer direction**.
 
-Most recently completed tactical:
+Active tactical:
+[`053-immutable-positional-storage-plans.md`](../tactical/053-immutable-positional-storage-plans.md).
+Most recently completed tactical is
 [`052-batched-durability-checkpoints.md`](../tactical/052-batched-durability-checkpoints.md).
 Tacticals `025` through
 [`032-bounded-coalesced-write-batches.md`](../tactical/032-bounded-coalesced-write-batches.md)
 are complete.
 
-Current milestone: author Tactical `053` from exact pinned source and tests,
-then establish immutable positional wanted-file and part-file payload plans
-without adding worker concurrency.
+Current milestone: establish immutable positional wanted-file and part-file
+payload plans without adding worker concurrency.
 
 Last completed evidence:
 
@@ -601,8 +603,13 @@ at 36.326 seconds, rejecting an earlier noisy cohort as a persistent
 regression. The public comparator is not causal for this slice because its
 RSTorrent adapter bypasses the session checkpoint path.
 
-Next executable action: inspect the exact positional I/O, part-file ownership
-and fence cases in the pinned libtorrent tests plus JSTorrent and rqbit, record
-Tactical `053`, then implement its one-writer positional foundation.
+Tactical `053` records the exact positional I/O, part-file ownership and fence
+cases from pinned libtorrent plus rqbit and JSTorrent. Its fresh engine-only
+baseline is a 35.792-second median with 544--548 physical writes and exact
+content/cleanup.
+
+Next executable action: add cross-platform full-range positional I/O helpers,
+then convert the one-writer single-file and selective storage paths to
+immutable generation-checked plans.
 
 Human blocker: **none**.
