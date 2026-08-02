@@ -31,11 +31,15 @@ use rstorrent_protocol::udp_tracker::{
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use tokio::net::{UdpSocket, lookup_host};
-use tokio::sync::mpsc;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{Instant as TokioInstant, timeout, timeout_at};
 use tokio_util::sync::CancellationToken;
 
+use crate::checkpoint::{
+    CheckpointAdmission, CheckpointBatch, CheckpointBatchState, CheckpointIntent, CheckpointPolicy,
+    DurabilityTarget,
+};
 use crate::dht::{DhtError, DhtHandle};
 use crate::network::{NetworkConfig, NetworkPolicy};
 use crate::peer::{
@@ -79,6 +83,12 @@ const CONTENT_DISCOVERY_QUEUE: usize = 8;
 const CONTENT_STORAGE_PENDING_QUEUE: usize = 2;
 const CONTENT_STORAGE_WRITE_BATCH_BLOCKS: usize = 16;
 const CONTENT_STORAGE_WRITE_BATCH_BYTES: usize = 256 * 1024;
+const CHECKPOINT_MAX_AGE: Duration = Duration::from_secs(2);
+const CHECKPOINT_MAX_DIRTY_BYTES: u64 = 64 * 1024 * 1024;
+const CHECKPOINT_MAX_PIECES: usize = 256;
+const CHECKPOINT_INTENT_CAPACITY: usize = 256;
+const CHECKPOINT_SYNC_CONCURRENCY: usize = 4;
+const CHECKPOINT_BYTE_UNIT: u64 = MAX_REQUEST_BLOCK_LENGTH as u64;
 const MAX_RESOLVED_ADDRESSES: usize = 32;
 const UNKNOWN_MAGNET_LEFT: u64 = 16 * 1024;
 const UDP_TRACKER_RECEIVE_LENGTH: usize = MAX_ANNOUNCE_RESPONSE_LENGTH + 1;
@@ -5002,7 +5012,8 @@ async fn run_single_download(
             resume: None,
             control: &control,
         },
-    )?;
+    )
+    .await?;
     let mut completed = download_content_swarm(peers, download).await?;
     let piece = completed
         .last_piece
@@ -5126,8 +5137,124 @@ enum ContentStorageCompletion {
     Verify {
         piece: u32,
         length: u32,
-        result: Result<[u8; 20], DownloadError>,
+        result: Result<ContentVerification, DownloadError>,
     },
+}
+
+struct ContentVerification {
+    actual: [u8; 20],
+    durability_targets: Vec<DurabilityTarget>,
+}
+
+struct PendingCheckpointIntent {
+    intent: CheckpointIntent,
+    permit: CheckpointPermit,
+}
+
+struct CheckpointPermit {
+    _item: OwnedSemaphorePermit,
+    _bytes: OwnedSemaphorePermit,
+}
+
+struct ContentCheckpointPipeline {
+    intents: Option<mpsc::Sender<PendingCheckpointIntent>>,
+    item_capacity: Arc<Semaphore>,
+    byte_capacity: Arc<Semaphore>,
+    failures: mpsc::Receiver<String>,
+    task: JoinHandle<Result<(), DownloadError>>,
+    started_at: Instant,
+}
+
+impl ContentCheckpointPipeline {
+    fn start(
+        handles: BTreeMap<DurabilityTarget, std::fs::File>,
+        checkpoints: Arc<dyn DownloadCheckpointSink>,
+    ) -> Result<Self, DownloadError> {
+        let policy = CheckpointPolicy::new(
+            CHECKPOINT_MAX_AGE,
+            CHECKPOINT_MAX_DIRTY_BYTES,
+            CHECKPOINT_MAX_PIECES,
+        )
+        .map_err(|error| DownloadError::StorageTask(error.to_string()))?;
+        let (intent_sender, intent_receiver) = mpsc::channel(CHECKPOINT_INTENT_CAPACITY);
+        let (failure_sender, failure_receiver) = mpsc::channel(1);
+        let item_capacity = Arc::new(Semaphore::new(CHECKPOINT_INTENT_CAPACITY));
+        let byte_permits = CHECKPOINT_MAX_DIRTY_BYTES / CHECKPOINT_BYTE_UNIT;
+        let byte_capacity = Arc::new(Semaphore::new(
+            usize::try_from(byte_permits)
+                .map_err(|_| DownloadError::StorageTask("checkpoint byte bound overflow".into()))?,
+        ));
+        let started_at = Instant::now();
+        let task_started_at = started_at;
+        let handles = handles
+            .into_iter()
+            .map(|(target, file)| (target, Arc::new(file)))
+            .collect();
+        let task = tokio::spawn(async move {
+            let result = run_content_checkpoint_task(
+                intent_receiver,
+                handles,
+                checkpoints,
+                policy,
+                task_started_at,
+            )
+            .await;
+            if let Err(error) = &result {
+                let _ = failure_sender.try_send(error.to_string());
+            }
+            result
+        });
+        Ok(Self {
+            intents: Some(intent_sender),
+            item_capacity,
+            byte_capacity,
+            failures: failure_receiver,
+            task,
+            started_at,
+        })
+    }
+
+    async fn enqueue(
+        &self,
+        piece_index: usize,
+        length: u32,
+        targets: Vec<DurabilityTarget>,
+    ) -> Result<(), DownloadError> {
+        let item = self
+            .item_capacity
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| DownloadError::StorageTask("checkpoint item owner closed".to_owned()))?;
+        let length_u64 = u64::from(length);
+        let units = length_u64.div_ceil(CHECKPOINT_BYTE_UNIT);
+        let maximum_units = CHECKPOINT_MAX_DIRTY_BYTES / CHECKPOINT_BYTE_UNIT;
+        let units = units.min(maximum_units);
+        let units = u32::try_from(units)
+            .map_err(|_| DownloadError::StorageTask("checkpoint byte charge overflow".into()))?;
+        let bytes = self
+            .byte_capacity
+            .clone()
+            .acquire_many_owned(units)
+            .await
+            .map_err(|_| DownloadError::StorageTask("checkpoint byte owner closed".to_owned()))?;
+        let intent =
+            CheckpointIntent::new(piece_index, length_u64, self.started_at.elapsed(), targets)
+                .map_err(|error| DownloadError::StorageTask(error.to_string()))?;
+        let sender = self.intents.as_ref().ok_or_else(|| {
+            DownloadError::StorageTask("checkpoint intent owner is stopped".to_owned())
+        })?;
+        sender
+            .send(PendingCheckpointIntent {
+                intent,
+                permit: CheckpointPermit {
+                    _item: item,
+                    _bytes: bytes,
+                },
+            })
+            .await
+            .map_err(|_| DownloadError::StorageTask("checkpoint intent channel closed".to_owned()))
+    }
 }
 
 struct ContentStoragePipeline {
@@ -5140,14 +5267,31 @@ struct ContentStoragePipeline {
     max_buffered_payload_bytes: usize,
     job_limit: usize,
     queue_capacity: usize,
+    checkpoint: Option<ContentCheckpointPipeline>,
 }
 
 impl ContentStoragePipeline {
-    fn start(
+    async fn start(
         storage: ContentStorage,
         control: &DownloadControl,
         max_buffered_payload_bytes: usize,
-    ) -> Self {
+        checkpoints: Option<Arc<dyn DownloadCheckpointSink>>,
+    ) -> Result<Self, DownloadError> {
+        let checkpoint = match checkpoints {
+            Some(checkpoints) => {
+                let ContentStorage::Selective(storage) = &storage else {
+                    return Err(DownloadError::StorageTask(
+                        "resumable checkpoint requires selective storage".to_owned(),
+                    ));
+                };
+                let handles = storage
+                    .checkpoint_handles()
+                    .await
+                    .map_err(DownloadError::SelectiveStorage)?;
+                Some(ContentCheckpointPipeline::start(handles, checkpoints)?)
+            }
+            None => None,
+        };
         control.configure_disk_runtime(max_buffered_payload_bytes);
         let job_limit = content_storage_job_limit(max_buffered_payload_bytes);
         debug_assert_ne!(job_limit, 0);
@@ -5163,7 +5307,7 @@ impl ContentStoragePipeline {
             control.clone(),
             queue_capacity,
         ));
-        Self {
+        Ok(Self {
             commands: Some(command_sender),
             completions: completion_receiver,
             cancellation,
@@ -5173,7 +5317,8 @@ impl ContentStoragePipeline {
             max_buffered_payload_bytes,
             job_limit,
             queue_capacity,
-        }
+            checkpoint,
+        })
     }
 
     fn enqueue(&mut self, command: ContentStorageCommand) -> Result<(), DownloadError> {
@@ -5273,9 +5418,19 @@ impl ContentStoragePipeline {
     }
 
     async fn next_completion(&mut self) -> Result<ContentStorageCompletion, DownloadError> {
-        self.completions.recv().await.ok_or_else(|| {
-            DownloadError::StorageTask("storage completion channel closed".to_owned())
-        })
+        let Some(checkpoint) = self.checkpoint.as_mut() else {
+            return self.completions.recv().await.ok_or_else(|| {
+                DownloadError::StorageTask("storage completion channel closed".to_owned())
+            });
+        };
+        tokio::select! {
+            completion = self.completions.recv() => completion.ok_or_else(|| {
+                DownloadError::StorageTask("storage completion channel closed".to_owned())
+            }),
+            failure = checkpoint.failures.recv() => Err(DownloadError::Checkpoint(
+                failure.unwrap_or_else(|| "checkpoint task stopped unexpectedly".to_owned())
+            )),
+        }
     }
 
     fn completion_received(&self, completion: &ContentStorageCompletion) {
@@ -5287,17 +5442,200 @@ impl ContentStoragePipeline {
 
     async fn shutdown(mut self, cancel: bool) -> Result<ContentStorage, DownloadError> {
         self.commands.take();
+        if let Some(checkpoint) = self.checkpoint.as_mut() {
+            checkpoint.intents.take();
+        }
         if cancel {
             self.cancellation.cancel();
         }
-        let result = self
+        let storage_result = self
             .task
             .await
             .map_err(|error| DownloadError::StorageTask(error.to_string()));
+        let checkpoint_result = match self.checkpoint {
+            Some(checkpoint) => checkpoint
+                .task
+                .await
+                .map_err(|error| DownloadError::StorageTask(error.to_string()))?,
+            None => Ok(()),
+        };
         self.control.clear_storage_jobs();
         self.control.clear_buffered_payload();
-        result
+        match (storage_result, checkpoint_result) {
+            (Ok(storage), Ok(())) => Ok(storage),
+            (Err(error), Ok(())) | (Ok(_), Err(error)) => Err(error),
+            (Err(error), Err(checkpoint)) => Err(DownloadError::StorageTask(format!(
+                "{error}; additionally {checkpoint}"
+            ))),
+        }
     }
+}
+
+async fn run_content_checkpoint_task(
+    mut intents: mpsc::Receiver<PendingCheckpointIntent>,
+    handles: BTreeMap<DurabilityTarget, Arc<std::fs::File>>,
+    checkpoints: Arc<dyn DownloadCheckpointSink>,
+    policy: CheckpointPolicy,
+    started_at: Instant,
+) -> Result<(), DownloadError> {
+    let mut state = CheckpointBatchState::new(policy);
+    let mut permits = BTreeMap::new();
+    let mut pending = None;
+    loop {
+        let next = match pending.take() {
+            Some(intent) => Some(intent),
+            None if state.len() == 0 => intents.recv().await,
+            None => {
+                let wait = state.next_flush_in(started_at.elapsed()).ok_or_else(|| {
+                    DownloadError::StorageTask(
+                        "nonempty checkpoint batch has no age deadline".to_owned(),
+                    )
+                })?;
+                match timeout(wait, intents.recv()).await {
+                    Ok(intent) => intent,
+                    Err(_) => {
+                        flush_content_checkpoint(&mut state, &mut permits, &handles, &checkpoints)
+                            .await?;
+                        continue;
+                    }
+                }
+            }
+        };
+        let Some(mut next) = next else {
+            flush_content_checkpoint(&mut state, &mut permits, &handles, &checkpoints).await?;
+            return Ok(());
+        };
+        let piece_index = next.intent.piece_index;
+        match state
+            .admit(next.intent, started_at.elapsed())
+            .map_err(|error| DownloadError::StorageTask(error.to_string()))?
+        {
+            CheckpointAdmission::Accumulating => {
+                if permits.insert(piece_index, next.permit).is_some() {
+                    return Err(DownloadError::StorageTask(
+                        "checkpoint permit piece is duplicated".to_owned(),
+                    ));
+                }
+            }
+            CheckpointAdmission::Ready(_) => {
+                if permits.insert(piece_index, next.permit).is_some() {
+                    return Err(DownloadError::StorageTask(
+                        "checkpoint permit piece is duplicated".to_owned(),
+                    ));
+                }
+                flush_content_checkpoint(&mut state, &mut permits, &handles, &checkpoints).await?;
+            }
+            CheckpointAdmission::FlushBefore { intent, .. } => {
+                flush_content_checkpoint(&mut state, &mut permits, &handles, &checkpoints).await?;
+                next.intent = intent;
+                pending = Some(next);
+            }
+        }
+    }
+}
+
+async fn flush_content_checkpoint(
+    state: &mut CheckpointBatchState,
+    permits: &mut BTreeMap<usize, CheckpointPermit>,
+    handles: &BTreeMap<DurabilityTarget, Arc<std::fs::File>>,
+    checkpoints: &Arc<dyn DownloadCheckpointSink>,
+) -> Result<(), DownloadError> {
+    let expected_dirty_bytes = state.dirty_bytes();
+    let Some(batch) = state.take() else {
+        return Ok(());
+    };
+    let actual_dirty_bytes = batch.intents.iter().try_fold(0_u64, |total, intent| {
+        total.checked_add(intent.length).ok_or_else(|| {
+            DownloadError::StorageTask("checkpoint batch byte sum overflow".to_owned())
+        })
+    })?;
+    let oldest_verified_at = batch
+        .intents
+        .iter()
+        .map(|intent| intent.verified_at)
+        .min()
+        .ok_or_else(|| DownloadError::StorageTask("checkpoint batch is empty".to_owned()))?;
+    if actual_dirty_bytes != batch.dirty_bytes
+        || actual_dirty_bytes != expected_dirty_bytes
+        || oldest_verified_at != batch.oldest_verified_at
+    {
+        return Err(DownloadError::StorageTask(
+            "checkpoint batch accounting diverged".to_owned(),
+        ));
+    }
+    let mut batch_permits = Vec::with_capacity(batch.intents.len());
+    let mut piece_indices = Vec::with_capacity(batch.intents.len());
+    for intent in &batch.intents {
+        piece_indices.push(intent.piece_index);
+        batch_permits.push(permits.remove(&intent.piece_index).ok_or_else(|| {
+            DownloadError::StorageTask(format!(
+                "checkpoint piece {} has no capacity permit",
+                intent.piece_index
+            ))
+        })?);
+    }
+    if !permits.is_empty() {
+        return Err(DownloadError::StorageTask(
+            "checkpoint permits escaped their batch".to_owned(),
+        ));
+    }
+    sync_checkpoint_targets(handles, &batch).await?;
+    let checkpoints = checkpoints.clone();
+    tokio::task::spawn_blocking(move || checkpoints.pieces_durable(&piece_indices))
+        .await
+        .map_err(|error| DownloadError::StorageTask(error.to_string()))?
+        .map_err(DownloadError::Checkpoint)?;
+    drop(batch_permits);
+    Ok(())
+}
+
+async fn sync_checkpoint_targets(
+    handles: &BTreeMap<DurabilityTarget, Arc<std::fs::File>>,
+    batch: &CheckpointBatch,
+) -> Result<(), DownloadError> {
+    let targets = batch
+        .targets
+        .iter()
+        .copied()
+        .map(|target| {
+            handles.get(&target).cloned().map_or_else(
+                || {
+                    Err(DownloadError::StorageTask(format!(
+                        "checkpoint target {target:?} has no sync handle"
+                    )))
+                },
+                |file| Ok((target, file)),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut targets = targets.into_iter();
+    let mut running = JoinSet::new();
+    let mut first_error = None;
+    loop {
+        while first_error.is_none() && running.len() < CHECKPOINT_SYNC_CONCURRENCY {
+            let Some((target, file)) = targets.next() else {
+                break;
+            };
+            running.spawn_blocking(move || (target, file.sync_data()));
+        }
+        let Some(result) = running.join_next().await else {
+            break;
+        };
+        match result {
+            Ok((_target, Ok(()))) => {}
+            Ok((target, Err(error))) => {
+                first_error.get_or_insert_with(|| {
+                    DownloadError::StorageTask(format!(
+                        "checkpoint target {target:?} sync failed: {error}"
+                    ))
+                });
+            }
+            Err(error) => {
+                first_error.get_or_insert_with(|| DownloadError::StorageTask(error.to_string()));
+            }
+        }
+    }
+    first_error.map_or(Ok(()), Err)
 }
 
 async fn run_content_storage_task(
@@ -5589,6 +5927,10 @@ async fn execute_content_storage_verification(
                 ContentStorage::Single(storage) => storage
                     .hash_piece(offset, length)
                     .await
+                    .map(|actual| ContentVerification {
+                        actual,
+                        durability_targets: Vec::new(),
+                    })
                     .map_err(DownloadError::Storage),
                 ContentStorage::Selective(storage) => {
                     async {
@@ -5600,17 +5942,25 @@ async fn execute_content_storage_verification(
                             let piece_index = usize::try_from(piece).map_err(|_| {
                                 DownloadError::Layout(LayoutError::ArithmeticOverflow)
                             })?;
-                            if durable {
+                            let durability_targets = if durable {
                                 storage
-                                    .sync_piece(piece)
-                                    .await
-                                    .map_err(DownloadError::SelectiveStorage)?;
-                            }
+                                    .durability_targets(piece)
+                                    .map_err(DownloadError::SelectiveStorage)?
+                            } else {
+                                Vec::new()
+                            };
                             storage
                                 .record_verified(piece_index)
                                 .map_err(DownloadError::SelectiveStorage)?;
+                            return Ok(ContentVerification {
+                                actual,
+                                durability_targets,
+                            });
                         }
-                        Ok(actual)
+                        Ok(ContentVerification {
+                            actual,
+                            durability_targets: Vec::new(),
+                        })
                     }
                     .await
                 }
@@ -5659,7 +6009,7 @@ enum ContentMessageDisposition {
 }
 
 impl<'a> ContentSwarmDownload<'a> {
-    fn new(
+    async fn new(
         config: SwarmConfig,
         max_buffered_payload_bytes: usize,
         plans: Vec<(u32, Vec<rstorrent_protocol::storage_layout::RequestRange>)>,
@@ -5689,13 +6039,18 @@ impl<'a> ContentSwarmDownload<'a> {
         }
         let state = SwarmState::new(config, layout.piece_count(), swarm_plans)
             .map_err(DownloadError::Swarm)?;
+        let checkpoints = resume.map(|resume| resume.checkpoints.clone());
         Ok(Self {
             state,
-            storage_pipeline: Some(ContentStoragePipeline::start(
-                storage,
-                control,
-                max_buffered_payload_bytes,
-            )),
+            storage_pipeline: Some(
+                ContentStoragePipeline::start(
+                    storage,
+                    control,
+                    max_buffered_payload_bytes,
+                    checkpoints,
+                )
+                .await?,
+            ),
             completed_storage: None,
             metainfo,
             layout,
@@ -5826,7 +6181,7 @@ impl<'a> ContentSwarmDownload<'a> {
             .is_some_and(ContentStoragePipeline::is_backpressured)
     }
 
-    fn handle_storage_completion(
+    async fn handle_storage_completion(
         &mut self,
         completion: ContentStorageCompletion,
         now: Duration,
@@ -5893,7 +6248,8 @@ impl<'a> ContentSwarmDownload<'a> {
                 length,
                 result,
             } => {
-                let actual = result?;
+                let verification = result?;
+                let actual = verification.actual;
                 let piece_index = usize::try_from(piece)
                     .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
                 let expected = self.metainfo.piece_hashes[piece_index];
@@ -5911,11 +6267,17 @@ impl<'a> ContentSwarmDownload<'a> {
                         .disk_piece_failed(piece, length, "piece hash failed; retrying");
                     ContentMessageDisposition::PieceHashFailed(failure)
                 } else {
-                    if let Some(resume) = self.resume {
-                        resume
-                            .checkpoints
-                            .piece_durable(piece_index)
-                            .map_err(DownloadError::Checkpoint)?;
+                    if self.resume.is_some() {
+                        self.storage_pipeline_mut()?
+                            .checkpoint
+                            .as_ref()
+                            .ok_or_else(|| {
+                                DownloadError::StorageTask(
+                                    "resumable storage has no checkpoint owner".to_owned(),
+                                )
+                            })?
+                            .enqueue(piece_index, length, verification.durability_targets)
+                            .await?;
                     }
                     let contributors = self
                         .state
@@ -6506,8 +6868,9 @@ async fn run_selective_swarm_loop(
         match event {
             ContentSupervisorEvent::Deadline => continue,
             ContentSupervisorEvent::Storage(completion) => {
-                let disposition =
-                    download.handle_storage_completion(completion, peers.elapsed())?;
+                let disposition = download
+                    .handle_storage_completion(completion, peers.elapsed())
+                    .await?;
                 apply_content_disposition(peers, sockets, download, None, disposition).await?;
             }
             ContentSupervisorEvent::Discovery(Some(ContentDiscoveryEvent::Peers {
@@ -6926,7 +7289,8 @@ async fn run_selective_download(
                 resume: resume.as_ref(),
                 control: &control,
             },
-        )?;
+        )
+        .await?;
         let mut completed = download_content_swarm(peers, download).await?;
         let result = (
             completed.total_blocks,

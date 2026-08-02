@@ -2,6 +2,7 @@
 
 //! Runtime ownership for the first verified-piece diagnostic.
 
+mod checkpoint;
 pub mod dht;
 mod driver;
 mod metadata_seed;

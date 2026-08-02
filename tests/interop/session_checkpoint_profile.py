@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import hashlib
 import shutil
 import sqlite3
 import subprocess
@@ -40,6 +41,14 @@ TOTAL_SIZE = 128 * 1024 * 1024
 PAYLOAD_ALLOWANCE = 32 * 1024 * 1024
 PROCESS_TIMEOUT_SECONDS = 180
 POLL_SECONDS = 0.005
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 @dataclass
@@ -255,6 +264,8 @@ def main() -> int:
     )
     try:
         binary = arguments.binary or build_binary(repository)
+        binary = binary.resolve()
+        print(f"binary={binary} binary_sha256={sha256_file(binary)}")
         results = [
             run_once(binary, ordinal)
             for ordinal in range(1, arguments.runs + 1)

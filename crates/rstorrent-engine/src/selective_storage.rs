@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::ffi::OsString;
 use std::fmt;
@@ -12,6 +13,7 @@ use sha1::{Digest, Sha1};
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 
+use crate::checkpoint::DurabilityTarget;
 use crate::part_file::{PartFile, PartFileError, PartFileIdentity};
 use crate::storage::VERIFICATION_CHUNK_LENGTH;
 
@@ -1117,6 +1119,60 @@ impl SelectiveStorage {
 
     pub fn record_verified(&mut self, piece_index: usize) -> Result<(), SelectiveStorageError> {
         self.set_verified(piece_index, true)
+    }
+
+    pub(crate) fn durability_targets(
+        &self,
+        piece_index: u32,
+    ) -> Result<Vec<DurabilityTarget>, SelectiveStorageError> {
+        let piece_length = self.layout.piece_length_at(piece_index)?;
+        let segments = self
+            .layout
+            .segments(piece_index, 0, piece_length, &self.selection)?;
+        let mut targets = Vec::new();
+        for segment in segments {
+            let target = match segment.target {
+                SegmentTarget::WantedFile { file_index, .. } => {
+                    DurabilityTarget::WantedFile(file_index)
+                }
+                SegmentTarget::SkippedFile { .. } => DurabilityTarget::PartFile,
+                SegmentTarget::Padding => continue,
+            };
+            if !targets.contains(&target) {
+                targets.push(target);
+            }
+        }
+        Ok(targets)
+    }
+
+    pub(crate) async fn checkpoint_handles(
+        &self,
+    ) -> Result<BTreeMap<DurabilityTarget, std::fs::File>, SelectiveStorageError> {
+        let mut handles = BTreeMap::new();
+        for (file_index, file) in self.files.iter().enumerate() {
+            let Some(file) = file else {
+                continue;
+            };
+            let handle = file
+                .try_clone()
+                .await
+                .map_err(|source| SelectiveStorageError::Io {
+                    operation: "duplicate selected file for durability checkpoint",
+                    source,
+                })?
+                .into_std()
+                .await;
+            handles.insert(DurabilityTarget::WantedFile(file_index), handle);
+        }
+        let part_file = self
+            .part_file
+            .as_ref()
+            .ok_or(SelectiveStorageError::NotPublished)?;
+        handles.insert(
+            DurabilityTarget::PartFile,
+            part_file.duplicate_for_checkpoint().await?,
+        );
+        Ok(handles)
     }
 
     pub fn set_verified(

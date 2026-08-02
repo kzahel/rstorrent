@@ -502,6 +502,18 @@ impl PartFile {
             })
     }
 
+    pub(crate) async fn duplicate_for_checkpoint(&self) -> Result<std::fs::File, PartFileError> {
+        let file = self
+            .file
+            .try_clone()
+            .await
+            .map_err(|source| PartFileError::Io {
+                operation: "duplicate part file for durability checkpoint",
+                source,
+            })?;
+        Ok(file.into_std().await)
+    }
+
     async fn ensure_slot(&mut self, piece_index: usize) -> Result<u32, PartFileError> {
         self.validate_piece_index(piece_index)?;
         if let Some(slot) = self.slots[piece_index] {

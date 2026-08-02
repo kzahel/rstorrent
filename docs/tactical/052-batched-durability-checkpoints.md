@@ -230,7 +230,7 @@ uv run --project tests/interop --locked \
   --binary target/debug/rstorrent-download-piece
 uv run --project tests/interop --locked \
   python tests/interop/session_checkpoint_profile.py --runs 3 \
-  --binary target/debug/rstorrent-session
+  --binary /tmp/rstorrent-pre052/target/debug/rstorrent-session
 ```
 
 The historical 32 MiB quick profile remained exact at 2.005 seconds. The new
@@ -245,12 +245,16 @@ stable baseline for later positional and concurrent execution slices.
 The new application-service profile downloads a separate deterministic
 128 MiB/512-piece multi-file torrent through the loopback seed, path-backed
 session service, `synchronous=FULL` SQLite store and ordinary publication.
-Three runs completed at 12.707--13.370 seconds with a 13.346-second median.
+The retained pre-change executable was built from exact commit `e618d2b` and
+fingerprinted as SHA-256 `323722b2e925ffc9e7844a624af5d8f1fe2601dda59d61983a8c264b97bb28c6`.
+Three runs completed at 50.019--50.301 seconds with a 50.085-second median.
 The metadata checkpoint was observed before any verified piece on every run;
 the final SQLite torrent revision was exactly 514 revisions later: one for
 each of 512 per-piece checkpoints and two final storage/state transitions.
 Every run retained exact raw info, full have geometry, the same payload SHA-1,
-verified publication and exact owner/artifact cleanup.
+verified publication and exact owner/artifact cleanup. An earlier
+12.707--13.370-second observation was rejected after the new executable
+fingerprint identified a stale July 31 binary; it is not baseline evidence.
 
 Larger 256 MiB and 768 MiB engine-only calibration attempts were stopped after
 crossing the declared steady window well before completion. Their owned
@@ -286,6 +290,42 @@ cargo test -p rstorrent-session --lib
 All 78 session tests pass. The next internal gate is runtime-independent
 checkpoint epoch selection and target de-duplication; payload sync and engine
 task ownership are still unchanged.
+
+## Implementation Checkpoint 2: Joined Runtime Owner
+
+The engine now separates successful SHA-1 verification from durability. Pure
+checkpoint state selects epochs at the exact two-second, 64 MiB and 256-piece
+bounds, admits one oversized piece alone, rejects duplicate pieces and
+de-duplicates stable wanted-file/part-file target IDs. Six deterministic tests
+cover those transitions.
+
+Resumable selective storage registers one sync-only handle for every wanted
+file and the part file. A joined checkpoint task holds both item and dirty-byte
+permits through target synchronization and `pieces_durable`, synchronizes no
+more than four unique targets concurrently, validates all handles before
+launching any blocking work, and drains every launched job after a failure.
+The storage owner no longer calls per-piece `sync_piece`; the supervisor queues
+the verified intent, and final publication waits for both the storage and
+checkpoint owners to join.
+
+The matched post-change application profile used executable SHA-256
+`7d80f5267382993143615dff333a1a4954d6553ac11944e44ff3703f7e1e9b59`.
+Three exact runs completed at 44.580--45.282 seconds with a 45.221-second
+median, 9.7% below the corrected 50.085-second pre-change median. Each used
+only 16--18 post-metadata revisions rather than 514, a 28.6--32.1x reduction,
+while exact payload, raw info, have geometry, publication and cleanup held.
+
+The forced-death resume fixture is now 32 MiB with 128 256 KiB pieces so it
+cannot complete before the batched owner's age boundary. One retained run
+killed the process after 112 durable pieces, corrupted one claimed piece, then
+rechecked 111 and downloaded exactly 4,456,448 missing/corrupt bytes before
+exact completion and cleanup. The old eight-piece fixture was correctly
+rejected because it could complete before the first epoch, making it a test of
+per-piece timing rather than crash recovery.
+
+The next internal gate is fixed checkpoint observability followed by
+deterministic sync/database delay and failure control. Positional writes and
+hash concurrency remain unchanged.
 
 ## Stopping Condition
 

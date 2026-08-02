@@ -825,7 +825,7 @@ independent bounded write/hash queues, optional pending-write read-through,
 and eventual session/root fairness. The proposal does not convert this evidence
 into an implementation or speed claim.
 
-## Batched-Checkpoint Pre-Change Evidence: 2026-08-02
+## Batched-Checkpoint Controlled Evidence: 2026-08-02
 
 Tactical `052` adds two retained 128 MiB loopback profiles before changing
 behavior. The three-file engine-only profile uses 512 256 KiB pieces and
@@ -836,13 +836,22 @@ writes. It retains the current execution baseline independently from SQLite.
 
 The application-service profile runs a separate 512-piece multi-file torrent
 through the path-backed session and `synchronous=FULL` SQLite checkpoint sink.
-Three exact publication runs completed in 12.707--13.370 seconds, with a
-13.346-second median. Each metadata checkpoint was observed before any piece
-became durable, and every final database was exactly 514 revisions later: 512
-per-piece have transactions plus two final state transitions. Payload hashes,
-raw info, complete have geometry, publication and cleanup all matched. The
-revision amplification is a structural baseline; the latency remains a
-single-machine development observation rather than a product threshold.
+The exact `e618d2b` pre-change executable completed three runs in
+50.019--50.301 seconds, with a 50.085-second median and exactly 514
+post-metadata revisions every time: 512 per-piece have transactions plus two
+final state transitions. Its SHA-256 fingerprint was
+`323722b2e925ffc9e7844a624af5d8f1fe2601dda59d61983a8c264b97bb28c6`.
+An earlier 12.707--13.370-second observation came from a stale binary and is
+explicitly rejected.
+
+After the joined checkpoint owner removed per-piece payload sync and batched
+have persistence, the source-matched executable completed three exact runs in
+44.580--45.282 seconds, with a 45.221-second median and only 16--18
+post-metadata revisions. That is a 9.7% controlled median reduction and a
+28.6--32.1x transaction-amplification reduction. Payload hashes, raw info,
+complete have geometry, publication and cleanup matched in all six retained
+runs. Latency remains a single-machine development observation rather than a
+product threshold; positional and concurrent storage work is still pending.
 
 ## Maintenance Contract
 

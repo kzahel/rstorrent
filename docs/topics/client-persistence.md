@@ -365,7 +365,9 @@ successful mutation unreadable after upgrade.
   app-private storage.
 - Tactical `052` is implementing the accepted bounded durability epochs from
   [`storage-throughput-architecture.md`](storage-throughput-architecture.md);
-  exact crash, restart and checkpoint-latency evidence remains open until that
+  the joined runtime owner, exact batch commit, matched controlled profile and
+  a mid-epoch forced-death resume case now pass. Explicit pre-sync,
+  post-sync/pre-commit and post-commit crash fixtures remain open until that
   tactical graduates.
 - The exact clean-shutdown, storage-generation, and file-observation evidence
   required before a later fast-resume path may skip hashing.

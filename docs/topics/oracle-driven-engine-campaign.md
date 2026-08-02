@@ -565,18 +565,21 @@ Tactical `052` pre-change evidence now includes:
 - a 128 MiB engine-only steady profile with 512 pieces, a 37.594-second
   three-run median, 542--546 physical writes and 31.108--34.088 seconds of
   serialized write service; and
-- a separate SQLite-backed 512-piece session profile with a 13.346-second
-  median and an exact 514-revision post-metadata amplification on every run,
-  proving one have transaction per piece plus two final transitions.
+- a separate SQLite-backed 512-piece session profile built from exact commit
+  `e618d2b`, with a 50.085-second median and an exact 514-revision
+  post-metadata amplification on every run. A prior stale-binary observation
+  was rejected after executable fingerprinting was added.
 
 `SessionStore::record_pieces`, the de-duplicating application sink and one
-coherent batched `ViewHub` Piece/Files transition now pass exact duplicate,
-bounds, revision and rollback tests. The engine still uses the trait's
-one-piece wrapper, so runtime behavior and the baseline are unchanged.
+coherent batched `ViewHub` Piece/Files transition pass exact duplicate,
+bounds, revision and rollback tests. The engine now queues hash-verified
+pieces to one bounded joined checkpoint owner, synchronizes unique targets,
+and invokes the batch sink outside the supervisor. Its matched three-run
+profile has a 45.221-second median and 16--18 revisions, with exact content and
+cleanup; forced-death resume also passes after 112 durable pieces.
 
-Next executable action: implement runtime-independent checkpoint epoch
-selection and durability-target de-duplication with exact age, byte, piece and
-large-piece liveness tests before adding filesystem handles or Tokio task
-ownership.
+Next executable action: expose fixed checkpoint stages and counters through
+the existing Disk contracts, then add deterministic sync/database delay and
+failure controls before the subprocess crash-boundary matrix.
 
 Human blocker: **none**.

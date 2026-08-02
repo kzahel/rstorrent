@@ -296,9 +296,12 @@ and successful cleanup held.
 Tactical `052` is now active by maintainer direction. It decouples hash
 verification from bounded batched durability while retaining the one-sided
 crash invariant, conservative restart recheck, exact cancellation and joined
-publication. Its pre-change session profile observes zero durable pieces at
-the metadata checkpoint and then exactly 514 SQLite revisions for a
-512-piece completion, directly capturing the per-piece checkpoint policy.
+publication. Its exact pre-change session profile advances 514 SQLite
+revisions for a 512-piece completion; the joined checkpoint owner reduces that
+to 16--18 revisions and a 45.221-second median from 50.085 seconds. A
+forced-death run persisted 112 of 128 pieces, detected one deliberately
+corrupted claimed piece on restart, retained the other 111 and downloaded
+exactly the corrupt plus missing payload before exact completion.
 Immutable positional spans and bounded independent write/hash execution remain
 later tacticals. Peer selection and request policy are unchanged.
 

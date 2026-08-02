@@ -37,8 +37,11 @@ from magnet_metadata import (
 PROCESS_TIMEOUT_SECONDS = 45
 POLL_SECONDS = 0.02
 UPLOAD_RATE_LIMIT = 1024 * 1024
-RESUME_PAYLOAD_SIZE = 8 * 1024 * 1024
-RESUME_PIECE_SIZE = 1024 * 1024
+# Keep this scenario longer than the checkpoint owner's two-second maximum age.
+# The former eight-piece fixture could complete before a batched epoch became
+# durable, which tested per-piece persistence timing rather than crash resume.
+RESUME_PAYLOAD_SIZE = 32 * 1024 * 1024
+RESUME_PIECE_SIZE = 256 * 1024
 
 
 @dataclass
