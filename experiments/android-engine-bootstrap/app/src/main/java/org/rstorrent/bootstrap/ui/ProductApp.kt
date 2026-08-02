@@ -53,6 +53,21 @@ private val RSTorrentColors =
         surfaceVariant = Color(0xFF293541),
     )
 
+private val diagnosticCategoryChoices =
+    listOf(
+        "lifecycle",
+        "discovery",
+        "tracker",
+        "peer",
+        "metadata",
+        "scheduler",
+        "piece",
+        "storage",
+        "integrity",
+        "platform",
+        "performance",
+    ).map(::DiagnosticCategory)
+
 @Composable
 fun ProductApp(
     service: ProductEngineService?,
@@ -211,7 +226,7 @@ private fun ProductContent(
         item {
             DiagnosticsPanel(
                 events = state.diagnostics,
-                dropped = state.diagnosticDropped,
+                sourceEvicted = state.diagnosticSourceEvicted,
                 resets = state.diagnosticResets,
                 selectedTorrent = state.selectedTorrent,
                 progressLabel =
@@ -357,7 +372,7 @@ private fun TorrentCard(
 @Composable
 private fun DiagnosticsPanel(
     events: List<DiagnosticEvent>,
-    dropped: String,
+    sourceEvicted: String,
     resets: ULong,
     selectedTorrent: String?,
     progressLabel: String?,
@@ -383,9 +398,9 @@ private fun DiagnosticsPanel(
                     needle.isEmpty() ||
                         listOf(
                             event.code,
-                            event.category.name,
+                            event.category.value,
                             event.severity.name,
-                            event.summary,
+                            event.message,
                         ).any { it.lowercase().contains(needle) }
                 )
         }
@@ -400,7 +415,7 @@ private fun DiagnosticsPanel(
         ) {
             Text("Diagnostics", style = MaterialTheme.typography.titleLarge)
             Text(
-                "${visible.size} shown · $dropped dropped · $resets resyncs",
+                "${visible.size} shown · $sourceEvicted source evicted · $resets resyncs",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -419,7 +434,7 @@ private fun DiagnosticsPanel(
             visible.lastOrNull()?.let { latest ->
                 Text(
                     "Latest · ${latest.severity.name.lowercase()} · " +
-                        latest.category.name.lowercase(),
+                        latest.category.value,
                     color =
                         if (latest.severity == DiagnosticSeverity.WARNING) {
                             MaterialTheme.colorScheme.secondary
@@ -433,7 +448,7 @@ private fun DiagnosticsPanel(
                     fontFamily = FontFamily.Monospace,
                     style = MaterialTheme.typography.labelSmall,
                 )
-                Text(latest.summary, style = MaterialTheme.typography.bodySmall)
+                Text(latest.message, style = MaterialTheme.typography.bodySmall)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 DiagnosticProfile.entries.forEach { value ->
@@ -451,14 +466,14 @@ private fun DiagnosticsPanel(
                 }
             }
             Text("Categories", style = MaterialTheme.typography.labelSmall)
-            DiagnosticCategory.entries.chunked(3).forEach { row ->
+            diagnosticCategoryChoices.chunked(3).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     row.forEach { category ->
                         Button(
                             onClick = { onCategory(category) },
                             enabled = category !in categories,
                         ) {
-                            Text(category.name.lowercase().take(9))
+                            Text(category.value.take(9))
                         }
                     }
                 }
@@ -486,7 +501,7 @@ private fun DiagnosticsPanel(
                         visible
                             .joinToString("\n") {
                                 "${it.timestampMillis} ${it.severity.name.lowercase()} " +
-                                    "${it.category.name.lowercase()} ${it.code} ${it.summary}"
+                                    "${it.category.value} ${it.code} ${it.message}"
                             }.take(64 * 1024)
                     clipboard.setText(AnnotatedString(text))
                 },
@@ -520,7 +535,7 @@ private fun DiagnosticRow(event: DiagnosticEvent) {
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
-                "${event.severity.name.lowercase()} · ${event.category.name.lowercase()}",
+                "${event.severity.name.lowercase()} · ${event.category.value}",
                 color =
                     when (event.severity) {
                         DiagnosticSeverity.ERROR -> MaterialTheme.colorScheme.error
@@ -535,6 +550,6 @@ private fun DiagnosticRow(event: DiagnosticEvent) {
                 style = MaterialTheme.typography.labelSmall,
             )
         }
-        Text(event.summary, style = MaterialTheme.typography.bodySmall)
+        Text(event.message, style = MaterialTheme.typography.bodySmall)
     }
 }

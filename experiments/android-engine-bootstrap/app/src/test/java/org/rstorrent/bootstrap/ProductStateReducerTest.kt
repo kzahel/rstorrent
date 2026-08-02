@@ -7,6 +7,7 @@ import org.rstorrent.session.uniffi.ActivePiece
 import org.rstorrent.session.uniffi.ActivePieceStageView
 import org.rstorrent.session.uniffi.DiagnosticCategory
 import org.rstorrent.session.uniffi.DiagnosticEvent
+import org.rstorrent.session.uniffi.DiagnosticRetention
 import org.rstorrent.session.uniffi.DiagnosticSeverity
 import org.rstorrent.session.uniffi.IndexRange
 import org.rstorrent.session.uniffi.ProgressAssessment
@@ -71,10 +72,11 @@ class ProductStateReducerTest {
                 "7",
                 "1000",
                 DiagnosticSeverity.WARNING,
-                DiagnosticCategory.DISCOVERY,
+                DiagnosticCategory("discovery.peer"),
                 "discovery_exhausted",
                 TORRENT_ID,
                 "No discovery source",
+                emptyList(),
                 emptyList(),
             )
         val snapshot =
@@ -83,7 +85,7 @@ class ProductStateReducerTest {
                 "0",
                 "0",
                 ViewUpdatePayload.Snapshot(
-                    ViewSnapshot.Diagnostics(listOf(event), "3"),
+                    ViewSnapshot.Diagnostics(listOf(event), DiagnosticRetention("3", "4")),
                 ),
             )
         val patched =
@@ -94,7 +96,7 @@ class ProductStateReducerTest {
                 ViewUpdatePayload.Patch(
                     ViewPatch.Diagnostics(
                         listOf(event.copy(sequence = "8", code = "retry_scheduled")),
-                        "3",
+                        DiagnosticRetention("3", "4"),
                     ),
                 ),
             )
@@ -104,7 +106,7 @@ class ProductStateReducerTest {
                 patched,
             )
         assertEquals(listOf("7", "8"), reduced.diagnostics.map { it.sequence })
-        assertEquals("3", reduced.diagnosticDropped)
+        assertEquals("3", reduced.diagnosticSourceEvicted)
     }
 
     @Test

@@ -25,7 +25,7 @@ data class ProductState(
     val torrents: Map<String, TorrentView> = emptyMap(),
     val pieces: Map<String, PieceActivityState> = emptyMap(),
     val diagnostics: List<DiagnosticEvent> = emptyList(),
-    val diagnosticDropped: String = "0",
+    val diagnosticSourceEvicted: String = "0",
     val diagnosticResets: ULong = 0UL,
     internal val streams: Map<String, StreamPosition> = emptyMap(),
 )
@@ -121,7 +121,7 @@ internal object ProductStateReducer {
             is ViewSnapshot.Diagnostics ->
                 state.copy(
                     diagnostics = snapshot.events.takeLast(512),
-                    diagnosticDropped = snapshot.droppedCount,
+                    diagnosticSourceEvicted = snapshot.retention.sourceEvictedCount,
                 )
         }
 
@@ -185,7 +185,7 @@ internal object ProductStateReducer {
                         .takeLast(512)
                 state.copy(
                     diagnostics = events,
-                    diagnosticDropped = patch.droppedCount,
+                    diagnosticSourceEvicted = patch.retention.sourceEvictedCount,
                 )
             }
         }
