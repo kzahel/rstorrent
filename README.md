@@ -120,6 +120,9 @@ provenance policy.
   guide implementation.
 - [Product and engine direction](docs/topics/product-direction.md) records the
   durable decisions, open questions, and bring-up sequence.
+- [Product surfaces and JSTorrent migration](docs/topics/product-surfaces-and-migration.md)
+  records the desktop and ChromeOS backend/presentation choices, launch and
+  handoff requirements, backend isolation, and manual-import direction.
 - [Desktop inspection surface](docs/topics/desktop-inspection-surface.md)
   records the accepted JSTorrent-derived desktop/web direction, Android
   presentation split, and the remaining inspection-design questions.

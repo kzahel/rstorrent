@@ -376,8 +376,12 @@ successful mutation unreadable after upgrade.
   required before a later fast-resume path may skip hashing.
 - How completed payload moved outside the application is deliberately
   relocated or rediscovered.
-- How a future JSTorrent migration imports existing settings, metadata, and
-  progress without treating unverified legacy state as verified content.
+- JSTorrent migration is accepted as an explicit user-initiated semantic
+  import into one selected backend, not in-place reuse of the legacy database
+  or live synchronization between backends. The exact supported source
+  versions and imported fields remain open; legacy progress is rechecked
+  before it can establish verified content. The product and UX direction lives
+  in [`product-surfaces-and-migration.md`](product-surfaces-and-migration.md).
 - How storage roots are remapped or replaced across platform backup/restore
   when an opaque locator or grant is not transferable.
 

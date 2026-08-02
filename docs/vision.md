@@ -59,6 +59,14 @@ explicit architecture and security decision. The vision does not authorize a
 generic socket proxy, filesystem proxy, public daemon API, or REST/WebSocket
 service during engine bring-up.
 
+The accepted graduation-level separation between native backends and
+detachable presentations, including desktop extension use, the two isolated
+ChromeOS backends, their three UI configurations, launch handoff, and manual
+JSTorrent import, is recorded in
+[`topics/product-surfaces-and-migration.md`](topics/product-surfaces-and-migration.md).
+That direction does not make extension or migration work part of the current
+engine tactical.
+
 ## Incubation And Graduation
 
 The separate RSTorrent name and repository create room to build deeply without
@@ -122,7 +130,8 @@ than assumed.
 - Whether RSTorrent remains only an internal/incubation name or is used for
   public previews.
 - When the implementation is mature enough to carry the JSTorrent name.
-- Which settings, torrent state, and integration contracts need migration.
+- The exact settings and torrent state included by the accepted user-initiated
+  semantic import, and the supported legacy source versions.
 - How an existing extension discovers, authenticates, and coordinates with the
   native product.
 - Which web integrations belong in the extension, local application API, or

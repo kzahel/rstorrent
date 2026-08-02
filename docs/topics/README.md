@@ -36,6 +36,10 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`product-direction.md`](product-direction.md): initial product motivation,
   first-party Rust engine decision, platform posture, non-goals, open choices,
   and recommended bring-up sequence.
+- [`product-surfaces-and-migration.md`](product-surfaces-and-migration.md):
+  backend/presentation separation, desktop extension use, ChromeOS Android and
+  Crostini choices, launch handoff, backend isolation, and manual JSTorrent
+  import.
 - [`capability-readiness.md`](capability-readiness.md): master engine and product
   scoreboard, evidence vocabulary, priority policy, and bounded current queue.
 - [`download-correctness.md`](download-correctness.md): completion, integrity,

@@ -92,6 +92,14 @@ the authenticated loopback gateway remains the headless automation seam for
 the same components. This direction does not make a local socket service or
 remote daemon part of the desktop architecture.
 
+For eventual JSTorrent graduation, the browser extension is also an accepted
+first-class desktop presentation preference. It should attach to the same
+native desktop backend and profile as a Tauri webview rather than take over a
+second engine. The future lifecycle, native-messaging, handoff, and security
+work is owned by
+[`product-surfaces-and-migration.md`](product-surfaces-and-migration.md); it
+does not replace the current in-process Tauri implementation path.
+
 `./scripts/webui` remains the explicit manual browser host and headless
 automation seam. `./scripts/desktop` now hosts the same React inspection
 surface through Tauri's in-process commands and acknowledged Channel view

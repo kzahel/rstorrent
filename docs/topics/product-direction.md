@@ -412,8 +412,11 @@ This is recommended direction beyond the accepted first slice:
 16. Grow the resulting thin surfaces only through capabilities the engine and
     application service actually own. Desktop content UI remains web-based;
     native desktop code owns the shell, tray, and operating-system integration.
-17. Evaluate product migration, extension control, and JSTorrent brand
-    graduation from the proven application contracts.
+17. The accepted graduation-level backend/presentation choices, extension
+    control posture, handoff requirements, backend isolation, and manual
+    JSTorrent import direction are recorded in
+    [`product-surfaces-and-migration.md`](product-surfaces-and-migration.md).
+    Their implementation still requires separate bounded tacticals.
 
 The platform feasibility probe remains a separate tactical so failure in it
 does not distort the protocol vertical slice.

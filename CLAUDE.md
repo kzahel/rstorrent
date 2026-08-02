@@ -6,8 +6,9 @@
 
 Start with [`README.md`](README.md), then read [`docs/vision.md`](docs/vision.md),
 [`docs/engineering-principles.md`](docs/engineering-principles.md),
-[`docs/topics/product-direction.md`](docs/topics/product-direction.md), and
-[`docs/topics/desktop-inspection-surface.md`](docs/topics/desktop-inspection-surface.md),
+[`docs/topics/product-direction.md`](docs/topics/product-direction.md),
+[`docs/topics/product-surfaces-and-migration.md`](docs/topics/product-surfaces-and-migration.md),
+and [`docs/topics/desktop-inspection-surface.md`](docs/topics/desktop-inspection-surface.md),
 [`docs/topics/web-ui-design.md`](docs/topics/web-ui-design.md),
 [`docs/topics/capability-readiness.md`](docs/topics/capability-readiness.md),
 [`docs/topics/oracle-driven-engine-campaign.md`](docs/topics/oracle-driven-engine-campaign.md),

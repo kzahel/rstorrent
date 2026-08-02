@@ -85,6 +85,16 @@ a listener, allocate a port, serialize through a socket, or acquire network
 authentication machinery merely to resemble the remote path. Both transports
 adapt to the same semantic dispatcher and reactive-view contract.
 
+The graduation direction adds the existing JSTorrent extension as a possible
+first-class presentation for a native desktop, Android, or Crostini backend.
+Desktop extension and Tauri presentations should attach to one desktop
+profile; ChromeOS Android and Crostini remain separate backend and data
+authorities. That future product topology, handoff UX, and manual migration
+posture are recorded in
+[`product-surfaces-and-migration.md`](product-surfaces-and-migration.md). It
+does not make a production extension transport part of the currently
+implemented client surface.
+
 Android uses UniFFI-generated Kotlin records, enums, objects, and suspend
 functions. A small Kotlin adapter exposes subscription handles as lifecycle-
 aware `Flow`s and maps portable application values into presentation models.
