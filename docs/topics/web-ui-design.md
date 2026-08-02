@@ -25,7 +25,10 @@ add the global Disk pipeline and selected-torrent bounded Canvas Pieces
 overview, including responsive and large-torrent fixtures. Tactical `047` adds
 the global Settings sheet and versioned Compact, Standard, and Spacious
 interface sizes, makes readable Standard the default, and keeps virtual-table
-geometry coherent with presentation sizing. The Tauri entry remains legacy.
+geometry coherent with presentation sizing. Tactical `048` replaces the
+legacy Tauri entry with the same React inspection application using
+acknowledged in-process leased-view streaming; HTTP polling remains the
+browser/headless delivery adapter.
 
 ## Purpose
 
@@ -187,12 +190,13 @@ should prevent unrelated application changes from rerendering every logical
 row. Sorting, filtering, formatting, and selection must remain measurable and
 bounded for thousands of torrents and much larger file collections.
 
-The first application-view delivery uses bounded periodic JSON snapshots and
-keyed diffs through one leased view set. The UI architecture must not depend on
-full-state replacement or broad React context updates. A later low-latency
-latest-state stream may coalesce changes and paint them on animation frames
-without changing view semantics. Binary encoding is a separable measured codec
-optimization, not automatically a new application API.
+Browser application-view delivery uses bounded periodic JSON snapshots and
+keyed diffs through one leased view set; Tauri now streams the same batches.
+The UI architecture does not depend on full-state replacement or broad React
+context updates. A later frame-coalescing policy may paint latest-state stream
+changes on animation frames without changing view semantics. Binary encoding
+is a separable measured codec optimization, not automatically a new
+application API.
 
 Ordered events, diagnostics, command results, and errors must not silently use
 latest-value conflation intended for current state. The exact delivery and
@@ -393,8 +397,9 @@ reflow.
    first detailed live engine views.
 5. Connect remaining detail views according to debugging and product value,
    keeping unsupported scaffolds truthful.
-6. Measure before adding frame-speed streaming, binary encoding, or more
-   specialized rendering paths.
+6. Tauri streaming is complete in Tactical `048`. Measure browser update
+   volume and decode/reduce/render cost before adding WebSocket delivery,
+   binary encoding, or more specialized rendering paths.
 
 This is continuing direction, not an active tactical or permission to build
 all stages as one slice.

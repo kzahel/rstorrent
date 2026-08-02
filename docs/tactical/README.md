@@ -262,9 +262,9 @@ that scope and its cleanup or compatibility rules explicitly.
   adds the global Settings surface, a readable Standard default, coordinated
   Compact/Standard/Spacious metrics, and legible first-party action icons.
 - [`048-unified-view-delivery-and-tauri-migration.md`](048-unified-view-delivery-and-tauri-migration.md):
-  planned; unifies leased view-set delivery across HTTP polling and
-  acknowledged Tauri streaming, then makes the React inspection surface the
-  in-process desktop default before categorized Logs work.
+  complete; unifies leased view-set delivery across HTTP polling and
+  acknowledged in-process Tauri streaming, then makes the React inspection
+  surface the desktop default before categorized Logs work.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

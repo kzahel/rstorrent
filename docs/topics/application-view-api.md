@@ -15,8 +15,12 @@ distinct stored and verified progress, and a separately bounded large-snapshot
 path. Tactical `043` adds the selected torrent's authoritative tracker
 lifecycle as bounded keyed rows. Tacticals `044`--`045` add global storage
 pressure and selected-torrent verified/active piece views, including keyed
-attempt diffs and fresh-epoch bitmap replacement. The existing Tactical `008`
-subscriptions remain compatible adapters. No stable public remote wire
+attempt diffs and fresh-epoch bitmap replacement. Tactical `048` makes pull
+and stream interchangeable TypeScript delivery capabilities and implements
+acknowledged Tauri Channel delivery against the same leased view sets,
+controller, reducer, and Zustand transaction. The existing Tactical `008`
+subscriptions remain compatibility adapters. Browser WebSocket delivery and
+binary encoding remain deferred, and no stable public remote wire
 compatibility is claimed yet.
 
 ## Purpose And Scope
@@ -24,7 +28,7 @@ compatibility is claimed yet.
 The desktop inspection surface needs a recoverable, typed local replica of the
 application state currently relevant to one UI. The same semantics must work
 through an in-process Tauri adapter, a headless browser gateway, periodic
-polling, and a later low-latency stream without making transport or encoding
+polling, and low-latency streaming without making transport or encoding
 choices part of the application model.
 
 This topic owns:
@@ -559,8 +563,10 @@ delivery intervals, expiry, generated drift, and shutdown wakeup.
 
 This is a local application boundary and automation seam, not a production
 remote-control security or compatibility claim. Per-view retained histories,
-per-view overflow reset, streaming delivery, a binary codec, Tauri Channel
-migration, and stable public compatibility remain later layers. The
+per-view overflow reset, browser WebSocket delivery, a binary codec, and
+stable public compatibility remain later layers. Tactical `048` implements
+stream delivery for Tauri with one explicit post-application acknowledgement
+and exact-generation resource cleanup. The
 transport-independent Zustand/React presentation foundation and demo adapter
 are complete in Tactical `034`; stable peer rows and the Rust-to-React polling
 adapter are complete in Tactical `035`; live Files is complete in Tactical
@@ -737,14 +743,16 @@ interactive machine.
    hostile and scale fixtures, mapped them through the controller into the
    inspection model, and closes lease/suspension lifecycle gaps. This step is
    complete.
-4. Add streaming as an interchangeable delivery adapter only after polling
-   behavior and reducer recovery are stable.
+4. Tactical `048` adds streaming as an interchangeable delivery adapter after
+   polling behavior and reducer recovery are stable, and implements it for the
+   in-process Tauri product. Browser WebSocket streaming remains deferred.
 5. Measure update volume, decode/reduce cost, rendering, and memory before
    selecting binary encoding or finer-grained row patches.
 
-Tacticals `033`, `034`, and `035` completed the first three steps. The next
-view should follow observed inspection value; streaming and binary encoding
-remain measurement-driven delivery changes rather than prerequisites.
+Tacticals `033`, `034`, `035`, and `048` completed the first four steps. The
+next view should follow observed inspection value; browser WebSocket delivery
+and binary encoding remain measurement-driven changes rather than
+prerequisites.
 
 ## References And Deliberate Differences
 
@@ -771,7 +779,7 @@ this design.
 - exact reset granularity when one view snapshot itself exceeds its bound;
 - remote authentication, pairing, TLS, exposure, and deployment posture;
 - browser router and navigation URL details;
-- the measured threshold for streaming, specialized field patches, or binary
-  encoding; and
+- the measured threshold for browser WebSocket delivery, specialized field
+  patches, or binary encoding; and
 - durable label and queue semantics; archive and bounded removal/deletion are
   implemented by Tactical `040`.

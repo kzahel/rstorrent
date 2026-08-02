@@ -32,10 +32,12 @@ Rust view-set lease. The live path is proven through the headless browser
 gateway; Android remains intentionally unchanged.
 Tactical `036` packages that same production-built live browser path behind
 `./scripts/webui`, with isolated persistent state, default online networking,
-normal-browser opening, and joined terminal-owned shutdown. Tauri still
-selects the legacy entry pending maintainer confirmation of the browser
-launcher. Tactical `037` adds the first live mutation to the new surface:
-bounded magnet intake through the semantic command boundary. Tactical `038`
+normal-browser opening, and joined terminal-owned shutdown. Tactical `048`
+selects the React inspection application for Tauri and supplies it with the
+same leased view-set semantics over acknowledged in-process Channel delivery;
+the desktop opens no loopback server. Tactical `037` adds the first live
+mutation to the new surface: bounded magnet intake through the semantic
+command boundary. Tactical `038`
 adds five curated public test-torrent shortcuts without adding a debug backend
 command or bypassing application policy. Android remains intentionally
 unchanged.
@@ -69,8 +71,8 @@ The Tauri and browser builds share components, reducers, generated TypeScript
 contract types, and one transport-neutral `ApplicationClient` interface.
 Their transports differ:
 
-- Tauri uses native commands for request/response and may use ordered Channels
-  for low-latency view updates.
+- Tauri uses native commands for request/response and an ordered Channel with
+  explicit post-application acknowledgement for low-latency view updates.
 - The browser initially uses bounded authenticated HTTP polling and may attach
   an authenticated WebSocket to the same retained view set and cursor.
 
@@ -150,10 +152,12 @@ not a production browser-control posture; the authenticated mode remains.
 The manual launcher serves the production bundle rather than the Vite
 development entry and stores its profile beneath ignored `.local/webui` by
 default. It is a maintainer-facing local bridge, not a change to the accepted
-in-process Tauri product architecture. The live React adapter currently
-supports inspection, magnet add, pause, and resume, but not `.torrent` file
-intake or the full legacy command set. React emits a transport-neutral magnet
-intent; only the live adapter constructs the generated application request.
+in-process Tauri product architecture. Tactical `048` makes that same React
+application the Tauri product entry through an in-process adapter. The React
+application currently supports inspection, magnet add, pause, and resume, but
+not `.torrent` file intake or the full legacy command set. React emits a
+transport-neutral magnet intent; only the live adapter constructs the
+generated application request.
 Typed and curated magnet intake share that path. A deterministic catalog test
 keeps the UI shortcuts identical to `tests/live/torrents.json`; public swarm
 availability remains variable evidence rather than a UI guarantee.
@@ -250,8 +254,9 @@ for shared web presentation. Repository harnesses run the real application
 service and shared browser UI with temporary profile, storage, and browser
 directories, then drive a headless Chrome process. This proves the same web
 components embedded by Tauri without launching or focusing a desktop window.
-Tauri still compiles and its transport adapter remains directly testable; the
-gateway does not become the local desktop product transport.
+Tauri compiles without launching a window and its pull/stream transport
+adapters are directly tested; the gateway does not become the local desktop
+product transport.
 
 Tactical `034` adds a still smaller deterministic seam: named demo scenarios
 implement the same frontend application port without starting Rust, a gateway,
@@ -321,9 +326,9 @@ future server.
   one persisted root. General root management, root migration, removable
   media policy, and file-selection presentation remain product gaps.
 - The current UI proves one controlled torrent. General multi-torrent
-  scheduling and complete product presentation remain absent. Peers is the
-  first live detailed table; Swarm, Logs, files, trackers, pieces, disk, speed,
-  and DHT remain truthful scaffolds or later feeds.
+  scheduling and complete product presentation remain absent. Peers, Files,
+  Trackers, Pieces, and global Disk are live; Swarm, Logs, Speed, and DHT
+  remain truthful scaffolds or later feeds.
 - Diagnostics currently cover application lifecycle, discovery exhaustion,
   network restriction, tracker policy rejection, metadata, storage, piece,
   and integrity edges.

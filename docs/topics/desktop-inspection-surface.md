@@ -19,8 +19,10 @@ file geometry and stored/verified progress through the same headless browser
 surface. Tactical `043` adds authoritative live tracker lifecycle, response
 counts, retry/reannounce timing, and failure context through that surface.
 Tacticals `044`--`045` add global receive/write/hash pressure and a bounded
-selected-torrent piece overview with controlled live evidence. The Tauri entry
-has not changed.
+selected-torrent piece overview with controlled live evidence. Tactical `048`
+makes this React surface the ordinary Tauri entry through acknowledged
+in-process leased-view streaming while preserving HTTP polling as its headless
+browser seam.
 
 Tactical `042` makes a magnet's verified metainfo name appear in both the live
 library row and General heading as soon as metadata arrives. The hash-prefix
@@ -72,14 +74,13 @@ the authenticated loopback gateway remains the headless automation seam for
 the same components. This direction does not make a local socket service or
 remote daemon part of the desktop architecture.
 
-During the transition, `./scripts/webui` is the explicit manual host for the
-new live React surface and `./scripts/desktop` still hosts the legacy surface.
-Once the maintainer confirms the browser path, the next bounded client slice
-should adapt Tauri's in-process commands/views to `InspectionApplication`
-rather than make the gateway a desktop dependency. The following inspection
-slice should prioritize the categorized Logs experience, studying JSTorrent's
-tab while deciding which existing legacy presentation behavior is worth
-migrating rather than copying wholesale.
+`./scripts/webui` remains the explicit manual browser host and headless
+automation seam. `./scripts/desktop` now hosts the same React inspection
+surface through Tauri's in-process commands and acknowledged Channel view
+delivery rather than making the gateway a desktop dependency. The next
+inspection slice should prioritize the categorized Logs experience, studying
+JSTorrent's tab while deciding which existing legacy presentation behavior is
+worth migrating rather than copying wholesale.
 
 ## Platform Split
 
@@ -187,9 +188,8 @@ columns and widths share the existing versioned preferences, exact sorting,
 and optional live re-sorting behavior. The phone detail keeps the URL and
 status useful while fully hiding the inactive library pane.
 
-The surface is therefore useful for live peer, file, and tracker observation,
-but it is not yet a complete debugging console. The existing categorized
-diagnostics feed is the broadest next view candidate; a registry-backed Swarm
-table is the deeper peer-lifecycle candidate. Pieces and Disk remain separate
-design subjects. Selection remains an explicit next tactical based on real
-inspection use.
+The surface is therefore useful for live peer, file, tracker, piece, and global
+disk observation, but it is not yet a complete debugging console. The
+existing categorized diagnostics feed is the broadest next view candidate; a
+registry-backed Swarm table is the deeper peer-lifecycle candidate. Selection
+remains an explicit next tactical based on real inspection use.

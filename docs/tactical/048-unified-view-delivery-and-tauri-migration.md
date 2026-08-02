@@ -1,6 +1,6 @@
 # Unified View Delivery And Tauri Migration
 
-Status: Planned.
+Status: Complete (2026-08-02).
 
 Topics: `application-view-api`, `client-surfaces`, `web-ui-design`,
 `desktop-inspection-surface`, `application-control`
@@ -337,4 +337,76 @@ launching a visible/physical client, or expanding into the Logs feature itself.
 
 ## Implementation And Evidence
 
-Pending.
+The implementation landed in three bounded commits:
+
+- `361afa8` recorded this design, ownership map, bounds, compatibility seam,
+  and stopping condition before code changed;
+- `7d4cf1c` added the shared pull/stream controller, the validated TypeScript
+  Tauri adapter, trusted per-window native view resources and acknowledged
+  Channel pump, and selected the React inspection application for Tauri; and
+- `2a4363d` scoped two pre-existing engine-test mutex guards synchronously so
+  the required all-target Clippy gate can prove they do not cross awaited
+  fixture cleanup. It changes no runtime behavior.
+
+`ApplicationViewClient` now exposes optional pull and stream delivery behind
+one semantic interface and one structured error taxonomy. `ViewController`
+uses either capability but always validates and reduces an `UpdateBatch`,
+then invokes the state callback, through the same path. The Tauri async
+iterator acknowledges the previously yielded cursor only when its consumer
+requests the next item. Validation, reduction, or state-callback failure
+therefore leaves that cursor unacknowledged.
+
+The desktop shell now owns one `DesktopViewResources` registry alongside the
+application service. A native stream has a trusted window-generation owner,
+one bounded acknowledgement slot, one unacknowledged batch, and a joined
+cancellation path. Explicit close, view-set close, exact-generation window
+destruction, and application shutdown all cancel and await pumps before
+closing their resources. A late callback from a destroyed generation cannot
+close a replacement window's resources. The application service continues
+running across ordinary macOS window close/reopen.
+
+The web entry selects the React `InspectionApplication` and in-process Tauri
+client when the Tauri runtime is present. Explicit `?demo` and `?live` browser
+hosts retain their deterministic and HTTP adapters, and plain non-Tauri
+startup retains the old proof entry. The desktop does not open or depend on a
+loopback server. Tactical `008` subscriptions, Android UniFFI, and the old
+`/control` WebSocket remain compatibility paths.
+
+Deterministic TypeScript tests prove early Channel delivery before attach
+returns, post-apply acknowledgement order, no acknowledgement for malformed or
+rejected batches, structured error mapping, abort during attach, shared
+pull/stream reduction, and replacement after lease expiry. Native tests prove
+exact acknowledgement, cancellation while blocked, error publication, and
+joined cleanup. No visible browser, Tauri window, emulator, or physical device
+was launched.
+
+Validation completed on Apple silicon macOS:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace --all-targets -- -D warnings`;
+- `cargo test --workspace --no-fail-fast --quiet` (all workspace suites pass;
+  the engine suite reports 156 passed and 3 intentionally ignored);
+- `cargo test -p rstorrent-desktop --no-fail-fast` (3 passed);
+- `cargo clippy -p rstorrent-desktop -- -D warnings`;
+- `npm --prefix clients/web run generate` followed by a generated-artifact
+  drift check;
+- `npm --prefix clients/web run typecheck`;
+- `npm --prefix clients/web test` (84 passed, 2 skipped opt-in cases);
+- `npm --prefix clients/web run build`;
+- `npm --prefix clients/web run test:e2e` (10 passed, 3 opt-in live cases
+  skipped);
+- `tauri build --no-bundle` against the desktop configuration, producing the
+  release executable without launching it; and
+- `uv run --project tests/interop --locked python
+  tests/interop/browser_peer_inspection_surface.py`, which passed a controlled
+  delayed UDP tracker and libtorrent-seed transfer through the retained HTTP
+  adapter: 122 files, three pieces, exact payload verification, view-set lease
+  recovery, peer removal, joined gateway shutdown, and temporary cleanup.
+
+The first invocation of that controlled live proof missed the deliberately
+transient `announcing` UI state after its one-shot tracker had already moved to
+a retry; an unchanged rerun passed in 33.4 seconds. This is retained as an
+honest harness timing observation, not attributed to the new delivery path.
+
+Browser WebSocket view streaming, a binary codec, legacy/Android retirement,
+and the categorized Logs projection and UI remain deliberate next slices.

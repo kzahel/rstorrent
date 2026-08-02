@@ -15,9 +15,11 @@ in [`application-view-api.md`](application-view-api.md). Tactical `040` adds
 durable archive/restore and fenced removal with explicit keep-data or
 delete-managed policy. Tactical `046` makes a successful pause receipt follow
 the joined metadata/content supervisor result and its final empty peer
-observation. The live web adapter now gives each application instance a random
-request-ID namespace so durable receipts do not conflict across reloads or
-tabs. No stable public remote wire format is accepted yet.
+observation. Tactical `048` adapts the same commands and leased view sets to
+the in-process Tauri product without introducing a local server. The live web
+adapter now gives each application instance a random request-ID namespace so
+durable receipts do not conflict across reloads or tabs. No stable public
+remote wire format is accepted yet.
 
 ## Scope
 
@@ -216,5 +218,7 @@ Coherent snapshots remain recovery authority above typed patches and
 independent bounded subscriber state. The WebSocket adapter is not the
 application authority, and local Tauri control does not use networking.
 Tactical `033` aggregates those subscriptions behind one leased view set and
-preserves the same recovery invariant through authenticated polling. Streaming
-remains an interchangeable future adapter rather than a current claim.
+preserves the same recovery invariant through authenticated polling. Tactical
+`048` implements streaming as an interchangeable Tauri delivery adapter with
+explicit post-application acknowledgements; browser WebSocket streaming
+remains deferred.
