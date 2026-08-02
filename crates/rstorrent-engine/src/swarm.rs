@@ -60,6 +60,19 @@ impl RequestAttemptId {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PieceGeneration(u64);
+
+impl PieceGeneration {
+    pub const fn new(value: u64) -> Option<Self> {
+        if value == 0 { None } else { Some(Self(value)) }
+    }
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct BlockKey {
     pub piece: u32,
     pub begin: u32,
@@ -582,6 +595,142 @@ struct BlockState {
 #[derive(Debug)]
 struct PieceState {
     blocks: Vec<BlockKey>,
+    storage: PieceStorageJoin,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PieceHashJoinState {
+    NotStarted,
+    Running,
+    Passed,
+    Failed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PieceStorageOutcome {
+    Pending,
+    Verified,
+    Failed,
+}
+
+#[derive(Debug)]
+struct PieceStorageJoin {
+    generation: PieceGeneration,
+    writes_expected: usize,
+    writes_completed: usize,
+    write_failed: bool,
+    hash: PieceHashJoinState,
+}
+
+impl PieceStorageJoin {
+    fn new(writes_expected: usize) -> Self {
+        debug_assert_ne!(writes_expected, 0);
+        Self {
+            generation: PieceGeneration(1),
+            writes_expected,
+            writes_completed: 0,
+            write_failed: false,
+            hash: PieceHashJoinState::NotStarted,
+        }
+    }
+
+    fn validate_generation(&self, generation: PieceGeneration) -> Result<(), SwarmError> {
+        if generation == self.generation {
+            Ok(())
+        } else {
+            Err(SwarmError::StalePieceGeneration {
+                expected: self.generation,
+                actual: generation,
+            })
+        }
+    }
+
+    fn write_completed(
+        &mut self,
+        generation: PieceGeneration,
+        succeeded: bool,
+    ) -> Result<PieceStorageOutcome, SwarmError> {
+        self.validate_generation(generation)?;
+        if self.writes_completed == self.writes_expected {
+            return Err(SwarmError::Invariant(
+                "piece received more write completions than expected",
+            ));
+        }
+        self.writes_completed = self
+            .writes_completed
+            .checked_add(1)
+            .ok_or(SwarmError::ArithmeticOverflow("piece write completions"))?;
+        self.write_failed |= !succeeded;
+        Ok(self.outcome())
+    }
+
+    fn hash_eligible(&self, generation: PieceGeneration) -> Result<bool, SwarmError> {
+        self.validate_generation(generation)?;
+        Ok(self.writes_completed == self.writes_expected
+            && !self.write_failed
+            && self.hash == PieceHashJoinState::NotStarted)
+    }
+
+    fn begin_hash(&mut self, generation: PieceGeneration) -> Result<(), SwarmError> {
+        self.validate_generation(generation)?;
+        if self.hash != PieceHashJoinState::NotStarted {
+            return Err(SwarmError::InvalidTransition(
+                "piece hash is already started or completed",
+            ));
+        }
+        self.hash = PieceHashJoinState::Running;
+        Ok(())
+    }
+
+    fn hash_completed(
+        &mut self,
+        generation: PieceGeneration,
+        passed: bool,
+    ) -> Result<PieceStorageOutcome, SwarmError> {
+        self.validate_generation(generation)?;
+        if self.hash != PieceHashJoinState::Running {
+            return Err(SwarmError::InvalidTransition(
+                "piece hash completion has no running hash",
+            ));
+        }
+        self.hash = if passed {
+            PieceHashJoinState::Passed
+        } else {
+            PieceHashJoinState::Failed
+        };
+        Ok(self.outcome())
+    }
+
+    fn outcome(&self) -> PieceStorageOutcome {
+        if self.writes_completed != self.writes_expected {
+            return PieceStorageOutcome::Pending;
+        }
+        if self.write_failed || self.hash == PieceHashJoinState::Failed {
+            return PieceStorageOutcome::Failed;
+        }
+        if self.hash == PieceHashJoinState::Passed {
+            PieceStorageOutcome::Verified
+        } else {
+            PieceStorageOutcome::Pending
+        }
+    }
+
+    fn reset(&mut self) -> Result<(), SwarmError> {
+        let generation = self
+            .generation
+            .0
+            .checked_add(1)
+            .map(PieceGeneration)
+            .ok_or(SwarmError::IdentifierOverflow("piece generation"))?;
+        *self = Self {
+            generation,
+            writes_expected: self.writes_expected,
+            writes_completed: 0,
+            write_failed: false,
+            hash: PieceHashJoinState::NotStarted,
+        };
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -648,6 +797,7 @@ impl SwarmState {
             pieces.insert(
                 plan.index,
                 PieceState {
+                    storage: PieceStorageJoin::new(plan.blocks.len()),
                     blocks: plan.blocks,
                 },
             );
@@ -1010,12 +1160,35 @@ impl SwarmState {
         })
     }
 
+    pub fn piece_generation(&self, piece: u32) -> Result<PieceGeneration, SwarmError> {
+        self.pieces
+            .get(&piece)
+            .map(|piece| piece.storage.generation)
+            .ok_or(SwarmError::UnknownPiece(piece))
+    }
+
     pub fn finish_write(
         &mut self,
         block: BlockKey,
         accepted: bool,
         now: Duration,
     ) -> Result<(), SwarmError> {
+        let generation = self.piece_generation(block.piece)?;
+        self.finish_write_for_generation(block, generation, accepted, now)
+    }
+
+    pub fn finish_write_for_generation(
+        &mut self,
+        block: BlockKey,
+        generation: PieceGeneration,
+        accepted: bool,
+        now: Duration,
+    ) -> Result<(), SwarmError> {
+        self.pieces
+            .get(&block.piece)
+            .ok_or(SwarmError::UnknownPiece(block.piece))?
+            .storage
+            .validate_generation(generation)?;
         let (source, evidence) = match self
             .blocks
             .get(&block)
@@ -1049,6 +1222,11 @@ impl SwarmState {
         if accepted && let Some(connection) = self.connections.get_mut(&source) {
             connection.last_useful_at = Some(now);
         }
+        self.pieces
+            .get_mut(&block.piece)
+            .ok_or(SwarmError::UnknownPiece(block.piece))?
+            .storage
+            .write_completed(generation, accepted)?;
         Ok(())
     }
 
@@ -1062,27 +1240,90 @@ impl SwarmState {
     }
 
     pub fn piece_ready(&self, piece: u32) -> Result<bool, SwarmError> {
+        let generation = self.piece_generation(piece)?;
+        self.piece_ready_for_generation(piece, generation)
+    }
+
+    pub fn piece_ready_for_generation(
+        &self,
+        piece: u32,
+        generation: PieceGeneration,
+    ) -> Result<bool, SwarmError> {
         let piece = self
             .pieces
             .get(&piece)
             .ok_or(SwarmError::UnknownPiece(piece))?;
-        Ok(piece.blocks.iter().all(|block| {
+        let blocks_ready = piece.blocks.iter().all(|block| {
             self.blocks.get(block).is_some_and(|block| {
                 matches!(
                     block.phase,
                     BlockPhase::Received { .. } | BlockPhase::Verified
                 )
             })
-        }))
+        });
+        Ok(blocks_ready && piece.storage.hash_eligible(generation)?)
+    }
+
+    pub fn begin_piece_hash(
+        &mut self,
+        piece: u32,
+        generation: PieceGeneration,
+    ) -> Result<(), SwarmError> {
+        let piece = self
+            .pieces
+            .get_mut(&piece)
+            .ok_or(SwarmError::UnknownPiece(piece))?;
+        if !piece.storage.hash_eligible(generation)? {
+            return Err(SwarmError::InvalidTransition(
+                "piece cannot hash before every write succeeds",
+            ));
+        }
+        piece.storage.begin_hash(generation)
+    }
+
+    pub fn finish_piece_hash(
+        &mut self,
+        piece: u32,
+        generation: PieceGeneration,
+        passed: bool,
+    ) -> Result<(), SwarmError> {
+        self.pieces
+            .get_mut(&piece)
+            .ok_or(SwarmError::UnknownPiece(piece))?
+            .storage
+            .hash_completed(generation, passed)?;
+        Ok(())
     }
 
     pub fn mark_piece_verified(&mut self, piece: u32) -> Result<Vec<ConnectionId>, SwarmError> {
+        let generation = self.piece_generation(piece)?;
+        self.begin_piece_hash(piece, generation)?;
+        self.finish_piece_hash(piece, generation, true)?;
+        self.mark_piece_verified_for_generation(piece, generation)
+    }
+
+    pub fn mark_piece_verified_for_generation(
+        &mut self,
+        piece: u32,
+        generation: PieceGeneration,
+    ) -> Result<Vec<ConnectionId>, SwarmError> {
         let blocks = self
             .pieces
             .get(&piece)
             .ok_or(SwarmError::UnknownPiece(piece))?
             .blocks
             .clone();
+        let storage = &self
+            .pieces
+            .get(&piece)
+            .ok_or(SwarmError::UnknownPiece(piece))?
+            .storage;
+        storage.validate_generation(generation)?;
+        if storage.outcome() != PieceStorageOutcome::Verified {
+            return Err(SwarmError::InvalidTransition(
+                "piece cannot verify before its write/hash join passes",
+            ));
+        }
         if !blocks.iter().all(|block| {
             self.blocks
                 .get(block)
@@ -1103,12 +1344,34 @@ impl SwarmState {
     }
 
     pub fn mark_piece_hash_failed(&mut self, piece: u32) -> Result<PieceHashFailure, SwarmError> {
+        let generation = self.piece_generation(piece)?;
+        self.begin_piece_hash(piece, generation)?;
+        self.finish_piece_hash(piece, generation, false)?;
+        self.mark_piece_hash_failed_for_generation(piece, generation)
+    }
+
+    pub fn mark_piece_hash_failed_for_generation(
+        &mut self,
+        piece: u32,
+        generation: PieceGeneration,
+    ) -> Result<PieceHashFailure, SwarmError> {
         let blocks = self
             .pieces
             .get(&piece)
             .ok_or(SwarmError::UnknownPiece(piece))?
             .blocks
             .clone();
+        let storage = &self
+            .pieces
+            .get(&piece)
+            .ok_or(SwarmError::UnknownPiece(piece))?
+            .storage;
+        storage.validate_generation(generation)?;
+        if storage.outcome() != PieceStorageOutcome::Failed {
+            return Err(SwarmError::InvalidTransition(
+                "piece cannot reset before its write/hash join fails",
+            ));
+        }
         if !blocks.iter().all(|block| {
             self.blocks
                 .get(block)
@@ -1130,6 +1393,11 @@ impl SwarmState {
                 .ok_or(SwarmError::UnknownBlock(block))?
                 .phase = BlockPhase::Missing;
         }
+        self.pieces
+            .get_mut(&piece)
+            .ok_or(SwarmError::UnknownPiece(piece))?
+            .storage
+            .reset()?;
         self.piece_hash_failures = self.piece_hash_failures.saturating_add(1);
         self.failed_piece_bytes = self.failed_piece_bytes.saturating_add(failed_bytes);
         self.last_hash_failure_contributors = contributors.len();
@@ -1923,21 +2191,35 @@ fn trim_terminal_attempts(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SwarmError {
     InvalidConfig(&'static str),
-    InvalidBlock { piece: u32, begin: u32, length: u32 },
+    InvalidBlock {
+        piece: u32,
+        begin: u32,
+        length: u32,
+    },
     EmptyPiecePlan(u32),
     OverlappingBlocks(u32),
-    PieceOutOfRange { piece: u32, piece_count: usize },
+    PieceOutOfRange {
+        piece: u32,
+        piece_count: usize,
+    },
     DuplicatePiecePlan(u32),
     DuplicateBlock(BlockKey),
     UnknownPiece(u32),
     UnknownBlock(BlockKey),
+    StalePieceGeneration {
+        expected: PieceGeneration,
+        actual: PieceGeneration,
+    },
     DuplicatePendingDial(PendingDialId),
     UnknownPendingDial(PendingDialId),
     PendingDialCapacity,
     DuplicateConnection(ConnectionId),
     UnknownConnection(ConnectionId),
     ConnectionCapacity,
-    InvalidAvailability { actual: usize, expected: usize },
+    InvalidAvailability {
+        actual: usize,
+        expected: usize,
+    },
     InvalidTransition(&'static str),
     IdentifierOverflow(&'static str),
     ArithmeticOverflow(&'static str),
@@ -1972,6 +2254,12 @@ impl fmt::Display for SwarmError {
             Self::DuplicateBlock(block) => write!(formatter, "duplicate block {block:?}"),
             Self::UnknownPiece(piece) => write!(formatter, "unknown piece {piece}"),
             Self::UnknownBlock(block) => write!(formatter, "unknown block {block:?}"),
+            Self::StalePieceGeneration { expected, actual } => write!(
+                formatter,
+                "stale piece generation {}, expected {}",
+                actual.get(),
+                expected.get()
+            ),
             Self::DuplicatePendingDial(id) => {
                 write!(formatter, "duplicate pending dial {}", id.get())
             }
@@ -2037,6 +2325,91 @@ mod tests {
         }
         state.set_bitfield(id, availability).expect("bitfield");
         state.set_choking(id, choking).expect("choke state");
+    }
+
+    #[test]
+    fn piece_storage_join_is_generation_safe_in_every_completion_order() {
+        let generation = PieceGeneration::new(1).expect("initial generation");
+
+        let mut hash_first = PieceStorageJoin::new(2);
+        hash_first.begin_hash(generation).expect("begin early hash");
+        assert_eq!(
+            hash_first
+                .hash_completed(generation, true)
+                .expect("complete hash"),
+            PieceStorageOutcome::Pending
+        );
+        assert_eq!(
+            hash_first
+                .write_completed(generation, true)
+                .expect("first write"),
+            PieceStorageOutcome::Pending
+        );
+        assert_eq!(
+            hash_first
+                .write_completed(generation, true)
+                .expect("second write"),
+            PieceStorageOutcome::Verified
+        );
+
+        let mut write_failure = PieceStorageJoin::new(2);
+        write_failure
+            .begin_hash(generation)
+            .expect("begin failure join hash");
+        write_failure
+            .hash_completed(generation, true)
+            .expect("hash passes");
+        write_failure
+            .write_completed(generation, false)
+            .expect("failed write");
+        assert_eq!(
+            write_failure
+                .write_completed(generation, true)
+                .expect("joined write"),
+            PieceStorageOutcome::Failed
+        );
+
+        let mut hash_failure = PieceStorageJoin::new(1);
+        hash_failure
+            .begin_hash(generation)
+            .expect("begin failed hash");
+        assert_eq!(
+            hash_failure
+                .hash_completed(generation, false)
+                .expect("failed hash"),
+            PieceStorageOutcome::Pending
+        );
+        assert_eq!(
+            hash_failure
+                .write_completed(generation, true)
+                .expect("join final write"),
+            PieceStorageOutcome::Failed
+        );
+
+        hash_failure.reset().expect("new generation");
+        let replacement = PieceGeneration::new(2).expect("replacement generation");
+        assert_eq!(hash_failure.generation, replacement);
+        assert!(matches!(
+            hash_failure.write_completed(generation, true),
+            Err(SwarmError::StalePieceGeneration {
+                expected,
+                actual,
+            }) if expected == replacement && actual == generation
+        ));
+        hash_failure
+            .write_completed(replacement, true)
+            .expect("replacement write");
+        assert!(matches!(
+            hash_failure.write_completed(replacement, true),
+            Err(SwarmError::Invariant(_))
+        ));
+
+        let mut overflow = PieceStorageJoin::new(1);
+        overflow.generation = PieceGeneration(u64::MAX);
+        assert_eq!(
+            overflow.reset(),
+            Err(SwarmError::IdentifierOverflow("piece generation"))
+        );
     }
 
     #[test]

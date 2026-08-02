@@ -63,8 +63,8 @@ use crate::storage::{
 };
 use crate::swarm::{
     BlockKey, ConnectionId, ConnectionRemoval, ConnectionWindowPhaseSnapshot, NoRequestReason,
-    PendingDialId, PieceHashFailure, PiecePlan, ReceiveDisposition, SwarmConfig, SwarmError,
-    SwarmState,
+    PendingDialId, PieceGeneration, PieceHashFailure, PiecePlan, ReceiveDisposition, SwarmConfig,
+    SwarmError, SwarmState,
 };
 use crate::tracker::{
     TrackerAction, TrackerId, TrackerRuntimeSnapshot, TrackerSchedule, TrackerWaitKind,
@@ -5420,11 +5420,13 @@ struct ContentWriteStats {
 enum ContentStorageCommand {
     Write {
         block: BlockKey,
+        generation: PieceGeneration,
         offset: u64,
         bytes: Vec<u8>,
     },
     Verify {
         piece: u32,
+        generation: PieceGeneration,
         offset: u64,
         length: u32,
         expected: [u8; 20],
@@ -5455,6 +5457,7 @@ struct QueuedContentStorageCommand {
 
 struct PreparedContentWrite {
     block: BlockKey,
+    generation: PieceGeneration,
     offset: u64,
     bytes: Vec<u8>,
     stats: ContentWriteStats,
@@ -5462,6 +5465,7 @@ struct PreparedContentWrite {
 
 struct ContentWriteMember {
     block: BlockKey,
+    generation: PieceGeneration,
     stats: ContentWriteStats,
 }
 
@@ -5476,10 +5480,12 @@ struct CoalescedContentWrite {
 enum ContentStorageCompletion {
     Write {
         block: BlockKey,
+        generation: PieceGeneration,
         result: Result<ContentWriteStats, DownloadError>,
     },
     Verify {
         piece: u32,
+        generation: PieceGeneration,
         length: u32,
         result: Result<ContentVerification, DownloadError>,
     },
@@ -6155,6 +6161,7 @@ async fn execute_content_storage_writes(
     for command in commands {
         let ContentStorageCommand::Write {
             block,
+            generation,
             offset,
             bytes,
         } = command.command
@@ -6177,11 +6184,12 @@ async fn execute_content_storage_writes(
         let stats = match stats {
             Ok(stats) => stats,
             Err(error) => {
-                return failed_content_write_batch(block, error, prepared.into_iter());
+                return failed_content_write_batch(block, generation, error, prepared.into_iter());
             }
         };
         prepared.push(PreparedContentWrite {
             block,
+            generation,
             offset,
             bytes,
             stats,
@@ -6190,9 +6198,10 @@ async fn execute_content_storage_writes(
 
     let writes = match coalesce_content_writes(prepared) {
         Ok(writes) => writes,
-        Err((block, error)) => {
+        Err((block, generation, error)) => {
             return vec![ContentStorageCompletion::Write {
                 block,
+                generation,
                 result: Err(error),
             }];
         }
@@ -6217,10 +6226,12 @@ async fn execute_content_storage_writes(
                 .expect("coalesced write retains at least one logical member");
             completed.push(ContentStorageCompletion::Write {
                 block: first.block,
+                generation: first.generation,
                 result: Err(error),
             });
             completed.extend(members.map(|member| ContentStorageCompletion::Write {
                 block: member.block,
+                generation: member.generation,
                 result: Err(DownloadError::StorageTask(
                     "coalesced physical write failed".to_owned(),
                 )),
@@ -6233,6 +6244,7 @@ async fn execute_content_storage_writes(
                 .into_iter()
                 .map(|member| ContentStorageCompletion::Write {
                     block: member.block,
+                    generation: member.generation,
                     result: Ok(member.stats),
                 }),
         );
@@ -6242,15 +6254,18 @@ async fn execute_content_storage_writes(
 
 fn failed_content_write_batch(
     failed_block: BlockKey,
+    failed_generation: PieceGeneration,
     error: DownloadError,
     prepared: impl Iterator<Item = PreparedContentWrite>,
 ) -> Vec<ContentStorageCompletion> {
     let mut completions = vec![ContentStorageCompletion::Write {
         block: failed_block,
+        generation: failed_generation,
         result: Err(error),
     }];
     completions.extend(prepared.map(|write| ContentStorageCompletion::Write {
         block: write.block,
+        generation: write.generation,
         result: Err(DownloadError::StorageTask(
             "coalesced write batch validation failed".to_owned(),
         )),
@@ -6260,7 +6275,7 @@ fn failed_content_write_batch(
 
 fn coalesce_content_writes(
     mut writes: Vec<PreparedContentWrite>,
-) -> Result<Vec<CoalescedContentWrite>, (BlockKey, DownloadError)> {
+) -> Result<Vec<CoalescedContentWrite>, (BlockKey, PieceGeneration, DownloadError)> {
     writes.sort_unstable_by_key(|write| (write.block.piece, write.block.begin));
     let mut coalesced: Vec<CoalescedContentWrite> = Vec::with_capacity(writes.len());
     for write in writes {
@@ -6273,6 +6288,7 @@ fn coalesce_content_writes(
             if previous_piece_end.is_some_and(|end| write.block.begin < end) {
                 return Err((
                     write.block,
+                    write.generation,
                     DownloadError::StorageTask(
                         "overlapping logical writes entered one storage batch".to_owned(),
                     ),
@@ -6285,6 +6301,7 @@ fn coalesce_content_writes(
                 previous.bytes.extend_from_slice(&write.bytes);
                 previous.members.push(ContentWriteMember {
                     block: write.block,
+                    generation: write.generation,
                     stats: write.stats,
                 });
                 continue;
@@ -6297,6 +6314,7 @@ fn coalesce_content_writes(
             bytes: write.bytes,
             members: vec![ContentWriteMember {
                 block: write.block,
+                generation: write.generation,
                 stats: write.stats,
             }],
         });
@@ -6312,6 +6330,7 @@ async fn execute_content_storage_verification(
     match command {
         ContentStorageCommand::Verify {
             piece,
+            generation,
             offset,
             length,
             expected,
@@ -6368,6 +6387,7 @@ async fn execute_content_storage_verification(
             }
             ContentStorageCompletion::Verify {
                 piece,
+                generation,
                 length,
                 result,
             }
@@ -6545,9 +6565,14 @@ impl<'a> ContentSwarmDownload<'a> {
                         });
                         self.contributor_attempts.insert(connection, source_attempt);
                         let offset = single_file_offset(self.layout, index, begin)?;
+                        let generation = self
+                            .state
+                            .piece_generation(index)
+                            .map_err(DownloadError::Swarm)?;
                         self.storage_pipeline_mut()?
                             .enqueue(ContentStorageCommand::Write {
                                 block: key,
+                                generation,
                                 offset,
                                 bytes: block,
                             })?;
@@ -6590,20 +6615,32 @@ impl<'a> ContentSwarmDownload<'a> {
         self.storage_pipeline_mut()?
             .completion_received(&completion);
         let disposition = match completion {
-            ContentStorageCompletion::Write { block, result } => {
+            ContentStorageCompletion::Write {
+                block,
+                generation,
+                result,
+            } => {
+                if self
+                    .state
+                    .piece_generation(block.piece)
+                    .map_err(DownloadError::Swarm)?
+                    != generation
+                {
+                    return Ok(ContentMessageDisposition::Continue);
+                }
                 let stats = match result {
                     Ok(stats) => stats,
                     Err(error) => {
                         self.control.disk_storage_error(&error.to_string());
                         self.state
-                            .finish_write(block, false, now)
+                            .finish_write_for_generation(block, generation, false, now)
                             .map_err(DownloadError::Swarm)?;
                         self.prune_contributor_attempts();
                         return Err(error);
                     }
                 };
                 self.state
-                    .finish_write(block, true, now)
+                    .finish_write_for_generation(block, generation, true, now)
                     .map_err(DownloadError::Swarm)?;
                 self.selected_written_bytes = self
                     .selected_written_bytes
@@ -6621,7 +6658,7 @@ impl<'a> ContentSwarmDownload<'a> {
                 });
                 if self
                     .state
-                    .piece_ready(block.piece)
+                    .piece_ready_for_generation(block.piece, generation)
                     .map_err(DownloadError::Swarm)?
                 {
                     let piece_index = usize::try_from(block.piece)
@@ -6633,9 +6670,13 @@ impl<'a> ContentSwarmDownload<'a> {
                     let offset = single_file_offset(self.layout, block.piece, 0)?;
                     let expected = self.metainfo.piece_hashes[piece_index];
                     let durable = self.resume.is_some();
+                    self.state
+                        .begin_piece_hash(block.piece, generation)
+                        .map_err(DownloadError::Swarm)?;
                     self.storage_pipeline_mut()?
                         .enqueue(ContentStorageCommand::Verify {
                             piece: block.piece,
+                            generation,
                             offset,
                             length,
                             expected,
@@ -6646,18 +6687,30 @@ impl<'a> ContentSwarmDownload<'a> {
             }
             ContentStorageCompletion::Verify {
                 piece,
+                generation,
                 length,
                 result,
             } => {
+                if self
+                    .state
+                    .piece_generation(piece)
+                    .map_err(DownloadError::Swarm)?
+                    != generation
+                {
+                    return Ok(ContentMessageDisposition::Continue);
+                }
                 let verification = result?;
                 let actual = verification.actual;
                 let piece_index = usize::try_from(piece)
                     .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
                 let expected = self.metainfo.piece_hashes[piece_index];
+                self.state
+                    .finish_piece_hash(piece, generation, actual == expected)
+                    .map_err(DownloadError::Swarm)?;
                 if actual != expected {
                     let failure = self
                         .state
-                        .mark_piece_hash_failed(piece)
+                        .mark_piece_hash_failed_for_generation(piece, generation)
                         .map_err(DownloadError::Swarm)?;
                     self.control.emit(DownloadActivityEvent::PieceHashFailed {
                         piece_index: piece,
@@ -6682,7 +6735,7 @@ impl<'a> ContentSwarmDownload<'a> {
                     }
                     let contributors = self
                         .state
-                        .mark_piece_verified(piece)
+                        .mark_piece_verified_for_generation(piece, generation)
                         .map_err(DownloadError::Swarm)?;
                     self.last_piece = Some(VerifiedPiece {
                         index: piece,
@@ -7934,7 +7987,7 @@ mod tests {
     use crate::storage::{StagingFile, StorageError, staging_path};
     use crate::swarm::{
         BlockKey, DEFAULT_INITIAL_REQUESTS_PER_CONNECTION, DEFAULT_MAX_ESTABLISHED_CONNECTIONS,
-        DEFAULT_MAX_PENDING_DIALS,
+        DEFAULT_MAX_PENDING_DIALS, PieceGeneration,
     };
     use crate::{DiskCheckpointStage, DiskPieceStage};
 
@@ -8132,6 +8185,7 @@ mod tests {
             &mut storage,
             ContentStorageCommand::Verify {
                 piece: 0,
+                generation: PieceGeneration::new(1).expect("generation"),
                 offset: 0,
                 length: 16,
                 expected,
@@ -8328,6 +8382,7 @@ mod tests {
     fn prepared_write(piece: u32, begin: u32, bytes: &[u8]) -> PreparedContentWrite {
         PreparedContentWrite {
             block: BlockKey::new(piece, begin, bytes.len() as u32).expect("test block"),
+            generation: PieceGeneration::new(1).expect("generation"),
             offset: u64::from(piece) * 1024 + u64::from(begin),
             bytes: bytes.to_vec(),
             stats: ContentWriteStats {
@@ -8342,6 +8397,7 @@ mod tests {
             enqueued_at: Instant::now(),
             command: ContentStorageCommand::Write {
                 block: BlockKey::new(piece, begin, length as u32).expect("test block"),
+                generation: PieceGeneration::new(1).expect("generation"),
                 offset: u64::from(piece) * 1024 * 1024 + u64::from(begin),
                 bytes: vec![piece as u8; length],
             },
@@ -8386,7 +8442,10 @@ mod tests {
             prepared_write(0, 0, b"abcdefgh"),
             prepared_write(0, 4, b"efgh"),
         ]);
-        assert!(matches!(overlap, Err((_, DownloadError::StorageTask(_)))));
+        assert!(matches!(
+            overlap,
+            Err((_, _, DownloadError::StorageTask(_)))
+        ));
     }
 
     #[test]
