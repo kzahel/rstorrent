@@ -9,18 +9,19 @@ use rstorrent_gateway::{
 use rstorrent_session::{
     ActivePiece, ActivePieceStageView, ApiEncoding, ApiHello, ApiLimits, ApiVersion,
     CapabilityStatus, Command, DeliveryMode, DeliveryPolicy, DiagnosticCategory, DiagnosticEvent,
-    DiagnosticField, DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity, DiskPieceStageView,
-    DiskPieceView, DiskPipelineView, DiskPressureView, ErrorCode, ErrorResponse, FileCatalogState,
-    FileSelectionView, FileView, IndexRange, OpenViewSetOptions, OpenViewSetRequest,
-    OpenViewSetResponse, PeerDirection, PeerDisconnectReason, PeerFieldCapabilities, PeerLifecycle,
-    PeerRequestPhase, PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction,
-    ProgressAssessment, ProgressDisposition, ProgressPhase, ProgressReason, RemovalDataPolicy,
-    RemovalState, RequestEnvelope, ResetReason, ResponseEnvelope, ResponseOutcome, ServiceSnapshot,
-    StorageState, SubscriptionSpec, TorrentSnapshot, TorrentState, TorrentView,
-    TrackerAnnounceEventView, TrackerCatalogState, TrackerNextActionView, TrackerSourceView,
-    TrackerStatusView, TrackerTransportView, TrackerView, UpdateBatch, UpdateViewSetRequest,
-    ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot,
-    ViewSpec, ViewUpdate, ViewUpdatePayload,
+    DiagnosticField, DiagnosticFilter, DiagnosticProfile, DiagnosticRetention, DiagnosticSeverity,
+    DiagnosticSubject, DiagnosticValue, DiskPieceStageView, DiskPieceView, DiskPipelineView,
+    DiskPressureView, ErrorCode, ErrorResponse, FileCatalogState, FileSelectionView, FileView,
+    IndexRange, OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
+    PeerDisconnectReason, PeerFieldCapabilities, PeerLifecycle, PeerRequestPhase, PeerRole,
+    PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
+    ProgressDisposition, ProgressPhase, ProgressReason, RemovalDataPolicy, RemovalState,
+    RequestEnvelope, ResetReason, ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState,
+    SubscriptionSpec, TorrentSnapshot, TorrentState, TorrentView, TrackerAnnounceEventView,
+    TrackerCatalogState, TrackerNextActionView, TrackerSourceView, TrackerStatusView,
+    TrackerTransportView, TrackerView, UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy,
+    ViewPatch, ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate,
+    ViewUpdatePayload,
 };
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -78,8 +79,11 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<DiagnosticCategory>(&mut declarations)?;
     append::<DiagnosticProfile>(&mut declarations)?;
     append::<DiagnosticFilter>(&mut declarations)?;
+    append::<DiagnosticSubject>(&mut declarations)?;
+    append::<DiagnosticValue>(&mut declarations)?;
     append::<DiagnosticField>(&mut declarations)?;
     append::<DiagnosticEvent>(&mut declarations)?;
+    append::<DiagnosticRetention>(&mut declarations)?;
     append::<ProgressDisposition>(&mut declarations)?;
     append::<ProgressPhase>(&mut declarations)?;
     append::<ProgressReason>(&mut declarations)?;

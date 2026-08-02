@@ -459,7 +459,14 @@ function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
       return {
         type: "snapshot",
         view_id: view.view_id,
-        snapshot: { type: "diagnostics", events: [], dropped_count: "0" },
+        snapshot: {
+          type: "diagnostics",
+          events: [],
+          retention: {
+            source_evicted_count: "0",
+            retained_from_sequence: "1",
+          },
+        },
       };
     case "piece_activity":
       throw new Error("piece view is not used by live inspection");

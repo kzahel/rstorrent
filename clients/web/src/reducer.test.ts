@@ -89,8 +89,9 @@ describe("reactive reducer", () => {
       category: "discovery" as const,
       code: "discovery_exhausted",
       torrent_id: torrentId,
-      summary: "No discovery source",
-      context: [],
+      message: "No discovery source",
+      subjects: [],
+      fields: [],
     };
     const initial: ViewUpdate = {
       contract_version: 2,
@@ -103,7 +104,10 @@ describe("reactive reducer", () => {
       snapshot: {
         type: "diagnostics",
         events: [diagnostic],
-        dropped_count: "3",
+        retention: {
+          source_evicted_count: "3",
+          retained_from_sequence: "7",
+        },
       },
     };
     const patched: ViewUpdate = {
@@ -115,7 +119,10 @@ describe("reactive reducer", () => {
         events: [
           { ...diagnostic, sequence: "8", code: "retry_scheduled" },
         ],
-        dropped_count: "3",
+        retention: {
+          source_evicted_count: "3",
+          retained_from_sequence: "7",
+        },
       },
     };
     const state = reduceViewUpdate(

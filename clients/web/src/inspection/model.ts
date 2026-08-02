@@ -134,7 +134,7 @@ export interface PeerRow {
 export interface LogRow {
   readonly id: string;
   readonly timestampMs: number;
-  readonly severity: "debug" | "info" | "warning" | "error";
+  readonly severity: "trace" | "debug" | "info" | "warning" | "error";
   readonly category: string;
   readonly summary: string;
   readonly torrentId: string | null;

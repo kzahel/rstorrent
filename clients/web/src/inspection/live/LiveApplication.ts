@@ -477,7 +477,10 @@ function mapViewState(
     piecesByTorrent,
     disk: disk === null ? emptyDiskSet() : mapDisk(disk),
     logs,
-    droppedLogs: diagnostics === null ? 0 : safeNumber(diagnostics.dropped_count),
+    droppedLogs:
+      diagnostics === null
+        ? 0
+        : safeNumber(diagnostics.retention.source_evicted_count),
     viewStatus: {
       library: materialization(
         desired.library,
@@ -947,9 +950,9 @@ function mapLog(event: DiagnosticEvent): LogRow {
   return {
     id: event.sequence,
     timestampMs: safeNumber(event.timestamp_millis),
-    severity: event.severity === "trace" ? "debug" : event.severity,
+    severity: event.severity,
     category: event.category,
-    summary: event.summary,
+    summary: event.message,
     torrentId: event.torrent_id ?? null,
   };
 }

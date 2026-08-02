@@ -23,10 +23,14 @@ const MAX_FILES = 4_096;
 const MAX_TRACKERS = 32;
 const MAX_DISK_PIECES = 16_384;
 const MAX_ACTIVE_PIECES = 16_384;
+const MAX_DIAGNOSTIC_EVENTS = 2_048;
+const MAX_DIAGNOSTIC_PATCH_EVENTS = 128;
 const MAX_U32 = 4_294_967_295;
 const DECIMAL = /^(0|[1-9][0-9]*)$/;
 const IDENTIFIER = /^[A-Za-z0-9._-]{1,128}$/;
 const TORRENT_ID = /^[A-Fa-f0-9]{40}$/;
+const DIAGNOSTIC_CATEGORY = /^[a-z0-9_-]+(?:\.[a-z0-9_-]+){0,3}$/;
+const DIAGNOSTIC_IDENTIFIER = /^[a-z0-9_.-]{1,48}$/;
 
 export class ContractError extends Error {}
 
@@ -353,12 +357,15 @@ function validateViewSnapshot(value: unknown): void {
       }
       break;
     }
-    case "diagnostics":
-      array(snapshot.events, "diagnostic events").forEach(
-        validateDiagnosticEvent,
-      );
-      decimal(snapshot.dropped_count, "diagnostic dropped count");
+    case "diagnostics": {
+      const events = array(snapshot.events, "diagnostic events");
+      if (events.length > MAX_DIAGNOSTIC_EVENTS) {
+        throw new ContractError("diagnostic snapshot exceeds its event bound");
+      }
+      events.forEach(validateDiagnosticEvent);
+      validateDiagnosticRetention(snapshot.retention);
       break;
+    }
     default:
       throw new ContractError("unknown view snapshot type");
   }
@@ -437,10 +444,15 @@ function validateViewPatch(value: unknown): void {
       );
       break;
     }
-    case "diagnostics":
-      array(patch.events, "diagnostic events").forEach(validateDiagnosticEvent);
-      decimal(patch.dropped_count, "diagnostic dropped count");
+    case "diagnostics": {
+      const events = array(patch.events, "diagnostic events");
+      if (events.length > MAX_DIAGNOSTIC_PATCH_EVENTS) {
+        throw new ContractError("diagnostic patch exceeds its event bound");
+      }
+      events.forEach(validateDiagnosticEvent);
+      validateDiagnosticRetention(patch.retention);
       break;
+    }
     default:
       throw new ContractError("unknown view patch type");
   }
@@ -665,20 +677,96 @@ function validateDiagnosticEvent(value: unknown): void {
     "warning",
     "error",
   ]);
-  boundedString(event.category, "diagnostic category", 32);
-  boundedString(event.code, "diagnostic code", 64);
+  const category = boundedString(event.category, "diagnostic category", 64);
+  if (!DIAGNOSTIC_CATEGORY.test(category)) {
+    throw new ContractError("diagnostic category is invalid");
+  }
+  const code = boundedString(event.code, "diagnostic code", 48);
+  if (!DIAGNOSTIC_IDENTIFIER.test(code)) {
+    throw new ContractError("diagnostic code is invalid");
+  }
   if (event.torrent_id !== undefined && event.torrent_id !== null) {
     torrentId(event.torrent_id);
   }
-  boundedString(event.summary, "diagnostic summary", 240);
-  const context = array(event.context, "diagnostic context");
-  if (context.length > 8) {
-    throw new ContractError("diagnostic context exceeds its bound");
+  boundedString(event.message, "diagnostic message", 1_280);
+  const subjects = array(event.subjects, "diagnostic subjects");
+  if (subjects.length > 4) {
+    throw new ContractError("diagnostic subjects exceed their bound");
   }
-  for (const field of context) {
+  subjects.forEach(validateDiagnosticSubject);
+  const fields = array(event.fields, "diagnostic fields");
+  if (fields.length > 8) {
+    throw new ContractError("diagnostic fields exceed their bound");
+  }
+  for (const field of fields) {
     const record = asRecord(field, "diagnostic field");
-    boundedString(record.key, "diagnostic field key", 32);
-    boundedString(record.value, "diagnostic field value", 160);
+    const key = boundedString(record.key, "diagnostic field key", 48);
+    if (!DIAGNOSTIC_IDENTIFIER.test(key)) {
+      throw new ContractError("diagnostic field key is invalid");
+    }
+    validateDiagnosticValue(record.value);
+  }
+}
+
+function validateDiagnosticRetention(value: unknown): void {
+  const retention = asRecord(value, "diagnostic retention");
+  decimal(retention.source_evicted_count, "diagnostic source eviction count");
+  decimal(retention.retained_from_sequence, "diagnostic retained sequence");
+}
+
+function validateDiagnosticSubject(value: unknown): void {
+  const subject = asRecord(value, "diagnostic subject");
+  switch (string(subject.type, "diagnostic subject type")) {
+    case "peer_connection":
+      boundedString(subject.connection_id, "peer connection subject", 240);
+      break;
+    case "tracker":
+      boundedString(subject.tracker_id, "tracker subject", 240);
+      break;
+    case "piece":
+      boundedInteger(subject.piece_index, "piece subject index", 0, MAX_U32);
+      optionalInteger(subject.attempt, "piece subject attempt", MAX_U32);
+      break;
+    case "file":
+      boundedInteger(subject.file_index, "file subject index", 0, MAX_U32);
+      break;
+    case "task": {
+      const kind = boundedString(subject.kind, "task subject kind", 48);
+      if (!DIAGNOSTIC_IDENTIFIER.test(kind)) {
+        throw new ContractError("task subject kind is invalid");
+      }
+      boundedString(subject.generation, "task subject generation", 240);
+      break;
+    }
+    default:
+      throw new ContractError("diagnostic subject type is unknown");
+  }
+}
+
+function validateDiagnosticValue(value: unknown): void {
+  const diagnosticValue = asRecord(value, "diagnostic value");
+  switch (string(diagnosticValue.type, "diagnostic value type")) {
+    case "boolean":
+      boolean(diagnosticValue.value, "diagnostic boolean value");
+      break;
+    case "count":
+    case "bytes":
+    case "duration_millis":
+      decimal(diagnosticValue.value, "diagnostic decimal value");
+      break;
+    case "error_code": {
+      const code = boundedString(diagnosticValue.value, "diagnostic error code", 48);
+      if (!DIAGNOSTIC_IDENTIFIER.test(code)) {
+        throw new ContractError("diagnostic error code is invalid");
+      }
+      break;
+    }
+    case "text":
+    case "endpoint":
+      boundedString(diagnosticValue.value, "diagnostic string value", 960);
+      break;
+    default:
+      throw new ContractError("diagnostic value type is unknown");
   }
 }
 

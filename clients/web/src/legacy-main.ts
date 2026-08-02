@@ -6,6 +6,7 @@ import type {
   DiagnosticEvent,
   DiagnosticProfile,
   DiagnosticSeverity,
+  DiagnosticValue,
   RequestEnvelope,
   TorrentView,
 } from "./api";
@@ -465,10 +466,10 @@ function renderDiagnostics(): string {
 }
 
 function renderDiagnosticEvent(event: DiagnosticEvent): string {
-  const fields = event.context
+  const fields = event.fields
     .map(
       (field) =>
-        `<span><b>${escapeHtml(field.key)}</b>=${escapeHtml(field.value)}</span>`,
+        `<span><b>${escapeHtml(field.key)}</b>=${escapeHtml(diagnosticValueText(field.value))}</span>`,
     )
     .join("");
   return `
@@ -476,7 +477,7 @@ function renderDiagnosticEvent(event: DiagnosticEvent): string {
       <time>${escapeHtml(new Date(Number(event.timestamp_millis)).toLocaleTimeString())}</time>
       <strong>${escapeHtml(event.severity)}</strong>
       <code>${escapeHtml(event.category)} / ${escapeHtml(event.code)}</code>
-      <p>${escapeHtml(event.summary)}</p>
+      <p>${escapeHtml(event.message)}</p>
       ${fields === "" ? "" : `<div>${fields}</div>`}
     </article>
   `;
@@ -487,6 +488,8 @@ function visibleDiagnostics(): DiagnosticEvent[] {
   return state.diagnostics.filter((event) => {
     if (
       diagnosticScope === "torrent" &&
+      event.torrent_id !== undefined &&
+      event.torrent_id !== null &&
       event.torrent_id !== selectedTorrent
     ) {
       return false;
@@ -496,8 +499,11 @@ function visibleDiagnostics(): DiagnosticEvent[] {
       event.code,
       event.category,
       event.severity,
-      event.summary,
-      ...event.context.flatMap((field) => [field.key, field.value]),
+      event.message,
+      ...event.fields.flatMap((field) => [
+        field.key,
+        diagnosticValueText(field.value),
+      ]),
     ].some((value) => value.toLocaleLowerCase().includes(needle));
   });
 }
@@ -582,7 +588,7 @@ async function copyDiagnostics(): Promise<void> {
   const text = visibleDiagnostics()
     .map(
       (event) =>
-        `${event.timestamp_millis} ${event.severity} ${event.category} ${event.code} ${event.summary}`,
+        `${event.timestamp_millis} ${event.severity} ${event.category} ${event.code} ${event.message}`,
     )
     .join("\n")
     .slice(0, 64 * 1024);
@@ -592,6 +598,10 @@ async function copyDiagnostics(): Promise<void> {
   } catch (error) {
     showStatus(`Copy failed: ${errorMessage(error)}`, true);
   }
+}
+
+function diagnosticValueText(value: DiagnosticValue): string {
+  return value.type === "boolean" ? String(value.value) : value.value;
 }
 
 function progressExplanation(torrent: TorrentView): string {

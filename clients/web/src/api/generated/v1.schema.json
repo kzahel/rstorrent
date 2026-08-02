@@ -396,36 +396,22 @@
       ],
       "type": "string"
     },
-    "DiagnosticCategory": {
-      "enum": [
-        "lifecycle",
-        "discovery",
-        "tracker",
-        "peer",
-        "metadata",
-        "protocol",
-        "scheduler",
-        "piece",
-        "storage",
-        "integrity",
-        "platform",
-        "performance"
-      ],
-      "type": "string"
-    },
     "DiagnosticEvent": {
       "properties": {
         "category": {
-          "$ref": "#/$defs/DiagnosticCategory"
+          "type": "string"
         },
         "code": {
           "type": "string"
         },
-        "context": {
+        "fields": {
           "items": {
             "$ref": "#/$defs/DiagnosticField"
           },
           "type": "array"
+        },
+        "message": {
+          "type": "string"
         },
         "sequence": {
           "type": "string"
@@ -433,8 +419,11 @@
         "severity": {
           "$ref": "#/$defs/DiagnosticSeverity"
         },
-        "summary": {
-          "type": "string"
+        "subjects": {
+          "items": {
+            "$ref": "#/$defs/DiagnosticSubject"
+          },
+          "type": "array"
         },
         "timestamp_millis": {
           "type": "string"
@@ -452,8 +441,9 @@
         "severity",
         "category",
         "code",
-        "summary",
-        "context"
+        "message",
+        "subjects",
+        "fields"
       ],
       "type": "object"
     },
@@ -463,7 +453,7 @@
           "type": "string"
         },
         "value": {
-          "type": "string"
+          "$ref": "#/$defs/DiagnosticValue"
         }
       },
       "required": [
@@ -476,7 +466,7 @@
       "properties": {
         "categories": {
           "items": {
-            "$ref": "#/$defs/DiagnosticCategory"
+            "type": "string"
           },
           "type": "array"
         },
@@ -502,6 +492,21 @@
       ],
       "type": "string"
     },
+    "DiagnosticRetention": {
+      "properties": {
+        "retained_from_sequence": {
+          "type": "string"
+        },
+        "source_evicted_count": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_evicted_count",
+        "retained_from_sequence"
+      ],
+      "type": "object"
+    },
     "DiagnosticSeverity": {
       "enum": [
         "trace",
@@ -511,6 +516,222 @@
         "error"
       ],
       "type": "string"
+    },
+    "DiagnosticSubject": {
+      "oneOf": [
+        {
+          "properties": {
+            "connection_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "peer_connection",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "connection_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "tracker_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "tracker",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "tracker_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "attempt": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "piece_index": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "piece",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "piece_index"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "file_index": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "file",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "file_index"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "generation": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "type": {
+              "const": "task",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "kind",
+            "generation"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "DiagnosticValue": {
+      "oneOf": [
+        {
+          "properties": {
+            "type": {
+              "const": "text",
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "boolean",
+              "type": "string"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "count",
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "bytes",
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "duration_millis",
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "endpoint",
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "error_code",
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "DiskPieceStageView": {
       "enum": [
@@ -2261,14 +2482,14 @@
         },
         {
           "properties": {
-            "dropped_count": {
-              "type": "string"
-            },
             "events": {
               "items": {
                 "$ref": "#/$defs/DiagnosticEvent"
               },
               "type": "array"
+            },
+            "retention": {
+              "$ref": "#/$defs/DiagnosticRetention"
             },
             "type": {
               "const": "diagnostics",
@@ -2278,7 +2499,7 @@
           "required": [
             "type",
             "events",
-            "dropped_count"
+            "retention"
           ],
           "type": "object"
         }
@@ -2553,14 +2774,14 @@
         },
         {
           "properties": {
-            "dropped_count": {
-              "type": "string"
-            },
             "events": {
               "items": {
                 "$ref": "#/$defs/DiagnosticEvent"
               },
               "type": "array"
+            },
+            "retention": {
+              "$ref": "#/$defs/DiagnosticRetention"
             },
             "type": {
               "const": "diagnostics",
@@ -2570,7 +2791,7 @@
           "required": [
             "type",
             "events",
-            "dropped_count"
+            "retention"
           ],
           "type": "object"
         }

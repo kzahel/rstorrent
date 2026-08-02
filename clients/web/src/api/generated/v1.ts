@@ -33,15 +33,21 @@ export type DeliveryPolicy = { min_interval_millis: number, max_queue_bytes: num
 
 export type DiagnosticSeverity = "trace" | "debug" | "info" | "warning" | "error";
 
-export type DiagnosticCategory = "lifecycle" | "discovery" | "tracker" | "peer" | "metadata" | "protocol" | "scheduler" | "piece" | "storage" | "integrity" | "platform" | "performance";
+export type DiagnosticCategory = string;
 
 export type DiagnosticProfile = "normal" | "detailed" | "trace";
 
 export type DiagnosticFilter = { profile: DiagnosticProfile, minimum_severity: DiagnosticSeverity, categories: Array<DiagnosticCategory>, };
 
-export type DiagnosticField = { key: string, value: string, };
+export type DiagnosticSubject = { "type": "peer_connection", connection_id: string, } | { "type": "tracker", tracker_id: string, } | { "type": "piece", piece_index: number, attempt: number | null, } | { "type": "file", file_index: number, } | { "type": "task", kind: string, generation: string, };
 
-export type DiagnosticEvent = { sequence: string, timestamp_millis: string, severity: DiagnosticSeverity, category: DiagnosticCategory, code: string, torrent_id?: string | null, summary: string, context: Array<DiagnosticField>, };
+export type DiagnosticValue = { "type": "text", value: string, } | { "type": "boolean", value: boolean, } | { "type": "count", value: string, } | { "type": "bytes", value: string, } | { "type": "duration_millis", value: string, } | { "type": "endpoint", value: string, } | { "type": "error_code", value: string, };
+
+export type DiagnosticField = { key: string, value: DiagnosticValue, };
+
+export type DiagnosticEvent = { sequence: string, timestamp_millis: string, severity: DiagnosticSeverity, category: DiagnosticCategory, code: string, torrent_id?: string | null, message: string, subjects: Array<DiagnosticSubject>, fields: Array<DiagnosticField>, };
+
+export type DiagnosticRetention = { source_evicted_count: string, retained_from_sequence: string, };
 
 export type ProgressDisposition = "active" | "waiting" | "blocked" | "inactive";
 
@@ -111,9 +117,9 @@ export type TrackerNextActionView = "announce" | "retry" | "reannounce";
 
 export type TrackerView = { tracker_id: string, url: string, transport: TrackerTransportView, source: TrackerSourceView, tier: number, status: TrackerStatusView, announce_event: TrackerAnnounceEventView | null, total_attempts: number, consecutive_failures: number, last_peer_count: number | null, seeders: number | null, leechers: number | null, interval_seconds: number | null, next_action: TrackerNextActionView | null, next_action_in_millis: string | null, last_success_age_millis: string | null, last_failure_age_millis: string | null, last_error: string | null, };
 
-export type ViewSnapshot = { "type": "torrent_list", torrents: Array<TorrentView>, } | { "type": "torrent", torrent: TorrentView | null, } | { "type": "piece_activity", torrent_id: string, piece_count: number, verified: Array<IndexRange>, active: Array<ActivePiece>, } | { "type": "session_disk", pipeline: DiskPipelineView, pieces: Array<DiskPieceView>, } | { "type": "peers", torrent_id: string, peers: Array<PeerView>, } | { "type": "files", torrent_id: string, state: FileCatalogState, filesystem_content_base: string | null, files: Array<FileView>, } | { "type": "trackers", torrent_id: string, state: TrackerCatalogState, trackers: Array<TrackerView>, } | { "type": "diagnostics", events: Array<DiagnosticEvent>, dropped_count: string, };
+export type ViewSnapshot = { "type": "torrent_list", torrents: Array<TorrentView>, } | { "type": "torrent", torrent: TorrentView | null, } | { "type": "piece_activity", torrent_id: string, piece_count: number, verified: Array<IndexRange>, active: Array<ActivePiece>, } | { "type": "session_disk", pipeline: DiskPipelineView, pieces: Array<DiskPieceView>, } | { "type": "peers", torrent_id: string, peers: Array<PeerView>, } | { "type": "files", torrent_id: string, state: FileCatalogState, filesystem_content_base: string | null, files: Array<FileView>, } | { "type": "trackers", torrent_id: string, state: TrackerCatalogState, trackers: Array<TrackerView>, } | { "type": "diagnostics", events: Array<DiagnosticEvent>, retention: DiagnosticRetention, };
 
-export type ViewPatch = { "type": "torrent_list", upsert: Array<TorrentView>, removed: Array<string>, } | { "type": "torrent", torrent: TorrentView | null, } | { "type": "piece_activity", torrent_id: string, piece_count: number, verified: Array<IndexRange>, cleared: Array<IndexRange>, active_upsert: Array<ActivePiece>, active_removed: Array<string>, } | { "type": "session_disk", pipeline: DiskPipelineView, upsert: Array<DiskPieceView>, removed: Array<string>, } | { "type": "peers", torrent_id: string, upsert: Array<PeerView>, removed: Array<string>, } | { "type": "files", torrent_id: string, upsert: Array<FileView>, removed: Array<string>, } | { "type": "trackers", torrent_id: string, upsert: Array<TrackerView>, removed: Array<string>, } | { "type": "diagnostics", events: Array<DiagnosticEvent>, dropped_count: string, };
+export type ViewPatch = { "type": "torrent_list", upsert: Array<TorrentView>, removed: Array<string>, } | { "type": "torrent", torrent: TorrentView | null, } | { "type": "piece_activity", torrent_id: string, piece_count: number, verified: Array<IndexRange>, cleared: Array<IndexRange>, active_upsert: Array<ActivePiece>, active_removed: Array<string>, } | { "type": "session_disk", pipeline: DiskPipelineView, upsert: Array<DiskPieceView>, removed: Array<string>, } | { "type": "peers", torrent_id: string, upsert: Array<PeerView>, removed: Array<string>, } | { "type": "files", torrent_id: string, upsert: Array<FileView>, removed: Array<string>, } | { "type": "trackers", torrent_id: string, upsert: Array<TrackerView>, removed: Array<string>, } | { "type": "diagnostics", events: Array<DiagnosticEvent>, retention: DiagnosticRetention, };
 
 export type ResetReason = "queue_overflow" | "cursor_mismatch" | "cursor_expired";
 

@@ -224,7 +224,7 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
       return {
         type: "diagnostics",
         events: mergeDiagnostics(snapshot.events, patch.events),
-        dropped_count: patch.dropped_count,
+        retention: { ...patch.retention },
       };
     }
   }
@@ -240,7 +240,7 @@ function mergeDiagnostics(
     .sort((left, right) =>
       BigInt(left.sequence) < BigInt(right.sequence) ? -1 : 1,
     )
-    .slice(-512);
+    .slice(-2_048);
 }
 
 function insertRange(

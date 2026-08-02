@@ -107,8 +107,8 @@ function applySnapshot(
       };
       break;
     case "diagnostics":
-      state.diagnostics = snapshot.events.slice(-512);
-      state.diagnosticDropped = snapshot.dropped_count;
+      state.diagnostics = snapshot.events.slice(-2_048);
+      state.diagnosticDropped = snapshot.retention.source_evicted_count;
       break;
   }
 }
@@ -156,8 +156,8 @@ function applyPatch(state: ApplicationViewState, patch: ViewPatch): void {
         .sort((left, right) =>
           BigInt(left.sequence) < BigInt(right.sequence) ? -1 : 1,
         )
-        .slice(-512);
-      state.diagnosticDropped = patch.dropped_count;
+        .slice(-2_048);
+      state.diagnosticDropped = patch.retention.source_evicted_count;
       break;
     }
   }
