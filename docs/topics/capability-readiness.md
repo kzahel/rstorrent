@@ -27,8 +27,10 @@ durability, cuts the retained SQLite-backed cohort median by 7.4%, and reduces
 514 post-metadata revisions to 18. Tactical `053` now removes cursor and
 per-piece-handle barriers through retained generation-checked positional plans;
 its engine median improves 5.9% and write service falls by roughly four
-seconds. The engine campaign now advances to bounded independent write and
-hash execution.
+seconds. Tactical `054` now adds bounded independent write/hash execution and
+checked scheduler indexes whose controlled 10 GiB rows all complete below
+36 seconds; raw-stage/concurrency sweeps and the retained application profile
+remain before graduation.
 Tactical `033` now completes the leased application view-set and headless
 polling foundation. Tactical `034` completes the responsive frontend,
 deterministic demo adapter, adaptive inspection hierarchy, and virtual table
@@ -119,11 +121,11 @@ evidence.
 
 ### Now
 
-**Add bounded independent write and hash execution.** The next tactical uses
-Tactical [`053`](../tactical/053-immutable-positional-storage-plans.md)'s
-retained generation-checked plans to give writes and hash-ready pieces
-separate bounded capacity, then joins both outcomes explicitly before
-verification becomes authoritative.
+**Complete Tactical `054`'s throughput graduation.** Independent write/hash
+capacity, explicit generation joins and the large local comparator are now in
+place. Measure raw write/hash ceilings, sweep the declared concurrency points,
+repeat the controlled engine cohort, and retain the SQLite-backed application
+profile before choosing final defaults or advancing to read-through hashing.
 
 ### Next
 
@@ -205,7 +207,7 @@ does not.
 | Multi-file mapping and selective files | Implemented | deterministic, runtime, interop | General product selection changes and priority scheduling are absent. | [`client-persistence`](client-persistence.md) |
 | Cross-file, skipped-file, and padding storage | Implemented | deterministic, runtime, interop | BEP 47 symlinks are deliberately rejected. | [`client-persistence`](client-persistence.md) |
 | Path-backed staging and publication | Implemented | runtime, interop | Disk-space policy, relocation, and broad filesystem failure profiles remain incomplete. | [`client-persistence`](client-persistence.md) |
-| Bounded asynchronous content storage | Implemented | deterministic, runtime, interop, live | Payload sync and batched SQLite checkpoints use a separate bounded joined owner; writes and all hashes use retained immutable positional plans, but execution remains one serialized FIFO pending independent write/hash queues. | [`storage-throughput-architecture`](storage-throughput-architecture.md) |
+| Bounded asynchronous content storage | Implemented | deterministic, runtime, interop, live | Payload sync and batched SQLite checkpoints use a separate bounded joined owner; immutable positional writes and hashes execute with independent bounds and explicit generation joins. Raw-stage sweeps, final defaults, Android concurrency evidence and multi-torrent/root fairness remain open. | [`storage-throughput-architecture`](storage-throughput-architecture.md) |
 | Android SAF storage and publication | Implemented | runtime, AVD, physical | General root management, removable-media policy, and migration remain absent. | [`client-persistence`](client-persistence.md) |
 | Durable have state and conservative recheck | Implemented | deterministic, runtime, interop, AVD, physical | It rehashes claimed pieces rather than providing optimized fast resume. | [`client-persistence`](client-persistence.md) |
 | Recovery after content hash failure | Implemented | deterministic, runtime | Sole corrupt and ambiguous multi-source generations retry cleanly with bounded exact-generation attribution. | [`download-correctness`](download-correctness.md) |

@@ -192,6 +192,88 @@ permit, so a saturated completion channel cannot deadlock admission shutdown.
    headless, bounded by the existing campaign policy and must clean its owned
    download. Public peer supply is contextual evidence, not a pass threshold.
 
+## Large-Geometry Baseline Checkpoint
+
+Commits `2fa5c2c` and `516ab64` landed the task-free generation join and the
+independently bounded write/hash executor at the initial `4/4` desktop limits.
+Commit `dd92643` then added
+`tests/interop/local_throughput_compare.py`, a controlled single-file loopback
+comparator with a pinned libtorrent `2.0.13` seeder. It materializes a
+deterministic non-sparse source, alternates client order, excludes fixture and
+whole-file validation time from transfer time, requires exact byte counts and
+full-file SHA-1, and removes each output immediately. Its retained matrix is
+1 GiB and 10 GiB at 256 KiB, 1 MiB, 4 MiB and 16 MiB pieces.
+
+The first 1 GiB/256 KiB RSTorrent case made no useful completion progress in
+more than four minutes while one core remained saturated. A three-second
+process sample attributed the main-thread work to `observe_swarm` and
+`SwarmState::snapshot`, which walked the complete piece/block geometry after
+each peer or storage event. Replacing derived whole-geometry queries with
+checked phase counts and bounded indexes, and publishing the full diagnostic
+snapshot on a 100 ms maintenance cadence, reduced the 32 MiB controls from
+14.5 to 74.0 MiB/s at 256 KiB pieces and from 18.7 to 219.3 MiB/s at 1 MiB
+pieces.
+
+The first 10 GiB fixture then exposed two ordinary-capability guards before it
+could transfer: the generic 512 KiB bencode string limit rejected its 819,200
+byte v1 `pieces` string, and the old single-file path rejected total lengths
+above `u32::MAX`. Metainfo now allows the complete existing 1 MiB input budget
+to hold piece hashes, deriving a still-bounded 52,428-piece ceiling, while the
+single-file runtime uses its existing 64-bit layout and storage offsets. A
+deterministic 10 GiB/256 KiB geometry test covers both conditions. This remains
+much tighter than pinned libtorrent's 30 MiB default `max_metadata_size`; it is
+the smallest bound change required by this baseline.
+
+Two later 10 GiB samples found and removed additional geometry-dependent
+supervisor work. Contributor-history pruning scanned every block after every
+verified piece; an incremental per-connection unverified-block count replaced
+it. Scheduling then spent 82% of sampled main-thread time scanning active
+pieces that had no missing block. A generation-safe
+`requestable_active_pieces` index now contains only active pieces with a
+currently missing request; assignment removes exhausted pieces and every
+retry transition refreshes membership. Test-only recomputation independently
+checks phase counts, active attempts, per-peer request and contributor counts,
+incomplete/active/requestable piece sets, and their byte totals across
+endgame, hash failure, retry, completion and cancellation.
+
+The final single-observation matrix used RSTorrent executable SHA-256
+`1ac603546048301173505dc784b77a073379878bb6642c339ab240f3d95fa097`, a
+64 MiB payload allowance and `4/4` storage execution. Times exclude source
+construction, torrent hashing and final SHA-1 validation:
+
+| Size | Piece | RSTorrent time | RSTorrent MiB/s | libtorrent time | libtorrent MiB/s | RST/libtorrent |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 GiB | 256 KiB | 2.135 s | 479.5 | 2.143 s | 477.9 | 100.3% |
+| 1 GiB | 1 MiB | 1.604 s | 638.5 | 2.107 s | 485.9 | 131.4% |
+| 1 GiB | 4 MiB | 1.680 s | 609.5 | 2.030 s | 504.5 | 120.8% |
+| 1 GiB | 16 MiB | 2.992 s | 342.3 | 2.114 s | 484.4 | 70.7% |
+| 10 GiB | 256 KiB | 30.042 s | 340.9 | 28.243 s | 362.6 | 94.0% |
+| 10 GiB | 1 MiB | 20.893 s | 490.1 | 19.670 s | 520.6 | 94.1% |
+| 10 GiB | 4 MiB | 17.151 s | 597.0 | 10.678 s | 959.0 | 62.3% |
+| 10 GiB | 16 MiB | 35.451 s | 288.9 | 10.798 s | 948.4 | 30.5% |
+
+All 16 client transfers matched their expected full-file SHA-1, reported the
+exact payload byte count, had zero failed and redundant bytes, published the
+complete output and cleaned it. The hardest small-piece row now finishes in
+30.0 seconds versus 119.5 seconds immediately before the requestable-piece
+index and more than four minutes before the first profile-guided correction.
+
+This is a reproducible scaling screen, not a stable parity claim. It is one
+observation per point with an explicitly warm, uncontrolled operating-system
+page cache, and later libtorrent rows reached nearly 959 MiB/s. The 4 MiB and
+especially 16 MiB RSTorrent rows retain material write-service gaps; the
+16 MiB case accumulated 125.958 seconds of write service across four workers
+and only one active hash, while the 256 KiB case accumulated 75.505 seconds
+of write and 74.252 seconds of hash service. The next Tactical `054` gate is
+therefore the declared raw-stage/concurrency sweep and repeated controlled
+cohort, not a claim that the integrated pipeline is already graduated.
+
+Validation at this checkpoint passed all 173 non-live engine library tests
+with three live-network tests ignored, the focused metainfo geometry tests,
+warning-denying Clippy for protocol and engine, and the comparator's exact
+integrity and cleanup assertions. Full workspace gates remain required before
+graduation.
+
 ## Escalation And Next Boundary
 
 Ordinary refactoring, internal naming, tests, concurrency selection within the

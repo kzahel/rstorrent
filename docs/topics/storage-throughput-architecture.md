@@ -5,9 +5,12 @@ Topic: `storage-throughput-architecture`
 Status: Accepted by maintainer direction on 2026-08-02. Tacticals
 [`052`](../tactical/052-batched-durability-checkpoints.md) and
 [`053`](../tactical/053-immutable-positional-storage-plans.md) completed the
-durability split and immutable positional-plan foundation. Bounded independent
-write/hash execution is the next slice; the current engine does not yet have
-the end-state architecture described here.
+durability split and immutable positional-plan foundation. Active Tactical
+[`054`](../tactical/054-bounded-independent-storage-execution.md) has landed
+the bounded generation join plus independent write/hash execution and removed
+three whole-geometry supervisor scaling paths. Raw-stage/concurrency sweeps,
+the retained application profile and broader platform evidence remain before
+that tactical or the end-state architecture graduates.
 
 ## Purpose And Scope
 
@@ -39,10 +42,10 @@ actual ceiling. The storage objective is narrower and falsifiable: when safe
 eligible storage or hash work is backlogged, no unrelated storage stage should
 leave usable configured capacity idle.
 
-## Current Evidence And Bottleneck
+## Pre-054 Evidence And Bottleneck
 
-The current implementation has several individually bounded components but
-one serialized execution path:
+Before Tactical `054`, the implementation had several individually bounded
+components but one serialized execution path:
 
 1. `ContentStoragePipeline` in `crates/rstorrent-engine/src/driver.rs` owns
    one command channel and one `run_content_storage_task` per active download,
@@ -836,5 +839,18 @@ retained positional handles, immutable no-extra-copy plans and generation
 checked part slots. Its engine median fell from 35.792 to 33.679 seconds and
 write service fell from 30.928--31.979 to 27.131--28.353 seconds; its
 SQLite-backed median was 45.594 seconds with unchanged checkpoint shape and
-exact restart/crash evidence. The next slice adds bounded independent write
-and hash execution with an explicit piece-generation join.
+exact restart/crash evidence.
+
+Tactical [`054`](../tactical/054-bounded-independent-storage-execution.md)
+now runs independently bounded write and hash jobs with an explicit
+piece-generation join. Its large local baseline additionally replaced
+per-event whole-swarm snapshots, per-piece whole-block contributor scans and
+active-piece scans that included fully requested work with checked incremental
+indexes. A controlled 10 GiB/256 KiB transfer now completes in 30.042 seconds
+at 340.9 MiB/s versus pinned libtorrent's 28.243 seconds and 362.6 MiB/s; the
+same row took 119.525 seconds immediately before the requestable-piece index
+and failed to finish in more than four minutes before the first scaling fix.
+All four 10 GiB RSTorrent piece-size rows finish below 36 seconds with exact
+hashes and cleanup, but 4 MiB and 16 MiB pieces retain material write-service
+gaps. The active slice therefore proceeds to raw-stage/concurrency sweeps and
+repeated engine/application cohorts rather than claiming graduation.

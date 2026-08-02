@@ -102,6 +102,7 @@ const SAFE_CANCEL_CRITICAL_MASK: usize = SAFE_CANCEL_REQUESTED - 1;
 const DHT_RETRY_INITIAL_DELAY: Duration = Duration::from_secs(15);
 const DHT_RETRY_MAX_DELAY: Duration = Duration::from_secs(5 * 60);
 const DHT_SUCCESS_REQUERY_DELAY: Duration = Duration::from_secs(60);
+const CONTENT_SWARM_MAINTENANCE_INTERVAL: Duration = Duration::from_millis(100);
 const CONTENT_PEER_DIAGNOSTIC_INTERVAL: Duration = Duration::from_secs(1);
 const PEER_OBSERVATION_INTERVAL: Duration = Duration::from_millis(100);
 const MAX_METADATA_PEERS: usize = 8;
@@ -5427,8 +5428,6 @@ async fn run_single_download(
     control: DownloadControl,
     peers: &mut TorrentPeerCoordinator,
 ) -> Result<DownloadReport, DownloadError> {
-    u32::try_from(metainfo.total_length)
-        .map_err(|_| DownloadError::Metainfo(MetainfoError::InvalidField("info.length")))?;
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let selection = FileSelection::new(&layout, &[]).map_err(DownloadError::Layout)?;
     let piece_count = u32::try_from(layout.piece_count())
@@ -7008,8 +7007,8 @@ impl<'a> ContentSwarmDownload<'a> {
         })
     }
 
-    fn is_complete(&self, now: Duration) -> bool {
-        self.state.snapshot(now).no_request_reason == Some(NoRequestReason::Complete)
+    fn is_complete(&self) -> bool {
+        self.state.is_complete()
     }
 
     async fn handle_message(
@@ -7109,7 +7108,6 @@ impl<'a> ContentSwarmDownload<'a> {
             | PeerMessage::Cancel(_)
             | PeerMessage::Extended { .. } => {}
         }
-        self.control.observe_swarm(&self.state, now);
         Ok(ContentMessageDisposition::Continue)
     }
 
@@ -7270,7 +7268,6 @@ impl<'a> ContentSwarmDownload<'a> {
                 }
             }
         };
-        self.control.observe_swarm(&self.state, now);
         Ok(disposition)
     }
 
@@ -7671,6 +7668,7 @@ async fn run_selective_swarm_loop(
 ) -> Result<(), DownloadError> {
     let mut next_owner = ContentSupervisorOwner::Storage;
     let mut storage_pressure_started = None;
+    let mut next_maintenance_at = Duration::ZERO;
     if let Some(connection) = peers.connection.take() {
         let attempt = connection.attempt();
         peers.handoff_to_content(attempt)?;
@@ -7712,19 +7710,17 @@ async fn run_selective_swarm_loop(
         download
             .control
             .observe_content_registry(&peers.registry, now);
-        let expired = if storage_backpressured {
-            Vec::new()
-        } else {
-            download
-                .state
-                .expire_requests(now)
-                .map_err(DownloadError::Swarm)?
-        };
-        for request in expired {
-            let _ = request;
+        if now >= next_maintenance_at {
+            if !storage_backpressured {
+                download
+                    .state
+                    .expire_requests(now)
+                    .map_err(DownloadError::Swarm)?;
+            }
+            download.control.observe_swarm(&download.state, now);
+            peers.observe_content_peers(&download.state)?;
+            next_maintenance_at = now.saturating_add(CONTENT_SWARM_MAINTENANCE_INTERVAL);
         }
-        download.control.observe_swarm(&download.state, now);
-        peers.observe_content_peers(&download.state)?;
 
         let assignments = if storage_ready && !storage_backpressured {
             download.state.schedule(now).map_err(DownloadError::Swarm)?
@@ -7776,11 +7772,10 @@ async fn run_selective_swarm_loop(
             )
             .await?;
         }
-        download
-            .control
-            .observe_swarm(&download.state, peers.elapsed());
-        peers.observe_content_peers(&download.state)?;
-        if download.is_complete(peers.elapsed()) {
+        if download.is_complete() {
+            let now = peers.elapsed();
+            download.control.observe_swarm(&download.state, now);
+            peers.observe_content_peers(&download.state)?;
             return Ok(());
         }
 
@@ -7803,25 +7798,8 @@ async fn run_selective_swarm_loop(
                 .unwrap_or(DownloadError::NoUsablePeer));
         }
 
-        let snapshot = download.state.snapshot(peers.elapsed());
-        let replacement_deadline = peers
-            .selector
-            .select(
-                &peers.registry,
-                PeerSelectionContext {
-                    now: peers.elapsed(),
-                },
-            )
-            .and(snapshot.next_replacement_at);
-        let next_deadline = (!storage_backpressured)
-            .then(|| {
-                [snapshot.next_request_expiry, replacement_deadline]
-                    .into_iter()
-                    .flatten()
-                    .min()
-            })
-            .flatten();
-        let until_expiry = next_deadline.map(|deadline| deadline.saturating_sub(peers.elapsed()));
+        let until_expiry =
+            (!storage_backpressured).then(|| next_maintenance_at.saturating_sub(peers.elapsed()));
         let cancellation = peers.control.inner.cancellation.clone();
         let event = {
             let storage = download.storage_pipeline_mut()?;
@@ -10640,9 +10618,9 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             progress.storage_write_blocks_started,
             progress.storage_write_blocks_completed
         );
-        assert_eq!(
-            progress.storage_write_batch_blocks_high_water,
-            progress.storage_write_blocks_started
+        assert!(progress.storage_write_batch_blocks_high_water > 0);
+        assert!(
+            progress.storage_write_batch_blocks_high_water <= progress.storage_write_blocks_started
         );
         assert!(progress.storage_write_service_micros >= 200_000);
         assert_eq!(progress.storage_hash_operations_started, 0);

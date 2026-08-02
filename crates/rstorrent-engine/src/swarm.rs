@@ -386,6 +386,7 @@ struct ConnectionState {
     choking: bool,
     connected_at: Duration,
     last_useful_at: Option<Duration>,
+    active_request_count: usize,
     request_window: RequestWindow,
 }
 
@@ -595,6 +596,7 @@ struct BlockState {
 #[derive(Debug)]
 struct PieceState {
     blocks: Vec<BlockKey>,
+    working_set_bytes: usize,
     storage: PieceStorageJoin,
 }
 
@@ -739,9 +741,20 @@ pub struct SwarmState {
     piece_count: usize,
     pieces: BTreeMap<u32, PieceState>,
     blocks: BTreeMap<BlockKey, BlockState>,
+    incomplete_pieces: BTreeSet<usize>,
+    active_pieces: BTreeSet<usize>,
+    requestable_active_pieces: BTreeSet<usize>,
+    active_piece_bytes: usize,
+    active_attempts: BTreeMap<RequestAttemptId, RequestAttempt>,
+    unverified_contributor_blocks: BTreeMap<ConnectionId, usize>,
     connections: BTreeMap<ConnectionId, ConnectionState>,
     pending_dials: BTreeSet<PendingDialId>,
     next_attempt_id: u64,
+    missing_blocks: usize,
+    requested_blocks: usize,
+    writing_blocks: usize,
+    received_blocks: usize,
+    verified_blocks: usize,
     outstanding_request_bytes: usize,
     outstanding_request_high_water: usize,
     last_scheduled_connection: Option<ConnectionId>,
@@ -770,6 +783,7 @@ impl SwarmState {
         }
         let mut pieces = BTreeMap::new();
         let mut blocks = BTreeMap::new();
+        let mut incomplete_pieces = BTreeSet::new();
         for plan in plans {
             if usize::try_from(plan.index).map_or(true, |index| index >= piece_count) {
                 return Err(SwarmError::PieceOutOfRange {
@@ -780,6 +794,11 @@ impl SwarmState {
             if pieces.contains_key(&plan.index) {
                 return Err(SwarmError::DuplicatePiecePlan(plan.index));
             }
+            let working_set_bytes = plan.blocks.iter().try_fold(0_usize, |total, block| {
+                total
+                    .checked_add(block.length as usize)
+                    .ok_or(SwarmError::ArithmeticOverflow("piece working-set bytes"))
+            })?;
             for block in &plan.blocks {
                 if blocks
                     .insert(
@@ -799,17 +818,34 @@ impl SwarmState {
                 PieceState {
                     storage: PieceStorageJoin::new(plan.blocks.len()),
                     blocks: plan.blocks,
+                    working_set_bytes,
                 },
             );
+            incomplete_pieces.insert(
+                usize::try_from(plan.index)
+                    .map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?,
+            );
         }
+        let missing_blocks = blocks.len();
         Ok(Self {
             config,
             piece_count,
             pieces,
             blocks,
+            incomplete_pieces,
+            active_pieces: BTreeSet::new(),
+            requestable_active_pieces: BTreeSet::new(),
+            active_piece_bytes: 0,
+            active_attempts: BTreeMap::new(),
+            unverified_contributor_blocks: BTreeMap::new(),
             connections: BTreeMap::new(),
             pending_dials: BTreeSet::new(),
             next_attempt_id: 1,
+            missing_blocks,
+            requested_blocks: 0,
+            writing_blocks: 0,
+            received_blocks: 0,
+            verified_blocks: 0,
             outstanding_request_bytes: 0,
             outstanding_request_high_water: 0,
             last_scheduled_connection: None,
@@ -824,6 +860,18 @@ impl SwarmState {
 
     pub const fn config(&self) -> SwarmConfig {
         self.config
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.verified_blocks == self.blocks.len()
+    }
+
+    pub const fn outstanding_request_bytes(&self) -> usize {
+        self.outstanding_request_bytes
+    }
+
+    pub const fn outstanding_request_high_water(&self) -> usize {
+        self.outstanding_request_high_water
     }
 
     pub fn begin_dial(&mut self, id: PendingDialId) -> Result<(), SwarmError> {
@@ -858,6 +906,7 @@ impl SwarmState {
                 choking: true,
                 connected_at: now,
                 last_useful_at: None,
+                active_request_count: 0,
                 request_window: RequestWindow::new(
                     now,
                     self.config.initial_requests_per_connection,
@@ -872,7 +921,7 @@ impl SwarmState {
         id: ConnectionId,
         removal: ConnectionRemoval,
     ) -> Result<Vec<BlockKey>, SwarmError> {
-        if self.connections.remove(&id).is_none() {
+        if !self.connections.contains_key(&id) {
             return Err(SwarmError::UnknownConnection(id));
         }
         let disposition = match removal {
@@ -881,7 +930,17 @@ impl SwarmState {
             }
             ConnectionRemoval::Cancelled => RequestDisposition::Cancelled,
         };
-        self.release_requests_for_connection(id, disposition)
+        let released = self.release_requests_for_connection(id, disposition)?;
+        let removed = self
+            .connections
+            .remove(&id)
+            .ok_or(SwarmError::UnknownConnection(id))?;
+        if removed.active_request_count != 0 {
+            return Err(SwarmError::Invariant(
+                "removed connection retained active requests",
+            ));
+        }
+        Ok(released)
     }
 
     pub fn set_bitfield(
@@ -958,11 +1017,7 @@ impl SwarmState {
                 break;
             }
         }
-        if !self
-            .blocks
-            .values()
-            .any(|block| matches!(block.phase, BlockPhase::Missing))
-        {
+        if self.missing_blocks == 0 {
             for connection in self.ordered_connection_ids() {
                 if self.connection_request_count(connection) != 0 {
                     continue;
@@ -989,15 +1044,10 @@ impl SwarmState {
     pub fn expire_requests(&mut self, now: Duration) -> Result<Vec<ExpiredRequest>, SwarmError> {
         let mut expired = Vec::new();
         let active = self
-            .blocks
-            .iter()
-            .flat_map(|(key, block)| {
-                block
-                    .attempts
-                    .iter()
-                    .filter(|attempt| attempt.disposition.is_active())
-                    .map(|attempt| (*key, *attempt))
-            })
+            .active_attempts
+            .values()
+            .copied()
+            .map(|attempt| (attempt.block, attempt))
             .collect::<Vec<_>>();
 
         let mut stalled_connections = self
@@ -1045,11 +1095,15 @@ impl SwarmState {
         if delay.is_zero() {
             return;
         }
-        for block in self.blocks.values_mut() {
-            for attempt in &mut block.attempts {
-                if attempt.disposition.is_active() {
-                    attempt.issued_at = attempt.issued_at.saturating_add(delay);
-                }
+        for attempt in self.active_attempts.values_mut() {
+            attempt.issued_at = attempt.issued_at.saturating_add(delay);
+            if let Some(retained) = self.blocks.get_mut(&attempt.block).and_then(|block| {
+                block
+                    .attempts
+                    .iter_mut()
+                    .find(|retained| retained.id == attempt.id)
+            }) {
+                retained.issued_at = attempt.issued_at;
             }
         }
         for connection in self.connections.values_mut() {
@@ -1143,7 +1197,22 @@ impl SwarmState {
                 Some(evidence.id),
             )?;
         }
-        for _ in 0..active_attempts.len() {
+        self.requested_blocks = self
+            .requested_blocks
+            .checked_sub(1)
+            .ok_or(SwarmError::Invariant("requested block count underflow"))?;
+        self.writing_blocks = self
+            .writing_blocks
+            .checked_add(1)
+            .ok_or(SwarmError::ArithmeticOverflow("writing block count"))?;
+        self.note_unverified_contribution(connection)?;
+        for attempt in &active_attempts {
+            if self.active_attempts.remove(&attempt.id).is_none() {
+                return Err(SwarmError::Invariant(
+                    "received block attempt is absent from the active index",
+                ));
+            }
+            self.release_connection_request(attempt.connection)?;
             self.release_request(block.length)?;
         }
         self.cancelled_request_attempts = self
@@ -1219,6 +1288,24 @@ impl SwarmState {
             self.config.max_terminal_attempts_per_block,
             accepted.then_some(evidence),
         )?;
+        self.writing_blocks = self
+            .writing_blocks
+            .checked_sub(1)
+            .ok_or(SwarmError::Invariant("writing block count underflow"))?;
+        if accepted {
+            self.received_blocks = self
+                .received_blocks
+                .checked_add(1)
+                .ok_or(SwarmError::ArithmeticOverflow("received block count"))?;
+        } else {
+            self.missing_blocks = self
+                .missing_blocks
+                .checked_add(1)
+                .ok_or(SwarmError::ArithmeticOverflow("missing block count"))?;
+            self.release_unverified_contribution(source)?;
+            self.deactivate_piece_if_idle(block.piece)?;
+            self.refresh_requestable_piece(block.piece)?;
+        }
         if accepted && let Some(connection) = self.connections.get_mut(&source) {
             connection.last_useful_at = Some(now);
         }
@@ -1333,13 +1420,39 @@ impl SwarmState {
                 "piece cannot verify before every block is newly stored",
             ));
         }
-        let contributors = self.piece_contributors(&blocks)?;
+        let contributor_sources = self.piece_contributor_sources(&blocks)?;
+        let contributors = contributor_sources
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let block_count = blocks.len();
         for block in blocks {
             self.blocks
                 .get_mut(&block)
                 .ok_or(SwarmError::UnknownBlock(block))?
                 .phase = BlockPhase::Verified;
         }
+        self.received_blocks = self
+            .received_blocks
+            .checked_sub(block_count)
+            .ok_or(SwarmError::Invariant("received block count underflow"))?;
+        self.verified_blocks = self
+            .verified_blocks
+            .checked_add(block_count)
+            .ok_or(SwarmError::ArithmeticOverflow("verified block count"))?;
+        for source in contributor_sources {
+            self.release_unverified_contribution(source)?;
+        }
+        let piece_index =
+            usize::try_from(piece).map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
+        if !self.incomplete_pieces.remove(&piece_index) {
+            return Err(SwarmError::Invariant(
+                "verified piece is absent from the incomplete index",
+            ));
+        }
+        self.deactivate_piece(piece)?;
         Ok(contributors)
     }
 
@@ -1381,18 +1494,37 @@ impl SwarmState {
                 "piece cannot fail its hash before every block is stored",
             ));
         }
-        let contributors = self.piece_contributors(&blocks)?;
+        let contributor_sources = self.piece_contributor_sources(&blocks)?;
+        let contributors = contributor_sources
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
         let failed_bytes = blocks.iter().try_fold(0_usize, |total, block| {
             total
                 .checked_add(block.length as usize)
                 .ok_or(SwarmError::ArithmeticOverflow("failed piece bytes"))
         })?;
+        let block_count = blocks.len();
         for block in blocks {
             self.blocks
                 .get_mut(&block)
                 .ok_or(SwarmError::UnknownBlock(block))?
                 .phase = BlockPhase::Missing;
         }
+        self.received_blocks = self
+            .received_blocks
+            .checked_sub(block_count)
+            .ok_or(SwarmError::Invariant("received block count underflow"))?;
+        self.missing_blocks = self
+            .missing_blocks
+            .checked_add(block_count)
+            .ok_or(SwarmError::ArithmeticOverflow("missing block count"))?;
+        for source in contributor_sources {
+            self.release_unverified_contribution(source)?;
+        }
+        self.deactivate_piece(piece)?;
         self.pieces
             .get_mut(&piece)
             .ok_or(SwarmError::UnknownPiece(piece))?
@@ -1408,10 +1540,13 @@ impl SwarmState {
         })
     }
 
-    fn piece_contributors(&self, blocks: &[BlockKey]) -> Result<Vec<ConnectionId>, SwarmError> {
-        let contributors = blocks
+    fn piece_contributor_sources(
+        &self,
+        blocks: &[BlockKey],
+    ) -> Result<Vec<ConnectionId>, SwarmError> {
+        blocks
             .iter()
-            .try_fold(BTreeSet::new(), |mut contributors, block| {
+            .map(|block| {
                 let state = self
                     .blocks
                     .get(block)
@@ -1427,43 +1562,28 @@ impl SwarmState {
                                 "stored block contributor evidence is missing",
                             ));
                         }
-                        contributors.insert(source);
+                        Ok(source)
                     }
-                    BlockPhase::Verified => {}
-                    _ => {
-                        return Err(SwarmError::InvalidTransition(
-                            "piece contributor requested before storage completion",
-                        ));
-                    }
+                    BlockPhase::Missing
+                    | BlockPhase::Requested
+                    | BlockPhase::Writing { .. }
+                    | BlockPhase::Verified => Err(SwarmError::InvalidTransition(
+                        "piece contributor requested before storage completion",
+                    )),
                 }
-                Ok(contributors)
-            })?;
-        Ok(contributors.into_iter().collect())
-    }
-
-    pub(crate) fn unverified_contributors(&self) -> BTreeSet<ConnectionId> {
-        self.blocks
-            .values()
-            .filter_map(|block| match block.phase {
-                BlockPhase::Writing { source, .. } | BlockPhase::Received { source, .. } => {
-                    Some(source)
-                }
-                _ => None,
             })
             .collect()
     }
 
+    pub(crate) fn unverified_contributors(&self) -> BTreeSet<ConnectionId> {
+        self.unverified_contributor_blocks.keys().copied().collect()
+    }
+
     pub fn cancel_all(&mut self) -> Result<(), SwarmError> {
         let requested = self
-            .blocks
-            .iter()
-            .flat_map(|(block, state)| {
-                state
-                    .attempts
-                    .iter()
-                    .filter(|attempt| attempt.disposition.is_active())
-                    .map(|attempt| (*block, attempt.id))
-            })
+            .active_attempts
+            .values()
+            .map(|attempt| (attempt.block, attempt.id))
             .collect::<Vec<_>>();
         for (block, attempt) in requested {
             self.terminate_requested(block, attempt, RequestDisposition::Cancelled)?;
@@ -1471,16 +1591,29 @@ impl SwarmState {
         let writing = self
             .blocks
             .iter()
-            .filter_map(|(block, state)| {
-                matches!(state.phase, BlockPhase::Writing { .. }).then_some(*block)
+            .filter_map(|(block, state)| match state.phase {
+                BlockPhase::Writing { source, .. } => Some((*block, source)),
+                _ => None,
             })
             .collect::<Vec<_>>();
-        for block in writing {
+        for (block, source) in writing {
             self.blocks
                 .get_mut(&block)
                 .ok_or(SwarmError::UnknownBlock(block))?
                 .phase = BlockPhase::Missing;
+            self.writing_blocks = self
+                .writing_blocks
+                .checked_sub(1)
+                .ok_or(SwarmError::Invariant("writing block count underflow"))?;
+            self.missing_blocks = self
+                .missing_blocks
+                .checked_add(1)
+                .ok_or(SwarmError::ArithmeticOverflow("missing block count"))?;
+            self.release_unverified_contribution(source)?;
         }
+        self.active_pieces.clear();
+        self.requestable_active_pieces.clear();
+        self.active_piece_bytes = 0;
         self.pending_dials.clear();
         Ok(())
     }
@@ -1489,13 +1622,13 @@ impl SwarmState {
         if self.connections.len() < self.config.max_established_connections {
             return None;
         }
-        let wanted_pieces = self.incomplete_piece_indices();
+        let wanted_pieces = &self.incomplete_pieces;
         self.connections
             .iter()
             .filter(|(id, connection)| {
                 now.saturating_sub(connection.last_useful_at.unwrap_or(connection.connected_at))
                     >= self.config.unproductive_grace
-                    && !self.has_unique_wanted_piece(**id, &wanted_pieces)
+                    && !self.has_unique_wanted_piece(**id, wanted_pieces)
             })
             .filter_map(|(id, connection)| {
                 let has_wanted = wanted_pieces
@@ -1536,54 +1669,24 @@ impl SwarmState {
     }
 
     pub fn snapshot(&self, now: Duration) -> SwarmSnapshot {
-        let mut missing = 0;
-        let mut requested = 0;
-        let mut active_request_attempts = 0_usize;
-        let mut active_duplicate_attempts = 0_usize;
-        let mut writing = 0;
-        let mut received = 0;
-        let mut verified = 0;
         let mut oldest_issued = None;
         let mut next_expiry = None;
         let mut oldest_by_connection = BTreeMap::new();
-        for block in self.blocks.values() {
-            match block.phase {
-                BlockPhase::Missing => missing += 1,
-                BlockPhase::Requested => {
-                    requested += 1;
-                    let mut block_active_attempts = 0_usize;
-                    for attempt in block
-                        .attempts
-                        .iter()
-                        .filter(|attempt| attempt.disposition.is_active())
-                    {
-                        block_active_attempts = block_active_attempts.saturating_add(1);
-                        oldest_issued =
-                            Some(oldest_issued.map_or(attempt.issued_at, |oldest: Duration| {
-                                oldest.min(attempt.issued_at)
-                            }));
-                        oldest_by_connection
-                            .entry(attempt.connection)
-                            .and_modify(|oldest: &mut Duration| {
-                                *oldest = (*oldest).min(attempt.issued_at);
-                            })
-                            .or_insert(attempt.issued_at);
-                        let deadline = attempt
-                            .issued_at
-                            .checked_add(self.config.request_timeout)
-                            .unwrap_or(Duration::MAX);
-                        next_expiry =
-                            Some(next_expiry.map_or(deadline, |next: Duration| next.min(deadline)));
-                    }
-                    active_request_attempts =
-                        active_request_attempts.saturating_add(block_active_attempts);
-                    active_duplicate_attempts = active_duplicate_attempts
-                        .saturating_add(block_active_attempts.saturating_sub(1));
-                }
-                BlockPhase::Writing { .. } => writing += 1,
-                BlockPhase::Received { .. } => received += 1,
-                BlockPhase::Verified => verified += 1,
-            }
+        for attempt in self.active_attempts.values() {
+            oldest_issued = Some(oldest_issued.map_or(attempt.issued_at, |oldest: Duration| {
+                oldest.min(attempt.issued_at)
+            }));
+            oldest_by_connection
+                .entry(attempt.connection)
+                .and_modify(|oldest: &mut Duration| {
+                    *oldest = (*oldest).min(attempt.issued_at);
+                })
+                .or_insert(attempt.issued_at);
+            let deadline = attempt
+                .issued_at
+                .checked_add(self.config.request_timeout)
+                .unwrap_or(Duration::MAX);
+            next_expiry = Some(next_expiry.map_or(deadline, |next: Duration| next.min(deadline)));
         }
         let mut request_timeout_min = None;
         let mut request_timeout_max = None;
@@ -1601,7 +1704,6 @@ impl SwarmState {
                     Some(next_expiry.map_or(deadline, |next: Duration| next.min(deadline)));
             }
         }
-        let active_pieces = self.active_piece_indices();
         SwarmSnapshot {
             pending_dials: self.pending_dials.len(),
             connected_peers: self.connections.len(),
@@ -1610,15 +1712,18 @@ impl SwarmState {
                 .values()
                 .filter(|connection| !connection.choking)
                 .count(),
-            missing_blocks: missing,
-            requested_blocks: requested,
-            active_request_attempts,
-            active_duplicate_attempts,
-            writing_blocks: writing,
-            received_blocks: received,
-            verified_blocks: verified,
-            active_piece_count: active_pieces.len(),
-            active_piece_bytes: self.active_piece_bytes(&active_pieces),
+            missing_blocks: self.missing_blocks,
+            requested_blocks: self.requested_blocks,
+            active_request_attempts: self.active_attempts.len(),
+            active_duplicate_attempts: self
+                .active_attempts
+                .len()
+                .saturating_sub(self.requested_blocks),
+            writing_blocks: self.writing_blocks,
+            received_blocks: self.received_blocks,
+            verified_blocks: self.verified_blocks,
+            active_piece_count: self.active_pieces.len(),
+            active_piece_bytes: self.active_piece_bytes,
             outstanding_request_bytes: self.outstanding_request_bytes,
             outstanding_request_high_water: self.outstanding_request_high_water,
             request_target_total: self
@@ -1670,26 +1775,16 @@ impl SwarmState {
     }
 
     pub(crate) fn connection_activity(&self, now: Duration) -> Vec<ConnectionActivitySnapshot> {
-        let wanted = self.incomplete_piece_indices();
         let mut requests = BTreeMap::<ConnectionId, (usize, usize, Option<Duration>)>::new();
-        for (key, state) in &self.blocks {
-            if !matches!(state.phase, BlockPhase::Requested) {
-                continue;
-            }
-            for attempt in state
-                .attempts
-                .iter()
-                .filter(|attempt| attempt.disposition.is_active())
-            {
-                let entry = requests.entry(attempt.connection).or_default();
-                entry.0 = entry.0.saturating_add(1);
-                entry.1 = entry.1.saturating_add(key.length as usize);
-                entry.2 = Some(
-                    entry
-                        .2
-                        .map_or(attempt.issued_at, |oldest| oldest.min(attempt.issued_at)),
-                );
-            }
+        for attempt in self.active_attempts.values() {
+            let entry = requests.entry(attempt.connection).or_default();
+            entry.0 = entry.0.saturating_add(1);
+            entry.1 = entry.1.saturating_add(attempt.block.length as usize);
+            entry.2 = Some(
+                entry
+                    .2
+                    .map_or(attempt.issued_at, |oldest| oldest.min(attempt.issued_at)),
+            );
         }
         self.connections
             .iter()
@@ -1712,7 +1807,8 @@ impl SwarmState {
                 ConnectionActivitySnapshot {
                     id: *id,
                     choking: connection.choking,
-                    wanted_piece_count: wanted
+                    wanted_piece_count: self
+                        .incomplete_pieces
                         .iter()
                         .filter(|piece| connection.availability[**piece])
                         .count(),
@@ -1741,10 +1837,10 @@ impl SwarmState {
         if self.connections.len() < self.config.max_established_connections {
             return None;
         }
-        let wanted_pieces = self.incomplete_piece_indices();
+        let wanted_pieces = &self.incomplete_pieces;
         self.connections
             .iter()
-            .filter(|(id, _)| !self.has_unique_wanted_piece(**id, &wanted_pieces))
+            .filter(|(id, _)| !self.has_unique_wanted_piece(**id, wanted_pieces))
             .filter(|(id, connection)| {
                 let has_wanted = wanted_pieces
                     .iter()
@@ -1795,28 +1891,20 @@ impl SwarmState {
         if connection.choking {
             return Ok(None);
         }
-        let active = self.active_piece_indices();
-        for piece in &active {
+        for piece in &self.requestable_active_pieces {
             if connection.availability[*piece]
                 && let Some(block) = self.first_missing_block(*piece as u32)
             {
                 return Ok(Some(block));
             }
         }
-        for (&piece, state) in &self.pieces {
-            let index = usize::try_from(piece)
-                .map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
-            if active.contains(&index)
-                || !connection.availability[index]
-                || state.blocks.iter().all(|block| {
-                    self.blocks
-                        .get(block)
-                        .is_some_and(|block| matches!(block.phase, BlockPhase::Verified))
-                })
-            {
+        for &index in &self.incomplete_pieces {
+            let piece =
+                u32::try_from(index).map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
+            if self.active_pieces.contains(&index) || !connection.availability[index] {
                 continue;
             }
-            if !self.can_activate_piece(index, &active) {
+            if !self.can_activate_piece(index) {
                 continue;
             }
             if let Some(block) = self.first_missing_block(piece) {
@@ -1865,51 +1953,20 @@ impl SwarmState {
             })
     }
 
-    fn active_piece_indices(&self) -> BTreeSet<usize> {
-        self.pieces
-            .iter()
-            .filter_map(|(&piece, state)| {
-                state
-                    .blocks
-                    .iter()
-                    .any(|block| {
-                        self.blocks.get(block).is_some_and(|block| {
-                            matches!(
-                                block.phase,
-                                BlockPhase::Requested
-                                    | BlockPhase::Writing { .. }
-                                    | BlockPhase::Received { .. }
-                            )
-                        })
-                    })
-                    .then(|| usize::try_from(piece).ok())
-                    .flatten()
-            })
-            .collect()
-    }
-
     fn piece_working_set_bytes(&self, piece: usize) -> usize {
         let Ok(piece) = u32::try_from(piece) else {
             return usize::MAX;
         };
-        self.pieces.get(&piece).map_or(0, |state| {
-            state.blocks.iter().fold(0_usize, |total, block| {
-                total.saturating_add(block.length as usize)
-            })
-        })
+        self.pieces
+            .get(&piece)
+            .map_or(0, |state| state.working_set_bytes)
     }
 
-    fn active_piece_bytes(&self, active: &BTreeSet<usize>) -> usize {
-        active.iter().fold(0_usize, |total, piece| {
-            total.saturating_add(self.piece_working_set_bytes(*piece))
-        })
-    }
-
-    fn can_activate_piece(&self, piece: usize, active: &BTreeSet<usize>) -> bool {
-        if active.is_empty() {
+    fn can_activate_piece(&self, piece: usize) -> bool {
+        if self.active_pieces.is_empty() {
             return true;
         }
-        self.active_piece_bytes(active)
+        self.active_piece_bytes
             .checked_add(self.piece_working_set_bytes(piece))
             .is_some_and(|bytes| bytes <= self.config.max_active_piece_bytes)
     }
@@ -1964,6 +2021,34 @@ impl SwarmState {
             disposition: RequestDisposition::Requested,
         });
         state.phase = BlockPhase::Requested;
+        if !endgame {
+            self.missing_blocks = self
+                .missing_blocks
+                .checked_sub(1)
+                .ok_or(SwarmError::Invariant("missing block count underflow"))?;
+            self.requested_blocks = self
+                .requested_blocks
+                .checked_add(1)
+                .ok_or(SwarmError::ArithmeticOverflow("requested block count"))?;
+            self.activate_piece(block.piece)?;
+        }
+        let attempt = RequestAttempt {
+            id: attempt_id,
+            block,
+            connection,
+            issued_at: now,
+            disposition: RequestDisposition::Requested,
+        };
+        if self.active_attempts.insert(attempt_id, attempt).is_some() {
+            return Err(SwarmError::Invariant(
+                "request attempt identifier was already active",
+            ));
+        }
+        let connection_state = self.connection_mut(connection)?;
+        connection_state.active_request_count =
+            connection_state.active_request_count.checked_add(1).ok_or(
+                SwarmError::ArithmeticOverflow("connection active request count"),
+            )?;
         let length = usize::try_from(block.length)
             .map_err(|_| SwarmError::ArithmeticOverflow("block length"))?;
         self.outstanding_request_bytes = self
@@ -1989,36 +2074,58 @@ impl SwarmState {
         attempt_id: RequestAttemptId,
         disposition: RequestDisposition,
     ) -> Result<(), SwarmError> {
-        let state = self
-            .blocks
-            .get_mut(&block)
-            .ok_or(SwarmError::UnknownBlock(block))?;
-        if !matches!(state.phase, BlockPhase::Requested) {
-            return Err(SwarmError::InvalidTransition(
-                "request attempt no longer owns the block",
-            ));
-        }
-        let attempt = state
-            .attempts
-            .iter_mut()
-            .find(|attempt| attempt.id == attempt_id)
-            .ok_or(SwarmError::Invariant("active request attempt is missing"))?;
-        if !attempt.disposition.is_active() {
-            return Err(SwarmError::Invariant(
-                "active request has a terminal disposition",
-            ));
-        }
-        attempt.disposition = disposition;
-        state.phase = if state
-            .attempts
-            .iter()
-            .any(|attempt| attempt.disposition.is_active())
-        {
-            BlockPhase::Requested
-        } else {
-            BlockPhase::Missing
+        let (connection, became_missing) = {
+            let state = self
+                .blocks
+                .get_mut(&block)
+                .ok_or(SwarmError::UnknownBlock(block))?;
+            if !matches!(state.phase, BlockPhase::Requested) {
+                return Err(SwarmError::InvalidTransition(
+                    "request attempt no longer owns the block",
+                ));
+            }
+            let attempt = state
+                .attempts
+                .iter_mut()
+                .find(|attempt| attempt.id == attempt_id)
+                .ok_or(SwarmError::Invariant("active request attempt is missing"))?;
+            if !attempt.disposition.is_active() {
+                return Err(SwarmError::Invariant(
+                    "active request has a terminal disposition",
+                ));
+            }
+            let connection = attempt.connection;
+            attempt.disposition = disposition;
+            let became_missing = !state
+                .attempts
+                .iter()
+                .any(|attempt| attempt.disposition.is_active());
+            state.phase = if became_missing {
+                BlockPhase::Missing
+            } else {
+                BlockPhase::Requested
+            };
+            trim_terminal_attempts(state, self.config.max_terminal_attempts_per_block, None)?;
+            (connection, became_missing)
         };
-        trim_terminal_attempts(state, self.config.max_terminal_attempts_per_block, None)?;
+        if self.active_attempts.remove(&attempt_id).is_none() {
+            return Err(SwarmError::Invariant(
+                "terminated request is absent from the active index",
+            ));
+        }
+        self.release_connection_request(connection)?;
+        if became_missing {
+            self.requested_blocks = self
+                .requested_blocks
+                .checked_sub(1)
+                .ok_or(SwarmError::Invariant("requested block count underflow"))?;
+            self.missing_blocks = self
+                .missing_blocks
+                .checked_add(1)
+                .ok_or(SwarmError::ArithmeticOverflow("missing block count"))?;
+            self.deactivate_piece_if_idle(block.piece)?;
+            self.refresh_requestable_piece(block.piece)?;
+        }
         self.release_request(block.length)
     }
 
@@ -2028,17 +2135,10 @@ impl SwarmState {
         disposition: RequestDisposition,
     ) -> Result<Vec<BlockKey>, SwarmError> {
         let requested = self
-            .blocks
-            .iter()
-            .flat_map(|(block, state)| {
-                state
-                    .attempts
-                    .iter()
-                    .filter(|attempt| {
-                        attempt.disposition.is_active() && attempt.connection == connection
-                    })
-                    .map(|attempt| (*block, attempt.id))
-            })
+            .active_attempts
+            .values()
+            .filter(|attempt| attempt.connection == connection)
+            .map(|attempt| (attempt.block, attempt.id))
             .collect::<Vec<_>>();
         let mut released = Vec::with_capacity(requested.len());
         for (block, attempt) in requested {
@@ -2058,37 +2158,117 @@ impl SwarmState {
         Ok(())
     }
 
-    fn connection_request_count(&self, connection: ConnectionId) -> usize {
-        self.blocks
-            .values()
-            .map(|state| {
-                state
-                    .attempts
-                    .iter()
-                    .filter(|attempt| {
-                        attempt.disposition.is_active() && attempt.connection == connection
-                    })
-                    .count()
-            })
-            .sum()
+    fn release_connection_request(&mut self, connection: ConnectionId) -> Result<(), SwarmError> {
+        let Some(connection) = self.connections.get_mut(&connection) else {
+            return Err(SwarmError::Invariant(
+                "active request refers to an absent connection",
+            ));
+        };
+        connection.active_request_count =
+            connection
+                .active_request_count
+                .checked_sub(1)
+                .ok_or(SwarmError::Invariant(
+                    "connection active request count underflow",
+                ))?;
+        Ok(())
     }
 
-    fn incomplete_piece_indices(&self) -> BTreeSet<usize> {
-        self.pieces
+    fn note_unverified_contribution(&mut self, connection: ConnectionId) -> Result<(), SwarmError> {
+        let count = self
+            .unverified_contributor_blocks
+            .entry(connection)
+            .or_default();
+        *count = count.checked_add(1).ok_or(SwarmError::ArithmeticOverflow(
+            "unverified contributor block count",
+        ))?;
+        Ok(())
+    }
+
+    fn release_unverified_contribution(
+        &mut self,
+        connection: ConnectionId,
+    ) -> Result<(), SwarmError> {
+        let count = self
+            .unverified_contributor_blocks
+            .get_mut(&connection)
+            .ok_or(SwarmError::Invariant(
+                "unverified contributor is absent from the active index",
+            ))?;
+        *count = count.checked_sub(1).ok_or(SwarmError::Invariant(
+            "unverified contributor block count underflow",
+        ))?;
+        if *count == 0 {
+            self.unverified_contributor_blocks.remove(&connection);
+        }
+        Ok(())
+    }
+
+    fn activate_piece(&mut self, piece: u32) -> Result<(), SwarmError> {
+        let index =
+            usize::try_from(piece).map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
+        if self.active_pieces.insert(index) {
+            self.active_piece_bytes = self
+                .active_piece_bytes
+                .checked_add(self.piece_working_set_bytes(index))
+                .ok_or(SwarmError::ArithmeticOverflow("active piece bytes"))?;
+        }
+        self.refresh_requestable_piece(piece)?;
+        Ok(())
+    }
+
+    fn deactivate_piece(&mut self, piece: u32) -> Result<(), SwarmError> {
+        let index =
+            usize::try_from(piece).map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
+        if !self.active_pieces.remove(&index) {
+            return Ok(());
+        }
+        self.requestable_active_pieces.remove(&index);
+        self.active_piece_bytes = self
+            .active_piece_bytes
+            .checked_sub(self.piece_working_set_bytes(index))
+            .ok_or(SwarmError::Invariant("active piece byte count underflow"))?;
+        Ok(())
+    }
+
+    fn refresh_requestable_piece(&mut self, piece: u32) -> Result<(), SwarmError> {
+        let index =
+            usize::try_from(piece).map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
+        if self.active_pieces.contains(&index) && self.first_missing_block(piece).is_some() {
+            self.requestable_active_pieces.insert(index);
+        } else {
+            self.requestable_active_pieces.remove(&index);
+        }
+        Ok(())
+    }
+
+    fn deactivate_piece_if_idle(&mut self, piece: u32) -> Result<(), SwarmError> {
+        let active = self
+            .pieces
+            .get(&piece)
+            .ok_or(SwarmError::UnknownPiece(piece))?
+            .blocks
             .iter()
-            .filter_map(|(&piece, state)| {
-                state
-                    .blocks
-                    .iter()
-                    .any(|block| {
-                        self.blocks
-                            .get(block)
-                            .is_some_and(|block| !matches!(block.phase, BlockPhase::Verified))
-                    })
-                    .then(|| usize::try_from(piece).ok())
-                    .flatten()
-            })
-            .collect()
+            .any(|block| {
+                self.blocks.get(block).is_some_and(|block| {
+                    matches!(
+                        block.phase,
+                        BlockPhase::Requested
+                            | BlockPhase::Writing { .. }
+                            | BlockPhase::Received { .. }
+                    )
+                })
+            });
+        if !active {
+            self.deactivate_piece(piece)?;
+        }
+        Ok(())
+    }
+
+    fn connection_request_count(&self, connection: ConnectionId) -> usize {
+        self.connections
+            .get(&connection)
+            .map_or(0, |state| state.active_request_count)
     }
 
     fn has_unique_wanted_piece(
@@ -2111,21 +2291,17 @@ impl SwarmState {
     }
 
     fn no_request_reason(&self) -> Option<NoRequestReason> {
-        if self
-            .blocks
-            .values()
-            .all(|block| matches!(block.phase, BlockPhase::Verified))
-        {
+        if self.is_complete() {
             return Some(NoRequestReason::Complete);
         }
         if self.connections.is_empty() {
             return Some(NoRequestReason::NoConnections);
         }
-        let wanted = self.incomplete_piece_indices();
-        let mut useful = self
-            .connections
-            .values()
-            .filter(|connection| wanted.iter().any(|piece| connection.availability[*piece]));
+        let mut useful = self.connections.values().filter(|connection| {
+            self.incomplete_pieces
+                .iter()
+                .any(|piece| connection.availability[*piece])
+        });
         let useful_count = useful.clone().count();
         if useful_count == 0 {
             return Some(NoRequestReason::NoPeerHasWantedPiece);
@@ -2143,18 +2319,10 @@ impl SwarmState {
         }) {
             return Some(NoRequestReason::RequestWindowsFull);
         }
-        let active = self.active_piece_indices();
-        let blocked_by_working_set = self.pieces.iter().all(|(piece, state)| {
-            let incomplete = state.blocks.iter().any(|block| {
-                self.blocks
-                    .get(block)
-                    .is_some_and(|block| !matches!(block.phase, BlockPhase::Verified))
-            });
-            !incomplete
-                || usize::try_from(*piece).map_or(true, |piece| {
-                    active.contains(&piece) || !self.can_activate_piece(piece, &active)
-                })
-        });
+        let blocked_by_working_set = self
+            .incomplete_pieces
+            .iter()
+            .all(|piece| self.active_pieces.contains(piece) || !self.can_activate_piece(*piece));
         if blocked_by_working_set {
             return Some(NoRequestReason::ActivePieceLimit);
         }
@@ -2325,6 +2493,119 @@ mod tests {
         }
         state.set_bitfield(id, availability).expect("bitfield");
         state.set_choking(id, choking).expect("choke state");
+    }
+
+    fn assert_cached_indexes(state: &SwarmState) {
+        let mut phases = [0_usize; 5];
+        let mut active_attempts = BTreeMap::new();
+        let mut connection_requests = BTreeMap::<ConnectionId, usize>::new();
+        let mut unverified_contributor_blocks = BTreeMap::<ConnectionId, usize>::new();
+        for (block, block_state) in &state.blocks {
+            phases[match block_state.phase {
+                BlockPhase::Missing => 0,
+                BlockPhase::Requested => 1,
+                BlockPhase::Writing { .. } => 2,
+                BlockPhase::Received { .. } => 3,
+                BlockPhase::Verified => 4,
+            }] += 1;
+            if let BlockPhase::Writing { source, .. } | BlockPhase::Received { source, .. } =
+                block_state.phase
+            {
+                *unverified_contributor_blocks.entry(source).or_default() += 1;
+            }
+            for attempt in block_state
+                .attempts
+                .iter()
+                .filter(|attempt| attempt.disposition.is_active())
+            {
+                assert_eq!(attempt.block, *block);
+                assert_eq!(active_attempts.insert(attempt.id, *attempt), None);
+                *connection_requests.entry(attempt.connection).or_default() += 1;
+            }
+        }
+        assert_eq!(state.missing_blocks, phases[0]);
+        assert_eq!(state.requested_blocks, phases[1]);
+        assert_eq!(state.writing_blocks, phases[2]);
+        assert_eq!(state.received_blocks, phases[3]);
+        assert_eq!(state.verified_blocks, phases[4]);
+        assert_eq!(state.active_attempts, active_attempts);
+        assert_eq!(
+            state.unverified_contributor_blocks,
+            unverified_contributor_blocks
+        );
+        assert_eq!(
+            state.outstanding_request_bytes,
+            active_attempts
+                .values()
+                .map(|attempt| attempt.block.length as usize)
+                .sum::<usize>()
+        );
+        for (id, connection) in &state.connections {
+            assert_eq!(
+                connection.active_request_count,
+                connection_requests.get(id).copied().unwrap_or(0)
+            );
+        }
+
+        let incomplete_pieces = state
+            .pieces
+            .iter()
+            .filter_map(|(&piece, piece_state)| {
+                piece_state
+                    .blocks
+                    .iter()
+                    .any(|block| {
+                        !matches!(
+                            state.blocks.get(block).map(|block| block.phase),
+                            Some(BlockPhase::Verified)
+                        )
+                    })
+                    .then(|| usize::try_from(piece).expect("piece index"))
+            })
+            .collect::<BTreeSet<_>>();
+        let active_pieces = state
+            .pieces
+            .iter()
+            .filter_map(|(&piece, piece_state)| {
+                piece_state
+                    .blocks
+                    .iter()
+                    .any(|block| {
+                        state.blocks.get(block).is_some_and(|block| {
+                            matches!(
+                                block.phase,
+                                BlockPhase::Requested
+                                    | BlockPhase::Writing { .. }
+                                    | BlockPhase::Received { .. }
+                            )
+                        })
+                    })
+                    .then(|| usize::try_from(piece).expect("piece index"))
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(state.incomplete_pieces, incomplete_pieces);
+        assert_eq!(state.active_pieces, active_pieces);
+        let requestable_active_pieces = active_pieces
+            .iter()
+            .copied()
+            .filter(|piece| {
+                let piece = u32::try_from(*piece).expect("piece index");
+                state.pieces[&piece].blocks.iter().any(|block| {
+                    state
+                        .blocks
+                        .get(block)
+                        .is_some_and(|block| matches!(block.phase, BlockPhase::Missing))
+                })
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(state.requestable_active_pieces, requestable_active_pieces);
+        assert_eq!(
+            state.active_piece_bytes,
+            active_pieces
+                .iter()
+                .map(|piece| state.piece_working_set_bytes(*piece))
+                .sum::<usize>()
+        );
     }
 
     #[test]
@@ -2936,6 +3217,7 @@ mod tests {
         assert_eq!(initial.active_duplicate_attempts, 1);
         assert_eq!(initial.endgame_assignments, 1);
         assert_eq!(initial.outstanding_request_bytes, 3 * BLOCK as usize);
+        assert_cached_indexes(&state);
 
         let winner = owners[1];
         let loser = owners[0];
@@ -2958,9 +3240,11 @@ mod tests {
         assert_eq!(writing.active_duplicate_attempts, 0);
         assert_eq!(writing.cancelled_request_attempts, 1);
         assert_eq!(writing.outstanding_request_bytes, BLOCK as usize);
+        assert_cached_indexes(&state);
         state
             .finish_write(winner.block, true, Duration::from_millis(1))
             .expect("winning write");
+        assert_cached_indexes(&state);
         assert_eq!(
             state
                 .receive_block(loser.connection, loser.block, Duration::from_millis(2))
@@ -3130,6 +3414,7 @@ mod tests {
         assert_eq!(failed.piece_hash_failures, 1);
         assert_eq!(failed.failed_piece_bytes, 2 * BLOCK as usize);
         assert_eq!(failed.last_hash_failure_contributors, 2);
+        assert_cached_indexes(&state);
 
         state
             .set_choking(connection(2), true)
@@ -3153,6 +3438,7 @@ mod tests {
             state.snapshot(Duration::ZERO).no_request_reason,
             Some(NoRequestReason::Complete)
         );
+        assert_cached_indexes(&state);
     }
 
     #[test]
@@ -3255,6 +3541,7 @@ mod tests {
             .receive_block(connection(1), assigned[0].block, Duration::ZERO)
             .expect("payload");
         state.cancel_all().expect("cancel");
+        assert_cached_indexes(&state);
         let snapshot = state.snapshot(Duration::ZERO);
         assert_eq!(snapshot.pending_dials, 0);
         assert_eq!(snapshot.outstanding_request_bytes, 0);

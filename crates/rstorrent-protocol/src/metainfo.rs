@@ -3,11 +3,13 @@ use std::fmt;
 
 use sha1::{Digest, Sha1};
 
-use crate::bencode::{DictionaryEntry, Node, ParseError, Value, parse};
+use crate::bencode::{
+    DictionaryEntry, Limits, MAX_BENCODE_INPUT_LENGTH, Node, ParseError, Value, parse_with_limits,
+};
 
 pub const MAX_PIECE_LENGTH: u32 = 256 * 1024 * 1024;
 pub const MAX_FILES: usize = 4096;
-pub const MAX_PIECES: usize = (512 * 1024) / 20;
+pub const MAX_PIECES: usize = MAX_BENCODE_INPUT_LENGTH / 20;
 pub const MAX_PATH_COMPONENTS: usize = 32;
 pub const MAX_PATH_COMPONENT_LENGTH: usize = 255;
 pub const MAX_PATH_LENGTH: usize = 4096;
@@ -120,19 +122,19 @@ impl From<ParseError> for MetainfoError {
 
 impl Metainfo {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, MetainfoError> {
-        let root = parse(bytes)?;
+        let root = parse_metainfo(bytes)?;
         let root_entries = dictionary(&root).ok_or(MetainfoError::RootIsNotDictionary)?;
         let info_node = field(root_entries, b"info").ok_or(MetainfoError::MissingField("info"))?;
         Self::from_info_node(bytes, info_node)
     }
 
     pub fn from_info_bytes(bytes: &[u8]) -> Result<Self, MetainfoError> {
-        let info_node = parse(bytes)?;
+        let info_node = parse_metainfo(bytes)?;
         Self::from_info_node(bytes, &info_node)
     }
 
     pub fn info_bytes(bytes: &[u8]) -> Result<&[u8], MetainfoError> {
-        let root = parse(bytes)?;
+        let root = parse_metainfo(bytes)?;
         let root_entries = dictionary(&root).ok_or(MetainfoError::RootIsNotDictionary)?;
         let info_node = field(root_entries, b"info").ok_or(MetainfoError::MissingField("info"))?;
         Ok(&bytes[info_node.span.clone()])
@@ -255,6 +257,16 @@ impl Metainfo {
         let remaining = self.total_length.checked_sub(begin)?;
         u32::try_from(remaining.min(u64::from(self.piece_length))).ok()
     }
+}
+
+fn parse_metainfo(bytes: &[u8]) -> Result<Node<'_>, ParseError> {
+    parse_with_limits(
+        bytes,
+        Limits {
+            max_string_length: MAX_PIECES * 20,
+            ..Limits::default()
+        },
+    )
 }
 
 fn parse_multi_files(
@@ -684,5 +696,20 @@ mod tests {
             Metainfo::from_bytes(&single_metainfo(1, MAX_PIECE_LENGTH + 1, &[[3; 20]])),
             Err(MetainfoError::InvalidField("info.piece length"))
         );
+    }
+
+    #[test]
+    fn accepts_ten_gibibytes_with_256_kib_pieces() {
+        const TOTAL_LENGTH: u64 = 10 * 1024 * 1024 * 1024;
+        const PIECE_LENGTH: u32 = 256 * 1024;
+        let piece_count = usize::try_from(TOTAL_LENGTH / u64::from(PIECE_LENGTH))
+            .expect("piece count fits usize");
+        let hashes = vec![[7; 20]; piece_count];
+
+        let metainfo = Metainfo::from_bytes(&single_metainfo(TOTAL_LENGTH, PIECE_LENGTH, &hashes))
+            .expect("ordinary large metainfo");
+
+        assert_eq!(metainfo.total_length, TOTAL_LENGTH);
+        assert_eq!(metainfo.piece_count(), 40_960);
     }
 }

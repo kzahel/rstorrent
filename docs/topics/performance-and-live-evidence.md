@@ -906,6 +906,47 @@ post-sync/pre-commit and post-commit crash outcomes remained one-sided. The
 next profile-changing slice is bounded independent write/hash execution; it
 must retain these exact fingerprints, integrity outcomes and cleanup bounds.
 
+## Large Local Throughput Baseline: 2026-08-02
+
+Tactical `054` adds
+`tests/interop/local_throughput_compare.py` as the retained large-transfer
+screen. It uses one pinned libtorrent `2.0.13` loopback seeder, a materialized
+deterministic single-file source, one direct peer, no discovery, alternating
+client order, immediate per-output cleanup and exact whole-file SHA-1. Transfer
+time excludes fixture construction, torrent hashing and final validation.
+
+The first 1 GiB/256 KiB RSTorrent run failed to finish in more than four
+minutes because full swarm geometry was recomputed after each event. Two later
+10 GiB process samples exposed per-piece whole-block contributor scans and
+active-piece scans that included pieces with no missing request. Checked
+incremental phase/request/contributor indexes, a 100 ms maintenance snapshot
+cadence and a requestable-active-piece index removed those costs. The
+10 GiB/256 KiB row moved from 119.525 seconds immediately before the final
+index to 30.042 seconds after it.
+
+The final one-run-per-point screen used executable SHA-256
+`1ac603546048301173505dc784b77a073379878bb6642c339ab240f3d95fa097`:
+
+| Size | Piece | RSTorrent MiB/s | libtorrent MiB/s | RST/libtorrent |
+| --- | ---: | ---: | ---: | ---: |
+| 1 GiB | 256 KiB | 479.5 | 477.9 | 100.3% |
+| 1 GiB | 1 MiB | 638.5 | 485.9 | 131.4% |
+| 1 GiB | 4 MiB | 609.5 | 504.5 | 120.8% |
+| 1 GiB | 16 MiB | 342.3 | 484.4 | 70.7% |
+| 10 GiB | 256 KiB | 340.9 | 362.6 | 94.0% |
+| 10 GiB | 1 MiB | 490.1 | 520.6 | 94.1% |
+| 10 GiB | 4 MiB | 597.0 | 959.0 | 62.3% |
+| 10 GiB | 16 MiB | 288.9 | 948.4 | 30.5% |
+
+Every one of the 16 transfers reported exact bytes, zero failed/redundant
+payload, the expected full-file SHA-1, complete publication and successful
+cleanup. All RSTorrent 10 GiB rows finished in 17.151--35.451 seconds, meeting
+the maintainer's informal under-one-minute screen. This cohort used a warm,
+uncontrolled operating-system page cache and only one run per point, so it is
+a baseline and causal scaling result rather than a stable parity or hardware
+ceiling claim. The larger-piece write-service gap remains open for Tactical
+`054`'s raw-stage and concurrency sweeps.
+
 ## Maintenance Contract
 
 Feature tacticals add measurements only when their owner can report them
