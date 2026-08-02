@@ -72,6 +72,10 @@ Topics own the current truth for a continuing concern. Tactical docs under
   pivot to a JSTorrent-derived detailed desktop/web product and debugging
   surface, an intentional Android presentation split, and the API questions
   that remain open before implementation.
+- [`application-interface-direction.md`](application-interface-direction.md):
+  accepted Library, Transfers, and Workbench product destinations, contextual
+  sidebar and inspector roles, media-library boundaries, and the preserved
+  traditional advanced interface.
 - [`web-ui-design.md`](web-ui-design.md): fresh React and CSS Modules web
   presentation, JSTorrent-inspired information hierarchy, category layer,
   Zustand state ownership, adaptive master/detail navigation, accessibility,

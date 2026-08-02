@@ -26,6 +26,7 @@ __pycache__/
 # Local agent and collaboration runtime artifacts
 /.attachments/
 /.claude/
+/mockups/
 /.yep/
 
 # Editors and operating systems

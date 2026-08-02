@@ -37,6 +37,10 @@ the size-only preference, and applies persisted theme before React content.
 Tactical `051` replaces ambiguous peer flag strings with typed Rust semantics,
 one exhaustive React glyph/label table, full cell accessibility, and a
 separate sortable-header help control containing the complete legend.
+The accepted product information architecture now retains this detailed
+surface as Workbench beside distinct Library and Transfers destinations, as
+recorded in
+[`application-interface-direction.md`](application-interface-direction.md).
 
 ## Purpose
 
@@ -93,19 +97,30 @@ settings, and other session or product concerns use an identifiable right-side
 global group. The accepted storage and piece split lives in
 [`disk-and-piece-inspection`](disk-and-piece-inspection.md).
 
-Add a library and categorization level above the torrent list. This may expose
-derived views such as all, active, downloading, seeding, completed, paused,
-and errors together with durable organizational state such as archived
-torrents and, later, user labels. The sidebar is one presentation of this
-level, not the only way to reach it.
+Use three top-level application destinations rather than making one sidebar
+carry product navigation, torrent filtering, and media organization:
+
+- Library is content-centric media browsing and eventual playback;
+- Transfers is the clean operational torrent queue; and
+- Workbench preserves the current dense torrent table, detailed tabs, and
+  global diagnostic surfaces as a first-class traditional interface.
+
+The accepted responsibilities, continuity rules, media-truth boundary, and
+local mockup record live in
+[`application-interface-direction.md`](application-interface-direction.md).
+The sidebar is contextual to the active destination. Torrent lifecycle filters
+such as active, downloading, seeding, completed, paused, and errors therefore
+belong to Transfers and Workbench rather than being described as a media
+library.
 
 The resulting conceptual hierarchy is:
 
 1. application and session;
-2. library category or organizational view;
-3. torrent collection and selection;
-4. selected torrent and its detail views; and
-5. progressive detail for a peer, file, tracker, piece, or other selected row
+2. Library, Transfers, or Workbench destination;
+3. destination-specific category, filter, and organization;
+4. media or torrent collection and selection;
+5. selected item and its contextual or Workbench detail views; and
+6. progressive detail for a peer, file, tracker, piece, or other selected row
    when useful.
 
 Archive is not deletion. Its exact relationship to pause, queue, content

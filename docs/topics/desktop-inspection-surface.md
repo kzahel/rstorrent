@@ -29,6 +29,12 @@ Tactical `050` extends the shared React Settings surface with browser-local
 Auto, Light, and Dark themes, preserving Interface size and applying persisted
 appearance before React content.
 
+The accepted application-interface direction now preserves this entire dense
+surface as the first-class Workbench destination alongside a content-centric
+Library and clean Transfers queue. Workbench is not hidden behind an advanced
+setting. See
+[`application-interface-direction.md`](application-interface-direction.md).
+
 Tactical `042` makes a magnet's verified metainfo name appear in both the live
 library row and General heading as soon as metadata arrives. The hash-prefix
 label remains only as the truthful pre-metadata fallback.
@@ -65,6 +71,13 @@ hierarchy and detailed views while adding category navigation, adaptive
 master/detail presentation, touch usability, and an accessibility baseline.
 Views may initially contain truthful unavailable states while their RSTorrent
 data feeds do not exist.
+
+The detailed surface graduates into Workbench rather than being displaced by
+cleaner product views. Library and Transfers may simplify their own tasks, but
+they do not need to absorb every diagnostic column or tab, and Workbench does
+not need to conceal its density. Primary navigation belongs in the existing top
+application bar; the left sidebar becomes contextual to the selected
+destination.
 
 The existing categorized logger naturally belongs in the logging view. The
 peer view is the first new live inspection priority because it gives a direct

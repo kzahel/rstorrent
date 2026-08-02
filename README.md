@@ -123,6 +123,9 @@ provenance policy.
 - [Desktop inspection surface](docs/topics/desktop-inspection-surface.md)
   records the accepted JSTorrent-derived desktop/web direction, Android
   presentation split, and the remaining inspection-design questions.
+- [Application interface direction](docs/topics/application-interface-direction.md)
+  records the accepted Library, Transfers, and Workbench destinations, media
+  boundaries, contextual sidebars, and preserved traditional advanced UI.
 - [Application view API](docs/topics/application-view-api.md) records leased
   view sets, typed snapshot/diff recovery, polling and streaming delivery,
   generated TypeScript/schema, and provisional remote routes.
