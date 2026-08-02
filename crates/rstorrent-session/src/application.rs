@@ -56,6 +56,10 @@ pub struct ApplicationConfig {
     #[doc(hidden)]
     pub storage_write_delay_for_testing: Duration,
     #[doc(hidden)]
+    pub storage_write_concurrency_for_testing: usize,
+    #[doc(hidden)]
+    pub storage_hash_concurrency_for_testing: usize,
+    #[doc(hidden)]
     pub checkpoint_sync_delay_for_testing: Duration,
     #[doc(hidden)]
     pub checkpoint_commit_delay_for_testing: Duration,
@@ -81,6 +85,8 @@ impl ApplicationConfig {
             view_set_lease: Duration::from_millis(crate::view_sets::VIEW_SET_LEASE_MILLIS),
             view_set_reaper_interval: Duration::from_millis(VIEW_SET_REAPER_INTERVAL_MILLIS),
             storage_write_delay_for_testing: Duration::ZERO,
+            storage_write_concurrency_for_testing: 4,
+            storage_hash_concurrency_for_testing: 4,
             checkpoint_sync_delay_for_testing: Duration::ZERO,
             checkpoint_commit_delay_for_testing: Duration::ZERO,
             checkpoint_stage_trace_for_testing: false,
@@ -116,6 +122,8 @@ pub struct ApplicationService {
     network: NetworkConfig,
     download_resource_limits: DownloadResourceLimits,
     storage_write_delay_for_testing: Duration,
+    storage_write_concurrency_for_testing: usize,
+    storage_hash_concurrency_for_testing: usize,
     checkpoint_sync_delay_for_testing: Duration,
     checkpoint_commit_delay_for_testing: Duration,
     checkpoint_stage_trace_for_testing: bool,
@@ -152,6 +160,13 @@ impl ApplicationService {
         {
             return Err(ApplicationError::Configuration(
                 "test storage delay exceeds its fixed maximum".to_owned(),
+            ));
+        }
+        if !(1..=8).contains(&config.storage_write_concurrency_for_testing)
+            || !(1..=8).contains(&config.storage_hash_concurrency_for_testing)
+        {
+            return Err(ApplicationError::Configuration(
+                "test storage concurrency must be between 1 and 8".to_owned(),
             ));
         }
         let mut storage_roots = BTreeMap::new();
@@ -195,6 +210,8 @@ impl ApplicationService {
             network: config.network,
             download_resource_limits: config.download_resource_limits,
             storage_write_delay_for_testing: config.storage_write_delay_for_testing,
+            storage_write_concurrency_for_testing: config.storage_write_concurrency_for_testing,
+            storage_hash_concurrency_for_testing: config.storage_hash_concurrency_for_testing,
             checkpoint_sync_delay_for_testing: config.checkpoint_sync_delay_for_testing,
             checkpoint_commit_delay_for_testing: config.checkpoint_commit_delay_for_testing,
             checkpoint_stage_trace_for_testing: config.checkpoint_stage_trace_for_testing,
@@ -971,6 +988,12 @@ impl ApplicationService {
     fn download_control(&self, torrent_id: &str) -> DownloadControl {
         let control = DownloadControl::new();
         control.set_storage_write_delay(self.storage_write_delay_for_testing);
+        control
+            .set_storage_execution_limits_for_testing(
+                self.storage_write_concurrency_for_testing,
+                self.storage_hash_concurrency_for_testing,
+            )
+            .expect("application configuration validated diagnostic storage limits");
         control.set_checkpoint_sync_delay_for_testing(self.checkpoint_sync_delay_for_testing);
         control.set_checkpoint_commit_delay_for_testing(self.checkpoint_commit_delay_for_testing);
         control.set_activity_sink(Arc::new(ViewActivitySink {

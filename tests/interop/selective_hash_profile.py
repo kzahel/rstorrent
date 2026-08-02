@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import gc
 import hashlib
+import os
 import shutil
 import subprocess
 import sys
@@ -80,6 +81,10 @@ class ProfileResult:
     storage_write_batch_blocks_high_water: int
     storage_write_batch_bytes_high_water: int
     storage_write_service_micros: int
+    storage_write_active_high_water: int
+    storage_hash_operations: int
+    storage_hash_service_micros: int
+    storage_hash_active_high_water: int
     file_hashes: dict[str, str]
     cleanup_succeeded: bool = False
 
@@ -180,6 +185,10 @@ def parse_diagnostic(output: str, config: ProfileConfig) -> dict[str, str]:
         "storage_write_batch_blocks_high_water",
         "storage_write_batch_bytes_high_water",
         "storage_write_service_micros",
+        "storage_write_active_high_water",
+        "storage_hash_operations",
+        "storage_hash_service_micros",
+        "storage_hash_active_high_water",
     }
     missing = required - values.keys()
     if missing:
@@ -204,6 +213,8 @@ def run_diagnostic(
     peer_port: int,
     output_root: Path,
     config: ProfileConfig,
+    write_concurrency: int,
+    hash_concurrency: int,
 ) -> subprocess.CompletedProcess[str]:
     command = [
         str(binary),
@@ -221,6 +232,11 @@ def run_diagnostic(
     try:
         return subprocess.run(
             command,
+            env={
+                **os.environ,
+                "RSTORRENT_TEST_STORAGE_WRITE_CONCURRENCY": str(write_concurrency),
+                "RSTORRENT_TEST_STORAGE_HASH_CONCURRENCY": str(hash_concurrency),
+            },
             capture_output=True,
             text=True,
             timeout=config.process_timeout_seconds,
@@ -234,7 +250,13 @@ def run_diagnostic(
         ) from error
 
 
-def run_once(binary: Path, config: ProfileConfig, ordinal: int) -> ProfileResult:
+def run_once(
+    binary: Path,
+    config: ProfileConfig,
+    ordinal: int,
+    write_concurrency: int,
+    hash_concurrency: int,
+) -> ProfileResult:
     run_path = Path(tempfile.mkdtemp(prefix=f"rstorrent-selective-hash-{ordinal}-"))
     session: lt.session | None = None
     handle: lt.torrent_handle | None = None
@@ -256,7 +278,13 @@ def run_once(binary: Path, config: ProfileConfig, ordinal: int) -> ProfileResult
         output_root = run_path / "downloaded"
         started = time.monotonic()
         completed = run_diagnostic(
-            binary, torrent_path, peer_port, output_root, config
+            binary,
+            torrent_path,
+            peer_port,
+            output_root,
+            config,
+            write_concurrency,
+            hash_concurrency,
         )
         transfer_seconds = time.monotonic() - started
         alerts.extend(alert.message() for alert in session.pop_alerts())
@@ -302,6 +330,16 @@ def run_once(binary: Path, config: ProfileConfig, ordinal: int) -> ProfileResult
             ),
             storage_write_service_micros=int(
                 diagnostic["storage_write_service_micros"]
+            ),
+            storage_write_active_high_water=int(
+                diagnostic["storage_write_active_high_water"]
+            ),
+            storage_hash_operations=int(diagnostic["storage_hash_operations"]),
+            storage_hash_service_micros=int(
+                diagnostic["storage_hash_service_micros"]
+            ),
+            storage_hash_active_high_water=int(
+                diagnostic["storage_hash_active_high_water"]
             ),
             file_hashes=actual_hashes,
         )
@@ -359,6 +397,12 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument("--binary", type=Path)
     parser.add_argument(
+        "--write-concurrency", type=int, choices=range(1, 9), default=4
+    )
+    parser.add_argument(
+        "--hash-concurrency", type=int, choices=range(1, 9), default=4
+    )
+    parser.add_argument(
         "--profile",
         choices=tuple(PROFILES),
         default="quick",
@@ -379,12 +423,20 @@ def main() -> int:
         f"total_size={config.total_size} piece_size={PIECE_SIZE} "
         f"pieces={config.total_size // PIECE_SIZE} files={len(config.files)} "
         f"blocks={config.total_size // BLOCK_SIZE} "
-        f"payload_allowance={config.payload_allowance}"
+        f"payload_allowance={config.payload_allowance} "
+        f"write_concurrency={arguments.write_concurrency} "
+        f"hash_concurrency={arguments.hash_concurrency}"
     )
     try:
         binary = arguments.binary or build_diagnostic(repository)
         results = [
-            run_once(binary, config, ordinal)
+            run_once(
+                binary,
+                config,
+                ordinal,
+                arguments.write_concurrency,
+                arguments.hash_concurrency,
+            )
             for ordinal in range(1, arguments.runs + 1)
         ]
     except (ScenarioFailure, subprocess.SubprocessError, ValueError) as error:
@@ -402,6 +454,10 @@ def main() -> int:
             f"batch_blocks_high_water={result.storage_write_batch_blocks_high_water} "
             f"batch_bytes_high_water={result.storage_write_batch_bytes_high_water} "
             f"write_service_seconds={result.storage_write_service_micros / 1_000_000:.3f} "
+            f"write_active_high_water={result.storage_write_active_high_water} "
+            f"hash_operations={result.storage_hash_operations} "
+            f"hash_service_seconds={result.storage_hash_service_micros / 1_000_000:.3f} "
+            f"hash_active_high_water={result.storage_hash_active_high_water} "
             f"file_hashes={hashes} cleanup=ok"
         )
     ordered = sorted(result.transfer_seconds for result in results)

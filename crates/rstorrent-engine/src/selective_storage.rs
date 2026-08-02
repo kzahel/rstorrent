@@ -347,6 +347,39 @@ struct ExecutableWriteSpan {
     length: usize,
 }
 
+#[derive(Debug)]
+pub(crate) struct SelectiveWriteJob {
+    payload: Arc<Vec<u8>>,
+    spans: Vec<ExecutableWriteSpan>,
+    stats: SelectiveWriteStats,
+}
+
+impl SelectiveWriteJob {
+    pub(crate) async fn execute(self) -> Result<SelectiveWriteStats, SelectiveStorageError> {
+        let payload = self.payload;
+        tokio::task::spawn_blocking(move || {
+            for span in self.spans {
+                write_all_at(
+                    &span.file,
+                    &payload[span.block_offset..span.block_offset + span.length],
+                    span.file_offset,
+                )?;
+            }
+            Ok::<(), io::Error>(())
+        })
+        .await
+        .map_err(|source| SelectiveStorageError::Io {
+            operation: "join positional selected write",
+            source: io::Error::other(source),
+        })?
+        .map_err(|source| SelectiveStorageError::Io {
+            operation: "write positional selected range",
+            source,
+        })?;
+        Ok(self.stats)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct SelectiveHashIoStats {
     wanted_file_seeks: usize,
@@ -357,7 +390,7 @@ struct SelectiveHashIoStats {
 }
 
 #[derive(Debug)]
-struct BlockingHashPlan {
+pub(crate) struct SelectiveHashPlan {
     spans: Vec<BlockingHashSpan>,
 }
 
@@ -379,7 +412,7 @@ enum BlockingHashSpan {
 
 type BlockingHashResult = Result<([u8; 20], SelectiveHashIoStats), SelectiveStorageError>;
 
-impl BlockingHashPlan {
+impl SelectiveHashPlan {
     fn hash(self) -> BlockingHashResult {
         let mut hasher = Sha1::new();
         let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
@@ -451,6 +484,12 @@ impl BlockingHashPlan {
             }
         }
         Ok((hasher.finalize().into(), stats))
+    }
+
+    pub(crate) async fn execute(self) -> Result<[u8; 20], SelectiveStorageError> {
+        await_blocking_hash(tokio::task::spawn_blocking(move || self.hash()))
+            .await
+            .map(|(hash, _stats)| hash)
     }
 }
 
@@ -936,6 +975,16 @@ impl SelectiveStorage {
         begin: u32,
         bytes: Vec<u8>,
     ) -> Result<SelectiveWriteStats, SelectiveStorageError> {
+        let plan = self.plan_write(piece_index, begin, bytes).await?;
+        self.execute_write_plan(plan).await
+    }
+
+    async fn plan_write(
+        &mut self,
+        piece_index: u32,
+        begin: u32,
+        bytes: Vec<u8>,
+    ) -> Result<SelectiveWritePlan, SelectiveStorageError> {
         let (segments, stats) = self.plan_layout_write(piece_index, begin, bytes.len())?;
         let piece_index_usize = usize::try_from(piece_index)
             .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
@@ -975,18 +1024,34 @@ impl SelectiveStorage {
                 length: segment.length,
             });
         }
-        let plan = SelectiveWritePlan {
+        Ok(SelectiveWritePlan {
             payload,
             spans,
             stats,
-        };
-        self.execute_write_plan(plan).await
+        })
+    }
+
+    pub(crate) async fn prepare_write(
+        &mut self,
+        piece_index: u32,
+        begin: u32,
+        bytes: Vec<u8>,
+    ) -> Result<SelectiveWriteJob, SelectiveStorageError> {
+        let plan = self.plan_write(piece_index, begin, bytes).await?;
+        self.prepare_write_job(plan)
     }
 
     async fn execute_write_plan(
         &self,
         plan: SelectiveWritePlan,
     ) -> Result<SelectiveWriteStats, SelectiveStorageError> {
+        self.prepare_write_job(plan)?.execute().await
+    }
+
+    fn prepare_write_job(
+        &self,
+        plan: SelectiveWritePlan,
+    ) -> Result<SelectiveWriteJob, SelectiveStorageError> {
         let mut executable = Vec::with_capacity(plan.spans.len());
         for span in &plan.spans {
             let end = span
@@ -1027,28 +1092,11 @@ impl SelectiveStorage {
                 length: span.length,
             });
         }
-
-        let payload = plan.payload;
-        tokio::task::spawn_blocking(move || {
-            for span in executable {
-                write_all_at(
-                    &span.file,
-                    &payload[span.block_offset..span.block_offset + span.length],
-                    span.file_offset,
-                )?;
-            }
-            Ok::<(), io::Error>(())
+        Ok(SelectiveWriteJob {
+            payload: plan.payload,
+            spans: executable,
+            stats: plan.stats,
         })
-        .await
-        .map_err(|source| SelectiveStorageError::Io {
-            operation: "join positional selected write",
-            source: io::Error::other(source),
-        })?
-        .map_err(|source| SelectiveStorageError::Io {
-            operation: "write positional selected range",
-            source,
-        })?;
-        Ok(plan.stats)
     }
 
     pub(crate) fn write_stats(
@@ -1102,7 +1150,7 @@ impl SelectiveStorage {
         &self,
         piece_index: usize,
         segments: &[LayoutSegment],
-    ) -> Result<BlockingHashPlan, SelectiveStorageError> {
+    ) -> Result<SelectiveHashPlan, SelectiveStorageError> {
         let mut spans = Vec::with_capacity(segments.len());
         for segment in segments {
             match segment.target {
@@ -1140,20 +1188,27 @@ impl SelectiveStorage {
                 }
             }
         }
-        Ok(BlockingHashPlan { spans })
+        Ok(SelectiveHashPlan { spans })
     }
 
-    async fn hash_piece_with_stats(
-        &mut self,
+    pub(crate) fn prepare_hash(
+        &self,
         piece_index: u32,
-    ) -> Result<([u8; 20], SelectiveHashIoStats), SelectiveStorageError> {
+    ) -> Result<SelectiveHashPlan, SelectiveStorageError> {
         let piece_length = self.layout.piece_length_at(piece_index)?;
         let segments = self
             .layout
             .segments(piece_index, 0, piece_length, &self.selection)?;
         let piece_index = usize::try_from(piece_index)
             .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
-        let plan = self.prepare_blocking_hash_plan(piece_index, &segments)?;
+        self.prepare_blocking_hash_plan(piece_index, &segments)
+    }
+
+    async fn hash_piece_with_stats(
+        &mut self,
+        piece_index: u32,
+    ) -> Result<([u8; 20], SelectiveHashIoStats), SelectiveStorageError> {
+        let plan = self.prepare_hash(piece_index)?;
         await_blocking_hash(tokio::task::spawn_blocking(move || plan.hash())).await
     }
 

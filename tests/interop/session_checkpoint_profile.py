@@ -111,7 +111,12 @@ def wait_for_metadata_checkpoint(
     raise ScenarioFailure("session did not durably checkpoint metadata")
 
 
-def run_once(binary: Path, ordinal: int) -> ProfileResult:
+def run_once(
+    binary: Path,
+    ordinal: int,
+    write_concurrency: int,
+    hash_concurrency: int,
+) -> ProfileResult:
     run_path = Path(tempfile.mkdtemp(prefix=f"rstorrent-checkpoint-{ordinal}-"))
     diagnostics: list[str] = []
     failure: BaseException | None = None
@@ -142,6 +147,8 @@ def run_once(binary: Path, ordinal: int) -> ProfileResult:
             payload_root,
             timeout_seconds=PROCESS_TIMEOUT_SECONDS,
             payload_allowance=PAYLOAD_ALLOWANCE,
+            storage_write_concurrency=write_concurrency,
+            storage_hash_concurrency=hash_concurrency,
         )
         add = envelope(
             "add",
@@ -249,6 +256,12 @@ def parse_arguments() -> argparse.Namespace:
         metavar="1..5",
     )
     parser.add_argument("--binary", type=Path)
+    parser.add_argument(
+        "--write-concurrency", type=int, choices=range(1, 9), default=4
+    )
+    parser.add_argument(
+        "--hash-concurrency", type=int, choices=range(1, 9), default=4
+    )
     return parser.parse_args()
 
 
@@ -260,14 +273,21 @@ def main() -> int:
     print(
         f"scenario=session-checkpoint total_size={TOTAL_SIZE} "
         f"piece_size={PIECE_SIZE} pieces={TOTAL_SIZE // PIECE_SIZE} "
-        f"payload_allowance={PAYLOAD_ALLOWANCE}"
+        f"payload_allowance={PAYLOAD_ALLOWANCE} "
+        f"write_concurrency={arguments.write_concurrency} "
+        f"hash_concurrency={arguments.hash_concurrency}"
     )
     try:
         binary = arguments.binary or build_binary(repository)
         binary = binary.resolve()
         print(f"binary={binary} binary_sha256={sha256_file(binary)}")
         results = [
-            run_once(binary, ordinal)
+            run_once(
+                binary,
+                ordinal,
+                arguments.write_concurrency,
+                arguments.hash_concurrency,
+            )
             for ordinal in range(1, arguments.runs + 1)
         ]
     except (ScenarioFailure, OSError, sqlite3.Error, subprocess.SubprocessError) as error:

@@ -55,11 +55,13 @@ use crate::peer_socket::{
     self, PeerConnection, PeerSetError, PeerSetEvent, PeerSocketError, PeerSocketSet, PeerTaskEvent,
 };
 use crate::selective_storage::{
-    DescriptorStorage, PreparedFileHash, ResumedStorage, SelectiveStorage, SelectiveStorageError,
-    remove_selective_part_if_present, remove_selective_staging_if_present,
+    DescriptorStorage, PreparedFileHash, ResumedStorage, SelectiveHashPlan, SelectiveStorage,
+    SelectiveStorageError, SelectiveWriteJob, remove_selective_part_if_present,
+    remove_selective_staging_if_present,
 };
 use crate::storage::{
-    StagingFile, StorageError, VERIFICATION_CHUNK_LENGTH, remove_staging_if_present, staging_path,
+    StagingFile, StagingHashPlan, StagingWritePlan, StorageError, VERIFICATION_CHUNK_LENGTH,
+    remove_staging_if_present, staging_path,
 };
 use crate::swarm::{
     BlockKey, ConnectionId, ConnectionRemoval, ConnectionWindowPhaseSnapshot, NoRequestReason,
@@ -83,6 +85,9 @@ const CONTENT_DISCOVERY_QUEUE: usize = 8;
 const CONTENT_STORAGE_PENDING_QUEUE: usize = 2;
 const CONTENT_STORAGE_WRITE_BATCH_BLOCKS: usize = 16;
 const CONTENT_STORAGE_WRITE_BATCH_BYTES: usize = 256 * 1024;
+const CONTENT_STORAGE_WRITE_CONCURRENCY: usize = 4;
+const CONTENT_STORAGE_HASH_CONCURRENCY: usize = 4;
+const CONTENT_STORAGE_MAX_DIAGNOSTIC_CONCURRENCY: usize = 8;
 const CHECKPOINT_MAX_AGE: Duration = Duration::from_secs(2);
 const CHECKPOINT_MAX_DIRTY_BYTES: u64 = 64 * 1024 * 1024;
 const CHECKPOINT_MAX_PIECES: usize = 256;
@@ -494,14 +499,15 @@ struct DownloadControlInner {
     checkpoint_commit_delay_millis: AtomicU64,
     checkpoint_sync_failures: AtomicUsize,
     storage_hashes_started: AtomicUsize,
+    storage_write_concurrency: AtomicUsize,
+    storage_hash_concurrency: AtomicUsize,
     storage_write_timing: StorageCommandTiming,
     storage_hash_timing: StorageCommandTiming,
     storage_write_blocks_started: AtomicUsize,
     storage_write_blocks_completed: AtomicUsize,
     storage_write_batch_blocks_high_water: AtomicUsize,
     storage_write_batch_bytes_high_water: AtomicUsize,
-    storage_active_operation: AtomicUsize,
-    storage_active_started_micros: AtomicU64,
+    storage_active: Mutex<StorageActiveOperations>,
     disk_runtime: Mutex<DiskRuntimeState>,
     activity_sink: Mutex<Option<Arc<dyn DownloadActivitySink>>>,
     last_swarm_activity: Mutex<Option<SwarmActivitySnapshot>>,
@@ -523,10 +529,18 @@ struct PeerConnectionDiagnosticState {
 struct StorageCommandTiming {
     started: AtomicUsize,
     completed: AtomicUsize,
+    active: AtomicUsize,
+    active_high_water: AtomicUsize,
     queue_wait_micros: AtomicU64,
     queue_wait_max_micros: AtomicU64,
     service_micros: AtomicU64,
     service_max_micros: AtomicU64,
+}
+
+#[derive(Debug, Default)]
+struct StorageActiveOperations {
+    writes: Vec<Instant>,
+    hashes: Vec<Instant>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -574,6 +588,8 @@ pub struct DownloadProgress {
     pub storage_hashes_started: usize,
     pub storage_write_operations_started: usize,
     pub storage_write_operations_completed: usize,
+    pub storage_write_operations_active: usize,
+    pub storage_write_operations_active_high_water: usize,
     pub storage_write_queue_wait_micros: u64,
     pub storage_write_queue_wait_max_micros: u64,
     pub storage_write_service_micros: u64,
@@ -584,6 +600,8 @@ pub struct DownloadProgress {
     pub storage_write_batch_bytes_high_water: usize,
     pub storage_hash_operations_started: usize,
     pub storage_hash_operations_completed: usize,
+    pub storage_hash_operations_active: usize,
+    pub storage_hash_operations_active_high_water: usize,
     pub storage_hash_queue_wait_micros: u64,
     pub storage_hash_queue_wait_max_micros: u64,
     pub storage_hash_service_micros: u64,
@@ -742,6 +760,7 @@ struct DiskPieceRuntimeState {
     requested: Vec<(u32, u32)>,
     received: Vec<(u32, u32)>,
     stored: Vec<(u32, u32)>,
+    active_write_jobs: usize,
     started_at: Instant,
     stage_started_at: Instant,
     checkpoint_dirty_since: Option<Instant>,
@@ -790,14 +809,15 @@ impl DownloadControl {
                 checkpoint_commit_delay_millis: AtomicU64::new(0),
                 checkpoint_sync_failures: AtomicUsize::new(0),
                 storage_hashes_started: AtomicUsize::new(0),
+                storage_write_concurrency: AtomicUsize::new(CONTENT_STORAGE_WRITE_CONCURRENCY),
+                storage_hash_concurrency: AtomicUsize::new(CONTENT_STORAGE_HASH_CONCURRENCY),
                 storage_write_timing: StorageCommandTiming::default(),
                 storage_hash_timing: StorageCommandTiming::default(),
                 storage_write_blocks_started: AtomicUsize::new(0),
                 storage_write_blocks_completed: AtomicUsize::new(0),
                 storage_write_batch_blocks_high_water: AtomicUsize::new(0),
                 storage_write_batch_bytes_high_water: AtomicUsize::new(0),
-                storage_active_operation: AtomicUsize::new(0),
-                storage_active_started_micros: AtomicU64::new(0),
+                storage_active: Mutex::new(StorageActiveOperations::default()),
                 disk_runtime: Mutex::new(DiskRuntimeState::default()),
                 activity_sink: Mutex::new(None),
                 last_swarm_activity: Mutex::new(None),
@@ -857,6 +877,10 @@ impl DownloadControl {
             storage_hashes_started: self.inner.storage_hashes_started.load(Ordering::Acquire),
             storage_write_operations_started: write_timing.started.load(Ordering::Acquire),
             storage_write_operations_completed: write_timing.completed.load(Ordering::Acquire),
+            storage_write_operations_active: write_timing.active.load(Ordering::Acquire),
+            storage_write_operations_active_high_water: write_timing
+                .active_high_water
+                .load(Ordering::Acquire),
             storage_write_queue_wait_micros: write_timing.queue_wait_micros.load(Ordering::Acquire),
             storage_write_queue_wait_max_micros: write_timing
                 .queue_wait_max_micros
@@ -883,6 +907,10 @@ impl DownloadControl {
                 .load(Ordering::Acquire),
             storage_hash_operations_started: hash_timing.started.load(Ordering::Acquire),
             storage_hash_operations_completed: hash_timing.completed.load(Ordering::Acquire),
+            storage_hash_operations_active: hash_timing.active.load(Ordering::Acquire),
+            storage_hash_operations_active_high_water: hash_timing
+                .active_high_water
+                .load(Ordering::Acquire),
             storage_hash_queue_wait_micros: hash_timing.queue_wait_micros.load(Ordering::Acquire),
             storage_hash_queue_wait_max_micros: hash_timing
                 .queue_wait_max_micros
@@ -1102,6 +1130,35 @@ impl DownloadControl {
         self.inner
             .storage_hash_delay_millis
             .store(millis, Ordering::Release);
+    }
+
+    #[doc(hidden)]
+    pub fn set_storage_execution_limits_for_testing(
+        &self,
+        writes: usize,
+        hashes: usize,
+    ) -> Result<(), DownloadError> {
+        if !(1..=CONTENT_STORAGE_MAX_DIAGNOSTIC_CONCURRENCY).contains(&writes)
+            || !(1..=CONTENT_STORAGE_MAX_DIAGNOSTIC_CONCURRENCY).contains(&hashes)
+        {
+            return Err(DownloadError::StorageTask(format!(
+                "diagnostic storage concurrency must be between 1 and {CONTENT_STORAGE_MAX_DIAGNOSTIC_CONCURRENCY}"
+            )));
+        }
+        self.inner
+            .storage_write_concurrency
+            .store(writes, Ordering::Release);
+        self.inner
+            .storage_hash_concurrency
+            .store(hashes, Ordering::Release);
+        Ok(())
+    }
+
+    fn storage_execution_limits(&self) -> (usize, usize) {
+        (
+            self.inner.storage_write_concurrency.load(Ordering::Acquire),
+            self.inner.storage_hash_concurrency.load(Ordering::Acquire),
+        )
     }
 
     #[doc(hidden)]
@@ -1707,7 +1764,9 @@ impl DownloadControl {
             .fetch_add(block.length as usize, Ordering::AcqRel);
         self.mutate_disk_piece(block.piece, piece_length, |piece, now| {
             insert_disk_range(&mut piece.stored, block.begin, block.length);
-            let stage = if range_bytes(&piece.stored) >= piece.piece_length {
+            let stage = if piece.active_write_jobs > 0 {
+                DiskPieceStage::Writing
+            } else if range_bytes(&piece.stored) >= piece.piece_length {
                 DiskPieceStage::Stored
             } else {
                 DiskPieceStage::Receiving
@@ -1724,7 +1783,7 @@ impl DownloadControl {
                 .disk_runtime
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            state.hashing_bytes = piece_length as usize;
+            state.hashing_bytes = state.hashing_bytes.saturating_add(piece_length as usize);
         }
         self.mutate_disk_piece(piece_index, piece_length, |piece, now| {
             set_disk_piece_stage(piece, DiskPieceStage::Hashing, now);
@@ -1744,7 +1803,7 @@ impl DownloadControl {
             .disk_runtime
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        state.hashing_bytes = 0;
+        state.hashing_bytes = state.hashing_bytes.saturating_sub(piece_length as usize);
         state.verified_bytes_total = state
             .verified_bytes_total
             .saturating_add(piece_length as usize);
@@ -1897,7 +1956,7 @@ impl DownloadControl {
                 .disk_runtime
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            state.hashing_bytes = 0;
+            state.hashing_bytes = state.hashing_bytes.saturating_sub(piece_length as usize);
         }
         self.mutate_disk_piece(piece_index, piece_length, |piece, now| {
             piece.error = Some(bounded_diagnostic_detail(detail));
@@ -1945,6 +2004,7 @@ impl DownloadControl {
                 requested: Vec::new(),
                 received: Vec::new(),
                 stored: Vec::new(),
+                active_write_jobs: 0,
                 started_at: now,
                 stage_started_at: now,
                 checkpoint_dirty_since: None,
@@ -1962,9 +2022,13 @@ impl DownloadControl {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         state.queued_write_bytes = state.queued_write_bytes.saturating_sub(bytes);
-        state.writing_bytes = bytes;
+        state.writing_bytes = state.writing_bytes.saturating_add(bytes);
+        let mut pieces = BTreeSet::new();
         for block in blocks {
-            if let Some(piece) = state.pieces.get_mut(&block.piece) {
+            if pieces.insert(block.piece)
+                && let Some(piece) = state.pieces.get_mut(&block.piece)
+            {
+                piece.active_write_jobs = piece.active_write_jobs.saturating_add(1);
                 set_disk_piece_stage(piece, DiskPieceStage::Writing, now);
             }
         }
@@ -1972,12 +2036,22 @@ impl DownloadControl {
         self.emit_storage_state();
     }
 
-    fn disk_write_batch_completed(&self) {
-        self.inner
+    fn disk_write_batch_completed(&self, blocks: &[BlockKey], bytes: usize) {
+        let mut state = self
+            .inner
             .disk_runtime
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .writing_bytes = 0;
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.writing_bytes = state.writing_bytes.saturating_sub(bytes);
+        let mut pieces = BTreeSet::new();
+        for block in blocks {
+            if pieces.insert(block.piece)
+                && let Some(piece) = state.pieces.get_mut(&block.piece)
+            {
+                piece.active_write_jobs = piece.active_write_jobs.saturating_sub(1);
+            }
+        }
+        drop(state);
         self.emit_storage_state();
     }
 
@@ -2093,21 +2167,24 @@ impl DownloadControl {
                 .unwrap_or_default(),
         );
         atomic_saturating_increment(&timing.started);
+        let active = timing
+            .active
+            .fetch_add(1, Ordering::AcqRel)
+            .saturating_add(1);
+        timing.active_high_water.fetch_max(active, Ordering::AcqRel);
         atomic_saturating_add(&timing.queue_wait_micros, queue_wait_micros);
         timing
             .queue_wait_max_micros
             .fetch_max(queue_wait_micros, Ordering::AcqRel);
-        self.inner.storage_active_started_micros.store(
-            duration_micros(
-                started_at
-                    .checked_duration_since(self.inner.started_at)
-                    .unwrap_or_default(),
-            ),
-            Ordering::Release,
-        );
-        self.inner
-            .storage_active_operation
-            .store(kind as usize, Ordering::Release);
+        let mut active = self
+            .inner
+            .storage_active
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match kind {
+            StorageCommandKind::Write => active.writes.push(started_at),
+            StorageCommandKind::Hash => active.hashes.push(started_at),
+        }
     }
 
     fn storage_command_completed(
@@ -2127,7 +2204,25 @@ impl DownloadControl {
             .service_max_micros
             .fetch_max(service_micros, Ordering::AcqRel);
         atomic_saturating_increment(&timing.completed);
-        self.clear_storage_active_operation();
+        let previous = timing.active.fetch_sub(1, Ordering::AcqRel);
+        debug_assert_ne!(previous, 0);
+        let mut active = self
+            .inner
+            .storage_active
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let operations = match kind {
+            StorageCommandKind::Write => &mut active.writes,
+            StorageCommandKind::Hash => &mut active.hashes,
+        };
+        if let Some(index) = operations
+            .iter()
+            .position(|candidate| *candidate == started_at)
+        {
+            operations.swap_remove(index);
+        } else {
+            debug_assert!(false, "completed storage operation was not active");
+        }
     }
 
     fn storage_write_batch_started(
@@ -2152,11 +2247,12 @@ impl DownloadControl {
         &self,
         started_at: Instant,
         completed_at: Instant,
-        blocks: usize,
+        blocks: &[BlockKey],
+        bytes: usize,
     ) {
-        atomic_saturating_add_usize(&self.inner.storage_write_blocks_completed, blocks);
+        atomic_saturating_add_usize(&self.inner.storage_write_blocks_completed, blocks.len());
         self.storage_command_completed(StorageCommandKind::Write, started_at, completed_at);
-        self.disk_write_batch_completed();
+        self.disk_write_batch_completed(blocks, bytes);
     }
 
     fn storage_timing(&self, kind: StorageCommandKind) -> &StorageCommandTiming {
@@ -2167,38 +2263,42 @@ impl DownloadControl {
     }
 
     fn storage_active_ages(&self) -> (Option<u64>, Option<u64>) {
-        let first_kind = self.inner.storage_active_operation.load(Ordering::Acquire);
-        if first_kind == 0 {
-            return (None, None);
-        }
-        let started_micros = self
+        let active = self
             .inner
-            .storage_active_started_micros
-            .load(Ordering::Acquire);
-        let second_kind = self.inner.storage_active_operation.load(Ordering::Acquire);
-        if first_kind != second_kind {
-            return (None, None);
-        }
-        let age = duration_micros(self.inner.started_at.elapsed()).saturating_sub(started_micros);
-        match first_kind {
-            value if value == StorageCommandKind::Write as usize => (Some(age), None),
-            value if value == StorageCommandKind::Hash as usize => (None, Some(age)),
-            _ => (None, None),
-        }
+            .storage_active
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let now = Instant::now();
+        let oldest_age = |operations: &[Instant]| {
+            operations
+                .iter()
+                .min()
+                .map(|started| duration_micros(now.saturating_duration_since(*started)))
+        };
+        (oldest_age(&active.writes), oldest_age(&active.hashes))
     }
 
-    fn clear_storage_active_operation(&self) {
+    fn clear_storage_active_operations(&self) {
         self.inner
-            .storage_active_operation
+            .storage_write_timing
+            .active
             .store(0, Ordering::Release);
         self.inner
-            .storage_active_started_micros
+            .storage_hash_timing
+            .active
             .store(0, Ordering::Release);
+        let mut active = self
+            .inner
+            .storage_active
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        active.writes.clear();
+        active.hashes.clear();
     }
 
     fn clear_storage_jobs(&self) {
         self.inner.storage_jobs_pending.store(0, Ordering::Release);
-        self.clear_storage_active_operation();
+        self.clear_storage_active_operations();
         let mut state = self
             .inner
             .disk_runtime
@@ -5477,6 +5577,72 @@ struct CoalescedContentWrite {
     members: Vec<ContentWriteMember>,
 }
 
+enum ContentWriteOperation {
+    Single(StagingWritePlan),
+    Selective(SelectiveWriteJob),
+}
+
+impl ContentWriteOperation {
+    async fn execute(self) -> Result<(), DownloadError> {
+        match self {
+            Self::Single(plan) => plan.execute().await.map_err(DownloadError::Storage),
+            Self::Selective(plan) => plan
+                .execute()
+                .await
+                .map(|_| ())
+                .map_err(DownloadError::SelectiveStorage),
+        }
+    }
+}
+
+struct PreparedPhysicalContentWrite {
+    operation: ContentWriteOperation,
+    members: Vec<ContentWriteMember>,
+}
+
+struct ContentWriteJob {
+    writes: Vec<PreparedPhysicalContentWrite>,
+}
+
+enum ContentHashOperation {
+    Single(StagingHashPlan),
+    Selective(SelectiveHashPlan),
+}
+
+struct ContentHashJob {
+    piece: u32,
+    generation: PieceGeneration,
+    length: u32,
+    expected: [u8; 20],
+    durable: bool,
+    durability_targets: Vec<DurabilityTarget>,
+    operation: ContentHashOperation,
+}
+
+struct ContentHashJobResult {
+    piece: u32,
+    generation: PieceGeneration,
+    length: u32,
+    expected: [u8; 20],
+    durable: bool,
+    durability_targets: Vec<DurabilityTarget>,
+    selective: bool,
+    result: Result<[u8; 20], DownloadError>,
+}
+
+enum ContentStorageJobResult {
+    Write {
+        started_at: Instant,
+        blocks: Vec<BlockKey>,
+        bytes: usize,
+        completions: Vec<ContentStorageCompletion>,
+    },
+    Hash {
+        started_at: Instant,
+        result: ContentHashJobResult,
+    },
+}
+
 enum ContentStorageCompletion {
     Write {
         block: BlockKey,
@@ -5613,7 +5779,7 @@ struct ContentStoragePipeline {
     commands: Option<mpsc::Sender<QueuedContentStorageCommand>>,
     completions: mpsc::Receiver<ContentStorageCompletion>,
     cancellation: CancellationToken,
-    task: JoinHandle<ContentStorage>,
+    task: JoinHandle<Result<ContentStorage, DownloadError>>,
     pending_commands: VecDeque<QueuedContentStorageCommand>,
     control: DownloadControl,
     max_buffered_payload_bytes: usize,
@@ -5807,7 +5973,8 @@ impl ContentStoragePipeline {
         let storage_result = self
             .task
             .await
-            .map_err(|error| DownloadError::StorageTask(error.to_string()));
+            .map_err(|error| DownloadError::StorageTask(error.to_string()))
+            .and_then(|result| result);
         let checkpoint_result = match self.checkpoint {
             Some(checkpoint) => checkpoint
                 .task
@@ -6046,24 +6213,41 @@ async fn run_content_storage_task(
     cancellation: CancellationToken,
     control: DownloadControl,
     queue_capacity: usize,
-) -> ContentStorage {
-    let mut deferred = None;
-    'storage: loop {
-        let command = match deferred.take() {
-            Some(command) => command,
-            None => tokio::select! {
-                biased;
-                _ = cancellation.cancelled() => break,
-                command = commands.recv() => match command {
-                    Some(command) => command,
-                    None => break,
-                },
-            },
-        };
+) -> Result<ContentStorage, DownloadError> {
+    let mut ready_writes = VecDeque::new();
+    let mut ready_hashes = VecDeque::new();
+    let mut pending_completions = VecDeque::new();
+    let mut running = JoinSet::new();
+    let mut active_writes = 0_usize;
+    let mut active_hashes = 0_usize;
+    let mut commands_closed = false;
+    let mut cancelled = false;
+    let (write_concurrency, hash_concurrency) = control.storage_execution_limits();
 
-        let completions_to_send = if command.command.write_bytes().is_some() {
-            let batch = collect_content_write_batch(command, &mut commands, &mut deferred);
-            let blocks = batch.len();
+    loop {
+        if !cancelled {
+            loop {
+                match commands.try_recv() {
+                    Ok(command) => {
+                        queue_content_storage_command(command, &mut ready_writes, &mut ready_hashes)
+                    }
+                    Err(mpsc::error::TryRecvError::Empty) => break,
+                    Err(mpsc::error::TryRecvError::Disconnected) => {
+                        commands_closed = true;
+                        break;
+                    }
+                }
+            }
+            flush_ready_content_storage_completions(
+                &completions,
+                &mut pending_completions,
+                &control,
+                queue_capacity,
+            )?;
+        }
+
+        while !cancelled && active_writes < write_concurrency && !ready_writes.is_empty() {
+            let batch = collect_ready_content_write_batch(&mut ready_writes);
             let block_keys = batch
                 .iter()
                 .filter_map(|command| match &command.command {
@@ -6077,45 +6261,257 @@ async fn run_content_storage_task(
             let enqueued_at = batch[0].enqueued_at;
             let started_at = Instant::now();
             control.storage_write_batch_started(enqueued_at, started_at, &block_keys, bytes);
-            let completed = execute_content_storage_writes(&mut storage, batch, &control).await;
-            control.storage_write_batch_completed(started_at, Instant::now(), blocks);
-            completed
-        } else {
-            let kind = command.command.kind();
-            debug_assert_eq!(kind, StorageCommandKind::Hash);
-            if let ContentStorageCommand::Verify { piece, length, .. } = &command.command {
-                control.disk_piece_hashing(*piece, *length);
-                control.emit(DownloadActivityEvent::PieceHashing {
-                    piece_index: *piece,
-                });
+            match prepare_content_storage_writes(&mut storage, batch).await {
+                Ok(job) => {
+                    active_writes += 1;
+                    let job_control = control.clone();
+                    running.spawn(async move {
+                        job_control.wait_before_storage().await;
+                        ContentStorageJobResult::Write {
+                            started_at,
+                            blocks: block_keys,
+                            bytes,
+                            completions: execute_content_write_job(job).await,
+                        }
+                    });
+                }
+                Err(failed) => {
+                    control.storage_write_batch_completed(
+                        started_at,
+                        Instant::now(),
+                        &block_keys,
+                        bytes,
+                    );
+                    pending_completions.extend(failed);
+                }
             }
-            let started_at = Instant::now();
-            control.storage_command_started(kind, command.enqueued_at, started_at);
-            let completion =
-                execute_content_storage_verification(&mut storage, command.command, &control).await;
-            control.storage_command_completed(kind, started_at, Instant::now());
-            vec![completion]
-        };
+        }
 
-        for completion in completions_to_send {
-            let projected_depth = queue_capacity
-                .saturating_sub(completions.capacity())
-                .saturating_add(1)
-                .min(queue_capacity);
-            control.observe_storage_completion_queue(projected_depth);
-            let sent = tokio::select! {
-                biased;
-                _ = cancellation.cancelled() => false,
-                result = completions.send(completion) => result.is_ok(),
+        while !cancelled && active_hashes < hash_concurrency && !ready_hashes.is_empty() {
+            let command = ready_hashes
+                .pop_front()
+                .expect("nonempty hash-ready queue has a command");
+            let ContentStorageCommand::Verify { piece, length, .. } = &command.command else {
+                unreachable!("hash-ready queue contains only verify commands");
             };
-            if !sent {
-                break 'storage;
+            control.disk_piece_hashing(*piece, *length);
+            control.emit(DownloadActivityEvent::PieceHashing {
+                piece_index: *piece,
+            });
+            let started_at = Instant::now();
+            control.storage_command_started(
+                StorageCommandKind::Hash,
+                command.enqueued_at,
+                started_at,
+            );
+            match prepare_content_storage_hash(&storage, command.command) {
+                Ok(job) => {
+                    active_hashes += 1;
+                    let job_control = control.clone();
+                    running.spawn(async move {
+                        job_control.wait_before_storage_hash().await;
+                        ContentStorageJobResult::Hash {
+                            started_at,
+                            result: execute_content_hash_job(job).await,
+                        }
+                    });
+                }
+                Err(failed) => {
+                    control.storage_command_completed(
+                        StorageCommandKind::Hash,
+                        started_at,
+                        Instant::now(),
+                    );
+                    pending_completions.push_back(failed);
+                }
+            }
+        }
+
+        if cancelled {
+            ready_writes.clear();
+            ready_hashes.clear();
+            pending_completions.clear();
+            while let Some(joined) = running.join_next().await {
+                complete_cancelled_content_storage_job(
+                    joined.map_err(|error| DownloadError::StorageTask(error.to_string()))?,
+                    &control,
+                );
+            }
+            return Ok(storage);
+        }
+
+        if commands_closed
+            && ready_writes.is_empty()
+            && ready_hashes.is_empty()
+            && running.is_empty()
+            && pending_completions.is_empty()
+        {
+            return Ok(storage);
+        }
+
+        tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => {
+                cancelled = true;
+                commands.close();
+            }
+            joined = running.join_next(), if !running.is_empty() => {
+                let result = joined
+                    .expect("nonempty storage job set has a completion")
+                    .map_err(|error| DownloadError::StorageTask(error.to_string()))?;
+                match result {
+                    ContentStorageJobResult::Write {
+                        started_at,
+                        blocks,
+                        bytes,
+                        completions: completed,
+                    } => {
+                        active_writes = active_writes.checked_sub(1).ok_or_else(|| {
+                            DownloadError::StorageTask("active write job underflow".to_owned())
+                        })?;
+                        control.storage_write_batch_completed(
+                            started_at,
+                            Instant::now(),
+                            &blocks,
+                            bytes,
+                        );
+                        pending_completions.extend(completed);
+                    }
+                    ContentStorageJobResult::Hash { started_at, result } => {
+                        active_hashes = active_hashes.checked_sub(1).ok_or_else(|| {
+                            DownloadError::StorageTask("active hash job underflow".to_owned())
+                        })?;
+                        control.storage_command_completed(
+                            StorageCommandKind::Hash,
+                            started_at,
+                            Instant::now(),
+                        );
+                        pending_completions.push_back(finish_content_hash_job(
+                            &mut storage,
+                            result,
+                            &control,
+                        ));
+                    }
+                }
+            }
+            permit = completions.reserve(), if !pending_completions.is_empty() => {
+                let permit = permit.map_err(|_| {
+                    DownloadError::StorageTask("storage completion channel closed".to_owned())
+                })?;
+                let projected_depth = queue_capacity
+                    .saturating_sub(completions.capacity())
+                    .saturating_add(1)
+                    .min(queue_capacity);
+                control.observe_storage_completion_queue(projected_depth);
+                permit.send(
+                    pending_completions
+                        .pop_front()
+                        .expect("reserved completion has a pending value"),
+                );
+            }
+            command = commands.recv(), if !commands_closed => {
+                match command {
+                    Some(command) => queue_content_storage_command(
+                        command,
+                        &mut ready_writes,
+                        &mut ready_hashes,
+                    ),
+                    None => commands_closed = true,
+                }
             }
         }
     }
-    storage
 }
 
+fn queue_content_storage_command(
+    command: QueuedContentStorageCommand,
+    writes: &mut VecDeque<QueuedContentStorageCommand>,
+    hashes: &mut VecDeque<QueuedContentStorageCommand>,
+) {
+    match command.command.kind() {
+        StorageCommandKind::Write => writes.push_back(command),
+        StorageCommandKind::Hash => hashes.push_back(command),
+    }
+}
+
+fn flush_ready_content_storage_completions(
+    completions: &mpsc::Sender<ContentStorageCompletion>,
+    pending: &mut VecDeque<ContentStorageCompletion>,
+    control: &DownloadControl,
+    queue_capacity: usize,
+) -> Result<(), DownloadError> {
+    while let Some(completion) = pending.pop_front() {
+        match completions.try_send(completion) {
+            Ok(()) => {
+                let depth = queue_capacity
+                    .saturating_sub(completions.capacity())
+                    .min(queue_capacity);
+                control.observe_storage_completion_queue(depth);
+            }
+            Err(mpsc::error::TrySendError::Full(completion)) => {
+                pending.push_front(completion);
+                break;
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                return Err(DownloadError::StorageTask(
+                    "storage completion channel closed".to_owned(),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn collect_ready_content_write_batch(
+    writes: &mut VecDeque<QueuedContentStorageCommand>,
+) -> Vec<QueuedContentStorageCommand> {
+    let first = writes
+        .pop_front()
+        .expect("nonempty write-ready queue has a command");
+    let mut bytes = first.command.write_bytes().unwrap_or(0);
+    let mut batch = Vec::with_capacity(CONTENT_STORAGE_WRITE_BATCH_BLOCKS);
+    batch.push(first);
+    while batch.len() < CONTENT_STORAGE_WRITE_BATCH_BLOCKS {
+        let Some(next_bytes) = writes
+            .front()
+            .and_then(|command| command.command.write_bytes())
+        else {
+            break;
+        };
+        let Some(projected) = bytes.checked_add(next_bytes) else {
+            break;
+        };
+        if projected > CONTENT_STORAGE_WRITE_BATCH_BYTES {
+            break;
+        }
+        bytes = projected;
+        batch.push(
+            writes
+                .pop_front()
+                .expect("inspected write-ready command remains present"),
+        );
+    }
+    batch
+}
+
+fn complete_cancelled_content_storage_job(
+    result: ContentStorageJobResult,
+    control: &DownloadControl,
+) {
+    match result {
+        ContentStorageJobResult::Write {
+            started_at,
+            blocks,
+            bytes,
+            ..
+        } => control.storage_write_batch_completed(started_at, Instant::now(), &blocks, bytes),
+        ContentStorageJobResult::Hash { started_at, .. } => {
+            control.storage_command_completed(StorageCommandKind::Hash, started_at, Instant::now())
+        }
+    }
+}
+
+#[cfg(test)]
 fn collect_content_write_batch(
     first: QueuedContentStorageCommand,
     commands: &mut mpsc::Receiver<QueuedContentStorageCommand>,
@@ -6151,12 +6547,23 @@ fn collect_content_write_batch(
     batch
 }
 
+#[cfg(test)]
 async fn execute_content_storage_writes(
     storage: &mut ContentStorage,
     commands: Vec<QueuedContentStorageCommand>,
     control: &DownloadControl,
 ) -> Vec<ContentStorageCompletion> {
     control.wait_before_storage().await;
+    match prepare_content_storage_writes(storage, commands).await {
+        Ok(job) => execute_content_write_job(job).await,
+        Err(completions) => completions,
+    }
+}
+
+async fn prepare_content_storage_writes(
+    storage: &mut ContentStorage,
+    commands: Vec<QueuedContentStorageCommand>,
+) -> Result<ContentWriteJob, Vec<ContentStorageCompletion>> {
     let mut prepared = Vec::with_capacity(commands.len());
     for command in commands {
         let ContentStorageCommand::Write {
@@ -6184,7 +6591,12 @@ async fn execute_content_storage_writes(
         let stats = match stats {
             Ok(stats) => stats,
             Err(error) => {
-                return failed_content_write_batch(block, generation, error, prepared.into_iter());
+                return Err(failed_content_write_batch(
+                    block,
+                    generation,
+                    error,
+                    prepared.into_iter(),
+                ));
             }
         };
         prepared.push(PreparedContentWrite {
@@ -6199,26 +6611,65 @@ async fn execute_content_storage_writes(
     let writes = match coalesce_content_writes(prepared) {
         Ok(writes) => writes,
         Err((block, generation, error)) => {
-            return vec![ContentStorageCompletion::Write {
+            return Err(vec![ContentStorageCompletion::Write {
                 block,
                 generation,
                 result: Err(error),
-            }];
+            }]);
         }
     };
-    let mut completed = Vec::new();
-    for write in writes {
-        let result = match storage {
+    let mut physical = Vec::with_capacity(writes.len());
+    let mut writes = writes.into_iter();
+    while let Some(write) = writes.next() {
+        let operation = match storage {
             ContentStorage::Single(storage) => storage
-                .write_block(write.offset, write.bytes)
-                .await
+                .plan_write(write.offset, write.bytes)
+                .map(ContentWriteOperation::Single)
                 .map_err(DownloadError::Storage),
             ContentStorage::Selective(storage) => storage
-                .write_block(write.piece, write.begin, write.bytes)
+                .prepare_write(write.piece, write.begin, write.bytes)
                 .await
-                .map(|_| ())
+                .map(ContentWriteOperation::Selective)
                 .map_err(DownloadError::SelectiveStorage),
         };
+        match operation {
+            Ok(operation) => physical.push(PreparedPhysicalContentWrite {
+                operation,
+                members: write.members,
+            }),
+            Err(error) => {
+                let mut members = write.members.into_iter();
+                let first = members
+                    .next()
+                    .expect("coalesced write retains at least one logical member");
+                let mut completions = vec![ContentStorageCompletion::Write {
+                    block: first.block,
+                    generation: first.generation,
+                    result: Err(error),
+                }];
+                completions.extend(members.map(failed_prepared_content_write));
+                completions.extend(
+                    physical
+                        .into_iter()
+                        .flat_map(|write| write.members)
+                        .map(failed_prepared_content_write),
+                );
+                completions.extend(
+                    writes
+                        .flat_map(|write| write.members)
+                        .map(failed_prepared_content_write),
+                );
+                return Err(completions);
+            }
+        }
+    }
+    Ok(ContentWriteJob { writes: physical })
+}
+
+async fn execute_content_write_job(job: ContentWriteJob) -> Vec<ContentStorageCompletion> {
+    let mut completed = Vec::new();
+    for write in job.writes {
+        let result = write.operation.execute().await;
         if let Err(error) = result {
             let mut members = write.members.into_iter();
             let first = members
@@ -6250,6 +6701,16 @@ async fn execute_content_storage_writes(
         );
     }
     completed
+}
+
+fn failed_prepared_content_write(member: ContentWriteMember) -> ContentStorageCompletion {
+    ContentStorageCompletion::Write {
+        block: member.block,
+        generation: member.generation,
+        result: Err(DownloadError::StorageTask(
+            "coalesced write batch preparation failed".to_owned(),
+        )),
+    }
 }
 
 fn failed_content_write_batch(
@@ -6322,79 +6783,140 @@ fn coalesce_content_writes(
     Ok(coalesced)
 }
 
+#[cfg(test)]
 async fn execute_content_storage_verification(
     storage: &mut ContentStorage,
     command: ContentStorageCommand,
     control: &DownloadControl,
 ) -> ContentStorageCompletion {
-    match command {
-        ContentStorageCommand::Verify {
+    let job = match prepare_content_storage_hash(storage, command) {
+        Ok(job) => job,
+        Err(completion) => return completion,
+    };
+    control.wait_before_storage_hash().await;
+    let result = execute_content_hash_job(job).await;
+    finish_content_hash_job(storage, result, control)
+}
+
+fn prepare_content_storage_hash(
+    storage: &ContentStorage,
+    command: ContentStorageCommand,
+) -> Result<ContentHashJob, ContentStorageCompletion> {
+    let ContentStorageCommand::Verify {
+        piece,
+        generation,
+        offset,
+        length,
+        expected,
+        durable,
+    } = command
+    else {
+        unreachable!("write commands execute through the bounded batch path");
+    };
+    let prepared = match storage {
+        ContentStorage::Single(storage) => storage
+            .plan_hash(offset, length)
+            .map(|operation| (ContentHashOperation::Single(operation), Vec::new()))
+            .map_err(DownloadError::Storage),
+        ContentStorage::Selective(storage) => {
+            let durability_targets = if durable {
+                storage
+                    .durability_targets(piece)
+                    .map_err(DownloadError::SelectiveStorage)
+            } else {
+                Ok(Vec::new())
+            };
+            durability_targets.and_then(|durability_targets| {
+                storage
+                    .prepare_hash(piece)
+                    .map(|operation| {
+                        (
+                            ContentHashOperation::Selective(operation),
+                            durability_targets,
+                        )
+                    })
+                    .map_err(DownloadError::SelectiveStorage)
+            })
+        }
+    };
+    match prepared {
+        Ok((operation, durability_targets)) => Ok(ContentHashJob {
             piece,
             generation,
-            offset,
             length,
             expected,
             durable,
-        } => {
-            control.wait_before_storage_hash().await;
-            let result = match storage {
-                ContentStorage::Single(storage) => storage
-                    .hash_piece(offset, length)
-                    .await
-                    .map(|actual| ContentVerification {
-                        actual,
-                        durability_targets: Vec::new(),
-                    })
-                    .map_err(DownloadError::Storage),
-                ContentStorage::Selective(storage) => {
-                    async {
-                        let actual = storage
-                            .hash_piece(piece)
-                            .await
-                            .map_err(DownloadError::SelectiveStorage)?;
-                        if actual == expected {
-                            let piece_index = usize::try_from(piece).map_err(|_| {
-                                DownloadError::Layout(LayoutError::ArithmeticOverflow)
-                            })?;
-                            let durability_targets = if durable {
-                                storage
-                                    .durability_targets(piece)
-                                    .map_err(DownloadError::SelectiveStorage)?
-                            } else {
-                                Vec::new()
-                            };
-                            storage
-                                .record_verified(piece_index)
-                                .map_err(DownloadError::SelectiveStorage)?;
-                            return Ok(ContentVerification {
-                                actual,
-                                durability_targets,
-                            });
-                        }
-                        Ok(ContentVerification {
-                            actual,
-                            durability_targets: Vec::new(),
-                        })
-                    }
-                    .await
-                }
+            durability_targets,
+            operation,
+        }),
+        Err(error) => Err(ContentStorageCompletion::Verify {
+            piece,
+            generation,
+            length,
+            result: Err(error),
+        }),
+    }
+}
+
+async fn execute_content_hash_job(job: ContentHashJob) -> ContentHashJobResult {
+    let selective = matches!(job.operation, ContentHashOperation::Selective(_));
+    let result = match job.operation {
+        ContentHashOperation::Single(plan) => plan.execute().await.map_err(DownloadError::Storage),
+        ContentHashOperation::Selective(plan) => plan
+            .execute()
+            .await
+            .map_err(DownloadError::SelectiveStorage),
+    };
+    ContentHashJobResult {
+        piece: job.piece,
+        generation: job.generation,
+        length: job.length,
+        expected: job.expected,
+        durable: job.durable,
+        durability_targets: job.durability_targets,
+        selective,
+        result,
+    }
+}
+
+fn finish_content_hash_job(
+    storage: &mut ContentStorage,
+    result: ContentHashJobResult,
+    control: &DownloadControl,
+) -> ContentStorageCompletion {
+    let verification = result.result.and_then(|actual| {
+        if actual == result.expected && result.selective {
+            let piece_index = usize::try_from(result.piece)
+                .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+            let ContentStorage::Selective(storage) = storage else {
+                return Err(DownloadError::StorageTask(
+                    "selective hash completed against single-file storage".to_owned(),
+                ));
             };
-            if result
-                .as_ref()
-                .is_ok_and(|verification| verification.actual == expected)
-            {
-                control.disk_piece_hash_verified(piece, length, durable);
-            }
-            ContentStorageCompletion::Verify {
-                piece,
-                generation,
-                length,
-                result,
-            }
+            storage
+                .record_verified(piece_index)
+                .map_err(DownloadError::SelectiveStorage)?;
         }
-        ContentStorageCommand::Write { .. } => {
-            unreachable!("write commands execute through the bounded batch path")
-        }
+        Ok(ContentVerification {
+            actual,
+            durability_targets: if actual == result.expected {
+                result.durability_targets
+            } else {
+                Vec::new()
+            },
+        })
+    });
+    if verification
+        .as_ref()
+        .is_ok_and(|verification| verification.actual == result.expected)
+    {
+        control.disk_piece_hash_verified(result.piece, result.length, result.durable);
+    }
+    ContentStorageCompletion::Verify {
+        piece: result.piece,
+        generation: result.generation,
+        length: result.length,
+        result: verification,
     }
 }
 
@@ -7955,12 +8477,13 @@ mod tests {
     use tokio::time::{sleep, timeout};
 
     use super::{
-        CLIENT_PEER_ID, CONTENT_STORAGE_WRITE_BATCH_BLOCKS, CONTENT_STORAGE_WRITE_BATCH_BYTES,
+        CLIENT_PEER_ID, CONTENT_STORAGE_HASH_CONCURRENCY, CONTENT_STORAGE_WRITE_BATCH_BLOCKS,
+        CONTENT_STORAGE_WRITE_BATCH_BYTES, CONTENT_STORAGE_WRITE_CONCURRENCY,
         CoalescedContentWrite, ContentCheckpointPipeline, ContentDownloadConfig, ContentStorage,
-        ContentStorageCommand, ContentStorageCompletion, ContentSupervisorOwner, ContentWriteStats,
-        DEFAULT_ADVERTISED_PEER_PORT, DhtRetryTiming, DiskPressure, DownloadActivityEvent,
-        DownloadActivitySink, DownloadConfig, DownloadControl, DownloadError,
-        DownloadResourceLimits, MAX_DIAGNOSTIC_ERROR_LENGTH, MAX_METADATA_PEERS,
+        ContentStorageCommand, ContentStorageCompletion, ContentStoragePipeline,
+        ContentSupervisorOwner, ContentWriteStats, DEFAULT_ADVERTISED_PEER_PORT, DhtRetryTiming,
+        DiskPressure, DownloadActivityEvent, DownloadActivitySink, DownloadConfig, DownloadControl,
+        DownloadError, DownloadResourceLimits, MAX_DIAGNOSTIC_ERROR_LENGTH, MAX_METADATA_PEERS,
         MAX_RECENT_METADATA_ATTEMPTS, MagnetDownloadConfig, MetadataAcquisitionPhase,
         MetadataPeerStage, PeerConnection, PreparedContentWrite, QueuedContentStorageCommand,
         SwarmConfig, TorrentPeerCoordinator, TrackerManager, UdpTrackerAnnounce,
@@ -9979,8 +10502,10 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let active = control.snapshot();
         assert!(active.storage_active_write_micros.is_some());
         assert_eq!(active.storage_active_hash_micros, None);
-        assert_eq!(active.storage_write_operations_started, 1);
+        assert!((1..=2).contains(&active.storage_write_operations_started));
         assert_eq!(active.storage_write_operations_completed, 0);
+        assert!((1..=2).contains(&active.storage_write_operations_active));
+        assert!((1..=2).contains(&active.storage_write_operations_active_high_water));
 
         let report = timeout(Duration::from_secs(3), &mut download)
             .await
@@ -10077,7 +10602,10 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         timeout(Duration::from_secs(2), async {
             loop {
                 let progress = control.snapshot();
-                if progress.received_bytes == payload_len && progress.storage_jobs_pending >= 2 {
+                if progress.received_bytes == payload_len
+                    && progress.storage_jobs_pending >= 2
+                    && progress.storage_write_operations_active >= 1
+                {
                     break;
                 }
                 tokio::task::yield_now().await;
@@ -10088,8 +10616,10 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let active = control.snapshot();
         assert!(active.storage_active_write_micros.is_some());
         assert_eq!(active.storage_active_hash_micros, None);
-        assert_eq!(active.storage_write_operations_started, 1);
+        assert!((1..=2).contains(&active.storage_write_operations_started));
         assert_eq!(active.storage_write_operations_completed, 0);
+        assert!((1..=2).contains(&active.storage_write_operations_active));
+        assert!((1..=2).contains(&active.storage_write_operations_active_high_water));
         control.cancel();
         let result = timeout(Duration::from_secs(1), &mut download)
             .await
@@ -10099,8 +10629,12 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let progress = control.snapshot();
         assert_eq!(progress.buffered_payload_bytes, 0);
         assert_eq!(progress.storage_jobs_pending, 0);
-        assert_eq!(progress.storage_write_operations_started, 1);
-        assert_eq!(progress.storage_write_operations_completed, 1);
+        assert!((1..=2).contains(&progress.storage_write_operations_started));
+        assert_eq!(
+            progress.storage_write_operations_started,
+            progress.storage_write_operations_completed
+        );
+        assert_eq!(progress.storage_write_operations_active, 0);
         assert!((1..=2).contains(&progress.storage_write_blocks_started));
         assert_eq!(
             progress.storage_write_blocks_started,
@@ -10181,6 +10715,8 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         assert!(active.storage_active_hash_micros.is_some());
         assert_eq!(active.storage_hash_operations_started, 1);
         assert_eq!(active.storage_hash_operations_completed, 0);
+        assert_eq!(active.storage_hash_operations_active, 1);
+        assert_eq!(active.storage_hash_operations_active_high_water, 1);
         control.cancel();
         let result = timeout(Duration::from_secs(1), &mut download)
             .await
@@ -10192,6 +10728,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         assert_eq!(progress.storage_jobs_pending, 0);
         assert_eq!(progress.storage_hash_operations_started, 1);
         assert_eq!(progress.storage_hash_operations_completed, 1);
+        assert_eq!(progress.storage_hash_operations_active, 0);
         assert!(progress.storage_hash_service_micros >= 200_000);
         assert_eq!(progress.storage_active_write_micros, None);
         assert_eq!(progress.storage_active_hash_micros, None);
@@ -10201,6 +10738,287 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             .expect("hash-cancel peer joined")
             .expect("hash-cancel peer task");
         let _ = tokio::fs::remove_file(staging_path(&output).expect("staging path")).await;
+    }
+
+    #[tokio::test]
+    async fn storage_executor_enforces_independent_write_and_hash_limits() {
+        let block_length = MIN_PAYLOAD_ALLOWANCE;
+        let output = test_path("storage-executor-limits.bin");
+        let staging = staging_path(&output).expect("staging path");
+        let control = DownloadControl::new();
+        control.set_storage_write_delay(Duration::from_millis(300));
+        let storage = ContentStorage::Single(
+            StagingFile::create(output.clone(), (5 * block_length) as u64)
+                .await
+                .expect("create write-limit storage"),
+        );
+        let mut pipeline = ContentStoragePipeline::start(storage, &control, 5 * block_length, None)
+            .await
+            .expect("start write-limit pipeline");
+        for piece in 0..CONTENT_STORAGE_WRITE_CONCURRENCY {
+            pipeline
+                .enqueue(ContentStorageCommand::Write {
+                    block: BlockKey::new(piece as u32, 0, block_length as u32)
+                        .expect("write-limit block"),
+                    generation: PieceGeneration::new(1).expect("generation"),
+                    offset: (piece * block_length) as u64,
+                    bytes: vec![piece as u8; block_length],
+                })
+                .expect("enqueue write-limit command");
+            timeout(Duration::from_secs(1), async {
+                loop {
+                    if control.snapshot().storage_write_operations_active == piece + 1 {
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("write reached its execution slot");
+        }
+        pipeline
+            .enqueue(ContentStorageCommand::Write {
+                block: BlockKey::new(
+                    CONTENT_STORAGE_WRITE_CONCURRENCY as u32,
+                    0,
+                    block_length as u32,
+                )
+                .expect("queued over-limit block"),
+                generation: PieceGeneration::new(1).expect("generation"),
+                offset: (CONTENT_STORAGE_WRITE_CONCURRENCY * block_length) as u64,
+                bytes: vec![0xee; block_length],
+            })
+            .expect("enqueue over-limit write");
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        let active = control.snapshot();
+        assert_eq!(active.storage_write_operations_active, 4);
+        assert_eq!(active.storage_write_operations_started, 4);
+        assert_eq!(active.storage_write_operations_active_high_water, 4);
+        let storage = timeout(Duration::from_secs(1), pipeline.shutdown(true))
+            .await
+            .expect("write-limit cancellation joined")
+            .expect("write-limit storage returned");
+        drop(storage);
+        let finished = control.snapshot();
+        assert_eq!(finished.storage_write_operations_active, 0);
+        assert_eq!(finished.storage_write_operations_started, 4);
+        assert_eq!(finished.storage_write_operations_completed, 4);
+        let _ = tokio::fs::remove_file(&staging).await;
+
+        let output = test_path("storage-hash-limits.bin");
+        let staging = staging_path(&output).expect("hash staging path");
+        let storage = StagingFile::create(
+            output.clone(),
+            ((CONTENT_STORAGE_HASH_CONCURRENCY + 1) * block_length) as u64,
+        )
+        .await
+        .expect("create hash-limit storage");
+        for piece in 0..=CONTENT_STORAGE_HASH_CONCURRENCY {
+            storage
+                .plan_write(
+                    (piece * block_length) as u64,
+                    vec![piece as u8; block_length],
+                )
+                .expect("plan hash fixture write")
+                .execute()
+                .await
+                .expect("write hash fixture");
+        }
+        let control = DownloadControl::new();
+        control.set_storage_hash_delay(Duration::from_millis(300));
+        let mut pipeline = ContentStoragePipeline::start(
+            ContentStorage::Single(storage),
+            &control,
+            (CONTENT_STORAGE_HASH_CONCURRENCY + 1) * block_length,
+            None,
+        )
+        .await
+        .expect("start hash-limit pipeline");
+        for piece in 0..CONTENT_STORAGE_HASH_CONCURRENCY {
+            let expected: [u8; 20] = Sha1::digest(vec![piece as u8; block_length]).into();
+            pipeline
+                .enqueue(ContentStorageCommand::Verify {
+                    piece: piece as u32,
+                    generation: PieceGeneration::new(1).expect("generation"),
+                    offset: (piece * block_length) as u64,
+                    length: block_length as u32,
+                    expected,
+                    durable: false,
+                })
+                .expect("enqueue hash-limit command");
+            timeout(Duration::from_secs(1), async {
+                loop {
+                    if control.snapshot().storage_hash_operations_active == piece + 1 {
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("hash reached its execution slot");
+        }
+        let piece = CONTENT_STORAGE_HASH_CONCURRENCY;
+        let expected: [u8; 20] = Sha1::digest(vec![piece as u8; block_length]).into();
+        pipeline
+            .enqueue(ContentStorageCommand::Verify {
+                piece: piece as u32,
+                generation: PieceGeneration::new(1).expect("generation"),
+                offset: (piece * block_length) as u64,
+                length: block_length as u32,
+                expected,
+                durable: false,
+            })
+            .expect("enqueue over-limit hash");
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        let active = control.snapshot();
+        assert_eq!(active.storage_hash_operations_active, 4);
+        assert_eq!(active.storage_hash_operations_started, 4);
+        assert_eq!(active.storage_hash_operations_active_high_water, 4);
+        let storage = timeout(Duration::from_secs(1), pipeline.shutdown(true))
+            .await
+            .expect("hash-limit cancellation joined")
+            .expect("hash-limit storage returned");
+        drop(storage);
+        let finished = control.snapshot();
+        assert_eq!(finished.storage_hash_operations_active, 0);
+        assert_eq!(finished.storage_hash_operations_started, 4);
+        assert_eq!(finished.storage_hash_operations_completed, 4);
+        let _ = tokio::fs::remove_file(&staging).await;
+    }
+
+    #[tokio::test]
+    async fn storage_executor_overlaps_classes_and_survives_full_completion_queue() {
+        let block_length = MIN_PAYLOAD_ALLOWANCE;
+        let output = test_path("storage-cross-class.bin");
+        let staging = staging_path(&output).expect("cross-class staging path");
+        let storage = StagingFile::create(output.clone(), (2 * block_length) as u64)
+            .await
+            .expect("create cross-class storage");
+        storage
+            .plan_write(0, vec![0x51; block_length])
+            .expect("plan first fixture write")
+            .execute()
+            .await
+            .expect("write first fixture");
+        let control = DownloadControl::new();
+        control.set_storage_hash_delay(Duration::from_millis(250));
+        control.set_storage_write_delay(Duration::from_millis(250));
+        let mut pipeline = ContentStoragePipeline::start(
+            ContentStorage::Single(storage),
+            &control,
+            2 * block_length,
+            None,
+        )
+        .await
+        .expect("start cross-class pipeline");
+        let expected: [u8; 20] = Sha1::digest(vec![0x51; block_length]).into();
+        pipeline
+            .enqueue(ContentStorageCommand::Verify {
+                piece: 0,
+                generation: PieceGeneration::new(1).expect("generation"),
+                offset: 0,
+                length: block_length as u32,
+                expected,
+                durable: false,
+            })
+            .expect("enqueue delayed hash");
+        timeout(Duration::from_secs(1), async {
+            loop {
+                if control.snapshot().storage_hash_operations_active == 1 {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("hash became active");
+        pipeline
+            .enqueue(ContentStorageCommand::Write {
+                block: BlockKey::new(1, 0, block_length as u32).expect("cross-class block"),
+                generation: PieceGeneration::new(1).expect("generation"),
+                offset: block_length as u64,
+                bytes: vec![0xa7; block_length],
+            })
+            .expect("enqueue overlapping write");
+        timeout(Duration::from_secs(1), async {
+            loop {
+                let progress = control.snapshot();
+                if progress.storage_hash_operations_active == 1
+                    && progress.storage_write_operations_active == 1
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("write and hash overlapped");
+        let storage = timeout(Duration::from_secs(1), pipeline.shutdown(true))
+            .await
+            .expect("cross-class cancellation joined")
+            .expect("cross-class storage returned");
+        drop(storage);
+        let _ = tokio::fs::remove_file(&staging).await;
+
+        let output = test_path("storage-full-completion.bin");
+        let staging = staging_path(&output).expect("completion staging path");
+        let storage = StagingFile::create(output.clone(), (2 * block_length) as u64)
+            .await
+            .expect("create completion storage");
+        for piece in 0..2 {
+            storage
+                .plan_write(
+                    (piece * block_length) as u64,
+                    vec![piece as u8; block_length],
+                )
+                .expect("plan completion fixture")
+                .execute()
+                .await
+                .expect("write completion fixture");
+        }
+        let control = DownloadControl::new();
+        let mut pipeline = ContentStoragePipeline::start(
+            ContentStorage::Single(storage),
+            &control,
+            block_length,
+            None,
+        )
+        .await
+        .expect("start one-slot completion pipeline");
+        for piece in 0..2 {
+            let expected: [u8; 20] = Sha1::digest(vec![piece as u8; block_length]).into();
+            pipeline
+                .enqueue(ContentStorageCommand::Verify {
+                    piece: piece as u32,
+                    generation: PieceGeneration::new(1).expect("generation"),
+                    offset: (piece * block_length) as u64,
+                    length: block_length as u32,
+                    expected,
+                    durable: false,
+                })
+                .expect("enqueue completion saturation hash");
+            timeout(Duration::from_secs(1), async {
+                loop {
+                    if control.snapshot().storage_hash_operations_completed == piece + 1 {
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("hash completed despite undrained completion channel");
+        }
+        assert_eq!(control.snapshot().storage_completion_queue_high_water, 1);
+        let storage = timeout(Duration::from_secs(1), pipeline.shutdown(true))
+            .await
+            .expect("saturated completion cancellation joined")
+            .expect("saturated completion storage returned");
+        drop(storage);
+        let finished = control.snapshot();
+        assert_eq!(finished.storage_hash_operations_started, 2);
+        assert_eq!(finished.storage_hash_operations_completed, 2);
+        assert_eq!(finished.storage_hash_operations_active, 0);
+        let _ = tokio::fs::remove_file(&staging).await;
     }
 
     #[tokio::test]

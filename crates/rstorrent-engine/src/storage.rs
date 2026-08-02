@@ -22,7 +22,6 @@ pub enum StorageError {
         length: usize,
         file_length: u64,
     },
-    StaleWritePlan,
     Io {
         operation: &'static str,
         source: io::Error,
@@ -51,7 +50,6 @@ impl fmt::Display for StorageError {
                 formatter,
                 "block at {begin} with length {length} exceeds file length {file_length}"
             ),
-            Self::StaleWritePlan => write!(formatter, "staging write plan has a stale route"),
             Self::Io { operation, source } => write!(formatter, "{operation}: {source}"),
         }
     }
@@ -73,14 +71,65 @@ pub struct StagingFile {
     staging_path: PathBuf,
     output_path: PathBuf,
     file_length: u64,
-    routing_generation: u64,
 }
 
 #[derive(Clone, Debug)]
-struct StagingWritePlan {
+pub(crate) struct StagingWritePlan {
+    file: Arc<std::fs::File>,
     begin: u64,
     payload: Arc<Vec<u8>>,
-    routing_generation: u64,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct StagingHashPlan {
+    file: Arc<std::fs::File>,
+    begin: u64,
+    length: u32,
+}
+
+impl StagingWritePlan {
+    pub(crate) async fn execute(self) -> Result<(), StorageError> {
+        tokio::task::spawn_blocking(move || write_all_at(&self.file, &self.payload, self.begin))
+            .await
+            .map_err(|source| StorageError::Io {
+                operation: "join positional staging write",
+                source: io::Error::other(source),
+            })?
+            .map_err(|source| StorageError::Io {
+                operation: "write unverified block",
+                source,
+            })
+    }
+}
+
+impl StagingHashPlan {
+    pub(crate) async fn execute(self) -> Result<[u8; 20], StorageError> {
+        tokio::task::spawn_blocking(move || {
+            let mut hasher = Sha1::new();
+            let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
+            let mut remaining = self.length as usize;
+            let mut offset = self.begin;
+            while remaining > 0 {
+                let chunk_length = remaining.min(buffer.len());
+                read_exact_at(&self.file, &mut buffer[..chunk_length], offset)?;
+                hasher.update(&buffer[..chunk_length]);
+                remaining -= chunk_length;
+                offset = offset
+                    .checked_add(chunk_length as u64)
+                    .ok_or_else(|| io::Error::other("verification offset overflow"))?;
+            }
+            Ok::<[u8; 20], io::Error>(hasher.finalize().into())
+        })
+        .await
+        .map_err(|source| StorageError::Io {
+            operation: "join positional staging verification",
+            source: io::Error::other(source),
+        })?
+        .map_err(|source| StorageError::Io {
+            operation: "read staging output for verification",
+            source,
+        })
+    }
 }
 
 impl StagingFile {
@@ -126,16 +175,20 @@ impl StagingFile {
             staging_path,
             output_path,
             file_length,
-            routing_generation: 0,
         })
     }
 
-    pub async fn write_block(&self, begin: u64, bytes: Vec<u8>) -> Result<(), StorageError> {
+    #[cfg(test)]
+    async fn write_block(&self, begin: u64, bytes: Vec<u8>) -> Result<(), StorageError> {
         let plan = self.plan_write(begin, bytes)?;
-        self.execute_write(plan).await
+        plan.execute().await
     }
 
-    fn plan_write(&self, begin: u64, bytes: Vec<u8>) -> Result<StagingWritePlan, StorageError> {
+    pub(crate) fn plan_write(
+        &self,
+        begin: u64,
+        bytes: Vec<u8>,
+    ) -> Result<StagingWritePlan, StorageError> {
         let end = begin
             .checked_add(bytes.len() as u64)
             .filter(|end| *end <= self.file_length)
@@ -146,34 +199,26 @@ impl StagingFile {
             })?;
         debug_assert!(end <= self.file_length);
         Ok(StagingWritePlan {
+            file: self
+                .positional
+                .as_ref()
+                .expect("positional staging handle is present until finalization")
+                .clone(),
             begin,
             payload: Arc::new(bytes),
-            routing_generation: self.routing_generation,
         })
     }
 
-    async fn execute_write(&self, plan: StagingWritePlan) -> Result<(), StorageError> {
-        if plan.routing_generation != self.routing_generation {
-            return Err(StorageError::StaleWritePlan);
-        }
-        let file = self
-            .positional
-            .as_ref()
-            .expect("positional staging handle is present until finalization")
-            .clone();
-        tokio::task::spawn_blocking(move || write_all_at(&file, &plan.payload, plan.begin))
-            .await
-            .map_err(|source| StorageError::Io {
-                operation: "join positional staging write",
-                source: io::Error::other(source),
-            })?
-            .map_err(|source| StorageError::Io {
-                operation: "write unverified block",
-                source,
-            })
+    #[cfg(test)]
+    async fn hash_piece(&self, begin: u64, length: u32) -> Result<[u8; 20], StorageError> {
+        self.plan_hash(begin, length)?.execute().await
     }
 
-    pub async fn hash_piece(&self, begin: u64, length: u32) -> Result<[u8; 20], StorageError> {
+    pub(crate) fn plan_hash(
+        &self,
+        begin: u64,
+        length: u32,
+    ) -> Result<StagingHashPlan, StorageError> {
         let end = begin
             .checked_add(u64::from(length))
             .filter(|end| *end <= self.file_length)
@@ -183,36 +228,14 @@ impl StagingFile {
                 file_length: self.file_length,
             })?;
         debug_assert!(end <= self.file_length);
-
-        let file = self
-            .positional
-            .as_ref()
-            .expect("positional staging handle is present until finalization")
-            .clone();
-        tokio::task::spawn_blocking(move || {
-            let mut hasher = Sha1::new();
-            let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
-            let mut remaining = length as usize;
-            let mut offset = begin;
-            while remaining > 0 {
-                let chunk_length = remaining.min(buffer.len());
-                read_exact_at(&file, &mut buffer[..chunk_length], offset)?;
-                hasher.update(&buffer[..chunk_length]);
-                remaining -= chunk_length;
-                offset = offset
-                    .checked_add(chunk_length as u64)
-                    .ok_or_else(|| io::Error::other("verification offset overflow"))?;
-            }
-            Ok::<[u8; 20], io::Error>(hasher.finalize().into())
-        })
-        .await
-        .map_err(|source| StorageError::Io {
-            operation: "join positional staging verification",
-            source: io::Error::other(source),
-        })?
-        .map_err(|source| StorageError::Io {
-            operation: "read staging output for verification",
-            source,
+        Ok(StagingHashPlan {
+            file: self
+                .positional
+                .as_ref()
+                .expect("positional staging handle is present until finalization")
+                .clone(),
+            begin,
+            length,
         })
     }
 

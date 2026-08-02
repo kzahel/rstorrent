@@ -104,6 +104,8 @@ fn parse_arguments(
     let mut storage_roots = Vec::new();
     let mut timeout = Duration::from_secs(120);
     let mut download_resource_limits = DownloadResourceLimits::DESKTOP;
+    let mut storage_write_concurrency = 4_usize;
+    let mut storage_hash_concurrency = 4_usize;
     let mut checkpoint_sync_delay = Duration::ZERO;
     let mut checkpoint_commit_delay = Duration::ZERO;
     let mut trace_checkpoint_stages = false;
@@ -153,6 +155,12 @@ fn parse_arguments(
                         DiagnosticError::Arguments("payload allowance exceeds usize".to_owned())
                     })?;
             }
+            "--storage-write-concurrency" => {
+                storage_write_concurrency = parse_storage_concurrency(value, name)?;
+            }
+            "--storage-hash-concurrency" => {
+                storage_hash_concurrency = parse_storage_concurrency(value, name)?;
+            }
             "--checkpoint-sync-delay-millis" => {
                 checkpoint_sync_delay = Duration::from_millis(parse_positive_u64(value, name)?);
             }
@@ -191,10 +199,26 @@ fn parse_arguments(
         NetworkConfig::new(NetworkPolicy::LoopbackOnly, timeout, timeout),
     );
     config.download_resource_limits = download_resource_limits;
+    config.storage_write_concurrency_for_testing = storage_write_concurrency;
+    config.storage_hash_concurrency_for_testing = storage_hash_concurrency;
     config.checkpoint_sync_delay_for_testing = checkpoint_sync_delay;
     config.checkpoint_commit_delay_for_testing = checkpoint_commit_delay;
     config.checkpoint_stage_trace_for_testing = trace_checkpoint_stages;
     Ok(config)
+}
+
+fn parse_storage_concurrency(
+    value: &std::ffi::OsStr,
+    name: &str,
+) -> Result<usize, DiagnosticError> {
+    let value = usize::try_from(parse_positive_u64(value, name)?)
+        .map_err(|_| DiagnosticError::Arguments(format!("{name} exceeds usize")))?;
+    if !(1..=8).contains(&value) {
+        return Err(DiagnosticError::Arguments(format!(
+            "{name} must be between 1 and 8"
+        )));
+    }
+    Ok(value)
 }
 
 fn set_once<T>(target: &mut Option<T>, value: T, name: &str) -> Result<(), DiagnosticError> {

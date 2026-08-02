@@ -95,6 +95,8 @@ def start_process(
     checkpoint_sync_delay_millis: int = 0,
     checkpoint_commit_delay_millis: int = 0,
     trace_checkpoint_stages: bool = False,
+    storage_write_concurrency: int = 4,
+    storage_hash_concurrency: int = 4,
 ) -> subprocess.Popen[str]:
     command = [
         str(binary),
@@ -108,6 +110,10 @@ def start_process(
         str(timeout_seconds),
         "--max-buffered-payload-bytes",
         str(payload_allowance),
+        "--storage-write-concurrency",
+        str(storage_write_concurrency),
+        "--storage-hash-concurrency",
+        str(storage_hash_concurrency),
     ]
     if checkpoint_sync_delay_millis > 0:
         command.extend(

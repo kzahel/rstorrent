@@ -15,6 +15,8 @@ use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
 const DEFAULT_TIMEOUT_SECONDS: u64 = 15;
 const MAX_TIMEOUT_SECONDS: u64 = 300;
 const MAX_BUFFERED_PAYLOAD_BYTES: usize = 64 * 1024 * 1024;
+const DEFAULT_STORAGE_WRITE_CONCURRENCY: usize = 4;
+const DEFAULT_STORAGE_HASH_CONCURRENCY: usize = 4;
 const USAGE: &str = "\
 Usage: rstorrent-download-piece \\
   --metainfo PATH --peer 127.0.0.1:PORT --output PATH \\
@@ -55,6 +57,10 @@ async fn main() -> ExitCode {
     };
 
     let control = DownloadControl::new();
+    if let Err(error) = configure_diagnostic_storage_execution(&control) {
+        eprintln!("argument error: {error}");
+        return ExitCode::from(2);
+    }
     let result = match config {
         DownloadCommand::Metainfo(config) => {
             download_verified_piece_with_control(config, control.clone()).await
@@ -104,7 +110,9 @@ outstanding_request_high_water={} active_piece_limit={} verification_buffer={} s
 skipped_file_bytes={} padding_bytes={} selected_written_bytes={} part_written_bytes={} \
 materialized_bytes={} part_slots_before={} part_slots_after={} part_reopened={} part_path={} \
 storage_write_operations={} storage_write_blocks={} storage_write_batch_blocks_high_water={} \
-storage_write_batch_bytes_high_water={} storage_write_service_micros={}",
+storage_write_batch_bytes_high_water={} storage_write_service_micros={} \
+storage_write_active_high_water={} storage_hash_operations={} \
+storage_hash_service_micros={} storage_hash_active_high_water={}",
                 report.verified_piece_count,
                 report.piece_count,
                 report.skipped_piece_count,
@@ -136,6 +144,10 @@ storage_write_batch_bytes_high_water={} storage_write_service_micros={}",
                 progress.storage_write_batch_blocks_high_water,
                 progress.storage_write_batch_bytes_high_water,
                 progress.storage_write_service_micros,
+                progress.storage_write_operations_active_high_water,
+                progress.storage_hash_operations_completed,
+                progress.storage_hash_service_micros,
+                progress.storage_hash_operations_active_high_water,
             );
             ExitCode::SUCCESS
         }
@@ -144,6 +156,31 @@ storage_write_batch_bytes_high_water={} storage_write_service_micros={}",
             ExitCode::FAILURE
         }
     }
+}
+
+fn configure_diagnostic_storage_execution(control: &DownloadControl) -> Result<(), String> {
+    let writes = parse_diagnostic_concurrency(
+        "RSTORRENT_TEST_STORAGE_WRITE_CONCURRENCY",
+        DEFAULT_STORAGE_WRITE_CONCURRENCY,
+    )?;
+    let hashes = parse_diagnostic_concurrency(
+        "RSTORRENT_TEST_STORAGE_HASH_CONCURRENCY",
+        DEFAULT_STORAGE_HASH_CONCURRENCY,
+    )?;
+    control
+        .set_storage_execution_limits_for_testing(writes, hashes)
+        .map_err(|error| error.to_string())
+}
+
+fn parse_diagnostic_concurrency(name: &str, default: usize) -> Result<usize, String> {
+    let Some(value) = std::env::var_os(name) else {
+        return Ok(default);
+    };
+    value
+        .to_str()
+        .ok_or_else(|| format!("{name} must be valid UTF-8"))?
+        .parse()
+        .map_err(|_| format!("{name} must be an integer"))
 }
 
 fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> {
