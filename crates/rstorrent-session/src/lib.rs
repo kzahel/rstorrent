@@ -7,6 +7,7 @@ uniffi::setup_scaffolding!();
 
 mod application;
 mod control;
+mod diagnostics;
 mod file_views;
 mod have;
 mod store;
@@ -22,6 +23,10 @@ pub use control::{
     CONTROL_VERSION, Command, ErrorCode, ErrorResponse, RemovalDataPolicy, RemovalState,
     RequestEnvelope, ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState,
     TorrentSnapshot, TorrentState,
+};
+pub use diagnostics::{
+    DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter, DiagnosticProfile,
+    DiagnosticRetention, DiagnosticSeverity, DiagnosticSubject, DiagnosticValue,
 };
 pub use file_views::{FileCatalogState, FileSelectionView, FileView};
 pub use have::{HaveError, HaveState};
@@ -40,11 +45,10 @@ pub use view_sets::{
     ViewSet, ViewSetError, ViewSetOwner, ViewSetStats, ViewSetUpdate, ViewSpec,
 };
 pub use views::{
-    ActivePiece, ActivePieceStageView, CapabilityStatus, DeliveryPolicy, DiagnosticCategory,
-    DiagnosticEvent, DiagnosticField, DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity,
-    DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView, IndexRange,
-    PeerDirection, PeerDisconnectReason, PeerFieldCapabilities, PeerLifecycle, PeerRequestPhase,
-    PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
+    ActivePiece, ActivePieceStageView, CapabilityStatus, DeliveryPolicy, DiskPieceStageView,
+    DiskPieceView, DiskPipelineView, DiskPressureView, IndexRange, PeerDirection,
+    PeerDisconnectReason, PeerFieldCapabilities, PeerLifecycle, PeerRequestPhase, PeerRole,
+    PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
     ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason, ResetReason,
     SubscriptionError, SubscriptionSpec, SubscriptionStats, TorrentView, VIEW_CONTRACT_VERSION,
     ViewHub, ViewPatch, ViewProjection, ViewSelector, ViewSnapshot, ViewSubscription, ViewUpdate,

@@ -22,6 +22,10 @@ use crate::control::{
     Command, ErrorCode, RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope,
     ResponseOutcome, StorageState, TorrentState,
 };
+use crate::diagnostics::{
+    DiagnosticCategory, DiagnosticDraft, DiagnosticField, DiagnosticSeverity, DiagnosticSubject,
+    category,
+};
 use crate::file_views::FileProgressModel;
 use crate::have::HaveState;
 use crate::store::{
@@ -31,9 +35,8 @@ use crate::store::{
 use crate::tracker_views::TrackerViewModel;
 use crate::view_sets::{VIEW_SET_REAPER_INTERVAL_MILLIS, ViewSetLeaseReaper};
 use crate::views::{
-    DiagnosticCategory, DiagnosticSeverity, DurableTorrentViewState, ProgressInputs,
-    SubscriptionError, SubscriptionSpec, TorrentActivity, ViewHub, ViewSubscription,
-    ranges_from_pieces,
+    DurableTorrentViewState, ProgressInputs, SubscriptionError, SubscriptionSpec, TorrentActivity,
+    ViewHub, ViewSubscription, ranges_from_pieces,
 };
 use crate::{
     OpenViewSetRequest, OpenViewSetResponse, UpdateViewSetRequest, ViewSet, ViewSetError,
@@ -184,7 +187,7 @@ impl ApplicationService {
         };
         service.views.record_diagnostic(
             DiagnosticSeverity::Info,
-            DiagnosticCategory::Lifecycle,
+            category::LIFECYCLE_SESSION,
             "application_opened",
             None,
             "Application profile opened",
@@ -196,7 +199,7 @@ impl ApplicationService {
         if let Some(detail) = dht_state_warning {
             service.views.record_diagnostic(
                 DiagnosticSeverity::Warning,
-                DiagnosticCategory::Discovery,
+                category::DISCOVERY_DHT,
                 "dht_state_rejected",
                 None,
                 "Saved DHT state was rejected; using cold bootstrap",
@@ -251,7 +254,7 @@ impl ApplicationService {
                     .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
                 self.views.record_diagnostic(
                     DiagnosticSeverity::Info,
-                    DiagnosticCategory::Lifecycle,
+                    category::LIFECYCLE_TORRENT,
                     "torrent_added",
                     Some(&torrent_id),
                     "Torrent added to the session",
@@ -263,7 +266,7 @@ impl ApplicationService {
                 let torrent_id = torrent_id.to_ascii_lowercase();
                 self.views.record_diagnostic(
                     DiagnosticSeverity::Info,
-                    DiagnosticCategory::Lifecycle,
+                    category::LIFECYCLE_TORRENT,
                     "torrent_resumed",
                     Some(&torrent_id),
                     "Torrent resume requested",
@@ -275,7 +278,7 @@ impl ApplicationService {
                 let torrent_id = torrent_id.to_ascii_lowercase();
                 self.views.record_diagnostic(
                     DiagnosticSeverity::Info,
-                    DiagnosticCategory::Lifecycle,
+                    category::LIFECYCLE_TORRENT,
                     "torrent_paused",
                     Some(&torrent_id),
                     "Torrent pause requested",
@@ -286,7 +289,7 @@ impl ApplicationService {
             Command::Archive { torrent_id } => {
                 self.views.record_diagnostic(
                     DiagnosticSeverity::Info,
-                    DiagnosticCategory::Lifecycle,
+                    category::LIFECYCLE_TORRENT,
                     "torrent_archived",
                     Some(&torrent_id),
                     "Torrent archived",
@@ -296,7 +299,7 @@ impl ApplicationService {
             Command::RestoreArchive { torrent_id } => {
                 self.views.record_diagnostic(
                     DiagnosticSeverity::Info,
-                    DiagnosticCategory::Lifecycle,
+                    category::LIFECYCLE_TORRENT,
                     "torrent_archive_restored",
                     Some(&torrent_id),
                     "Torrent restored from archive",
@@ -307,7 +310,7 @@ impl ApplicationService {
                 let torrent_id = torrent_id.to_ascii_lowercase();
                 self.views.record_diagnostic(
                     DiagnosticSeverity::Info,
-                    DiagnosticCategory::Lifecycle,
+                    category::LIFECYCLE_TORRENT,
                     "torrent_removal_started",
                     Some(&torrent_id),
                     "Torrent removal started",
@@ -602,7 +605,7 @@ impl ApplicationService {
         self.refresh_views()?;
         self.views.record_diagnostic(
             DiagnosticSeverity::Info,
-            DiagnosticCategory::Storage,
+            category::PLATFORM_ADAPTER,
             "torrent_removal_completed",
             Some(&torrent_id),
             "Platform-managed torrent data and catalog entry removed",
@@ -634,7 +637,7 @@ impl ApplicationService {
         self.refresh_views()?;
         self.views.record_diagnostic(
             DiagnosticSeverity::Error,
-            DiagnosticCategory::Storage,
+            category::PLATFORM_ADAPTER,
             "torrent_removal_failed",
             Some(&torrent_id),
             "Platform-managed torrent data could not be removed",
@@ -672,7 +675,7 @@ impl ApplicationService {
         }
         self.views.record_diagnostic(
             DiagnosticSeverity::Info,
-            DiagnosticCategory::Lifecycle,
+            category::LIFECYCLE_TORRENT,
             "application_shutdown",
             None,
             "Application shutdown completed",
@@ -781,7 +784,7 @@ impl ApplicationService {
         self.refresh_views()?;
         self.views.record_diagnostic(
             DiagnosticSeverity::Info,
-            DiagnosticCategory::Lifecycle,
+            category::LIFECYCLE_TORRENT,
             "torrent_removal_completed",
             Some(&removal.torrent_id),
             "Torrent removed from the session",
@@ -800,7 +803,7 @@ impl ApplicationService {
         self.refresh_views()?;
         self.views.record_diagnostic(
             DiagnosticSeverity::Error,
-            DiagnosticCategory::Storage,
+            category::STORAGE_IO,
             "torrent_removal_failed",
             Some(&removal.torrent_id),
             "Torrent data could not be removed",
@@ -974,7 +977,7 @@ impl ApplicationService {
         )?;
         self.views.record_diagnostic(
             DiagnosticSeverity::Info,
-            DiagnosticCategory::Lifecycle,
+            category::LIFECYCLE_TORRENT,
             "engine_task_started",
             Some(torrent_id),
             "Engine task started",
@@ -1139,7 +1142,7 @@ fn handle_task_outcome(
             views
                 .record_diagnostic(
                     DiagnosticSeverity::Info,
-                    DiagnosticCategory::Lifecycle,
+                    category::LIFECYCLE_TORRENT,
                     "engine_task_completed",
                     Some(torrent_id),
                     "Engine task completed",
@@ -1154,7 +1157,7 @@ fn handle_task_outcome(
             views
                 .record_diagnostic(
                     DiagnosticSeverity::Info,
-                    DiagnosticCategory::Lifecycle,
+                    category::LIFECYCLE_TORRENT,
                     "engine_task_cancelled",
                     Some(torrent_id),
                     "Engine task stopped at a cancellation point",
@@ -1175,7 +1178,7 @@ fn handle_task_outcome(
             views
                 .record_diagnostic(
                     DiagnosticSeverity::Info,
-                    DiagnosticCategory::Discovery,
+                    category::DISCOVERY_PEER,
                     "network_disabled",
                     Some(torrent_id),
                     "Outbound networking is disabled by application policy",
@@ -1198,7 +1201,7 @@ fn handle_task_outcome(
                 views
                     .record_diagnostic(
                         DiagnosticSeverity::Warning,
-                        DiagnosticCategory::Tracker,
+                        category::TRACKER_ANNOUNCE,
                         "tracker_address_rejected",
                         Some(torrent_id),
                         "Tracker supplied no address allowed by the current network policy",
@@ -1209,7 +1212,7 @@ fn handle_task_outcome(
             views
                 .record_diagnostic(
                     DiagnosticSeverity::Warning,
-                    DiagnosticCategory::Discovery,
+                    category::DISCOVERY_PEER,
                     "discovery_exhausted",
                     Some(torrent_id),
                     "No enabled discovery source can currently supply an eligible peer",
@@ -1246,7 +1249,7 @@ fn handle_task_outcome(
             views
                 .record_diagnostic(
                     DiagnosticSeverity::Error,
-                    DiagnosticCategory::Lifecycle,
+                    category::LIFECYCLE_TORRENT,
                     "engine_task_failed",
                     Some(torrent_id),
                     "Engine task failed",
@@ -1309,7 +1312,7 @@ impl StoreCheckpointSink {
         self.views
             .record_diagnostic(
                 DiagnosticSeverity::Info,
-                DiagnosticCategory::Storage,
+                category::STORAGE_IO,
                 "storage_selection_required",
                 Some(&self.torrent_id),
                 "Verified metadata is waiting for platform storage",
@@ -1331,7 +1334,7 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
         self.views
             .record_diagnostic(
                 DiagnosticSeverity::Info,
-                DiagnosticCategory::Metadata,
+                category::METADATA_EXCHANGE,
                 "metadata_verified",
                 Some(&self.torrent_id),
                 "Torrent metadata verified",
@@ -1355,7 +1358,7 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
         self.views
             .record_diagnostic(
                 DiagnosticSeverity::Info,
-                DiagnosticCategory::Storage,
+                category::STORAGE_IO,
                 "storage_prepared",
                 Some(&self.torrent_id),
                 "Torrent storage prepared",
@@ -1385,7 +1388,7 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
         self.views
             .record_diagnostic(
                 DiagnosticSeverity::Info,
-                DiagnosticCategory::Integrity,
+                category::INTEGRITY_HASH,
                 "have_rechecked",
                 Some(&self.torrent_id),
                 "Existing piece state rechecked",
@@ -1409,7 +1412,7 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
         self.views
             .record_diagnostic(
                 DiagnosticSeverity::Debug,
-                DiagnosticCategory::Piece,
+                category::PIECE_BLOCK,
                 "piece_durable",
                 Some(&self.torrent_id),
                 "Verified piece became durable",
@@ -1429,7 +1432,7 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
         self.views
             .record_diagnostic(
                 DiagnosticSeverity::Info,
-                DiagnosticCategory::Storage,
+                category::STORAGE_IO,
                 "publication_prepared",
                 Some(&self.torrent_id),
                 "Payload files prepared for publication",
@@ -1449,7 +1452,7 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
         self.views
             .record_diagnostic(
                 DiagnosticSeverity::Info,
-                DiagnosticCategory::Lifecycle,
+                category::LIFECYCLE_TORRENT,
                 "torrent_completed",
                 Some(&self.torrent_id),
                 "Torrent completed",
@@ -1463,6 +1466,46 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
 struct ViewActivitySink {
     torrent_id: String,
     views: ViewHub,
+}
+
+fn piece_diagnostic_context(
+    event: &DownloadActivityEvent,
+) -> (Vec<DiagnosticSubject>, Vec<DiagnosticField>) {
+    let (piece_index, attempt) = match event {
+        DownloadActivityEvent::PieceStarted {
+            piece_index,
+            attempt,
+            ..
+        } => (*piece_index, Some(*attempt)),
+        DownloadActivityEvent::BlockRequested { piece_index, .. }
+        | DownloadActivityEvent::BlockReceived { piece_index, .. }
+        | DownloadActivityEvent::BlockStored { piece_index, .. }
+        | DownloadActivityEvent::PieceHashing { piece_index }
+        | DownloadActivityEvent::PieceVerified { piece_index } => (*piece_index, None),
+        _ => return (Vec::new(), Vec::new()),
+    };
+    let fields = match event {
+        DownloadActivityEvent::PieceStarted { piece_length, .. } => {
+            vec![DiagnosticField::bytes(
+                "piece_length",
+                u64::from(*piece_length),
+            )]
+        }
+        DownloadActivityEvent::BlockRequested { begin, length, .. }
+        | DownloadActivityEvent::BlockReceived { begin, length, .. }
+        | DownloadActivityEvent::BlockStored { begin, length, .. } => vec![
+            DiagnosticField::bytes("block_offset", u64::from(*begin)),
+            DiagnosticField::bytes("block_length", u64::from(*length)),
+        ],
+        _ => Vec::new(),
+    };
+    (
+        vec![DiagnosticSubject::Piece {
+            piece_index,
+            attempt,
+        }],
+        fields,
+    )
 }
 
 impl DownloadActivitySink for ViewActivitySink {
@@ -1548,50 +1591,57 @@ impl DownloadActivitySink for ViewActivitySink {
         let (severity, category, code, summary) = match event {
             DownloadActivityEvent::PieceStarted { .. } => (
                 DiagnosticSeverity::Debug,
-                DiagnosticCategory::Scheduler,
+                category::SCHEDULER_REQUEST,
                 "piece_started",
                 "Piece transfer started",
             ),
             DownloadActivityEvent::BlockRequested { .. } => (
                 DiagnosticSeverity::Trace,
-                DiagnosticCategory::Protocol,
+                category::PEER_PROTOCOL,
                 "block_requested",
                 "Piece block requested",
             ),
             DownloadActivityEvent::BlockReceived { .. } => (
                 DiagnosticSeverity::Trace,
-                DiagnosticCategory::Protocol,
+                category::PEER_PROTOCOL,
                 "block_received",
                 "Piece block received",
             ),
             DownloadActivityEvent::BlockStored { .. } => (
                 DiagnosticSeverity::Trace,
-                DiagnosticCategory::Storage,
+                category::STORAGE_IO,
                 "block_stored",
                 "Piece block stored",
             ),
             DownloadActivityEvent::PieceHashing { .. } => (
                 DiagnosticSeverity::Debug,
-                DiagnosticCategory::Integrity,
+                category::INTEGRITY_HASH,
                 "piece_hashing",
                 "Piece hash verification started",
             ),
             DownloadActivityEvent::PieceVerified { .. } => (
                 DiagnosticSeverity::Info,
-                DiagnosticCategory::Integrity,
+                category::INTEGRITY_HASH,
                 "piece_verified",
                 "Piece hash verified",
             ),
             _ => unreachable!("discovery events returned before piece diagnostics"),
         };
-        let _ = self.views.record_diagnostic(
-            severity,
-            category,
-            code,
-            Some(&self.torrent_id),
-            summary,
-            &[],
-        );
+        let diagnostic_torrent_id = self.torrent_id.clone();
+        let _ =
+            self.views
+                .record_diagnostic_lazy(severity, category, Some(&self.torrent_id), || {
+                    let (subjects, fields) = piece_diagnostic_context(&event);
+                    DiagnosticDraft {
+                        severity,
+                        category: DiagnosticCategory::from_static(category),
+                        code: code.to_owned(),
+                        torrent_id: Some(diagnostic_torrent_id),
+                        message: summary.to_owned(),
+                        subjects,
+                        fields,
+                    }
+                });
     }
 }
 
@@ -1610,7 +1660,7 @@ impl ViewActivitySink {
                 let file_count = file_count.to_string();
                 let _ = self.views.record_diagnostic(
                     DiagnosticSeverity::Info,
-                    DiagnosticCategory::Protocol,
+                    category::PEER_PROTOCOL,
                     "metadata_verified",
                     Some(&self.torrent_id),
                     "Torrent metadata verified",
@@ -1636,7 +1686,7 @@ impl ViewActivitySink {
                 let announce_event = format!("{event:?}").to_ascii_lowercase();
                 let _ = self.views.record_diagnostic(
                     DiagnosticSeverity::Info,
-                    DiagnosticCategory::Tracker,
+                    category::TRACKER_ANNOUNCE,
                     "tracker_announce_started",
                     Some(&self.torrent_id),
                     "Contacting UDP tracker",
@@ -1651,7 +1701,7 @@ impl ViewActivitySink {
             DownloadActivityEvent::TrackerUdpRetransmitted { tracker, operation } => {
                 let _ = self.views.record_diagnostic(
                     DiagnosticSeverity::Debug,
-                    DiagnosticCategory::Tracker,
+                    category::TRACKER_ANNOUNCE,
                     "tracker_udp_retransmitted",
                     Some(&self.torrent_id),
                     "UDP tracker request retransmitted after silence",
@@ -1668,7 +1718,7 @@ impl ViewActivitySink {
                 let retry = retry_in_seconds.to_string();
                 let _ = self.views.record_diagnostic(
                     DiagnosticSeverity::Warning,
-                    DiagnosticCategory::Tracker,
+                    category::TRACKER_ANNOUNCE,
                     "tracker_announce_failed",
                     Some(&self.torrent_id),
                     "UDP tracker announce failed temporarily",
@@ -1684,7 +1734,7 @@ impl ViewActivitySink {
                 let tier = tier.to_string();
                 let _ = self.views.record_diagnostic(
                     DiagnosticSeverity::Info,
-                    DiagnosticCategory::Tracker,
+                    category::TRACKER_ANNOUNCE,
                     "tracker_fallback_selected",
                     Some(&self.torrent_id),
                     "Trying another tracker in the tier",
@@ -1701,7 +1751,7 @@ impl ViewActivitySink {
                 let retry = retry_in_seconds.to_string();
                 let _ = self.views.record_diagnostic(
                     DiagnosticSeverity::Info,
-                    DiagnosticCategory::Tracker,
+                    category::TRACKER_ANNOUNCE,
                     "tracker_retry_scheduled",
                     Some(&self.torrent_id),
                     "Tracker discovery will retry automatically",
@@ -1715,7 +1765,7 @@ impl ViewActivitySink {
                 let announce = announce_in_seconds.to_string();
                 let _ = self.views.record_diagnostic(
                     DiagnosticSeverity::Debug,
-                    DiagnosticCategory::Tracker,
+                    category::TRACKER_ANNOUNCE,
                     "tracker_reannounce_scheduled",
                     Some(&self.torrent_id),
                     "Tracker accepted the announce interval",
@@ -1731,7 +1781,7 @@ impl ViewActivitySink {
                 let interval = interval_seconds.to_string();
                 let _ = self.views.record_diagnostic(
                     DiagnosticSeverity::Info,
-                    DiagnosticCategory::Tracker,
+                    category::TRACKER_ANNOUNCE,
                     "tracker_announce_succeeded",
                     Some(&self.torrent_id),
                     "UDP tracker announce succeeded",
@@ -1752,7 +1802,7 @@ impl ViewActivitySink {
                 let peers = peer_count.to_string();
                 let _ = self.views.record_diagnostic(
                     DiagnosticSeverity::Info,
-                    DiagnosticCategory::Peer,
+                    category::PEER_CONNECTION,
                     "tracker_peers_unavailable",
                     Some(&self.torrent_id),
                     "Tracker response has no currently eligible peer",
@@ -1765,7 +1815,7 @@ impl ViewActivitySink {
                     .set_discovery_activity(&self.torrent_id, true, false);
                 let _ = self.views.record_diagnostic(
                     DiagnosticSeverity::Info,
-                    DiagnosticCategory::Discovery,
+                    category::DISCOVERY_DHT,
                     "dht_lookup_started",
                     Some(&self.torrent_id),
                     "Searching the distributed hash table for peers",
@@ -1776,7 +1826,7 @@ impl ViewActivitySink {
                 let peers = peer_count.to_string();
                 let _ = self.views.record_diagnostic(
                     DiagnosticSeverity::Info,
-                    DiagnosticCategory::Discovery,
+                    category::DISCOVERY_DHT,
                     "dht_lookup_succeeded",
                     Some(&self.torrent_id),
                     "DHT lookup returned peers",
@@ -1789,7 +1839,7 @@ impl ViewActivitySink {
                     .set_discovery_activity(&self.torrent_id, false, true);
                 let _ = self.views.record_diagnostic(
                     DiagnosticSeverity::Warning,
-                    DiagnosticCategory::Discovery,
+                    category::DISCOVERY_DHT,
                     "dht_lookup_failed",
                     Some(&self.torrent_id),
                     "DHT lookup ended without a peer and may be retried",
@@ -1800,7 +1850,7 @@ impl ViewActivitySink {
                 let retry = retry_in_seconds.to_string();
                 let _ = self.views.record_diagnostic(
                     DiagnosticSeverity::Info,
-                    DiagnosticCategory::Discovery,
+                    category::DISCOVERY_DHT,
                     "dht_retry_scheduled",
                     Some(&self.torrent_id),
                     "DHT lookup will retry after bounded backoff",
@@ -1810,7 +1860,7 @@ impl ViewActivitySink {
             DownloadActivityEvent::DhtDisabledForPrivateTorrent => {
                 let _ = self.views.record_diagnostic(
                     DiagnosticSeverity::Info,
-                    DiagnosticCategory::Discovery,
+                    category::DISCOVERY_DHT,
                     "dht_disabled_private_torrent",
                     Some(&self.torrent_id),
                     "Verified private metadata disabled decentralized discovery",
@@ -1823,7 +1873,7 @@ impl ViewActivitySink {
                     .set_discovery_activity(&self.torrent_id, true, false);
                 let _ = self.views.record_diagnostic(
                     DiagnosticSeverity::Info,
-                    DiagnosticCategory::Peer,
+                    category::PEER_CONNECTION,
                     "peer_dial_started",
                     Some(&self.torrent_id),
                     "Connecting to discovered peer",
@@ -1852,7 +1902,7 @@ impl ViewActivitySink {
                     .map_or_else(|| "requestable".to_owned(), |reason| format!("{reason:?}"));
                 let _ = self.views.record_diagnostic(
                     DiagnosticSeverity::Debug,
-                    DiagnosticCategory::Scheduler,
+                    category::PERFORMANCE_BACKPRESSURE,
                     "swarm_state_changed",
                     Some(&self.torrent_id),
                     "Torrent request state changed",
@@ -1881,7 +1931,7 @@ impl ViewActivitySink {
                 let failed_bytes = failed_bytes.to_string();
                 let _ = self.views.record_diagnostic(
                     DiagnosticSeverity::Warning,
-                    DiagnosticCategory::Integrity,
+                    category::INTEGRITY_HASH,
                     "piece_hash_failed",
                     Some(&self.torrent_id),
                     "Piece hash failed; retrying the entire piece",

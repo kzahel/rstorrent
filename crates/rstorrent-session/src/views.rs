@@ -19,6 +19,12 @@ use rstorrent_engine::{
 };
 
 use crate::control::{RemovalState, ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState};
+use crate::diagnostics::{
+    DiagnosticCategory, DiagnosticDraft, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
+    DiagnosticRetention, DiagnosticSeverity, DiagnosticStore, MAX_DIAGNOSTIC_PATCH_BYTES,
+    MAX_DIAGNOSTIC_PATCH_EVENTS, diagnostic_matches, interest_matches, patch_encoded_len,
+    valid_filter,
+};
 use crate::file_views::{FileCatalogState, FileProgressModel, FileView};
 use crate::tracker_views::{TrackerCatalogState, TrackerView, TrackerViewModel};
 use crate::view_sets::{DEFAULT_VIEW_SET_QUEUE_BYTES, ViewSetInner, ViewSetUpdate};
@@ -27,12 +33,6 @@ pub const VIEW_CONTRACT_VERSION: u16 = 2;
 pub const MIN_SUBSCRIPTION_QUEUE_BYTES: u32 = 4 * 1024;
 pub const MAX_SUBSCRIPTION_QUEUE_BYTES: u32 = 4 * 1024 * 1024;
 pub const MAX_SUBSCRIPTION_INTERVAL_MILLIS: u32 = 60_000;
-const MAX_DIAGNOSTIC_EVENTS: usize = 512;
-const MAX_DIAGNOSTIC_BYTES: usize = 192 * 1024;
-const MAX_DIAGNOSTIC_CONTEXT_FIELDS: usize = 8;
-const MAX_DIAGNOSTIC_SUMMARY_CHARS: usize = 240;
-const MAX_DIAGNOSTIC_KEY_CHARS: usize = 32;
-const MAX_DIAGNOSTIC_VALUE_CHARS: usize = 160;
 
 static NEXT_EPOCH: AtomicU64 = AtomicU64::new(1);
 
@@ -55,87 +55,6 @@ pub enum ViewProjection {
     Files,
     Trackers,
     Diagnostics,
-}
-
-#[derive(
-    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, JsonSchema, TS,
-)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum DiagnosticSeverity {
-    Trace,
-    Debug,
-    Info,
-    Warning,
-    Error,
-}
-
-#[derive(
-    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, JsonSchema, TS,
-)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum DiagnosticCategory {
-    Lifecycle,
-    Discovery,
-    Tracker,
-    Peer,
-    Metadata,
-    Protocol,
-    Scheduler,
-    Piece,
-    Storage,
-    Integrity,
-    Platform,
-    Performance,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum DiagnosticProfile {
-    Normal,
-    Detailed,
-    Trace,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct DiagnosticFilter {
-    pub profile: DiagnosticProfile,
-    pub minimum_severity: DiagnosticSeverity,
-    pub categories: Vec<DiagnosticCategory>,
-}
-
-impl Default for DiagnosticFilter {
-    fn default() -> Self {
-        Self {
-            profile: DiagnosticProfile::Normal,
-            minimum_severity: DiagnosticSeverity::Info,
-            categories: Vec::new(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct DiagnosticField {
-    pub key: String,
-    pub value: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct DiagnosticEvent {
-    pub sequence: String,
-    pub timestamp_millis: String,
-    pub severity: DiagnosticSeverity,
-    pub category: DiagnosticCategory,
-    pub code: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub torrent_id: Option<String>,
-    pub summary: String,
-    pub context: Vec<DiagnosticField>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -854,7 +773,7 @@ pub enum ViewSnapshot {
     },
     Diagnostics {
         events: Vec<DiagnosticEvent>,
-        dropped_count: String,
+        retention: DiagnosticRetention,
     },
 }
 
@@ -902,7 +821,7 @@ pub enum ViewPatch {
     },
     Diagnostics {
         events: Vec<DiagnosticEvent>,
-        dropped_count: String,
+        retention: DiagnosticRetention,
     },
 }
 
@@ -955,10 +874,7 @@ pub(crate) struct HubState {
     pub(crate) revision: u64,
     torrents: BTreeMap<String, TorrentModel>,
     disk: DiskSessionModel,
-    diagnostics: VecDeque<StoredDiagnostic>,
-    diagnostic_bytes: usize,
-    diagnostic_dropped: u64,
-    next_diagnostic_sequence: u64,
+    diagnostics: DiagnosticStore,
     subscribers: BTreeMap<u64, Weak<SubscriberInner>>,
     next_stream_id: u64,
     pub(crate) view_sets: BTreeMap<String, Arc<ViewSetInner>>,
@@ -1003,12 +919,6 @@ pub(crate) struct DurableTorrentViewState {
     pub(crate) verified: Vec<IndexRange>,
     pub(crate) files: Option<FileProgressModel>,
     pub(crate) trackers: TrackerViewModel,
-}
-
-#[derive(Clone, Debug)]
-struct StoredDiagnostic {
-    event: DiagnosticEvent,
-    encoded_bytes: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -1120,10 +1030,7 @@ impl ViewHub {
                     })
                     .collect(),
                 disk: DiskSessionModel::default(),
-                diagnostics: VecDeque::new(),
-                diagnostic_bytes: 0,
-                diagnostic_dropped: 0,
-                next_diagnostic_sequence: 1,
+                diagnostics: DiagnosticStore::default(),
                 subscribers: BTreeMap::new(),
                 next_stream_id: 1,
                 view_sets: BTreeMap::new(),
@@ -1500,60 +1407,128 @@ impl ViewHub {
     pub fn record_diagnostic(
         &self,
         severity: DiagnosticSeverity,
-        category: DiagnosticCategory,
+        category: &str,
         code: &str,
         torrent_id: Option<&str>,
-        summary: &str,
+        message: &str,
         context: &[(&str, &str)],
+    ) -> Result<(), SubscriptionError> {
+        let category = DiagnosticCategory::new(category)
+            .ok_or_else(|| SubscriptionError::Internal("invalid diagnostic category".to_owned()))?;
+        self.record_structured_diagnostic(DiagnosticDraft {
+            severity,
+            category,
+            code: code.to_owned(),
+            torrent_id: torrent_id.map(ToOwned::to_owned),
+            message: message.to_owned(),
+            subjects: Vec::new(),
+            fields: context
+                .iter()
+                .map(|(key, value)| DiagnosticField::text(*key, *value))
+                .collect(),
+        })
+    }
+
+    pub(crate) fn record_structured_diagnostic(
+        &self,
+        draft: DiagnosticDraft,
     ) -> Result<(), SubscriptionError> {
         let mut hub = self
             .inner
             .lock()
             .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
-        let event = DiagnosticEvent {
-            sequence: hub.next_diagnostic_sequence.to_string(),
-            timestamp_millis: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis()
-                .to_string(),
-            severity,
-            category,
-            code: sanitize_text(code, MAX_DIAGNOSTIC_KEY_CHARS),
-            torrent_id: torrent_id.map(|value| sanitize_text(value, 40)),
-            summary: sanitize_text(summary, MAX_DIAGNOSTIC_SUMMARY_CHARS),
-            context: context
-                .iter()
-                .take(MAX_DIAGNOSTIC_CONTEXT_FIELDS)
-                .map(|(key, value)| DiagnosticField {
-                    key: sanitize_text(key, MAX_DIAGNOSTIC_KEY_CHARS),
-                    value: sanitize_text(value, MAX_DIAGNOSTIC_VALUE_CHARS),
-                })
-                .collect(),
-        };
-        hub.next_diagnostic_sequence = hub.next_diagnostic_sequence.saturating_add(1);
-        let encoded_bytes = serde_json::to_vec(&event)
-            .map_err(|error| SubscriptionError::Internal(error.to_string()))?
-            .len();
-        hub.diagnostics.push_back(StoredDiagnostic {
-            event: event.clone(),
-            encoded_bytes,
-        });
-        hub.diagnostic_bytes = hub.diagnostic_bytes.saturating_add(encoded_bytes);
-        while hub.diagnostics.len() > MAX_DIAGNOSTIC_EVENTS
-            || hub.diagnostic_bytes > MAX_DIAGNOSTIC_BYTES
-        {
-            let Some(dropped) = hub.diagnostics.pop_front() else {
-                break;
-            };
-            hub.diagnostic_bytes = hub.diagnostic_bytes.saturating_sub(dropped.encoded_bytes);
-            hub.diagnostic_dropped = hub.diagnostic_dropped.saturating_add(1);
+        if !hub.diagnostic_enabled(draft.severity, &draft.category, draft.torrent_id.as_deref())? {
+            return Ok(());
         }
+        let timestamp_millis = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let event = hub.diagnostics.record(draft, timestamp_millis);
         hub.publish_diagnostic(event)
+    }
+
+    pub(crate) fn record_diagnostic_lazy<F>(
+        &self,
+        severity: DiagnosticSeverity,
+        category: &'static str,
+        torrent_id: Option<&str>,
+        build: F,
+    ) -> Result<(), SubscriptionError>
+    where
+        F: FnOnce() -> DiagnosticDraft,
+    {
+        let category = DiagnosticCategory::from_static(category);
+        let enabled = {
+            let mut hub = self
+                .inner
+                .lock()
+                .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+            hub.diagnostic_enabled(severity, &category, torrent_id)?
+        };
+        if !enabled {
+            return Ok(());
+        }
+        self.record_structured_diagnostic(build())
     }
 }
 
 impl HubState {
+    fn diagnostic_enabled(
+        &mut self,
+        severity: DiagnosticSeverity,
+        category: &DiagnosticCategory,
+        torrent_id: Option<&str>,
+    ) -> Result<bool, SubscriptionError> {
+        if interest_matches(
+            &DiagnosticFilter::default(),
+            None,
+            severity,
+            category,
+            torrent_id,
+        ) {
+            return Ok(true);
+        }
+        self.subscribers.retain(|_, weak| weak.strong_count() != 0);
+        if self
+            .subscribers
+            .values()
+            .filter_map(Weak::upgrade)
+            .any(|subscriber| {
+                let filter = subscriber.spec.diagnostics.clone().unwrap_or_default();
+                subscriber.spec.projection == ViewProjection::Diagnostics
+                    && interest_matches(
+                        &filter,
+                        selector_torrent_id(&subscriber.spec.selector),
+                        severity,
+                        category,
+                        torrent_id,
+                    )
+            })
+        {
+            return Ok(true);
+        }
+        self.retain_live_view_sets();
+        for view_set in self.view_sets.values() {
+            for spec in view_set.view_specs()? {
+                let subscription = spec.subscription_spec(DEFAULT_VIEW_SET_QUEUE_BYTES);
+                if subscription.projection == ViewProjection::Diagnostics {
+                    let filter = subscription.diagnostics.clone().unwrap_or_default();
+                    if interest_matches(
+                        &filter,
+                        selector_torrent_id(&subscription.selector),
+                        severity,
+                        category,
+                        torrent_id,
+                    ) {
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+        Ok(false)
+    }
+
     pub(crate) fn snapshot_for(&self, spec: &SubscriptionSpec) -> ViewSnapshot {
         match (&spec.selector, spec.projection) {
             (ViewSelector::TorrentList, ViewProjection::Summary) => ViewSnapshot::TorrentList {
@@ -1641,15 +1616,10 @@ impl HubState {
             }
             (selector, ViewProjection::Diagnostics) => {
                 let filter = spec.diagnostics.clone().unwrap_or_default();
+                let torrent_id = selector_torrent_id(selector);
                 ViewSnapshot::Diagnostics {
-                    events: self
-                        .diagnostics
-                        .iter()
-                        .map(|stored| &stored.event)
-                        .filter(|event| diagnostic_matches(selector, &filter, event))
-                        .cloned()
-                        .collect(),
-                    dropped_count: self.diagnostic_dropped.to_string(),
+                    events: self.diagnostics.matching(&filter, torrent_id),
+                    retention: self.diagnostics.retention(),
                 }
             }
             (
@@ -1801,7 +1771,7 @@ impl HubState {
 
     fn publish_diagnostic(&mut self, event: DiagnosticEvent) -> Result<(), SubscriptionError> {
         let revision = self.revision;
-        let dropped_count = self.diagnostic_dropped.to_string();
+        let retention = self.diagnostics.retention();
         self.subscribers.retain(|_, weak| weak.strong_count() != 0);
         let subscribers = self
             .subscribers
@@ -1813,12 +1783,16 @@ impl HubState {
                 continue;
             }
             let filter = subscriber.spec.diagnostics.clone().unwrap_or_default();
-            if diagnostic_matches(&subscriber.spec.selector, &filter, &event) {
+            if diagnostic_matches(
+                &filter,
+                selector_torrent_id(&subscriber.spec.selector),
+                &event,
+            ) {
                 subscriber.enqueue_diagnostic_patch(
                     revision,
                     ViewPatch::Diagnostics {
                         events: vec![event.clone()],
-                        dropped_count: dropped_count.clone(),
+                        retention: retention.clone(),
                     },
                 )?;
             }
@@ -1832,12 +1806,13 @@ impl HubState {
                     continue;
                 }
                 let filter = subscription.diagnostics.clone().unwrap_or_default();
-                if diagnostic_matches(&subscription.selector, &filter, &event) {
+                if diagnostic_matches(&filter, selector_torrent_id(&subscription.selector), &event)
+                {
                     view_set.enqueue_patch(
                         spec.view_id(),
                         ViewPatch::Diagnostics {
                             events: vec![event.clone()],
-                            dropped_count: dropped_count.clone(),
+                            retention: retention.clone(),
                         },
                         revision,
                     )?;
@@ -2690,12 +2665,7 @@ pub(crate) fn validate_spec(spec: &SubscriptionSpec) -> Result<(), SubscriptionE
         return Err(SubscriptionError::InvalidProjection);
     }
     if let Some(filter) = &spec.diagnostics
-        && (filter.categories.len() > 12
-            || filter
-                .categories
-                .iter()
-                .enumerate()
-                .any(|(index, category)| filter.categories[..index].contains(category)))
+        && !valid_filter(filter)
     {
         return Err(SubscriptionError::InvalidProjection);
     }
@@ -3302,75 +3272,31 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
             true
         }
         (
-            ViewPatch::Diagnostics {
-                events,
-                dropped_count,
-            },
+            ViewPatch::Diagnostics { events, retention },
             ViewPatch::Diagnostics {
                 events: next_events,
-                dropped_count: next_dropped_count,
+                retention: next_retention,
             },
         ) => {
+            if events.len().saturating_add(next_events.len()) > MAX_DIAGNOSTIC_PATCH_EVENTS
+                || patch_encoded_len(events).saturating_add(patch_encoded_len(next_events))
+                    > MAX_DIAGNOSTIC_PATCH_BYTES
+            {
+                return false;
+            }
             events.extend(next_events.iter().cloned());
-            *dropped_count = next_dropped_count.clone();
+            *retention = next_retention.clone();
             true
         }
         _ => false,
     }
 }
 
-fn diagnostic_matches(
-    selector: &ViewSelector,
-    filter: &DiagnosticFilter,
-    event: &DiagnosticEvent,
-) -> bool {
-    if event.severity < filter.minimum_severity {
-        return false;
+fn selector_torrent_id(selector: &ViewSelector) -> Option<&str> {
+    match selector {
+        ViewSelector::TorrentList => None,
+        ViewSelector::Torrent { torrent_id } => Some(torrent_id),
     }
-    if let ViewSelector::Torrent { torrent_id } = selector
-        && event.torrent_id.as_deref() != Some(torrent_id.as_str())
-    {
-        return false;
-    }
-    if !filter.categories.is_empty() && !filter.categories.contains(&event.category) {
-        return filter.profile == DiagnosticProfile::Normal
-            && event.severity >= DiagnosticSeverity::Warning;
-    }
-    match filter.profile {
-        DiagnosticProfile::Trace => true,
-        DiagnosticProfile::Detailed => event.category != DiagnosticCategory::Piece,
-        DiagnosticProfile::Normal => {
-            event.severity >= DiagnosticSeverity::Warning
-                || matches!(
-                    event.category,
-                    DiagnosticCategory::Lifecycle
-                        | DiagnosticCategory::Discovery
-                        | DiagnosticCategory::Tracker
-                        | DiagnosticCategory::Peer
-                        | DiagnosticCategory::Storage
-                        | DiagnosticCategory::Integrity
-                        | DiagnosticCategory::Platform
-                )
-        }
-    }
-}
-
-fn sanitize_text(value: &str, maximum_chars: usize) -> String {
-    value
-        .chars()
-        .filter(|character| {
-            !character.is_control()
-                && !matches!(
-                    *character,
-                    '\u{061c}'
-                        | '\u{200e}'
-                        | '\u{200f}'
-                        | '\u{202a}'..='\u{202e}'
-                        | '\u{2066}'..='\u{2069}'
-                )
-        })
-        .take(maximum_chars)
-        .collect()
 }
 
 fn add_counter(counter: &mut String, increment: u64) {
@@ -3497,11 +3423,14 @@ mod tests {
     };
 
     use super::{
-        DeliveryPolicy, DiagnosticCategory, DiagnosticFilter, DiagnosticProfile,
-        DiagnosticSeverity, DurableTorrentViewState, IndexRange, ProgressAction,
-        ProgressDisposition, ProgressInputs, ProgressReason, ResetReason, SubscriptionSpec,
-        TorrentActivity, ViewHub, ViewPatch, ViewProjection, ViewSelector, ViewSnapshot,
-        ViewUpdatePayload, assess_progress, ranges_from_pieces,
+        DeliveryPolicy, DiagnosticFilter, DiagnosticSeverity, DurableTorrentViewState, IndexRange,
+        ProgressAction, ProgressDisposition, ProgressInputs, ProgressReason, ResetReason,
+        SubscriptionSpec, TorrentActivity, ViewHub, ViewPatch, ViewProjection, ViewSelector,
+        ViewSnapshot, ViewUpdatePayload, assess_progress, ranges_from_pieces,
+    };
+    use crate::diagnostics::{
+        DiagnosticCategory, DiagnosticEvent, DiagnosticProfile, DiagnosticRetention,
+        DiagnosticValue, MAX_DIAGNOSTIC_EVENTS, MAX_DIAGNOSTIC_PATCH_EVENTS, category,
     };
     use crate::tracker_views::TrackerViewModel;
     use crate::{ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState};
@@ -4172,14 +4101,14 @@ mod tests {
                 diagnostics: Some(DiagnosticFilter {
                     profile: DiagnosticProfile::Normal,
                     minimum_severity: DiagnosticSeverity::Trace,
-                    categories: vec![DiagnosticCategory::Piece],
+                    categories: vec![DiagnosticCategory::from_static(category::PIECE_BLOCK)],
                 }),
             })
             .expect("subscribe");
         filtered.next_update().await.expect("snapshot");
         hub.record_diagnostic(
             DiagnosticSeverity::Trace,
-            DiagnosticCategory::Piece,
+            category::PIECE_BLOCK,
             "block_received",
             None,
             "trace",
@@ -4190,7 +4119,7 @@ mod tests {
 
         hub.record_diagnostic(
             DiagnosticSeverity::Warning,
-            DiagnosticCategory::Tracker,
+            category::TRACKER_ANNOUNCE,
             "tracker_unavailable",
             None,
             "warning",
@@ -4204,10 +4133,10 @@ mod tests {
                 .contains("tracker_unavailable")
         );
 
-        for index in 0..600 {
+        for index in 0..MAX_DIAGNOSTIC_EVENTS + 20 {
             hub.record_diagnostic(
                 DiagnosticSeverity::Warning,
-                DiagnosticCategory::Tracker,
+                category::TRACKER_ANNOUNCE,
                 "bounded",
                 None,
                 &format!("event {index}"),
@@ -4234,27 +4163,71 @@ mod tests {
             .await
             .expect("bounded snapshot");
         let ViewUpdatePayload::Snapshot {
-            snapshot:
-                ViewSnapshot::Diagnostics {
-                    events,
-                    dropped_count,
-                },
+            snapshot: ViewSnapshot::Diagnostics { events, retention },
         } = snapshot.payload
         else {
             panic!("expected diagnostic snapshot");
         };
-        assert_eq!(events.len(), super::MAX_DIAGNOSTIC_EVENTS);
-        assert_ne!(dropped_count, "0");
+        assert_eq!(events.len(), MAX_DIAGNOSTIC_EVENTS);
+        assert_ne!(retention.source_evicted_count, "0");
         assert!(
             events
                 .iter()
-                .all(|event| !event.summary.contains('\u{202e}'))
+                .all(|event| !event.message.contains('\u{202e}'))
         );
         assert!(
             events
                 .iter()
-                .flat_map(|event| &event.context)
-                .all(|field| !field.value.contains('\u{202e}'))
+                .flat_map(|event| &event.fields)
+                .all(|field| match &field.value {
+                    DiagnosticValue::Text { value }
+                    | DiagnosticValue::Endpoint { value }
+                    | DiagnosticValue::ErrorCode { value }
+                    | DiagnosticValue::Count { value }
+                    | DiagnosticValue::Bytes { value }
+                    | DiagnosticValue::DurationMillis { value } => !value.contains('\u{202e}'),
+                    DiagnosticValue::Boolean { .. } => true,
+                })
         );
+    }
+
+    #[test]
+    fn diagnostic_patch_coalescing_respects_count_and_byte_bounds() {
+        let event = DiagnosticEvent {
+            sequence: "1".to_owned(),
+            timestamp_millis: "1".to_owned(),
+            severity: DiagnosticSeverity::Trace,
+            category: DiagnosticCategory::from_static(category::PIECE_BLOCK),
+            code: "block_received".to_owned(),
+            torrent_id: None,
+            message: "received".to_owned(),
+            subjects: Vec::new(),
+            fields: Vec::new(),
+        };
+        let retention = DiagnosticRetention {
+            source_evicted_count: "0".to_owned(),
+            retained_from_sequence: "1".to_owned(),
+        };
+        let mut count_bounded = ViewPatch::Diagnostics {
+            events: vec![event.clone(); MAX_DIAGNOSTIC_PATCH_EVENTS],
+            retention: retention.clone(),
+        };
+        let next = ViewPatch::Diagnostics {
+            events: vec![event.clone()],
+            retention: retention.clone(),
+        };
+        assert!(!super::coalesce_patch(&mut count_bounded, &next));
+
+        let mut large = event;
+        large.message = "x".repeat(3_000);
+        let mut byte_bounded = ViewPatch::Diagnostics {
+            events: vec![large.clone(); 40],
+            retention: retention.clone(),
+        };
+        let next = ViewPatch::Diagnostics {
+            events: vec![large; 10],
+            retention,
+        };
+        assert!(!super::coalesce_patch(&mut byte_bounded, &next));
     }
 }

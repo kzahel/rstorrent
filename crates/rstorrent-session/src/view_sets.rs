@@ -12,9 +12,10 @@ use tokio::task::{JoinError, JoinHandle};
 use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
 
+use crate::diagnostics::DiagnosticFilter;
 use crate::views::{
-    DeliveryPolicy, DiagnosticFilter, HubState, ResetReason, SubscriptionSpec, ViewHub, ViewPatch,
-    ViewProjection, ViewSelector, ViewSnapshot, coalesce_patch,
+    DeliveryPolicy, HubState, ResetReason, SubscriptionSpec, ViewHub, ViewPatch, ViewProjection,
+    ViewSelector, ViewSnapshot, coalesce_patch,
 };
 
 pub const API_VERSION: u16 = 1;
@@ -1334,11 +1335,12 @@ fn next_epoch() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::diagnostics::category;
     use crate::{
-        DiagnosticCategory, DiagnosticEvent, DiagnosticSeverity, FileCatalogState,
-        FileSelectionView, FileView, ProgressAction, ProgressAssessment, ProgressDisposition,
-        ProgressPhase, ProgressReason, ServiceSnapshot, StorageState, TorrentSnapshot,
-        TorrentState, TorrentView,
+        DiagnosticCategory, DiagnosticEvent, DiagnosticRetention, DiagnosticSeverity,
+        FileCatalogState, FileSelectionView, FileView, ProgressAction, ProgressAssessment,
+        ProgressDisposition, ProgressPhase, ProgressReason, ServiceSnapshot, StorageState,
+        TorrentSnapshot, TorrentState, TorrentView,
     };
     use rstorrent_engine::peer::{PeerSource, PeerSources};
     use rstorrent_engine::swarm::ConnectionId;
@@ -1779,13 +1781,17 @@ mod tests {
                         sequence: "1".to_owned(),
                         timestamp_millis: "1".to_owned(),
                         severity: DiagnosticSeverity::Info,
-                        category: DiagnosticCategory::Lifecycle,
+                        category: DiagnosticCategory::from_static(category::LIFECYCLE_TORRENT),
                         code: "oversized".to_owned(),
                         torrent_id: None,
-                        summary: "x".repeat(MIN_VIEW_SET_QUEUE_BYTES as usize),
-                        context: Vec::new(),
+                        message: "x".repeat(MIN_VIEW_SET_QUEUE_BYTES as usize),
+                        subjects: Vec::new(),
+                        fields: Vec::new(),
                     }],
-                    dropped_count: "0".to_owned(),
+                    retention: DiagnosticRetention {
+                        source_evicted_count: "0".to_owned(),
+                        retained_from_sequence: "1".to_owned(),
+                    },
                 },
                 1,
             )
@@ -1879,7 +1885,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(20)).await;
         hub.record_diagnostic(
             DiagnosticSeverity::Info,
-            DiagnosticCategory::Lifecycle,
+            category::LIFECYCLE_TORRENT,
             "producer_activity",
             None,
             "Producer publication must not renew a client lease",
