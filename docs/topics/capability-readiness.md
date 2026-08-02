@@ -24,8 +24,11 @@ roughly 5,700 logical blocks to about 500 physical writes, but controlled wall
 time stayed neutral and public write plus hash service still consumed 93--94%.
 Tactical `052` now separates hash verification from bounded batched
 durability, cuts the retained SQLite-backed cohort median by 7.4%, and reduces
-514 post-metadata revisions to 18. The engine campaign now advances to
-immutable positional storage plans before bounded concurrency.
+514 post-metadata revisions to 18. Tactical `053` now removes cursor and
+per-piece-handle barriers through retained generation-checked positional plans;
+its engine median improves 5.9% and write service falls by roughly four
+seconds. The engine campaign now advances to bounded independent write and
+hash execution.
 Tactical `033` now completes the leased application view-set and headless
 polling foundation. Tactical `034` completes the responsive frontend,
 deterministic demo adapter, adaptive inspection hierarchy, and virtual table
@@ -116,17 +119,17 @@ evidence.
 
 ### Now
 
-**Establish immutable positional storage plans.** Tactical
-[`053`](../tactical/053-immutable-positional-storage-plans.md) removes
-mutable-cursor ownership from wanted-file and part-file payload operations,
-separates part-slot metadata ownership, and retains one executing write until
-the positional foundation passes exact cross-file and restart gates.
+**Add bounded independent write and hash execution.** The next tactical uses
+Tactical [`053`](../tactical/053-immutable-positional-storage-plans.md)'s
+retained generation-checked plans to give writes and hash-ready pieces
+separate bounded capacity, then joins both outcomes explicitly before
+verification becomes authoritative.
 
 ### Next
 
-1. **Add bounded independent write and hash execution.** After positional
-   ownership is proven, introduce measured root-aware write capacity and a
-   separate hash-ready queue without weakening per-piece generation joins.
+1. **Measure pending-write read-through only after simpler overlap.** Retain
+   accepted buffers for hashing before final write completion only if the
+   bounded independent queues leave a material page-cache reread cost.
 2. **Deepen peer inspection only if engine selection needs it.** A
    registry-backed Swarm view remains the strongest missing inspection
    candidate, but it should not displace a reproducible download correctness
@@ -202,7 +205,7 @@ does not.
 | Multi-file mapping and selective files | Implemented | deterministic, runtime, interop | General product selection changes and priority scheduling are absent. | [`client-persistence`](client-persistence.md) |
 | Cross-file, skipped-file, and padding storage | Implemented | deterministic, runtime, interop | BEP 47 symlinks are deliberately rejected. | [`client-persistence`](client-persistence.md) |
 | Path-backed staging and publication | Implemented | runtime, interop | Disk-space policy, relocation, and broad filesystem failure profiles remain incomplete. | [`client-persistence`](client-persistence.md) |
-| Bounded asynchronous content storage | Implemented | deterministic, runtime, interop, live | Writes and hashes remain serialized, but payload sync and batched SQLite checkpoints now run in a separate bounded joined owner; positional execution and independent write/hash queues remain pending. | [`storage-throughput-architecture`](storage-throughput-architecture.md) |
+| Bounded asynchronous content storage | Implemented | deterministic, runtime, interop, live | Payload sync and batched SQLite checkpoints use a separate bounded joined owner; writes and all hashes use retained immutable positional plans, but execution remains one serialized FIFO pending independent write/hash queues. | [`storage-throughput-architecture`](storage-throughput-architecture.md) |
 | Android SAF storage and publication | Implemented | runtime, AVD, physical | General root management, removable-media policy, and migration remain absent. | [`client-persistence`](client-persistence.md) |
 | Durable have state and conservative recheck | Implemented | deterministic, runtime, interop, AVD, physical | It rehashes claimed pieces rather than providing optimized fast resume. | [`client-persistence`](client-persistence.md) |
 | Recovery after content hash failure | Implemented | deterministic, runtime | Sole corrupt and ambiguous multi-source generations retry cleanly with bounded exact-generation attribution. | [`download-correctness`](download-correctness.md) |

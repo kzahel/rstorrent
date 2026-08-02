@@ -31,6 +31,13 @@ selection or request policy. Tactical `039` corrects a separate product-profile
 defect: outstanding requests, received payload, and active-piece selection now
 have distinct byte budgets instead of sharing the former 32 KiB desktop
 allowance.
+Tactical `052` separates hash success from bounded batched durability and
+proves conservative pre-sync, post-sync/pre-commit and post-commit crash
+outcomes. Tactical `053` moves single-file, wanted-file and part-file writes
+plus mixed hashes onto retained generation-checked positional plans; stale
+routes fail before payload mutation, skipped/padding integrity and
+materialization remain exact, and execution intentionally remains serialized
+until the next piece-generation join tactical.
 Tactical `046` closes a cancellation ownership race in public and
 session-facing wrappers: terminal metadata/content results now follow the
 supervisors' joined cleanup and final empty peer observation.

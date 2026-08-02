@@ -1,6 +1,6 @@
 # Tactical 053: Immutable Positional Storage Plans
 
-Status: Active on 2026-08-02.
+Status: Complete on 2026-08-02.
 
 Topics: `storage-throughput-architecture`, `download-correctness`,
 `client-persistence`, `disk-and-piece-inspection`,
@@ -131,7 +131,7 @@ The concrete write boundary is equivalent to:
 StorageWritePlan {
     piece_index,
     logical_begin,
-    payload: Arc<[u8]>,
+    payload: Arc<Vec<u8>> held immutably,
     spans: [StorageWriteSpan {
         destination:
             SingleFile { routing_generation }
@@ -218,6 +218,78 @@ source-fingerprinted cohort: 45.740, 46.735 and 46.380 seconds, with a
 46.380-second median, exactly 18 post-metadata revisions, complete 512-piece
 have state, exact payload/publication and cleanup. Tactical `053` must not
 change checkpoint policy or transaction shape.
+
+## Implementation And Final Evidence
+
+Commit `a495010` added one engine-owned full-range positional I/O boundary.
+Its Unix implementation uses `FileExt::{read_at,write_at}`, Windows uses
+`FileExt::{seek_read,seek_write}`, and unsupported platforms fail explicitly.
+The loops retry interruption, advance partial operations, reject zero-progress
+writes and short reads, and check every offset advance. `StagingFile` now
+retains one positional handle, transfers its existing `Vec<u8>` into an
+immutable `Arc<Vec<u8>>` without another payload copy, and performs writes and
+fixed-buffer hashes in awaited blocking jobs.
+
+Commit `b8847fa` applied the same boundary to selective storage. Wanted files
+retain separate control and positional handles for their storage lifetime.
+One selective plan resolves every wanted-file or part-slot destination,
+payload interval, absolute offset and route generation, validates every span
+before payload execution, and then performs the operation in one awaited
+blocking job. All-wanted and mixed wanted/skipped hashes now consume retained
+handles in torrent order in one job; the old per-piece wanted-handle
+duplication and mixed cursor fallback are gone.
+
+`PartFile` now owns per-piece mapping generations and returns immutable
+`PartFileSpan` values. Allocation writes its four-byte mapping entry
+positionally without a standalone `sync_data`; the joined checkpoint still
+orders that entry and payload before SQLite. Release forces the missing entry
+before making the slot reusable and increments the generation. Deterministic
+tests prove a stale slot plan is rejected after reuse and a stale wanted-file
+route prevents every span—including an earlier valid span—from mutating
+payload.
+
+The complete repository gate passed formatting, warning-denying workspace
+clippy and every workspace test: 170 engine tests passed with three opt-in live
+tests ignored, 78 session tests passed, and all protocol, gateway, desktop and
+Android tests passed. Fresh generated web contracts produced no diff; 95 web
+tests passed with two skipped, followed by strict TypeScript and the production
+build. Bundled SQLite and the session library cross-compiled through the
+installed NDK for `x86_64` and `arm64-v8a` at API 28.
+
+Controlled evidence retained exact content and cleanup across three
+selective-file runs, including skipped bytes, padding, part-file reopen,
+7,000-byte materialization and all five piece hashes; the adverse plus healthy
+mixed-source run; all nine comparator classification tests; and the
+79,000-byte paired publication fixture. Three forced-restart runs retained
+96--98 conservative claims and redownloaded only the missing remainder. The
+three crash markers also passed: pre-sync and post-sync/pre-commit reopened
+with zero durable pieces, while post-commit reopened with 11 durable pieces
+and uploaded exactly the remaining 245 pieces. Every result matched the exact
+payload hash and removed its owned artifacts.
+
+The final 128 MiB engine cohort used executable SHA-256
+`d6244ffca595fe57251a45254ba7ed7b3a74d7f500cd184629fd312b873ae8ea`.
+Its three transfer times were 33.679, 34.134 and 33.279 seconds, for a
+33.679-second median: 5.9% below the exact 35.792-second pre-change median.
+All 8,192 blocks reached the same 16-block/256 KiB caps and exact file hashes.
+Physical writes varied from 562 to 566 rather than the baseline's 544--548,
+but serialized write service fell materially from 30.928--31.979 seconds to
+27.131--28.353 seconds, and cleanup remained exact.
+
+The SQLite-backed application cohort used executable SHA-256
+`42247bbcdfc91bac4964eb975d7b0a038f89203228616589fe44860d23ab5594`.
+It completed at 46.069, 45.594 and 45.590 seconds, for a 45.594-second median,
+1.7% below Tactical `052`'s final 46.380-second median. Every run retained all
+512 pieces, exact payload SHA-1
+`9224038c2041d03f6f8eb46a7f618fc32cf34e67`, publication and cleanup, with
+17--18 post-metadata revisions. Checkpoint policy and transaction shape are
+unchanged.
+
+The result is intentionally a foundation result rather than a worker-speed
+claim. Positional execution removed cursor and handle barriers and improved
+both retained medians without weakening integrity, restart, durability or
+resource bounds. The remaining causal bottleneck is the one executing storage
+operation and its FIFO write/verify ordering.
 
 ## Stopping Condition
 

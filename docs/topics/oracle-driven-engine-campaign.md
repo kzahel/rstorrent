@@ -12,8 +12,9 @@ multi-tactical replacement is recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md).
 Tactical [`052`](../tactical/052-batched-durability-checkpoints.md) has
 completed its checkpoint split and retained performance gate; Tactical
-[`053`](../tactical/053-immutable-positional-storage-plans.md) now owns the
-immutable positional-storage slice. The intervening desktop inspection and
+[`053`](../tactical/053-immutable-positional-storage-plans.md) has completed
+the immutable positional-storage slice. Bounded independent write/hash
+execution is the next source-first slice. The intervening desktop inspection and
 view-set foundations are complete enough to expose the new checkpoint stages
 as the engine evolves.
 High-impact BEP breadth still follows the core common-denominator parity gate.
@@ -324,16 +325,15 @@ reason to stop.
 
 Campaign state: **active by maintainer direction**.
 
-Active tactical:
-[`053-immutable-positional-storage-plans.md`](../tactical/053-immutable-positional-storage-plans.md).
+Active tactical: none while the bounded concurrency slice is authored.
 Most recently completed tactical is
-[`052-batched-durability-checkpoints.md`](../tactical/052-batched-durability-checkpoints.md).
+[`053-immutable-positional-storage-plans.md`](../tactical/053-immutable-positional-storage-plans.md).
 Tacticals `025` through
 [`032-bounded-coalesced-write-batches.md`](../tactical/032-bounded-coalesced-write-batches.md)
 are complete.
 
-Current milestone: establish immutable positional wanted-file and part-file
-payload plans without adding worker concurrency.
+Current milestone: define bounded independent write/hash execution and an
+explicit piece-generation join over the completed positional-plan boundary.
 
 Last completed evidence:
 
@@ -608,8 +608,17 @@ cases from pinned libtorrent plus rqbit and JSTorrent. Its fresh engine-only
 baseline is a 35.792-second median with 544--548 physical writes and exact
 content/cleanup.
 
-Next executable action: add cross-platform full-range positional I/O helpers,
-then convert the one-writer single-file and selective storage paths to
-immutable generation-checked plans.
+Tactical `053` then completed in commits `a495010` and `b8847fa`. Full-range
+positional loops, retained wanted/part handles, immutable no-extra-copy write
+plans, per-piece part generations and one positional mixed-file hash job pass
+workspace, web, Android cross-build, selective, mixed-source, resume and crash
+gates. The exact 128 MiB engine median fell from 35.792 to 33.679 seconds and
+write service fell from 30.928--31.979 to 27.131--28.353 seconds. The exact
+SQLite-backed median was 45.594 seconds with 17--18 revisions, unchanged
+checkpoint semantics and exact payload/publication/cleanup.
+
+Next executable action: author Tactical `054` from the pinned libtorrent disk
+job/fence and hashing owners, choosing explicit initial write/hash limits and
+a piece-generation completion join before changing execution concurrency.
 
 Human blocker: **none**.

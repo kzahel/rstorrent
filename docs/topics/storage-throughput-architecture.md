@@ -2,12 +2,12 @@
 
 Topic: `storage-throughput-architecture`
 
-Status: Accepted by maintainer direction on 2026-08-02. Tactical
-[`052`](../tactical/052-batched-durability-checkpoints.md) completed the first
-bounded implementation slice; Tactical
-[`053`](../tactical/053-immutable-positional-storage-plans.md) now owns
-immutable positional storage plans. The current engine does not yet have the
-end-state architecture described here.
+Status: Accepted by maintainer direction on 2026-08-02. Tacticals
+[`052`](../tactical/052-batched-durability-checkpoints.md) and
+[`053`](../tactical/053-immutable-positional-storage-plans.md) completed the
+durability split and immutable positional-plan foundation. Bounded independent
+write/hash execution is the next slice; the current engine does not yet have
+the end-state architecture described here.
 
 ## Purpose And Scope
 
@@ -55,29 +55,28 @@ one serialized execution path:
    `CONTENT_STORAGE_WRITE_BATCH_BYTES` (256 KiB), `coalesce_content_writes`
    merges exact adjacent same-piece ranges by copying into one `Vec<u8>`, and
    `execute_content_storage_writes` awaits every resulting write serially.
-3. `StagingFile::write_block`, `SelectiveStorage::write_block` and
-   `PartFile::write_piece_range` use `seek` followed by `write_all` on mutable
-   Tokio files. That cursor-based contract requires exclusive access even when
-   destination ranges do not overlap, and each command's exclusively owned
-   `Vec<u8>` payload cannot be shared with a concurrent hash reader.
+3. `StagingFile`, `SelectiveStorage` and `PartFile` now retain stable
+   positional handles. Each write transfers its existing `Vec<u8>` into one
+   immutable shared plan without another payload copy, resolves checked
+   physical spans, validates wanted-file or part-slot generations, and runs in
+   one awaited blocking job. The one storage owner still awaits that entire
+   job before starting another operation.
 4. A `Verify` command is created only after the supervisor consumes the final
    write completion for a piece. It joins the tail of the same FIFO that holds
    later writes and, once reached, acts as a batch barrier: writes queued
    behind it wait for the hash and its synchronization to finish.
-5. The ordinary all-wanted selective hash is one `spawn_blocking` job doing
-   positional reads after duplicating every touched wanted-file handle; pieces
-   that touch skipped files fall back to async cursor reads through the part
-   file. Either way the storage task executes one hash at a time.
-6. On a hash match in a resumable selective download, the same operation calls
-   `SelectiveStorage::sync_piece`. That calls `sync_data` on every wanted file
-   touched by the piece and on the part file when applicable. Single-file
-   staging skips per-piece synchronization and syncs only at finalization.
-7. Only after that operation completes does the supervisor call
-   `DownloadCheckpointSink::piece_durable`. The application sink locks the
-   shared store mutex inline on the supervisor task while
-   `SessionStore::record_piece` decodes, updates and re-encodes the complete
-   have bitmap and commits one `synchronous=FULL` SQLite transaction for that
-   piece.
+5. Every wanted/skipped/padding hash is now one fixed-buffer positional job
+   over retained handles with no per-piece descriptor duplication or cursor
+   fallback. The storage task nevertheless executes only one hash and no
+   writes at the same time.
+6. Hash success marks the piece usable immediately and queues it to Tactical
+   `052`'s bounded checkpoint owner. That owner batches dirty pieces,
+   synchronizes each touched stable handle once per epoch, and persists one
+   merged SQLite have transition without holding the supervisor or hash stage.
+7. The remaining causal barrier is therefore execution rather than cursor or
+   durability ownership: one FIFO command stream and one executing operation
+   prevent unrelated writes from overlapping a hash and make an encountered
+   `Verify` delay later writes.
 
 `sync_data` is a durability operation. It asks the operating system to flush
 dirty file data, and the metadata required to retrieve it, toward stable
@@ -102,11 +101,11 @@ durability boundary rather than SHA-1 arithmetic alone.
 
 The product observation that prompted this topic showed a long visible
 hashing backlog on hardware capable of much faster SHA-1. The current
-`DiskPieceStage::Hashing` is applied when hash execution starts and persists
-through the per-piece payload synchronization, while pieces whose queued
-verify has not started age as `Stored`, so the UI does not prove that SHA-1
-itself is slow. It does prove that piece completion is spending too long
-behind the combined serialized boundary.
+`DiskPieceStage::Hashing` now covers SHA-1 service only, while queued verifies
+age as `Stored` and durability has distinct dirty/syncing/committing stages.
+The UI therefore exposes the remaining serialized execution queue more
+truthfully, but the backlog still does not imply that SHA-1 arithmetic itself
+is the limiting resource.
 
 ## Throughput Invariants
 
@@ -354,12 +353,13 @@ materialization job still references its old mapping generation. Reuse follows
 an affected-piece fence. A crash may leave an uncheckpointed payload slot
 orphaned; restart ignores or reclaims it rather than treating it as verified.
 
-The current format writes and synchronizes each slot entry when it is first
-needed: `PartFile::ensure_slot` scans for a free slot and `write_slot_entry`
-writes the four-byte entry and calls `sync_data` before the piece's first
-payload byte. A tactical may either batch those existing entries or introduce
-a new versioned mapping representation, but a format change requires an
-explicit resume compatibility and migration decision.
+The current format now writes each newly allocated slot entry positionally
+without a standalone `sync_data`; the joined checkpoint synchronizes the
+mapping and payload before durable have state. `release_piece` forces its
+missing entry before making the physical slot reusable, and per-piece mapping
+generations reject stale spans. A later tactical may introduce a new versioned
+mapping representation, but a format change requires an explicit resume
+compatibility and migration decision.
 
 ## File Selection And Placement Changes
 
@@ -393,11 +393,10 @@ of that uncommon operation.
 
 ## Durability And Batched Resume Checkpoints
 
-Per-piece `sync_data` plus one SQLite transaction is removed from the critical
-path. One application-service checkpoint owner collects verified-dirty pieces
-into bounded epochs. This also moves SQLite off the transfer supervisor, which
-today blocks on the shared store mutex inline in
-`StoreCheckpointSink::piece_durable`.
+Per-piece `sync_data` plus one SQLite transaction has been removed from the
+critical path. One application-service checkpoint owner collects
+verified-dirty pieces into bounded epochs, and SQLite no longer runs inline on
+the transfer supervisor.
 
 A checkpoint epoch performs these steps:
 
@@ -831,8 +830,11 @@ Tactical [`052`](../tactical/052-batched-durability-checkpoints.md) completed
 the first slice: hash verification now precedes bounded batched payload and
 SQLite durability in separate joined stages. Its final SQLite-backed cohort
 reduced the median from 50.085 to 46.380 seconds and post-metadata revisions
-from 514 to 18 without a persistent raw storage-control regression. The next
-slice is Tactical
-[`053`](../tactical/053-immutable-positional-storage-plans.md): it establishes
-immutable positional plans and part-file metadata ownership with one executing
-write before any worker concurrency is introduced.
+from 514 to 18 without a persistent raw storage-control regression. Tactical
+[`053`](../tactical/053-immutable-positional-storage-plans.md) then established
+retained positional handles, immutable no-extra-copy plans and generation
+checked part slots. Its engine median fell from 35.792 to 33.679 seconds and
+write service fell from 30.928--31.979 to 27.131--28.353 seconds; its
+SQLite-backed median was 45.594 seconds with unchanged checkpoint shape and
+exact restart/crash evidence. The next slice adds bounded independent write
+and hash execution with an explicit piece-generation join.

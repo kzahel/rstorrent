@@ -62,8 +62,10 @@ duration, or sampled rate.
 
 Tactical `052` implements the first throughput split: hash service ends at the
 SHA-1 result, and checkpoint dirty, syncing and committing are distinct typed
-stages. The later positional and concurrent execution tacticals still need to
-split write/hash ownership and expose their resulting queue shape.
+stages. Tactical `053` now makes every payload write and hash positional over
+retained handles without changing these stages. The concurrent execution
+tactical still needs to split write/hash ownership and expose its resulting
+queue shape.
 
 The finest Disk table identity is one piece attempt. The UI never receives one
 row per 16 KiB block and never receives payload buffers. A piece attempt may
@@ -258,6 +260,12 @@ engine/session transition tests plus the full web contract suite pass. Its
 completed delay, failure and three-boundary crash matrix proves stage truth,
 bounded backlog and conservative restart; the retained application cohort
 uses 18 revisions for 512 pieces rather than 514.
+
+Tactical `053` preserves that truthful stage contract while removing mutable
+cursor and per-piece handle ownership. Mixed wanted/skipped pieces now use one
+positional hash job, but one FIFO storage owner still leaves queued verifies
+as `Stored` until hashing begins. Its retained engine profile lowers write
+service without inventing a new stage or treating queued time as SHA-1 work.
 
 ## Known Gaps After This Sequence
 

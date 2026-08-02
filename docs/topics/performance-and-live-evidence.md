@@ -872,6 +872,40 @@ engine probe and never instantiates the SQLite checkpoint path; public
 full-download comparison resumes when later slices change that shared hot
 path.
 
+## Immutable Positional-Plan Evidence: 2026-08-02
+
+Tactical `053` replaced ordinary single-file, wanted-file and part-file
+payload writes plus every piece-hash read with immutable positional plans over
+retained handles. It deliberately retained one executing operation, so this is
+a foundation and service-cost result rather than a worker-concurrency claim.
+
+The final 128 MiB engine cohort used executable SHA-256
+`d6244ffca595fe57251a45254ba7ed7b3a74d7f500cd184629fd312b873ae8ea`.
+It completed at 33.679, 34.134 and 33.279 seconds, for a 33.679-second median,
+5.9% below the exact 35.792-second pre-change median. All 8,192 blocks reached
+the 16-block/256 KiB batch caps, all three file hashes matched and cleanup was
+exact. Physical calls varied from 562 to 566 versus 544--548 before, while
+serialized write service fell from 30.928--31.979 seconds to
+27.131--28.353 seconds. The service reduction, rather than call count alone,
+is the retained causal observation.
+
+The SQLite-backed application cohort used executable SHA-256
+`42247bbcdfc91bac4964eb975d7b0a038f89203228616589fe44860d23ab5594`.
+Its 46.069, 45.594 and 45.590-second transfers produced a 45.594-second
+median, 1.7% below Tactical `052`'s final 46.380-second median. Every run
+retained exact 512-piece state, payload SHA-1
+`9224038c2041d03f6f8eb46a7f618fc32cf34e67`, publication and cleanup, with
+17--18 post-metadata revisions. Checkpoint policy and transaction shape did
+not change.
+
+Three selective-file runs additionally proved the wanted/skipped/padding
+join, part-file reopen and materialization with exact piece/file hashes. The
+mixed-source and controlled paired-publication cases passed, three forced
+restarts retained conservative have state, and all pre-sync,
+post-sync/pre-commit and post-commit crash outcomes remained one-sided. The
+next profile-changing slice is bounded independent write/hash execution; it
+must retain these exact fingerprints, integrity outcomes and cleanup bounds.
+
 ## Maintenance Contract
 
 Feature tacticals add measurements only when their owner can report them
