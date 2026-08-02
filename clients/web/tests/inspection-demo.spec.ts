@@ -149,6 +149,78 @@ test("global disk pipeline shows pressure and responsive piece work", async ({
   await capture(page, "rstorrent-disk-phone.png");
 });
 
+test("piece canvas shows retry truth and bounds a large torrent", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openScenario(page, "piece-retry", 10_000);
+  await page.getByRole("tab", { name: "Pieces" }).click();
+  const retryMap = page.getByRole("img", {
+    name: /1,055 pieces: 450 verified, 1 active/i,
+  });
+  await expect(retryMap).toBeVisible();
+  await expect(page.getByLabel("Piece state legend")).toBeVisible();
+  const retryCanvas = await retryMap.evaluate((element) => {
+    const canvas = element as HTMLCanvasElement;
+    return {
+      width: canvas.width,
+      height: canvas.height,
+      cssHeight: Math.round(canvas.getBoundingClientRect().height),
+    };
+  });
+  expect(retryCanvas.height).toBeGreaterThan(0);
+  expect(retryCanvas.cssHeight).toBeLessThanOrEqual(1_024);
+  const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+  await capture(page, "rstorrent-pieces-retry-wide.png");
+
+  await page.setViewportSize({ width: 920, height: 720 });
+  await expect(retryMap).toBeVisible();
+  await capture(page, "rstorrent-pieces-retry-compact.png");
+
+  await openScenario(page, "large-swarm", 0);
+  await page.getByRole("tab", { name: "Pieces" }).click();
+  const largeMap = page.getByRole("img", {
+    name: /250,000 pieces: 135,000 verified, 6 active/i,
+  });
+  await expect(largeMap).toBeVisible();
+  const largeMetrics = await page.evaluate(() => ({
+    domElements: document.getElementsByTagName("*").length,
+    canvas: [...document.querySelectorAll("canvas")].map((canvas) => ({
+      width: canvas.width,
+      height: canvas.height,
+      cssHeight: Math.round(canvas.getBoundingClientRect().height),
+    })),
+  }));
+  expect(largeMetrics.domElements).toBeLessThan(1_500);
+  expect(largeMetrics.canvas).toHaveLength(1);
+  expect(largeMetrics.canvas[0]?.cssHeight).toBeLessThanOrEqual(1_024);
+  expect(largeMetrics.canvas[0]?.width).toBeLessThanOrEqual(920 * 3);
+  await capture(page, "rstorrent-pieces-large.png");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page
+    .getByRole("grid", { name: "Torrent library" })
+    .getByRole("row")
+    .nth(1)
+    .click();
+  await expect(page.getByRole("button", { name: "Torrents", exact: true })).toBeVisible();
+  await expect
+    .poll(async () =>
+      page
+        .getByRole("navigation", { name: "Torrent library" })
+        .evaluate((element) => Math.round(element.getBoundingClientRect().right)),
+    )
+    .toBeLessThanOrEqual(0);
+  await expect(page.getByRole("tab", { name: "Pieces" })).toBeInViewport();
+  await expect(largeMap).toBeVisible();
+  await capture(page, "rstorrent-pieces-phone.png");
+  console.log(`piece_scale_metrics ${JSON.stringify(largeMetrics)}`);
+});
+
 test("removal keeps data by default and exposes destructive intent", async ({
   page,
 }) => {

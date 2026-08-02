@@ -1,0 +1,135 @@
+.panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: auto;
+  height: 100%;
+  background: var(--surface-primary);
+}
+
+.summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--border-soft);
+  padding: 0.7rem 0.85rem;
+  background: var(--surface-secondary);
+}
+
+.summary h2 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.summary p {
+  margin: 0.18rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.65rem;
+}
+
+.counts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem 0.8rem;
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.mapSection {
+  min-height: 0;
+  padding: 0.8rem;
+}
+
+.canvasWrap {
+  width: 100%;
+  min-width: 0;
+}
+
+.canvas {
+  display: block;
+  max-width: 100%;
+  border: 0;
+  --piece-missing: var(--surface-tertiary);
+  --piece-mixed: var(--success);
+  --piece-verified: var(--success);
+  --piece-requested: var(--warning);
+  --piece-received: var(--accent);
+  --piece-stored: #6c77cf;
+  --piece-hashing: #9b58b5;
+  --piece-failed: var(--danger);
+  --piece-pattern: color-mix(in srgb, var(--surface-primary) 60%, transparent);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem 0.8rem;
+  margin-top: 0.65rem;
+  color: var(--text-muted);
+  font-size: 0.62rem;
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.swatch {
+  inline-size: 0.62rem;
+  block-size: 0.62rem;
+  border: 1px solid color-mix(in srgb, currentcolor 24%, transparent);
+  border-radius: 1px;
+  background: var(--swatch);
+}
+
+.swatch[data-pattern="mixed"] {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--success) 0 2px,
+    var(--surface-primary) 2px 4px
+  );
+}
+
+.swatch[data-pattern="failed"] {
+  outline: 1px solid var(--danger-strong);
+  outline-offset: 1px;
+}
+
+.empty {
+  display: grid;
+  min-height: 12rem;
+  place-content: center;
+  padding: 2rem;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.empty strong {
+  color: var(--text-primary);
+  font-size: 0.82rem;
+}
+
+.empty p {
+  max-width: 30rem;
+  margin: 0.35rem 0 0;
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 520px) {
+  .summary {
+    display: grid;
+    padding: 0.62rem 0.7rem;
+  }
+
+  .counts {
+    justify-content: flex-start;
+  }
+
+  .mapSection {
+    padding: 0.65rem;
+  }
+}

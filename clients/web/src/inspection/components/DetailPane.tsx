@@ -13,6 +13,7 @@ import { PeerTable } from "./PeerTable";
 import { FileTable } from "./FileTable";
 import { TrackerTable } from "./TrackerTable";
 import { DiskPanel } from "./DiskPanel";
+import { PieceMapPanel } from "./PieceMapPanel";
 import { VirtualTable, type VirtualColumn } from "./VirtualTable";
 import styles from "./DetailPane.module.css";
 
@@ -84,6 +85,9 @@ export function DetailPane() {
   );
   const activeTab = useInspectionStore((state) => state.presentation.activeTab);
   const layout = useInspectionStore((state) => state.presentation.layout);
+  const detailOpen = useInspectionStore(
+    (state) => state.presentation.detailOpen,
+  );
   const selectTab = useInspectionStore((state) => state.selectTab);
   const closeDetail = useInspectionStore((state) => state.closeDetail);
   const logs = useInspectionStore((state) => state.logs);
@@ -97,12 +101,23 @@ export function DetailPane() {
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
-      tabsRef.current
-        ?.querySelector<HTMLElement>(`[data-tab-id="${activeTab}"]`)
-        ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+      const tabList = tabsRef.current;
+      const active = tabList?.querySelector<HTMLElement>(
+        `[data-tab-id="${activeTab}"]`,
+      );
+      if (tabList === null || active === null || active === undefined) return;
+      const left = Math.max(
+        0,
+        active.offsetLeft - (tabList.clientWidth - active.offsetWidth) / 2,
+      );
+      if (typeof tabList.scrollTo === "function") {
+        tabList.scrollTo({ left });
+      } else {
+        active.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+      }
     });
     return () => cancelAnimationFrame(frame);
-  }, [activeTab, layout]);
+  }, [activeTab, detailOpen, layout]);
 
   const selectAdjacentTab = (tab: DetailTab, direction: -1 | 1) => {
     const index = TABS.findIndex((candidate) => candidate.id === tab);
@@ -187,6 +202,8 @@ export function DetailPane() {
           <TrackerTable torrentId={selectedId} />
         ) : activeTab === "files" && selectedId !== null ? (
           <FileTable torrentId={selectedId} />
+        ) : activeTab === "pieces" && selectedId !== null ? (
+          <PieceMapPanel torrentId={selectedId} />
         ) : activeTab === "disk" ? (
           <DiskPanel />
         ) : activeTab === "general" && torrent !== undefined ? (

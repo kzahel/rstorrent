@@ -31,6 +31,18 @@ beforeAll(() => {
     callback(0);
     return 1;
   };
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
+    () =>
+      ({
+        setTransform: vi.fn(),
+        clearRect: vi.fn(),
+        fillRect: vi.fn(),
+        beginPath: vi.fn(),
+        moveTo: vi.fn(),
+        lineTo: vi.fn(),
+        stroke: vi.fn(),
+      }) as unknown as CanvasRenderingContext2D,
+  );
 });
 
 const controllers: InspectionController[] = [];
@@ -115,6 +127,22 @@ describe("inspection application", () => {
     expect(pieces).toHaveAttribute("aria-rowcount", "65");
     expect(within(pieces).getAllByRole("row").length).toBeLessThanOrEqual(100);
     expect(screen.getByText("intake paused now")).toBeVisible();
+  });
+
+  it("renders a bounded accessible canvas for a 250,000-piece torrent", async () => {
+    const user = userEvent.setup();
+    renderScenario("large-swarm", 0);
+
+    await user.click(screen.getByRole("tab", { name: "Pieces" }));
+
+    const canvas = screen.getByRole("img", {
+      name: /250,000 pieces: 135,000 verified, 6 active/i,
+    }) as HTMLCanvasElement;
+    expect(canvas).toBeVisible();
+    expect(canvas.width).toBeLessThanOrEqual(640 * 3);
+    expect(canvas.height).toBeLessThanOrEqual(1_024 * 3);
+    expect(document.querySelectorAll("*").length).toBeLessThan(1_500);
+    expect(screen.getByLabelText("Piece state legend")).toBeVisible();
   });
 
   it("resizes the detail pane with pointer and keyboard input", async () => {
