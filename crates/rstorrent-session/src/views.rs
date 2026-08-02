@@ -13,9 +13,9 @@ use ts_rs::TS;
 
 use rstorrent_engine::peer::{PeerFailure, PeerSource, PeerSources};
 use rstorrent_engine::{
-    DiskPieceStage, DiskPressure, DiskRuntimeSnapshot, PeerConnectionDirection,
-    PeerConnectionLifecycle, PeerConnectionObservation, PeerConnectionRole, PeerRequestWindowPhase,
-    PeerTransport, TrackerRuntimeSnapshot,
+    DiskPieceRuntimeSnapshot, DiskPieceStage, DiskPressure, DiskRuntimeSnapshot,
+    PeerConnectionDirection, PeerConnectionLifecycle, PeerConnectionObservation,
+    PeerConnectionRole, PeerRequestWindowPhase, PeerTransport, TrackerRuntimeSnapshot,
 };
 
 use crate::control::{RemovalState, ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState};
@@ -377,11 +377,28 @@ impl IndexRange {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ActivePiece {
+    pub piece_id: String,
     pub piece_index: u32,
+    pub attempt: u32,
     pub piece_length: u32,
+    pub stage: ActivePieceStageView,
     pub requested: Vec<IndexRange>,
     pub received: Vec<IndexRange>,
     pub stored: Vec<IndexRange>,
+    pub age_millis: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum ActivePieceStageView {
+    Requested,
+    Received,
+    Stored,
+    Hashing,
+    Failed,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -814,7 +831,7 @@ pub enum ViewSnapshot {
         torrent_id: String,
         piece_count: u32,
         verified: Vec<IndexRange>,
-        active: Option<ActivePiece>,
+        active: Vec<ActivePiece>,
     },
     SessionDisk {
         pipeline: DiskPipelineView,
@@ -860,7 +877,8 @@ pub enum ViewPatch {
         piece_count: u32,
         verified: Vec<IndexRange>,
         cleared: Vec<IndexRange>,
-        active: Option<ActivePiece>,
+        active_upsert: Vec<ActivePiece>,
+        active_removed: Vec<String>,
     },
     SessionDisk {
         pipeline: DiskPipelineView,
@@ -953,7 +971,7 @@ struct TorrentModel {
     snapshot: TorrentSnapshot,
     progress_inputs: ProgressInputs,
     verified: Vec<IndexRange>,
-    active: Option<ActivePiece>,
+    active: BTreeMap<u32, ActivePiece>,
     peers: BTreeMap<String, PeerView>,
     files: Option<FileProgressModel>,
     trackers: TrackerViewModel,
@@ -1277,6 +1295,40 @@ impl ViewHub {
         Ok(())
     }
 
+    pub(crate) fn record_piece_runtime(
+        &self,
+        torrent_id: &str,
+        pieces: &[DiskPieceRuntimeSnapshot],
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let Some(model) = hub.torrents.get_mut(torrent_id) else {
+            return Ok(());
+        };
+        let previous_view = model.view.clone();
+        let previous_verified = model.verified.clone();
+        let previous_active = model.active.clone();
+        model.reconcile_piece_runtime(pieces);
+        let next_view = model.view.clone();
+        let next_verified = model.verified.clone();
+        let next_active = model.active.clone();
+        if previous_active != next_active {
+            hub.publish_activity_changes(
+                torrent_id,
+                &previous_view,
+                &next_view,
+                &previous_verified,
+                &next_verified,
+                &previous_active,
+                &next_active,
+                &[],
+            )?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn clear_disk_runtime(&self, torrent_id: &str) -> Result<(), SubscriptionError> {
         let mut hub = self
             .inner
@@ -1289,6 +1341,10 @@ impl ViewHub {
             hub.publish_disk_changes(&previous, &current)?;
         }
         Ok(())
+    }
+
+    pub(crate) fn clear_piece_runtime(&self, torrent_id: &str) -> Result<(), SubscriptionError> {
+        self.record_piece_runtime(torrent_id, &[])
     }
 
     pub(crate) fn record_piece_durable(
@@ -1521,7 +1577,9 @@ impl HubState {
                     torrent_id: torrent_id.clone(),
                     piece_count: torrent.map_or(0, |torrent| torrent.view.piece_count),
                     verified: torrent.map_or_else(Vec::new, |torrent| torrent.verified.clone()),
-                    active: torrent.and_then(|torrent| torrent.active.clone()),
+                    active: torrent.map_or_else(Vec::new, |torrent| {
+                        torrent.active.values().cloned().collect()
+                    }),
                 }
             }
             (ViewSelector::TorrentList, ViewProjection::Disk) => {
@@ -1692,8 +1750,8 @@ impl HubState {
         next_view: &TorrentView,
         previous_verified: &[IndexRange],
         next_verified: &[IndexRange],
-        previous_active: &Option<ActivePiece>,
-        next_active: &Option<ActivePiece>,
+        previous_active: &BTreeMap<u32, ActivePiece>,
+        next_active: &BTreeMap<u32, ActivePiece>,
         file_upsert: &[FileView],
     ) -> Result<(), SubscriptionError> {
         let revision = self.revision;
@@ -1936,7 +1994,7 @@ impl TorrentModel {
             snapshot: snapshot.clone(),
             progress_inputs,
             verified: Vec::new(),
-            active: None,
+            active: BTreeMap::new(),
             peers: BTreeMap::new(),
             files: None,
             trackers: TrackerViewModel::default(),
@@ -1952,14 +2010,22 @@ impl TorrentModel {
             TorrentActivity::PieceStarted {
                 piece_index,
                 piece_length,
+                attempt,
             } => {
-                self.active = Some(ActivePiece {
-                    piece_index,
-                    piece_length,
-                    requested: Vec::new(),
-                    received: Vec::new(),
-                    stored: Vec::new(),
-                });
+                self.active
+                    .entry(piece_index)
+                    .or_insert_with(|| ActivePiece {
+                        piece_id: active_piece_id(piece_index, attempt),
+                        piece_index,
+                        attempt,
+                        piece_length,
+                        stage: ActivePieceStageView::Requested,
+                        requested: Vec::new(),
+                        received: Vec::new(),
+                        stored: Vec::new(),
+                        age_millis: "0".to_owned(),
+                        error: None,
+                    });
             }
             TorrentActivity::BlockRequested {
                 piece_index,
@@ -1967,8 +2033,9 @@ impl TorrentModel {
                 length,
             } => {
                 add_counter(&mut self.view.requested_bytes, u64::from(length));
-                if let Some(active) = matching_active(&mut self.active, piece_index) {
+                if let Some(active) = self.active.get_mut(&piece_index) {
                     insert_range(&mut active.requested, begin, length);
+                    active.stage = ActivePieceStageView::Requested;
                 }
             }
             TorrentActivity::BlockReceived {
@@ -1977,9 +2044,10 @@ impl TorrentModel {
                 length,
             } => {
                 add_counter(&mut self.view.received_bytes, u64::from(length));
-                if let Some(active) = matching_active(&mut self.active, piece_index) {
+                if let Some(active) = self.active.get_mut(&piece_index) {
                     remove_range(&mut active.requested, begin, length);
                     insert_range(&mut active.received, begin, length);
+                    active.stage = ActivePieceStageView::Received;
                 }
             }
             TorrentActivity::BlockStored {
@@ -1988,9 +2056,15 @@ impl TorrentModel {
                 length,
             } => {
                 add_counter(&mut self.view.stored_bytes, u64::from(length));
-                if let Some(active) = matching_active(&mut self.active, piece_index) {
+                if let Some(active) = self.active.get_mut(&piece_index) {
                     remove_range(&mut active.received, begin, length);
                     insert_range(&mut active.stored, begin, length);
+                    active.stage =
+                        if range_cardinality(&active.stored) >= u64::from(active.piece_length) {
+                            ActivePieceStageView::Stored
+                        } else {
+                            ActivePieceStageView::Received
+                        };
                 }
                 if let Some(files) = &mut self.files {
                     file_upsert = files.stored_block(piece_index, begin, length)?;
@@ -2000,29 +2074,54 @@ impl TorrentModel {
                 insert_range(&mut self.verified, piece_index, 1);
                 self.view.verified_piece_count =
                     range_cardinality(&self.verified).min(u64::from(u32::MAX)) as u32;
-                if self
-                    .active
-                    .as_ref()
-                    .is_some_and(|active| active.piece_index == piece_index)
-                {
-                    self.active = None;
-                }
+                self.active.remove(&piece_index);
                 if let Some(files) = &mut self.files {
                     file_upsert = files.piece_verified(piece_index)?;
                 }
             }
             TorrentActivity::PieceHashFailed { piece_index } => {
-                if let Some(active) = matching_active(&mut self.active, piece_index) {
+                if let Some(active) = self.active.get_mut(&piece_index) {
                     active.requested.clear();
                     active.received.clear();
                     active.stored.clear();
+                    active.stage = ActivePieceStageView::Failed;
+                    active.error = Some("Piece hash failed; retrying".to_owned());
                 }
                 if let Some(files) = &mut self.files {
                     file_upsert = files.piece_hash_failed(piece_index)?;
                 }
             }
+            TorrentActivity::PieceHashing { piece_index } => {
+                if let Some(active) = self.active.get_mut(&piece_index) {
+                    active.stage = ActivePieceStageView::Hashing;
+                }
+            }
         }
         Ok(file_upsert)
+    }
+
+    fn reconcile_piece_runtime(&mut self, pieces: &[DiskPieceRuntimeSnapshot]) {
+        let mut retained = BTreeSet::new();
+        for runtime in pieces {
+            if runtime.piece_index >= self.view.piece_count {
+                continue;
+            }
+            retained.insert(runtime.piece_index);
+            let active = self
+                .active
+                .entry(runtime.piece_index)
+                .or_insert_with(|| active_piece_from_runtime(runtime));
+            if active.attempt != runtime.attempt {
+                *active = active_piece_from_runtime(runtime);
+            } else {
+                active.piece_length = runtime.piece_length;
+                active.stage = active_stage_from_runtime(runtime);
+                active.age_millis = runtime.age_millis.to_string();
+                active.error = runtime.error.clone();
+            }
+        }
+        self.active
+            .retain(|piece_index, _| retained.contains(piece_index));
     }
 }
 
@@ -2291,11 +2390,47 @@ const fn map_disk_piece_stage(stage: DiskPieceStage) -> DiskPieceStageView {
     }
 }
 
+fn active_piece_id(piece_index: u32, attempt: u32) -> String {
+    format!("{piece_index}:{attempt}")
+}
+
+fn active_piece_from_runtime(runtime: &DiskPieceRuntimeSnapshot) -> ActivePiece {
+    ActivePiece {
+        piece_id: active_piece_id(runtime.piece_index, runtime.attempt),
+        piece_index: runtime.piece_index,
+        attempt: runtime.attempt,
+        piece_length: runtime.piece_length,
+        stage: active_stage_from_runtime(runtime),
+        requested: Vec::new(),
+        received: Vec::new(),
+        stored: Vec::new(),
+        age_millis: runtime.age_millis.to_string(),
+        error: runtime.error.clone(),
+    }
+}
+
+const fn active_stage_from_runtime(runtime: &DiskPieceRuntimeSnapshot) -> ActivePieceStageView {
+    match runtime.stage {
+        DiskPieceStage::Receiving => {
+            if runtime.received_bytes > runtime.stored_bytes {
+                ActivePieceStageView::Received
+            } else {
+                ActivePieceStageView::Requested
+            }
+        }
+        DiskPieceStage::Queued | DiskPieceStage::Writing => ActivePieceStageView::Received,
+        DiskPieceStage::Stored => ActivePieceStageView::Stored,
+        DiskPieceStage::Hashing => ActivePieceStageView::Hashing,
+        DiskPieceStage::Failed => ActivePieceStageView::Failed,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum TorrentActivity {
     PieceStarted {
         piece_index: u32,
         piece_length: u32,
+        attempt: u32,
     },
     BlockRequested {
         piece_index: u32,
@@ -2316,6 +2451,9 @@ pub(crate) enum TorrentActivity {
         piece_index: u32,
     },
     PieceHashFailed {
+        piece_index: u32,
+    },
+    PieceHashing {
         piece_index: u32,
     },
 }
@@ -2643,12 +2781,17 @@ fn patch_for(
             let next_verified = next.map_or(&[][..], |model| model.verified.as_slice());
             let verified = difference(next_verified, old_verified);
             let cleared = difference(old_verified, next_verified);
+            let empty = BTreeMap::new();
+            let old_active = old.map_or(&empty, |model| &model.active);
+            let next_active = next.map_or(&empty, |model| &model.active);
+            let (active_upsert, active_removed) = active_piece_patch(old_active, next_active);
             Some(ViewPatch::PieceActivity {
                 torrent_id: torrent_id.clone(),
                 piece_count: next.map_or(0, |model| model.view.piece_count),
                 verified,
                 cleared,
-                active: next.and_then(|model| model.active.clone()),
+                active_upsert,
+                active_removed,
             })
         }
         (ViewSelector::Torrent { torrent_id }, ViewProjection::Peers) => {
@@ -2734,8 +2877,8 @@ fn targeted_activity_patch(
     next_view: &TorrentView,
     previous_verified: &[IndexRange],
     next_verified: &[IndexRange],
-    previous_active: &Option<ActivePiece>,
-    next_active: &Option<ActivePiece>,
+    previous_active: &BTreeMap<u32, ActivePiece>,
+    next_active: &BTreeMap<u32, ActivePiece>,
     file_upsert: &[FileView],
 ) -> Option<ViewPatch> {
     match (&spec.selector, spec.projection) {
@@ -2761,15 +2904,19 @@ fn targeted_activity_patch(
         ) if selected == torrent_id => {
             let verified = difference(next_verified, previous_verified);
             let cleared = difference(previous_verified, next_verified);
-            (!verified.is_empty() || !cleared.is_empty() || previous_active != next_active).then(
-                || ViewPatch::PieceActivity {
-                    torrent_id: torrent_id.to_owned(),
-                    piece_count: next_view.piece_count,
-                    verified,
-                    cleared,
-                    active: next_active.clone(),
-                },
-            )
+            let (active_upsert, active_removed) = active_piece_patch(previous_active, next_active);
+            (!verified.is_empty()
+                || !cleared.is_empty()
+                || !active_upsert.is_empty()
+                || !active_removed.is_empty())
+            .then(|| ViewPatch::PieceActivity {
+                torrent_id: torrent_id.to_owned(),
+                piece_count: next_view.piece_count,
+                verified,
+                cleared,
+                active_upsert,
+                active_removed,
+            })
         }
         (
             ViewSelector::Torrent {
@@ -2921,6 +3068,27 @@ fn disk_patch(previous: &DiskSessionView, current: &DiskSessionView) -> Option<V
     )
 }
 
+fn active_piece_patch(
+    previous: &BTreeMap<u32, ActivePiece>,
+    current: &BTreeMap<u32, ActivePiece>,
+) -> (Vec<ActivePiece>, Vec<String>) {
+    let upsert = current
+        .iter()
+        .filter(|(piece_index, piece)| previous.get(*piece_index) != Some(*piece))
+        .map(|(_, piece)| piece.clone())
+        .collect();
+    let removed = previous
+        .iter()
+        .filter(|(piece_index, piece)| {
+            current
+                .get(*piece_index)
+                .is_none_or(|current| current.piece_id != piece.piece_id)
+        })
+        .map(|(_, piece)| piece.piece_id.clone())
+        .collect();
+    (upsert, removed)
+}
+
 fn coalesce(update: &mut ViewUpdate, next: &ViewUpdatePayload) -> bool {
     let (ViewUpdatePayload::Patch { patch: current }, ViewUpdatePayload::Patch { patch: next }) =
         (&mut update.payload, next)
@@ -2968,14 +3136,16 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
                 piece_count,
                 verified,
                 cleared,
-                active,
+                active_upsert,
+                active_removed,
             },
             ViewPatch::PieceActivity {
                 torrent_id: next_id,
                 piece_count: next_piece_count,
                 verified: next_verified,
                 cleared: next_cleared,
-                active: next_active,
+                active_upsert: next_active_upsert,
+                active_removed: next_active_removed,
             },
         ) if torrent_id == next_id => {
             for range in next_cleared {
@@ -2987,7 +3157,23 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
                 insert_interval(verified, *range);
             }
             *piece_count = *next_piece_count;
-            *active = next_active.clone();
+            let mut values = active_upsert
+                .drain(..)
+                .map(|piece| (piece.piece_id.clone(), piece))
+                .collect::<BTreeMap<_, _>>();
+            for id in next_active_removed {
+                values.remove(id);
+            }
+            for piece in next_active_upsert {
+                values.insert(piece.piece_id.clone(), piece.clone());
+            }
+            let mut removed_ids = active_removed.drain(..).collect::<BTreeSet<_>>();
+            for piece in next_active_upsert {
+                removed_ids.remove(&piece.piece_id);
+            }
+            removed_ids.extend(next_active_removed.iter().cloned());
+            *active_upsert = values.into_values().collect();
+            *active_removed = removed_ids.into_iter().collect();
             true
         }
         (
@@ -3185,12 +3371,6 @@ fn sanitize_text(value: &str, maximum_chars: usize) -> String {
         })
         .take(maximum_chars)
         .collect()
-}
-
-fn matching_active(active: &mut Option<ActivePiece>, piece_index: u32) -> Option<&mut ActivePiece> {
-    active
-        .as_mut()
-        .filter(|active| active.piece_index == piece_index)
 }
 
 fn add_counter(counter: &mut String, increment: u64) {
@@ -3615,6 +3795,7 @@ mod tests {
             TorrentActivity::PieceStarted {
                 piece_index: 900_000,
                 piece_length: 32 * 1024 * 1024,
+                attempt: 1,
             },
         )
         .expect("activity");
@@ -3638,6 +3819,7 @@ mod tests {
             TorrentActivity::PieceStarted {
                 piece_index: 0,
                 piece_length: 16 * 1024,
+                attempt: 1,
             },
         )
         .expect("start piece");
@@ -3659,18 +3841,79 @@ mod tests {
         .expect("failed piece");
         let update = subscription.next_update().await.expect("reset patch");
         let ViewUpdatePayload::Patch {
-            patch:
-                ViewPatch::PieceActivity {
-                    active: Some(active),
-                    ..
-                },
+            patch: ViewPatch::PieceActivity {
+                ref active_upsert, ..
+            },
         } = update.payload
         else {
             panic!("expected active-piece reset patch");
         };
-        assert!(active.requested.is_empty());
-        assert!(active.received.is_empty());
-        assert!(active.stored.is_empty());
+        assert_eq!(active_upsert.len(), 1);
+        assert!(active_upsert[0].requested.is_empty());
+        assert!(active_upsert[0].received.is_empty());
+        assert!(active_upsert[0].stored.is_empty());
+        assert_eq!(active_upsert[0].stage, super::ActivePieceStageView::Failed);
+    }
+
+    #[tokio::test]
+    async fn piece_runtime_tracks_simultaneous_attempts_and_keyed_retry_cleanup() {
+        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
+        let subscription = hub.subscribe(piece_spec(16 * 1024)).expect("subscribe");
+        subscription.next_update().await.expect("snapshot");
+        let piece = |piece_index, attempt, stage| DiskPieceRuntimeSnapshot {
+            piece_index,
+            piece_length: 16 * 1024,
+            attempt,
+            stage,
+            requested_bytes: 16 * 1024,
+            received_bytes: 0,
+            stored_bytes: 0,
+            age_millis: 50,
+            stage_age_millis: 10,
+            error: (stage == DiskPieceStage::Failed)
+                .then(|| "piece hash failed; retrying".to_owned()),
+        };
+        hub.record_piece_runtime(
+            torrent_id,
+            &[
+                piece(0, 1, DiskPieceStage::Receiving),
+                piece(2, 1, DiskPieceStage::Hashing),
+            ],
+        )
+        .expect("simultaneous runtime");
+        let first = subscription.next_update().await.expect("active patch");
+        assert!(matches!(
+            first.payload,
+            ViewUpdatePayload::Patch {
+                patch: ViewPatch::PieceActivity { ref active_upsert, ref active_removed, .. }
+            } if active_upsert.len() == 2 && active_removed.is_empty()
+        ));
+
+        hub.record_piece_runtime(torrent_id, &[piece(0, 1, DiskPieceStage::Failed)])
+            .expect("failed attempt");
+        subscription.next_update().await.expect("failed patch");
+        hub.record_piece_runtime(torrent_id, &[piece(0, 2, DiskPieceStage::Receiving)])
+            .expect("retry attempt");
+        let retry = subscription.next_update().await.expect("retry patch");
+        assert!(matches!(
+            retry.payload,
+            ViewUpdatePayload::Patch {
+                patch: ViewPatch::PieceActivity { ref active_upsert, ref active_removed, .. }
+            } if active_upsert.len() == 1
+                && active_upsert[0].piece_id == "0:2"
+                && active_removed == &["0:1".to_owned()]
+        ));
+
+        hub.clear_piece_runtime(torrent_id)
+            .expect("terminal cleanup");
+        let terminal = subscription.next_update().await.expect("terminal patch");
+        assert!(matches!(
+            terminal.payload,
+            ViewUpdatePayload::Patch {
+                patch: ViewPatch::PieceActivity { ref active_upsert, ref active_removed, .. }
+            } if active_upsert.is_empty() && active_removed == &["0:2".to_owned()]
+        ));
     }
 
     #[tokio::test]

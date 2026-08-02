@@ -86,9 +86,9 @@ liveDescribe("authenticated gateway interop", () => {
           state = reduceViewUpdate(state, update);
           updates += 1;
           const active = state.pieces[torrentId]?.active;
-          requested = Math.max(requested, rangeBytes(active?.requested));
-          received = Math.max(received, rangeBytes(active?.received));
-          stored = Math.max(stored, rangeBytes(active?.stored));
+          requested = Math.max(requested, activeRangeBytes(active, "requested"));
+          received = Math.max(received, activeRangeBytes(active, "received"));
+          stored = Math.max(stored, activeRangeBytes(active, "stored"));
           changed();
         }
       };
@@ -190,4 +190,17 @@ function rangeBytes(ranges: ReadonlyArray<IndexRange> | undefined): number {
       0,
     ) ?? 0
   );
+}
+
+function activeRangeBytes(
+  active:
+    | ReadonlyArray<{
+        requested: ReadonlyArray<IndexRange>;
+        received: ReadonlyArray<IndexRange>;
+        stored: ReadonlyArray<IndexRange>;
+      }>
+    | undefined,
+  field: "requested" | "received" | "stored",
+): number {
+  return Math.max(0, ...(active ?? []).map((piece) => rangeBytes(piece[field])));
 }

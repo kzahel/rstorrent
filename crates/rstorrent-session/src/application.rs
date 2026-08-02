@@ -1124,6 +1124,9 @@ fn handle_task_outcome(
     views
         .clear_disk_runtime(torrent_id)
         .map_err(|error| error.to_string())?;
+    views
+        .clear_piece_runtime(torrent_id)
+        .map_err(|error| error.to_string())?;
     match outcome {
         Ok(report) => {
             views
@@ -1476,6 +1479,9 @@ impl DownloadActivitySink for ViewActivitySink {
         }
         if let DownloadActivityEvent::StorageState(snapshot) = &event {
             let _ = self.views.record_disk_runtime(&self.torrent_id, snapshot);
+            let _ = self
+                .views
+                .record_piece_runtime(&self.torrent_id, &snapshot.pieces);
             return;
         }
         let piece_activity = match &event {
@@ -1485,9 +1491,11 @@ impl DownloadActivitySink for ViewActivitySink {
             DownloadActivityEvent::PieceStarted {
                 piece_index,
                 piece_length,
+                attempt,
             } => TorrentActivity::PieceStarted {
                 piece_index: *piece_index,
                 piece_length: *piece_length,
+                attempt: *attempt,
             },
             DownloadActivityEvent::BlockRequested {
                 piece_index,
@@ -1526,6 +1534,9 @@ impl DownloadActivitySink for ViewActivitySink {
                     piece_index: *piece_index,
                 }
             }
+            DownloadActivityEvent::PieceHashing { piece_index } => TorrentActivity::PieceHashing {
+                piece_index: *piece_index,
+            },
             _ => return self.record_discovery_event(event),
         };
         let _ = self.views.record_activity(&self.torrent_id, piece_activity);
@@ -1556,6 +1567,12 @@ impl DownloadActivitySink for ViewActivitySink {
                 DiagnosticCategory::Storage,
                 "block_stored",
                 "Piece block stored",
+            ),
+            DownloadActivityEvent::PieceHashing { .. } => (
+                DiagnosticSeverity::Debug,
+                DiagnosticCategory::Integrity,
+                "piece_hashing",
+                "Piece hash verification started",
             ),
             DownloadActivityEvent::PieceVerified { .. } => (
                 DiagnosticSeverity::Info,
@@ -1877,6 +1894,7 @@ impl ViewActivitySink {
             | DownloadActivityEvent::BlockRequested { .. }
             | DownloadActivityEvent::BlockReceived { .. }
             | DownloadActivityEvent::BlockStored { .. }
+            | DownloadActivityEvent::PieceHashing { .. }
             | DownloadActivityEvent::PieceVerified { .. } => {
                 unreachable!("piece events are handled before discovery events")
             }

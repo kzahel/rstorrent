@@ -8,6 +8,7 @@ import type {
   InspectionSnapshot,
   LogRow,
   PeerRow,
+  PieceMapSet,
   TorrentRow,
   TrackerRow,
   TrackerSet,
@@ -46,6 +47,13 @@ export const DEMO_SCENARIOS: readonly DemoScenarioSummary[] = [
     title: "Endgame",
     description: "The final blocks duplicate safely and converge on completion.",
     durationMs: 35_000,
+    autoplay: true,
+  },
+  {
+    id: "piece-retry",
+    title: "Piece hash retry",
+    description: "A corrupt attempt fails, clears, and retries from clean state.",
+    durationMs: 30_000,
     autoplay: true,
   },
   {
@@ -116,6 +124,7 @@ export function buildScenarioSnapshot(
   );
   const filesByTorrent = content.files ?? {};
   const trackersByTorrent = content.trackers ?? {};
+  const piecesByTorrent = content.pieces ?? {};
   const disk = content.disk ?? emptyDiskSet();
   const active = content.torrents.filter(
     (torrent) => torrent.status === "downloading" || torrent.status === "metadata",
@@ -140,6 +149,7 @@ export function buildScenarioSnapshot(
     peersByTorrent,
     filesByTorrent,
     trackersByTorrent,
+    piecesByTorrent,
     disk,
     logs: content.logs.slice(-256),
     droppedLogs: Math.max(0, content.logs.length - 256),
@@ -149,6 +159,7 @@ export function buildScenarioSnapshot(
       peers: { status: "ready" },
       files: { status: "ready" },
       trackers: { status: "ready" },
+      pieces: { status: "ready" },
       disk: { status: "ready" },
       logs: { status: "ready" },
     },
@@ -160,6 +171,7 @@ interface ScenarioContent {
   readonly peers: Readonly<Record<string, readonly PeerRow[]>>;
   readonly files?: Readonly<Record<string, FileSet>>;
   readonly trackers?: Readonly<Record<string, TrackerSet>>;
+  readonly pieces?: Readonly<Record<string, PieceMapSet>>;
   readonly disk?: DiskSet;
   readonly logs: readonly LogRow[];
 }
@@ -168,7 +180,8 @@ function buildScenarioContent(
   scenarioId: DemoScenarioId,
   elapsedMs: number,
 ): ScenarioContent {
-  switch (scenarioId) {
+  const content = (() => {
+    switch (scenarioId) {
     case "healthy-download":
       return healthyDownload(elapsedMs);
     case "stalled-metadata":
@@ -177,6 +190,8 @@ function buildScenarioContent(
       return trackerRecovery(elapsedMs);
     case "endgame":
       return endgame(elapsedMs);
+    case "piece-retry":
+      return pieceRetry(elapsedMs);
     case "large-swarm":
       return largeSwarm();
     case "file-progress":
@@ -187,7 +202,12 @@ function buildScenarioContent(
       return diskError(elapsedMs);
     case "empty-library":
       return { torrents: [], peers: {}, logs: [] };
-  }
+    }
+  })();
+  return {
+    ...content,
+    pieces: buildPieceMaps(scenarioId, elapsedMs, content.torrents),
+  };
 }
 
 function healthyDownload(elapsedMs: number): ScenarioContent {
@@ -543,6 +563,42 @@ function endgame(elapsedMs: number): ScenarioContent {
   };
 }
 
+function pieceRetry(elapsedMs: number): ScenarioContent {
+  const seconds = elapsedMs / 1_000;
+  const retrying = seconds >= 12;
+  const recovered = seconds >= 24;
+  const progress = recovered ? 0.427 : 0.426;
+  return {
+    torrents: [
+      torrent({
+        id: BUNNY_ID,
+        name: "Big Buck Bunny — hash retry inspection",
+        status: "downloading",
+        sizeBytes: 276_445_467,
+        progress,
+        downloadRate: seconds >= 9 && seconds < 12 ? 0 : 4_800_000,
+        peersConnected: 18,
+        peersKnown: 121,
+        etaSeconds: 36,
+        progressReason: recovered
+          ? "Piece 450 verified on its clean retry"
+          : retrying
+            ? "Piece 450 is being fetched again after a hash failure"
+            : "Piece 450 attempt 1 is moving through storage and hashing",
+      }),
+    ],
+    peers: { [BUNNY_ID]: buildPeers(BUNNY_ID, 18, seconds, progress) },
+    logs: timelineLogs(BUNNY_ID, [
+      [0, "debug", "piece", "Piece 450 attempt 1 requested"],
+      [7, "debug", "storage", "Piece 450 attempt 1 entered hashing"],
+      [9, "warning", "integrity", "Piece 450 attempt 1 failed its SHA-1 check"],
+      [12, "info", "scheduler", "Piece 450 attempt 2 admitted from clean state"],
+      [20, "debug", "storage", "Piece 450 attempt 2 entered hashing"],
+      [24, "info", "integrity", "Piece 450 attempt 2 verified"],
+    ], elapsedMs),
+  };
+}
+
 function largeSwarm(): ScenarioContent {
   const torrents: TorrentRow[] = [];
   for (let index = 0; index < 2_000; index += 1) {
@@ -566,7 +622,12 @@ function largeSwarm(): ScenarioContent {
   }
   const selectedId = torrents[0]?.id ?? fixedId(10_000);
   if (torrents[0] !== undefined) {
-    torrents[0] = { ...torrents[0], peersConnected: 10_000 };
+    torrents[0] = {
+      ...torrents[0],
+      status: "downloading",
+      progress: 0.54,
+      peersConnected: 10_000,
+    };
   }
   return {
     torrents,
@@ -575,6 +636,93 @@ function largeSwarm(): ScenarioContent {
       [0, "info", "performance", "Loaded 2,000 torrents and 10,000 peers"],
     ], 60_000),
   };
+}
+
+function buildPieceMaps(
+  scenarioId: DemoScenarioId,
+  elapsedMs: number,
+  torrents: readonly TorrentRow[],
+): Readonly<Record<string, PieceMapSet>> {
+  const torrent = torrents[0];
+  if (torrent === undefined || torrent.progress === null) return {};
+
+  const pieceCount = scenarioId === "large-swarm" ? 250_000 : 1_055;
+  const verified = new Uint8Array(pieceCount);
+  let verifiedCount = Math.min(
+    pieceCount,
+    Math.max(0, Math.floor(torrent.progress * pieceCount)),
+  );
+  if (scenarioId === "piece-retry") verifiedCount = 450;
+  verified.fill(1, 0, verifiedCount);
+
+  const active = [];
+  if (scenarioId === "piece-retry") {
+    const seconds = elapsedMs / 1_000;
+    if (seconds < 9) {
+      active.push(pieceSummary(450, 1, seconds < 4 ? "received" : "hashing", seconds));
+    } else if (seconds < 12) {
+      active.push(pieceSummary(450, 1, "failed", seconds, "SHA-1 mismatch"));
+    } else if (seconds < 24) {
+      active.push(
+        pieceSummary(
+          450,
+          2,
+          seconds < 16 ? "requested" : seconds < 20 ? "received" : "hashing",
+          seconds - 12,
+        ),
+      );
+    } else {
+      verified[450] = 1;
+    }
+  } else if (verifiedCount < pieceCount && scenarioId !== "stalled-metadata") {
+    const activeCount = scenarioId === "large-swarm" ? 6 : scenarioId === "endgame" ? 8 : 4;
+    const stages = ["requested", "received", "stored", "hashing"] as const;
+    for (let index = 0; index < activeCount; index += 1) {
+      const pieceIndex = Math.min(pieceCount - 1, verifiedCount + index * 3);
+      active.push(
+        pieceSummary(
+          pieceIndex,
+          1,
+          stages[index % stages.length] ?? "requested",
+          elapsedMs / 1_000 + index,
+        ),
+      );
+    }
+  }
+
+  return {
+    [torrent.id]: {
+      torrentId: torrent.id,
+      pieceCount,
+      verified,
+      active,
+      revision: Math.floor(elapsedMs / 250),
+    },
+  };
+}
+
+function pieceSummary(
+  pieceIndex: number,
+  attempt: number,
+  stage: "requested" | "received" | "stored" | "hashing" | "failed",
+  ageSeconds: number,
+  error: string | null = null,
+) {
+  const pieceLength = 256 * 1_024;
+  const receivedBytes =
+    stage === "requested" ? 48 * 1_024 : stage === "received" ? 192 * 1_024 : pieceLength;
+  return {
+    id: `${pieceIndex}:${attempt}`,
+    pieceIndex,
+    attempt,
+    pieceLength,
+    stage,
+    requestedBytes: pieceLength,
+    receivedBytes,
+    storedBytes: stage === "stored" || stage === "hashing" || stage === "failed" ? pieceLength : 0,
+    ageMillis: Math.max(0, Math.floor(ageSeconds * 1_000)),
+    error,
+  } as const;
 }
 
 function diskError(elapsedMs: number): ScenarioContent {

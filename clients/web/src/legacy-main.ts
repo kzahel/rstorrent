@@ -280,11 +280,11 @@ function renderApplication(): void {
 function observeInterop(): void {
   if (interop === undefined) return;
   for (const activity of Object.values(state.pieces)) {
-    const active = activity.active;
-    if (active === null) continue;
-    interop.requested = Math.max(interop.requested, rangeBytes(active.requested));
-    interop.received = Math.max(interop.received, rangeBytes(active.received));
-    interop.stored = Math.max(interop.stored, rangeBytes(active.stored));
+    for (const active of activity.active) {
+      interop.requested = Math.max(interop.requested, rangeBytes(active.requested));
+      interop.received = Math.max(interop.received, rangeBytes(active.received));
+      interop.stored = Math.max(interop.stored, rangeBytes(active.stored));
+    }
   }
 }
 
@@ -616,9 +616,9 @@ function humanize(value: string): string {
 function renderPieceActivity(activity: PieceActivityState): string {
   const active = activity.active;
   const blockSummary =
-    active === null
+    active.length === 0
       ? "No active piece"
-      : `Piece ${active.piece_index.toLocaleString()} · ${active.piece_length.toLocaleString()} bytes`;
+      : `${active.length.toLocaleString()} active ${active.length === 1 ? "piece" : "pieces"}`;
   return `
     <section class="piece-panel panel">
       <div class="section-heading compact">
@@ -626,19 +626,19 @@ function renderPieceActivity(activity: PieceActivityState): string {
         <span>${blockSummary}</span>
       </div>
       <canvas id="piece-map" width="960" height="144" aria-label="Verified piece map"></canvas>
-      ${active === null ? "" : renderBlockTracks(active)}
+      ${active.length === 0 ? "" : renderBlockTracks(active)}
     </section>
   `;
 }
 
 function renderBlockTracks(
-  active: NonNullable<PieceActivityState["active"]>,
+  active: PieceActivityState["active"],
 ): string {
   return `
     <div class="block-legend">
-      <span><i class="requested"></i>Requested ${rangeBytes(active.requested).toLocaleString()}</span>
-      <span><i class="received"></i>Received ${rangeBytes(active.received).toLocaleString()}</span>
-      <span><i class="stored"></i>Stored ${rangeBytes(active.stored).toLocaleString()}</span>
+      <span><i class="requested"></i>Requested ${active.reduce((total, piece) => total + rangeBytes(piece.requested), 0).toLocaleString()}</span>
+      <span><i class="received"></i>Received ${active.reduce((total, piece) => total + rangeBytes(piece.received), 0).toLocaleString()}</span>
+      <span><i class="stored"></i>Stored ${active.reduce((total, piece) => total + rangeBytes(piece.stored), 0).toLocaleString()}</span>
     </div>
   `;
 }
@@ -703,10 +703,9 @@ function drawPieceMap(activity: PieceActivityState): void {
     const range = activity.verified[rangeIndex];
     const verified =
       range !== undefined && range.start < end && range.end_exclusive > start;
-    const active =
-      activity.active !== null &&
-      activity.active.piece_index >= start &&
-      activity.active.piece_index < end;
+    const active = activity.active.some(
+      (piece) => piece.piece_index >= start && piece.piece_index < end,
+    );
     context.fillStyle = active ? "#e9aa4f" : verified ? "#55d6a7" : "#293541";
     const x = (bucket % columns) * 6;
     const y = Math.floor(bucket / columns) * 6;

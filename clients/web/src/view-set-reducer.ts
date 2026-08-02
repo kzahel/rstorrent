@@ -104,7 +104,11 @@ function cloneSnapshot(snapshot: ViewSnapshot): ViewSnapshot {
     case "torrent":
       return { ...snapshot };
     case "piece_activity":
-      return { ...snapshot, verified: [...snapshot.verified] };
+      return {
+        ...snapshot,
+        verified: [...snapshot.verified],
+        active: [...snapshot.active],
+      };
     case "session_disk":
       return {
         ...snapshot,
@@ -145,12 +149,17 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
       let verified = snapshot.verified;
       for (const range of patch.cleared) verified = removeRange(verified, range);
       for (const range of patch.verified) verified = insertRange(verified, range);
+      const active = new Map(
+        snapshot.active.map((piece) => [piece.piece_id, piece]),
+      );
+      for (const pieceId of patch.active_removed) active.delete(pieceId);
+      for (const piece of patch.active_upsert) active.set(piece.piece_id, piece);
       return {
         type: "piece_activity",
         torrent_id: patch.torrent_id,
         piece_count: patch.piece_count,
         verified,
-        active: patch.active,
+        active: [...active.values()],
       };
     }
     case "session_disk": {

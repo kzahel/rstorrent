@@ -17,7 +17,7 @@
           "end_exclusive": 70000
         }
       ],
-      "active": null
+      "active": []
     }
   },
   {
@@ -44,18 +44,25 @@
           "end_exclusive": 65537
         }
       ],
-      "active": {
-        "piece_index": 900001,
-        "piece_length": 33554432,
-        "requested": [
-          {
-            "start": 0,
-            "end_exclusive": 16384
-          }
-        ],
-        "received": [],
-        "stored": []
-      }
+      "active_upsert": [
+        {
+          "piece_id": "900001:1",
+          "piece_index": 900001,
+          "attempt": 1,
+          "piece_length": 33554432,
+          "stage": "requested",
+          "requested": [
+            {
+              "start": 0,
+              "end_exclusive": 16384
+            }
+          ],
+          "received": [],
+          "stored": [],
+          "age_millis": "125"
+        }
+      ],
+      "active_removed": []
     }
   }
 ]

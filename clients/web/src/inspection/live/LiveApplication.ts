@@ -28,18 +28,21 @@ import type {
   LogRow,
   PeerRow,
   PeerSet,
+  PieceMapSet,
   TorrentRow,
   TrackerRow,
   TrackerSet,
   ViewMaterialization,
 } from "../model";
 import { emptyDiskSet } from "../state";
+import { mapPieceActivity, type MappedPieceActivity } from "./pieces";
 
 const LIBRARY_VIEW_ID = "library";
 const SUMMARY_VIEW_ID = "torrent-summary";
 const PEERS_VIEW_ID = "torrent-peers";
 const FILES_VIEW_ID = "torrent-files";
 const TRACKERS_VIEW_ID = "torrent-trackers";
+const PIECES_VIEW_ID = "torrent-pieces";
 const DISK_VIEW_ID = "session-disk";
 const LOGS_VIEW_ID = "logs";
 
@@ -59,6 +62,7 @@ export class LiveApplication implements InspectionApplication {
     readonly source: Extract<ViewSnapshot, { type: "files" }>;
     readonly value: FileSet;
   } | null = null;
+  private mappedPieces: MappedPieceActivity | null = null;
   private hello: ApiHello | null = null;
   private closed = false;
   private readonly requestInstanceId = generateRequestInstanceId();
@@ -218,14 +222,33 @@ export class LiveApplication implements InspectionApplication {
     if (this.closed) return;
     const files = projection(state, FILES_VIEW_ID, "files");
     const fileSet = this.mapFiles(files);
+    const pieces = projection(state, PIECES_VIEW_ID, "piece_activity");
+    const pieceSet = this.mapPieces(pieces, state.epoch);
     this.snapshot = mapViewState(
       state,
       this.desired,
       this.capabilities(),
       "connected",
       fileSet,
+      pieceSet,
     );
     this.emit({ type: "snapshot", snapshot: this.snapshot });
+  }
+
+  private mapPieces(
+    source: Extract<ViewSnapshot, { type: "piece_activity" }> | null,
+    epoch: string,
+  ): PieceMapSet | null {
+    if (source === null) {
+      this.mappedPieces = null;
+      return null;
+    }
+    if (this.mappedPieces?.source === source && this.mappedPieces.epoch === epoch) {
+      return this.mappedPieces.value;
+    }
+    const value = mapPieceActivity(source, this.mappedPieces, epoch);
+    this.mappedPieces = { source, value, epoch };
+    return value;
   }
 
   private mapFiles(
@@ -258,6 +281,7 @@ export class LiveApplication implements InspectionApplication {
           this.snapshot.viewStatus.trackers,
           error,
         ),
+        pieces: staleIfMaterialized(this.snapshot.viewStatus.pieces, error),
         disk: staleIfMaterialized(this.snapshot.viewStatus.disk, error),
         logs: staleIfMaterialized(this.snapshot.viewStatus.logs, error),
       },
@@ -323,6 +347,18 @@ export class LiveApplication implements InspectionApplication {
         delivery: { min_interval_millis: 250 },
       });
     }
+    if (
+      views.detail === "pieces" &&
+      views.torrentId !== null &&
+      capabilities.has("piece_activity")
+    ) {
+      specs.push({
+        type: "piece_activity",
+        view_id: PIECES_VIEW_ID,
+        torrent_id: views.torrentId,
+        delivery: { min_interval_millis: 100 },
+      });
+    }
     if (views.detail === "disk" && capabilities.has("session_disk")) {
       specs.push({
         type: "session_disk",
@@ -370,12 +406,14 @@ function mapViewState(
   capabilities: ReadonlySet<string>,
   connection: "connected" | "reconnecting" | "offline",
   fileSet: FileSet | null,
+  pieceSet: PieceMapSet | null,
 ): InspectionSnapshot {
   const library = projection(state, LIBRARY_VIEW_ID, "torrent_list");
   const summary = projection(state, SUMMARY_VIEW_ID, "torrent");
   const peers = projection(state, PEERS_VIEW_ID, "peers");
   const files = projection(state, FILES_VIEW_ID, "files");
   const trackers = projection(state, TRACKERS_VIEW_ID, "trackers");
+  const pieces = projection(state, PIECES_VIEW_ID, "piece_activity");
   const disk = projection(state, DISK_VIEW_ID, "session_disk");
   const diagnostics = projection(state, LOGS_VIEW_ID, "diagnostics");
   const torrentRows = new Map<string, TorrentRow>();
@@ -414,6 +452,12 @@ function mapViewState(
             state: trackers.state,
           },
         };
+  const piecesByTorrent =
+    pieceSet === null ||
+    desired.torrentId === null ||
+    pieces?.torrent_id !== desired.torrentId
+      ? {}
+      : { [desired.torrentId]: pieceSet };
   const rows = [...torrentRows.values()];
   return {
     revision: safeNumber(state.durableRevision),
@@ -430,6 +474,7 @@ function mapViewState(
     peersByTorrent,
     filesByTorrent,
     trackersByTorrent,
+    piecesByTorrent,
     disk: disk === null ? emptyDiskSet() : mapDisk(disk),
     logs,
     droppedLogs: diagnostics === null ? 0 : safeNumber(diagnostics.dropped_count),
@@ -463,6 +508,12 @@ function mapViewState(
         capabilities.has("torrent_trackers"),
         trackers?.torrent_id === desired.torrentId,
         "Tracker inspection is unavailable",
+      ),
+      pieces: materialization(
+        desired.detail === "pieces",
+        capabilities.has("piece_activity"),
+        pieces?.torrent_id === desired.torrentId,
+        "Piece inspection is unavailable",
       ),
       disk: materialization(
         desired.detail === "disk",
@@ -526,6 +577,7 @@ function transitionSnapshot(
     peersByTorrent: {},
     filesByTorrent: {},
     trackersByTorrent: {},
+    piecesByTorrent: {},
     disk: current.disk,
     logs: [],
     droppedLogs: 0,
@@ -550,6 +602,10 @@ function transitionSnapshot(
       trackers: transitionStatus(
         desired.detail === "trackers",
         capabilities.has("torrent_trackers"),
+      ),
+      pieces: transitionStatus(
+        desired.detail === "pieces",
+        capabilities.has("piece_activity"),
       ),
       disk: transitionStatus(
         desired.detail === "disk",
@@ -940,6 +996,7 @@ function emptyLiveSnapshot(
     peersByTorrent: {},
     filesByTorrent: {},
     trackersByTorrent: {},
+    piecesByTorrent: {},
     disk: emptyDiskSet(),
     logs: [],
     droppedLogs: 0,
@@ -951,6 +1008,10 @@ function emptyLiveSnapshot(
       files: desired.detail === "files" ? { status: "loading" } : { status: "not_requested" },
       trackers:
         desired.detail === "trackers"
+          ? { status: "loading" }
+          : { status: "not_requested" },
+      pieces:
+        desired.detail === "pieces"
           ? { status: "loading" }
           : { status: "not_requested" },
       disk: desired.detail === "disk" ? { status: "loading" } : { status: "not_requested" },

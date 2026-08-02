@@ -28,7 +28,7 @@ describe("gateway validation", () => {
               torrent_id: "0".repeat(40),
               piece_count: 2,
               verified: [{ start: 1, end_exclusive: 3 }],
-              active: null,
+              active: [],
             },
           },
         }),
@@ -91,6 +91,55 @@ describe("disk view validation", () => {
     );
   });
 });
+
+describe("piece activity validation", () => {
+  it("accepts keyed attempts and rejects overlapping lifecycle ranges", () => {
+    const batch = pieceBatch();
+    expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
+    batch.updates[0]!.snapshot.active[0]!.received = [
+      { start: 8_192, end_exclusive: 24_576 },
+    ];
+    expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
+      /lifecycle ranges overlap/,
+    );
+  });
+});
+
+function pieceBatch() {
+  return {
+    api_version: 1,
+    view_set_id: "vs_000102030405060708090a0b0c0d0e0f",
+    epoch: "1",
+    base_cursor: "0",
+    cursor: "1",
+    durable_revision: "1",
+    updates: [
+      {
+        type: "snapshot" as const,
+        view_id: "pieces",
+        snapshot: {
+          type: "piece_activity" as const,
+          torrent_id: "0".repeat(40),
+          piece_count: 4,
+          verified: [{ start: 2, end_exclusive: 3 }],
+          active: [
+            {
+              piece_id: "0:1",
+              piece_index: 0,
+              attempt: 1,
+              piece_length: 262_144,
+              stage: "requested",
+              requested: [{ start: 0, end_exclusive: 16_384 }],
+              received: [] as Array<{ start: number; end_exclusive: number }>,
+              stored: [],
+              age_millis: "10",
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
 
 function diskBatch() {
   const zeroFields = {

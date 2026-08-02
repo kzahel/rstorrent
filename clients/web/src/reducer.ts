@@ -12,7 +12,7 @@ export interface PieceActivityState {
   torrentId: string;
   pieceCount: number;
   verified: IndexRange[];
-  active: ActivePiece | null;
+  active: ActivePiece[];
 }
 
 interface StreamPosition {
@@ -139,7 +139,11 @@ function applyPatch(state: ApplicationViewState, patch: ViewPatch): void {
         torrentId: patch.torrent_id,
         pieceCount: patch.piece_count,
         verified,
-        active: patch.active,
+        active: applyActivePatch(
+          previous?.active ?? [],
+          patch.active_upsert,
+          patch.active_removed,
+        ),
       };
       break;
     }
@@ -157,6 +161,17 @@ function applyPatch(state: ApplicationViewState, patch: ViewPatch): void {
       break;
     }
   }
+}
+
+function applyActivePatch(
+  current: readonly ActivePiece[],
+  upsert: readonly ActivePiece[],
+  removed: readonly string[],
+): ActivePiece[] {
+  const pieces = new Map(current.map((piece) => [piece.piece_id, piece]));
+  for (const pieceId of removed) pieces.delete(pieceId);
+  for (const piece of upsert) pieces.set(piece.piece_id, piece);
+  return [...pieces.values()];
 }
 
 function insertRange(

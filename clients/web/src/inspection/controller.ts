@@ -133,6 +133,7 @@ function desiredViewsFor(state: InspectionStore): DesiredInspectionViews {
       : presentation.activeTab === "peers" ||
           presentation.activeTab === "trackers" ||
           presentation.activeTab === "files" ||
+          presentation.activeTab === "pieces" ||
           presentation.activeTab === "logs" ||
           presentation.activeTab === "general"
         ? presentation.activeTab

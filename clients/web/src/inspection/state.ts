@@ -10,6 +10,7 @@ import type {
   FileSet,
   PeerSet,
   TrackerSet,
+  PieceMapSet,
   TorrentRow,
 } from "./model";
 
@@ -63,6 +64,7 @@ const EMPTY_SNAPSHOT: InspectionSnapshot = {
   peersByTorrent: {},
   filesByTorrent: {},
   trackersByTorrent: {},
+  piecesByTorrent: {},
   disk: emptyDiskSet(),
   logs: [],
   droppedLogs: 0,
@@ -72,6 +74,7 @@ const EMPTY_SNAPSHOT: InspectionSnapshot = {
     peers: { status: "not_requested" },
     files: { status: "not_requested" },
     trackers: { status: "not_requested" },
+    pieces: { status: "not_requested" },
     disk: { status: "not_requested" },
     logs: { status: "not_requested" },
   },
@@ -185,6 +188,7 @@ export function reduceInspectionUpdate(
   let peersByTorrent = state.peersByTorrent;
   let filesByTorrent = state.filesByTorrent;
   let trackersByTorrent = state.trackersByTorrent;
+  let piecesByTorrent = state.piecesByTorrent;
   let disk = state.disk;
   let logs = state.logs;
   let droppedLogs = state.droppedLogs;
@@ -269,6 +273,10 @@ export function reduceInspectionUpdate(
     disk = update.disk;
   }
 
+  if (update.pieces !== undefined) {
+    piecesByTorrent = update.pieces;
+  }
+
   if (update.logs !== undefined) {
     const combined = [...state.logs, ...update.logs.append];
     const overflow = Math.max(0, combined.length - 256);
@@ -291,6 +299,7 @@ export function reduceInspectionUpdate(
     peersByTorrent,
     filesByTorrent,
     trackersByTorrent,
+    piecesByTorrent,
     disk,
     logs,
     droppedLogs,
@@ -392,6 +401,16 @@ export function emptyDiskSet(): DiskSet {
     },
     order: [],
     rows: {},
+  };
+}
+
+export function emptyPieceMapSet(torrentId: string): PieceMapSet {
+  return {
+    torrentId,
+    pieceCount: 0,
+    verified: new Uint8Array(0),
+    active: [],
+    revision: 0,
   };
 }
 

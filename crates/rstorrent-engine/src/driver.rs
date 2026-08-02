@@ -214,6 +214,7 @@ pub enum DownloadActivityEvent {
     PieceStarted {
         piece_index: u32,
         piece_length: u32,
+        attempt: u32,
     },
     BlockRequested {
         piece_index: u32,
@@ -229,6 +230,9 @@ pub enum DownloadActivityEvent {
         piece_index: u32,
         begin: u32,
         length: u32,
+    },
+    PieceHashing {
+        piece_index: u32,
     },
     PieceVerified {
         piece_index: u32,
@@ -1481,11 +1485,11 @@ impl DownloadControl {
         }
     }
 
-    fn disk_block_requested(&self, block: BlockKey, piece_length: u32) {
+    fn disk_block_requested(&self, block: BlockKey, piece_length: u32) -> (u32, bool) {
         self.inner
             .requested_bytes
             .fetch_add(block.length as usize, Ordering::AcqRel);
-        self.mutate_disk_piece(block.piece, piece_length, |piece, now| {
+        let attempt = self.mutate_disk_piece(block.piece, piece_length, |piece, now| {
             if piece.stage == DiskPieceStage::Failed {
                 piece.attempt = piece.attempt.saturating_add(1);
                 piece.requested.clear();
@@ -1494,10 +1498,14 @@ impl DownloadControl {
                 piece.started_at = now;
                 piece.error = None;
             }
+            let started =
+                piece.requested.is_empty() && piece.received.is_empty() && piece.stored.is_empty();
             insert_disk_range(&mut piece.requested, block.begin, block.length);
             set_disk_piece_stage(piece, DiskPieceStage::Receiving, now);
+            (piece.attempt, started)
         });
         self.emit_storage_state();
+        attempt
     }
 
     fn disk_block_received(&self, block: BlockKey, piece_length: u32) {
@@ -1592,12 +1600,12 @@ impl DownloadControl {
         self.emit_storage_state();
     }
 
-    fn mutate_disk_piece(
+    fn mutate_disk_piece<T>(
         &self,
         piece_index: u32,
         piece_length: u32,
-        update: impl FnOnce(&mut DiskPieceRuntimeState, Instant),
-    ) {
+        update: impl FnOnce(&mut DiskPieceRuntimeState, Instant) -> T,
+    ) -> T {
         let now = Instant::now();
         let mut state = self
             .inner
@@ -1619,7 +1627,7 @@ impl DownloadControl {
                 error: None,
             });
         piece.piece_length = piece_length;
-        update(piece, now);
+        update(piece, now)
     }
 
     fn disk_write_batch_started(&self, blocks: &[BlockKey], bytes: usize) {
@@ -5270,6 +5278,9 @@ async fn run_content_storage_task(
             debug_assert_eq!(kind, StorageCommandKind::Hash);
             if let ContentStorageCommand::Verify { piece, length, .. } = &command.command {
                 control.disk_piece_hashing(*piece, *length);
+                control.emit(DownloadActivityEvent::PieceHashing {
+                    piece_index: *piece,
+                });
             }
             let started_at = Instant::now();
             control.storage_command_started(kind, command.enqueued_at, started_at);
@@ -5597,13 +5608,6 @@ impl<'a> ContentSwarmDownload<'a> {
         let mut total_bytes = 0;
         let mut swarm_plans = Vec::with_capacity(plans.len());
         for (piece, ranges) in plans {
-            let piece_length = layout
-                .piece_length_at(piece)
-                .map_err(DownloadError::Layout)?;
-            control.emit(DownloadActivityEvent::PieceStarted {
-                piece_index: piece,
-                piece_length,
-            });
             total_blocks += ranges.len();
             total_bytes += ranges
                 .iter()
@@ -6339,9 +6343,16 @@ async fn run_selective_swarm_loop(
                 .layout
                 .piece_length_at(assignment.block.piece)
                 .map_err(DownloadError::Layout)?;
-            download
+            let (attempt, started) = download
                 .control
                 .disk_block_requested(assignment.block, piece_length);
+            if started {
+                download.control.emit(DownloadActivityEvent::PieceStarted {
+                    piece_index: assignment.block.piece,
+                    piece_length,
+                    attempt,
+                });
+            }
             download
                 .control
                 .emit(DownloadActivityEvent::BlockRequested {
@@ -9395,21 +9406,43 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             .expect("clean record");
         assert_eq!(clean_record.integrity().trust_points, 1);
         assert_eq!(clean_record.integrity().valid_pieces, 1);
-        assert!(
-            activity
-                .events
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
+        let events = activity
+            .events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DownloadActivityEvent::PieceHashFailed {
+                piece_index: 0,
+                contributor_count: 1,
+                failed_bytes: MIN_PAYLOAD_ALLOWANCE,
+            }
+        )));
+        assert_eq!(
+            events
                 .iter()
-                .any(|event| matches!(
-                    event,
-                    DownloadActivityEvent::PieceHashFailed {
+                .filter_map(|event| match event {
+                    DownloadActivityEvent::PieceStarted {
                         piece_index: 0,
-                        contributor_count: 1,
-                        failed_bytes: MIN_PAYLOAD_ALLOWANCE,
-                    }
-                ))
+                        attempt,
+                        ..
+                    } => Some(*attempt),
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            vec![1, 2]
         );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(
+                    event,
+                    DownloadActivityEvent::PieceHashing { piece_index: 0 }
+                ))
+                .count(),
+            2
+        );
+        drop(events);
         for task in [corrupt_task, clean_task] {
             timeout(Duration::from_secs(1), task)
                 .await

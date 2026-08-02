@@ -11,10 +11,11 @@ import type {
   FileRow,
   LogRow,
   PeerRow,
+  PieceMapSet,
   TorrentRow,
   TrackerRow,
 } from "../model";
-import { emptyDiskSet } from "../state";
+import { emptyDiskSet, emptyPieceMapSet } from "../state";
 import {
   buildScenarioSnapshot,
   DEMO_BASE_TIME_MS,
@@ -297,6 +298,14 @@ function materializeDemoViews(
           },
         }
       : {};
+  const piecesByTorrent =
+    desired.detail === "pieces" && desired.torrentId !== null
+      ? {
+          [desired.torrentId]:
+            source.piecesByTorrent[desired.torrentId] ??
+            emptyPieceMapSet(desired.torrentId),
+        }
+      : {};
   return {
     ...source,
     torrentOrder: desired.library ? source.torrentOrder : [],
@@ -304,6 +313,7 @@ function materializeDemoViews(
     peersByTorrent,
     filesByTorrent,
     trackersByTorrent,
+    piecesByTorrent,
     disk: desired.detail === "disk" ? source.disk : emptyDiskSet(),
     logs: desired.detail === "logs" ? source.logs : [],
     droppedLogs: desired.detail === "logs" ? source.droppedLogs : 0,
@@ -327,6 +337,10 @@ function materializeDemoViews(
           : { status: "not_requested" },
       trackers:
         desired.detail === "trackers"
+          ? { status: "ready" }
+          : { status: "not_requested" },
+      pieces:
+        desired.detail === "pieces"
           ? { status: "ready" }
           : { status: "not_requested" },
       disk:
@@ -417,6 +431,11 @@ function applyOverlays(
     ),
     trackersByTorrent: Object.fromEntries(
       Object.entries(source.trackersByTorrent).filter(
+        ([torrentId]) => !removed.has(torrentId),
+      ),
+    ),
+    piecesByTorrent: Object.fromEntries(
+      Object.entries(source.piecesByTorrent).filter(
         ([torrentId]) => !removed.has(torrentId),
       ),
     ),
@@ -569,6 +588,9 @@ function diffSnapshots(
     ...(peerPatches.length === 0 ? {} : { peers: peerPatches }),
     ...(filePatches.length === 0 ? {} : { files: filePatches }),
     ...(trackerPatches.length === 0 ? {} : { trackers: trackerPatches }),
+    ...(!samePieceMaps(previous.piecesByTorrent, next.piecesByTorrent)
+      ? { pieces: next.piecesByTorrent }
+      : {}),
     ...(!sameDisk(previous.disk, next.disk) ? { disk: next.disk } : {}),
     ...(appendedLogs.length === 0
       ? {}
@@ -587,6 +609,34 @@ function sameDisk(left: DiskSet, right: DiskSet): boolean {
   return right.order.every((id) => {
     const row = right.rows[id];
     return row !== undefined && shallowEqual(left.rows[id], row);
+  });
+}
+
+function samePieceMaps(
+  left: Readonly<Record<string, PieceMapSet>>,
+  right: Readonly<Record<string, PieceMapSet>>,
+): boolean {
+  const ids = Object.keys(right);
+  if (ids.length !== Object.keys(left).length) return false;
+  return ids.every((id) => {
+    const previous = left[id];
+    const next = right[id];
+    if (
+      previous === undefined ||
+      next === undefined ||
+      previous.pieceCount !== next.pieceCount ||
+      previous.revision !== next.revision ||
+      previous.active.length !== next.active.length ||
+      previous.verified.length !== next.verified.length
+    ) {
+      return false;
+    }
+    for (let index = 0; index < next.verified.length; index += 1) {
+      if (previous.verified[index] !== next.verified[index]) return false;
+    }
+    return next.active.every((piece, index) =>
+      shallowEqual(previous.active[index], piece),
+    );
   });
 }
 

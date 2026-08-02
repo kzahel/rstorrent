@@ -171,6 +171,49 @@ describe("view-set reducer", () => {
     });
   });
 
+  it("applies compact verified changes and keyed active piece retries", () => {
+    const first = activePiece(0, 1, "received");
+    let state = reduceUpdateBatch(
+      undefined,
+      batch("0", "1", [
+        {
+          type: "snapshot",
+          view_id: "pieces",
+          snapshot: {
+            type: "piece_activity",
+            torrent_id: torrentId,
+            piece_count: 3,
+            verified: [],
+            active: [first],
+          },
+        },
+      ]),
+    );
+    state = reduceUpdateBatch(
+      state,
+      batch("1", "2", [
+        {
+          type: "patch",
+          view_id: "pieces",
+          patch: {
+            type: "piece_activity",
+            torrent_id: torrentId,
+            piece_count: 3,
+            verified: [{ start: 1, end_exclusive: 2 }],
+            cleared: [],
+            active_upsert: [activePiece(0, 2, "requested")],
+            active_removed: [first.piece_id],
+          },
+        },
+      ]),
+    );
+    expect(state.views.pieces).toMatchObject({
+      type: "piece_activity",
+      verified: [{ start: 1, end_exclusive: 2 }],
+      active: [{ piece_id: "0:2", attempt: 2, stage: "requested" }],
+    });
+  });
+
   it("reduces snapshots, keyed patches, removals, and later upserts", () => {
     let state = reduceUpdateBatch(
       undefined,
@@ -252,7 +295,7 @@ describe("view-set reducer", () => {
               torrent_id: torrentId,
               piece_count: 3,
               verified: [{ start: 0, end_exclusive: 1 }],
-              active: null,
+              active: [],
             },
           },
         ],
@@ -324,6 +367,24 @@ function diskPipeline(pressure: "normal" | "backpressured") {
     hash_service_max_micros: "0",
     pressure_transition_count: pressure === "backpressured" ? "1" : "0",
     backpressured_millis_total: "0",
+  };
+}
+
+function activePiece(
+  pieceIndex: number,
+  attempt: number,
+  stage: "requested" | "received",
+) {
+  return {
+    piece_id: `${pieceIndex}:${attempt}`,
+    piece_index: pieceIndex,
+    attempt,
+    piece_length: 262144,
+    stage,
+    requested: stage === "requested" ? [{ start: 0, end_exclusive: 16384 }] : [],
+    received: stage === "received" ? [{ start: 0, end_exclusive: 16384 }] : [],
+    stored: [],
+    age_millis: "100",
   };
 }
 

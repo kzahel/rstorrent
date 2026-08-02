@@ -22,6 +22,7 @@ const MAX_ACTIVE_PEERS = 256;
 const MAX_FILES = 4_096;
 const MAX_TRACKERS = 32;
 const MAX_DISK_PIECES = 16_384;
+const MAX_ACTIVE_PIECES = 16_384;
 const MAX_U32 = 4_294_967_295;
 const DECIMAL = /^(0|[1-9][0-9]*)$/;
 const IDENTIFIER = /^[A-Za-z0-9._-]{1,128}$/;
@@ -296,7 +297,7 @@ function validateViewSnapshot(value: unknown): void {
         MAX_U32,
       );
       validateRanges(snapshot.verified, pieceCount, "verified pieces");
-      validateActivePiece(snapshot.active, pieceCount);
+      validateActivePieces(snapshot.active, pieceCount, "active pieces");
       break;
     }
     case "session_disk": {
@@ -383,7 +384,8 @@ function validateViewPatch(value: unknown): void {
       );
       validateRanges(patch.verified, pieceCount, "verified pieces");
       validateRanges(patch.cleared, pieceCount, "cleared pieces");
-      validateActivePiece(patch.active, pieceCount);
+      validateActivePieces(patch.active_upsert, pieceCount, "active piece upserts");
+      validatePieceIds(patch.active_removed, "active piece removals");
       break;
     }
     case "session_disk": {
@@ -683,8 +685,7 @@ function validateDiagnosticEvent(value: unknown): void {
 function validateActivePiece(
   value: unknown,
   pieceCount: number,
-): asserts value is ActivePiece | null {
-  if (value === null) return;
+): asserts value is ActivePiece {
   const active = asRecord(value, "active piece");
   const pieceIndex = boundedInteger(
     active.piece_index,
@@ -701,9 +702,75 @@ function validateActivePiece(
     1,
     MAX_U32,
   );
+  const attempt = boundedInteger(active.attempt, "active piece attempt", 1, MAX_U32);
+  const pieceId = boundedString(active.piece_id, "active piece ID", 64);
+  if (pieceId !== `${pieceIndex}:${attempt}`) {
+    throw new ContractError("active piece ID does not match its piece attempt");
+  }
+  oneOf(active.stage, "active piece stage", [
+    "requested",
+    "received",
+    "stored",
+    "hashing",
+    "failed",
+  ]);
   validateRanges(active.requested, pieceLength, "requested blocks");
   validateRanges(active.received, pieceLength, "received blocks");
   validateRanges(active.stored, pieceLength, "stored blocks");
+  validateDisjointActiveRanges(active, pieceLength);
+  decimal(active.age_millis, "active piece age");
+  optionalString(active.error, "active piece error", 256);
+}
+
+function validateActivePieces(value: unknown, pieceCount: number, label: string): void {
+  const pieces = array(value, label);
+  if (pieces.length > MAX_ACTIVE_PIECES || pieces.length > pieceCount) {
+    throw new ContractError(`${label} exceeds its bound`);
+  }
+  const ids = new Set<string>();
+  const indices = new Set<number>();
+  for (const value of pieces) {
+    validateActivePiece(value, pieceCount);
+    const piece = value as ActivePiece;
+    if (ids.has(piece.piece_id) || indices.has(piece.piece_index)) {
+      throw new ContractError(`${label} contains duplicate identity`);
+    }
+    ids.add(piece.piece_id);
+    indices.add(piece.piece_index);
+  }
+}
+
+function validatePieceIds(value: unknown, label: string): void {
+  const values = array(value, label);
+  if (values.length > MAX_ACTIVE_PIECES) {
+    throw new ContractError(`${label} exceeds its bound`);
+  }
+  const ids = new Set<string>();
+  for (const value of values) {
+    const id = boundedString(value, "active piece ID", 64);
+    if (!/^(0|[1-9][0-9]*):[1-9][0-9]*$/.test(id) || ids.has(id)) {
+      throw new ContractError(`${label} contains an invalid or duplicate ID`);
+    }
+    ids.add(id);
+  }
+}
+
+function validateDisjointActiveRanges(
+  active: Record<string, unknown>,
+  pieceLength: number,
+): void {
+  const ranges = ["requested", "received", "stored"]
+    .flatMap((field) =>
+      (active[field] as IndexRange[]).map((range) => ({ ...range, field })),
+    )
+    .sort((left, right) => left.start - right.start || left.end_exclusive - right.end_exclusive);
+  let previousEnd = 0;
+  for (const range of ranges) {
+    if (range.end_exclusive > pieceLength || range.start < previousEnd) {
+      throw new ContractError("active piece lifecycle ranges overlap");
+    }
+    previousEnd = range.end_exclusive;
+  }
 }
 
 function validateDiskPipeline(value: unknown): void {

@@ -7,10 +7,10 @@ use rstorrent_gateway::{
     GatewayServerMessage,
 };
 use rstorrent_session::{
-    ActivePiece, ApiEncoding, ApiHello, ApiLimits, ApiVersion, CapabilityStatus, Command,
-    DeliveryMode, DeliveryPolicy, DiagnosticCategory, DiagnosticEvent, DiagnosticField,
-    DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity, DiskPieceStageView, DiskPieceView,
-    DiskPipelineView, DiskPressureView, ErrorCode, ErrorResponse, FileCatalogState,
+    ActivePiece, ActivePieceStageView, ApiEncoding, ApiHello, ApiLimits, ApiVersion,
+    CapabilityStatus, Command, DeliveryMode, DeliveryPolicy, DiagnosticCategory, DiagnosticEvent,
+    DiagnosticField, DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity, DiskPieceStageView,
+    DiskPieceView, DiskPipelineView, DiskPressureView, ErrorCode, ErrorResponse, FileCatalogState,
     FileSelectionView, FileView, IndexRange, OpenViewSetOptions, OpenViewSetRequest,
     OpenViewSetResponse, PeerDirection, PeerDisconnectReason, PeerFieldCapabilities, PeerLifecycle,
     PeerRequestPhase, PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction,
@@ -87,6 +87,7 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<ProgressAssessment>(&mut declarations)?;
     append::<SubscriptionSpec>(&mut declarations)?;
     append::<IndexRange>(&mut declarations)?;
+    append::<ActivePieceStageView>(&mut declarations)?;
     append::<ActivePiece>(&mut declarations)?;
     append::<DiskPressureView>(&mut declarations)?;
     append::<DiskPieceStageView>(&mut declarations)?;
@@ -228,7 +229,7 @@ fn write_fixture(output: PathBuf) -> Result<(), Box<dyn Error>> {
                         start: 65_536,
                         end_exclusive: 70_000,
                     }],
-                    active: None,
+                    active: Vec::new(),
                 },
             },
         },
@@ -251,16 +252,22 @@ fn write_fixture(output: PathBuf) -> Result<(), Box<dyn Error>> {
                         start: 65_536,
                         end_exclusive: 65_537,
                     }],
-                    active: Some(ActivePiece {
+                    active_upsert: vec![ActivePiece {
+                        piece_id: "900001:1".to_owned(),
                         piece_index: 900_001,
+                        attempt: 1,
                         piece_length: 32 * 1024 * 1024,
+                        stage: ActivePieceStageView::Requested,
                         requested: vec![IndexRange {
                             start: 0,
                             end_exclusive: 16 * 1024,
                         }],
                         received: Vec::new(),
                         stored: Vec::new(),
-                    }),
+                        age_millis: "125".to_owned(),
+                        error: None,
+                    }],
+                    active_removed: Vec::new(),
                 },
             },
         },

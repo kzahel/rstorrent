@@ -87,9 +87,18 @@ liveDescribe("authenticated polling gateway interop", () => {
           }
           const pieces = next.views.pieces;
           if (pieces?.type === "piece_activity") {
-            requested = Math.max(requested, rangeBytes(pieces.active?.requested));
-            received = Math.max(received, rangeBytes(pieces.active?.received));
-            stored = Math.max(stored, rangeBytes(pieces.active?.stored));
+            requested = Math.max(
+              requested,
+              ...pieces.active.map((piece) => rangeBytes(piece.requested)),
+            );
+            received = Math.max(
+              received,
+              ...pieces.active.map((piece) => rangeBytes(piece.received)),
+            );
+            stored = Math.max(
+              stored,
+              ...pieces.active.map((piece) => rangeBytes(piece.stored)),
+            );
           }
           changed();
         },

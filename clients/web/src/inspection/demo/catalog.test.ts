@@ -20,6 +20,31 @@ describe("file progress demo", () => {
   });
 });
 
+describe("piece map demos", () => {
+  it("shows a failed attempt, a clean retry, and eventual verification", () => {
+    const failed = pieceMapAt("piece-retry", 10_000);
+    const retry = pieceMapAt("piece-retry", 16_000);
+    const recovered = pieceMapAt("piece-retry", 25_000);
+
+    expect(failed.active).toMatchObject([
+      { id: "450:1", stage: "failed", error: "SHA-1 mismatch" },
+    ]);
+    expect(retry.active).toMatchObject([
+      { id: "450:2", stage: "received", error: null },
+    ]);
+    expect(recovered.active).toEqual([]);
+    expect(recovered.verified[450]).toBe(1);
+  });
+
+  it("keeps a 250,000-piece scale fixture bounded to one typed bitmap", () => {
+    const map = pieceMapAt("large-swarm", 0);
+    expect(map.pieceCount).toBe(250_000);
+    expect(map.verified).toBeInstanceOf(Uint8Array);
+    expect(map.verified).toHaveLength(250_000);
+    expect(map.active).toHaveLength(6);
+  });
+});
+
 function fileSetAt(elapsedMs: number): FileSet {
   const snapshot = buildScenarioSnapshot("file-progress", elapsedMs, false, 1);
   const torrentId = snapshot.torrentOrder[0];
@@ -34,4 +59,16 @@ function total(fileSet: FileSet, field: "doneBytes" | "verifiedBytes"): bigint {
     (sum, id) => sum + BigInt(fileSet.rows[id]?.[field] ?? "0"),
     0n,
   );
+}
+
+function pieceMapAt(
+  scenario: "piece-retry" | "large-swarm",
+  elapsedMs: number,
+) {
+  const snapshot = buildScenarioSnapshot(scenario, elapsedMs, false, 1);
+  const torrentId = snapshot.torrentOrder[0];
+  if (torrentId === undefined) throw new Error("piece demo torrent is missing");
+  const pieces = snapshot.piecesByTorrent[torrentId];
+  if (pieces === undefined) throw new Error("piece demo map is missing");
+  return pieces;
 }

@@ -2,6 +2,23 @@
   "$defs": {
     "ActivePiece": {
       "properties": {
+        "age_millis": {
+          "type": "string"
+        },
+        "attempt": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "piece_id": {
+          "type": "string"
+        },
         "piece_index": {
           "format": "uint32",
           "minimum": 0,
@@ -24,6 +41,9 @@
           },
           "type": "array"
         },
+        "stage": {
+          "$ref": "#/$defs/ActivePieceStageView"
+        },
         "stored": {
           "items": {
             "$ref": "#/$defs/IndexRange"
@@ -32,13 +52,27 @@
         }
       },
       "required": [
+        "piece_id",
         "piece_index",
+        "attempt",
         "piece_length",
+        "stage",
         "requested",
         "received",
-        "stored"
+        "stored",
+        "age_millis"
       ],
       "type": "object"
+    },
+    "ActivePieceStageView": {
+      "enum": [
+        "requested",
+        "received",
+        "stored",
+        "hashing",
+        "failed"
+      ],
+      "type": "string"
     },
     "ApiEncoding": {
       "enum": [
@@ -2057,15 +2091,17 @@
         },
         {
           "properties": {
-            "active": {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/ActivePiece"
-                },
-                {
-                  "type": "null"
-                }
-              ]
+            "active_removed": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "active_upsert": {
+              "items": {
+                "$ref": "#/$defs/ActivePiece"
+              },
+              "type": "array"
             },
             "cleared": {
               "items": {
@@ -2097,7 +2133,9 @@
             "torrent_id",
             "piece_count",
             "verified",
-            "cleared"
+            "cleared",
+            "active_upsert",
+            "active_removed"
           ],
           "type": "object"
         },
@@ -2374,14 +2412,10 @@
         {
           "properties": {
             "active": {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/ActivePiece"
-                },
-                {
-                  "type": "null"
-                }
-              ]
+              "items": {
+                "$ref": "#/$defs/ActivePiece"
+              },
+              "type": "array"
             },
             "piece_count": {
               "format": "uint32",
@@ -2406,7 +2440,8 @@
             "type",
             "torrent_id",
             "piece_count",
-            "verified"
+            "verified",
+            "active"
           ],
           "type": "object"
         },

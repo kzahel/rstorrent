@@ -20,7 +20,7 @@ describe("reactive reducer", () => {
       { start: 65_537, end_exclusive: 70_000 },
       { start: 900_000, end_exclusive: 900_001 },
     ]);
-    expect(state.pieces[torrentId]?.active?.piece_length).toBe(33_554_432);
+    expect(state.pieces[torrentId]?.active[0]?.piece_length).toBe(33_554_432);
   });
 
   it("keeps indices beyond 65535 and checks continuity", () => {
@@ -37,7 +37,7 @@ describe("reactive reducer", () => {
         torrent_id: torrentId,
         piece_count: 1_000_000,
         verified: [{ start: 65_536, end_exclusive: 70_000 }],
-        active: null,
+        active: [],
       },
     };
     const patched: ViewUpdate = {
@@ -54,13 +54,18 @@ describe("reactive reducer", () => {
         piece_count: 1_000_000,
         verified: [{ start: 900_000, end_exclusive: 900_001 }],
         cleared: [{ start: 65_536, end_exclusive: 65_537 }],
-        active: {
+        active_upsert: [{
+          piece_id: "900001:1",
           piece_index: 900_001,
+          attempt: 1,
           piece_length: 33_554_432,
+          stage: "requested",
           requested: [{ start: 0, end_exclusive: 16_384 }],
           received: [],
           stored: [],
-        },
+          age_millis: "125",
+        }],
+        active_removed: [],
       },
     };
     const first = reduceViewUpdate(emptyApplicationViewState(), initial);
@@ -69,7 +74,7 @@ describe("reactive reducer", () => {
       { start: 65_537, end_exclusive: 70_000 },
       { start: 900_000, end_exclusive: 900_001 },
     ]);
-    expect(second.pieces[torrentId]?.active?.piece_index).toBe(900_001);
+    expect(second.pieces[torrentId]?.active[0]?.piece_index).toBe(900_001);
 
     expect(() =>
       reduceViewUpdate(second, { ...patched, sequence: "4" }),

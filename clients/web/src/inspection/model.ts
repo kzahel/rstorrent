@@ -57,6 +57,7 @@ export interface InspectionViewStatus {
   readonly peers: ViewMaterialization;
   readonly files: ViewMaterialization;
   readonly trackers: ViewMaterialization;
+  readonly pieces: ViewMaterialization;
   readonly disk: ViewMaterialization;
   readonly logs: ViewMaterialization;
 }
@@ -69,6 +70,7 @@ export interface DesiredInspectionViews {
     | "trackers"
     | "peers"
     | "files"
+    | "pieces"
     | "disk"
     | "logs"
     | null;
@@ -261,6 +263,34 @@ export interface DiskSet {
   readonly rows: Readonly<Record<string, DiskPieceRow>>;
 }
 
+export type PieceLifecycleStage =
+  | "requested"
+  | "received"
+  | "stored"
+  | "hashing"
+  | "failed";
+
+export interface ActivePieceSummary {
+  readonly id: string;
+  readonly pieceIndex: number;
+  readonly attempt: number;
+  readonly pieceLength: number;
+  readonly stage: PieceLifecycleStage;
+  readonly requestedBytes: number;
+  readonly receivedBytes: number;
+  readonly storedBytes: number;
+  readonly ageMillis: number;
+  readonly error: string | null;
+}
+
+export interface PieceMapSet {
+  readonly torrentId: string;
+  readonly pieceCount: number;
+  readonly verified: Uint8Array;
+  readonly active: readonly ActivePieceSummary[];
+  readonly revision: number;
+}
+
 export interface InspectionSnapshot {
   readonly revision: number;
   readonly session: SessionSummary;
@@ -270,6 +300,7 @@ export interface InspectionSnapshot {
   readonly peersByTorrent: Readonly<Record<string, PeerSet>>;
   readonly filesByTorrent: Readonly<Record<string, FileSet>>;
   readonly trackersByTorrent: Readonly<Record<string, TrackerSet>>;
+  readonly piecesByTorrent: Readonly<Record<string, PieceMapSet>>;
   readonly disk: DiskSet;
   readonly logs: readonly LogRow[];
   readonly droppedLogs: number;
@@ -306,6 +337,7 @@ export type InspectionUpdate =
         readonly state?: TrackerSet["state"];
         readonly order?: readonly string[];
       })[];
+      readonly pieces?: Readonly<Record<string, PieceMapSet>>;
       readonly disk?: DiskSet;
       readonly logs?: {
         readonly append: readonly LogRow[];
@@ -335,6 +367,7 @@ export type DemoScenarioId =
   | "stalled-metadata"
   | "tracker-recovery"
   | "endgame"
+  | "piece-retry"
   | "large-swarm"
   | "file-progress"
   | "disk-error"
