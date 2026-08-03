@@ -49,6 +49,10 @@ torrent-backed content grid; and collection-only application-view leasing
 outside Workbench. The detailed surface remains intact as Workbench, as
 recorded in
 [`application-interface-direction.md`](application-interface-direction.md).
+Tactical `058` replaces persistent torrent checkboxes with a discoverable
+selection mode, separates the current torrent from batch command targets, and
+applies the same interaction locally to Files. Files now exposes disabled
+Download and Skip actions without claiming runtime mutation support.
 
 ## Purpose
 
@@ -169,6 +173,13 @@ Touch is a first-class input. Primary actions cannot require hover, right
 click, or a fine pointer. Context menus may complement visible or otherwise
 discoverable actions but cannot be their only access path. Density may adapt
 without removing information or making controls too small to operate.
+
+Table multi-selection is an explicit mode rather than permanent checkbox
+chrome. A visible Select control and keyboard Space make the mode discoverable;
+Command/Control-click and a bounded touch/pen long press are accelerators. Only
+the mode shows checkboxes and select-all, row activation then toggles checks,
+and Done or Escape clears the batch set. Outside the mode, row activation owns
+one current item, commands target that item, and empty table space can clear it.
 
 Torrent-detail tab selection is a paint-only state change. Labels retain the
 same font metrics, the underline is out of layout flow, and bounded count
@@ -335,9 +346,10 @@ Tactical `055` adds a separate versioned navigation preference for the active
 Library, Transfers, or Workbench destination and each destination's local
 filter. Transfers is the fresh and invalid-storage fallback. The preference
 contains presentation values only and tolerates absent, malformed, future, or
-denied storage. Primary and multi-selection remain ephemeral application-store
-state and are repaired against every materialized torrent collection rather
-than persisted.
+denied storage. Tactical `058` keeps the current torrent and explicit batch
+selection as separate ephemeral application-store concepts. Missing torrents
+are pruned without inventing a replacement after the user clears or loses the
+current row, and neither concept is persisted.
 
 Archive state, user labels, and other organization intended to survive a new
 webview or appear in another client are durable application data. Torrent
@@ -393,6 +405,12 @@ projection but is hidden with an explicit count. Exact decimal counters use
 and semantic enum order is explicit. Live update sorting is opt-in so changing
 rates or progress do not make rows jump while being inspected.
 
+Tactical `058` adds a Files-local current row and explicit multi-selection
+using the shared table interaction. The visible More menu contains Download and
+Skip download, but both remain disabled with an unavailable reason because no
+runtime file-selection command exists. This is intentional UI staging, not an
+optimistic command or a support claim.
+
 Column visibility, widths, sort, and live-sort preference persist per table in
 a versioned browser-local setting. Resize separators work by pointer and
 keyboard. Wide, compact, and phone evidence keeps the active tab visible,
@@ -424,6 +442,15 @@ keeps Workbench and Transfers below 100 rendered rows, keeps Library below 100
 rendered cards, and retains fewer than 2,000 total DOM elements after changing
 destinations. These are bounded development assertions rather than a general
 browser performance guarantee.
+
+Tactical `058` adds pure state and component coverage for independent current
+and batch torrent selection, modifier and keyboard entry, touch long press and
+movement cancellation, empty-space clearing, shared Transfers/Workbench mode,
+and Files-local selection. Browser evidence covers the explicit desktop path,
+a phone-sized long press, disabled Files actions, wide/compact/phone Files
+layouts, and empty serious/critical axe findings. The 4,096-row scenario still
+renders fewer than 100 table rows; one sampled run retained 665 DOM elements,
+52,586,655 bytes of JavaScript heap, and a 41 ms scenario update.
 
 The deterministic 4,096-row scenario hides one padding row and rendered 690
 DOM elements with 66,468,705 bytes of sampled JavaScript heap. A complete

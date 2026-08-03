@@ -6,6 +6,7 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type UIEvent,
@@ -47,13 +48,17 @@ export interface VirtualTableProps<Row> {
   readonly selectedId?: string | null;
   readonly selection?: VirtualTableSelection<Row>;
   readonly onSelect?: (row: Row) => void;
+  readonly onClear?: () => void;
   readonly emptyMessage: string;
   readonly initialSort?: { readonly columnId: string; readonly direction: "asc" | "desc" };
 }
 
 export interface VirtualTableSelection<Row> {
+  readonly active: boolean;
   readonly selectedIds: ReadonlySet<string>;
   readonly getRowLabel: (row: Row) => string;
+  readonly onEnter: (row?: Row) => void;
+  readonly onExit: () => void;
   readonly onToggle: (row: Row) => void;
   readonly onSetAll: (rows: readonly Row[], selected: boolean) => void;
 }
@@ -84,6 +89,7 @@ export function VirtualTable<Row>({
   selectedId = null,
   selection,
   onSelect,
+  onClear,
   emptyMessage,
   initialSort,
 }: VirtualTableProps<Row>) {
@@ -118,6 +124,28 @@ export function VirtualTable<Row>({
     readonly startX: number;
     readonly startWidth: number;
   } | null>(null);
+  const longPressRef = useRef<{
+    readonly pointerId: number;
+    readonly rowId: string;
+    readonly startX: number;
+    readonly startY: number;
+    readonly timer: ReturnType<typeof globalThis.setTimeout>;
+  } | null>(null);
+  const suppressClickRowRef = useRef<string | null>(null);
+
+  useEffect(
+    () => () => {
+      const press = longPressRef.current;
+      if (press !== null) globalThis.clearTimeout(press.timer);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (selection?.active !== true || longPressRef.current === null) return;
+    globalThis.clearTimeout(longPressRef.current.timer);
+    longPressRef.current = null;
+  }, [selection?.active]);
 
   useEffect(() => {
     const loaded = loadTableConfig(tableId, columns);
@@ -219,9 +247,10 @@ export function VirtualTable<Row>({
     Math.ceil(viewportSize.height / tableRowHeight) + overscan * 2;
   const lastIndex = Math.min(sortedRows.length, firstIndex + visibleCount);
   const renderedRows = sortedRows.slice(firstIndex, lastIndex);
-  const selectionColumnWidth = selection === undefined ? 0 : 44;
+  const selectionActive = selection?.active === true;
+  const selectionColumnWidth = selectionActive ? 44 : 0;
   const gridTemplateColumns = [
-    ...(selection === undefined ? [] : [`${selectionColumnWidth}px`]),
+    ...(selectionActive ? [`${selectionColumnWidth}px`] : []),
     ...visibleColumns.map((column) => `${column.width}px`),
   ].join(" ");
   const minimumWidth =
@@ -234,6 +263,85 @@ export function VirtualTable<Row>({
 
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     setScrollTop(event.currentTarget.scrollTop);
+    if (longPressRef.current !== null) {
+      globalThis.clearTimeout(longPressRef.current.timer);
+      longPressRef.current = null;
+    }
+  };
+
+  const cancelLongPress = (pointerId: number) => {
+    const press = longPressRef.current;
+    if (press?.pointerId !== pointerId) return;
+    globalThis.clearTimeout(press.timer);
+    longPressRef.current = null;
+  };
+
+  const startLongPress = (
+    event: ReactPointerEvent<HTMLDivElement>,
+    row: Row,
+    rowId: string,
+  ) => {
+    if (
+      selection === undefined ||
+      selection.active ||
+      event.pointerType === "mouse" ||
+      event.button !== 0
+    ) {
+      return;
+    }
+    if (longPressRef.current !== null) {
+      globalThis.clearTimeout(longPressRef.current.timer);
+    }
+    const pointerId = event.pointerId;
+    const timer = globalThis.setTimeout(() => {
+      const press = longPressRef.current;
+      if (press?.pointerId !== pointerId || press.rowId !== rowId) return;
+      longPressRef.current = null;
+      suppressClickRowRef.current = rowId;
+      selection.onEnter(row);
+    }, 500);
+    longPressRef.current = {
+      pointerId,
+      rowId,
+      startX: event.clientX,
+      startY: event.clientY,
+      timer,
+    };
+  };
+
+  const continueLongPress = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const press = longPressRef.current;
+    if (press?.pointerId !== event.pointerId) return;
+    if (
+      Math.hypot(event.clientX - press.startX, event.clientY - press.startY) >
+      10
+    ) {
+      cancelLongPress(event.pointerId);
+    }
+  };
+
+  const activateRow = (
+    event: ReactMouseEvent<HTMLDivElement>,
+    row: Row,
+    rowId: string,
+  ) => {
+    const suppressedRow = suppressClickRowRef.current;
+    if (suppressedRow !== null) {
+      suppressClickRowRef.current = null;
+      if (suppressedRow === rowId) return;
+    }
+    if (selection !== undefined && (event.metaKey || event.ctrlKey)) {
+      if (selection.active) selection.onToggle(row);
+      else selection.onEnter(row);
+      return;
+    }
+    if (selection?.active === true) selection.onToggle(row);
+    else onSelect?.(row);
+  };
+
+  const activateBackground = () => {
+    if (selection?.active === true) selection.onExit();
+    else onClear?.();
   };
 
   const changeSort = (column: VirtualColumn<Row>) => {
@@ -346,7 +454,7 @@ export function VirtualTable<Row>({
       ? undefined
       : visibleColumns.find((column) => column.id === headerHelp.columnId);
   const selectedVisibleCount =
-    selection === undefined
+    !selectionActive || selection === undefined
       ? 0
       : sortedRows.filter((row) =>
           selection.selectedIds.has(getRowId(row)),
@@ -390,11 +498,35 @@ export function VirtualTable<Row>({
     <div className={styles.container} style={tableStyle}>
       <div className={styles.toolbar}>
         <span>
-          {selection !== undefined && selection.selectedIds.size > 0
-            ? `${selection.selectedIds.size.toLocaleString()} selected · `
-            : ""}
           {sortedRows.length.toLocaleString()} rows
         </span>
+        {selection === undefined ? null : selection.active ? (
+          <>
+            <strong className={styles.selectionStatus} aria-live="polite">
+              {selection.selectedIds.size.toLocaleString()} selected
+            </strong>
+            <button
+              type="button"
+              aria-label={`Done selecting rows in ${label}`}
+              onClick={selection.onExit}
+            >
+              Done
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            aria-label={`Select rows in ${label}`}
+            disabled={sortedRows.length === 0}
+            onClick={() =>
+              selection.onEnter(
+                sortedRows.find((row) => getRowId(row) === selectedId),
+              )
+            }
+          >
+            Select
+          </button>
+        )}
         <button
           ref={columnsButtonRef}
           type="button"
@@ -482,10 +614,24 @@ export function VirtualTable<Row>({
         role="grid"
         aria-label={label}
         aria-rowcount={sortedRows.length + 1}
-        aria-colcount={visibleColumns.length + (selection === undefined ? 0 : 1)}
-        aria-multiselectable={selection === undefined ? undefined : true}
+        aria-colcount={visibleColumns.length + (selectionActive ? 1 : 0)}
+        aria-multiselectable={selectionActive ? true : undefined}
         onScroll={handleScroll}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) activateBackground();
+        }}
         onKeyDown={(event) => {
+          if (event.key === "Escape" && selection?.active === true) {
+            event.preventDefault();
+            selection.onExit();
+            return;
+          }
+          if (
+            event.target instanceof HTMLElement &&
+            event.target.closest("button, input, select, textarea, [role='separator']")
+          ) {
+            return;
+          }
           if (event.key === "ArrowDown") {
             event.preventDefault();
             moveFocus(focusIndex + 1);
@@ -500,16 +646,18 @@ export function VirtualTable<Row>({
             moveFocus(sortedRows.length - 1);
           } else if (event.key === "Enter") {
             const row = sortedRows[focusIndex];
-            if (row !== undefined && onSelect !== undefined) {
+            if (row !== undefined) {
               event.preventDefault();
-              onSelect(row);
+              if (selection?.active === true) selection.onToggle(row);
+              else onSelect?.(row);
             }
           } else if (event.key === " ") {
             const row = sortedRows[focusIndex];
             if (row === undefined) return;
             if (selection !== undefined) {
               event.preventDefault();
-              selection.onToggle(row);
+              if (selection.active) selection.onToggle(row);
+              else selection.onEnter(row);
             } else if (onSelect !== undefined) {
               event.preventDefault();
               onSelect(row);
@@ -519,11 +667,17 @@ export function VirtualTable<Row>({
         data-testid="virtual-table"
       >
       <div className={styles.header} role="row" style={gridStyle}>
-        {selection === undefined ? null : (
+        {!selectionActive || selection === undefined ? null : (
           <div
             className={styles.selectionHeaderCell}
             role="columnheader"
             aria-label="Selection"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (event.target === event.currentTarget) {
+                selection.onSetAll(sortedRows, !allVisibleSelected);
+              }
+            }}
           >
             <SelectionCheckbox
               checked={allVisibleSelected}
@@ -603,7 +757,9 @@ export function VirtualTable<Row>({
         })}
       </div>
       {sortedRows.length === 0 ? (
-        <div className={styles.empty}>{emptyMessage}</div>
+        <div className={styles.empty} onClick={activateBackground}>
+          {emptyMessage}
+        </div>
       ) : (
         <div
           className={styles.canvas}
@@ -611,14 +767,17 @@ export function VirtualTable<Row>({
             height: `${sortedRows.length * tableRowHeight}px`,
             minWidth: `${minimumWidth}px`,
           }}
+          onClick={(event) => {
+            if (event.target === event.currentTarget) activateBackground();
+          }}
         >
           {renderedRows.map((row, offset) => {
             const index = firstIndex + offset;
             const rowId = getRowId(row);
             const selected =
-              selection === undefined
-                ? rowId === selectedId
-                : selection.selectedIds.has(rowId);
+              selectionActive && selection !== undefined
+                ? selection.selectedIds.has(rowId)
+                : rowId === selectedId;
             return (
               <div
                 key={rowId}
@@ -626,25 +785,42 @@ export function VirtualTable<Row>({
                 role="row"
                 aria-rowindex={index + 2}
                 aria-selected={selected}
+                aria-current={rowId === selectedId ? "true" : undefined}
                 tabIndex={index === focusIndex ? 0 : -1}
                 data-row-index={index}
                 data-row-id={rowId}
                 data-selected={selected}
+                data-current={rowId === selectedId}
                 style={{
                   ...gridStyle,
                   transform: `translateY(${index * tableRowHeight}px)`,
                 }}
                 onFocus={() => setFocusIndex(index)}
-                onClick={() => {
+                onPointerDown={(event) => startLongPress(event, row, rowId)}
+                onPointerMove={continueLongPress}
+                onPointerUp={(event) => cancelLongPress(event.pointerId)}
+                onPointerCancel={(event) => {
+                  cancelLongPress(event.pointerId);
+                  if (suppressClickRowRef.current === rowId) {
+                    suppressClickRowRef.current = null;
+                  }
+                }}
+                onPointerLeave={(event) => cancelLongPress(event.pointerId)}
+                onClick={(event) => {
                   setFocusIndex(index);
-                  onSelect?.(row);
+                  activateRow(event, row, rowId);
                 }}
               >
-                {selection === undefined ? null : (
+                {!selectionActive || selection === undefined ? null : (
                   <div
                     className={styles.selectionCell}
                     role="gridcell"
-                    onClick={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (event.target === event.currentTarget) {
+                        selection.onToggle(row);
+                      }
+                    }}
                   >
                     <SelectionCheckbox
                       checked={selected}

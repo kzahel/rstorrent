@@ -36,6 +36,8 @@ export interface PresentationState {
   readonly transfersCategory: TorrentCategory;
   readonly workbenchCategory: TorrentCategory;
   readonly selectedTorrentId: string | null;
+  readonly torrentSelectionInitialized: boolean;
+  readonly torrentSelectionMode: boolean;
   readonly selectedTorrentIds: readonly string[];
   readonly selectedPeerId: string | null;
   readonly activeTab: DetailTab;
@@ -68,6 +70,9 @@ export interface InspectionActions {
   readonly selectTorrent: (torrentId: string) => void;
   readonly focusTorrent: (torrentId: string) => void;
   readonly openTorrentInWorkbench: (torrentId: string) => void;
+  readonly clearTorrentFocus: () => void;
+  readonly enterTorrentSelection: (torrentId?: string) => void;
+  readonly exitTorrentSelection: () => void;
   readonly toggleTorrentSelection: (torrentId: string) => void;
   readonly replaceTorrentSelection: (torrentIds: readonly string[]) => void;
   readonly selectPeer: (connectionId: string | null) => void;
@@ -142,6 +147,8 @@ const DEFAULT_PRESENTATION: PresentationState = {
   transfersCategory: "all",
   workbenchCategory: "all",
   selectedTorrentId: null,
+  torrentSelectionInitialized: false,
+  torrentSelectionMode: false,
   selectedTorrentIds: [],
   selectedPeerId: null,
   activeTab: "peers",
@@ -239,7 +246,9 @@ export function createInspectionStore(
               presentation: {
                 ...state.presentation,
                 selectedTorrentId: torrentId,
-                selectedTorrentIds: [torrentId],
+                torrentSelectionInitialized: true,
+                torrentSelectionMode: false,
+                selectedTorrentIds: [],
                 selectedPeerId: null,
                 detailOpen: true,
               },
@@ -254,7 +263,9 @@ export function createInspectionStore(
               presentation: {
                 ...state.presentation,
                 selectedTorrentId: torrentId,
-                selectedTorrentIds: [torrentId],
+                torrentSelectionInitialized: true,
+                torrentSelectionMode: false,
+                selectedTorrentIds: [],
                 selectedPeerId: null,
               },
             },
@@ -267,7 +278,9 @@ export function createInspectionStore(
           ...state.presentation,
           destination: "workbench" as const,
           selectedTorrentId: torrentId,
-          selectedTorrentIds: [torrentId],
+          torrentSelectionInitialized: true,
+          torrentSelectionMode: false,
+          selectedTorrentIds: [],
           selectedPeerId: null,
           detailOpen: true,
           sidebarOpen: false,
@@ -275,6 +288,46 @@ export function createInspectionStore(
         persistNavigation(navigationPreferencesFor(presentation));
         return { presentation };
       });
+    },
+    clearTorrentFocus: () => {
+      set((state) => ({
+        presentation: {
+          ...state.presentation,
+          selectedTorrentId: null,
+          torrentSelectionInitialized: true,
+          torrentSelectionMode: false,
+          selectedTorrentIds: [],
+          selectedPeerId: null,
+          detailOpen: false,
+        },
+      }));
+    },
+    enterTorrentSelection: (torrentId) => {
+      set((state) => {
+        const seed =
+          torrentId !== undefined && state.torrents[torrentId] !== undefined
+            ? torrentId
+            : state.presentation.selectedTorrentId !== null &&
+                state.torrents[state.presentation.selectedTorrentId] !== undefined
+              ? state.presentation.selectedTorrentId
+              : null;
+        return {
+          presentation: {
+            ...state.presentation,
+            torrentSelectionMode: true,
+            selectedTorrentIds: seed === null ? [] : [seed],
+          },
+        };
+      });
+    },
+    exitTorrentSelection: () => {
+      set((state) => ({
+        presentation: {
+          ...state.presentation,
+          torrentSelectionMode: false,
+          selectedTorrentIds: [],
+        },
+      }));
     },
     toggleTorrentSelection: (torrentId) => {
       set((state) => {
@@ -286,24 +339,11 @@ export function createInspectionStore(
               (id) => id !== torrentId,
             )
           : [...state.presentation.selectedTorrentIds, torrentId];
-        const selectedTorrentId = selected
-          ? state.presentation.selectedTorrentId === torrentId
-            ? (selectedTorrentIds.at(-1) ?? null)
-            : state.presentation.selectedTorrentId
-          : torrentId;
         return {
           presentation: {
             ...state.presentation,
-            selectedTorrentId,
+            torrentSelectionMode: true,
             selectedTorrentIds,
-            selectedPeerId:
-              selectedTorrentId === state.presentation.selectedTorrentId
-                ? state.presentation.selectedPeerId
-                : null,
-            detailOpen:
-              selectedTorrentId === null
-                ? false
-                : state.presentation.detailOpen,
           },
         };
       });
@@ -314,24 +354,11 @@ export function createInspectionStore(
           torrentIds,
           state.torrents,
         );
-        const selectedTorrentId =
-          state.presentation.selectedTorrentId !== null &&
-          selectedTorrentIds.includes(state.presentation.selectedTorrentId)
-            ? state.presentation.selectedTorrentId
-            : (selectedTorrentIds[0] ?? null);
         return {
           presentation: {
             ...state.presentation,
-            selectedTorrentId,
+            torrentSelectionMode: true,
             selectedTorrentIds,
-            selectedPeerId:
-              selectedTorrentId === state.presentation.selectedTorrentId
-                ? state.presentation.selectedPeerId
-                : null,
-            detailOpen:
-              selectedTorrentId === null
-                ? false
-                : state.presentation.detailOpen,
           },
         };
       });
@@ -468,6 +495,8 @@ export function reduceInspectionUpdate(
     const selection = repairTorrentSelection(
       previousSelected,
       state.presentation.selectedTorrentIds,
+      state.presentation.torrentSelectionInitialized,
+      state.presentation.torrentSelectionMode,
       update.snapshot.torrentOrder,
       update.snapshot.torrents,
     );
@@ -596,6 +625,8 @@ export function reduceInspectionUpdate(
   const selection = repairTorrentSelection(
     selectedId,
     state.presentation.selectedTorrentIds,
+    state.presentation.torrentSelectionInitialized,
+    state.presentation.torrentSelectionMode,
     torrentOrder,
     torrents,
   );
@@ -686,22 +717,29 @@ function navigationPreferencesFor(
 function repairTorrentSelection(
   selectedTorrentId: string | null,
   selectedTorrentIds: readonly string[],
+  initialized: boolean,
+  selectionMode: boolean,
   torrentOrder: readonly string[],
   torrents: Readonly<Record<string, TorrentRow>>,
-): Pick<PresentationState, "selectedTorrentId" | "selectedTorrentIds"> {
+): Pick<
+  PresentationState,
+  | "selectedTorrentId"
+  | "selectedTorrentIds"
+  | "torrentSelectionInitialized"
+  | "torrentSelectionMode"
+> {
   const existing = uniqueExistingTorrentIds(selectedTorrentIds, torrents);
   const primary =
     selectedTorrentId !== null && torrents[selectedTorrentId] !== undefined
       ? selectedTorrentId
-      : (existing[0] ?? torrentOrder[0] ?? null);
+      : initialized
+        ? null
+        : (torrentOrder[0] ?? null);
   return {
     selectedTorrentId: primary,
-    selectedTorrentIds:
-      primary === null
-        ? existing
-        : existing.includes(primary)
-          ? existing
-          : [primary, ...existing],
+    selectedTorrentIds: selectionMode ? existing : [],
+    torrentSelectionInitialized: initialized || primary !== null,
+    torrentSelectionMode: selectionMode,
   };
 }
 

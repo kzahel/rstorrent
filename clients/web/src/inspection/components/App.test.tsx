@@ -270,6 +270,30 @@ describe("inspection application", () => {
     expect(files).toHaveAttribute("aria-rowcount", "4096");
     expect(within(files).getAllByRole("row").length).toBeLessThanOrEqual(100);
     expect(screen.getByText("1 padding hidden")).toBeVisible();
+    expect(within(files).queryByRole("checkbox")).not.toBeInTheDocument();
+    const firstFile = within(files).getAllByRole("row")[1]!;
+    await user.click(firstFile);
+    await user.click(
+      screen.getByRole("button", { name: "More file actions" }),
+    );
+    const fileActions = screen.getByRole("menu", { name: "File actions" });
+    expect(within(fileActions).getByRole("menuitem", { name: "Download" })).toBeDisabled();
+    expect(
+      within(fileActions).getByRole("menuitem", { name: "Skip download" }),
+    ).toBeDisabled();
+    expect(fileActions).toHaveTextContent("File actions are not available yet.");
+    await user.keyboard("{Escape}");
+
+    await user.click(
+      screen.getByRole("button", { name: "Select rows in Torrent files" }),
+    );
+    expect(files).toHaveAttribute("aria-multiselectable", "true");
+    expect(within(files).getAllByRole("checkbox").length).toBeGreaterThan(1);
+    await user.click(within(files).getAllByRole("row")[2]!);
+    expect(screen.getByText("2 selected")).toBeVisible();
+    fireEvent.keyDown(files, { key: "Escape" });
+    expect(within(files).queryByRole("checkbox")).not.toBeInTheDocument();
+
     await user.click(screen.getAllByRole("button", { name: "Columns" }).at(-1)!);
     await user.click(screen.getByRole("checkbox", { name: "Storage Path" }));
     expect(within(files).getByRole("columnheader", { name: /Storage Path/ })).toBeVisible();
@@ -441,10 +465,14 @@ describe("inspection application", () => {
   it("shares multi-selection between Transfers and Workbench", async () => {
     const user = userEvent.setup();
     renderScenario("healthy-download", 42_000);
+    expect(screen.queryByRole("checkbox", { name: /Sintel/ })).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Select rows in Transfer queue" }),
+    );
     await user.click(
       screen.getByRole("checkbox", { name: "Select Sintel 4K open movie" }),
     );
-    expect(screen.getByText(/2 selected · 3 rows/)).toBeVisible();
+    expect(screen.getByText("2 selected")).toBeVisible();
     expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
 
     await user.click(screen.getByRole("button", { name: "Workbench" }));
@@ -456,7 +484,43 @@ describe("inspection application", () => {
     expect(
       screen.getByRole("checkbox", { name: "Deselect Sintel 4K open movie" }),
     ).toBeChecked();
-    expect(screen.getByText(/2 selected · 3 rows/)).toBeVisible();
+    expect(screen.getByText("2 selected")).toBeVisible();
+  });
+
+  it("targets an ordinary row action and clears it from table background", async () => {
+    const user = userEvent.setup();
+    const snapshot = {
+      ...buildScenarioSnapshot("healthy-download", 42_000, false, 1),
+      demo: null,
+    };
+    const bunny = Object.values(snapshot.torrents).find(
+      (torrent) => torrent.name === "Big Buck Bunny 1080p surround",
+    )!;
+    const sintel = Object.values(snapshot.torrents).find(
+      (torrent) => torrent.name === "Sintel 4K open movie",
+    )!;
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot,
+    });
+    renderApplication(application);
+
+    await user.click(screen.getByRole("row", { name: /Sintel 4K open movie/ }));
+    await user.click(screen.getByRole("row", { name: /Big Buck Bunny 1080p/ }));
+    await user.click(screen.getByRole("button", { name: "Pause" }));
+    await waitFor(() =>
+      expect(application.commands).toEqual([
+        { type: "pause", torrentId: bunny.id },
+      ]),
+    );
+    expect(application.commands).not.toContainEqual({
+      type: "pause",
+      torrentId: sintel.id,
+    });
+
+    fireEvent.click(screen.getByRole("grid", { name: "Transfer queue" }));
+    expect(screen.getByRole("button", { name: "Pause" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
   });
 
   it("runs uniform batch commands sequentially and reports partial failure", async () => {
@@ -473,6 +537,9 @@ describe("inspection application", () => {
       sintel.id,
     );
     renderApplication(application);
+    await user.click(
+      screen.getByRole("button", { name: "Select rows in Transfer queue" }),
+    );
     await user.click(
       screen.getByRole("checkbox", { name: "Select Sintel 4K open movie" }),
     );

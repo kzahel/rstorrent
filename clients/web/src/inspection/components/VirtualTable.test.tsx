@@ -2,9 +2,9 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { VirtualTable, type VirtualColumn } from "./VirtualTable";
 
@@ -208,15 +208,15 @@ describe("VirtualTable", () => {
     expect(second()).toHaveStyle({ transform: "translateY(42px)" });
   });
 
-  it("supports checkbox, select-all, and Space multi-selection", () => {
+  it("shows checks only in explicit selection mode", () => {
     function SelectableTable() {
       const rows = [
         { id: "one", value: "1" },
         { id: "two", value: "2" },
       ];
-      const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
-        new Set(["one"]),
-      );
+      const [active, setActive] = useState(false);
+      const [currentId, setCurrentId] = useState<string | null>("one");
+      const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
       return (
         <VirtualTable
           tableId="selection-test"
@@ -226,9 +226,21 @@ describe("VirtualTable", () => {
           columns={COLUMNS}
           interfaceSize="standard"
           emptyMessage="empty"
+          selectedId={currentId}
+          onSelect={(row) => setCurrentId(row.id)}
+          onClear={() => setCurrentId(null)}
           selection={{
+            active,
             selectedIds,
             getRowLabel: (row) => row.id,
+            onEnter: (row) => {
+              setActive(true);
+              setSelectedIds(new Set(row === undefined ? [] : [row.id]));
+            },
+            onExit: () => {
+              setActive(false);
+              setSelectedIds(new Set());
+            },
             onToggle: (row) =>
               setSelectedIds((current) => {
                 const next = new Set(current);
@@ -246,19 +258,103 @@ describe("VirtualTable", () => {
     }
 
     render(<SelectableTable />);
+    const grid = screen.getByRole("grid", { name: "Selectable rows" });
+    expect(grid).not.toHaveAttribute("aria-multiselectable");
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(screen.getByRole("row", { name: /1/ })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Select rows in Selectable rows" }),
+    );
+    expect(grid).toHaveAttribute("aria-multiselectable", "true");
     const selectAll = screen.getByRole("checkbox", { name: "Select all rows" });
     expect(selectAll).toHaveProperty("indeterminate", true);
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select two" }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select two" }).parentElement!,
+    );
     expect(screen.getByRole("checkbox", { name: "Deselect all rows" })).toBeChecked();
 
     const firstRow = screen.getByRole("row", { name: /Deselect one/ });
     firstRow.focus();
-    fireEvent.keyDown(screen.getByRole("grid", { name: "Selectable rows" }), {
+    fireEvent.keyDown(grid, {
       key: " ",
     });
     expect(screen.getByRole("checkbox", { name: "Select one" })).not.toBeChecked();
     fireEvent.click(screen.getByRole("checkbox", { name: "Select all rows" }));
-    expect(screen.getByText("2 selected · 2 rows")).toBeVisible();
+    expect(screen.getByText("2 selected")).toBeVisible();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Done selecting rows in Selectable rows",
+      }),
+    );
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    const currentRow = screen.getByRole("row", { name: /1/ });
+    currentRow.focus();
+    fireEvent.keyDown(grid, { key: " " });
+    expect(screen.getByRole("checkbox", { name: "Deselect one" })).toBeChecked();
+    fireEvent.keyDown(grid, { key: "Escape" });
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+
+    const secondRow = screen.getByRole("row", { name: /2/ });
+    fireEvent.click(secondRow, { ctrlKey: true });
+    expect(screen.getByRole("checkbox", { name: "Deselect two" })).toBeChecked();
+    const firstInSelection = screen.getByRole("row", { name: /Select one/ });
+    fireEvent.focus(firstInSelection);
+    fireEvent.keyDown(grid, { key: "Enter" });
+    expect(screen.getByRole("checkbox", { name: "Deselect one" })).toBeChecked();
+    fireEvent.click(grid);
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
+
+  it("enters selection on a stationary touch hold and cancels on movement", () => {
+    vi.useFakeTimers();
+    const enter = vi.fn();
+    render(
+      <VirtualTable
+        tableId="long-press-test"
+        label="Touch rows"
+        rows={[{ id: "one", value: "1" }]}
+        getRowId={(row) => row.id}
+        columns={COLUMNS}
+        interfaceSize="standard"
+        emptyMessage="empty"
+        selection={{
+          active: false,
+          selectedIds: new Set(),
+          getRowLabel: (row) => row.id,
+          onEnter: enter,
+          onExit: vi.fn(),
+          onToggle: vi.fn(),
+          onSetAll: vi.fn(),
+        }}
+      />,
+    );
+    const row = screen.getByRole("row", { name: /1/ });
+    fireEvent.pointerDown(row, {
+      button: 0,
+      pointerId: 1,
+      pointerType: "touch",
+      clientX: 10,
+      clientY: 10,
+    });
+    fireEvent.pointerMove(row, { pointerId: 1, clientX: 21, clientY: 10 });
+    act(() => vi.advanceTimersByTime(500));
+    expect(enter).not.toHaveBeenCalled();
+
+    fireEvent.pointerDown(row, {
+      button: 0,
+      pointerId: 2,
+      pointerType: "touch",
+      clientX: 10,
+      clientY: 10,
+    });
+    act(() => vi.advanceTimersByTime(500));
+    expect(enter).toHaveBeenCalledWith(expect.objectContaining({ id: "one" }));
+    vi.useRealTimers();
   });
 });
 

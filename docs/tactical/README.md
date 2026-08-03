@@ -296,6 +296,9 @@ that scope and its cleanup or compatibility rules explicitly.
 - [`057-hardware-performance-baselines.md`](057-hardware-performance-baselines.md):
   complete; retains hardware-matched 1/10 GiB engine gates and paired
   per-view/adversarial application throughput evidence in local and CI tiers.
+- [`058-contextual-table-selection.md`](058-contextual-table-selection.md):
+  complete; replaces persistent torrent checkboxes with an explicit selection
+  mode and applies the same UI-only interaction plus deferred actions to Files.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

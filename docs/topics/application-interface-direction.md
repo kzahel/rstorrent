@@ -144,7 +144,10 @@ Fresh installations open Transfers. Best-effort browser-local preferences
 restore the last destination and each destination's independent filter, so a
 power user can remain in Workbench without repeatedly opting into it. Primary
 selection is shared by all three destinations, while multi-selection is shared
-by Transfers and Workbench and repaired exactly when torrents disappear.
+by Transfers and Workbench and pruned exactly when torrents disappear.
+Tactical `058` makes those separate states: ordinary row activation establishes
+the current single-command target, while explicit selection mode owns the
+checked batch-command set without changing the current/detail torrent.
 
 ## Implemented Initial Cross-Section
 
@@ -154,8 +157,7 @@ commands, generated contracts, or durable data:
 - labeled primary navigation at wide widths and icon-plus-accessible-name
   navigation at phone widths;
 - contextual Library, Transfers, and Workbench sidebars;
-- a clean virtualized Transfers queue with shared checkbox, select-all, and
-  keyboard-Space multi-selection;
+- a clean virtualized Transfers queue with shared multi-selection;
 - sequential Start, Pause, and uniform Archive or Restore over existing
   one-torrent commands, while removal remains deliberately single-torrent;
 - a virtualized torrent-backed Library with an explicit Open in Workbench
@@ -165,6 +167,13 @@ commands, generated contracts, or durable data:
 
 The initial slice deliberately leaves lightweight clean-view inspectors,
 media enrichment, playback, routes, and multi-remove policy open.
+
+Tactical `058` refines that initial selection interaction. Checkboxes and
+select-all appear only in a clearly labeled mode entered through Select,
+keyboard Space, Command/Control-click, or touch/pen long press. Done and Escape
+exit it. Normal row activation and empty-space clearing remain unambiguous
+single-selection behavior, and the existing command policies choose either the
+current row or checked set from the active mode.
 
 ## Adaptive And Platform Direction
 

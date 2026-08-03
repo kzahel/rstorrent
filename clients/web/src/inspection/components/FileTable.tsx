@@ -1,8 +1,9 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useInspectionStore } from "../context";
 import { formatDecimalBytes, formatDecimalProgress } from "../format";
 import type { FileRow, ViewMaterialization } from "../model";
+import { FileActionsMenu } from "./FileActionsMenu";
 import { VirtualTable, type VirtualColumn } from "./VirtualTable";
 import styles from "./FileTable.module.css";
 
@@ -139,6 +140,11 @@ const COLUMNS: readonly VirtualColumn<FileRow>[] = [
 ];
 
 export function FileTable({ torrentId }: { readonly torrentId: string }) {
+  const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedFileIds, setSelectedFileIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
   const fileSet = useInspectionStore((state) => state.filesByTorrent[torrentId]);
   const materialization = useInspectionStore((state) => state.viewStatus.files);
   const interfaceSize = useInspectionStore(
@@ -157,15 +163,69 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
         .length,
     [fileSet],
   );
+  const availableIds = useMemo(
+    () => new Set(rows.map((row) => row.id)),
+    [rows],
+  );
+
+  useEffect(() => {
+    setSelectedFileId(null);
+    setSelectionMode(false);
+    setSelectedFileIds(new Set());
+  }, [torrentId]);
+
+  useEffect(() => {
+    setSelectedFileId((current) =>
+      current !== null && availableIds.has(current) ? current : null,
+    );
+    setSelectedFileIds((current) => {
+      const next = new Set([...current].filter((id) => availableIds.has(id)));
+      return setsEqual(current, next) ? current : next;
+    });
+  }, [availableIds]);
+
+  const enterSelection = (row?: FileRow) => {
+    const seed = row?.id ?? selectedFileId;
+    setSelectionMode(true);
+    setSelectedFileIds(
+      seed !== null && seed !== undefined && availableIds.has(seed)
+        ? new Set([seed])
+        : new Set(),
+    );
+  };
+
+  const exitSelection = () => {
+    setSelectionMode(false);
+    setSelectedFileIds(new Set());
+  };
+
+  const toggleSelection = (row: FileRow) => {
+    setSelectedFileIds((current) => {
+      const next = new Set(current);
+      if (next.has(row.id)) next.delete(row.id);
+      else next.add(row.id);
+      return next;
+    });
+  };
+
+  const targetCount = selectionMode
+    ? selectedFileIds.size
+    : selectedFileId === null
+      ? 0
+      : 1;
 
   return (
     <div className={styles.filePanel}>
       <div className={styles.summary}>
         <span>{rows.length.toLocaleString()} files</span>
         {paddingCount > 0 ? <span>{paddingCount.toLocaleString()} padding hidden</span> : null}
-        <span title={fileSet?.filesystemContentBase ?? undefined}>
+        <span
+          className={styles.storagePath}
+          title={fileSet?.filesystemContentBase ?? undefined}
+        >
           {fileSet?.filesystemContentBase ?? "Platform-managed storage"}
         </span>
+        <FileActionsMenu targetCount={targetCount} />
       </div>
       <VirtualTable
         tableId="files"
@@ -174,11 +234,39 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
         getRowId={(row) => row.id}
         columns={COLUMNS}
         interfaceSize={interfaceSize}
+        selectedId={selectedFileId}
+        selection={{
+          active: selectionMode,
+          selectedIds: selectedFileIds,
+          getRowLabel: (row) => row.name,
+          onEnter: enterSelection,
+          onExit: exitSelection,
+          onToggle: toggleSelection,
+          onSetAll: (visibleRows, selected) =>
+            setSelectedFileIds(
+              selected
+                ? new Set(visibleRows.map((row) => row.id))
+                : new Set(),
+            ),
+        }}
+        onSelect={(row) => setSelectedFileId(row.id)}
+        onClear={() => {
+          if (selectionMode) exitSelection();
+          else setSelectedFileId(null);
+        }}
         emptyMessage={fileEmptyMessage(materialization, fileSet?.state)}
         initialSort={{ columnId: "index", direction: "asc" }}
       />
     </div>
   );
+}
+
+function setsEqual(left: ReadonlySet<string>, right: ReadonlySet<string>) {
+  if (left.size !== right.size) return false;
+  for (const value of left) {
+    if (!right.has(value)) return false;
+  }
+  return true;
 }
 
 function progressBasisPoints(row: FileRow): number {

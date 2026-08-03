@@ -16,7 +16,7 @@
   font-size: var(--ui-font-caption);
 }
 
-.summary span:last-child {
+.storagePath {
   overflow: hidden;
   margin-left: auto;
   text-overflow: ellipsis;
@@ -35,6 +35,11 @@
 
 .priority[data-selection="skipped"] {
   color: var(--warning-strong);
+}
+
+.filePanel :global([role="row"][aria-selected="true"]) .priority[data-selection="skipped"] {
+  color: var(--text-primary);
+  font-weight: 650;
 }
 
 .progress {
@@ -61,7 +66,7 @@
 }
 
 @media (max-width: 700px) {
-  .summary span:last-child {
+  .storagePath {
     display: none;
   }
 }

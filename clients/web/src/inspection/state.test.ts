@@ -25,7 +25,7 @@ describe("inspection store", () => {
     expect(store.getState().torrents.first?.progress).toBe(0.7);
   });
 
-  it("repairs selection when the selected torrent is removed", () => {
+  it("clears a removed current torrent without inventing a fallback", () => {
     const store = createInspectionStore();
     store.getState().applyUpdate({
       type: "snapshot",
@@ -37,12 +37,12 @@ describe("inspection store", () => {
       revision: 2,
       torrents: { upsert: [], removed: ["second"], order: ["first"] },
     });
-    expect(store.getState().presentation.selectedTorrentId).toBe("first");
-    expect(store.getState().presentation.selectedTorrentIds).toEqual(["first"]);
+    expect(store.getState().presentation.selectedTorrentId).toBeNull();
+    expect(store.getState().presentation.selectedTorrentIds).toEqual([]);
     expect(store.getState().presentation.detailOpen).toBe(false);
   });
 
-  it("shares bounded multi-selection and repairs it after removals", () => {
+  it("keeps current and explicit multi-selection independent", () => {
     const store = createInspectionStore(null);
     store.getState().applyUpdate({
       type: "snapshot",
@@ -59,7 +59,8 @@ describe("inspection store", () => {
       "second",
       "third",
     ]);
-    expect(store.getState().presentation.selectedTorrentId).toBe("third");
+    expect(store.getState().presentation.selectedTorrentId).toBe("first");
+    expect(store.getState().presentation.torrentSelectionMode).toBe(true);
 
     store.getState().applyUpdate({
       type: "patch",
@@ -72,6 +73,18 @@ describe("inspection store", () => {
     });
     expect(store.getState().presentation.selectedTorrentIds).toEqual(["first"]);
     expect(store.getState().presentation.selectedTorrentId).toBe("first");
+
+    store.getState().selectTorrent("first");
+    expect(store.getState().presentation.torrentSelectionMode).toBe(false);
+    expect(store.getState().presentation.selectedTorrentIds).toEqual([]);
+    store.getState().clearTorrentFocus();
+    expect(store.getState().presentation.selectedTorrentId).toBeNull();
+    store.getState().applyUpdate({
+      type: "patch",
+      revision: 3,
+      torrents: { upsert: [{ ...row("first", "paused"), progress: 0.5 }], removed: [] },
+    });
+    expect(store.getState().presentation.selectedTorrentId).toBeNull();
   });
 
   it("keeps destination filters independent and persists navigation", () => {

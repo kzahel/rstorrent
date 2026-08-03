@@ -96,7 +96,22 @@ export function TransferTable() {
   const selectedIds = useInspectionStore(
     (state) => state.presentation.selectedTorrentIds,
   );
+  const selectedId = useInspectionStore(
+    (state) => state.presentation.selectedTorrentId,
+  );
+  const selectionMode = useInspectionStore(
+    (state) => state.presentation.torrentSelectionMode,
+  );
   const focusTorrent = useInspectionStore((state) => state.focusTorrent);
+  const clearTorrentFocus = useInspectionStore(
+    (state) => state.clearTorrentFocus,
+  );
+  const enterTorrentSelection = useInspectionStore(
+    (state) => state.enterTorrentSelection,
+  );
+  const exitTorrentSelection = useInspectionStore(
+    (state) => state.exitTorrentSelection,
+  );
   const toggleTorrentSelection = useInspectionStore(
     (state) => state.toggleTorrentSelection,
   );
@@ -128,9 +143,13 @@ export function TransferTable() {
       getRowId={(row) => row.id}
       columns={COLUMNS}
       interfaceSize={interfaceSize}
+      selectedId={selectedId}
       selection={{
+        active: selectionMode,
         selectedIds: selectedIdSet,
         getRowLabel: (row) => row.name,
+        onEnter: (row) => enterTorrentSelection(row?.id),
+        onExit: exitTorrentSelection,
         onToggle: (row) => toggleTorrentSelection(row.id),
         onSetAll: (visibleRows, selected) => {
           const visibleIds = new Set(visibleRows.map((row) => row.id));
@@ -142,6 +161,7 @@ export function TransferTable() {
         },
       }}
       onSelect={(row) => focusTorrent(row.id)}
+      onClear={clearTorrentFocus}
       emptyMessage={
         materialization.status !== "ready"
           ? materializationMessage(materialization)

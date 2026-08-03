@@ -22,6 +22,12 @@ export function TorrentActions() {
   const selectedIds = useInspectionStore(
     (state) => state.presentation.selectedTorrentIds,
   );
+  const selectedId = useInspectionStore(
+    (state) => state.presentation.selectedTorrentId,
+  );
+  const selectionMode = useInspectionStore(
+    (state) => state.presentation.torrentSelectionMode,
+  );
   const demo = useInspectionStore((state) => state.demo);
   const dispatch = useInspectionDispatch();
   const [status, setStatus] = useState("");
@@ -33,11 +39,17 @@ export function TorrentActions() {
   const removeButtonRef = useRef<HTMLButtonElement>(null);
   const statusId = useId();
   const selectedRows = useMemo(
-    () =>
-      selectedIds
+    () => {
+      const targetIds = selectionMode
+        ? selectedIds
+        : selectedId === null
+          ? []
+          : [selectedId];
+      return targetIds
         .map((id) => torrents[id])
-        .filter((row): row is TorrentRow => row !== undefined),
-    [selectedIds, torrents],
+        .filter((row): row is TorrentRow => row !== undefined);
+    },
+    [selectedId, selectedIds, selectionMode, torrents],
   );
   const canStart =
     selectedRows.length > 0 &&

@@ -44,6 +44,7 @@
   min-width: 0;
   place-items: center;
   border-right: 1px solid var(--border-soft);
+  cursor: pointer;
 }
 
 .selectionCheckbox {
@@ -83,6 +84,17 @@
   background: var(--surface-secondary);
   font: inherit;
   cursor: pointer;
+}
+
+.toolbar > button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.selectionStatus {
+  color: var(--accent-strong);
+  font-size: var(--ui-font-caption);
+  font-weight: 700;
 }
 
 .columnMenu {
@@ -255,6 +267,8 @@
   background: var(--surface-primary);
   font-size: var(--ui-font-small);
   cursor: default;
+  touch-action: pan-x pan-y;
+  user-select: none;
 }
 
 .row:hover {
@@ -263,6 +277,10 @@
 
 .row[data-selected="true"] {
   background: var(--selection);
+}
+
+.row[data-current="true"] {
+  box-shadow: inset 3px 0 var(--accent);
 }
 
 .row:focus-visible {
