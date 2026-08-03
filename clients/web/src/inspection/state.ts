@@ -19,6 +19,7 @@ import type {
   DiskSet,
   FileSet,
   PeerSet,
+  SwarmSet,
   TrackerSet,
   PieceMapSet,
   TorrentCategory,
@@ -118,6 +119,7 @@ const EMPTY_SNAPSHOT: InspectionSnapshot = {
   torrentOrder: [],
   torrents: {},
   peersByTorrent: {},
+  swarmByTorrent: {},
   filesByTorrent: {},
   trackersByTorrent: {},
   piecesByTorrent: {},
@@ -134,6 +136,7 @@ const EMPTY_SNAPSHOT: InspectionSnapshot = {
     library: { status: "not_requested" },
     torrentSummary: { status: "not_requested" },
     peers: { status: "not_requested" },
+    swarm: { status: "not_requested" },
     files: { status: "not_requested" },
     trackers: { status: "not_requested" },
     pieces: { status: "not_requested" },
@@ -518,6 +521,7 @@ export function reduceInspectionUpdate(
   let torrents = state.torrents;
   let torrentOrder = state.torrentOrder;
   let peersByTorrent = state.peersByTorrent;
+  let swarmByTorrent = state.swarmByTorrent;
   let filesByTorrent = state.filesByTorrent;
   let trackersByTorrent = state.trackersByTorrent;
   let piecesByTorrent = state.piecesByTorrent;
@@ -554,6 +558,30 @@ export function reduceInspectionUpdate(
       };
     }
     peersByTorrent = nextPeerSets;
+  }
+
+  if (update.swarm !== undefined) {
+    const nextSwarmSets = { ...state.swarmByTorrent };
+    for (const patch of update.swarm) {
+      const current =
+        state.swarmByTorrent[patch.torrentId] ?? EMPTY_SWARM_SET;
+      const rows = applyRows(
+        current.rows,
+        patch.upsert,
+        patch.removed,
+        (row) => row.recordId,
+      );
+      nextSwarmSets[patch.torrentId] = {
+        state: patch.state,
+        capturedMillis: patch.capturedMillis,
+        maximumRecords: patch.maximumRecords,
+        counts: patch.counts,
+        rows,
+        order:
+          patch.order ?? current.order.filter((id) => rows[id] !== undefined),
+      };
+    }
+    swarmByTorrent = nextSwarmSets;
   }
 
   if (update.files !== undefined) {
@@ -640,6 +668,7 @@ export function reduceInspectionUpdate(
     torrents,
     torrentOrder,
     peersByTorrent,
+    swarmByTorrent,
     filesByTorrent,
     trackersByTorrent,
     piecesByTorrent,
@@ -773,6 +802,23 @@ function applyRows<T>(
 }
 
 const EMPTY_PEER_SET: PeerSet = { order: [], rows: {} };
+const EMPTY_SWARM_SET: SwarmSet = {
+  state: "inactive",
+  capturedMillis: 0,
+  maximumRecords: 1_000,
+  counts: {
+    total: 0,
+    eligible: 0,
+    not_connectable: 0,
+    dialing: 0,
+    connected: 0,
+    backed_off: 0,
+    failure_limited: 0,
+    banned: 0,
+  },
+  order: [],
+  rows: {},
+};
 const EMPTY_FILE_SET: FileSet = {
   state: "metadata_pending",
   filesystemContentBase: null,

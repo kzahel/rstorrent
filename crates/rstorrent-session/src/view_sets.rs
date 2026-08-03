@@ -90,6 +90,7 @@ impl Default for ApiHello {
                 "torrent_list".to_owned(),
                 "torrent_summary".to_owned(),
                 "torrent_peers".to_owned(),
+                "torrent_swarm".to_owned(),
                 "torrent_files".to_owned(),
                 "torrent_trackers".to_owned(),
                 "session_disk".to_owned(),
@@ -148,6 +149,12 @@ pub enum ViewSpec {
         #[serde(default)]
         delivery: ViewDeliveryPolicy,
     },
+    TorrentSwarm {
+        view_id: String,
+        torrent_id: String,
+        #[serde(default)]
+        delivery: ViewDeliveryPolicy,
+    },
     TorrentFiles {
         view_id: String,
         torrent_id: String,
@@ -179,6 +186,7 @@ impl ViewSpec {
             | Self::PieceActivity { view_id, .. }
             | Self::SessionDisk { view_id, .. }
             | Self::TorrentPeers { view_id, .. }
+            | Self::TorrentSwarm { view_id, .. }
             | Self::TorrentFiles { view_id, .. }
             | Self::TorrentTrackers { view_id, .. }
             | Self::Diagnostics { view_id, .. } => view_id,
@@ -192,6 +200,7 @@ impl ViewSpec {
             | Self::PieceActivity { delivery, .. }
             | Self::SessionDisk { delivery, .. }
             | Self::TorrentPeers { delivery, .. }
+            | Self::TorrentSwarm { delivery, .. }
             | Self::TorrentFiles { delivery, .. }
             | Self::TorrentTrackers { delivery, .. }
             | Self::Diagnostics { delivery, .. } => *delivery,
@@ -221,6 +230,13 @@ impl ViewSpec {
                     torrent_id: torrent_id.clone(),
                 },
                 ViewProjection::Peers,
+                None,
+            ),
+            Self::TorrentSwarm { torrent_id, .. } => (
+                ViewSelector::Torrent {
+                    torrent_id: torrent_id.clone(),
+                },
+                ViewProjection::Swarm,
                 None,
             ),
             Self::TorrentFiles { torrent_id, .. } => (

@@ -8,6 +8,8 @@ import type {
   InspectionSnapshot,
   LogRow,
   PeerRow,
+  SwarmRow,
+  SwarmSet,
   PieceMapSet,
   TorrentRow,
   TrackerRow,
@@ -59,9 +61,16 @@ export const DEMO_SCENARIOS: readonly DemoScenarioSummary[] = [
   {
     id: "large-swarm",
     title: "Large swarm",
-    description: "2,000 torrents and 10,000 peers for rendering pressure.",
+    description: "2,000 torrents, 10,000 connections, and 1,000 registry records.",
     durationMs: 60_000,
     autoplay: false,
+  },
+  {
+    id: "swarm-lifecycle",
+    title: "Swarm lifecycle",
+    description: "Peer candidates merge, dial, connect, back off, and retire.",
+    durationMs: 45_000,
+    autoplay: true,
   },
   {
     id: "file-progress",
@@ -130,6 +139,7 @@ export function buildScenarioSnapshot(
     ]),
   );
   const filesByTorrent = content.files ?? {};
+  const swarmByTorrent = content.swarm ?? {};
   const trackersByTorrent = content.trackers ?? {};
   const piecesByTorrent = content.pieces ?? {};
   const disk = content.disk ?? emptyDiskSet();
@@ -155,6 +165,7 @@ export function buildScenarioSnapshot(
     torrentOrder: content.torrents.map((torrent) => torrent.id),
     torrents,
     peersByTorrent,
+    swarmByTorrent,
     filesByTorrent,
     trackersByTorrent,
     piecesByTorrent,
@@ -171,6 +182,7 @@ export function buildScenarioSnapshot(
       library: { status: "ready" },
       torrentSummary: { status: "ready" },
       peers: { status: "ready" },
+      swarm: { status: "ready" },
       files: { status: "ready" },
       trackers: { status: "ready" },
       pieces: { status: "ready" },
@@ -183,6 +195,7 @@ export function buildScenarioSnapshot(
 interface ScenarioContent {
   readonly torrents: readonly TorrentRow[];
   readonly peers: Readonly<Record<string, readonly PeerRow[]>>;
+  readonly swarm?: Readonly<Record<string, SwarmSet>>;
   readonly files?: Readonly<Record<string, FileSet>>;
   readonly trackers?: Readonly<Record<string, TrackerSet>>;
   readonly pieces?: Readonly<Record<string, PieceMapSet>>;
@@ -208,6 +221,8 @@ function buildScenarioContent(
       return pieceRetry(elapsedMs);
     case "large-swarm":
       return largeSwarm();
+    case "swarm-lifecycle":
+      return swarmLifecycle(elapsedMs);
     case "file-progress":
       return fileProgress(elapsedMs);
     case "slow-disk-pressure":
@@ -710,9 +725,104 @@ function largeSwarm(): ScenarioContent {
   return {
     torrents,
     peers: { [selectedId]: buildPeers(selectedId, 10_000, 17, 0.54) },
+    swarm: { [selectedId]: buildSwarmSet(selectedId, 1_000, 17) },
     logs: timelineLogs(selectedId, [
       [0, "info", "performance", "Loaded 2,000 torrents and 10,000 peers"],
     ], 60_000),
+  };
+}
+
+function swarmLifecycle(elapsedMs: number): ScenarioContent {
+  const seconds = elapsedMs / 1_000;
+  return {
+    torrents: [
+      torrent({
+        id: BUNNY_ID,
+        name: "Big Buck Bunny — swarm registry inspection",
+        status: "downloading",
+        sizeBytes: 276_445_467,
+        progress: 0.31,
+        downloadRate: seconds < 12 ? 0 : 5_400_000,
+        peersConnected: seconds < 12 ? 0 : 2,
+        peersKnown: 8,
+        etaSeconds: 92,
+        progressReason: "Inspecting peer discovery and dial eligibility",
+      }),
+    ],
+    peers: {
+      [BUNNY_ID]: seconds < 12 ? [] : buildPeers(BUNNY_ID, 2, seconds, 0.31),
+    },
+    swarm: { [BUNNY_ID]: buildSwarmSet(BUNNY_ID, 8, seconds) },
+    logs: timelineLogs(BUNNY_ID, [
+      [0, "info", "discovery", "Tracker and DHT candidates entered the registry"],
+      [8, "info", "peer", "Eligible candidates entered bounded dial attempts"],
+      [12, "info", "peer", "Two peer handshakes completed"],
+      [22, "warning", "peer", "A failed candidate entered reconnect backoff"],
+      [34, "info", "peer", "Backoff expired and the candidate became eligible"],
+    ], elapsedMs),
+  };
+}
+
+function buildSwarmSet(torrentId: string, count: number, seconds: number): SwarmSet {
+  const states: readonly SwarmRow["state"][] = [
+    "eligible",
+    "not_connectable",
+    "dialing",
+    "connected",
+    "backed_off",
+    "failure_limited",
+    "banned",
+  ];
+  const rows = Array.from({ length: count }, (_, index): SwarmRow => {
+    let state = states[index % states.length] ?? "eligible";
+    if (count <= 8) {
+      if (index === 2) state = seconds < 8 ? "eligible" : seconds < 12 ? "dialing" : "connected";
+      if (index === 4) state = seconds < 22 ? "eligible" : seconds < 34 ? "backed_off" : "eligible";
+    }
+    const failed = state === "backed_off" || state === "failure_limited";
+    return {
+      recordId: String(index + 1),
+      torrentId,
+      endpoint: `10.${Math.floor(index / 65_536) % 250}.${Math.floor(index / 256) % 256}.${(index % 254) + 1}:${4_000 + (index % 2_000)}`,
+      sources:
+        index % 5 === 0
+          ? ["tracker", "dht"]
+          : [(["tracker", "dht", "peer_exchange", "magnet_hint"] as const)[index % 4] ?? "tracker"],
+      state,
+      connectable: state !== "not_connectable",
+      firstObservedAgeMs: 18_000 + index * 17,
+      lastObservedAgeMs: index * 13,
+      retryInMs: state === "backed_off" ? Math.max(0, Math.round((34 - seconds) * 1_000)) : null,
+      dialAttempts: index % 4,
+      consecutiveFailures: failed ? (index % 3) + 1 : 0,
+      totalFailures: failed ? (index % 7) + 1 : index % 2,
+      lastDialAgeMs: index % 3 === 0 ? index * 101 : null,
+      lastConnectedAgeMs: state === "connected" ? index * 91 : null,
+      lastFailure: failed ? (index % 2 === 0 ? "connect" : "handshake") : null,
+      lastFailureAgeMs: failed ? index * 83 : null,
+      trustPoints: state === "banned" ? -7 : index % 5,
+      hashFailures: state === "banned" ? 3 : 0,
+      validPieces: index % 43,
+      onParole: index % 17 === 0,
+    };
+  });
+  const counts = {
+    total: rows.length,
+    eligible: rows.filter((row) => row.state === "eligible").length,
+    not_connectable: rows.filter((row) => row.state === "not_connectable").length,
+    dialing: rows.filter((row) => row.state === "dialing").length,
+    connected: rows.filter((row) => row.state === "connected").length,
+    backed_off: rows.filter((row) => row.state === "backed_off").length,
+    failure_limited: rows.filter((row) => row.state === "failure_limited").length,
+    banned: rows.filter((row) => row.state === "banned").length,
+  };
+  return {
+    state: "active",
+    capturedMillis: Math.round(seconds * 1_000),
+    maximumRecords: 1_000,
+    counts,
+    order: rows.map((row) => row.recordId),
+    rows: Object.fromEntries(rows.map((row) => [row.recordId, row])),
   };
 }
 

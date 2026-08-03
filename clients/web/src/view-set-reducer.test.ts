@@ -321,6 +321,125 @@ describe("view-set reducer", () => {
     expect(state.views.library).toBeUndefined();
   });
 
+  it("applies bounded keyed swarm rows and coherent summary transitions", () => {
+    let state = reduceUpdateBatch(
+      undefined,
+      batch("0", "1", [
+        {
+          type: "snapshot",
+          view_id: "swarm",
+          snapshot: {
+            type: "swarm",
+            torrent_id: torrentId,
+            state: "active",
+            captured_millis: "1000",
+            maximum_records: 1000,
+            counts: {
+              total: 0,
+              eligible: 0,
+              not_connectable: 0,
+              dialing: 0,
+              connected: 0,
+              backed_off: 0,
+              failure_limited: 0,
+              banned: 0,
+            },
+            peers: [],
+          },
+        },
+      ]),
+    );
+    const peer = {
+      peer_record_id: "7",
+      torrent_id: torrentId,
+      endpoint: "127.0.0.1:6881",
+      sources: ["tracker" as const, "dht" as const],
+      state: "backed_off" as const,
+      connectable: true,
+      first_observed_age_millis: "5000",
+      last_observed_age_millis: "200",
+      retry_in_millis: "8000",
+      dial_attempts: 2,
+      consecutive_failures: 1,
+      total_failures: 1,
+      last_dial_age_millis: "1000",
+      last_connected_age_millis: null,
+      last_failure: "connect" as const,
+      last_failure_age_millis: "900",
+      trust_points: 0,
+      hash_failures: 0,
+      valid_pieces: 0,
+      on_parole: false,
+    };
+    state = reduceUpdateBatch(
+      state,
+      batch("1", "2", [
+        {
+          type: "patch",
+          view_id: "swarm",
+          patch: {
+            type: "swarm",
+            torrent_id: torrentId,
+            state: "active",
+            captured_millis: "2000",
+            maximum_records: 1000,
+            counts: {
+              total: 1,
+              eligible: 0,
+              not_connectable: 0,
+              dialing: 0,
+              connected: 0,
+              backed_off: 1,
+              failure_limited: 0,
+              banned: 0,
+            },
+            upsert: [peer],
+            removed: [],
+          },
+        },
+      ]),
+    );
+    expect(state.views.swarm).toMatchObject({
+      type: "swarm",
+      counts: { total: 1, backed_off: 1 },
+      peers: [{ peer_record_id: "7", sources: ["tracker", "dht"] }],
+    });
+
+    state = reduceUpdateBatch(
+      state,
+      batch("2", "3", [
+        {
+          type: "patch",
+          view_id: "swarm",
+          patch: {
+            type: "swarm",
+            torrent_id: torrentId,
+            state: "inactive",
+            captured_millis: "3000",
+            maximum_records: 1000,
+            counts: {
+              total: 0,
+              eligible: 0,
+              not_connectable: 0,
+              dialing: 0,
+              connected: 0,
+              backed_off: 0,
+              failure_limited: 0,
+              banned: 0,
+            },
+            upsert: [],
+            removed: ["7"],
+          },
+        },
+      ]),
+    );
+    expect(state.views.swarm).toMatchObject({
+      type: "swarm",
+      state: "inactive",
+      peers: [],
+    });
+  });
+
   it("treats an already-applied replay as idempotent", () => {
     const initial = batch("0", "1", [
       {

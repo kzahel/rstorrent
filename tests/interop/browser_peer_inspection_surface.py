@@ -374,7 +374,10 @@ def run(
             (
                 magnet_uri(fixture.info_hash, f"127.0.0.1:{port}")
                 if direct_peer
-                else tracker_magnet(fixture.info_hash, tracker.port)
+                else (
+                    f"{tracker_magnet(fixture.info_hash, tracker.port)}"
+                    f"&x.pe=127.0.0.1%3A{port}"
+                )
             ),
             fixture.info_hash,
             len(fixture.files),
@@ -403,7 +406,8 @@ def run(
             f"payload_sha1={fixture.payload_hash} "
             f"responsive={'wide' if direct_peer else 'wide,compact,phone'} "
             f"tracker_requests={0 if direct_peer else 2} "
-            "peer_removal=ok gateway_shutdown=joined cleanup=ok"
+            "peer_removal=ok swarm_source_merge=ok swarm_terminal_cleanup=ok "
+            "gateway_shutdown=joined cleanup=ok"
         )
     except BaseException as error:
         failure = error

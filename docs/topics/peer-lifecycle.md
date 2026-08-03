@@ -174,13 +174,15 @@ Tactical `035` makes the active lifecycle vocabulary transport-neutral:
 The Peers application view contains every active connection generation in
 those phases. It retains a disconnecting row until task, registry, scheduler,
 request, and payload cleanup finish, then removes it. It contains no
-disconnected history. Planned Tactical
-[`064`](../tactical/064-registry-backed-swarm-inspection.md) makes Swarm project
+disconnected history. Tactical
+[`064`](../tactical/064-registry-backed-swarm-inspection.md) now makes Swarm project
 all retained peer records, including eligible, not-connectable, backed-off,
 failure-limited, banned, dialing, and connected records, with the registry's
 existing 1,000-record bound. It is current retained state, not a connection
-history. A UI projection may map these owners coherently but cannot become
-another lifecycle authority.
+history. Semantic registry transitions flow through the coordinator's existing
+activity boundary, retry expiry uses its existing deadline/wake path, and one
+inactive empty snapshot follows joined terminal cleanup. No view interest,
+application state, or browser timer can mutate registry lifecycle.
 
 The current `PeerRegistry`, `PeerSocketSet`, and `SwarmState` remain valid
 subowners with distinct invariants. `TorrentPeerCoordinator` now coordinates
@@ -206,6 +208,14 @@ the default queue bound. A controlled libtorrent transfer then observes the
 same active row through the real React surface and its keyed removal after
 verified completion. This is observation evidence, not incoming or uTP
 runtime support and not a change to dial, picker, or request policy.
+
+Tactical `064` adds the companion retained-state evidence. A tracker and DHT
+observation merge on one stable registry ID, failed dialing moves that row
+through backoff and deadline re-eligibility, and an empty Peers observation
+does not remove it from Swarm. The controlled libtorrent browser proof merges
+tracker and magnet-hint sources on one loopback endpoint before exact active
+connection removal and terminal inactive cleanup. This adds observation only;
+registry admission, scoring, eviction, and integrity policy are unchanged.
 
 Tactical `046` adds the missing pause evidence at this same boundary. Public
 operation wrappers now request cancellation and await the supervisor that

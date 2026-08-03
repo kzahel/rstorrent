@@ -11,6 +11,8 @@ import type {
   FileRow,
   LogRow,
   PeerRow,
+  SwarmRow,
+  SwarmSet,
   PieceMapSet,
   TorrentRow,
   TrackerRow,
@@ -290,6 +292,28 @@ function materializeDemoViews(
           },
         }
       : {};
+  const swarmByTorrent =
+    desired.detail === "swarm" && desired.torrentId !== null
+      ? {
+          [desired.torrentId]: source.swarmByTorrent[desired.torrentId] ?? {
+            state: "inactive" as const,
+            capturedMillis: source.demo?.elapsedMs ?? 0,
+            maximumRecords: 1_000,
+            counts: {
+              total: 0,
+              eligible: 0,
+              not_connectable: 0,
+              dialing: 0,
+              connected: 0,
+              backed_off: 0,
+              failure_limited: 0,
+              banned: 0,
+            },
+            order: [],
+            rows: {},
+          },
+        }
+      : {};
   const filesByTorrent =
     desired.detail === "files" && desired.torrentId !== null
       ? {
@@ -324,6 +348,7 @@ function materializeDemoViews(
     torrentOrder: desired.library ? source.torrentOrder : [],
     torrents,
     peersByTorrent,
+    swarmByTorrent,
     filesByTorrent,
     trackersByTorrent,
     piecesByTorrent,
@@ -351,6 +376,10 @@ function materializeDemoViews(
             : { status: "ready" },
       peers:
         desired.detail === "peers"
+          ? { status: "ready" }
+          : { status: "not_requested" },
+      swarm:
+        desired.detail === "swarm"
           ? { status: "ready" }
           : { status: "not_requested" },
       files:
@@ -452,6 +481,12 @@ function applyOverlays(
     },
     torrentOrder,
     torrents,
+    peersByTorrent: Object.fromEntries(
+      Object.entries(source.peersByTorrent).filter(([torrentId]) => !removed.has(torrentId)),
+    ),
+    swarmByTorrent: Object.fromEntries(
+      Object.entries(source.swarmByTorrent).filter(([torrentId]) => !removed.has(torrentId)),
+    ),
     filesByTorrent: Object.fromEntries(
       Object.entries(source.filesByTorrent).filter(([torrentId]) => !removed.has(torrentId)),
     ),
@@ -488,6 +523,16 @@ function diffSnapshots(
   const peerPatches: Array<
     KeyedPatch<PeerRow> & { readonly torrentId: string; readonly order: readonly string[] }
   > = [];
+  const swarmPatches: Array<
+    KeyedPatch<SwarmRow> & {
+      readonly torrentId: string;
+      readonly state: SwarmSet["state"];
+      readonly capturedMillis: number;
+      readonly maximumRecords: number;
+      readonly counts: SwarmSet["counts"];
+      readonly order: readonly string[];
+    }
+  > = [];
   const filePatches: Array<
     KeyedPatch<FileRow> & {
       readonly torrentId: string;
@@ -522,6 +567,58 @@ function diffSnapshots(
   for (const [torrentId, previousSet] of Object.entries(previous.peersByTorrent)) {
     if (next.peersByTorrent[torrentId] === undefined) {
       peerPatches.push({ torrentId, upsert: [], removed: previousSet.order, order: [] });
+    }
+  }
+  for (const [torrentId, nextSet] of Object.entries(next.swarmByTorrent)) {
+    const previousSet = previous.swarmByTorrent[torrentId];
+    const upsert = nextSet.order
+      .map((id) => nextSet.rows[id])
+      .filter((row): row is SwarmRow => row !== undefined)
+      .filter((row) => !shallowEqual(previousSet?.rows[row.recordId], row));
+    const removed =
+      previousSet?.order.filter((id) => nextSet.rows[id] === undefined) ?? [];
+    if (
+      upsert.length > 0 ||
+      removed.length > 0 ||
+      previousSet?.state !== nextSet.state ||
+      previousSet?.capturedMillis !== nextSet.capturedMillis ||
+      previousSet?.maximumRecords !== nextSet.maximumRecords ||
+      !shallowEqual(previousSet?.counts, nextSet.counts) ||
+      !arraysEqual(previousSet?.order ?? [], nextSet.order)
+    ) {
+      swarmPatches.push({
+        torrentId,
+        state: nextSet.state,
+        capturedMillis: nextSet.capturedMillis,
+        maximumRecords: nextSet.maximumRecords,
+        counts: nextSet.counts,
+        upsert,
+        removed,
+        order: nextSet.order,
+      });
+    }
+  }
+  for (const [torrentId, previousSet] of Object.entries(previous.swarmByTorrent)) {
+    if (next.swarmByTorrent[torrentId] === undefined) {
+      swarmPatches.push({
+        torrentId,
+        state: "torrent_missing",
+        capturedMillis: previousSet.capturedMillis,
+        maximumRecords: previousSet.maximumRecords,
+        counts: {
+          total: 0,
+          eligible: 0,
+          not_connectable: 0,
+          dialing: 0,
+          connected: 0,
+          backed_off: 0,
+          failure_limited: 0,
+          banned: 0,
+        },
+        upsert: [],
+        removed: previousSet.order,
+        order: [],
+      });
     }
   }
   for (const [torrentId, nextSet] of Object.entries(next.filesByTorrent)) {
@@ -616,6 +713,7 @@ function diffSnapshots(
           },
         }),
     ...(peerPatches.length === 0 ? {} : { peers: peerPatches }),
+    ...(swarmPatches.length === 0 ? {} : { swarm: swarmPatches }),
     ...(filePatches.length === 0 ? {} : { files: filePatches }),
     ...(trackerPatches.length === 0 ? {} : { trackers: trackerPatches }),
     ...(!samePieceMaps(previous.piecesByTorrent, next.piecesByTorrent)

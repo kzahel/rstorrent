@@ -11,7 +11,9 @@ use tokio::sync::Notify;
 use tokio::time::Instant;
 use ts_rs::TS;
 
-use rstorrent_engine::peer::{PeerFailure, PeerSource, PeerSources};
+use rstorrent_engine::peer::{
+    DialEligibility, PeerFailure, PeerRegistrySnapshot, PeerSource, PeerSources,
+};
 use rstorrent_engine::{
     DiskCheckpointStage, DiskPieceRuntimeSnapshot, DiskPieceStage, DiskPressure,
     DiskRuntimeSnapshot, PeerConnectionDirection, PeerConnectionLifecycle,
@@ -57,6 +59,7 @@ pub enum ViewProjection {
     PieceActivity,
     Disk,
     Peers,
+    Swarm,
     Files,
     Trackers,
     Diagnostics,
@@ -623,6 +626,66 @@ pub enum PeerDisconnectReason {
     RemoteClosed,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum SwarmCatalogState {
+    Active,
+    Inactive,
+    TorrentMissing,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum SwarmPeerState {
+    Eligible,
+    NotConnectable,
+    Dialing,
+    Connected,
+    BackedOff,
+    FailureLimited,
+    Banned,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct SwarmCountsView {
+    pub total: u32,
+    pub eligible: u32,
+    pub not_connectable: u32,
+    pub dialing: u32,
+    pub connected: u32,
+    pub backed_off: u32,
+    pub failure_limited: u32,
+    pub banned: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct SwarmPeerView {
+    pub peer_record_id: String,
+    pub torrent_id: String,
+    pub endpoint: String,
+    pub sources: Vec<PeerSourceView>,
+    pub state: SwarmPeerState,
+    pub connectable: bool,
+    pub first_observed_age_millis: String,
+    pub last_observed_age_millis: String,
+    pub retry_in_millis: Option<String>,
+    pub dial_attempts: u32,
+    pub consecutive_failures: u32,
+    pub total_failures: u32,
+    pub last_dial_age_millis: Option<String>,
+    pub last_connected_age_millis: Option<String>,
+    pub last_failure: Option<PeerDisconnectReason>,
+    pub last_failure_age_millis: Option<String>,
+    pub trust_points: i8,
+    pub hash_failures: u8,
+    pub valid_pieces: u32,
+    pub on_parole: bool,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PeerFieldCapabilities {
@@ -853,6 +916,127 @@ fn peer_sources(sources: PeerSources) -> Vec<PeerSourceView> {
     .collect()
 }
 
+const MAX_SWARM_RECORDS: usize = 1_000;
+
+fn peer_failure_view(failure: PeerFailure) -> PeerDisconnectReason {
+    match failure {
+        PeerFailure::Connect => PeerDisconnectReason::Connect,
+        PeerFailure::Handshake => PeerDisconnectReason::Handshake,
+        PeerFailure::Protocol => PeerDisconnectReason::Protocol,
+        PeerFailure::RemoteClosed => PeerDisconnectReason::RemoteClosed,
+    }
+}
+
+fn swarm_model(
+    torrent_id: &str,
+    active: bool,
+    snapshot: &PeerRegistrySnapshot,
+) -> Result<SwarmModel, SubscriptionError> {
+    if snapshot.maximum_records > MAX_SWARM_RECORDS
+        || snapshot.records.len() > snapshot.maximum_records
+        || snapshot.counts.total != snapshot.records.len()
+    {
+        return Err(SubscriptionError::Internal(
+            "peer registry snapshot exceeds its bounded contract".to_owned(),
+        ));
+    }
+    let counts_total = snapshot.counts.eligible
+        + snapshot.counts.not_connectable
+        + snapshot.counts.dialing
+        + snapshot.counts.connected
+        + snapshot.counts.banned
+        + snapshot.counts.backed_off
+        + snapshot.counts.failure_limited;
+    if counts_total != snapshot.counts.total {
+        return Err(SubscriptionError::Internal(
+            "peer registry snapshot counts are inconsistent".to_owned(),
+        ));
+    }
+    let captured_at = snapshot.captured_at;
+    let peers = if active {
+        snapshot
+            .records
+            .iter()
+            .map(|record| {
+                let (state, retry_in_millis) = match record.eligibility {
+                    DialEligibility::Eligible => (SwarmPeerState::Eligible, None),
+                    DialEligibility::NotConnectable => (SwarmPeerState::NotConnectable, None),
+                    DialEligibility::Dialing => (SwarmPeerState::Dialing, None),
+                    DialEligibility::Connected => (SwarmPeerState::Connected, None),
+                    DialEligibility::Backoff { retry_at } => (
+                        SwarmPeerState::BackedOff,
+                        Some(duration_millis_string(retry_at.saturating_sub(captured_at))),
+                    ),
+                    DialEligibility::FailureLimit { .. } => (SwarmPeerState::FailureLimited, None),
+                    DialEligibility::Banned => (SwarmPeerState::Banned, None),
+                };
+                let history = record.history;
+                let view = SwarmPeerView {
+                    peer_record_id: record.id.get().to_string(),
+                    torrent_id: torrent_id.to_owned(),
+                    endpoint: record.endpoint.to_string(),
+                    sources: peer_sources(record.sources),
+                    state,
+                    connectable: record.connectable,
+                    first_observed_age_millis: duration_millis_string(
+                        captured_at.saturating_sub(record.first_observed_at),
+                    ),
+                    last_observed_age_millis: duration_millis_string(
+                        captured_at.saturating_sub(record.last_observed_at),
+                    ),
+                    retry_in_millis,
+                    dial_attempts: history.dial_attempts,
+                    consecutive_failures: history.consecutive_failures,
+                    total_failures: history.total_failures,
+                    last_dial_age_millis: history
+                        .last_dial_at
+                        .map(|at| duration_millis_string(captured_at.saturating_sub(at))),
+                    last_connected_age_millis: history
+                        .last_connected_at
+                        .map(|at| duration_millis_string(captured_at.saturating_sub(at))),
+                    last_failure: history.last_failure.map(peer_failure_view),
+                    last_failure_age_millis: history.last_failure.and_then(|_| {
+                        history
+                            .last_disconnected_at
+                            .map(|at| duration_millis_string(captured_at.saturating_sub(at)))
+                    }),
+                    trust_points: record.integrity.trust_points,
+                    hash_failures: record.integrity.hash_failures,
+                    valid_pieces: record.integrity.valid_pieces,
+                    on_parole: record.integrity.on_parole,
+                };
+                (view.peer_record_id.clone(), view)
+            })
+            .collect()
+    } else {
+        BTreeMap::new()
+    };
+    Ok(SwarmModel {
+        state: if active {
+            SwarmCatalogState::Active
+        } else {
+            SwarmCatalogState::Inactive
+        },
+        captured_millis: duration_millis_string(captured_at),
+        maximum_records: bounded_u32(snapshot.maximum_records),
+        counts: if active {
+            SwarmCountsView {
+                total: bounded_u32(snapshot.counts.total),
+                eligible: bounded_u32(snapshot.counts.eligible),
+                not_connectable: bounded_u32(snapshot.counts.not_connectable),
+                dialing: bounded_u32(snapshot.counts.dialing),
+                connected: bounded_u32(snapshot.counts.connected),
+                backed_off: bounded_u32(snapshot.counts.backed_off),
+                failure_limited: bounded_u32(snapshot.counts.failure_limited),
+                banned: bounded_u32(snapshot.counts.banned),
+            }
+        } else {
+            SwarmCountsView::default()
+        },
+        peers,
+    })
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 // UniFFI does not lower boxed record fields. These DTO variants are bounded
@@ -880,6 +1064,14 @@ pub enum ViewSnapshot {
     Peers {
         torrent_id: String,
         peers: Vec<PeerView>,
+    },
+    Swarm {
+        torrent_id: String,
+        state: SwarmCatalogState,
+        captured_millis: String,
+        maximum_records: u32,
+        counts: SwarmCountsView,
+        peers: Vec<SwarmPeerView>,
     },
     Files {
         torrent_id: String,
@@ -930,6 +1122,15 @@ pub enum ViewPatch {
     Peers {
         torrent_id: String,
         upsert: Vec<PeerView>,
+        removed: Vec<String>,
+    },
+    Swarm {
+        torrent_id: String,
+        state: SwarmCatalogState,
+        captured_millis: String,
+        maximum_records: u32,
+        counts: SwarmCountsView,
+        upsert: Vec<SwarmPeerView>,
         removed: Vec<String>,
     },
     Files {
@@ -1013,8 +1214,30 @@ struct TorrentModel {
     verified: Vec<IndexRange>,
     active: BTreeMap<u32, ActivePiece>,
     peers: BTreeMap<String, PeerView>,
+    swarm: SwarmModel,
     files: Option<FileProgressModel>,
     trackers: TrackerViewModel,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SwarmModel {
+    state: SwarmCatalogState,
+    captured_millis: String,
+    maximum_records: u32,
+    counts: SwarmCountsView,
+    peers: BTreeMap<String, SwarmPeerView>,
+}
+
+impl Default for SwarmModel {
+    fn default() -> Self {
+        Self {
+            state: SwarmCatalogState::Inactive,
+            captured_millis: "0".to_owned(),
+            maximum_records: 1_000,
+            counts: SwarmCountsView::default(),
+            peers: BTreeMap::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1246,6 +1469,7 @@ impl ViewHub {
                 model.view.progress = assess_progress(torrent, model.progress_inputs);
                 model.active = old.active.clone();
                 model.peers = old.peers.clone();
+                model.swarm = old.swarm.clone();
                 if let (Some(old_files), Some(durable_files)) = (&old.files, model.files.as_ref())
                     && old_files.catalog_matches(durable_files)
                 {
@@ -1525,6 +1749,25 @@ impl ViewHub {
         )
     }
 
+    pub(crate) fn record_peer_registry_state(
+        &self,
+        torrent_id: &str,
+        active: bool,
+        snapshot: &PeerRegistrySnapshot,
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let Some(model) = hub.torrents.get_mut(torrent_id) else {
+            return Ok(());
+        };
+        let previous = model.swarm.clone();
+        model.swarm = swarm_model(torrent_id, active, snapshot)?;
+        let current = model.swarm.clone();
+        hub.publish_swarm_changes(torrent_id, &previous, &current)
+    }
+
     pub(crate) fn record_tracker_state(
         &self,
         torrent_id: &str,
@@ -1716,6 +1959,20 @@ impl HubState {
                         torrent.peers.values().cloned().collect()
                     }),
             },
+            (ViewSelector::Torrent { torrent_id }, ViewProjection::Swarm) => {
+                let swarm = self.torrents.get(torrent_id).map(|torrent| &torrent.swarm);
+                ViewSnapshot::Swarm {
+                    torrent_id: torrent_id.clone(),
+                    state: swarm.map_or(SwarmCatalogState::TorrentMissing, |swarm| swarm.state),
+                    captured_millis: swarm
+                        .map_or_else(|| "0".to_owned(), |swarm| swarm.captured_millis.clone()),
+                    maximum_records: swarm.map_or(1_000, |swarm| swarm.maximum_records),
+                    counts: swarm
+                        .map_or_else(SwarmCountsView::default, |swarm| swarm.counts.clone()),
+                    peers: swarm
+                        .map_or_else(Vec::new, |swarm| swarm.peers.values().cloned().collect()),
+                }
+            }
             (ViewSelector::Torrent { torrent_id }, ViewProjection::Files) => {
                 match self.torrents.get(torrent_id) {
                     Some(torrent) => ViewSnapshot::Files {
@@ -1769,6 +2026,7 @@ impl HubState {
                 ViewSelector::TorrentList,
                 ViewProjection::PieceActivity
                 | ViewProjection::Peers
+                | ViewProjection::Swarm
                 | ViewProjection::Files
                 | ViewProjection::Trackers,
             ) => {
@@ -2024,6 +2282,46 @@ impl HubState {
         Ok(())
     }
 
+    fn publish_swarm_changes(
+        &mut self,
+        torrent_id: &str,
+        previous: &SwarmModel,
+        current: &SwarmModel,
+    ) -> Result<(), SubscriptionError> {
+        if previous == current {
+            return Ok(());
+        }
+        let revision = self.revision;
+        self.subscribers.retain(|_, weak| weak.strong_count() != 0);
+        let subscribers = self
+            .subscribers
+            .values()
+            .filter_map(Weak::upgrade)
+            .collect::<Vec<_>>();
+        for subscriber in subscribers {
+            if let Some(patch) =
+                targeted_swarm_patch(&subscriber.spec, torrent_id, previous, current)
+            {
+                subscriber.enqueue_patch(revision, patch)?;
+            }
+        }
+        self.retain_live_view_sets();
+        let view_sets = self.view_sets.values().cloned().collect::<Vec<_>>();
+        for view_set in view_sets {
+            for spec in view_set.view_specs()? {
+                if let Some(patch) = targeted_swarm_patch(
+                    &spec.subscription_spec(DEFAULT_VIEW_SET_QUEUE_BYTES),
+                    torrent_id,
+                    previous,
+                    current,
+                ) {
+                    view_set.enqueue_patch(spec.view_id(), patch, revision)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn publish_tracker_changes(
         &mut self,
         torrent_id: &str,
@@ -2127,6 +2425,7 @@ impl TorrentModel {
             verified: Vec::new(),
             active: BTreeMap::new(),
             peers: BTreeMap::new(),
+            swarm: SwarmModel::default(),
             files: None,
             trackers: TrackerViewModel::default(),
         }
@@ -2898,6 +3197,7 @@ pub(crate) fn validate_spec(spec: &SubscriptionSpec) -> Result<(), SubscriptionE
             spec.projection,
             ViewProjection::PieceActivity
                 | ViewProjection::Peers
+                | ViewProjection::Swarm
                 | ViewProjection::Files
                 | ViewProjection::Trackers
         )
@@ -3028,6 +3328,14 @@ fn patch_for(
             let next = current.get(torrent_id).map_or(&empty, |model| &model.peers);
             peer_collection_patch(torrent_id, old, next)
         }
+        (ViewSelector::Torrent { torrent_id }, ViewProjection::Swarm) => {
+            match (previous.get(torrent_id), current.get(torrent_id)) {
+                (Some(old), Some(next)) => {
+                    swarm_collection_patch(torrent_id, &old.swarm, &next.swarm)
+                }
+                _ => None,
+            }
+        }
         (ViewSelector::Torrent { torrent_id }, ViewProjection::Files) => {
             let old = previous
                 .get(torrent_id)
@@ -3061,6 +3369,7 @@ fn patch_for(
             ViewSelector::TorrentList,
             ViewProjection::PieceActivity
             | ViewProjection::Peers
+            | ViewProjection::Swarm
             | ViewProjection::Files
             | ViewProjection::Trackers,
         ) => None,
@@ -3074,6 +3383,11 @@ fn projection_requires_snapshot(
     previous: &BTreeMap<String, TorrentModel>,
     current: &BTreeMap<String, TorrentModel>,
 ) -> bool {
+    if let (ViewSelector::Torrent { torrent_id }, ViewProjection::Swarm) =
+        (&spec.selector, spec.projection)
+    {
+        return previous.contains_key(torrent_id) != current.contains_key(torrent_id);
+    }
     if let (ViewSelector::Torrent { torrent_id }, ViewProjection::Trackers) =
         (&spec.selector, spec.projection)
     {
@@ -3195,6 +3509,23 @@ fn targeted_peer_patch(
     }
 }
 
+fn targeted_swarm_patch(
+    spec: &SubscriptionSpec,
+    torrent_id: &str,
+    previous: &SwarmModel,
+    current: &SwarmModel,
+) -> Option<ViewPatch> {
+    match (&spec.selector, spec.projection) {
+        (
+            ViewSelector::Torrent {
+                torrent_id: selected,
+            },
+            ViewProjection::Swarm,
+        ) if selected == torrent_id => swarm_collection_patch(torrent_id, previous, current),
+        _ => None,
+    }
+}
+
 fn targeted_tracker_patch(
     spec: &SubscriptionSpec,
     torrent_id: &str,
@@ -3248,6 +3579,37 @@ fn peer_collection_patch(
         .collect::<Vec<_>>();
     (!upsert.is_empty() || !removed.is_empty()).then(|| ViewPatch::Peers {
         torrent_id: torrent_id.to_owned(),
+        upsert,
+        removed,
+    })
+}
+
+fn swarm_collection_patch(
+    torrent_id: &str,
+    previous: &SwarmModel,
+    current: &SwarmModel,
+) -> Option<ViewPatch> {
+    if previous == current {
+        return None;
+    }
+    let upsert = current
+        .peers
+        .iter()
+        .filter(|(id, peer)| previous.peers.get(*id) != Some(*peer))
+        .map(|(_, peer)| peer.clone())
+        .collect();
+    let removed = previous
+        .peers
+        .keys()
+        .filter(|id| !current.peers.contains_key(*id))
+        .cloned()
+        .collect();
+    Some(ViewPatch::Swarm {
+        torrent_id: torrent_id.to_owned(),
+        state: current.state,
+        captured_millis: current.captured_millis.clone(),
+        maximum_records: current.maximum_records,
+        counts: current.counts.clone(),
         upsert,
         removed,
     })
@@ -3477,6 +3839,49 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
             true
         }
         (
+            ViewPatch::Swarm {
+                torrent_id,
+                state,
+                captured_millis,
+                maximum_records,
+                counts,
+                upsert,
+                removed,
+            },
+            ViewPatch::Swarm {
+                torrent_id: next_id,
+                state: next_state,
+                captured_millis: next_captured_millis,
+                maximum_records: next_maximum_records,
+                counts: next_counts,
+                upsert: next_upsert,
+                removed: next_removed,
+            },
+        ) if torrent_id == next_id => {
+            let mut values = upsert
+                .drain(..)
+                .map(|peer| (peer.peer_record_id.clone(), peer))
+                .collect::<BTreeMap<_, _>>();
+            for id in next_removed {
+                values.remove(id);
+            }
+            for peer in next_upsert {
+                values.insert(peer.peer_record_id.clone(), peer.clone());
+            }
+            let mut removed_ids = removed.drain(..).collect::<BTreeSet<_>>();
+            for peer in next_upsert {
+                removed_ids.remove(&peer.peer_record_id);
+            }
+            removed_ids.extend(next_removed.iter().cloned());
+            *state = *next_state;
+            *captured_millis = next_captured_millis.clone();
+            *maximum_records = *next_maximum_records;
+            *counts = next_counts.clone();
+            *upsert = values.into_values().collect();
+            *removed = removed_ids.into_iter().collect();
+            true
+        }
+        (
             ViewPatch::Files {
                 torrent_id,
                 upsert,
@@ -3683,6 +4088,10 @@ mod tests {
     use std::collections::BTreeMap;
     use std::time::Duration;
 
+    use rstorrent_engine::peer::{
+        PeerEndpoint, PeerObservation, PeerRegistry, PeerRegistryConfig, PeerSelectionContext,
+        PeerSource,
+    };
     use rstorrent_engine::{
         DiskCheckpointStage, DiskPieceRuntimeSnapshot, DiskPieceStage, DiskPressure,
         DiskRuntimeSnapshot, TrackerNextAction, TrackerRuntimeRecordSnapshot,
@@ -3994,6 +4403,149 @@ mod tests {
                     upsert[0].status,
                     crate::tracker_views::TrackerStatusView::Inactive
                 )
+        ));
+    }
+
+    #[tokio::test]
+    async fn swarm_projection_keeps_registry_rows_after_connections_and_clears_terminally() {
+        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
+        let subscription = hub
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::Torrent {
+                    torrent_id: torrent_id.to_owned(),
+                },
+                projection: ViewProjection::Swarm,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 64 * 1024,
+                },
+                diagnostics: None,
+            })
+            .expect("swarm subscription");
+        let initial = subscription.next_update().await.expect("initial snapshot");
+        assert!(matches!(
+            initial.payload,
+            ViewUpdatePayload::Snapshot {
+                snapshot: ViewSnapshot::Swarm {
+                    state: super::SwarmCatalogState::Inactive,
+                    ref peers,
+                    ..
+                }
+            } if peers.is_empty()
+        ));
+
+        let mut registry = PeerRegistry::new(PeerRegistryConfig {
+            max_records: 1,
+            ..PeerRegistryConfig::default()
+        })
+        .expect("registry");
+        let endpoint =
+            PeerEndpoint::new("127.0.0.1:6881".parse().expect("address")).expect("endpoint");
+        registry
+            .observe(
+                PeerObservation::dialable(endpoint, PeerSource::Tracker),
+                Duration::from_secs(1),
+            )
+            .expect("tracker candidate");
+        registry
+            .observe(
+                PeerObservation::dialable(endpoint, PeerSource::Dht),
+                Duration::from_secs(2),
+            )
+            .expect("merged source");
+        let active = registry.snapshot(PeerSelectionContext {
+            now: Duration::from_secs(3),
+        });
+        hub.record_peer_registry_state(torrent_id, true, &active)
+            .expect("active registry");
+        let update = subscription.next_update().await.expect("active patch");
+        assert!(matches!(
+            update.payload,
+            ViewUpdatePayload::Patch {
+                patch: ViewPatch::Swarm {
+                    state: super::SwarmCatalogState::Active,
+                    ref counts,
+                    ref upsert,
+                    ref removed,
+                    ..
+                }
+            } if counts.total == 1
+                && counts.eligible == 1
+                && upsert.len() == 1
+                && upsert[0].sources.len() == 2
+                && removed.is_empty()
+        ));
+
+        let replacement_endpoint =
+            PeerEndpoint::new("127.0.0.1:6882".parse().expect("address")).expect("endpoint");
+        registry
+            .observe(
+                PeerObservation::dialable(replacement_endpoint, PeerSource::Tracker),
+                Duration::from_secs(4),
+            )
+            .expect("capacity replacement");
+        let replacement = registry.snapshot(PeerSelectionContext {
+            now: Duration::from_secs(5),
+        });
+        hub.record_peer_registry_state(torrent_id, true, &replacement)
+            .expect("replacement registry");
+        let update = subscription.next_update().await.expect("replacement patch");
+        assert!(matches!(
+            update.payload,
+            ViewUpdatePayload::Patch {
+                patch: ViewPatch::Swarm {
+                    ref counts,
+                    ref upsert,
+                    ref removed,
+                    ..
+                }
+            } if counts.total == 1
+                && upsert.len() == 1
+                && upsert[0].peer_record_id == "2"
+                && removed == &["1".to_owned()]
+        ));
+
+        hub.record_peer_connections(torrent_id, Duration::from_secs(6), &[])
+            .expect("empty connection projection");
+        let current = hub
+            .inner
+            .lock()
+            .expect("hub state")
+            .snapshot_for(&SubscriptionSpec {
+                selector: ViewSelector::Torrent {
+                    torrent_id: torrent_id.to_owned(),
+                },
+                projection: ViewProjection::Swarm,
+                delivery: DeliveryPolicy::default(),
+                diagnostics: None,
+            });
+        assert!(matches!(
+            current,
+            ViewSnapshot::Swarm { ref peers, .. } if peers.len() == 1
+        ));
+
+        let terminal = PeerRegistry::new(PeerRegistryConfig::default())
+            .expect("terminal registry")
+            .snapshot(PeerSelectionContext {
+                now: Duration::from_secs(7),
+            });
+        hub.record_peer_registry_state(torrent_id, false, &terminal)
+            .expect("terminal registry state");
+        let update = subscription.next_update().await.expect("terminal patch");
+        assert!(matches!(
+            update.payload,
+            ViewUpdatePayload::Patch {
+                patch: ViewPatch::Swarm {
+                    state: super::SwarmCatalogState::Inactive,
+                    ref counts,
+                    ref upsert,
+                    ref removed,
+                    ..
+                }
+            } if counts.total == 0
+                && upsert.is_empty()
+                && removed == &["2".to_owned()]
         ));
     }
 

@@ -1,7 +1,6 @@
 # Tactical 064: Registry-Backed Swarm Inspection
 
-Status: Planned; direction accepted on 2026-08-03. Implementation has not
-begun.
+Status: Complete on 2026-08-03.
 
 Topics: `peer-lifecycle`, `application-view-api`, `web-ui-design`,
 `desktop-inspection-surface`, `capability-readiness`
@@ -36,6 +35,31 @@ view, generated contracts, demo scenario, responsive presentation, and
 controlled loopback lifecycle proof all pass. It does not change peer
 selection, dialing, backoff, banning, or protocol-support claims.
 
+## Implemented Outcome
+
+The engine now publishes `PeerRegistryState` from the existing torrent peer
+coordinator. Registry mutations force a semantic observation, the existing
+owner wake path observes a retry deadline becoming eligible, and tracker/task
+shutdown publishes one terminal inactive snapshot with zero rows only after
+joined cleanup. The observation adds no task, timer, channel, or networking
+policy. Diagnostic registry counts now derive from the same last published
+snapshot.
+
+The application exposes capability `torrent_swarm` and
+`ViewSpec::TorrentSwarm`. Its closed DTOs preserve registry ID, endpoint,
+deduplicated sources, eligibility, monotonic ages, retry/failure history, and
+integrity posture. Snapshots distinguish active, inactive, and torrent-missing;
+patches carry a coherent summary plus keyed upserts/removals. Rust rejects a
+snapshot above the 1,000-row product bound or with inconsistent counts, and
+the browser repeats those semantic checks before reducing it.
+
+The shared React surface now uses one central detail-tab scope vocabulary.
+Swarm leases only the selected torrent projection and renders a compact count
+strip over a sortable, resizable, preference-backed virtual table. The
+permanent `swarm-lifecycle` scenario covers every state and a multi-source row;
+the existing `large-swarm` pressure scenario carries exactly 1,000 registry
+records. Peers remains the separate active-connection-generation table.
+
 ## Dependencies And Sequence
 
 - Tacticals `033`, `035`, `043`, `048`, and `060` provide the leased view-set,
@@ -53,8 +77,8 @@ selection, dialing, backoff, banning, or protocol-support claims.
   boundary, including one terminal inactive state after joined cleanup.
 - Retain one bounded per-torrent Swarm projection in the application view hub.
 - Add capability `torrent_swarm`, `ViewSpec::TorrentSwarm`, coherent snapshots,
-  keyed patches, generated TypeScript/schema/UniFFI/Kotlin contracts, strict
-  browser decoding, and reducer coverage.
+  keyed patches, generated TypeScript/schema contracts, UniFFI bridge types,
+  strict browser decoding, and reducer coverage.
 - Replace the Swarm scaffold with a summary strip and virtualized table.
 - Centralize detail-tab scope metadata so torrent tabs and session tabs are
   selected from one vocabulary rather than hard-coded independently in the
@@ -91,7 +115,7 @@ as such.
 
 The required oracle remains libtorrent `2.0.13` at
 `7d7fc38fac61177fa5e02148f791b2f65250b09d` from `reference/pins.toml`.
-Implementation must re-inspect:
+The implementation re-inspected:
 
 - `include/libtorrent/peer_info.hpp` for active-peer observation vocabulary;
 - `include/libtorrent/torrent_peer.hpp` and `src/peer_list.cpp` for retained
@@ -113,7 +137,16 @@ Inspect local JSTorrent revision
   connection, retry, and failure semantics.
 
 JSTorrent informs labels and useful scenarios. No JavaScript source, fixture,
-  table implementation, or implicit unbounded history is copied.
+table implementation, or implicit unbounded history is copied.
+
+The pinned survey used `torrent_peer.hpp` fields for connectability,
+fail-count, trust, parole, banning, last-connected state, and source flags;
+`peer_list.cpp` candidate/pruning transitions; and the duplicate endpoint,
+incoming/outgoing collision, active retention, and bounded replacement cases
+in `test_peer_list.cpp`. `peer_info.hpp` confirmed the independent active-peer
+and multi-source vocabulary. JSTorrent's `SwarmTable.tsx` confirmed the useful
+product distinction, but the RSTorrent presentation and fixtures are
+independently authored over the existing Rust registry.
 
 ## Existing Boundary And Concrete Improvement
 
@@ -252,8 +285,9 @@ empty string.
 
 - The title is **Swarm** and helper text says that it contains all retained
   candidates, while **Peers** contains active connection generations.
-- The summary strip shows Total, Eligible, Dialing, Connected, Backed off,
-  Failure limited, and Banned. Counts do not become filters in this slice.
+- The summary strip shows Total, Eligible, Not connectable, Dialing, Connected,
+  Backed off, Failure limited, and Banned. Counts do not become filters in this
+  slice.
 - Default columns are Endpoint, State, Sources, Last seen, Attempts, Failures,
   Retry, Trust, and Parole. First seen, valid pieces, hash failures, and last
   failure are optional columns in the shared table preferences.
@@ -272,8 +306,9 @@ empty string.
 
 The permanent `swarm-lifecycle` scenario contains stable rows for eligible,
 not-connectable, dialing, connected, backed-off, failure-limited, banned, and
-multi-source records. It also exposes empty, inactive, stale, and overflow/reset
-states without using timers for fixture truth.
+multi-source records without using timers for fixture truth. The `large-swarm`
+fixture reaches the exact 1,000-row bound; adapter tests cover stale/reset and
+lease recovery, while the controlled live test covers terminal inactive state.
 
 The implementation and tests must cover:
 
@@ -322,6 +357,71 @@ membership, and lifecycle ownership.
 Run the repository Rust baseline and focused frontend lint/type/test/build
 commands in proportion to the changed packages. Record exact commands and
 results in this tactical when complete.
+
+## Evidence
+
+### Deterministic and contract evidence
+
+- `peer_registry_activity_tracks_semantic_transitions_and_terminal_cleanup`
+  proves active-empty publication, tracker/DHT source merge on one stable row,
+  failed-dial backoff, deadline-driven eligibility, and terminal clearing.
+- `swarm_projection_keeps_registry_rows_after_connections_and_clears_terminally`
+  proves keyed application mapping, complete count/source state, independence
+  from an empty Peers projection, and exact inactive removal.
+- Browser semantic validation rejects a `maximum_records` value above 1,000
+  and inconsistent category totals. The pure view-set reducer proves keyed
+  insert and terminal removal, and the live adapter proves exact
+  `torrent_swarm` leasing plus fresh-snapshot recovery after lease expiry.
+- Rust-derived TypeScript, JSON Schema, and standalone CSP-safe validators were
+  regenerated. The workspace build also compiled the new closed DTO variants
+  through the session crate's UniFFI derives used by the Android bridge.
+
+### Presentation and scale evidence
+
+- Vitest component coverage renders eight lifecycle records even when only two
+  active connections exist. The table retains inherited keyboard sorting,
+  column visibility/sizing preferences, row virtualization, and accessible
+  text for every colored state token.
+- Targeted Playwright passed the deterministic Swarm view at 1,100 px and
+  390 px with no serious or critical Axe findings.
+- The 1,000-record Swarm fixture reported `aria-rowcount=1001`, rendered fewer
+  than 100 DOM rows, and kept the page under 2,000 DOM elements. The companion
+  2,000-torrent/10,000-Peers pressure run recorded 877 DOM elements, about
+  30.3 MiB JavaScript heap, and no observed long task before switching to the
+  Swarm projection.
+
+### Controlled loopback evidence
+
+`tests/interop/.venv/bin/python
+tests/interop/browser_peer_inspection_surface.py` passed against libtorrent
+2.0.13. The real engine/gateway/WebSocket/browser path retained one endpoint
+with both tracker and magnet-hint sources, exposed it in Swarm, removed the
+active Peers generation at completion, then rendered terminal inactive Swarm
+state. It verified 122 files, three pieces, payload SHA-1
+`8941c83d69407ff4a215f0e2b3d4a9c26e6d3d73`, one WebSocket upgrade, zero
+semantic HTTP fallbacks, two tracker requests, joined shutdown, and temporary
+cleanup.
+
+### Commands run
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test --workspace
+npm run typecheck
+npm test
+npm run build
+RSTORRENT_PLAYWRIGHT_BASE_URL=http://127.0.0.1:4188 \
+  npm run test:e2e -- --grep "swarm lifecycle|large collections"
+tests/interop/.venv/bin/python \
+  tests/interop/browser_peer_inspection_surface.py
+```
+
+Results: Rust had 383 passing tests, three opt-in public-network tests ignored,
+and no failures; web unit coverage had 123 passing tests and two intentional
+skips after the final lease-recovery addition; the production CSP check
+passed; both targeted demo browser tests passed; and the controlled loopback
+browser test passed. No public-swarm traffic or visible desktop client ran.
 
 ## Escalation Contract
 

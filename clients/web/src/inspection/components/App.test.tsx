@@ -112,6 +112,21 @@ describe("inspection application", () => {
     ).toBeVisible();
   });
 
+  it("renders the bounded swarm registry independently of active connections", async () => {
+    const user = userEvent.setup();
+    renderScenario("swarm-lifecycle", 24_000);
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(screen.getByRole("tab", { name: "Swarm" }));
+
+    const grid = await screen.findByRole("grid", { name: "Known swarm peers" });
+    expect(grid).toHaveAttribute("aria-rowcount", "9");
+    expect(screen.getByLabelText("Swarm registry summary")).toHaveTextContent(
+      "8known",
+    );
+    expect(within(grid).getAllByText(/backed off/i).length).toBeGreaterThan(0);
+    expect(within(grid).getAllByText(/TRK|DHT|TRACKER/i).length).toBeGreaterThan(0);
+  });
+
   it("drives an ordered diagnostic console with separate capture controls", async () => {
     const user = userEvent.setup();
     const rendered = renderScenario("diagnostic-console", 45_000);

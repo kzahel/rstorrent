@@ -60,6 +60,7 @@ test("paired application transport throughput", async ({ page }) => {
   const started = performance.now();
   await input.fill(magnet!);
   await input.press("Enter");
+  await confirmDefaultAddOptions(page);
   await expect(page.getByText("Torrent added", { exact: true })).toBeVisible();
   const row = transfers.locator(`[data-row-id="${torrentId!}"]`);
   await expect(row).toContainText(/complete/i, { timeout: 180_000 });
@@ -211,6 +212,7 @@ test("live peer inspection follows a controlled verified transfer", async ({
   const transferStartedAt = performance.now();
   await torrentInput.fill(magnet!);
   await torrentInput.press("Enter");
+  await confirmDefaultAddOptions(page);
   await expect(page.getByText("Torrent added", { exact: true })).toBeVisible();
   await expect(torrentInput).toHaveValue("");
 
@@ -259,12 +261,24 @@ test("live peer inspection follows a controlled verified transfer", async ({
   await expect(peers.getByText("127.0.0.1", { exact: false }).first()).toBeVisible();
   await capture(page, "live-peer-wide.png");
 
+  await page.getByRole("tab", { name: "Swarm" }).click();
+  const swarm = page.getByRole("grid", { name: "Known swarm peers" });
+  await expect(swarm).toHaveAttribute("aria-rowcount", "2", { timeout: 20_000 });
+  await expect(swarm.getByText("127.0.0.1", { exact: false }).first()).toBeVisible();
+  await expect(swarm.getByText(/TRACKER · Magnet/).first()).toBeVisible({
+    timeout: 20_000,
+  });
+  await capture(page, "live-swarm-wide.png");
+
   const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
     (violation) => violation.impact === "serious" || violation.impact === "critical",
   );
   expect(violations).toEqual([]);
 
   await expect(torrentRow).toContainText("complete", { timeout: 30_000 });
+  await expect(swarm).toHaveAttribute("aria-rowcount", "1", { timeout: 10_000 });
+  await expect(page.getByText("The peer registry is inactive.")).toBeVisible();
+  await page.getByRole("tab", { name: "Peers" }).click();
   await expect
     .poll(async () => Number(await peers.getAttribute("aria-rowcount")))
     .toBe(1);
@@ -279,7 +293,7 @@ test("live peer inspection follows a controlled verified transfer", async ({
   expect(applicationUpgrades).toBe(1);
   expect(semanticHttpRequests).toEqual([]);
   console.log(
-    `file_live_milestones ${JSON.stringify({ firstDoneMs, firstVerifiedMs, files: expectedFileCount, applicationUpgrades, semanticHttpRequests: semanticHttpRequests.length })}`,
+    `file_live_milestones ${JSON.stringify({ firstDoneMs, firstVerifiedMs, files: expectedFileCount, swarmSourceMerge: true, swarmTerminalCleanup: true, applicationUpgrades, semanticHttpRequests: semanticHttpRequests.length })}`,
   );
 });
 
@@ -395,6 +409,7 @@ async function addAndOpenInWorkbench(
     .getByRole("textbox", { name: "Magnet link or torrent URL" });
   await input.fill(liveMagnet);
   await input.press("Enter");
+  await confirmDefaultAddOptions(page);
   await expect(page.getByText("Torrent added", { exact: true })).toBeVisible();
   const transferRow = transfers.locator(`[data-row-id="${liveTorrentId}"]`);
   await expect(transferRow).toBeVisible({ timeout: 10_000 });
@@ -413,6 +428,12 @@ async function scrollToEnd(grid: Locator) {
     element.scrollTop = element.scrollHeight;
     element.dispatchEvent(new Event("scroll"));
   });
+}
+
+async function confirmDefaultAddOptions(page: Page) {
+  const dialog = page.getByRole("dialog", { name: "Choose download options" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Add torrent" }).click();
 }
 
 async function capture(page: Page, filename: string) {

@@ -175,14 +175,15 @@ surface, not the RSTorrent application-view architecture.
 The view-set, snapshot/diff, polling-to-streaming, generated-type, and Zustand
 architecture is accepted. Tactical `035` now implements the first live torrent
 and active-peer field set, Peers-versus-Swarm membership, and local endpoint
-privacy posture. The accepted missing-detail direction is now bounded by
-Tacticals [`064`](../tactical/064-registry-backed-swarm-inspection.md),
-[`065`](../tactical/065-dht-observatory.md), and
-[`066`](../tactical/066-smooth-session-speed-history.md): Swarm projects the
-retained peer registry, DHT leads with truthful XOR-bucket occupancy and active
-lookups rather than a raw node table, and Speed uses bounded session history
-with a hand-rolled RAF-smooth Canvas renderer. The remaining inspection design
-includes:
+privacy posture. Tactical
+[`064`](../tactical/064-registry-backed-swarm-inspection.md) now projects the
+retained peer registry as the bounded, live Swarm detail. The remaining
+accepted detail direction is bounded by
+[`065`](../tactical/065-dht-observatory.md) and
+[`066`](../tactical/066-smooth-session-speed-history.md): DHT leads with
+truthful XOR-bucket occupancy and active lookups rather than a raw node table,
+and Speed uses bounded session history with a hand-rolled RAF-smooth Canvas
+renderer. The remaining inspection design includes:
 
 - the division between later protocol-message and deeper history views;
 - sorting, filtering, selection, and row-detail semantics beyond the first
@@ -231,10 +232,10 @@ columns and widths share the existing versioned preferences, exact sorting,
 and optional live re-sorting behavior. The phone detail keeps the URL and
 status useful while fully hiding the inactive library pane.
 
-The surface is therefore useful for live peer, file, tracker, piece, global
-disk, and structured diagnostic observation. A controlled libtorrent transfer
-proved real tracker context through the same console and shared pull/stream
-reducer without launching a visible client. A registry-backed Swarm table
-and session-scoped DHT and Speed views are accepted as planned Tacticals
-`064`--`066`; the existing oracle campaign remains the source for the next
-engine-correctness slice.
+The surface is therefore useful for live peer, retained-swarm, file, tracker,
+piece, global disk, and structured diagnostic observation. A controlled
+libtorrent transfer proved real tracker context and merged tracker-plus-magnet
+Swarm provenance through the same console and shared pull/stream reducer
+without launching a visible client. Session-scoped DHT and Speed views remain
+accepted as planned Tacticals `065`--`066`; the existing oracle campaign
+remains the source for the next engine-correctness slice.

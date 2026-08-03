@@ -56,7 +56,8 @@ pub use views::{
     PeerDirection, PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle,
     PeerRequestPhase, PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction,
     ProgressAssessment, ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason,
-    ResetReason, SubscriptionError, SubscriptionSpec, SubscriptionStats, TorrentView,
-    VIEW_CONTRACT_VERSION, ViewHub, ViewPatch, ViewProjection, ViewSelector, ViewSnapshot,
-    ViewSubscription, ViewUpdate, ViewUpdatePayload, assess_progress,
+    ResetReason, SubscriptionError, SubscriptionSpec, SubscriptionStats, SwarmCatalogState,
+    SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentView, VIEW_CONTRACT_VERSION, ViewHub,
+    ViewPatch, ViewProjection, ViewSelector, ViewSnapshot, ViewSubscription, ViewUpdate,
+    ViewUpdatePayload, assess_progress,
 };

@@ -119,9 +119,12 @@ global group. The accepted storage and piece split lives in
 [`disk-and-piece-inspection`](disk-and-piece-inspection.md).
 
 The remaining detail-tab direction is also accepted. Tactical
-[`064`](../tactical/064-registry-backed-swarm-inspection.md) makes Swarm a
-bounded table over retained registry records while Peers remains active
-connections. Tactical [`065`](../tactical/065-dht-observatory.md) makes DHT a
+[`064`](../tactical/064-registry-backed-swarm-inspection.md) now makes Swarm a
+bounded, virtualized table over retained registry records while Peers remains
+active connections. One central tab vocabulary owns torrent/session scope,
+and the `swarm-lifecycle` plus 1,000-row fixtures cover state legibility,
+responsive layout, accessibility, and bounded rendering. Tactical
+[`065`](../tactical/065-dht-observatory.md) makes DHT a
 session observatory led by a 160-bucket XOR-distance ribbon and bounded lookup
 summaries, with no force graph, globe, or raw node table in the first slice.
 Tactical [`066`](../tactical/066-smooth-session-speed-history.md) makes Speed a

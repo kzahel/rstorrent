@@ -580,13 +580,15 @@ including bounded pipeline state, keyed active piece attempts, lease recovery,
 and terminal owner cleanup.
 The selected-torrent piece activity contract is generalized and rendered by
 Tactical `045`. Files is implemented by Tactical `041` and trackers by
-Tactical `043`. The accepted planned sequence adds `torrent_swarm`,
-`session_dht`, and `session_speed` through Tacticals
-[`064`](../tactical/064-registry-backed-swarm-inspection.md),
+Tactical `043`. Tactical
+[`064`](../tactical/064-registry-backed-swarm-inspection.md) now implements
+`torrent_swarm`; the accepted planned sequence continues with `session_dht`
+and `session_speed` through Tacticals
 [`065`](../tactical/065-dht-observatory.md), and
 [`066`](../tactical/066-smooth-session-speed-history.md). Swarm is keyed
-registry state; DHT is one bounded latest session observation; Speed is a
-bounded session history with keyed completed-bucket patches. Unsupported views
+registry state with active, inactive, and torrent-missing catalogs; DHT is one
+bounded latest session observation; Speed is a bounded session history with
+keyed completed-bucket patches. Unsupported views
 must report unsupported or unavailable explicitly rather than fabricate empty
 data.
 
@@ -628,6 +630,24 @@ transport-independent Zustand/React presentation foundation and demo adapter
 are complete in Tactical `034`; stable peer rows and the Rust-to-React polling
 adapter are complete in Tactical `035`; live Files is complete in Tactical
 `041`; and live Trackers is complete in Tactical `043`.
+
+## Live Swarm Extension
+
+Tactical `064` implements `torrent_swarm` as the selected torrent's complete
+bounded `PeerRegistry` projection, independently of `torrent_peers`. The
+generated contract carries closed catalog/source/eligibility/failure
+vocabularies, monotonic ages and retry duration, dial/failure history, and
+integrity posture. `peer_record_id` is the stable row and patch key. A summary
+and its row set always share one capture; Rust and browser validation reject
+more than 1,000 records or inconsistent category totals.
+
+Registry mutations and retry-deadline transitions publish through the existing
+task-free engine activity boundary. Terminal inactive publication clears rows
+only after joined tracker and torrent-peer cleanup. View-set interest affects
+only delivery: lease expiry/reopen reconstructs the complete current registry,
+and an empty active-connections patch cannot erase retained Swarm rows. The
+shared reducer handles keyed updates and terminal removals without joining the
+two projections in the browser.
 
 ## Live Peer Extension
 

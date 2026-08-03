@@ -132,7 +132,10 @@ describe("DemoApplication", () => {
     const torrentId = state.torrentOrder[0]!;
     expect(state.torrentOrder).toHaveLength(2_000);
     expect(state.peersByTorrent[torrentId]?.order).toHaveLength(10_000);
-    const revision = state.revision;
+    controller.store.getState().selectTab("swarm");
+    await Promise.resolve();
+    expect(controller.store.getState().swarmByTorrent[torrentId]?.order).toHaveLength(1_000);
+    const revision = controller.store.getState().revision;
     await vi.advanceTimersByTimeAsync(60_000);
     expect(controller.store.getState().revision).toBe(revision);
     await controller.close();

@@ -7,6 +7,7 @@ import type {
   RequestEnvelope,
   StorageRootSnapshot,
   StorageSettingsSnapshot,
+  SwarmPeerView,
   TorrentState,
   TorrentView,
   TrackerView,
@@ -33,6 +34,8 @@ import type {
   PeerFlag,
   PeerRow,
   PeerSet,
+  SwarmRow,
+  SwarmSet,
   PieceMapSet,
   TorrentRow,
   TrackerRow,
@@ -45,6 +48,7 @@ import { mapPieceActivity, type MappedPieceActivity } from "./pieces";
 const LIBRARY_VIEW_ID = "library";
 const SUMMARY_VIEW_ID = "torrent-summary";
 const PEERS_VIEW_ID = "torrent-peers";
+const SWARM_VIEW_ID = "torrent-swarm";
 const FILES_VIEW_ID = "torrent-files";
 const TRACKERS_VIEW_ID = "torrent-trackers";
 const PIECES_VIEW_ID = "torrent-pieces";
@@ -363,6 +367,7 @@ export class LiveApplication implements InspectionApplication {
           error,
         ),
         peers: staleIfMaterialized(this.snapshot.viewStatus.peers, error),
+        swarm: staleIfMaterialized(this.snapshot.viewStatus.swarm, error),
         files: staleIfMaterialized(this.snapshot.viewStatus.files, error),
         trackers: staleIfMaterialized(
           this.snapshot.viewStatus.trackers,
@@ -406,6 +411,18 @@ export class LiveApplication implements InspectionApplication {
       specs.push({
         type: "torrent_peers",
         view_id: PEERS_VIEW_ID,
+        torrent_id: views.torrentId,
+        delivery: { min_interval_millis: 100 },
+      });
+    }
+    if (
+      views.detail === "swarm" &&
+      views.torrentId !== null &&
+      capabilities.has("torrent_swarm")
+    ) {
+      specs.push({
+        type: "torrent_swarm",
+        view_id: SWARM_VIEW_ID,
         torrent_id: views.torrentId,
         delivery: { min_interval_millis: 100 },
       });
@@ -508,6 +525,7 @@ function mapViewState(
   const library = projection(state, LIBRARY_VIEW_ID, "torrent_list");
   const summary = projection(state, SUMMARY_VIEW_ID, "torrent");
   const peers = projection(state, PEERS_VIEW_ID, "peers");
+  const swarm = projection(state, SWARM_VIEW_ID, "swarm");
   const files = projection(state, FILES_VIEW_ID, "files");
   const trackers = projection(state, TRACKERS_VIEW_ID, "trackers");
   const pieces = projection(state, PIECES_VIEW_ID, "piece_activity");
@@ -530,6 +548,11 @@ function mapViewState(
     peerSet === null || desired.torrentId === null || peers?.torrent_id !== desired.torrentId
       ? {}
       : { [desired.torrentId]: peerSet };
+  const swarmSet = swarm === null ? null : mapSwarm(swarm);
+  const swarmByTorrent =
+    swarmSet === null || desired.torrentId === null || swarm?.torrent_id !== desired.torrentId
+      ? {}
+      : { [desired.torrentId]: swarmSet };
   const filesByTorrent =
     fileSet === null || desired.torrentId === null || files?.torrent_id !== desired.torrentId
       ? {}
@@ -570,6 +593,7 @@ function mapViewState(
     torrentOrder,
     torrents,
     peersByTorrent,
+    swarmByTorrent,
     filesByTorrent,
     trackersByTorrent,
     piecesByTorrent,
@@ -604,6 +628,12 @@ function mapViewState(
         capabilities.has("torrent_peers"),
         peers?.torrent_id === desired.torrentId,
         "Peer inspection is unavailable",
+      ),
+      swarm: materialization(
+        desired.detail === "swarm",
+        capabilities.has("torrent_swarm"),
+        swarm?.torrent_id === desired.torrentId,
+        "Swarm inspection is unavailable",
       ),
       files: materialization(
         desired.detail === "files",
@@ -683,6 +713,7 @@ function transitionSnapshot(
     torrentOrder: desired.library ? libraryRows.map((row) => row.id) : [],
     torrents: Object.fromEntries(rows),
     peersByTorrent: {},
+    swarmByTorrent: {},
     filesByTorrent: {},
     trackersByTorrent: {},
     piecesByTorrent: {},
@@ -705,6 +736,10 @@ function transitionSnapshot(
       peers: transitionStatus(
         desired.detail === "peers",
         capabilities.has("torrent_peers"),
+      ),
+      swarm: transitionStatus(
+        desired.detail === "swarm",
+        capabilities.has("torrent_swarm"),
       ),
       files: transitionStatus(
         desired.detail === "files",
@@ -817,6 +852,45 @@ function mapPeers(peers: readonly PeerView[]): PeerSet {
   return {
     order: rows.map((peer) => peer.connectionId),
     rows: Object.fromEntries(rows.map((peer) => [peer.connectionId, peer])),
+  };
+}
+
+function mapSwarm(
+  snapshot: Extract<ViewSnapshot, { type: "swarm" }>,
+): SwarmSet {
+  const rows = snapshot.peers.map(mapSwarmPeer);
+  return {
+    state: snapshot.state,
+    capturedMillis: safeNumber(snapshot.captured_millis),
+    maximumRecords: snapshot.maximum_records,
+    counts: { ...snapshot.counts },
+    order: rows.map((peer) => peer.recordId),
+    rows: Object.fromEntries(rows.map((peer) => [peer.recordId, peer])),
+  };
+}
+
+function mapSwarmPeer(peer: SwarmPeerView): SwarmRow {
+  return {
+    recordId: peer.peer_record_id,
+    torrentId: peer.torrent_id,
+    endpoint: peer.endpoint,
+    sources: peer.sources,
+    state: peer.state,
+    connectable: peer.connectable,
+    firstObservedAgeMs: safeNumber(peer.first_observed_age_millis),
+    lastObservedAgeMs: safeNumber(peer.last_observed_age_millis),
+    retryInMs: safeNullableNumber(peer.retry_in_millis),
+    dialAttempts: peer.dial_attempts,
+    consecutiveFailures: peer.consecutive_failures,
+    totalFailures: peer.total_failures,
+    lastDialAgeMs: safeNullableNumber(peer.last_dial_age_millis),
+    lastConnectedAgeMs: safeNullableNumber(peer.last_connected_age_millis),
+    lastFailure: peer.last_failure,
+    lastFailureAgeMs: safeNullableNumber(peer.last_failure_age_millis),
+    trustPoints: peer.trust_points,
+    hashFailures: peer.hash_failures,
+    validPieces: peer.valid_pieces,
+    onParole: peer.on_parole,
   };
 }
 
@@ -1182,6 +1256,7 @@ function emptyLiveSnapshot(
     torrentOrder: [],
     torrents: {},
     peersByTorrent: {},
+    swarmByTorrent: {},
     filesByTorrent: {},
     trackersByTorrent: {},
     piecesByTorrent: {},
@@ -1199,6 +1274,7 @@ function emptyLiveSnapshot(
       torrentSummary:
         desired.torrentId === null ? { status: "not_requested" } : { status: "loading" },
       peers: desired.detail === "peers" ? { status: "loading" } : { status: "not_requested" },
+      swarm: desired.detail === "swarm" ? { status: "loading" } : { status: "not_requested" },
       files: desired.detail === "files" ? { status: "loading" } : { status: "not_requested" },
       trackers:
         desired.detail === "trackers"

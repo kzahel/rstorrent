@@ -321,6 +321,10 @@ pub enum DownloadActivityEvent {
         captured_at: Duration,
         peers: Box<Vec<PeerConnectionObservation>>,
     },
+    PeerRegistryState {
+        active: bool,
+        snapshot: Box<PeerRegistrySnapshot>,
+    },
     TrackerState(Box<TrackerRuntimeSnapshot>),
     SwarmState(Box<SwarmActivitySnapshot>),
 }
@@ -518,7 +522,7 @@ struct DownloadControlInner {
     activity_sink: Mutex<Option<Arc<dyn DownloadActivitySink>>>,
     last_swarm_activity: Mutex<Option<SwarmActivitySnapshot>>,
     last_content_peers: Mutex<(Option<Duration>, Vec<ContentPeerActivitySnapshot>)>,
-    last_content_registry: Mutex<Option<PeerRegistryCounts>>,
+    peer_registry_activity: Mutex<PeerRegistryActivityState>,
     peer_connections: Mutex<PeerConnectionDiagnosticState>,
     metadata_diagnostics: Mutex<MetadataDiagnosticState>,
     safe_cancel_state: AtomicUsize,
@@ -529,6 +533,13 @@ struct PeerConnectionDiagnosticState {
     current: Vec<PeerConnectionObservation>,
     last_emitted: Vec<PeerConnectionObservation>,
     last_emitted_at: Option<Duration>,
+}
+
+#[derive(Debug, Default)]
+struct PeerRegistryActivityState {
+    active: bool,
+    last_emitted: Option<PeerRegistrySnapshot>,
+    next_transition_at: Option<Duration>,
 }
 
 #[derive(Debug, Default)]
@@ -829,7 +840,7 @@ impl DownloadControl {
                 activity_sink: Mutex::new(None),
                 last_swarm_activity: Mutex::new(None),
                 last_content_peers: Mutex::new((None, Vec::new())),
-                last_content_registry: Mutex::new(None),
+                peer_registry_activity: Mutex::new(PeerRegistryActivityState::default()),
                 peer_connections: Mutex::new(PeerConnectionDiagnosticState::default()),
                 metadata_diagnostics: Mutex::new(MetadataDiagnosticState::default()),
                 safe_cancel_state: AtomicUsize::new(0),
@@ -985,11 +996,14 @@ impl DownloadControl {
             .last_swarm_activity
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let content_registry = *self
+        let content_registry = self
             .inner
-            .last_content_registry
+            .peer_registry_activity
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .last_emitted
+            .as_ref()
+            .map(|snapshot| snapshot.counts);
         let (content_peers_captured_at, content_peers) = {
             let state = self
                 .inner
@@ -1629,13 +1643,69 @@ impl DownloadControl {
         }
     }
 
-    fn observe_content_registry(&self, registry: &PeerRegistry, now: Duration) {
-        *self
-            .inner
-            .last_content_registry
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) =
-            Some(registry.counts(PeerSelectionContext { now }));
+    fn observe_peer_registry(
+        &self,
+        registry: &PeerRegistry,
+        now: Duration,
+        active: bool,
+        force: bool,
+    ) {
+        let event = {
+            let mut state = self
+                .inner
+                .peer_registry_activity
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if !force
+                && state.active == active
+                && state
+                    .next_transition_at
+                    .is_none_or(|deadline| now < deadline)
+            {
+                return;
+            }
+
+            let mut snapshot = registry.snapshot(PeerSelectionContext { now });
+            if !active {
+                snapshot.records.clear();
+                snapshot.counts = PeerRegistryCounts::default();
+            }
+            state.next_transition_at = active
+                .then(|| {
+                    snapshot
+                        .records
+                        .iter()
+                        .filter_map(|record| match record.eligibility {
+                            crate::peer::DialEligibility::Backoff { retry_at }
+                                if retry_at > now =>
+                            {
+                                Some(retry_at)
+                            }
+                            _ => None,
+                        })
+                        .min()
+                })
+                .flatten();
+            let changed = state.active != active
+                || state.last_emitted.as_ref().is_none_or(|previous| {
+                    previous.maximum_records != snapshot.maximum_records
+                        || previous.counts != snapshot.counts
+                        || previous.records != snapshot.records
+                });
+            state.active = active;
+            if changed {
+                state.last_emitted = Some(snapshot.clone());
+                Some(DownloadActivityEvent::PeerRegistryState {
+                    active,
+                    snapshot: Box::new(snapshot),
+                })
+            } else {
+                None
+            }
+        };
+        if let Some(event) = event {
+            self.emit(event);
+        }
     }
 
     fn observe_peer_runtime(&self, runtime: &PeerRuntime, captured_at: Duration, force: bool) {
@@ -4051,7 +4121,13 @@ impl TorrentPeerCoordinator {
         }
         self.control
             .observe_peer_runtime(&self.runtime, self.elapsed(), force);
+        self.publish_peer_registry(force);
         Ok(())
+    }
+
+    fn publish_peer_registry(&self, force: bool) {
+        self.control
+            .observe_peer_registry(&self.registry, self.elapsed(), true, force);
     }
 
     fn from_endpoint(
@@ -4074,6 +4150,7 @@ impl TorrentPeerCoordinator {
         dht: Option<DhtHandle>,
     ) -> Result<Self, DownloadError> {
         let mut peers = Self::new(network, control)?;
+        peers.publish_peer_registry(true);
         peers.dht = dht;
         if peers.control.is_cancelled() {
             return Err(DownloadError::Cancelled);
@@ -4547,10 +4624,13 @@ impl TorrentPeerCoordinator {
     }
 
     async fn shutdown_tracker(&mut self) -> Result<(), DownloadError> {
-        let Some(tracker) = self.tracker.take() else {
-            return Ok(());
+        let result = match self.tracker.take() {
+            Some(tracker) => tracker.shutdown().await,
+            None => Ok(()),
         };
-        tracker.shutdown().await
+        self.control
+            .observe_peer_registry(&self.registry, self.elapsed(), false, true);
+        result
     }
 
     async fn disable_dht_for_private(&mut self, info_hash: [u8; 20]) -> Result<(), DownloadError> {
@@ -5411,7 +5491,7 @@ async fn run_download(
         skip_files: config.skip_files,
         materialize_files: config.materialize_files,
     };
-    run_content_download(
+    let result = run_content_download(
         content_config,
         metainfo,
         control,
@@ -5419,7 +5499,8 @@ async fn run_download(
         &mut peers,
         None,
     )
-    .await
+    .await;
+    merge_tracker_shutdown(result, peers.shutdown_tracker().await)
 }
 
 async fn run_content_download(
@@ -5431,6 +5512,7 @@ async fn run_content_download(
     resume: Option<ResumeContext>,
 ) -> Result<DownloadReport, DownloadError> {
     peers.control = control.clone();
+    peers.publish_peer_registry(true);
     let result = match metainfo.mode {
         rstorrent_protocol::metainfo::MetainfoMode::SingleFile => {
             if resume.is_some() {
@@ -7742,9 +7824,7 @@ async fn run_selective_swarm_loop(
             }
             _ => {}
         }
-        download
-            .control
-            .observe_content_registry(&peers.registry, now);
+        peers.publish_peer_registry(false);
         if now >= next_maintenance_at {
             if !storage_backpressured {
                 download
@@ -13424,6 +13504,82 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .push(event);
         }
+    }
+
+    #[test]
+    fn peer_registry_activity_tracks_semantic_transitions_and_terminal_cleanup() {
+        let control = DownloadControl::new();
+        let activity = Arc::new(RecordingActivitySink::default());
+        control.set_activity_sink(activity.clone());
+        let mut registry = PeerRegistry::new(PeerRegistryConfig {
+            max_records: 1_000,
+            max_consecutive_failures: 3,
+            reconnect_backoff: Duration::from_secs(10),
+        })
+        .expect("registry");
+
+        control.observe_peer_registry(&registry, Duration::ZERO, true, true);
+        let endpoint =
+            PeerEndpoint::new("127.0.0.1:6881".parse().expect("address")).expect("endpoint");
+        registry
+            .observe(
+                PeerObservation::dialable(endpoint, PeerSource::Tracker),
+                Duration::from_secs(1),
+            )
+            .expect("tracker observation");
+        registry
+            .observe(
+                PeerObservation::dialable(endpoint, PeerSource::Dht),
+                Duration::from_secs(2),
+            )
+            .expect("merged DHT observation");
+        control.observe_peer_registry(&registry, Duration::from_secs(2), true, true);
+
+        let attempt = registry
+            .begin_dial(
+                PeerSelector
+                    .select(
+                        &registry,
+                        PeerSelectionContext {
+                            now: Duration::from_secs(3),
+                        },
+                    )
+                    .expect("eligible peer"),
+                PeerSelectionContext {
+                    now: Duration::from_secs(3),
+                },
+            )
+            .expect("dial");
+        registry
+            .dial_failed(attempt, Duration::from_secs(4), PeerFailure::Connect)
+            .expect("failure");
+        control.observe_peer_registry(&registry, Duration::from_secs(4), true, true);
+        control.observe_peer_registry(&registry, Duration::from_secs(13), true, false);
+        control.observe_peer_registry(&registry, Duration::from_secs(14), true, false);
+        control.observe_peer_registry(&registry, Duration::from_secs(15), false, true);
+
+        let states = activity
+            .events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .filter_map(|event| match event {
+                DownloadActivityEvent::PeerRegistryState { active, snapshot } => {
+                    Some((*active, snapshot.as_ref().clone()))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(states.len(), 5);
+        assert!(states[0].0);
+        assert_eq!(states[0].1.counts.total, 0);
+        assert_eq!(states[1].1.counts.eligible, 1);
+        assert_eq!(states[1].1.records[0].sources.len(), 2);
+        assert_eq!(states[2].1.counts.backed_off, 1);
+        assert_eq!(states[3].1.counts.eligible, 1);
+        assert!(!states[4].0);
+        assert_eq!(states[4].1.counts.total, 0);
+        assert!(states[4].1.records.is_empty());
     }
 
     #[test]

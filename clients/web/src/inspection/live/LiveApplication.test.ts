@@ -36,6 +36,7 @@ class FakeLiveClient implements ApplicationViewClient {
         "torrent_list",
         "torrent_summary",
         "torrent_peers",
+        "torrent_swarm",
         "torrent_files",
         "torrent_trackers",
         "diagnostics",
@@ -253,6 +254,18 @@ describe("LiveApplication", () => {
     await application.setViews({
       library: false,
       torrentId: TORRENT_ID,
+      detail: "swarm",
+      logCapture: null,
+    });
+    expect(client.updates.at(-1)?.views.map((view) => view.type)).toEqual([
+      "torrent_summary",
+      "torrent_swarm",
+    ]);
+    expect(snapshots.at(-1)?.viewStatus.swarm.status).toBe("loading");
+
+    await application.setViews({
+      library: false,
+      torrentId: TORRENT_ID,
       detail: "logs",
       logCapture: { profile: "normal", torrentId: null },
     });
@@ -417,6 +430,39 @@ describe("LiveApplication", () => {
     ).toBe("µTorrent 3.5.5");
     await application.close();
   });
+
+  it("reopens a leased swarm view from a complete fresh snapshot", async () => {
+    const client = new FakeLiveClient();
+    const application = await LiveApplication.open(client, {
+      initialViews: {
+        library: false,
+        torrentId: TORRENT_ID,
+        detail: "swarm",
+        logCapture: null,
+      },
+      retryBaseMillis: 1,
+      retryMaximumMillis: 2,
+    });
+    const snapshots: InspectionSnapshot[] = [];
+    application.subscribe((update) => {
+      if (update.type === "snapshot") snapshots.push(update.snapshot);
+    });
+    expect(snapshots.at(-1)?.swarmByTorrent[TORRENT_ID]?.order).toEqual(["1"]);
+
+    client.expireViewSet();
+    await waitUntil(() => client.openCount === 2);
+    await waitUntil(() => snapshots.at(-1)?.session.connection === "connected");
+
+    expect(
+      snapshots.some(
+        (snapshot) =>
+          snapshot.session.connection === "reconnecting" &&
+          snapshot.viewStatus.swarm.status === "stale",
+      ),
+    ).toBe(true);
+    expect(snapshots.at(-1)?.swarmByTorrent[TORRENT_ID]?.order).toEqual(["2"]);
+    await application.close();
+  });
 });
 
 function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
@@ -445,6 +491,29 @@ function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
           type: "peers",
           torrent_id: TORRENT_ID,
           peers: [peer(generation)],
+        },
+      };
+    case "torrent_swarm":
+      return {
+        type: "snapshot",
+        view_id: view.view_id,
+        snapshot: {
+          type: "swarm",
+          torrent_id: TORRENT_ID,
+          state: "active",
+          captured_millis: "1000",
+          maximum_records: 1000,
+          counts: {
+            total: 1,
+            eligible: 1,
+            not_connectable: 0,
+            dialing: 0,
+            connected: 0,
+            backed_off: 0,
+            failure_limited: 0,
+            banned: 0,
+          },
+          peers: [swarmPeer(generation)],
         },
       };
     case "torrent_files":
@@ -578,6 +647,31 @@ function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
     case "piece_activity":
       throw new Error("piece view is not used by live inspection");
   }
+}
+
+function swarmPeer(generation: number) {
+  return {
+    peer_record_id: String(generation),
+    torrent_id: TORRENT_ID,
+    endpoint: `127.0.0.1:${6_880 + generation}`,
+    sources: ["tracker" as const, "dht" as const],
+    state: "eligible" as const,
+    connectable: true,
+    first_observed_age_millis: "5000",
+    last_observed_age_millis: "100",
+    retry_in_millis: null,
+    dial_attempts: generation,
+    consecutive_failures: 0,
+    total_failures: 0,
+    last_dial_age_millis: null,
+    last_connected_age_millis: null,
+    last_failure: null,
+    last_failure_age_millis: null,
+    trust_points: 0,
+    hash_failures: 0,
+    valid_pieces: 0,
+    on_parole: false,
+  };
 }
 
 function torrent(): TorrentView {

@@ -2502,6 +2502,199 @@
       ],
       "type": "string"
     },
+    "SwarmCatalogState": {
+      "enum": [
+        "active",
+        "inactive",
+        "torrent_missing"
+      ],
+      "type": "string"
+    },
+    "SwarmCountsView": {
+      "properties": {
+        "backed_off": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "banned": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "connected": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "dialing": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "eligible": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "failure_limited": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "not_connectable": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total",
+        "eligible",
+        "not_connectable",
+        "dialing",
+        "connected",
+        "backed_off",
+        "failure_limited",
+        "banned"
+      ],
+      "type": "object"
+    },
+    "SwarmPeerState": {
+      "enum": [
+        "eligible",
+        "not_connectable",
+        "dialing",
+        "connected",
+        "backed_off",
+        "failure_limited",
+        "banned"
+      ],
+      "type": "string"
+    },
+    "SwarmPeerView": {
+      "properties": {
+        "connectable": {
+          "type": "boolean"
+        },
+        "consecutive_failures": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "dial_attempts": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "first_observed_age_millis": {
+          "type": "string"
+        },
+        "hash_failures": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "last_connected_age_millis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_dial_age_millis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_failure": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PeerDisconnectReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_failure_age_millis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_observed_age_millis": {
+          "type": "string"
+        },
+        "on_parole": {
+          "type": "boolean"
+        },
+        "peer_record_id": {
+          "type": "string"
+        },
+        "retry_in_millis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/PeerSourceView"
+          },
+          "type": "array"
+        },
+        "state": {
+          "$ref": "#/$defs/SwarmPeerState"
+        },
+        "torrent_id": {
+          "type": "string"
+        },
+        "total_failures": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "trust_points": {
+          "format": "int8",
+          "maximum": 127,
+          "minimum": -128,
+          "type": "integer"
+        },
+        "valid_pieces": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "peer_record_id",
+        "torrent_id",
+        "endpoint",
+        "sources",
+        "state",
+        "connectable",
+        "first_observed_age_millis",
+        "last_observed_age_millis",
+        "dial_attempts",
+        "consecutive_failures",
+        "total_failures",
+        "trust_points",
+        "hash_failures",
+        "valid_pieces",
+        "on_parole"
+      ],
+      "type": "object"
+    },
     "TorrentSnapshot": {
       "properties": {
         "archived": {
@@ -3090,6 +3283,54 @@
         },
         {
           "properties": {
+            "captured_millis": {
+              "type": "string"
+            },
+            "counts": {
+              "$ref": "#/$defs/SwarmCountsView"
+            },
+            "maximum_records": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "removed": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "state": {
+              "$ref": "#/$defs/SwarmCatalogState"
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "swarm",
+              "type": "string"
+            },
+            "upsert": {
+              "items": {
+                "$ref": "#/$defs/SwarmPeerView"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id",
+            "state",
+            "captured_millis",
+            "maximum_records",
+            "counts",
+            "upsert",
+            "removed"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "removed": {
               "items": {
                 "type": "string"
@@ -3386,6 +3627,47 @@
         },
         {
           "properties": {
+            "captured_millis": {
+              "type": "string"
+            },
+            "counts": {
+              "$ref": "#/$defs/SwarmCountsView"
+            },
+            "maximum_records": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "peers": {
+              "items": {
+                "$ref": "#/$defs/SwarmPeerView"
+              },
+              "type": "array"
+            },
+            "state": {
+              "$ref": "#/$defs/SwarmCatalogState"
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "swarm",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id",
+            "state",
+            "captured_millis",
+            "maximum_records",
+            "counts",
+            "peers"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "files": {
               "items": {
                 "$ref": "#/$defs/FileView"
@@ -3580,6 +3862,32 @@
             },
             "type": {
               "const": "torrent_peers",
+              "type": "string"
+            },
+            "view_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "view_id",
+            "torrent_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "delivery": {
+              "$ref": "#/$defs/ViewDeliveryPolicy",
+              "default": {
+                "min_interval_millis": 0
+              }
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "torrent_swarm",
               "type": "string"
             },
             "view_id": {

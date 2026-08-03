@@ -1,0 +1,121 @@
+.panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: 0.38rem;
+  min-width: 0;
+  border-bottom: 1px solid var(--border-soft);
+  padding: 0.4rem 0.72rem;
+  color: var(--text-muted);
+  background: var(--surface-primary);
+  font-size: var(--ui-font-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.summary strong {
+  color: var(--text-primary);
+  font-size: var(--ui-font-small);
+}
+
+.separator {
+  width: 1px;
+  height: 0.9rem;
+  margin: 0 0.18rem;
+  background: var(--border-soft);
+}
+
+.summaryCount {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+}
+
+.summaryCount > span {
+  width: 0.36rem;
+  height: 0.36rem;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.summaryCount[data-tone="ready"] > span,
+.summaryCount[data-tone="connected"] > span {
+  background: var(--success);
+}
+
+.summaryCount[data-tone="waiting"] > span {
+  background: var(--accent);
+}
+
+.summaryCount[data-tone="blocked"] > span {
+  background: var(--warning);
+}
+
+.summaryCount[data-tone="limited"] > span {
+  background: var(--danger);
+}
+
+.capacity {
+  margin-left: auto;
+  color: var(--text-muted);
+}
+
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  overflow: hidden;
+  text-transform: capitalize;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.state > span {
+  width: 0.42rem;
+  height: 0.42rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.state[data-state="dialing"] > span,
+.state[data-state="backed_off"] > span {
+  background: var(--accent);
+}
+
+.state[data-state="not_connectable"] > span,
+.state[data-state="failure_limited"] > span {
+  background: var(--warning);
+}
+
+.state[data-state="banned"] > span {
+  background: var(--danger);
+}
+
+.endpoint {
+  display: block;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--ui-font-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 620px) {
+  .summary {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .capacity {
+    display: none;
+  }
+}

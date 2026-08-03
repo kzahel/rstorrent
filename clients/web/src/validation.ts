@@ -21,6 +21,7 @@ const MAX_HTTP_RESPONSE_BYTES = 16 * 1024 * 1024;
 const MAX_APPLICATION_FRAME_BYTES = MAX_HTTP_RESPONSE_BYTES + 4 * 1024;
 const MAX_COLLECTION = 100_000;
 const MAX_ACTIVE_PEERS = 256;
+const MAX_SWARM_PEERS = 1_000;
 const PEER_FLAGS = [
   "incoming",
   "encrypted",
@@ -447,6 +448,35 @@ function validateViewSnapshot(value: unknown): void {
       peers.forEach((peer) => validatePeerView(peer, owningTorrent));
       break;
     }
+    case "swarm": {
+      const owningTorrent = string(snapshot.torrent_id, "swarm-view torrent ID");
+      torrentId(owningTorrent);
+      const state = oneOf(snapshot.state, "swarm catalog state", [
+        "active",
+        "inactive",
+        "torrent_missing",
+      ]);
+      decimal(snapshot.captured_millis, "swarm capture time");
+      const maximumRecords = boundedInteger(
+        snapshot.maximum_records,
+        "swarm record maximum",
+        0,
+        MAX_SWARM_PEERS,
+      );
+      const peers = array(snapshot.peers, "swarm peers");
+      if (peers.length > maximumRecords) {
+        throw new ContractError("swarm view exceeds its row bound");
+      }
+      peers.forEach((peer) => validateSwarmPeerView(peer, owningTorrent));
+      const total = validateSwarmCounts(snapshot.counts, peers.length);
+      if (state !== "active" && peers.length !== 0) {
+        throw new ContractError("inactive swarm catalog contains rows");
+      }
+      if (state !== "active" && total !== 0) {
+        throw new ContractError("inactive swarm catalog contains nonzero counts");
+      }
+      break;
+    }
     case "files": {
       torrentId(snapshot.torrent_id);
       oneOf(snapshot.state, "file catalog state", [
@@ -545,6 +575,35 @@ function validateViewPatch(value: unknown): void {
       array(patch.removed, "active peer removals").forEach((connection) =>
         decimal(connection, "peer connection ID"),
       );
+      break;
+    }
+    case "swarm": {
+      const owningTorrent = string(patch.torrent_id, "swarm-view torrent ID");
+      torrentId(owningTorrent);
+      oneOf(patch.state, "swarm catalog state", [
+        "active",
+        "inactive",
+        "torrent_missing",
+      ]);
+      decimal(patch.captured_millis, "swarm capture time");
+      const maximumRecords = boundedInteger(
+        patch.maximum_records,
+        "swarm record maximum",
+        0,
+        MAX_SWARM_PEERS,
+      );
+      const upserts = array(patch.upsert, "swarm peer upserts");
+      if (upserts.length > maximumRecords) {
+        throw new ContractError("swarm patch exceeds its row bound");
+      }
+      upserts.forEach((peer) => validateSwarmPeerView(peer, owningTorrent));
+      array(patch.removed, "swarm peer removals").forEach((recordId) =>
+        decimal(recordId, "swarm peer record ID"),
+      );
+      const total = validateSwarmCounts(patch.counts);
+      if (patch.state !== "active" && (upserts.length !== 0 || total !== 0)) {
+        throw new ContractError("inactive swarm patch contains rows or nonzero counts");
+      }
       break;
     }
     case "files": {
@@ -836,6 +895,89 @@ function validatePeerView(value: unknown, owningTorrent: string): void {
       "unsupported",
     ]),
   );
+}
+
+function validateSwarmCounts(value: unknown, expectedTotal?: number): number {
+  const counts = asRecord(value, "swarm counts");
+  const fields = [
+    "total",
+    "eligible",
+    "not_connectable",
+    "dialing",
+    "connected",
+    "backed_off",
+    "failure_limited",
+    "banned",
+  ] as const;
+  for (const field of fields) {
+    boundedInteger(counts[field], `swarm ${field} count`, 0, MAX_SWARM_PEERS);
+  }
+  const total = boundedInteger(counts.total, "swarm total count", 0, MAX_SWARM_PEERS);
+  const categorized = fields
+    .slice(1)
+    .reduce((sum, field) => sum + Number(counts[field]), 0);
+  if (categorized !== total || (expectedTotal !== undefined && total !== expectedTotal)) {
+    throw new ContractError("swarm counts are inconsistent");
+  }
+  return total;
+}
+
+function validateSwarmPeerView(value: unknown, owningTorrent: string): void {
+  const peer = asRecord(value, "swarm peer");
+  decimal(peer.peer_record_id, "swarm peer record ID");
+  torrentId(peer.torrent_id);
+  if (peer.torrent_id !== owningTorrent) {
+    throw new ContractError("swarm peer belongs to another torrent");
+  }
+  boundedString(peer.endpoint, "swarm peer endpoint", 128);
+  const sources = array(peer.sources, "swarm peer sources");
+  if (sources.length > 8 || new Set(sources).size !== sources.length) {
+    throw new ContractError("swarm peer sources exceed their bound or contain duplicates");
+  }
+  sources.forEach((source) =>
+    oneOf(source, "swarm peer source", [
+      "tracker",
+      "peer_exchange",
+      "dht",
+      "local_discovery",
+      "incoming",
+      "manual",
+      "magnet_hint",
+      "cache",
+    ]),
+  );
+  oneOf(peer.state, "swarm peer state", [
+    "eligible",
+    "not_connectable",
+    "dialing",
+    "connected",
+    "backed_off",
+    "failure_limited",
+    "banned",
+  ]);
+  boolean(peer.connectable, "swarm peer connectable");
+  decimal(peer.first_observed_age_millis, "swarm peer first observed age");
+  decimal(peer.last_observed_age_millis, "swarm peer last observed age");
+  [
+    "retry_in_millis",
+    "last_dial_age_millis",
+    "last_connected_age_millis",
+    "last_failure_age_millis",
+  ].forEach((field) => optionalDecimal(peer[field], `swarm peer ${field}`));
+  ["dial_attempts", "consecutive_failures", "total_failures", "valid_pieces"].forEach(
+    (field) => boundedInteger(peer[field], `swarm peer ${field}`, 0, MAX_U32),
+  );
+  boundedInteger(peer.hash_failures, "swarm peer hash failures", 0, 255);
+  boundedInteger(peer.trust_points, "swarm peer trust points", -128, 127);
+  boolean(peer.on_parole, "swarm peer parole state");
+  if (peer.last_failure !== null) {
+    oneOf(peer.last_failure, "swarm peer last failure", [
+      "connect",
+      "handshake",
+      "protocol",
+      "remote_closed",
+    ]);
+  }
 }
 
 function validateDiagnosticEvent(value: unknown): void {

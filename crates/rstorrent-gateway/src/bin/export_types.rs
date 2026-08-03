@@ -20,11 +20,11 @@ use rstorrent_session::{
     ProgressDisposition, ProgressPhase, ProgressReason, RemovalDataPolicy, RemovalState,
     RequestEnvelope, ResetReason, ResponseEnvelope, ResponseOutcome, ServiceSnapshot,
     StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot, StorageState,
-    SubscriptionSpec, TorrentSnapshot, TorrentState, TorrentView, TrackerAnnounceEventView,
-    TrackerCatalogState, TrackerNextActionView, TrackerSourceView, TrackerStatusView,
-    TrackerTransportView, TrackerView, UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy,
-    ViewPatch, ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate,
-    ViewUpdatePayload,
+    SubscriptionSpec, SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView,
+    TorrentSnapshot, TorrentState, TorrentView, TrackerAnnounceEventView, TrackerCatalogState,
+    TrackerNextActionView, TrackerSourceView, TrackerStatusView, TrackerTransportView, TrackerView,
+    UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector,
+    ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate, ViewUpdatePayload,
 };
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -117,6 +117,10 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<PeerDisconnectReason>(&mut declarations)?;
     append::<PeerFieldCapabilities>(&mut declarations)?;
     append::<PeerView>(&mut declarations)?;
+    append::<SwarmCatalogState>(&mut declarations)?;
+    append::<SwarmCountsView>(&mut declarations)?;
+    append::<SwarmPeerState>(&mut declarations)?;
+    append::<SwarmPeerView>(&mut declarations)?;
     append::<FileSelectionView>(&mut declarations)?;
     append::<FileCatalogState>(&mut declarations)?;
     append::<FileView>(&mut declarations)?;

@@ -134,6 +134,12 @@ function cloneSnapshot(snapshot: ViewSnapshot): ViewSnapshot {
       };
     case "peers":
       return { ...snapshot, peers: [...snapshot.peers] };
+    case "swarm":
+      return {
+        ...snapshot,
+        counts: { ...snapshot.counts },
+        peers: [...snapshot.peers],
+      };
     case "files":
       return { ...snapshot, files: [...snapshot.files] };
     case "trackers":
@@ -210,6 +216,30 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
       return {
         type: "peers",
         torrent_id: patch.torrent_id,
+        peers: [...peers.values()],
+      };
+    }
+    case "swarm": {
+      if (snapshot.type !== "swarm") throw new Error("unreachable");
+      const peers = new Map(
+        snapshot.peers.map((peer) => [peer.peer_record_id, peer]),
+      );
+      for (const recordId of patch.removed) peers.delete(recordId);
+      for (const peer of patch.upsert) peers.set(peer.peer_record_id, peer);
+      if (
+        peers.size > patch.maximum_records ||
+        patch.counts.total !== peers.size ||
+        (patch.state !== "active" && peers.size !== 0)
+      ) {
+        throw new ViewSetContinuityError("swarm patch violates its row bound or counts");
+      }
+      return {
+        type: "swarm",
+        torrent_id: patch.torrent_id,
+        state: patch.state,
+        captured_millis: patch.captured_millis,
+        maximum_records: patch.maximum_records,
+        counts: { ...patch.counts },
         peers: [...peers.values()],
       };
     }

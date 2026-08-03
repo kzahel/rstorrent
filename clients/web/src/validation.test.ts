@@ -85,6 +85,22 @@ describe("peer view validation", () => {
   });
 });
 
+describe("swarm view validation", () => {
+  it("accepts coherent bounded registry state and rejects oversized or inconsistent counts", () => {
+    const batch = swarmBatch();
+    expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
+    batch.updates[0]!.snapshot.maximum_records = 1_001;
+    expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
+      /record maximum must be an integer in range/,
+    );
+    const inconsistent = swarmBatch();
+    inconsistent.updates[0]!.snapshot.counts.eligible = 1;
+    expect(() => decodeUpdateBatch(JSON.stringify(inconsistent))).toThrow(
+      /counts are inconsistent/,
+    );
+  });
+});
+
 describe("torrent display-name validation", () => {
   it("accepts a bounded verified name and rejects oversized input", () => {
     const batch = torrentBatch("Verified torrent");
@@ -482,6 +498,41 @@ function peerBatch(torrentId: string) {
               },
             },
           ],
+        },
+      },
+    ],
+  };
+}
+
+function swarmBatch() {
+  return {
+    api_version: 1,
+    view_set_id: "vs_000102030405060708090a0b0c0d0e0f",
+    epoch: "1",
+    base_cursor: "0",
+    cursor: "1",
+    durable_revision: "1",
+    updates: [
+      {
+        type: "snapshot" as const,
+        view_id: "torrent-swarm",
+        snapshot: {
+          type: "swarm" as const,
+          torrent_id: "0".repeat(40),
+          state: "active",
+          captured_millis: "1000",
+          maximum_records: 1000,
+          counts: {
+            total: 0,
+            eligible: 0,
+            not_connectable: 0,
+            dialing: 0,
+            connected: 0,
+            backed_off: 0,
+            failure_limited: 0,
+            banned: 0,
+          },
+          peers: [],
         },
       },
     ],

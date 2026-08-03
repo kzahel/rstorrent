@@ -10,6 +10,7 @@ import {
   type InspectionStore,
   type InspectionStoreApi,
 } from "./state";
+import { desiredDetailForTab } from "./tabs";
 
 export class InspectionController {
   readonly store: InspectionStoreApi;
@@ -138,18 +139,7 @@ function desiredViewsFor(state: InspectionStore): DesiredInspectionViews {
     return { library: true, torrentId: null, detail: null, logCapture: null };
   }
   const torrentId = selected;
-  const detail =
-    presentation.activeTab === "disk" || presentation.activeTab === "logs"
-      ? presentation.activeTab
-      : torrentId === null
-      ? null
-      : presentation.activeTab === "peers" ||
-          presentation.activeTab === "trackers" ||
-          presentation.activeTab === "files" ||
-          presentation.activeTab === "pieces" ||
-          presentation.activeTab === "general"
-        ? presentation.activeTab
-        : null;
+  const detail = desiredDetailForTab(presentation.activeTab, torrentId);
   return {
     library: presentation.layout !== "phone",
     torrentId,

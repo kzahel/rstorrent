@@ -1905,6 +1905,12 @@ impl DownloadActivitySink for ViewActivitySink {
             );
             return;
         }
+        if let DownloadActivityEvent::PeerRegistryState { active, snapshot } = &event {
+            let _ =
+                self.views
+                    .record_peer_registry_state(&self.torrent_id, *active, snapshot.as_ref());
+            return;
+        }
         if let DownloadActivityEvent::TrackerState(snapshot) = &event {
             let _ = self.views.record_tracker_state(&self.torrent_id, snapshot);
             return;
@@ -2380,6 +2386,9 @@ impl ViewActivitySink {
             }
             DownloadActivityEvent::PeerConnections { .. } => {
                 unreachable!("peer projections are handled before diagnostic events")
+            }
+            DownloadActivityEvent::PeerRegistryState { .. } => {
+                unreachable!("swarm projections are handled before diagnostic events")
             }
             DownloadActivityEvent::TrackerState(_) => {
                 unreachable!("tracker projections are handled before diagnostic events")

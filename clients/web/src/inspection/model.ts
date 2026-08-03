@@ -1,7 +1,12 @@
 import type {
   DiagnosticField,
   DiagnosticSubject,
+  PeerDisconnectReason,
   PeerFlagView,
+  PeerSourceView,
+  SwarmCatalogState,
+  SwarmCountsView,
+  SwarmPeerState,
 } from "../api";
 
 export type TorrentStatus =
@@ -84,6 +89,7 @@ export interface InspectionViewStatus {
   readonly library: ViewMaterialization;
   readonly torrentSummary: ViewMaterialization;
   readonly peers: ViewMaterialization;
+  readonly swarm: ViewMaterialization;
   readonly files: ViewMaterialization;
   readonly trackers: ViewMaterialization;
   readonly pieces: ViewMaterialization;
@@ -98,6 +104,7 @@ export interface DesiredInspectionViews {
     | "general"
     | "trackers"
     | "peers"
+    | "swarm"
     | "files"
     | "pieces"
     | "disk"
@@ -187,6 +194,38 @@ export interface LogLoss {
 export interface PeerSet {
   readonly order: readonly string[];
   readonly rows: Readonly<Record<string, PeerRow>>;
+}
+
+export interface SwarmRow {
+  readonly recordId: string;
+  readonly torrentId: string;
+  readonly endpoint: string;
+  readonly sources: readonly PeerSourceView[];
+  readonly state: SwarmPeerState;
+  readonly connectable: boolean;
+  readonly firstObservedAgeMs: number;
+  readonly lastObservedAgeMs: number;
+  readonly retryInMs: number | null;
+  readonly dialAttempts: number;
+  readonly consecutiveFailures: number;
+  readonly totalFailures: number;
+  readonly lastDialAgeMs: number | null;
+  readonly lastConnectedAgeMs: number | null;
+  readonly lastFailure: PeerDisconnectReason | null;
+  readonly lastFailureAgeMs: number | null;
+  readonly trustPoints: number;
+  readonly hashFailures: number;
+  readonly validPieces: number;
+  readonly onParole: boolean;
+}
+
+export interface SwarmSet {
+  readonly state: SwarmCatalogState;
+  readonly capturedMillis: number;
+  readonly maximumRecords: number;
+  readonly counts: SwarmCountsView;
+  readonly order: readonly string[];
+  readonly rows: Readonly<Record<string, SwarmRow>>;
 }
 
 export interface FileRow {
@@ -370,6 +409,7 @@ export interface InspectionSnapshot {
   readonly torrentOrder: readonly string[];
   readonly torrents: Readonly<Record<string, TorrentRow>>;
   readonly peersByTorrent: Readonly<Record<string, PeerSet>>;
+  readonly swarmByTorrent: Readonly<Record<string, SwarmSet>>;
   readonly filesByTorrent: Readonly<Record<string, FileSet>>;
   readonly trackersByTorrent: Readonly<Record<string, TrackerSet>>;
   readonly piecesByTorrent: Readonly<Record<string, PieceMapSet>>;
@@ -397,6 +437,14 @@ export type InspectionUpdate =
       };
       readonly peers?: readonly (KeyedPatch<PeerRow> & {
         readonly torrentId: string;
+        readonly order?: readonly string[];
+      })[];
+      readonly swarm?: readonly (KeyedPatch<SwarmRow> & {
+        readonly torrentId: string;
+        readonly state: SwarmSet["state"];
+        readonly capturedMillis: number;
+        readonly maximumRecords: number;
+        readonly counts: SwarmCountsView;
         readonly order?: readonly string[];
       })[];
       readonly files?: readonly (KeyedPatch<FileRow> & {
@@ -460,6 +508,7 @@ export type DemoScenarioId =
   | "endgame"
   | "piece-retry"
   | "large-swarm"
+  | "swarm-lifecycle"
   | "file-progress"
   | "disk-error"
   | "slow-disk-pressure"

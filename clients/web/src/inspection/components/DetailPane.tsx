@@ -7,30 +7,15 @@ import {
   formatRate,
 } from "../format";
 import type { DetailTab } from "../model";
+import { DETAIL_TABS } from "../tabs";
 import { PeerTable } from "./PeerTable";
+import { SwarmTable } from "./SwarmTable";
 import { FileTable } from "./FileTable";
 import { TrackerTable } from "./TrackerTable";
 import { DiskPanel } from "./DiskPanel";
 import { PieceMapPanel } from "./PieceMapPanel";
 import { LogConsole } from "./LogConsole";
 import styles from "./DetailPane.module.css";
-
-const TABS: readonly {
-  readonly id: DetailTab;
-  readonly label: string;
-  readonly scope: "torrent" | "session";
-}[] = [
-  { id: "general", label: "General", scope: "torrent" },
-  { id: "trackers", label: "Trackers", scope: "torrent" },
-  { id: "peers", label: "Peers", scope: "torrent" },
-  { id: "swarm", label: "Swarm", scope: "torrent" },
-  { id: "files", label: "Files", scope: "torrent" },
-  { id: "pieces", label: "Pieces", scope: "torrent" },
-  { id: "disk", label: "Disk", scope: "session" },
-  { id: "logs", label: "Logs", scope: "session" },
-  { id: "speed", label: "Speed", scope: "session" },
-  { id: "dht", label: "DHT", scope: "session" },
-];
 
 export function DetailPane() {
   const selectedId = useInspectionStore(
@@ -71,8 +56,8 @@ export function DetailPane() {
   }, [activeTab, detailOpen, layout]);
 
   const selectAdjacentTab = (tab: DetailTab, direction: -1 | 1) => {
-    const index = TABS.findIndex((candidate) => candidate.id === tab);
-    const next = TABS[(index + direction + TABS.length) % TABS.length];
+    const index = DETAIL_TABS.findIndex((candidate) => candidate.id === tab);
+    const next = DETAIL_TABS[(index + direction + DETAIL_TABS.length) % DETAIL_TABS.length];
     if (next === undefined) return;
     selectTab(next.id);
     requestAnimationFrame(() => {
@@ -94,7 +79,7 @@ export function DetailPane() {
         role="tablist"
         aria-label="Torrent detail views"
       >
-        {TABS.map((tab) => {
+        {DETAIL_TABS.map((tab) => {
           const count =
             tab.id === "peers"
               ? (torrent?.peersConnected ?? null)
@@ -149,6 +134,8 @@ export function DetailPane() {
           <EmptyDetail />
         ) : activeTab === "peers" && selectedId !== null ? (
           <PeerTable torrentId={selectedId} />
+        ) : activeTab === "swarm" && selectedId !== null ? (
+          <SwarmTable torrentId={selectedId} />
         ) : activeTab === "trackers" && selectedId !== null ? (
           <TrackerTable torrentId={selectedId} />
         ) : activeTab === "files" && selectedId !== null ? (

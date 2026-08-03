@@ -484,6 +484,36 @@ test("compact tracker recovery remains legible", async ({ page }) => {
   await capture(page, "rstorrent-trackers-phone.png");
 });
 
+test("swarm lifecycle remains readable and accessible across layouts", async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 760 });
+  await openScenario(page, "swarm-lifecycle", 24_000);
+  await page.getByRole("tab", { name: "Swarm" }).click();
+  const swarm = page.getByRole("grid", { name: "Known swarm peers" });
+  await expect(swarm).toHaveAttribute("aria-rowcount", "9");
+  await expect(page.getByLabel("Swarm registry summary")).toContainText(/8.*known/);
+  await expect(swarm.getByText("backed off").first()).toBeVisible();
+  await expect(swarm.getByText(/TRACKER · DHT/).first()).toBeVisible();
+  let violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
+    (violation) => violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+  await capture(page, "rstorrent-swarm-wide.png");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page
+    .getByRole("grid", { name: "Torrent library" })
+    .getByRole("row")
+    .filter({ hasText: "Big Buck Bunny" })
+    .click();
+  await expect(swarm).toBeVisible();
+  await expect(page.getByRole("button", { name: "Torrents", exact: true })).toBeVisible();
+  violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
+    (violation) => violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+  await capture(page, "rstorrent-swarm-phone.png");
+});
+
 test("global disk pipeline shows pressure and responsive piece work", async ({
   page,
 }) => {
@@ -761,6 +791,11 @@ test("large collections retain a bounded virtual DOM", async ({ page }) => {
   }
   expect(initialRenderMs).toBeLessThan(5_000);
   expect(updateRenderMs).toBeLessThan(5_000);
+  await page.getByRole("tab", { name: "Swarm" }).click();
+  const swarm = page.getByRole("grid", { name: "Known swarm peers" });
+  await expect(swarm).toHaveAttribute("aria-rowcount", "1001");
+  expect(await swarm.getByRole("row").count()).toBeLessThanOrEqual(100);
+  expect(await page.locator("*").count()).toBeLessThan(2_000);
   const primary = page.getByRole("navigation", { name: "Primary" });
   await primary.getByRole("button", { name: "Transfers" }).click();
   const transferQueue = page.getByRole("grid", { name: "Transfer queue" });
