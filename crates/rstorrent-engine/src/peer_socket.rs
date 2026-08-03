@@ -5,6 +5,7 @@ use std::error::Error;
 use std::fmt;
 use std::io;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use rstorrent_protocol::peer_wire::{
@@ -23,6 +24,7 @@ use crate::network::{NetworkConfig, NetworkPolicy};
 use crate::peer::{DialAttempt, DialAttemptId, PeerFailure};
 use crate::peer_runtime::connection_id;
 use crate::swarm::ConnectionId;
+use crate::{ByteMetric, ByteMetricSink};
 
 const CLIENT_PEER_ID: [u8; 20] = *b"-RS0001-000000000000";
 const NETWORK_READ_LENGTH: usize = 16 * 1024;
@@ -37,6 +39,7 @@ pub(crate) struct PeerConnection {
     decoder: FrameDecoder,
     queued_messages: VecDeque<PeerMessage>,
     io_timeout: Duration,
+    byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
 }
 
 impl PeerConnection {
@@ -61,6 +64,7 @@ impl PeerConnection {
             decoder: FrameDecoder::new(),
             queued_messages: VecDeque::new(),
             io_timeout,
+            byte_metric_sink: None,
         }
     }
 }
@@ -152,7 +156,15 @@ pub(crate) async fn connect(
     advertise_extensions: bool,
     network: NetworkConfig,
 ) -> Result<(PeerConnection, Handshake), PeerSocketError> {
-    connect_with_progress(attempt, info_hash, advertise_extensions, network, None).await
+    connect_with_progress(
+        attempt,
+        info_hash,
+        advertise_extensions,
+        network,
+        None,
+        None,
+    )
+    .await
 }
 
 async fn connect_with_progress(
@@ -161,6 +173,7 @@ async fn connect_with_progress(
     advertise_extensions: bool,
     network: NetworkConfig,
     progress: Option<&mpsc::Sender<PeerDialProgress>>,
+    byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
 ) -> Result<(PeerConnection, Handshake), PeerSocketError> {
     let address = attempt.endpoint().address();
     if !network.policy.allows(address) {
@@ -199,6 +212,16 @@ async fn connect_with_progress(
             operation: "send peer handshake",
             source,
         })?;
+    record_bytes(
+        byte_metric_sink.as_ref(),
+        ByteMetric::PeerWireSent,
+        handshake.len(),
+    );
+    record_bytes(
+        byte_metric_sink.as_ref(),
+        ByteMetric::PeerProtocolSent,
+        handshake.len(),
+    );
 
     let mut handshake = [0_u8; HANDSHAKE_LENGTH];
     timeout(network.peer_io_timeout, stream.read_exact(&mut handshake))
@@ -211,6 +234,16 @@ async fn connect_with_progress(
             operation: "read peer handshake",
             source,
         })?;
+    record_bytes(
+        byte_metric_sink.as_ref(),
+        ByteMetric::PeerWireReceived,
+        handshake.len(),
+    );
+    record_bytes(
+        byte_metric_sink.as_ref(),
+        ByteMetric::PeerProtocolReceived,
+        handshake.len(),
+    );
     let handshake = decode_handshake(&handshake, info_hash).map_err(PeerSocketError::Handshake)?;
     Ok((
         PeerConnection {
@@ -219,6 +252,7 @@ async fn connect_with_progress(
             decoder: FrameDecoder::new(),
             queued_messages: VecDeque::new(),
             io_timeout: network.peer_io_timeout,
+            byte_metric_sink,
         },
         handshake,
     ))
@@ -243,16 +277,48 @@ pub(crate) async fn next_message(
         if read == 0 {
             return Err(PeerSocketError::Closed);
         }
+        record_bytes(
+            peer.byte_metric_sink.as_ref(),
+            ByteMetric::PeerWireReceived,
+            read,
+        );
         peer.queued_messages.extend(
             peer.decoder
                 .push(&network_buffer[..read])
                 .map_err(PeerSocketError::Frame)?,
         );
     }
-    Ok(peer
+    let message = peer
         .queued_messages
         .pop_front()
-        .expect("peer message queue is nonempty after receive loop"))
+        .expect("peer message queue is nonempty after receive loop");
+    record_incoming_message(peer, &message)?;
+    Ok(message)
+}
+
+fn record_incoming_message(
+    peer: &PeerConnection,
+    message: &PeerMessage,
+) -> Result<(), PeerSocketError> {
+    let frame_length = encode_message(&message)
+        .map_err(PeerSocketError::Frame)?
+        .len();
+    let (payload_length, payload_metric) = match &message {
+        PeerMessage::Piece { block, .. } => (block.len(), None),
+        PeerMessage::Extended { payload, .. } => {
+            (payload.len(), Some(ByteMetric::MetadataPayloadReceived))
+        }
+        _ => (0, None),
+    };
+    record_bytes(
+        peer.byte_metric_sink.as_ref(),
+        ByteMetric::PeerProtocolReceived,
+        frame_length.saturating_sub(payload_length),
+    );
+    if let Some(metric) = payload_metric {
+        record_bytes(peer.byte_metric_sink.as_ref(), metric, payload_length);
+    }
+    Ok(())
 }
 
 pub(crate) async fn send_message(
@@ -269,7 +335,36 @@ pub(crate) async fn send_message(
         .map_err(|source| PeerSocketError::Io {
             operation: "send peer message",
             source,
-        })
+        })?;
+    record_bytes(
+        peer.byte_metric_sink.as_ref(),
+        ByteMetric::PeerWireSent,
+        frame.len(),
+    );
+    let (payload_length, payload_metric) = match message {
+        PeerMessage::Piece { block, .. } => (block.len(), None),
+        PeerMessage::Extended { payload, .. } => {
+            (payload.len(), Some(ByteMetric::MetadataPayloadSent))
+        }
+        _ => (0, None),
+    };
+    record_bytes(
+        peer.byte_metric_sink.as_ref(),
+        ByteMetric::PeerProtocolSent,
+        frame.len().saturating_sub(payload_length),
+    );
+    if let Some(metric) = payload_metric {
+        record_bytes(peer.byte_metric_sink.as_ref(), metric, payload_length);
+    }
+    Ok(())
+}
+
+fn record_bytes(sink: Option<&Arc<dyn ByteMetricSink>>, metric: ByteMetric, bytes: usize) {
+    if let Some(sink) = sink
+        && bytes != 0
+    {
+        sink.record(metric, bytes.try_into().unwrap_or(u64::MAX));
+    }
 }
 
 #[derive(Debug)]
@@ -466,6 +561,7 @@ impl PeerSocketSet {
         info_hash: [u8; 20],
         advertise_extensions: bool,
         network: NetworkConfig,
+        byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
     ) -> Result<(), PeerSetError> {
         if self.pending_attempts.contains_key(&attempt.id()) {
             return Err(PeerSetError::DuplicateDial(attempt.id()));
@@ -484,6 +580,7 @@ impl PeerSocketSet {
                     advertise_extensions,
                     network,
                     Some(&progress),
+                    byte_metric_sink,
                 ) => result,
             };
             (attempt, result)
@@ -648,9 +745,17 @@ async fn run_peer_task(
                 if read == 0 {
                     return Err(PeerSocketError::Closed);
                 }
+                record_bytes(
+                    peer.byte_metric_sink.as_ref(),
+                    ByteMetric::PeerWireReceived,
+                    read,
+                );
                 let messages = peer.decoder
                     .push(&network_buffer[..read])
                     .map_err(PeerSocketError::Frame)?;
+                for message in &messages {
+                    record_incoming_message(&peer, message)?;
+                }
                 if !messages.is_empty() {
                     read_deadline = Instant::now() + peer.io_timeout;
                 }
@@ -745,6 +850,7 @@ mod tests {
                     Duration::from_secs(1),
                     Duration::from_secs(1),
                 ),
+                None,
             )
             .expect("begin dial");
         assert!(matches!(

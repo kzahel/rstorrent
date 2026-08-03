@@ -41,6 +41,7 @@ use crate::checkpoint::{
     DurabilityTarget,
 };
 use crate::dht::{DhtError, DhtHandle};
+use crate::metrics::{ByteMetric, ByteMetricSink, SharedByteMetricSink};
 use crate::network::{NetworkConfig, NetworkPolicy};
 use crate::peer::{
     DialAttempt, DialAttemptId, DialCandidate, PeerEndpoint, PeerFailure, PeerIntegrityAction,
@@ -521,6 +522,7 @@ struct DownloadControlInner {
     disk_runtime: Mutex<DiskRuntimeState>,
     last_storage_emitted_at: Mutex<Option<Instant>>,
     activity_sink: Mutex<Option<Arc<dyn DownloadActivitySink>>>,
+    byte_metric_sink: Mutex<Option<SharedByteMetricSink>>,
     last_swarm_activity: Mutex<Option<SwarmActivitySnapshot>>,
     last_content_peers: Mutex<(Option<Duration>, Vec<ContentPeerActivitySnapshot>)>,
     peer_registry_activity: Mutex<PeerRegistryActivityState>,
@@ -841,6 +843,7 @@ impl DownloadControl {
                 disk_runtime: Mutex::new(DiskRuntimeState::default()),
                 last_storage_emitted_at: Mutex::new(None),
                 activity_sink: Mutex::new(None),
+                byte_metric_sink: Mutex::new(None),
                 last_swarm_activity: Mutex::new(None),
                 last_content_peers: Mutex::new((None, Vec::new())),
                 peer_registry_activity: Mutex::new(PeerRegistryActivityState::default()),
@@ -1277,6 +1280,31 @@ impl DownloadControl {
             .activity_sink
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(sink);
+    }
+
+    pub fn set_byte_metric_sink(&self, sink: Arc<dyn ByteMetricSink>) {
+        *self
+            .inner
+            .byte_metric_sink
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(sink);
+    }
+
+    fn byte_metric_sink(&self) -> Option<SharedByteMetricSink> {
+        self.inner
+            .byte_metric_sink
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    fn record_bytes(&self, metric: ByteMetric, bytes: usize) {
+        if bytes == 0 {
+            return;
+        }
+        if let Some(sink) = self.byte_metric_sink() {
+            sink.record(metric, bytes.try_into().unwrap_or(u64::MAX));
+        }
     }
 
     fn emit(&self, event: DownloadActivityEvent) {
@@ -4466,7 +4494,13 @@ impl TorrentPeerCoordinator {
                 });
                 let attempt = self.begin_dial(candidate, PeerConnectionRole::Metadata)?;
                 self.control.metadata_dial_started(attempt);
-                if let Err(error) = sockets.begin_dial(attempt, info_hash, true, self.network) {
+                if let Err(error) = sockets.begin_dial(
+                    attempt,
+                    info_hash,
+                    true,
+                    self.network,
+                    self.control.byte_metric_sink(),
+                ) {
                     self.dial_cancelled(attempt)?;
                     return Err(download_peer_set_error(error));
                 }
@@ -4986,6 +5020,7 @@ async fn exchange_udp_tracker_packet<T>(
         timing.completion_timeout,
     )
     .await?;
+    control.record_bytes(ByteMetric::TrackerSent, packet.len());
     let started = TokioInstant::now();
     let retransmit_at = started + timing.retransmit_after;
     let deadline = started + timing.completion_timeout;
@@ -5010,6 +5045,7 @@ async fn exchange_udp_tracker_packet<T>(
                     timing.completion_timeout,
                 )
                 .await?;
+                control.record_bytes(ByteMetric::TrackerSent, packet.len());
                 retransmitted = true;
                 control.emit(DownloadActivityEvent::TrackerUdpRetransmitted {
                     tracker: tracker_label.to_owned(),
@@ -5024,6 +5060,7 @@ async fn exchange_udp_tracker_packet<T>(
                 });
             }
         };
+        control.record_bytes(ByteMetric::TrackerReceived, received);
         if received > MAX_ANNOUNCE_RESPONSE_LENGTH {
             return Err(DownloadError::UdpTrackerResponseTooLarge {
                 maximum: MAX_ANNOUNCE_RESPONSE_LENGTH,
@@ -7212,16 +7249,24 @@ impl<'a> ContentSwarmDownload<'a> {
                 block,
             } => {
                 let Ok(length) = u32::try_from(block.len()) else {
+                    self.control
+                        .record_bytes(ByteMetric::PeerUnclassifiedReceived, block.len());
                     return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
                 };
                 let Ok(key) = BlockKey::new(index, begin, length) else {
+                    self.control
+                        .record_bytes(ByteMetric::PeerUnclassifiedReceived, block.len());
                     return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
                 };
-                match self
-                    .state
-                    .receive_block(connection, key, now)
-                    .map_err(DownloadError::Swarm)?
-                {
+                let disposition = match self.state.receive_block(connection, key, now) {
+                    Ok(disposition) => disposition,
+                    Err(error) => {
+                        self.control
+                            .record_bytes(ByteMetric::PeerUnclassifiedReceived, block.len());
+                        return Err(DownloadError::Swarm(error));
+                    }
+                };
+                match disposition {
                     ReceiveDisposition::Accept { cancellations, .. } => {
                         let source_attempt = sockets.attempt(connection).ok_or({
                             DownloadError::Swarm(SwarmError::Invariant(
@@ -7241,6 +7286,8 @@ impl<'a> ContentSwarmDownload<'a> {
                             .piece_length_at(index)
                             .map_err(DownloadError::Layout)?;
                         self.control.disk_block_received(key, piece_length);
+                        self.control
+                            .record_bytes(ByteMetric::PayloadReceived, block.len());
                         self.control.emit(DownloadActivityEvent::BlockReceived {
                             piece_index: index,
                             begin,
@@ -7260,7 +7307,12 @@ impl<'a> ContentSwarmDownload<'a> {
                                 bytes: block,
                             })?;
                     }
-                    ReceiveDisposition::Redundant | ReceiveDisposition::Unsolicited => {}
+                    ReceiveDisposition::Redundant | ReceiveDisposition::Unsolicited => {
+                        self.control
+                            .record_bytes(ByteMetric::PayloadRedundant, block.len());
+                        self.control
+                            .record_bytes(ByteMetric::PeerUnclassifiedReceived, block.len());
+                    }
                 }
             }
             PeerMessage::KeepAlive
@@ -7333,6 +7385,8 @@ impl<'a> ContentSwarmDownload<'a> {
                     .piece_length_at(block.piece)
                     .map_err(DownloadError::Layout)?;
                 self.control.disk_block_stored(block, piece_length);
+                self.control
+                    .record_bytes(ByteMetric::StagedWrite, block.length as usize);
                 self.control.emit(DownloadActivityEvent::BlockStored {
                     piece_index: block.piece,
                     begin: block.begin,
@@ -7382,6 +7436,8 @@ impl<'a> ContentSwarmDownload<'a> {
                     return Ok(ContentMessageDisposition::Continue);
                 }
                 let verification = result?;
+                self.control
+                    .record_bytes(ByteMetric::LogicalHashRead, length as usize);
                 let actual = verification.actual;
                 let piece_index = usize::try_from(piece)
                     .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
@@ -7399,6 +7455,8 @@ impl<'a> ContentSwarmDownload<'a> {
                         contributor_count: failure.contributors.len(),
                         failed_bytes: failure.failed_bytes,
                     });
+                    self.control
+                        .record_bytes(ByteMetric::PayloadHashFailed, failure.failed_bytes);
                     self.control
                         .disk_piece_failed(piece, length, "piece hash failed; retrying");
                     ContentMessageDisposition::PieceHashFailed(failure)
@@ -7424,6 +7482,8 @@ impl<'a> ContentSwarmDownload<'a> {
                         hash: actual,
                         length,
                     });
+                    self.control
+                        .record_bytes(ByteMetric::PayloadVerified, length as usize);
                     self.control
                         .emit(DownloadActivityEvent::PieceVerified { piece_index: piece });
                     ContentMessageDisposition::PieceVerified(contributors)
@@ -7584,7 +7644,13 @@ fn fill_content_dials(
             peers.dial_cancelled(attempt)?;
             return Err(DownloadError::Swarm(error));
         }
-        if let Err(error) = sockets.begin_dial(attempt, info_hash, false, peers.network) {
+        if let Err(error) = sockets.begin_dial(
+            attempt,
+            info_hash,
+            false,
+            peers.network,
+            peers.control.byte_metric_sink(),
+        ) {
             state
                 .finish_dial(pending_dial_id(attempt))
                 .map_err(DownloadError::Swarm)?;
@@ -8736,7 +8802,7 @@ mod tests {
         BlockKey, DEFAULT_INITIAL_REQUESTS_PER_CONNECTION, DEFAULT_MAX_ESTABLISHED_CONNECTIONS,
         DEFAULT_MAX_PENDING_DIALS, PieceGeneration,
     };
-    use crate::{DiskCheckpointStage, DiskPieceStage};
+    use crate::{ByteMetric, ByteMetricSink, DiskCheckpointStage, DiskPieceStage};
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -11608,6 +11674,8 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let control = DownloadControl::new();
         let activity = Arc::new(RecordingActivitySink::default());
         control.set_activity_sink(activity.clone());
+        let metrics = Arc::new(RecordingByteMetricSink::default());
+        control.set_byte_metric_sink(metrics.clone());
         let output = test_path("piece-hash-retry.bin");
 
         let report = timeout(
@@ -11646,6 +11714,44 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         assert_eq!(snapshot.last_hash_failure_contributors, 1);
         assert_eq!(snapshot.active_request_attempts, 0);
         assert_eq!(snapshot.outstanding_request_bytes, 0);
+        assert_eq!(
+            metrics.bytes(ByteMetric::PayloadReceived),
+            2 * payload.len() as u64
+        );
+        assert_eq!(
+            metrics.bytes(ByteMetric::StagedWrite),
+            2 * payload.len() as u64
+        );
+        assert_eq!(
+            metrics.bytes(ByteMetric::PayloadVerified),
+            payload.len() as u64
+        );
+        assert_eq!(
+            metrics.bytes(ByteMetric::PayloadHashFailed),
+            payload.len() as u64
+        );
+        assert_eq!(
+            metrics.bytes(ByteMetric::LogicalHashRead),
+            2 * payload.len() as u64
+        );
+        assert!(
+            metrics.bytes(ByteMetric::PeerWireReceived) > 2 * payload.len() as u64,
+            "peer wire bytes were {}",
+            metrics.bytes(ByteMetric::PeerWireReceived),
+        );
+        assert_eq!(
+            metrics.bytes(ByteMetric::PeerWireReceived),
+            metrics.bytes(ByteMetric::PayloadReceived)
+                + metrics.bytes(ByteMetric::PeerProtocolReceived)
+                + metrics.bytes(ByteMetric::MetadataPayloadReceived)
+                + metrics.bytes(ByteMetric::PeerUnclassifiedReceived),
+        );
+        assert_eq!(
+            metrics.bytes(ByteMetric::PeerWireSent),
+            metrics.bytes(ByteMetric::PeerProtocolSent)
+                + metrics.bytes(ByteMetric::MetadataPayloadSent)
+                + metrics.bytes(ByteMetric::PeerUnclassifiedSent),
+        );
         let corrupt_record = peers
             .registry
             .find_endpoint(PeerEndpoint::new(corrupt_address).expect("corrupt endpoint"))
@@ -12404,6 +12510,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             bootstrap_retry_interval: Duration::from_secs(1),
             routing_refresh_interval: Duration::from_secs(60),
             read_only: false,
+            byte_metric_sink: None,
         }
     }
 
@@ -13620,6 +13727,33 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .push(event);
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct RecordingByteMetricSink {
+        bytes: Mutex<BTreeMap<ByteMetric, u64>>,
+    }
+
+    impl RecordingByteMetricSink {
+        fn bytes(&self, metric: ByteMetric) -> u64 {
+            self.bytes
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .get(&metric)
+                .copied()
+                .unwrap_or(0)
+        }
+    }
+
+    impl ByteMetricSink for RecordingByteMetricSink {
+        fn record(&self, metric: ByteMetric, bytes: u64) {
+            let mut observed = self
+                .bytes
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let total = observed.entry(metric).or_default();
+            *total = total.saturating_add(bytes);
         }
     }
 

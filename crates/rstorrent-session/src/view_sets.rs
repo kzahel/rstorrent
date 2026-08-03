@@ -13,6 +13,7 @@ use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
 
 use crate::diagnostics::DiagnosticFilter;
+use crate::speed::{MAX_SPEED_SERIES, SpeedMetric, SpeedRange};
 use crate::views::{
     DeliveryPolicy, HubState, ResetReason, SubscriptionSpec, ViewHub, ViewPatch, ViewProjection,
     ViewSelector, ViewSnapshot, coalesce_patch,
@@ -94,6 +95,7 @@ impl Default for ApiHello {
                 "torrent_files".to_owned(),
                 "torrent_trackers".to_owned(),
                 "session_disk".to_owned(),
+                "session_speed".to_owned(),
                 "piece_activity".to_owned(),
                 "diagnostics".to_owned(),
             ],
@@ -143,6 +145,13 @@ pub enum ViewSpec {
         #[serde(default)]
         delivery: ViewDeliveryPolicy,
     },
+    SessionSpeed {
+        view_id: String,
+        range: SpeedRange,
+        metrics: Vec<SpeedMetric>,
+        #[serde(default)]
+        delivery: ViewDeliveryPolicy,
+    },
     TorrentPeers {
         view_id: String,
         torrent_id: String,
@@ -185,6 +194,7 @@ impl ViewSpec {
             | Self::TorrentSummary { view_id, .. }
             | Self::PieceActivity { view_id, .. }
             | Self::SessionDisk { view_id, .. }
+            | Self::SessionSpeed { view_id, .. }
             | Self::TorrentPeers { view_id, .. }
             | Self::TorrentSwarm { view_id, .. }
             | Self::TorrentFiles { view_id, .. }
@@ -199,6 +209,7 @@ impl ViewSpec {
             | Self::TorrentSummary { delivery, .. }
             | Self::PieceActivity { delivery, .. }
             | Self::SessionDisk { delivery, .. }
+            | Self::SessionSpeed { delivery, .. }
             | Self::TorrentPeers { delivery, .. }
             | Self::TorrentSwarm { delivery, .. }
             | Self::TorrentFiles { delivery, .. }
@@ -225,6 +236,14 @@ impl ViewSpec {
                 None,
             ),
             Self::SessionDisk { .. } => (ViewSelector::TorrentList, ViewProjection::Disk, None),
+            Self::SessionSpeed { range, metrics, .. } => (
+                ViewSelector::SessionSpeed {
+                    range: *range,
+                    metrics: metrics.clone(),
+                },
+                ViewProjection::Speed,
+                None,
+            ),
             Self::TorrentPeers { torrent_id, .. } => (
                 ViewSelector::Torrent {
                     torrent_id: torrent_id.clone(),
@@ -639,6 +658,7 @@ impl ViewHub {
         )?;
         let response = inner.open_response()?;
         hub.view_sets.insert(id, inner);
+        self.speed_interest.notify_one();
         Ok(response)
     }
 
@@ -677,7 +697,9 @@ impl ViewHub {
                 });
             }
         }
-        view_set.replace_views(views, updates, hub.revision, now)
+        view_set.replace_views(views, updates, hub.revision, now)?;
+        self.speed_interest.notify_one();
+        Ok(())
     }
 
     pub fn view_set(&self, owner: &ViewSetOwner, id: &str) -> Result<ViewSet, ViewSetError> {
@@ -702,6 +724,7 @@ impl ViewHub {
         let view_set = owned_view_set(&hub, owner, id)?;
         hub.view_sets.remove(id);
         view_set.close();
+        self.speed_interest.notify_one();
         Ok(())
     }
 
@@ -711,6 +734,7 @@ impl ViewHub {
                 view_set.close();
             }
         }
+        self.speed_interest.notify_one();
     }
 
     pub(crate) fn reap_expired_view_sets(&self) -> usize {
@@ -1126,6 +1150,23 @@ fn validate_specs(views: &[ViewSpec]) -> Result<BTreeMap<String, ViewSpec>, View
             return Err(ViewSetError::InvalidDeliveryInterval {
                 maximum: MAX_VIEW_DELIVERY_INTERVAL_MILLIS,
             });
+        }
+        if let ViewSpec::SessionSpeed { metrics, .. } = view {
+            let unique = metrics
+                .iter()
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>();
+            if metrics.is_empty()
+                || metrics.len() > MAX_SPEED_SERIES
+                || unique.len() != metrics.len()
+                || metrics
+                    .iter()
+                    .any(|metric| !SpeedMetric::AVAILABLE.contains(metric))
+            {
+                return Err(ViewSetError::InvalidView(format!(
+                    "session speed requires 1..={MAX_SPEED_SERIES} distinct available metrics"
+                )));
+            }
         }
         let spec = view.subscription_spec(DEFAULT_VIEW_SET_QUEUE_BYTES);
         super::views::validate_spec(&spec)

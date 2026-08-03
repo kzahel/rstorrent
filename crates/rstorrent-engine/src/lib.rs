@@ -6,6 +6,7 @@ mod checkpoint;
 pub mod dht;
 mod driver;
 mod metadata_seed;
+mod metrics;
 mod network;
 mod part_file;
 pub mod peer;
@@ -35,6 +36,7 @@ pub use metadata_seed::{
     MetadataSeedConfig, MetadataSeedError, MetadataSeedReport, MetadataSeedServer,
     bind_metadata_seed,
 };
+pub use metrics::{ByteMetric, ByteMetricSink};
 pub use network::{NetworkConfig, NetworkPolicy};
 pub use part_file::{PartFile, PartFileError, PartFileIdentity};
 pub use peer_runtime::{

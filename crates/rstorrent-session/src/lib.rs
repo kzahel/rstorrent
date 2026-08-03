@@ -11,6 +11,7 @@ mod control;
 mod diagnostics;
 mod file_views;
 mod have;
+mod speed;
 mod store;
 mod tracker_views;
 mod view_sets;
@@ -37,6 +38,10 @@ pub use diagnostics::{
 pub use file_views::{FileCatalogState, FileSelectionView, FileView};
 pub use have::{HaveError, HaveState};
 pub use rstorrent_engine::{DownloadResourceLimits, NetworkConfig, NetworkPolicy};
+pub use speed::{
+    SpeedCurrentRate, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,
+    SpeedPersistenceState, SpeedRange, SpeedSeriesView,
+};
 pub use store::{
     ConfiguredStorageRoot, PreparedFileRecord, RemovalRecord, ResumeRecord, SessionStore,
     StorageRootLocation, StoreError, StoredStorageRoot,

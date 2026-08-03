@@ -19,9 +19,11 @@ use rstorrent_session::{
     PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
     ProgressDisposition, ProgressPhase, ProgressReason, RemovalDataPolicy, RemovalState,
     RequestEnvelope, ResetReason, ResponseEnvelope, ResponseOutcome, ServiceSnapshot,
-    StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot, StorageState,
-    SubscriptionSpec, SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView,
-    TorrentSnapshot, TorrentState, TorrentView, TrackerAnnounceEventView, TrackerCatalogState,
+    SpeedCurrentRate, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,
+    SpeedPersistenceState, SpeedRange, SpeedSeriesView, StorageRootAvailability,
+    StorageRootSnapshot, StorageSettingsSnapshot, StorageState, SubscriptionSpec,
+    SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentSnapshot,
+    TorrentState, TorrentView, TrackerAnnounceEventView, TrackerCatalogState,
     TrackerNextActionView, TrackerSourceView, TrackerStatusView, TrackerTransportView, TrackerView,
     UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector,
     ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate, ViewUpdatePayload,
@@ -105,6 +107,13 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<DiskPieceStageView>(&mut declarations)?;
     append::<DiskPipelineView>(&mut declarations)?;
     append::<DiskPieceView>(&mut declarations)?;
+    append::<SpeedMetric>(&mut declarations)?;
+    append::<SpeedRange>(&mut declarations)?;
+    append::<SpeedPersistenceState>(&mut declarations)?;
+    append::<SpeedSeriesView>(&mut declarations)?;
+    append::<SpeedMetricAvailability>(&mut declarations)?;
+    append::<SpeedCurrentRate>(&mut declarations)?;
+    append::<SpeedHistoryView>(&mut declarations)?;
     append::<TorrentView>(&mut declarations)?;
     append::<CapabilityStatus>(&mut declarations)?;
     append::<PeerDirection>(&mut declarations)?;

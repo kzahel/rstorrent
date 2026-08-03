@@ -4,6 +4,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::sync::Arc;
 use std::time::Duration;
 
 use rstorrent_protocol::dht::{
@@ -19,6 +20,7 @@ use tokio::time::{Instant, MissedTickBehavior, interval};
 use tokio_util::sync::CancellationToken;
 
 use crate::network::{NetworkPolicy, is_valid_outbound_address};
+use crate::{ByteMetric, ByteMetricSink};
 
 pub const DHT_SNAPSHOT_VERSION: u32 = 1;
 pub const MAX_PERSISTED_NODES_PER_FAMILY: usize = 64;
@@ -89,6 +91,7 @@ pub struct DhtConfig {
     pub bootstrap_retry_interval: Duration,
     pub routing_refresh_interval: Duration,
     pub read_only: bool,
+    pub byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
 }
 
 impl DhtConfig {
@@ -121,6 +124,7 @@ impl DhtConfig {
             bootstrap_retry_interval: DEFAULT_BOOTSTRAP_RETRY_INTERVAL,
             routing_refresh_interval: DEFAULT_ROUTING_REFRESH_INTERVAL,
             read_only: false,
+            byte_metric_sink: None,
         }
     }
 
@@ -662,10 +666,17 @@ impl Actor {
                 }
                 received = self.socket.recv_from(&mut receive_buffer) => {
                     match received {
-                        Ok((length, source)) if length <= MAX_DATAGRAM_SIZE => {
-                            self.handle_datagram(&receive_buffer[..length], source).await?;
+                        Ok((length, source)) => {
+                            if let Some(sink) = &self.config.byte_metric_sink {
+                                sink.record(ByteMetric::DhtReceived, length as u64);
+                            }
+                            if length <= MAX_DATAGRAM_SIZE {
+                                self.handle_datagram(&receive_buffer[..length], source).await?;
+                            } else {
+                                self.stats.malformed_received =
+                                    self.stats.malformed_received.saturating_add(1);
+                            }
                         }
-                        Ok(_) => self.stats.malformed_received = self.stats.malformed_received.saturating_add(1),
                         Err(error) => return Err(DhtError::Io(error.to_string())),
                     }
                 }
@@ -887,10 +898,14 @@ impl Actor {
             self.config.read_only,
         )
         .map_err(|error| DhtError::Io(error.to_string()))?;
-        self.socket
+        let sent = self
+            .socket
             .send_to(&bytes, endpoint)
             .await
             .map_err(|error| DhtError::Io(error.to_string()))?;
+        if let Some(sink) = &self.config.byte_metric_sink {
+            sink.record(ByteMetric::DhtSent, sent as u64);
+        }
         self.transactions.insert(
             transaction_id,
             Transaction {
@@ -1149,8 +1164,11 @@ impl Actor {
                 encode_error(&query.transaction, 204, b"method unknown", observed_address)
             }
         };
-        if let Ok(bytes) = result {
-            let _ = self.socket.send_to(&bytes, source).await;
+        if let Ok(bytes) = result
+            && let Ok(sent) = self.socket.send_to(&bytes, source).await
+            && let Some(sink) = &self.config.byte_metric_sink
+        {
+            sink.record(ByteMetric::DhtSent, sent as u64);
         }
         Ok(())
     }
@@ -1635,6 +1653,7 @@ mod tests {
             bootstrap_retry_interval: Duration::from_secs(1),
             routing_refresh_interval: Duration::from_secs(60),
             read_only: false,
+            byte_metric_sink: None,
         }
     }
 

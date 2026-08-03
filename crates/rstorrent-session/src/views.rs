@@ -33,6 +33,9 @@ use crate::diagnostics::{
     valid_filter,
 };
 use crate::file_views::{FileCatalogState, FileProgressModel, FileView};
+use crate::speed::{
+    MAX_SPEED_SERIES, SessionRateHistory, SpeedHistoryView, SpeedMetric, SpeedRange,
+};
 use crate::tracker_views::{TrackerCatalogState, TrackerView, TrackerViewModel};
 use crate::view_sets::{DEFAULT_VIEW_SET_QUEUE_BYTES, ViewSetInner, ViewSetUpdate};
 
@@ -48,7 +51,13 @@ static NEXT_EPOCH: AtomicU64 = AtomicU64::new(1);
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ViewSelector {
     TorrentList,
-    Torrent { torrent_id: String },
+    Torrent {
+        torrent_id: String,
+    },
+    SessionSpeed {
+        range: SpeedRange,
+        metrics: Vec<SpeedMetric>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -58,6 +67,7 @@ pub enum ViewProjection {
     Summary,
     PieceActivity,
     Disk,
+    Speed,
     Peers,
     Swarm,
     Files,
@@ -1061,6 +1071,9 @@ pub enum ViewSnapshot {
         pipeline: DiskPipelineView,
         pieces: Vec<DiskPieceView>,
     },
+    SessionSpeed {
+        history: SpeedHistoryView,
+    },
     Peers {
         torrent_id: String,
         peers: Vec<PeerView>,
@@ -1118,6 +1131,9 @@ pub enum ViewPatch {
         pipeline: DiskPipelineView,
         upsert: Vec<DiskPieceView>,
         removed: Vec<String>,
+    },
+    SessionSpeed {
+        history: SpeedHistoryView,
     },
     Peers {
         torrent_id: String,
@@ -1190,6 +1206,7 @@ pub struct SubscriptionStats {
 #[derive(Clone, Debug)]
 pub struct ViewHub {
     pub(crate) inner: Arc<Mutex<HubState>>,
+    pub(crate) speed_interest: Arc<Notify>,
 }
 
 #[derive(Debug)]
@@ -1199,6 +1216,7 @@ pub(crate) struct HubState {
     torrents: BTreeMap<String, TorrentModel>,
     storage: StorageSettingsSnapshot,
     disk: DiskSessionModel,
+    speed: Arc<Mutex<SessionRateHistory>>,
     diagnostics: DiagnosticStore,
     subscribers: BTreeMap<u64, Weak<SubscriberInner>>,
     next_stream_id: u64,
@@ -1361,6 +1379,18 @@ impl ViewHub {
         snapshot: &ServiceSnapshot,
         view_set_lease: Duration,
     ) -> Result<Self, SubscriptionError> {
+        Self::new_with_speed_history(
+            snapshot,
+            view_set_lease,
+            Arc::new(Mutex::new(SessionRateHistory::new())),
+        )
+    }
+
+    pub(crate) fn new_with_speed_history(
+        snapshot: &ServiceSnapshot,
+        view_set_lease: Duration,
+        speed: Arc<Mutex<SessionRateHistory>>,
+    ) -> Result<Self, SubscriptionError> {
         let revision = parse_revision(&snapshot.revision)?;
         Ok(Self {
             inner: Arc::new(Mutex::new(HubState {
@@ -1378,12 +1408,14 @@ impl ViewHub {
                     .collect(),
                 storage: snapshot.storage.clone(),
                 disk: DiskSessionModel::default(),
+                speed,
                 diagnostics: DiagnosticStore::default(),
                 subscribers: BTreeMap::new(),
                 next_stream_id: 1,
                 view_sets: BTreeMap::new(),
                 view_set_lease,
             })),
+            speed_interest: Arc::new(Notify::new()),
         })
     }
 
@@ -1425,10 +1457,101 @@ impl ViewHub {
         });
         inner.enqueue_snapshot(hub.revision, snapshot)?;
         hub.subscribers.insert(stream_id, Arc::downgrade(&inner));
+        self.speed_interest.notify_one();
         Ok(ViewSubscription {
             inner,
             hub: Arc::downgrade(&self.inner),
         })
+    }
+
+    pub(crate) fn has_live_speed_interest(&self) -> bool {
+        let Ok(mut hub) = self.inner.lock() else {
+            return false;
+        };
+        hub.subscribers.retain(|_, weak| weak.strong_count() != 0);
+        if hub
+            .subscribers
+            .values()
+            .filter_map(Weak::upgrade)
+            .any(|subscriber| {
+                subscriber.spec.projection == ViewProjection::Speed
+                    && matches!(
+                        subscriber.spec.selector,
+                        ViewSelector::SessionSpeed { range, .. } if range.is_live()
+                    )
+            })
+        {
+            return true;
+        }
+        hub.retain_live_view_sets();
+        hub.view_sets.values().any(|view_set| {
+            view_set.view_specs().is_ok_and(|specs| {
+                specs.iter().any(|spec| {
+                    matches!(
+                        spec,
+                        crate::ViewSpec::SessionSpeed { range, .. } if range.is_live()
+                    )
+                })
+            })
+        })
+    }
+
+    pub(crate) fn speed_interest_notify(&self) -> Arc<Notify> {
+        self.speed_interest.clone()
+    }
+
+    pub(crate) fn publish_speed_tick(&self) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let now_millis = {
+            let mut speed = hub
+                .speed
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let now_millis = speed.now_millis();
+            speed.advance_to(now_millis);
+            now_millis
+        };
+        let revision = hub.revision;
+        hub.subscribers.retain(|_, weak| weak.strong_count() != 0);
+        let subscribers = hub
+            .subscribers
+            .values()
+            .filter_map(Weak::upgrade)
+            .collect::<Vec<_>>();
+        for subscriber in subscribers {
+            let ViewSelector::SessionSpeed { range, metrics } = &subscriber.spec.selector else {
+                continue;
+            };
+            let history = hub
+                .speed
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .view(*range, metrics, now_millis);
+            subscriber.enqueue_patch(revision, ViewPatch::SessionSpeed { history })?;
+        }
+        hub.retain_live_view_sets();
+        let view_sets = hub.view_sets.values().cloned().collect::<Vec<_>>();
+        for view_set in view_sets {
+            for spec in view_set.view_specs()? {
+                let crate::ViewSpec::SessionSpeed { range, metrics, .. } = &spec else {
+                    continue;
+                };
+                let history = hub
+                    .speed
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .view(*range, metrics, now_millis);
+                view_set.enqueue_patch(
+                    spec.view_id(),
+                    ViewPatch::SessionSpeed { history },
+                    revision,
+                )?;
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn replace_durable(
@@ -1950,6 +2073,16 @@ impl HubState {
                     pieces: disk.pieces.into_values().collect(),
                 }
             }
+            (ViewSelector::SessionSpeed { range, metrics }, ViewProjection::Speed) => {
+                let mut history = self
+                    .speed
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                let now_millis = history.now_millis();
+                ViewSnapshot::SessionSpeed {
+                    history: history.view(*range, metrics, now_millis),
+                }
+            }
             (ViewSelector::Torrent { torrent_id }, ViewProjection::Peers) => ViewSnapshot::Peers {
                 torrent_id: torrent_id.clone(),
                 peers: self
@@ -2025,6 +2158,7 @@ impl HubState {
             (
                 ViewSelector::TorrentList,
                 ViewProjection::PieceActivity
+                | ViewProjection::Speed
                 | ViewProjection::Peers
                 | ViewProjection::Swarm
                 | ViewProjection::Files
@@ -2033,6 +2167,12 @@ impl HubState {
                 unreachable!("invalid projection is rejected before snapshot construction")
             }
             (ViewSelector::Torrent { .. }, ViewProjection::Disk) => {
+                unreachable!("invalid projection is rejected before snapshot construction")
+            }
+            (ViewSelector::Torrent { .. }, ViewProjection::Speed) => {
+                unreachable!("invalid projection is rejected before snapshot construction")
+            }
+            (ViewSelector::SessionSpeed { .. }, _) => {
                 unreachable!("invalid projection is rejected before snapshot construction")
             }
         }
@@ -3205,9 +3345,25 @@ pub(crate) fn validate_spec(spec: &SubscriptionSpec) -> Result<(), SubscriptionE
         return Err(SubscriptionError::InvalidProjection);
     }
     if matches!(spec.selector, ViewSelector::Torrent { .. })
-        && spec.projection == ViewProjection::Disk
+        && matches!(
+            spec.projection,
+            ViewProjection::Disk | ViewProjection::Speed
+        )
     {
         return Err(SubscriptionError::InvalidProjection);
+    }
+    match (&spec.selector, spec.projection) {
+        (ViewSelector::SessionSpeed { metrics, .. }, ViewProjection::Speed)
+            if !metrics.is_empty()
+                && metrics.len() <= MAX_SPEED_SERIES
+                && metrics
+                    .iter()
+                    .all(|metric| SpeedMetric::AVAILABLE.contains(metric))
+                && metrics.iter().copied().collect::<BTreeSet<_>>().len() == metrics.len() => {}
+        (ViewSelector::SessionSpeed { .. }, _) | (_, ViewProjection::Speed) => {
+            return Err(SubscriptionError::InvalidProjection);
+        }
+        _ => {}
     }
     if spec.projection != ViewProjection::Diagnostics && spec.diagnostics.is_some() {
         return Err(SubscriptionError::InvalidProjection);
@@ -3373,8 +3529,8 @@ fn patch_for(
             | ViewProjection::Files
             | ViewProjection::Trackers,
         ) => None,
-        (_, ViewProjection::Disk) => None,
-        (_, ViewProjection::Diagnostics) => None,
+        (_, ViewProjection::Disk | ViewProjection::Speed | ViewProjection::Diagnostics) => None,
+        (ViewSelector::SessionSpeed { .. }, _) => None,
     }
 }
 
@@ -3808,6 +3964,15 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
             true
         }
         (
+            ViewPatch::SessionSpeed { history },
+            ViewPatch::SessionSpeed {
+                history: next_history,
+            },
+        ) => {
+            *history = next_history.clone();
+            true
+        }
+        (
             ViewPatch::Peers {
                 torrent_id,
                 upsert,
@@ -3966,7 +4131,7 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
 
 fn selector_torrent_id(selector: &ViewSelector) -> Option<&str> {
     match selector {
-        ViewSelector::TorrentList => None,
+        ViewSelector::TorrentList | ViewSelector::SessionSpeed { .. } => None,
         ViewSelector::Torrent { torrent_id } => Some(torrent_id),
     }
 }

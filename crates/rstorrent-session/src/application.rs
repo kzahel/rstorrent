@@ -30,6 +30,7 @@ use crate::diagnostics::{
 };
 use crate::file_views::FileProgressModel;
 use crate::have::HaveState;
+use crate::speed::{PreparedSpeedHistory, SessionSpeedRecorder, SpeedHistoryRuntime};
 use crate::store::{
     ConfiguredStorageRoot, ManagedArtifactState, PreparedFileRecord, RemovalRecord, ResumeRecord,
     SessionStore, StorageRootLocation, StoreError, StoredStorageRoot,
@@ -135,6 +136,8 @@ pub struct ApplicationService {
     storage_file_pool: StorageFilePool,
     active: Option<ActiveDownload>,
     dht: Option<DhtService>,
+    speed_recorder: Arc<SessionSpeedRecorder>,
+    speed_history: Option<SpeedHistoryRuntime>,
     views: ViewHub,
     view_set_reaper: Option<ViewSetLeaseReaper>,
 }
@@ -203,12 +206,20 @@ impl ApplicationService {
             Ok(snapshot) => (snapshot, None),
             Err(error) => (None, Some(error.to_string())),
         };
+        let speed = PreparedSpeedHistory::open(&config.profile_root);
+        let speed_recorder = speed.recorder.clone();
         let mut dht_config = config.dht;
         dht_config.network_policy = config.network.policy;
         dht_config.initial_snapshot = initial_dht_snapshot;
+        dht_config.byte_metric_sink = Some(speed_recorder.clone());
         let dht = DhtService::start(dht_config).await?;
         let snapshot = store.snapshot()?;
-        let views = ViewHub::new_with_view_set_lease(&snapshot, config.view_set_lease)?;
+        let views = ViewHub::new_with_speed_history(
+            &snapshot,
+            config.view_set_lease,
+            speed.history.clone(),
+        )?;
+        let speed_history = speed.start(views.clone());
         let view_set_reaper =
             ViewSetLeaseReaper::start(views.clone(), config.view_set_reaper_interval);
         let mut service = Self {
@@ -229,6 +240,8 @@ impl ApplicationService {
             .map_err(|error| ApplicationError::Configuration(error.to_owned()))?,
             active: None,
             dht: Some(dht),
+            speed_recorder,
+            speed_history: Some(speed_history),
             views,
             view_set_reaper: Some(view_set_reaper),
         };
@@ -1065,6 +1078,12 @@ impl ApplicationService {
             let snapshot = dht.shutdown().await?;
             self.store_mut()?.save_dht_snapshot(snapshot)?;
         }
+        if let Some(speed_history) = self.speed_history.take()
+            && let Err(error) = speed_history.shutdown().await
+            && active_join_error.is_none()
+        {
+            active_join_error = Some(format!("speed history: {error}"));
+        }
         if let Some(error) = active_join_error {
             return Err(ApplicationError::Join(error));
         }
@@ -1481,6 +1500,7 @@ impl ApplicationService {
             trace_checkpoint_stages: self.checkpoint_stage_trace_for_testing,
             last_checkpoint_stage: Mutex::new(None),
         }));
+        control.set_byte_metric_sink(self.speed_recorder.clone());
         control
     }
 
