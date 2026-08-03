@@ -23,6 +23,14 @@
   white-space: nowrap;
 }
 
+.commandStatus {
+  overflow: hidden;
+  max-width: 18rem;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .name {
   overflow: hidden;
   font-weight: 620;

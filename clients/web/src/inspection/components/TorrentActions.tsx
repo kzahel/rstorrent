@@ -156,6 +156,7 @@ export function TorrentActions() {
     magnet: string,
     storageRoot: string,
     clearInputOnSuccess: boolean,
+    startContent = true,
   ) => {
     addingRef.current = true;
     setAdding(true);
@@ -164,6 +165,7 @@ export function TorrentActions() {
         type: "add_magnet",
         magnet,
         storageRoot,
+        startContent,
       });
       if (accepted && clearInputOnSuccess) setTorrentInput("");
       return accepted;
@@ -193,7 +195,11 @@ export function TorrentActions() {
     return result.storageRoot ?? null;
   };
 
-  const confirmAdd = async (rootId: string, dontShowAgain: boolean) => {
+  const confirmAdd = async (
+    rootId: string,
+    dontShowAgain: boolean,
+    startContent: boolean,
+  ) => {
     if (pendingAdd === null || addingRef.current) return;
     addingRef.current = true;
     setAdding(true);
@@ -202,6 +208,7 @@ export function TorrentActions() {
         type: "add_magnet",
         magnet: pendingAdd.magnet,
         storageRoot: rootId,
+        startContent,
       });
       let message = result.message;
       if (dontShowAgain) {

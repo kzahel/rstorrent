@@ -801,6 +801,10 @@
               },
               "type": "array"
             },
+            "start_content": {
+              "default": true,
+              "type": "boolean"
+            },
             "storage_root": {
               "type": "string"
             },
@@ -813,6 +817,35 @@
             "type",
             "magnet",
             "storage_root"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "file_indices": {
+              "items": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "priority": {
+              "$ref": "#/$defs/FilePriority"
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "set_file_priority",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id",
+            "file_indices",
+            "priority"
           ],
           "type": "object"
         },
@@ -1659,6 +1692,13 @@
         "metadata_pending",
         "available",
         "torrent_missing"
+      ],
+      "type": "string"
+    },
+    "FilePriority": {
+      "enum": [
+        "normal",
+        "skip"
       ],
       "type": "string"
     },

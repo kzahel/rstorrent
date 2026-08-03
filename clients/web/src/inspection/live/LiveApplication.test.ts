@@ -140,6 +140,7 @@ describe("LiveApplication", () => {
         type: "add_magnet",
         magnet,
         storageRoot: "root_a",
+        startContent: false,
       }),
     ).resolves.toEqual({ accepted: true, message: "Torrent added" });
     expect(client.requests).toHaveLength(1);
@@ -147,7 +148,29 @@ describe("LiveApplication", () => {
       type: "add_magnet",
       magnet,
       storage_root: "root_a",
+      start_content: false,
       skip_files: [],
+    });
+    await application.close();
+  });
+
+  it("maps sorted live file priority changes to the application command", async () => {
+    const client = new FakeLiveClient();
+    const application = await LiveApplication.open(client);
+
+    await expect(
+      application.dispatch({
+        type: "set_file_priority",
+        torrentId: TORRENT_ID,
+        fileIndices: [9, 2, 4],
+        priority: "skip",
+      }),
+    ).resolves.toEqual({ accepted: true, message: "Selected files skipped" });
+    expect(client.requests[0]?.command).toEqual({
+      type: "set_file_priority",
+      torrent_id: TORRENT_ID,
+      file_indices: [2, 4, 9],
+      priority: "skip",
     });
     await application.close();
   });

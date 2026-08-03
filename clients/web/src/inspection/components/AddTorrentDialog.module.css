@@ -134,17 +134,28 @@
 }
 
 .files {
-  display: grid;
-  gap: 0.18rem;
   margin-top: 1.15rem;
   border-block: 1px solid var(--border-soft);
   padding: 0.8rem 0;
   font-size: var(--ui-font-small);
 }
 
-.files span,
+.files label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.55rem;
+  cursor: pointer;
+}
+
+.files span {
+  display: grid;
+  gap: 0.18rem;
+}
+
 .files small {
   color: var(--text-muted);
+  line-height: 1.4;
 }
 
 .preference {
@@ -157,6 +168,7 @@
 }
 
 .preference input,
+.files input,
 .location input {
   accent-color: var(--accent);
 }

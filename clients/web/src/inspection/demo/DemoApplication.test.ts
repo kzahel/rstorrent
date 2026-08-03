@@ -109,6 +109,7 @@ describe("DemoApplication", () => {
         magnet:
           "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213",
         storageRoot: "root_a",
+        startContent: true,
       }),
     ).rejects.toThrow("unavailable in demo scenarios");
     await controller.dispatch({ type: "reset_demo" });

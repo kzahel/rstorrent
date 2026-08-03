@@ -793,12 +793,14 @@ test("full file catalog stays virtualized across wide compact and phone layouts"
   await page.getByRole("button", { name: "More file actions" }).click();
   const fileActions = page.getByRole("menu", { name: "File actions" });
   await expect(
-    fileActions.getByRole("menuitem", { name: "Download", exact: true }),
+    fileActions.getByRole("menuitem", { name: "Normal", exact: true }),
   ).toBeDisabled();
   await expect(
-    fileActions.getByRole("menuitem", { name: "Skip download" }),
+    fileActions.getByRole("menuitem", { name: "Skip", exact: true }),
   ).toBeDisabled();
-  await expect(fileActions).toContainText("File actions are not available yet");
+  await expect(fileActions).toContainText(
+    "File priority changes are unavailable in demo scenarios.",
+  );
   await page.keyboard.press("Escape");
   await files.getByRole("row").nth(2).click({ modifiers: ["Shift"] });
   await expect(files).toHaveAttribute("aria-multiselectable", "true");

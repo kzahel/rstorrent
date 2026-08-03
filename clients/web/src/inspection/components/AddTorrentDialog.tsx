@@ -20,6 +20,7 @@ export interface AddTorrentDialogProps {
   readonly onConfirm: (
     rootId: string,
     dontShowAgain: boolean,
+    startContent: boolean,
   ) => Promise<void>;
 }
 
@@ -40,6 +41,7 @@ export function AddTorrentDialog({
     : availableRoots[0]?.id ?? null;
   const [selectedRoot, setSelectedRoot] = useState<string | null>(preferred);
   const [dontShowAgain, setDontShowAgain] = useState(false);
+  const [startContent, setStartContent] = useState(true);
   const [choosingRoot, setChoosingRoot] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -79,7 +81,7 @@ export function AddTorrentDialog({
     setPending(true);
     setError("");
     try {
-      await onConfirm(selectedRoot, dontShowAgain);
+      await onConfirm(selectedRoot, dontShowAgain, startContent);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
       setPending(false);
@@ -182,10 +184,21 @@ export function AddTorrentDialog({
           </button>
         </fieldset>
 
-        <section className={styles.files} aria-labelledby="add-files-heading">
-          <strong id="add-files-heading">Files</strong>
-          <span>All files will be downloaded.</span>
-          <small>File selection for magnet links will be added in a later step.</small>
+        <section className={styles.files}>
+          <label>
+            <input
+              type="checkbox"
+              checked={startContent}
+              disabled={busy}
+              onChange={(event) => setStartContent(event.currentTarget.checked)}
+            />
+            <span>
+              <strong>Start downloading files when metadata is available</strong>
+              <small>
+                Turn this off to fetch metadata first, then choose files in the Files tab.
+              </small>
+            </span>
+          </label>
         </section>
 
         <label className={styles.preference}>

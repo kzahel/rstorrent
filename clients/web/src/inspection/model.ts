@@ -426,6 +426,13 @@ export type InspectionCommand =
       readonly type: "add_magnet";
       readonly magnet: string;
       readonly storageRoot: string;
+      readonly startContent: boolean;
+    }
+  | {
+      readonly type: "set_file_priority";
+      readonly torrentId: string;
+      readonly fileIndices: readonly number[];
+      readonly priority: "normal" | "skip";
     }
   | { readonly type: "choose_download_root"; readonly repairRoot?: string }
   | { readonly type: "set_default_download_root"; readonly rootId: string }

@@ -171,6 +171,7 @@ export class LiveApplication implements InspectionApplication {
     }
     if (
       command.type !== "add_magnet" &&
+      command.type !== "set_file_priority" &&
       command.type !== "set_default_download_root" &&
       command.type !== "set_show_add_options" &&
       command.type !== "remove_download_root" &&
@@ -194,8 +195,16 @@ export class LiveApplication implements InspectionApplication {
               type: "add_magnet",
               magnet: command.magnet,
               storage_root: command.storageRoot,
+              start_content: command.startContent,
               skip_files: [],
             }
+          : command.type === "set_file_priority"
+            ? {
+                type: "set_file_priority",
+                torrent_id: command.torrentId,
+                file_indices: [...command.fileIndices].sort((left, right) => left - right),
+                priority: command.priority,
+              }
           : command.type === "set_default_download_root"
             ? {
                 type: "set_default_storage_root",
@@ -239,6 +248,10 @@ export class LiveApplication implements InspectionApplication {
       message:
         command.type === "add_magnet"
           ? "Torrent added"
+          : command.type === "set_file_priority"
+            ? command.priority === "skip"
+              ? "Selected files skipped"
+              : "Selected files set to normal"
           : command.type === "set_default_download_root"
             ? "Default download folder changed"
             : command.type === "set_show_add_options"

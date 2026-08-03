@@ -115,6 +115,7 @@ liveDescribe("authenticated polling gateway interop", () => {
           type: "add_magnet",
           magnet,
           storage_root: "downloads",
+          start_content: true,
           skip_files: [],
         },
       };

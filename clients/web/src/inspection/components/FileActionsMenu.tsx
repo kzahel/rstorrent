@@ -1,21 +1,29 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { Icon } from "./Icon";
 import styles from "./FileActionsMenu.module.css";
 
 export function FileActionsMenu({
   targetCount,
+  pending,
+  unavailableReason,
+  onPriority,
 }: {
   readonly targetCount: number;
+  readonly pending: boolean;
+  readonly unavailableReason?: string;
+  readonly onPriority: (priority: "normal" | "skip") => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const unavailableReason =
+  const reason =
     targetCount === 0
       ? "Select a file to use these actions."
-      : "File actions are not available yet.";
+      : unavailableReason;
+  const reasonId = useId();
+  const disabled = pending || reason !== undefined;
 
   const close = (restoreFocus: boolean) => {
     setOpen(false);
@@ -58,6 +66,7 @@ export function FileActionsMenu({
         aria-label="More file actions"
         aria-haspopup="menu"
         aria-expanded={open}
+        disabled={pending}
         onClick={() => setOpen((current) => !current)}
         onKeyDown={(event) => {
           if (event.key !== "ArrowDown") return;
@@ -73,16 +82,32 @@ export function FileActionsMenu({
           className={styles.menu}
           role="menu"
           aria-label="File actions"
-          aria-describedby="file-actions-unavailable"
+          aria-describedby={reason === undefined ? undefined : reasonId}
           tabIndex={-1}
         >
-          <button type="button" role="menuitem" disabled>
-            Download
+          <button
+            type="button"
+            role="menuitem"
+            disabled={disabled}
+            onClick={() => {
+              close(false);
+              void onPriority("normal");
+            }}
+          >
+            Normal
           </button>
-          <button type="button" role="menuitem" disabled>
-            Skip download
+          <button
+            type="button"
+            role="menuitem"
+            disabled={disabled}
+            onClick={() => {
+              close(false);
+              void onPriority("skip");
+            }}
+          >
+            Skip
           </button>
-          <p id="file-actions-unavailable">{unavailableReason}</p>
+          {reason === undefined ? null : <p id={reasonId}>{reason}</p>}
         </div>
       ) : null}
     </div>

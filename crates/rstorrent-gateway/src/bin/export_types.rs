@@ -13,8 +13,8 @@ use rstorrent_session::{
     DeliveryPolicy, DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
     DiagnosticProfile, DiagnosticRetention, DiagnosticSeverity, DiagnosticSubject, DiagnosticValue,
     DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
-    ErrorCode, ErrorResponse, FileCatalogState, FileSelectionView, FileView, IndexRange,
-    OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
+    ErrorCode, ErrorResponse, FileCatalogState, FilePriority, FileSelectionView, FileView,
+    IndexRange, OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
     PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerRequestPhase,
     PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
     ProgressDisposition, ProgressPhase, ProgressReason, RemovalDataPolicy, RemovalState,
@@ -64,6 +64,7 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
          // Do not edit by hand.\n\n",
     );
     append::<Command>(&mut declarations)?;
+    append::<FilePriority>(&mut declarations)?;
     append::<RemovalDataPolicy>(&mut declarations)?;
     append::<RemovalState>(&mut declarations)?;
     append::<ErrorCode>(&mut declarations)?;

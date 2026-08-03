@@ -25,6 +25,11 @@
   background: var(--surface-hover);
 }
 
+.trigger:disabled {
+  opacity: 0.58;
+  cursor: default;
+}
+
 .trigger:focus-visible,
 .menu:focus-visible {
   outline: 2px solid var(--focus);
@@ -64,6 +69,13 @@
   font: inherit;
   font-size: var(--ui-font-small);
   text-align: left;
+  cursor: pointer;
+}
+
+.menu button:not(:disabled):hover,
+.menu button:not(:disabled):focus-visible {
+  color: var(--text-primary);
+  background: var(--surface-hover);
 }
 
 .menu button:disabled {

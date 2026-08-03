@@ -281,11 +281,13 @@ describe("inspection application", () => {
       screen.getByRole("button", { name: "More file actions" }),
     );
     const fileActions = screen.getByRole("menu", { name: "File actions" });
-    expect(within(fileActions).getByRole("menuitem", { name: "Download" })).toBeDisabled();
+    expect(within(fileActions).getByRole("menuitem", { name: "Normal" })).toBeDisabled();
     expect(
-      within(fileActions).getByRole("menuitem", { name: "Skip download" }),
+      within(fileActions).getByRole("menuitem", { name: "Skip" }),
     ).toBeDisabled();
-    expect(fileActions).toHaveTextContent("File actions are not available yet.");
+    expect(fileActions).toHaveTextContent(
+      "File priority changes are unavailable in demo scenarios.",
+    );
     await user.keyboard("{Escape}");
 
     fireEvent.click(within(files).getAllByRole("row")[2]!, { shiftKey: true });
@@ -299,6 +301,51 @@ describe("inspection application", () => {
     await user.click(screen.getAllByRole("button", { name: "Columns" }).at(-1)!);
     await user.click(screen.getByRole("checkbox", { name: "Storage Path" }));
     expect(within(files).getByRole("columnheader", { name: /Storage Path/ })).toBeVisible();
+  });
+
+  it("sends Skip and Normal for the selected live torrent files", async () => {
+    const user = userEvent.setup();
+    const snapshot = buildScenarioSnapshot("file-progress", 24_000, false, 1);
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: { ...snapshot, demo: null },
+    });
+    const firstFileSet = snapshot.filesByTorrent[DEMO_PRIMARY_TORRENT_ID]!;
+    const firstFile = firstFileSet.order
+      .map((id) => firstFileSet.rows[id])
+      .find((row) => row?.padding === false)!;
+    renderApplication(application);
+
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(screen.getByRole("tab", { name: "Files" }));
+    const files = screen.getByRole("grid", { name: "Torrent files" });
+    await user.click(within(files).getAllByRole("row")[1]!);
+    await user.click(screen.getByRole("button", { name: "More file actions" }));
+    const skip = screen.getByRole("menuitem", { name: "Skip" });
+    expect(skip).toBeEnabled();
+    await user.click(skip);
+
+    await waitFor(() =>
+      expect(application.commands.at(-1)).toEqual({
+        type: "set_file_priority",
+        torrentId: DEMO_PRIMARY_TORRENT_ID,
+        fileIndices: [firstFile.index],
+        priority: "skip",
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "More file actions" }));
+    const normal = screen.getByRole("menuitem", { name: "Normal" });
+    expect(normal).toBeEnabled();
+    await user.click(normal);
+    await waitFor(() =>
+      expect(application.commands.at(-1)).toEqual({
+        type: "set_file_priority",
+        torrentId: DEMO_PRIMARY_TORRENT_ID,
+        fileIndices: [firstFile.index],
+        priority: "normal",
+      }),
+    );
   });
 
   it("materializes the global disk pipeline only on the Disk tab", async () => {
@@ -654,6 +701,11 @@ describe("inspection application", () => {
     await user.click(
       within(dialog).getByRole("checkbox", { name: /Don’t show these options again/ }),
     );
+    await user.click(
+      within(dialog).getByRole("checkbox", {
+        name: /Start downloading files when metadata is available/,
+      }),
+    );
     await user.click(within(dialog).getByRole("button", { name: "Add torrent" }));
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "Choose download options" })).not.toBeInTheDocument(),
@@ -661,7 +713,12 @@ describe("inspection application", () => {
     expect(draft).toHaveValue("");
     expect(application.commands).toEqual([
       { type: "choose_download_root" },
-      { type: "add_magnet", magnet, storageRoot: "root_1" },
+      {
+        type: "add_magnet",
+        magnet,
+        storageRoot: "root_1",
+        startContent: false,
+      },
       { type: "set_show_add_options", show: false },
     ]);
   });
@@ -696,6 +753,7 @@ describe("inspection application", () => {
         type: "add_magnet",
         magnet,
         storageRoot: "root_b",
+        startContent: true,
       }),
     );
     expect(application.commands).not.toContainEqual({
@@ -792,6 +850,7 @@ describe("inspection application", () => {
           type: "add_magnet",
           magnet: wiredSource.magnet,
           storageRoot: "root_a",
+          startContent: true,
         },
       ]);
     });

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { useInspectionStore } from "../context";
+import { useInspectionCommand, useInspectionStore } from "../context";
 import { formatDecimalBytes, formatDecimalProgress } from "../format";
 import type { FileRow, ViewMaterialization } from "../model";
 import { FileActionsMenu } from "./FileActionsMenu";
@@ -145,6 +145,10 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
   const [selectedFileIds, setSelectedFileIds] = useState<ReadonlySet<string>>(
     new Set(),
   );
+  const [priorityPending, setPriorityPending] = useState(false);
+  const [priorityStatus, setPriorityStatus] = useState("");
+  const execute = useInspectionCommand();
+  const demo = useInspectionStore((state) => state.demo);
   const fileSet = useInspectionStore((state) => state.filesByTorrent[torrentId]);
   const materialization = useInspectionStore((state) => state.viewStatus.files);
   const interfaceSize = useInspectionStore(
@@ -172,6 +176,8 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
     setSelectedFileId(null);
     setSelectionMode(false);
     setSelectedFileIds(new Set());
+    setPriorityPending(false);
+    setPriorityStatus("");
   }, [torrentId]);
 
   useEffect(() => {
@@ -214,6 +220,36 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
     : selectedFileId === null
       ? 0
       : 1;
+  const targetRows = useMemo(
+    () =>
+      rows
+        .filter((row) =>
+          selectionMode
+            ? selectedFileIds.has(row.id)
+            : row.id === selectedFileId,
+        )
+        .sort((left, right) => left.index - right.index),
+    [rows, selectedFileId, selectedFileIds, selectionMode],
+  );
+
+  const setPriority = async (priority: "normal" | "skip") => {
+    if (targetRows.length === 0 || priorityPending || demo !== null) return;
+    setPriorityPending(true);
+    setPriorityStatus("");
+    try {
+      const result = await execute({
+        type: "set_file_priority",
+        torrentId,
+        fileIndices: targetRows.map((row) => row.index),
+        priority,
+      });
+      setPriorityStatus(result.message);
+    } catch (error) {
+      setPriorityStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPriorityPending(false);
+    }
+  };
 
   return (
     <div className={styles.filePanel}>
@@ -226,7 +262,20 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
         >
           {fileSet?.filesystemContentBase ?? "Platform-managed storage"}
         </span>
-        <FileActionsMenu targetCount={targetCount} />
+        <output className={styles.commandStatus} aria-live="polite">
+          {priorityStatus}
+        </output>
+        <FileActionsMenu
+          targetCount={targetCount}
+          pending={priorityPending}
+          {...(demo === null
+            ? {}
+            : {
+                unavailableReason:
+                  "File priority changes are unavailable in demo scenarios.",
+              })}
+          onPriority={setPriority}
+        />
       </div>
       <VirtualTable
         tableId="files"
