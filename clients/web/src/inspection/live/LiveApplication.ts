@@ -600,18 +600,16 @@ function mapViewState(
       ? {}
       : { [desired.torrentId]: pieceSet };
   const rows = [...torrentRows.values()];
+  const speedDownloadRate = speed?.history.series.find(
+    (series) => series.metric === "payload_received",
+  )?.current_rate_bytes;
   return {
     revision: safeNumber(state.durableRevision),
     session: {
       connection,
-      downloadRate:
-        speed?.history.series.find((series) => series.metric === "payload_received") === undefined
-          ? rows.reduce((total, row) => total + row.downloadRate, 0)
-          : safeNumber(
-              speed.history.series.find(
-                (series) => series.metric === "payload_received",
-              )?.current_rate_bytes ?? "0",
-            ),
+      downloadRate: speedDownloadRate === null || speedDownloadRate === undefined
+        ? rows.reduce((total, row) => total + row.downloadRate, 0)
+        : safeNumber(speedDownloadRate),
       uploadRate: null,
       dhtNodes: null,
       knownPeers: null,

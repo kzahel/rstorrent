@@ -181,7 +181,7 @@ impl SpeedRange {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct SpeedSeriesView {
     pub metric: SpeedMetric,
-    pub current_rate_bytes: String,
+    pub current_rate_bytes: Option<String>,
     pub values: Vec<Option<String>>,
 }
 
@@ -198,7 +198,7 @@ pub struct SpeedMetricAvailability {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct SpeedCurrentRate {
     pub metric: SpeedMetric,
-    pub bytes: String,
+    pub bytes: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -274,6 +274,7 @@ const TIERS: [TierConfig; 7] = [
 struct Bucket {
     start_millis: u64,
     bytes: u64,
+    covered: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -310,16 +311,18 @@ impl TierHistory {
                 *slot = Some(Bucket {
                     start_millis,
                     bytes,
+                    covered: true,
                 });
             }
         }
     }
 
-    fn restore(&mut self, start_millis: u64, bytes: u64) {
+    fn restore(&mut self, start_millis: u64, bytes: u64, covered: bool) {
         let index = self.index(start_millis);
         self.buckets[index] = Some(Bucket {
             start_millis,
             bytes,
+            covered,
         });
         self.last_advanced_start = Some(
             self.last_advanced_start
@@ -345,6 +348,7 @@ impl TierHistory {
                 self.buckets[index] = Some(Bucket {
                     start_millis: start,
                     bytes: 0,
+                    covered: true,
                 });
             }
             let Some(next) = start.checked_add(self.config.bucket_millis) else {
@@ -363,6 +367,7 @@ impl TierHistory {
             self.buckets[index] = Some(Bucket {
                 start_millis: start,
                 bytes: 0,
+                covered: true,
             });
         }
         self.last_advanced_start = Some(start);
@@ -370,8 +375,12 @@ impl TierHistory {
 
     fn value(&self, start_millis: u64) -> Option<u64> {
         self.buckets[self.index(start_millis)]
-            .filter(|bucket| bucket.start_millis == start_millis)
+            .filter(|bucket| bucket.start_millis == start_millis && bucket.covered)
             .map(|bucket| bucket.bytes)
+    }
+
+    fn bucket(&self, start_millis: u64) -> Option<Bucket> {
+        self.buckets[self.index(start_millis)].filter(|bucket| bucket.start_millis == start_millis)
     }
 }
 
@@ -493,7 +502,9 @@ impl SessionRateHistory {
                     .collect();
                 Some(SpeedSeriesView {
                     metric: *metric,
-                    current_rate_bytes: self.current_rate(*metric, now_millis).to_string(),
+                    current_rate_bytes: self
+                        .current_rate(*metric, now_millis)
+                        .map(|bytes| bytes.to_string()),
                     values,
                 })
             })
@@ -515,7 +526,9 @@ impl SessionRateHistory {
                 .into_iter()
                 .map(|metric| SpeedCurrentRate {
                     metric,
-                    bytes: self.current_rate(metric, now_millis).to_string(),
+                    bytes: self
+                        .current_rate(metric, now_millis)
+                        .map(|bytes| bytes.to_string()),
                 })
                 .collect(),
             series,
@@ -523,16 +536,16 @@ impl SessionRateHistory {
         }
     }
 
-    fn current_rate(&self, metric: SpeedMetric, now_millis: u64) -> u64 {
+    fn current_rate(&self, metric: SpeedMetric, now_millis: u64) -> Option<u64> {
         let Some(tier) = self.tiers.get(&metric).and_then(|tiers| tiers.first()) else {
-            return 0;
+            return None;
         };
         let current_start = now_millis / 100 * 100;
         let complete = current_start.saturating_sub(100);
-        let total = (0..10_u64)
-            .filter_map(|offset| tier.value(complete.saturating_sub(offset * 100)))
-            .fold(0_u64, u64::saturating_add);
-        total
+        (0..10_u64).try_fold(0_u64, |total, offset| {
+            tier.value(complete.saturating_sub(offset * 100))
+                .map(|bytes| total.saturating_add(bytes))
+        })
     }
 
     fn restore(&mut self, row: PersistRow) {
@@ -545,7 +558,7 @@ impl SessionRateHistory {
         else {
             return;
         };
-        tier.restore(row.start_millis, row.bytes);
+        tier.restore(row.start_millis, row.bytes, row.complete);
     }
 
     pub(crate) fn drain_persistent_rows(
@@ -568,13 +581,13 @@ impl SessionRateHistory {
                 drained.push((metric, bucket_millis, start_millis));
                 continue;
             };
-            if let Some(bytes) = tier.value(start_millis) {
+            if let Some(bucket) = tier.bucket(start_millis) {
                 output.push(PersistRow {
                     bucket_millis,
                     start_millis,
                     metric,
-                    bytes,
-                    complete: start_millis < current,
+                    bytes: bucket.bytes,
+                    complete: start_millis < current && bucket.covered,
                 });
             }
             drained.push((metric, bucket_millis, start_millis));
@@ -1127,5 +1140,34 @@ mod tests {
         );
         assert!(rows.iter().all(|row| !row.complete));
         assert!(history.drain_persistent_rows(now, true).is_empty());
+    }
+
+    #[test]
+    fn restart_partial_bucket_and_short_current_window_remain_gaps() {
+        let now = 2_000_040_000;
+        let mut history = SessionRateHistory::new();
+        history.restore(PersistRow {
+            bucket_millis: 60_000,
+            start_millis: now - 60_000,
+            metric: SpeedMetric::PayloadReceived,
+            bytes: 4096,
+            complete: false,
+        });
+        history.resume_at(now);
+        let historical = history.view(SpeedRange::Hours24, &[SpeedMetric::PayloadReceived], now);
+        assert_eq!(historical.series[0].values.last(), Some(&None));
+
+        let early = history.view(
+            SpeedRange::Seconds30,
+            &[SpeedMetric::PayloadReceived],
+            now + 500,
+        );
+        assert_eq!(early.series[0].current_rate_bytes, None);
+        let covered = history.view(
+            SpeedRange::Seconds30,
+            &[SpeedMetric::PayloadReceived],
+            now + 1_000,
+        );
+        assert_eq!(covered.series[0].current_rate_bytes.as_deref(), Some("0"));
     }
 }

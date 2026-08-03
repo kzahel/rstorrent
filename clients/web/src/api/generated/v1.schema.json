@@ -2439,15 +2439,17 @@
     "SpeedCurrentRate": {
       "properties": {
         "bytes": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "metric": {
           "$ref": "#/$defs/SpeedMetric"
         }
       },
       "required": [
-        "metric",
-        "bytes"
+        "metric"
       ],
       "type": "object"
     },
@@ -2578,7 +2580,10 @@
     "SpeedSeriesView": {
       "properties": {
         "current_rate_bytes": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "metric": {
           "$ref": "#/$defs/SpeedMetric"
@@ -2595,7 +2600,6 @@
       },
       "required": [
         "metric",
-        "current_rate_bytes",
         "values"
       ],
       "type": "object"

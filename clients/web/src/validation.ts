@@ -699,7 +699,7 @@ function validateSpeedHistory(value: unknown): void {
   for (const item of current) {
     const rate = asRecord(item, "speed current rate");
     oneOf(rate.metric, "speed metric", SPEED_METRICS);
-    decimal(rate.bytes, "speed current rate bytes");
+    if (rate.bytes !== null) decimal(rate.bytes, "speed current rate bytes");
   }
   const series = array(history.series, "speed series");
   if (series.length === 0 || series.length > 8) {
@@ -712,7 +712,9 @@ function validateSpeedHistory(value: unknown): void {
     const metric = oneOf(row.metric, "speed metric", SPEED_METRICS);
     if (selected.has(metric)) throw new ContractError("speed series are duplicated");
     selected.add(metric);
-    decimal(row.current_rate_bytes, "speed current rate");
+    if (row.current_rate_bytes !== null) {
+      decimal(row.current_rate_bytes, "speed current rate");
+    }
     const values = array(row.values, "speed values");
     bucketCount ??= values.length;
     if (values.length !== bucketCount || values.length > 2_880) {

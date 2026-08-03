@@ -449,7 +449,9 @@ function materializeDemoSpeed(
   const sourceComplete = numberOrZero(source.complete_through_millis);
   const completeThrough = Math.floor(sourceComplete / config.bucketMillis) * config.bucketMillis;
   const start = completeThrough - (config.count - 1) * config.bucketMillis;
-  const current = new Map(source.current.map((entry) => [entry.metric, numberOrZero(entry.bytes)]));
+  const current = new Map(
+    source.current.map((entry) => [entry.metric, numberOrZero(entry.bytes ?? "0")]),
+  );
   const received = current.get("payload_received") ?? 0;
   return {
     ...source,

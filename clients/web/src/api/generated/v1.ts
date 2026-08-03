@@ -91,11 +91,11 @@ export type SpeedRange = "seconds30" | "minutes2" | "minutes10" | "hour1" | "hou
 
 export type SpeedPersistenceState = "healthy" | "degraded";
 
-export type SpeedSeriesView = { metric: SpeedMetric, current_rate_bytes: string, values: Array<string | null>, };
+export type SpeedSeriesView = { metric: SpeedMetric, current_rate_bytes: string | null, values: Array<string | null>, };
 
 export type SpeedMetricAvailability = { metric: SpeedMetric, available: boolean, reason?: string | null, };
 
-export type SpeedCurrentRate = { metric: SpeedMetric, bytes: string, };
+export type SpeedCurrentRate = { metric: SpeedMetric, bytes: string | null, };
 
 export type SpeedHistoryView = { captured_millis: string, history_epoch: string, range: SpeedRange, bucket_millis: string, start_millis: string, complete_through_millis: string, live: boolean, persistence: SpeedPersistenceState, current: Array<SpeedCurrentRate>, series: Array<SpeedSeriesView>, catalog: Array<SpeedMetricAvailability>, };
 

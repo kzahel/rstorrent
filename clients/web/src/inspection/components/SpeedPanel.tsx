@@ -67,7 +67,10 @@ export function SpeedPanel() {
   const setRange = useInspectionStore((state) => state.setSpeedRange);
   const toggleMetric = useInspectionStore((state) => state.toggleSpeedMetric);
   const current = useMemo(
-    () => new Map(history?.current.map((entry) => [entry.metric, number(entry.bytes)])),
+    () => new Map(history?.current.map((entry) => [
+      entry.metric,
+      entry.bytes === null ? null : number(entry.bytes),
+    ])),
     [history],
   );
 
@@ -97,7 +100,7 @@ export function SpeedPanel() {
             <span style={{ "--series-color": COLORS[metric] } as React.CSSProperties}>
               {METRIC_LABELS[metric]}
             </span>
-            <strong>{speedRate(current.get(metric) ?? 0)}</strong>
+            <strong>{nullableSpeedRate(current.get(metric))}</strong>
           </div>
         ))}
       </div>
@@ -418,7 +421,11 @@ function WindowSummaries({ history }: { history: SpeedHistoryView }) {
                 <small>{covered.length}/{series.values.length} covered</small>
               )}
             </strong>
-            <span data-label="Current">{speedRate(number(series.current_rate_bytes))}</span>
+            <span data-label="Current">
+              {nullableSpeedRate(
+                series.current_rate_bytes === null ? null : number(series.current_rate_bytes),
+              )}
+            </span>
             <span data-label="Average">{speedRate(average)}</span>
             <span data-label="Peak">{speedRate(peak)}</span>
             <span data-label="Total">{formatDecimalBytes(total.toString())}</span>
@@ -434,7 +441,7 @@ function TrafficBreakdown({
   current,
 }: {
   history: SpeedHistoryView;
-  current: ReadonlyMap<SpeedMetric, number>;
+  current: ReadonlyMap<SpeedMetric, number | null>;
 }) {
   const rows: readonly [string, SpeedMetric, SpeedMetric][] = [
     ["Peer wire", "peer_wire_received", "peer_wire_sent"],
@@ -451,17 +458,17 @@ function TrafficBreakdown({
         {rows.map(([label, incoming, outgoing]) => (
           <div className={styles.breakdownRow} key={label}>
             <strong>{label}</strong>
-            <span>{speedRate(current.get(incoming) ?? 0)}</span>
-            <span>{speedRate(current.get(outgoing) ?? 0)}</span>
+            <span>{nullableSpeedRate(current.get(incoming))}</span>
+            <span>{nullableSpeedRate(current.get(outgoing))}</span>
           </div>
         ))}
         <div className={styles.breakdownRow}>
-          <strong>Hash read</strong><span>{speedRate(current.get("logical_hash_read") ?? 0)}</span><span>—</span>
+          <strong>Hash read</strong><span>{nullableSpeedRate(current.get("logical_hash_read"))}</span><span>—</span>
         </div>
         <div className={styles.breakdownRow}>
           <strong>Redundant / failed</strong>
-          <span>{speedRate(current.get("payload_redundant") ?? 0)}</span>
-          <span>{speedRate(current.get("payload_hash_failed") ?? 0)}</span>
+          <span>{nullableSpeedRate(current.get("payload_redundant"))}</span>
+          <span>{nullableSpeedRate(current.get("payload_hash_failed"))}</span>
         </div>
       </div>
       {history.catalog.find((entry) => entry.metric === "payload_uploaded")?.available === false ? (
@@ -487,6 +494,10 @@ function sampleLabel(value: string | null | undefined, bucketMillis: number): st
 
 function speedRate(value: number): string {
   return `${formatBytes(Math.max(0, value))}/s`;
+}
+
+function nullableSpeedRate(value: number | null | undefined): string {
+  return value === null || value === undefined ? "—" : speedRate(value);
 }
 
 function niceMaximum(value: number): number {
