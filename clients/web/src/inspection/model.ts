@@ -59,6 +59,19 @@ export interface SessionSummary {
   readonly knownPeers: number | null;
 }
 
+export interface DownloadRoot {
+  readonly id: string;
+  readonly label: string;
+  readonly path: string | null;
+  readonly availability: "available" | "unavailable";
+}
+
+export interface DownloadStorageSettings {
+  readonly roots: readonly DownloadRoot[];
+  readonly defaultRoot: string | null;
+  readonly showAddOptions: boolean;
+}
+
 export type ViewMaterialization =
   | { readonly status: "not_requested" }
   | { readonly status: "loading" }
@@ -353,6 +366,7 @@ export interface InspectionSnapshot {
   readonly revision: number;
   readonly session: SessionSummary;
   readonly demo: DemoState | null;
+  readonly storage: DownloadStorageSettings;
   readonly torrentOrder: readonly string[];
   readonly torrents: Readonly<Record<string, TorrentRow>>;
   readonly peersByTorrent: Readonly<Record<string, PeerSet>>;
@@ -377,6 +391,7 @@ export type InspectionUpdate =
       readonly revision: number;
       readonly session?: SessionSummary;
       readonly demo?: DemoState;
+      readonly storage?: DownloadStorageSettings;
       readonly torrents?: KeyedPatch<TorrentRow> & {
         readonly order?: readonly string[];
       };
@@ -407,7 +422,15 @@ export type InspectionUpdate =
     };
 
 export type InspectionCommand =
-  | { readonly type: "add_magnet"; readonly magnet: string }
+  | {
+      readonly type: "add_magnet";
+      readonly magnet: string;
+      readonly storageRoot: string;
+    }
+  | { readonly type: "choose_download_root"; readonly repairRoot?: string }
+  | { readonly type: "set_default_download_root"; readonly rootId: string }
+  | { readonly type: "set_show_add_options"; readonly show: boolean }
+  | { readonly type: "remove_download_root"; readonly rootId: string }
   | { readonly type: "pause"; readonly torrentId: string }
   | { readonly type: "resume"; readonly torrentId: string }
   | { readonly type: "archive"; readonly torrentId: string }
@@ -447,4 +470,5 @@ export interface DemoScenarioSummary {
 export interface CommandResult {
   readonly accepted: boolean;
   readonly message: string;
+  readonly storageRoot?: DownloadRoot | null;
 }

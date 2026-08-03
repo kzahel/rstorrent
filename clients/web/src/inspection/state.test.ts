@@ -218,6 +218,7 @@ function snapshot(rows: readonly TorrentRow[]): InspectionSnapshot {
       knownPeers: 0,
     },
     demo: null,
+    storage: { roots: [], defaultRoot: null, showAddOptions: true },
     torrentOrder: rows.map((item) => item.id),
     torrents: Object.fromEntries(rows.map((item) => [item.id, item])),
     peersByTorrent: {},

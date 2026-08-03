@@ -1,0 +1,206 @@
+.backdrop {
+  position: fixed;
+  z-index: 140;
+  display: grid;
+  inset: 0;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(9 20 33 / 52%);
+}
+
+.dialog {
+  overflow: auto;
+  width: min(35rem, 100%);
+  max-height: min(44rem, calc(100vh - 2rem));
+  border: 1px solid var(--border-strong);
+  border-radius: 0.75rem;
+  padding: 1.2rem;
+  color: var(--text-primary);
+  background: var(--surface-primary);
+  box-shadow: 0 1.2rem 3rem rgb(8 20 34 / 35%);
+}
+
+.dialog header p,
+.dialog header h2 {
+  margin: 0;
+}
+
+.dialog header p {
+  margin-bottom: 0.15rem;
+  color: var(--text-muted);
+  font-size: var(--ui-font-caption);
+  font-weight: 750;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.dialog header h2 {
+  font-size: var(--ui-font-heading);
+}
+
+.description,
+.empty {
+  color: var(--text-secondary);
+  font-size: var(--ui-font-small);
+  line-height: 1.5;
+}
+
+.locations {
+  min-width: 0;
+  margin: 1.1rem 0 0;
+  border: 0;
+  padding: 0;
+}
+
+.locations legend {
+  margin-bottom: 0.55rem;
+  font-size: var(--ui-font-body);
+  font-weight: 750;
+}
+
+.location {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 0.55rem;
+  padding: 0.65rem 0.75rem;
+}
+
+.location + .location {
+  margin-top: 0.4rem;
+}
+
+.location:has(input:checked) {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--border-strong));
+  background: var(--selection);
+}
+
+.location[data-availability="unavailable"] {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border-soft));
+}
+
+.location label {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.6rem;
+  cursor: pointer;
+}
+
+.location label > span {
+  display: grid;
+  min-width: 0;
+  gap: 0.12rem;
+}
+
+.location small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--ui-font-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.location button,
+.choose,
+.actions button {
+  min-height: var(--ui-control-height);
+  border: 1px solid var(--border-strong);
+  border-radius: 0.42rem;
+  padding: 0 0.75rem;
+  color: var(--text-primary);
+  background: var(--surface-secondary);
+  font: inherit;
+  font-size: var(--ui-font-small);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.choose {
+  margin-top: 0.65rem;
+}
+
+.defaultBadge {
+  border-radius: 999px;
+  padding: 0.2rem 0.48rem;
+  color: var(--accent-strong);
+  background: var(--selection);
+  font-size: var(--ui-font-caption);
+  font-weight: 750;
+}
+
+.files {
+  display: grid;
+  gap: 0.18rem;
+  margin-top: 1.15rem;
+  border-block: 1px solid var(--border-soft);
+  padding: 0.8rem 0;
+  font-size: var(--ui-font-small);
+}
+
+.files span,
+.files small {
+  color: var(--text-muted);
+}
+
+.preference {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin-top: 0.9rem;
+  font-size: var(--ui-font-small);
+  line-height: 1.4;
+}
+
+.preference input,
+.location input {
+  accent-color: var(--accent);
+}
+
+.error {
+  border-left: 3px solid var(--danger);
+  padding: 0.5rem 0.65rem;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  font-size: var(--ui-font-small);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.actions .confirm {
+  border-color: var(--accent-action);
+  color: #fff;
+  background: var(--accent-action);
+}
+
+.dialog button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.dialog button:focus-visible,
+.dialog input:focus-visible {
+  outline: 2px solid var(--focus);
+}
+
+@media (max-width: 520px) {
+  .backdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .dialog {
+    width: 100%;
+    max-height: 94vh;
+    border-radius: 0.75rem 0.75rem 0 0;
+  }
+}

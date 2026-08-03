@@ -5,6 +5,8 @@ import type {
   PeerSourceView,
   PeerView,
   RequestEnvelope,
+  StorageRootSnapshot,
+  StorageSettingsSnapshot,
   TorrentState,
   TorrentView,
   TrackerView,
@@ -20,6 +22,8 @@ import type {
   DesiredInspectionViews,
   DiskPieceRow,
   DiskSet,
+  DownloadRoot,
+  DownloadStorageSettings,
   InspectionCommand,
   InspectionSnapshot,
   InspectionUpdate,
@@ -129,8 +133,47 @@ export class LiveApplication implements InspectionApplication {
 
   async dispatch(command: InspectionCommand): Promise<CommandResult> {
     this.ensureOpen();
+    if (command.type === "choose_download_root") {
+      try {
+        const root = await this.client.chooseDownloadRoot({
+          ...(command.repairRoot === undefined
+            ? {}
+            : { repair_root: command.repairRoot }),
+        });
+        if (root === null) {
+          return {
+            accepted: true,
+            message: "Folder selection canceled",
+            storageRoot: null,
+          };
+        }
+        const mapped = mapStorageRoot(root);
+        const roots = this.snapshot.storage.roots.filter(
+          (candidate) => candidate.id !== mapped.id,
+        );
+        this.snapshot = {
+          ...this.snapshot,
+          storage: {
+            ...this.snapshot.storage,
+            roots: [...roots, mapped],
+            defaultRoot: this.snapshot.storage.defaultRoot ?? mapped.id,
+          },
+        };
+        this.emit({ type: "snapshot", snapshot: this.snapshot });
+        return {
+          accepted: true,
+          message: `Download folder ${mapped.label} is ready`,
+          storageRoot: mapped,
+        };
+      } catch (error) {
+        return { accepted: false, message: asError(error).message };
+      }
+    }
     if (
       command.type !== "add_magnet" &&
+      command.type !== "set_default_download_root" &&
+      command.type !== "set_show_add_options" &&
+      command.type !== "remove_download_root" &&
       command.type !== "pause" &&
       command.type !== "resume" &&
       command.type !== "archive" &&
@@ -150,19 +193,34 @@ export class LiveApplication implements InspectionApplication {
           ? {
               type: "add_magnet",
               magnet: command.magnet,
-              storage_root: "downloads",
+              storage_root: command.storageRoot,
               skip_files: [],
             }
-          : command.type === "remove"
+          : command.type === "set_default_download_root"
             ? {
-                type: "remove_torrent",
-                torrent_id: command.torrentId,
-                data: command.deleteData ? "delete_managed" : "keep",
+                type: "set_default_storage_root",
+                storage_root: command.rootId,
               }
-            : {
-              type: command.type === "unarchive" ? "restore_archive" : command.type,
-              torrent_id: command.torrentId,
-            },
+            : command.type === "set_show_add_options"
+              ? { type: "set_show_add_options", show: command.show }
+              : command.type === "remove_download_root"
+                ? {
+                    type: "remove_storage_root",
+                    storage_root: command.rootId,
+                  }
+                : command.type === "remove"
+                  ? {
+                      type: "remove_torrent",
+                      torrent_id: command.torrentId,
+                      data: command.deleteData ? "delete_managed" : "keep",
+                    }
+                  : {
+                      type:
+                        command.type === "unarchive"
+                          ? "restore_archive"
+                          : command.type,
+                      torrent_id: command.torrentId,
+                    },
     };
     const response = await this.controller?.dispatch(request);
     if (response === undefined) {
@@ -171,20 +229,33 @@ export class LiveApplication implements InspectionApplication {
     if (response.status === "error") {
       return { accepted: false, message: response.error.message };
     }
+    this.snapshot = {
+      ...this.snapshot,
+      storage: mapStorage(response.snapshot.storage),
+    };
+    this.emit({ type: "snapshot", snapshot: this.snapshot });
     return {
       accepted: true,
       message:
         command.type === "add_magnet"
           ? "Torrent added"
-          : command.type === "pause"
-            ? "Torrent paused"
-            : command.type === "resume"
-              ? "Torrent resumed"
-              : command.type === "archive"
-                ? "Torrent archived"
-                : command.type === "unarchive"
-                  ? "Torrent restored"
-                  : "Torrent removal started",
+          : command.type === "set_default_download_root"
+            ? "Default download folder changed"
+            : command.type === "set_show_add_options"
+              ? command.show
+                ? "Add options will be shown"
+                : "Add options will be skipped when a default is available"
+              : command.type === "remove_download_root"
+                ? "Download folder removed"
+                : command.type === "pause"
+                  ? "Torrent paused"
+                  : command.type === "resume"
+                    ? "Torrent resumed"
+                    : command.type === "archive"
+                      ? "Torrent archived"
+                      : command.type === "unarchive"
+                        ? "Torrent restored"
+                        : "Torrent removal started",
     };
   }
 
@@ -233,6 +304,7 @@ export class LiveApplication implements InspectionApplication {
       "connected",
       fileSet,
       pieceSet,
+      this.snapshot.storage,
     );
     this.emit({ type: "snapshot", snapshot: this.snapshot });
   }
@@ -418,6 +490,7 @@ function mapViewState(
   connection: "connected" | "reconnecting" | "offline",
   fileSet: FileSet | null,
   pieceSet: PieceMapSet | null,
+  previousStorage: DownloadStorageSettings,
 ): InspectionSnapshot {
   const library = projection(state, LIBRARY_VIEW_ID, "torrent_list");
   const summary = projection(state, SUMMARY_VIEW_ID, "torrent");
@@ -480,6 +553,7 @@ function mapViewState(
       knownPeers: null,
     },
     demo: null,
+    storage: library === null ? previousStorage : mapStorage(library.storage),
     torrentOrder,
     torrents,
     peersByTorrent,
@@ -679,6 +753,23 @@ function mapTorrent(torrent: TorrentView): TorrentRow {
     infoHash: torrent.torrent_id,
     error: torrent.error ?? null,
     progressReason: torrent.progress.reason.replaceAll("_", " "),
+  };
+}
+
+function mapStorage(settings: StorageSettingsSnapshot): DownloadStorageSettings {
+  return {
+    roots: settings.roots.map(mapStorageRoot),
+    defaultRoot: settings.default_root ?? null,
+    showAddOptions: settings.show_add_options,
+  };
+}
+
+function mapStorageRoot(root: StorageRootSnapshot): DownloadRoot {
+  return {
+    id: root.root_id,
+    label: root.label,
+    path: root.display_path ?? null,
+    availability: root.availability,
   };
 }
 
@@ -1074,6 +1165,7 @@ function emptyLiveSnapshot(
       knownPeers: null,
     },
     demo: null,
+    storage: { roots: [], defaultRoot: null, showAddOptions: true },
     torrentOrder: [],
     torrents: {},
     peersByTorrent: {},

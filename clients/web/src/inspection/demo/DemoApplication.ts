@@ -153,6 +153,11 @@ export class DemoApplication implements InspectionApplication {
         return accepted("Generated demo transfer added");
       case "add_magnet":
         return rejected("Live magnet add is unavailable in demo scenarios");
+      case "choose_download_root":
+      case "set_default_download_root":
+      case "set_show_add_options":
+      case "remove_download_root":
+        return rejected("Download folder management is unavailable in demo scenarios");
     }
   }
 

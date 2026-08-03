@@ -21,6 +21,7 @@ import {
 } from "../demo/catalog";
 import type {
   CommandResult,
+  DownloadStorageSettings,
   DesiredInspectionViews,
   InspectionCommand,
   InspectionUpdate,
@@ -617,9 +618,147 @@ describe("inspection application", () => {
     );
   });
 
-  it("dispatches an exact test magnet through the keyboard submenu", async () => {
+  it("requires a folder on first add and retains the magnet across cancellation", async () => {
     const user = userEvent.setup();
     const application = new RecordingLiveApplication();
+    renderApplication(application);
+    const draft = screen.getByRole("textbox", {
+      name: "Magnet link or torrent URL",
+    });
+    const magnet =
+      "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213";
+    await user.type(draft, magnet);
+    await user.click(screen.getByRole("button", { name: "Add" }));
+
+    let dialog = screen.getByRole("dialog", { name: "Choose download options" });
+    expect(within(dialog).getByText(/download folder is required/i)).toBeVisible();
+    expect(within(dialog).getByRole("button", { name: "Add torrent" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    expect(draft).toHaveValue(magnet);
+
+    await user.click(within(dialog).getByRole("button", { name: "Choose folder…" }));
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("radio", { name: /Selected Downloads/ }),
+      ).toBeChecked(),
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Choose download options" })).not.toBeInTheDocument();
+    expect(draft).toHaveValue(magnet);
+    expect(
+      application.commands.filter((command) => command.type === "add_magnet"),
+    ).toEqual([]);
+
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    dialog = screen.getByRole("dialog", { name: "Choose download options" });
+    await user.click(
+      within(dialog).getByRole("checkbox", { name: /Don’t show these options again/ }),
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Add torrent" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Choose download options" })).not.toBeInTheDocument(),
+    );
+    expect(draft).toHaveValue("");
+    expect(application.commands).toEqual([
+      { type: "choose_download_root" },
+      { type: "add_magnet", magnet, storageRoot: "root_1" },
+      { type: "set_show_add_options", show: false },
+    ]);
+  });
+
+  it("uses an alternate root for one add without changing the default", async () => {
+    const user = userEvent.setup();
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: liveSnapshot({
+        roots: [
+          downloadRoot("root_a", "Default Downloads"),
+          downloadRoot("root_b", "External Drive"),
+        ],
+        defaultRoot: "root_a",
+        showAddOptions: true,
+      }),
+    });
+    renderApplication(application);
+    const magnet =
+      "magnet:?xt=urn:btih:111102030405060708090a0b0c0d0e0f10111213";
+    await user.type(
+      screen.getByRole("textbox", { name: "Magnet link or torrent URL" }),
+      magnet,
+    );
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    const dialog = screen.getByRole("dialog", { name: "Choose download options" });
+    expect(within(dialog).getByRole("radio", { name: /Default Downloads/ })).toBeChecked();
+    await user.click(within(dialog).getByRole("radio", { name: /External Drive/ }));
+    await user.click(within(dialog).getByRole("button", { name: "Add torrent" }));
+    await waitFor(() =>
+      expect(application.commands).toContainEqual({
+        type: "add_magnet",
+        magnet,
+        storageRoot: "root_b",
+      }),
+    );
+    expect(application.commands).not.toContainEqual({
+      type: "set_default_download_root",
+      rootId: "root_b",
+    });
+  });
+
+  it("manages download roots and the add-options preference in Settings", async () => {
+    const user = userEvent.setup();
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: liveSnapshot({
+        roots: [
+          downloadRoot("root_a", "Downloads"),
+          downloadRoot("root_missing", "Missing Drive", "unavailable"),
+        ],
+        defaultRoot: "root_a",
+        showAddOptions: true,
+      }),
+    });
+    renderApplication(application);
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const dialog = screen.getByRole("dialog", { name: "Settings" });
+    expect(within(dialog).getByText("Default download folder")).toBeVisible();
+    expect(
+      within(dialog).getByRole("checkbox", {
+        name: /Show options when adding torrents/,
+      }),
+    ).toBeChecked();
+
+    await user.click(within(dialog).getByRole("button", { name: "Repair…" }));
+    await waitFor(() =>
+      expect(application.commands).toContainEqual({
+        type: "choose_download_root",
+        repairRoot: "root_missing",
+      }),
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Make default" }));
+    await user.click(
+      within(dialog).getByRole("checkbox", {
+        name: /Show options when adding torrents/,
+      }),
+    );
+    await waitFor(() =>
+      expect(application.commands).toContainEqual({
+        type: "set_show_add_options",
+        show: false,
+      }),
+    );
+    expect(within(dialog).getByText(/future torrents only/i)).toBeVisible();
+  });
+
+  it("dispatches an exact test magnet through the keyboard submenu", async () => {
+    const user = userEvent.setup();
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: liveSnapshot({
+        roots: [downloadRoot("root_a", "Downloads")],
+        defaultRoot: "root_a",
+        showAddOptions: false,
+      }),
+    });
     renderApplication(application);
     const draft = screen.getByRole("textbox", {
       name: "Magnet link or torrent URL",
@@ -649,11 +788,15 @@ describe("inspection application", () => {
     const wiredSource = WEBTORRENT_TEST_TORRENTS.at(-1)!;
     await waitFor(() => {
       expect(application.commands).toEqual([
-        { type: "add_magnet", magnet: wiredSource.magnet },
+        {
+          type: "add_magnet",
+          magnet: wiredSource.magnet,
+          storageRoot: "root_a",
+        },
       ]);
     });
     expect(draft).toHaveValue("unfinished draft");
-    expect(screen.getByText("WIRED CD added", { exact: true })).toBeVisible();
+    expect(screen.getByText("Torrent added", { exact: true })).toBeVisible();
     expect(screen.queryByRole("menu", { name: "More actions" })).not.toBeInTheDocument();
     await waitFor(() => expect(more).toHaveFocus());
 
@@ -712,17 +855,28 @@ class RecordingLiveApplication implements InspectionApplication {
   readonly scenarios = [];
   readonly commands: InspectionCommand[] = [];
   readonly views: DesiredInspectionViews[] = [];
+  private listener: ((update: InspectionUpdate) => void) | null = null;
+  private storage: DownloadStorageSettings;
 
   constructor(
     private readonly initialSnapshot?: InspectionUpdate & {
       readonly type: "snapshot";
     },
     private readonly rejectTorrentId?: string,
-  ) {}
+  ) {
+    this.storage = initialSnapshot?.snapshot.storage ?? {
+      roots: [],
+      defaultRoot: null,
+      showAddOptions: true,
+    };
+  }
 
   subscribe(listener: (update: InspectionUpdate) => void): () => void {
+    this.listener = listener;
     if (this.initialSnapshot !== undefined) listener(this.initialSnapshot);
-    return () => {};
+    return () => {
+      this.listener = null;
+    };
   }
 
   async setViews(views: DesiredInspectionViews): Promise<void> {
@@ -737,8 +891,79 @@ class RecordingLiveApplication implements InspectionApplication {
     ) {
       throw new Error("rejected for test");
     }
+    if (command.type === "choose_download_root") {
+      const root = downloadRoot(
+        command.repairRoot ?? `root_${this.storage.roots.length + 1}`,
+        command.repairRoot === undefined ? "Selected Downloads" : "Repaired Downloads",
+      );
+      this.storage = {
+        ...this.storage,
+        roots: [
+          ...this.storage.roots.filter((candidate) => candidate.id !== root.id),
+          root,
+        ],
+        defaultRoot: this.storage.defaultRoot ?? root.id,
+      };
+      this.emitStorage();
+      return {
+        accepted: true,
+        message: "Download folder ready",
+        storageRoot: root,
+      };
+    }
+    if (command.type === "set_default_download_root") {
+      this.storage = { ...this.storage, defaultRoot: command.rootId };
+      this.emitStorage();
+      return { accepted: true, message: "Default changed" };
+    }
+    if (command.type === "set_show_add_options") {
+      this.storage = { ...this.storage, showAddOptions: command.show };
+      this.emitStorage();
+      return { accepted: true, message: "Preference changed" };
+    }
+    if (command.type === "remove_download_root") {
+      this.storage = {
+        ...this.storage,
+        roots: this.storage.roots.filter((root) => root.id !== command.rootId),
+        defaultRoot:
+          this.storage.defaultRoot === command.rootId
+            ? null
+            : this.storage.defaultRoot,
+      };
+      this.emitStorage();
+      return { accepted: true, message: "Folder removed" };
+    }
     return { accepted: true, message: "Torrent added" };
   }
 
+  private emitStorage(): void {
+    this.listener?.({
+      type: "patch",
+      revision: 2,
+      storage: this.storage,
+    });
+  }
+
   async close(): Promise<void> {}
+}
+
+function downloadRoot(
+  id: string,
+  label: string,
+  availability: "available" | "unavailable" = "available",
+) {
+  return {
+    id,
+    label,
+    path: `/Users/test/${label}`,
+    availability,
+  } as const;
+}
+
+function liveSnapshot(storage: DownloadStorageSettings) {
+  return {
+    ...buildScenarioSnapshot("empty-library", 0, false, 1),
+    demo: null,
+    storage,
+  };
 }

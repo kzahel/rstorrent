@@ -9,7 +9,7 @@ import {
 } from "react";
 
 import { applyColorTheme } from "../appearance";
-import { useInspectionStore } from "../context";
+import { useInspectionCommand, useInspectionStore } from "../context";
 import { formatRate } from "../format";
 import type { ApplicationDestination } from "../model";
 import {
@@ -39,6 +39,9 @@ const DESTINATIONS: readonly {
 
 export function App() {
   const session = useInspectionStore((state) => state.session);
+  const demo = useInspectionStore((state) => state.demo);
+  const storage = useInspectionStore((state) => state.storage);
+  const execute = useInspectionCommand();
   const destination = useInspectionStore(
     (state) => state.presentation.destination,
   );
@@ -281,9 +284,27 @@ export function App() {
         <SettingsDialog
           colorTheme={colorTheme}
           interfaceSize={interfaceSize}
+          storage={storage}
+          downloadsManageable={demo === null}
           returnFocus={settingsButtonRef}
           onColorThemeChange={setColorTheme}
           onInterfaceSizeChange={setInterfaceSize}
+          onChooseFolder={async (repairRoot) => {
+            const result = await execute({
+              type: "choose_download_root",
+              ...(repairRoot === undefined ? {} : { repairRoot }),
+            });
+            return result.storageRoot ?? null;
+          }}
+          onDefaultRootChange={async (rootId) => {
+            await execute({ type: "set_default_download_root", rootId });
+          }}
+          onShowAddOptionsChange={async (show) => {
+            await execute({ type: "set_show_add_options", show });
+          }}
+          onRemoveRoot={async (rootId) => {
+            await execute({ type: "remove_download_root", rootId });
+          }}
           onClose={() => setSettingsOpen(false)}
         />
       ) : null}

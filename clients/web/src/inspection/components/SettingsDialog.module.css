@@ -80,6 +80,10 @@
   padding: 0;
 }
 
+.downloads {
+  margin-top: calc(var(--ui-space-lg) * 1.25);
+}
+
 .section legend {
   width: 100%;
   border-bottom: 1px solid var(--border-soft);
@@ -158,6 +162,105 @@
   color: var(--text-secondary);
   font-size: var(--ui-font-small);
   line-height: 1.35;
+}
+
+.rootList {
+  display: grid;
+  gap: var(--ui-space-xs);
+}
+
+.root {
+  display: grid;
+  gap: var(--ui-space-sm);
+  border: 1px solid var(--border-soft);
+  border-radius: 0.55rem;
+  padding: var(--ui-space-sm) var(--ui-space-md);
+}
+
+.root[data-availability="unavailable"] {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--border-soft));
+}
+
+.root > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 0.14rem;
+}
+
+.root span {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--ui-font-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.root small,
+.preference small {
+  color: var(--text-muted);
+  font-size: var(--ui-font-caption);
+}
+
+.rootActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-space-xs);
+}
+
+.rootActions button,
+.addFolder {
+  min-height: var(--ui-control-height);
+  border: 1px solid var(--border-strong);
+  border-radius: 0.42rem;
+  padding: 0 var(--ui-space-sm);
+  color: var(--text-primary);
+  background: var(--surface-secondary);
+  font: inherit;
+  font-size: var(--ui-font-small);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.rootActions button:disabled,
+.addFolder:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.addFolder {
+  margin-top: var(--ui-space-sm);
+}
+
+.preference {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--ui-space-sm);
+  margin-top: var(--ui-space-lg);
+}
+
+.preference input {
+  inline-size: 1rem;
+  block-size: 1rem;
+  margin: 0.15rem 0 0;
+  accent-color: var(--accent);
+}
+
+.preference > span {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.storageNote,
+.storageStatus {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--ui-font-small);
+  line-height: 1.45;
+}
+
+.storageStatus {
+  margin-top: var(--ui-space-sm);
 }
 
 @media (max-width: 520px) {

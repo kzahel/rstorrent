@@ -151,6 +151,7 @@ export function buildScenarioSnapshot(
       running,
       durationMs: scenario.durationMs,
     },
+    storage: { roots: [], defaultRoot: null, showAddOptions: true },
     torrentOrder: content.torrents.map((torrent) => torrent.id),
     torrents,
     peersByTorrent,

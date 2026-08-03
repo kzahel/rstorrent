@@ -136,13 +136,17 @@ describe("LiveApplication", () => {
       "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213";
 
     await expect(
-      application.dispatch({ type: "add_magnet", magnet }),
+      application.dispatch({
+        type: "add_magnet",
+        magnet,
+        storageRoot: "root_a",
+      }),
     ).resolves.toEqual({ accepted: true, message: "Torrent added" });
     expect(client.requests).toHaveLength(1);
     expect(client.requests[0]?.command).toEqual({
       type: "add_magnet",
       magnet,
-      storage_root: "downloads",
+      storage_root: "root_a",
       skip_files: [],
     });
     await application.close();
