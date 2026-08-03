@@ -10,12 +10,15 @@ const torrentId = process.env.RSTORRENT_LIVE_TORRENT_ID;
 const torrentName = process.env.RSTORRENT_LIVE_TORRENT_NAME;
 const fileCount = process.env.RSTORRENT_LIVE_FILE_COUNT;
 const trackerUrl = process.env.RSTORRENT_LIVE_TRACKER_URL;
+const gatewayToken = process.env.RSTORRENT_LIVE_GATEWAY_TOKEN;
+const storagePath = process.env.RSTORRENT_LIVE_STORAGE_PATH;
 const screenshotDirectory = process.env.RSTORRENT_SCREENSHOT_DIR;
 const expectDiskPressure = process.env.RSTORRENT_LIVE_EXPECT_DISK_PRESSURE === "1";
 const expectPieces = process.env.RSTORRENT_LIVE_EXPECT_PIECES === "1";
 const transportBenchmark =
   process.env.RSTORRENT_LIVE_TRANSPORT_BENCHMARK === "1";
 const benchmarkTransport = process.env.RSTORRENT_LIVE_TRANSPORT;
+const expectFileSelection = process.env.RSTORRENT_LIVE_FILE_SELECTION === "1";
 
 test("paired application transport throughput", async ({ page }) => {
   test.setTimeout(240_000);
@@ -48,7 +51,7 @@ test("paired application transport throughput", async ({ page }) => {
     benchmarkTransport === "http"
       ? `/?live=${encodeURIComponent(gateway!)}&transport=http&poll_ms=100`
       : `/?live=${encodeURIComponent(gateway!)}`;
-  await page.goto(query);
+  await page.goto(withGatewayToken(query));
   const transfers = page.getByRole("grid", { name: "Transfer queue" });
   await expect(transfers).toBeVisible();
   const input = page
@@ -86,7 +89,7 @@ test("live disk inspection observes pressure and exact recovery", async ({
     "controlled slow-storage gateway is opt-in",
   );
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(`/?live=${encodeURIComponent(gateway!)}`);
+  await page.goto(liveUrl());
   const torrentRow = await addAndOpenInWorkbench(page, magnet!, torrentId!);
   await page.getByRole("tab", { name: "Disk" }).click();
   const pieces = page.getByRole("grid", { name: "Active storage pieces" });
@@ -128,7 +131,7 @@ test("live piece inspection follows active work through verification", async ({
     "controlled piece-map gateway is opt-in",
   );
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(`/?live=${encodeURIComponent(gateway!)}`);
+  await page.goto(liveUrl());
   const startedAt = performance.now();
   const torrentRow = await addAndOpenInWorkbench(page, magnet!, torrentId!);
   await page.getByRole("tab", { name: "Pieces" }).click();
@@ -194,7 +197,7 @@ test("live peer inspection follows a controlled verified transfer", async ({
     }
   });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(`/?live=${encodeURIComponent(gateway!)}`);
+  await page.goto(liveUrl());
   const primary = page.getByRole("navigation", { name: "Primary" });
   const transferGrid = page.getByRole("grid", { name: "Transfer queue" });
   await expect(primary).toBeVisible();
@@ -280,6 +283,104 @@ test("live peer inspection follows a controlled verified transfer", async ({
   );
 });
 
+test("live metadata-only add and file selection", async ({ page }) => {
+  test.setTimeout(90_000);
+  test.skip(
+    !expectFileSelection ||
+      gateway === undefined ||
+      gatewayToken === undefined ||
+      magnet === undefined ||
+      torrentId === undefined ||
+      torrentName === undefined ||
+      fileCount === undefined ||
+      storagePath === undefined,
+    "controlled live file-selection gateway is opt-in",
+  );
+
+  const storage = path.resolve(storagePath!);
+  const output = path.join(storage, torrentName!);
+  const staging = path.join(storage, `.${torrentId!}.rstorrent-staging`);
+  const part = path.join(storage, `.${torrentId!}.rstorrent-parts`);
+  const prefix = path.join(output, "nested", "prefix.bin");
+  const payload = path.join(output, "payload.bin");
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(liveUrl());
+  const addForm = page.getByRole("form", { name: "Add torrent" });
+  await addForm
+    .getByRole("textbox", { name: "Magnet link or torrent URL" })
+    .fill(magnet!);
+  await addForm.getByRole("button", { name: "Add" }).click();
+
+  const addDialog = page.getByRole("dialog", {
+    name: "Choose download options",
+  });
+  await expect(addDialog).toBeVisible();
+  const startContent = addDialog.getByRole("checkbox", {
+    name: /Start downloading files when metadata is available/,
+  });
+  await expect(startContent).toBeChecked();
+  await startContent.uncheck();
+  await addDialog.getByRole("button", { name: "Add torrent" }).click();
+  await expect(page.getByText("Torrent added", { exact: true })).toBeVisible();
+
+  const transfers = page.getByRole("grid", { name: "Transfer queue" });
+  const transferRow = transfers.locator(`[data-row-id="${torrentId!}"]`);
+  await expect(transferRow).toBeVisible({ timeout: 10_000 });
+  await transferRow.click();
+  await page
+    .getByRole("navigation", { name: "Primary" })
+    .getByRole("button", { name: "Workbench" })
+    .click();
+  const torrentRow = page
+    .getByRole("grid", { name: "Torrent library" })
+    .locator(`[data-row-id="${torrentId!}"]`);
+  await expect(torrentRow).toBeVisible();
+  await torrentRow.click();
+  await page.getByRole("tab", { name: "Files" }).click();
+  const files = page.getByRole("grid", { name: "Torrent files" });
+  await expect(files).toHaveAttribute(
+    "aria-rowcount",
+    String(Number(fileCount!) + 1),
+    { timeout: 20_000 },
+  );
+  expect(await fs.readdir(storage)).toEqual([]);
+
+  await scrollToEnd(files);
+  const prefixRow = files.getByRole("row").filter({ hasText: "prefix.bin" });
+  await expect(prefixRow).toBeVisible();
+  await prefixRow.click();
+  await page.getByRole("button", { name: "More file actions" }).click();
+  const fileActions = page.getByRole("menu", { name: "File actions" });
+  await expect(fileActions.getByRole("menuitem")).toHaveCount(2);
+  await fileActions
+    .getByRole("menuitem", { name: "Skip", exact: true })
+    .click();
+  await expect(prefixRow.getByText("Skip", { exact: true })).toBeVisible();
+  expect(await fs.readdir(storage)).toEqual([]);
+
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await expect(torrentRow).toContainText("complete", { timeout: 60_000 });
+  await expect.poll(() => pathExists(payload)).toBe(true);
+  await expect.poll(() => pathExists(part)).toBe(true);
+  expect(await pathExists(prefix)).toBe(false);
+  expect(await pathExists(staging)).toBe(false);
+
+  await prefixRow.click();
+  await page.getByRole("button", { name: "More file actions" }).click();
+  await page
+    .getByRole("menu", { name: "File actions" })
+    .getByRole("menuitem", { name: "Normal", exact: true })
+    .click();
+  await expect(prefixRow.getByText("Normal", { exact: true })).toBeVisible();
+  await expect.poll(() => pathExists(prefix), { timeout: 20_000 }).toBe(true);
+  await expect.poll(() => pathExists(part), { timeout: 20_000 }).toBe(false);
+  await expect(torrentRow).toContainText("complete", { timeout: 20_000 });
+  console.log(
+    "file_selection_live_milestones metadata_only=no_artifacts skip=published_part normal=materialized_part_removed",
+  );
+});
+
 async function addAndOpenInWorkbench(
   page: Page,
   liveMagnet: string,
@@ -321,4 +422,24 @@ async function capture(page: Page, filename: string) {
     path: path.join(screenshotDirectory, filename),
     fullPage: false,
   });
+}
+
+function liveUrl(): string {
+  return withGatewayToken(`/?live=${encodeURIComponent(gateway!)}`);
+}
+
+function withGatewayToken(url: string): string {
+  if (gatewayToken === undefined) return url;
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}token=${encodeURIComponent(gatewayToken)}`;
+}
+
+async function pathExists(candidate: string): Promise<boolean> {
+  try {
+    await fs.stat(candidate);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
 }

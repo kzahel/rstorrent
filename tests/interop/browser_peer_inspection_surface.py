@@ -26,7 +26,7 @@ from first_verified_piece import (
     create_session,
     wait_for_listener,
 )
-from application_surface_harness import build_gateway, verify_payload
+from application_surface_harness import TOKEN, build_gateway, verify_payload
 from magnet_metadata import ROOT_NAME, create_fixture, magnet_uri
 from udp_tracker_magnet import OneShotUdpTracker, tracker_magnet
 
@@ -52,9 +52,16 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="run the selected-torrent Pieces canvas proof",
     )
+    parser.add_argument(
+        "--file-selection",
+        action="store_true",
+        help="run metadata-only add plus live Skip/Normal storage proof",
+    )
     arguments = parser.parse_args()
-    if arguments.disk_pressure and arguments.piece_map:
-        parser.error("--disk-pressure and --piece-map are mutually exclusive")
+    if sum((arguments.disk_pressure, arguments.piece_map, arguments.file_selection)) > 1:
+        parser.error(
+            "--disk-pressure, --piece-map, and --file-selection are mutually exclusive"
+        )
     return arguments
 
 
@@ -65,6 +72,7 @@ def start_development_gateway(
     origin: str,
     *,
     disk_pressure: bool,
+    bearer: bool,
     lease_millis: int = 500,
 ) -> tuple[subprocess.Popen[str], str]:
     profile.mkdir()
@@ -74,14 +82,28 @@ def start_development_gateway(
         {
             "RSTORRENT_PROFILE_ROOT": str(profile),
             "RSTORRENT_STORAGE_ROOT": str(storage),
-            "RSTORRENT_GATEWAY_AUTH": "unauthenticated_loopback_development",
             "RSTORRENT_GATEWAY_ORIGIN": origin,
             "RSTORRENT_NETWORK_POLICY": "loopback_only",
-            "RSTORRENT_TEST_VIEW_SET_LEASE_MILLIS": str(lease_millis),
         }
     )
-    environment.pop("RSTORRENT_GATEWAY_BIND", None)
-    environment.pop("RSTORRENT_GATEWAY_TOKEN", None)
+    if bearer:
+        environment.update(
+            {
+                "RSTORRENT_GATEWAY_AUTH": "bearer",
+                "RSTORRENT_GATEWAY_BIND": "127.0.0.1:0",
+                "RSTORRENT_GATEWAY_TOKEN": TOKEN,
+            }
+        )
+        environment.pop("RSTORRENT_TEST_VIEW_SET_LEASE_MILLIS", None)
+    else:
+        environment.update(
+            {
+                "RSTORRENT_GATEWAY_AUTH": "unauthenticated_loopback_development",
+                "RSTORRENT_TEST_VIEW_SET_LEASE_MILLIS": str(lease_millis),
+            }
+        )
+        environment.pop("RSTORRENT_GATEWAY_BIND", None)
+        environment.pop("RSTORRENT_GATEWAY_TOKEN", None)
     if disk_pressure:
         environment["RSTORRENT_TEST_STORAGE_WRITE_DELAY_MILLIS"] = "150"
         environment["RSTORRENT_TEST_BUFFERED_PAYLOAD_BYTES"] = str(128 * 1024)
@@ -150,6 +172,8 @@ def run_playwright(
     *,
     disk_pressure: bool,
     piece_map: bool,
+    file_selection: bool,
+    storage: Path,
 ) -> str:
     environment = os.environ.copy()
     environment.update(
@@ -170,11 +194,21 @@ def run_playwright(
         environment["RSTORRENT_LIVE_EXPECT_DISK_PRESSURE"] = "1"
     if piece_map:
         environment["RSTORRENT_LIVE_EXPECT_PIECES"] = "1"
+    if file_selection:
+        environment.update(
+            {
+                "RSTORRENT_LIVE_FILE_SELECTION": "1",
+                "RSTORRENT_LIVE_GATEWAY_TOKEN": TOKEN,
+                "RSTORRENT_LIVE_STORAGE_PATH": str(storage),
+            }
+        )
     test_name = (
         "live disk inspection"
         if disk_pressure
         else "live piece inspection"
         if piece_map
+        else "live metadata-only add and file selection"
+        if file_selection
         else "live peer inspection"
     )
     completed = subprocess.run(
@@ -210,6 +244,8 @@ def run_playwright(
         if disk_pressure
         else "piece_live_milestones "
         if piece_map
+        else "file_selection_live_milestones "
+        if file_selection
         else "file_live_milestones "
     )
     milestones = next(
@@ -275,6 +311,7 @@ def run(
     *,
     disk_pressure: bool,
     piece_map: bool,
+    file_selection: bool,
 ) -> None:
     repository = Path(__file__).resolve().parents[2]
     run_path = Path(tempfile.mkdtemp(prefix="rstorrent-browser-peer-inspection-"))
@@ -286,7 +323,7 @@ def run(
     diagnostics: list[str] = []
     failure: BaseException | None = None
     try:
-        direct_peer = disk_pressure or piece_map
+        direct_peer = disk_pressure or piece_map or file_selection
         fixture = create_fixture(
             run_path,
             payload_size=4 * 1024 * 1024 if direct_peer else 40_000,
@@ -327,6 +364,7 @@ def run(
             storage,
             origin,
             disk_pressure=disk_pressure,
+            bearer=file_selection,
         )
         vite = build_and_start_production_web(repository, origin, vite_port)
         result = run_playwright(
@@ -344,13 +382,15 @@ def run(
             screenshot_directory,
             disk_pressure=disk_pressure,
             piece_map=piece_map,
+            file_selection=file_selection,
+            storage=storage,
         )
         if tracker is not None:
             tracker.join()
-        verify_payload(storage, fixture.info_hash, fixture.payload_hash)
+        verify_payload(storage, ROOT_NAME, fixture.payload_hash)
         compare_payloads(
             fixture.seed_directory / ROOT_NAME / BROWSER_PREFIX_PATH,
-            storage / fixture.info_hash / BROWSER_PREFIX_PATH,
+            storage / ROOT_NAME / BROWSER_PREFIX_PATH,
         )
         stop_process(vite, "Vite")
         vite = None
@@ -410,6 +450,7 @@ def main() -> int:
             else None,
             disk_pressure=arguments.disk_pressure,
             piece_map=arguments.piece_map,
+            file_selection=arguments.file_selection,
         )
     except (ScenarioFailure, OSError, subprocess.SubprocessError) as error:
         print(error, file=sys.stderr)
