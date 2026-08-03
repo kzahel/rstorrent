@@ -13,6 +13,65 @@ const trackerUrl = process.env.RSTORRENT_LIVE_TRACKER_URL;
 const screenshotDirectory = process.env.RSTORRENT_SCREENSHOT_DIR;
 const expectDiskPressure = process.env.RSTORRENT_LIVE_EXPECT_DISK_PRESSURE === "1";
 const expectPieces = process.env.RSTORRENT_LIVE_EXPECT_PIECES === "1";
+const transportBenchmark =
+  process.env.RSTORRENT_LIVE_TRANSPORT_BENCHMARK === "1";
+const benchmarkTransport = process.env.RSTORRENT_LIVE_TRANSPORT;
+
+test("paired application transport throughput", async ({ page }) => {
+  test.setTimeout(240_000);
+  test.skip(
+    !transportBenchmark ||
+      gateway === undefined ||
+      magnet === undefined ||
+      torrentId === undefined ||
+      (benchmarkTransport !== "http" && benchmarkTransport !== "websocket"),
+    "paired transport benchmark is opt-in",
+  );
+  let applicationUpgrades = 0;
+  let semanticHttpRequests = 0;
+  const expectedSocket = `${gateway!.replace(/^http/, "ws")}/api/v1/connect`;
+  page.on("websocket", (socket) => {
+    if (socket.url() === expectedSocket) applicationUpgrades += 1;
+  });
+  page.on("request", (request) => {
+    if (!request.url().startsWith(gateway!)) return;
+    const pathname = new URL(request.url()).pathname;
+    if (
+      pathname === "/api/v1/hello" ||
+      pathname === "/api/v1/commands" ||
+      pathname.startsWith("/api/v1/view-sets")
+    ) {
+      semanticHttpRequests += 1;
+    }
+  });
+  const query =
+    benchmarkTransport === "http"
+      ? `/?live=${encodeURIComponent(gateway!)}&transport=http&poll_ms=100`
+      : `/?live=${encodeURIComponent(gateway!)}`;
+  await page.goto(query);
+  const transfers = page.getByRole("grid", { name: "Transfer queue" });
+  await expect(transfers).toBeVisible();
+  const input = page
+    .getByRole("form", { name: "Add torrent" })
+    .getByRole("textbox", { name: "Magnet link or torrent URL" });
+  const started = performance.now();
+  await input.fill(magnet!);
+  await input.press("Enter");
+  await expect(page.getByText("Torrent added", { exact: true })).toBeVisible();
+  const row = transfers.locator(`[data-row-id="${torrentId!}"]`);
+  await expect(row).toContainText(/complete/i, { timeout: 180_000 });
+  const transferSeconds = (performance.now() - started) / 1_000;
+  if (benchmarkTransport === "websocket") {
+    expect(applicationUpgrades).toBe(1);
+    expect(semanticHttpRequests).toBe(0);
+  } else {
+    expect(applicationUpgrades).toBe(0);
+    expect(semanticHttpRequests).toBeGreaterThan(0);
+  }
+  console.log(
+    `transport_benchmark_result ${JSON.stringify({ transport: benchmarkTransport, transferSeconds, applicationUpgrades, semanticHttpRequests })}`,
+  );
+});
 
 test("live disk inspection observes pressure and exact recovery", async ({
   page,

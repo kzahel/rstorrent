@@ -65,6 +65,7 @@ def start_development_gateway(
     origin: str,
     *,
     disk_pressure: bool,
+    lease_millis: int = 500,
 ) -> tuple[subprocess.Popen[str], str]:
     profile.mkdir()
     storage.mkdir()
@@ -76,7 +77,7 @@ def start_development_gateway(
             "RSTORRENT_GATEWAY_AUTH": "unauthenticated_loopback_development",
             "RSTORRENT_GATEWAY_ORIGIN": origin,
             "RSTORRENT_NETWORK_POLICY": "loopback_only",
-            "RSTORRENT_TEST_VIEW_SET_LEASE_MILLIS": "500",
+            "RSTORRENT_TEST_VIEW_SET_LEASE_MILLIS": str(lease_millis),
         }
     )
     environment.pop("RSTORRENT_GATEWAY_BIND", None)
@@ -117,7 +118,7 @@ def start_development_gateway(
     )
 
 
-def terminate_gateway(process: subprocess.Popen[str]) -> None:
+def terminate_gateway(process: subprocess.Popen[str]) -> str:
     if process.poll() is None:
         process.send_signal(signal.SIGINT)
     try:
@@ -134,6 +135,7 @@ def terminate_gateway(process: subprocess.Popen[str]) -> None:
             f"gateway exited with status {process.returncode}\n"
             f"stdout:\n{stdout}\nstderr:\n{stderr}"
         )
+    return stderr
 
 
 def run_playwright(
