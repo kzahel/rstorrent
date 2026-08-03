@@ -5,7 +5,7 @@ use std::fmt;
 use std::fmt::Write as _;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use rstorrent_protocol::metainfo::Metainfo;
 use rstorrent_protocol::storage_layout::{
@@ -182,7 +182,7 @@ impl fmt::Display for SelectiveStorageError {
             ),
             Self::IncompleteResumeArtifacts => write!(
                 formatter,
-                "resumable storage must contain one selected tree and its part file"
+                "resumable storage must contain exactly one selected tree"
             ),
             Self::UnexpectedFileType { path } => {
                 write!(
@@ -303,9 +303,12 @@ pub struct SelectiveStorage {
     selection: FileSelection,
     files: Vec<Option<RetainedFile>>,
     part_file: Option<PartFile>,
+    part_checkpoint_handle: Option<Arc<OnceLock<Arc<std::fs::File>>>>,
     verified: Vec<bool>,
     published: bool,
 }
+
+pub(crate) type CheckpointHandles = BTreeMap<DurabilityTarget, Arc<OnceLock<Arc<std::fs::File>>>>;
 
 #[derive(Debug)]
 struct RetainedFile {
@@ -603,7 +606,6 @@ impl SelectiveStorage {
             piece_length: layout.piece_length(),
             total_length: layout.total_length(),
         };
-        let part_file = PartFile::create(part_path.clone(), identity).await?;
         let piece_count = layout.piece_count();
 
         Ok(Self {
@@ -616,7 +618,8 @@ impl SelectiveStorage {
             layout,
             selection,
             files,
-            part_file: Some(part_file),
+            part_file: None,
+            part_checkpoint_handle: None,
             verified: vec![false; piece_count],
             published: false,
         })
@@ -754,6 +757,7 @@ impl SelectiveStorage {
             selection,
             files,
             part_file: Some(part_file),
+            part_checkpoint_handle: None,
             verified: vec![false; piece_count],
             published: false,
         })
@@ -840,6 +844,7 @@ impl SelectiveStorage {
             selection,
             files,
             part_file: Some(part_file),
+            part_checkpoint_handle: None,
             verified,
             published: false,
         })
@@ -896,21 +901,7 @@ impl SelectiveStorage {
             .await?;
             return Ok((storage, ResumedStorage::Created));
         }
-        if verified.iter().all(|piece| !piece) {
-            match (output_exists, staging_exists, part_exists) {
-                (true, false, false) => {
-                    return Err(SelectiveStorageError::ExistingOutput(output_root));
-                }
-                (false, true, false) => {
-                    return Err(SelectiveStorageError::ExistingStaging(staging_root));
-                }
-                (false, false, true) => {
-                    return Err(SelectiveStorageError::ExistingPartFile(part_path));
-                }
-                _ => {}
-            }
-        }
-        if output_exists == staging_exists || !part_exists {
+        if output_exists == staging_exists {
             return Err(SelectiveStorageError::IncompleteResumeArtifacts);
         }
 
@@ -932,43 +923,83 @@ impl SelectiveStorage {
         }
 
         let mut files = Vec::with_capacity(layout.files().len());
+        let mut promoted_files = Vec::new();
         for (file_index, metainfo_file) in layout.files().iter().enumerate() {
-            if metainfo_file.padding || !selection.is_wanted(file_index) {
+            if metainfo_file.padding {
                 files.push(None);
                 continue;
             }
             let path = joined_path(tree_root, &metainfo_file.path);
-            let metadata = tokio::fs::symlink_metadata(&path).await.map_err(|source| {
-                SelectiveStorageError::Io {
-                    operation: "inspect resumable selected file",
-                    source,
+            match tokio::fs::symlink_metadata(&path).await {
+                Ok(metadata) => {
+                    if !metadata.is_file() || metadata.file_type().is_symlink() {
+                        return Err(SelectiveStorageError::UnexpectedFileType { path });
+                    }
+                    if metadata.len() != metainfo_file.length {
+                        return Err(SelectiveStorageError::UnexpectedFileLength {
+                            file_index,
+                            expected: metainfo_file.length,
+                            actual: metadata.len(),
+                        });
+                    }
+                    files.push(Some(
+                        RetainedFile::new(
+                            OpenOptions::new()
+                                .read(true)
+                                .write(true)
+                                .open(&path)
+                                .await
+                                .map_err(|source| SelectiveStorageError::Io {
+                                    operation: "open resumable selected file",
+                                    source,
+                                })?,
+                            "retain resumable selected file",
+                        )
+                        .await?,
+                    ));
                 }
-            })?;
-            if !metadata.is_file() || metadata.file_type().is_symlink() {
-                return Err(SelectiveStorageError::UnexpectedFileType { path });
-            }
-            if metadata.len() != metainfo_file.length {
-                return Err(SelectiveStorageError::UnexpectedFileLength {
-                    file_index,
-                    expected: metainfo_file.length,
-                    actual: metadata.len(),
-                });
-            }
-            files.push(Some(
-                RetainedFile::new(
-                    OpenOptions::new()
+                Err(source) if source.kind() == io::ErrorKind::NotFound => {
+                    if !selection.is_wanted(file_index) {
+                        files.push(None);
+                        continue;
+                    }
+                    let parent = path
+                        .parent()
+                        .ok_or(SelectiveStorageError::InvalidOutputPath)?;
+                    tokio::fs::create_dir_all(parent).await.map_err(|source| {
+                        SelectiveStorageError::Io {
+                            operation: "create promoted file parent",
+                            source,
+                        }
+                    })?;
+                    let file = OpenOptions::new()
                         .read(true)
                         .write(true)
+                        .create_new(true)
                         .open(&path)
                         .await
                         .map_err(|source| SelectiveStorageError::Io {
-                            operation: "open resumable selected file",
+                            operation: "create promoted selected file",
                             source,
-                        })?,
-                    "retain resumable selected file",
-                )
-                .await?,
-            ));
+                        })?;
+                    file.set_len(metainfo_file.length).await.map_err(|source| {
+                        SelectiveStorageError::Io {
+                            operation: "size promoted selected file",
+                            source,
+                        }
+                    })?;
+                    files.push(Some(
+                        RetainedFile::new(file, "retain promoted selected file").await?,
+                    ));
+                    promoted_files.push(file_index);
+                }
+                Err(source) => {
+                    return Err(SelectiveStorageError::Io {
+                        operation: "inspect resumable selected file",
+                        source,
+                    });
+                }
+            }
         }
 
         let identity = PartFileIdentity {
@@ -977,24 +1008,31 @@ impl SelectiveStorage {
             piece_length: layout.piece_length(),
             total_length: layout.total_length(),
         };
-        let part_file = PartFile::open(part_path.clone(), identity).await?;
-        Ok((
-            Self {
-                backing: StorageBacking::Paths {
-                    output_root,
-                    staging_root,
-                    part_path,
-                },
-                identity,
-                layout,
-                selection,
-                files,
-                part_file: Some(part_file),
-                verified,
-                published,
+        let part_file = if part_exists {
+            Some(PartFile::open(part_path.clone(), identity).await?)
+        } else {
+            None
+        };
+        let mut storage = Self {
+            backing: StorageBacking::Paths {
+                output_root,
+                staging_root,
+                part_path,
             },
-            resumed,
-        ))
+            identity,
+            layout,
+            selection,
+            files,
+            part_file,
+            part_checkpoint_handle: None,
+            verified,
+            published,
+        };
+        for file_index in promoted_files {
+            storage.restore_promoted_file(file_index).await?;
+        }
+        storage.release_unused_part_slots().await?;
+        Ok((storage, resumed))
     }
 
     pub fn selected_bytes(&self) -> u64 {
@@ -1039,6 +1077,10 @@ impl SelectiveStorage {
             .map_or(0, PartFile::mapped_piece_count)
     }
 
+    pub fn has_part_file(&self) -> bool {
+        self.part_file.is_some()
+    }
+
     pub fn is_published(&self) -> bool {
         self.published
     }
@@ -1079,15 +1121,26 @@ impl SelectiveStorage {
                         routing_generation: file.routing_generation,
                     }
                 }
-                SegmentTarget::SkippedFile { .. } => SelectiveWriteDestination::PartFile(
-                    self.part_file_mut()?
-                        .plan_write_piece_range(
-                            piece_index_usize,
-                            segment.piece_offset,
-                            segment.length,
-                        )
-                        .await?,
-                ),
+                SegmentTarget::SkippedFile {
+                    file_index,
+                    file_offset,
+                } => match self.files[file_index].as_ref() {
+                    Some(file) => SelectiveWriteDestination::WantedFile {
+                        file_index,
+                        file_offset,
+                        routing_generation: file.routing_generation,
+                    },
+                    None => SelectiveWriteDestination::PartFile(
+                        self.ensure_part_file()
+                            .await?
+                            .plan_write_piece_range(
+                                piece_index_usize,
+                                segment.piece_offset,
+                                segment.length,
+                            )
+                            .await?,
+                    ),
+                },
                 SegmentTarget::Padding => {
                     unreachable!("padding was rejected while planning the write");
                 }
@@ -1200,8 +1253,12 @@ impl SelectiveStorage {
                 SegmentTarget::WantedFile { .. } => {
                     stats.wanted_bytes = stats.wanted_bytes.saturating_add(segment.length);
                 }
-                SegmentTarget::SkippedFile { .. } => {
-                    stats.skipped_bytes = stats.skipped_bytes.saturating_add(segment.length);
+                SegmentTarget::SkippedFile { file_index, .. } => {
+                    if self.files[file_index].is_some() {
+                        stats.wanted_bytes = stats.wanted_bytes.saturating_add(segment.length);
+                    } else {
+                        stats.skipped_bytes = stats.skipped_bytes.saturating_add(segment.length);
+                    }
                 }
                 SegmentTarget::Padding => {
                     return Err(SelectiveStorageError::PaddingInPeerBlock);
@@ -1244,21 +1301,32 @@ impl SelectiveStorage {
                 SegmentTarget::Padding => spans.push(BlockingHashSpan::Padding {
                     length: segment.length,
                 }),
-                SegmentTarget::SkippedFile { .. } => {
-                    let part_file = self
-                        .part_file
-                        .as_ref()
-                        .ok_or(SelectiveStorageError::NotPublished)?;
-                    let span = part_file.plan_read_piece_range(
-                        piece_index,
-                        segment.piece_offset,
-                        segment.length,
-                    )?;
-                    part_file.validate_span(span)?;
-                    spans.push(BlockingHashSpan::PartFile {
-                        file: part_file.positional_handle(),
-                        span,
-                    });
+                SegmentTarget::SkippedFile {
+                    file_index,
+                    file_offset,
+                } => {
+                    if let Some(file) = self.files[file_index].as_ref() {
+                        spans.push(BlockingHashSpan::WantedFile {
+                            file: file.positional.clone(),
+                            file_offset,
+                            length: segment.length,
+                        });
+                    } else {
+                        let part_file = self
+                            .part_file
+                            .as_ref()
+                            .ok_or(SelectiveStorageError::NotPublished)?;
+                        let span = part_file.plan_read_piece_range(
+                            piece_index,
+                            segment.piece_offset,
+                            segment.length,
+                        )?;
+                        part_file.validate_span(span)?;
+                        spans.push(BlockingHashSpan::PartFile {
+                            file: part_file.positional_handle(),
+                            span,
+                        });
+                    }
                 }
             }
         }
@@ -1304,7 +1372,13 @@ impl SelectiveStorage {
                 SegmentTarget::WantedFile { file_index, .. } => {
                     DurabilityTarget::WantedFile(file_index)
                 }
-                SegmentTarget::SkippedFile { .. } => DurabilityTarget::PartFile,
+                SegmentTarget::SkippedFile { file_index, .. } => {
+                    if self.files[file_index].is_some() {
+                        DurabilityTarget::WantedFile(file_index)
+                    } else {
+                        DurabilityTarget::PartFile
+                    }
+                }
                 SegmentTarget::Padding => continue,
             };
             if !targets.contains(&target) {
@@ -1315,8 +1389,8 @@ impl SelectiveStorage {
     }
 
     pub(crate) async fn checkpoint_handles(
-        &self,
-    ) -> Result<BTreeMap<DurabilityTarget, std::fs::File>, SelectiveStorageError> {
+        &mut self,
+    ) -> Result<CheckpointHandles, SelectiveStorageError> {
         let mut handles = BTreeMap::new();
         for (file_index, file) in self.files.iter().enumerate() {
             let Some(file) = file else {
@@ -1329,16 +1403,19 @@ impl SelectiveStorage {
                         operation: "duplicate selected file for durability checkpoint",
                         source,
                     })?;
-            handles.insert(DurabilityTarget::WantedFile(file_index), handle);
+            let cell = Arc::new(OnceLock::new());
+            cell.set(Arc::new(handle))
+                .expect("new selected-file checkpoint cell is empty");
+            handles.insert(DurabilityTarget::WantedFile(file_index), cell);
         }
-        let part_file = self
-            .part_file
-            .as_ref()
-            .ok_or(SelectiveStorageError::NotPublished)?;
-        handles.insert(
-            DurabilityTarget::PartFile,
-            part_file.duplicate_for_checkpoint().await?,
-        );
+        let part_cell = Arc::new(OnceLock::new());
+        if let Some(part_file) = self.part_file.as_ref() {
+            part_cell
+                .set(Arc::new(part_file.duplicate_for_checkpoint().await?))
+                .expect("new part-file checkpoint cell is empty");
+        }
+        self.part_checkpoint_handle = Some(part_cell.clone());
+        handles.insert(DurabilityTarget::PartFile, part_cell);
         Ok(handles)
     }
 
@@ -1369,7 +1446,15 @@ impl SelectiveStorage {
                         wanted_files.push(file_index);
                     }
                 }
-                SegmentTarget::SkippedFile { .. } => sync_part = true,
+                SegmentTarget::SkippedFile { file_index, .. } => {
+                    if self.files[file_index].is_some() {
+                        if !wanted_files.contains(&file_index) {
+                            wanted_files.push(file_index);
+                        }
+                    } else {
+                        sync_part = true;
+                    }
+                }
                 SegmentTarget::Padding => {}
             }
         }
@@ -1460,7 +1545,9 @@ impl SelectiveStorage {
                     source,
                 })?;
         }
-        self.part_file_mut()?.sync_payload().await?;
+        if let Some(part_file) = self.part_file.as_ref() {
+            part_file.sync_payload().await?;
+        }
         if matches!(self.backing, StorageBacking::Paths { .. }) {
             self.files.iter_mut().for_each(|file| {
                 file.take();
@@ -1470,6 +1557,9 @@ impl SelectiveStorage {
     }
 
     pub async fn reopen_part_file(&mut self) -> Result<(), SelectiveStorageError> {
+        if self.part_file.is_none() {
+            return Ok(());
+        }
         self.part_file.take();
         self.part_file = Some(match &mut self.backing {
             StorageBacking::Paths { part_path, .. } => {
@@ -1487,6 +1577,31 @@ impl SelectiveStorage {
             }
         });
         Ok(())
+    }
+
+    pub(crate) fn has_piece_sources(
+        &self,
+        piece_index: u32,
+    ) -> Result<bool, SelectiveStorageError> {
+        let piece_length = self.layout.piece_length_at(piece_index)?;
+        let segments = self
+            .layout
+            .segments(piece_index, 0, piece_length, &self.selection)?;
+        let piece_index = usize::try_from(piece_index)
+            .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
+        for segment in segments {
+            if let SegmentTarget::SkippedFile { file_index, .. } = segment.target
+                && self.files[file_index].is_none()
+            {
+                let Some(part_file) = self.part_file.as_ref() else {
+                    return Ok(false);
+                };
+                if !part_file.has_piece(piece_index)? {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
     }
 
     pub async fn materialize_file(
@@ -1644,17 +1759,17 @@ impl SelectiveStorage {
         let slots_before = self.part_slots();
         self.selection.set_wanted(&self.layout, file_index, true)?;
         for piece_index in self.layout.file_pieces(file_index)? {
-            if !self
-                .layout
-                .piece_has_skipped_file(piece_index, &self.selection)?
+            if !self.piece_requires_part_file(piece_index)?
+                && let Some(part_file) = self.part_file.as_mut()
             {
-                self.part_file_mut()?
+                part_file
                     .release_piece(usize::try_from(piece_index).map_err(|_| {
                         SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow)
                     })?)
                     .await?;
             }
         }
+        self.remove_empty_part_file().await?;
         Ok(MaterializationReport {
             file_index,
             bytes: metainfo_file.length,
@@ -1721,6 +1836,165 @@ impl SelectiveStorage {
         self.part_file
             .as_mut()
             .ok_or(SelectiveStorageError::NotPublished)
+    }
+
+    async fn ensure_part_file(&mut self) -> Result<&mut PartFile, SelectiveStorageError> {
+        if self.part_file.is_none() {
+            let part_path = match &self.backing {
+                StorageBacking::Paths { part_path, .. } => part_path.clone(),
+                StorageBacking::Descriptors { .. } => {
+                    return Err(SelectiveStorageError::InvalidStorageOperation(
+                        "lazy descriptor part-file creation",
+                    ));
+                }
+            };
+            let part_file = PartFile::create(part_path, self.identity).await?;
+            if let Some(handle) = self.part_checkpoint_handle.as_ref() {
+                handle
+                    .set(Arc::new(part_file.duplicate_for_checkpoint().await?))
+                    .map_err(|_| {
+                        SelectiveStorageError::InvalidStorageOperation(
+                            "replace registered part-file checkpoint handle",
+                        )
+                    })?;
+            }
+            self.part_file = Some(part_file);
+        }
+        self.part_file_mut()
+    }
+
+    async fn restore_promoted_file(
+        &mut self,
+        file_index: usize,
+    ) -> Result<(), SelectiveStorageError> {
+        let metainfo_file = self
+            .layout
+            .files()
+            .get(file_index)
+            .ok_or(LayoutError::InvalidFileIndex {
+                index: file_index,
+                file_count: self.layout.files().len(),
+            })?
+            .clone();
+        let destination = self.files[file_index]
+            .as_ref()
+            .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?
+            .positional
+            .clone();
+        let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
+        let mut file_offset = 0_u64;
+        while file_offset < metainfo_file.length {
+            let torrent_offset = metainfo_file.offset.checked_add(file_offset).ok_or(
+                SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow),
+            )?;
+            let piece_index_u64 = torrent_offset / u64::from(self.layout.piece_length());
+            let piece_index = usize::try_from(piece_index_u64)
+                .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
+            let piece_offset_u64 = torrent_offset % u64::from(self.layout.piece_length());
+            let piece_offset = u32::try_from(piece_offset_u64)
+                .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
+            let piece_remaining = u64::from(self.layout.piece_length()) - piece_offset_u64;
+            let length = usize::try_from(
+                (metainfo_file.length - file_offset)
+                    .min(piece_remaining)
+                    .min(buffer.len() as u64),
+            )
+            .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
+            let part_has_piece = match self.part_file.as_ref() {
+                Some(part_file) => part_file.has_piece(piece_index)?,
+                None => false,
+            };
+            if self.verified[piece_index] && part_has_piece {
+                self.part_file
+                    .as_ref()
+                    .expect("part file was checked above")
+                    .read_piece_range(piece_index, piece_offset, &mut buffer[..length])
+                    .await?;
+                let destination = destination.clone();
+                let payload: Arc<[u8]> = Arc::from(&buffer[..length]);
+                tokio::task::spawn_blocking(move || {
+                    write_all_at(&destination, &payload, file_offset)
+                })
+                .await
+                .map_err(|source| SelectiveStorageError::Io {
+                    operation: "join promoted selected-file write",
+                    source: io::Error::other(source),
+                })?
+                .map_err(|source| SelectiveStorageError::Io {
+                    operation: "write promoted selected-file range",
+                    source,
+                })?;
+            }
+            file_offset =
+                file_offset
+                    .checked_add(length as u64)
+                    .ok_or(SelectiveStorageError::Layout(
+                        LayoutError::ArithmeticOverflow,
+                    ))?;
+        }
+        self.files[file_index]
+            .as_ref()
+            .expect("promoted file remains retained")
+            .control
+            .sync_data()
+            .await
+            .map_err(|source| SelectiveStorageError::Io {
+                operation: "flush promoted selected file",
+                source,
+            })
+    }
+
+    async fn release_unused_part_slots(&mut self) -> Result<(), SelectiveStorageError> {
+        for piece_index in 0..self.layout.piece_count() {
+            let piece_index_u32 = u32::try_from(piece_index)
+                .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
+            if self.piece_requires_part_file(piece_index_u32)? {
+                continue;
+            }
+            if let Some(part_file) = self.part_file.as_mut() {
+                part_file.release_piece(piece_index).await?;
+            }
+        }
+        self.remove_empty_part_file().await
+    }
+
+    fn piece_requires_part_file(&self, piece_index: u32) -> Result<bool, SelectiveStorageError> {
+        let piece_length = self.layout.piece_length_at(piece_index)?;
+        Ok(self
+            .layout
+            .segments(piece_index, 0, piece_length, &self.selection)?
+            .into_iter()
+            .any(|segment| {
+                matches!(
+                    segment.target,
+                    SegmentTarget::SkippedFile { file_index, .. }
+                        if self.files[file_index].is_none()
+                )
+            }))
+    }
+
+    async fn remove_empty_part_file(&mut self) -> Result<(), SelectiveStorageError> {
+        if self
+            .part_file
+            .as_ref()
+            .is_none_or(|part_file| part_file.mapped_piece_count() != 0)
+        {
+            return Ok(());
+        }
+        match &mut self.backing {
+            StorageBacking::Paths { part_path, .. } => {
+                self.part_checkpoint_handle.take();
+                self.part_file.take();
+                remove_file_if_present(part_path).await.map_err(|source| {
+                    SelectiveStorageError::Io {
+                        operation: "remove empty part file",
+                        source,
+                    }
+                })?;
+            }
+            StorageBacking::Descriptors { .. } => {}
+        }
+        Ok(())
     }
 }
 
@@ -2100,6 +2374,8 @@ mod tests {
     use rstorrent_protocol::metainfo::{Metainfo, MetainfoFile, MetainfoMode};
     use rstorrent_protocol::storage_layout::{FileSelection, TorrentLayout};
     use sha1::{Digest, Sha1};
+
+    use crate::checkpoint::DurabilityTarget;
 
     use super::{
         BlockingHashResult, DescriptorFile, DescriptorStorage, PreparedFileHash, ResumedStorage,
@@ -2536,6 +2812,15 @@ mod tests {
         let mut storage = SelectiveStorage::create(output.clone(), &metainfo, layout, selection)
             .await
             .expect("create selected storage");
+        let checkpoint_handles = storage
+            .checkpoint_handles()
+            .await
+            .expect("register checkpoint handles");
+        assert!(
+            checkpoint_handles[&DurabilityTarget::PartFile]
+                .get()
+                .is_none()
+        );
 
         let planned = storage
             .write_stats(0, 0, metainfo.piece_length as usize)
@@ -2547,6 +2832,11 @@ mod tests {
             .await
             .expect("write coalesced piece range");
         assert_eq!(actual, planned);
+        assert!(
+            checkpoint_handles[&DurabilityTarget::PartFile]
+                .get()
+                .is_some()
+        );
         assert_eq!(
             storage.hash_piece(0).await.expect("hash coalesced piece"),
             <[u8; 20]>::from(Sha1::digest(&bytes[..metainfo.piece_length as usize]))
@@ -2587,6 +2877,12 @@ mod tests {
                 .await
                 .expect("padding staging")
         );
+        let part_path = selective_part_path(&output).expect("part path");
+        assert!(
+            !tokio::fs::try_exists(&part_path)
+                .await
+                .expect("part remains lazy")
+        );
         assert!(matches!(
             storage.publish().await,
             Err(SelectiveStorageError::IncompleteSelection { piece_index: 0 })
@@ -2594,9 +2890,7 @@ mod tests {
         assert!(!tokio::fs::try_exists(&output).await.expect("output state"));
         assert!(matches!(
             storage.hash_piece(0).await,
-            Err(SelectiveStorageError::PartFile(
-                crate::part_file::PartFileError::MissingSlot { piece_index: 0 }
-            ))
+            Err(SelectiveStorageError::NotPublished)
         ));
 
         let mut wanted_written = 0;
@@ -2636,6 +2930,11 @@ mod tests {
                 .record_verified(piece_index as usize)
                 .expect("record verified");
         }
+        assert!(
+            tokio::fs::try_exists(&part_path)
+                .await
+                .expect("first skipped write created part")
+        );
         assert_eq!(wanted_written, 73_000);
         assert_eq!(skipped_written, 24_232);
         assert_eq!(storage.part_slots(), 2);
@@ -2706,7 +3005,7 @@ mod tests {
         .expect("create resumable storage");
         assert_eq!(resumed, ResumedStorage::Created);
         assert!(paths.staging.exists());
-        assert!(paths.part.exists());
+        assert!(!paths.part.exists());
         for request in layout
             .request_ranges(0, &selection)
             .expect("first-piece requests")
@@ -2721,6 +3020,7 @@ mod tests {
                 .await
                 .expect("write first piece");
         }
+        assert!(paths.part.exists());
         let expected_hash = storage.hash_piece(0).await.expect("hash first piece");
         storage.sync_piece(0).await.expect("sync first piece");
         storage.record_verified(0).expect("record first piece");
@@ -2788,6 +3088,136 @@ mod tests {
                 actual: 1
             })
         ));
+        tokio::fs::remove_dir_all(root).await.expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn resume_promotes_verified_part_bytes_and_removes_empty_part() {
+        let root = test_path("resume-promote");
+        tokio::fs::create_dir(&root).await.expect("create root");
+        let metainfo = fixture();
+        let paths = torrent_storage_paths(&root, &metainfo.name, metainfo.info_hash)
+            .expect("plan storage paths");
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let skipped = FileSelection::new(&layout, &[1, 2]).expect("initial selection");
+        let bytes = torrent_bytes(&metainfo);
+        let (mut storage, _) = SelectiveStorage::resume_with_paths(
+            paths.clone(),
+            &metainfo,
+            layout.clone(),
+            skipped.clone(),
+            vec![false; layout.piece_count()],
+        )
+        .await
+        .expect("create initial storage");
+        for request in layout.request_ranges(0, &skipped).expect("piece requests") {
+            let begin = request.begin as usize;
+            storage
+                .write_block(
+                    0,
+                    request.begin,
+                    bytes[begin..begin + request.length as usize].to_vec(),
+                )
+                .await
+                .expect("write boundary piece");
+        }
+        storage.record_verified(0).expect("record verified piece");
+        storage.sync_piece(0).await.expect("sync verified piece");
+        assert!(paths.part.exists());
+        drop(storage);
+
+        let promoted = FileSelection::new(&layout, &[2]).expect("promoted selection");
+        let mut verified = vec![false; layout.piece_count()];
+        verified[0] = true;
+        let (mut storage, resumed) = SelectiveStorage::resume_with_paths(
+            paths.clone(),
+            &metainfo,
+            layout,
+            promoted,
+            verified,
+        )
+        .await
+        .expect("resume promoted storage");
+        assert_eq!(resumed, ResumedStorage::Staging);
+        assert_eq!(
+            storage.hash_piece(0).await.expect("hash promoted piece"),
+            <[u8; 20]>::from(Sha1::digest(&bytes[..metainfo.piece_length as usize]))
+        );
+        assert_eq!(
+            tokio::fs::read(paths.staging.join("skip/large.bin"))
+                .await
+                .expect("read promoted file")[..12_768],
+            bytes[20_000..32_768]
+        );
+        assert!(!paths.part.exists());
+        tokio::fs::remove_dir_all(root).await.expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn resume_keeps_existing_file_route_when_it_becomes_skipped() {
+        let root = test_path("resume-retain-skipped");
+        tokio::fs::create_dir(&root).await.expect("create root");
+        let metainfo = fixture();
+        let paths = torrent_storage_paths(&root, &metainfo.name, metainfo.info_hash)
+            .expect("plan storage paths");
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let all_wanted = FileSelection::new(&layout, &[]).expect("initial selection");
+        let bytes = torrent_bytes(&metainfo);
+        let (mut storage, _) = SelectiveStorage::resume_with_paths(
+            paths.clone(),
+            &metainfo,
+            layout.clone(),
+            all_wanted.clone(),
+            vec![false; layout.piece_count()],
+        )
+        .await
+        .expect("create all-wanted storage");
+        for request in layout
+            .request_ranges(0, &all_wanted)
+            .expect("piece requests")
+        {
+            let begin = request.begin as usize;
+            storage
+                .write_block(
+                    0,
+                    request.begin,
+                    bytes[begin..begin + request.length as usize].to_vec(),
+                )
+                .await
+                .expect("write wanted piece");
+        }
+        storage.record_verified(0).expect("record verified piece");
+        storage.sync_piece(0).await.expect("sync verified piece");
+        drop(storage);
+
+        let lowered = FileSelection::new(&layout, &[1]).expect("lowered selection");
+        let mut verified = vec![false; layout.piece_count()];
+        verified[0] = true;
+        let (mut storage, resumed) = SelectiveStorage::resume_with_paths(
+            paths.clone(),
+            &metainfo,
+            layout,
+            lowered,
+            verified,
+        )
+        .await
+        .expect("resume lowered storage");
+        assert_eq!(resumed, ResumedStorage::Staging);
+        assert!(storage.has_piece_sources(0).expect("piece sources"));
+        assert_eq!(
+            storage.hash_piece(0).await.expect("hash retained route"),
+            <[u8; 20]>::from(Sha1::digest(&bytes[..metainfo.piece_length as usize]))
+        );
+        assert_eq!(
+            storage
+                .write_stats(0, 0, metainfo.piece_length as usize)
+                .expect("retained route stats"),
+            SelectiveWriteStats {
+                wanted_bytes: metainfo.piece_length as usize,
+                skipped_bytes: 0,
+            }
+        );
+        assert!(!paths.part.exists());
         tokio::fs::remove_dir_all(root).await.expect("remove root");
     }
 

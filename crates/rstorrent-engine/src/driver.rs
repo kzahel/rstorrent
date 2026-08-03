@@ -55,8 +55,8 @@ use crate::peer_socket::{
     self, PeerConnection, PeerSetError, PeerSetEvent, PeerSocketError, PeerSocketSet, PeerTaskEvent,
 };
 use crate::selective_storage::{
-    DescriptorStorage, PreparedFileHash, ResumedStorage, SelectiveHashPlan, SelectiveStorage,
-    SelectiveStorageError, SelectiveWriteJob, remove_selective_part_if_present,
+    CheckpointHandles, DescriptorStorage, PreparedFileHash, ResumedStorage, SelectiveHashPlan,
+    SelectiveStorage, SelectiveStorageError, SelectiveWriteJob, remove_selective_part_if_present,
     remove_selective_staging_if_present, torrent_storage_paths_for_output,
     validate_publication_name,
 };
@@ -5717,7 +5717,7 @@ struct ContentCheckpointPipeline {
 
 impl ContentCheckpointPipeline {
     fn start(
-        handles: BTreeMap<DurabilityTarget, std::fs::File>,
+        handles: CheckpointHandles,
         checkpoints: Arc<dyn DownloadCheckpointSink>,
         control: DownloadControl,
     ) -> Result<Self, DownloadError> {
@@ -5737,10 +5737,6 @@ impl ContentCheckpointPipeline {
         ));
         let started_at = Instant::now();
         let task_started_at = started_at;
-        let handles = handles
-            .into_iter()
-            .map(|(target, file)| (target, Arc::new(file)))
-            .collect();
         let task = tokio::spawn(async move {
             let result = run_content_checkpoint_task(
                 intent_receiver,
@@ -5824,14 +5820,14 @@ struct ContentStoragePipeline {
 
 impl ContentStoragePipeline {
     async fn start(
-        storage: ContentStorage,
+        mut storage: ContentStorage,
         control: &DownloadControl,
         max_buffered_payload_bytes: usize,
         checkpoints: Option<Arc<dyn DownloadCheckpointSink>>,
     ) -> Result<Self, DownloadError> {
         let checkpoint = match checkpoints {
             Some(checkpoints) => {
-                let ContentStorage::Selective(storage) = &storage else {
+                let ContentStorage::Selective(storage) = &mut storage else {
                     return Err(DownloadError::StorageTask(
                         "resumable checkpoint requires selective storage".to_owned(),
                     ));
@@ -6030,7 +6026,7 @@ impl ContentStoragePipeline {
 
 async fn run_content_checkpoint_task(
     mut intents: mpsc::Receiver<PendingCheckpointIntent>,
-    handles: BTreeMap<DurabilityTarget, Arc<std::fs::File>>,
+    handles: CheckpointHandles,
     checkpoints: Arc<dyn DownloadCheckpointSink>,
     policy: CheckpointPolicy,
     started_at: Instant,
@@ -6116,7 +6112,7 @@ async fn run_content_checkpoint_task(
 async fn flush_content_checkpoint(
     state: &mut CheckpointBatchState,
     permits: &mut BTreeMap<usize, CheckpointPermit>,
-    handles: &BTreeMap<DurabilityTarget, Arc<std::fs::File>>,
+    handles: &CheckpointHandles,
     checkpoints: &Arc<dyn DownloadCheckpointSink>,
     control: &DownloadControl,
 ) -> Result<(), DownloadError> {
@@ -6192,7 +6188,7 @@ async fn flush_content_checkpoint(
 }
 
 async fn sync_checkpoint_targets(
-    handles: &BTreeMap<DurabilityTarget, Arc<std::fs::File>>,
+    handles: &CheckpointHandles,
     batch: &CheckpointBatch,
 ) -> Result<(), DownloadError> {
     let targets = batch
@@ -6200,14 +6196,18 @@ async fn sync_checkpoint_targets(
         .iter()
         .copied()
         .map(|target| {
-            handles.get(&target).cloned().map_or_else(
-                || {
-                    Err(DownloadError::StorageTask(format!(
-                        "checkpoint target {target:?} has no sync handle"
-                    )))
-                },
-                |file| Ok((target, file)),
-            )
+            handles
+                .get(&target)
+                .and_then(|handle| handle.get())
+                .cloned()
+                .map_or_else(
+                    || {
+                        Err(DownloadError::StorageTask(format!(
+                            "checkpoint target {target:?} has no sync handle"
+                        )))
+                    },
+                    |file| Ok((target, file)),
+                )
         })
         .collect::<Result<Vec<_>, _>>()?;
     let mut targets = targets.into_iter();
@@ -8230,6 +8230,16 @@ async fn run_selective_download(
                     }
                     let piece_index_u32 = u32::try_from(piece_index)
                         .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+                    if !storage
+                        .has_piece_sources(piece_index_u32)
+                        .map_err(DownloadError::SelectiveStorage)?
+                    {
+                        *verified = false;
+                        storage
+                            .set_verified(piece_index, false)
+                            .map_err(DownloadError::SelectiveStorage)?;
+                        continue;
+                    }
                     let actual = storage
                         .hash_piece(piece_index_u32)
                         .await
@@ -8330,6 +8340,7 @@ async fn run_selective_download(
             .map_err(DownloadError::Checkpoint)?;
     }
     let part_slots_before_materialization = storage.part_slots();
+    let part_reopened = storage.has_part_file();
     storage
         .reopen_part_file()
         .await
@@ -8382,7 +8393,7 @@ async fn run_selective_download(
         materialized_bytes,
         part_slots_before_materialization,
         part_slots_after_materialization,
-        part_reopened: true,
+        part_reopened,
         part_path,
         prepared_files,
     })
@@ -8523,7 +8534,7 @@ mod tests {
     };
     use crate::peer_runtime::PeerConnectionLifecycle;
     use crate::selective_storage::{
-        SelectiveStorageError, selective_part_path, selective_staging_path,
+        CheckpointHandles, SelectiveStorageError, selective_part_path, selective_staging_path,
     };
     use crate::storage::{StagingFile, StorageError, staging_path};
     use crate::swarm::{
@@ -8675,7 +8686,7 @@ mod tests {
         .expect("checkpoint reached expected stage");
     }
 
-    fn checkpoint_sync_handle(name: &str) -> (PathBuf, BTreeMap<DurabilityTarget, std::fs::File>) {
+    fn checkpoint_sync_handle(name: &str) -> (PathBuf, CheckpointHandles) {
         let path = test_path(name);
         let file = std::fs::OpenOptions::new()
             .create_new(true)
@@ -8683,7 +8694,11 @@ mod tests {
             .write(true)
             .open(&path)
             .expect("create checkpoint sync target");
-        (path, BTreeMap::from([(DurabilityTarget::PartFile, file)]))
+        let handle = Arc::new(std::sync::OnceLock::new());
+        handle
+            .set(Arc::new(file))
+            .expect("new checkpoint test cell is empty");
+        (path, BTreeMap::from([(DurabilityTarget::PartFile, handle)]))
     }
 
     #[tokio::test]
@@ -15341,9 +15356,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
 
         timeout(Duration::from_secs(1), async {
             loop {
-                if tokio::fs::try_exists(&staging).await.expect("staging")
-                    && tokio::fs::try_exists(&part).await.expect("part")
-                {
+                if tokio::fs::try_exists(&staging).await.expect("staging") {
                     break;
                 }
                 tokio::task::yield_now().await;
@@ -15351,6 +15364,11 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         })
         .await
         .expect("engine created owned artifacts");
+        assert!(
+            !tokio::fs::try_exists(&part)
+                .await
+                .expect("part remains lazy")
+        );
         timeout(Duration::from_secs(1), async {
             loop {
                 if control
