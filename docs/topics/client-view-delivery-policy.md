@@ -40,7 +40,8 @@ hardware-specific throughput and observer-cost measurement.
 This topic does not select WebSocket framing, a binary codec, compression,
 relay authentication, or a public remote protocol. Those mechanisms must
 preserve the policy recorded here rather than becoming competing cadence
-authorities.
+authorities. Their accepted connection and multiplexing direction is recorded
+in [`application-connection-architecture.md`](application-connection-architecture.md).
 
 ## Four Separate Controls
 

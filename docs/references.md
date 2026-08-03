@@ -199,6 +199,16 @@ imported by the design documentation. Binary WebSocket frames and Tauri raw
 responses or Channels remain codec and delivery capabilities, not a reason to
 make a second semantic API.
 
+The accepted multiplexed connection and future relay direction in
+[`application-connection-architecture.md`](topics/application-connection-architecture.md)
+also uses the maintainer's local `~/code/yepanywhere` sibling as an
+architectural and failure reference. The topic records the exact observed
+commit and paths for its inner request/subscription router, plain and encrypted
+connection composition, opaque outer relay circuits, per-circuit fair queues
+and head-of-line-blocking analysis. RSTorrent adopts those lessons without
+copying source or adopting YepAnywhere's wire contract, HTTP-like operations,
+cryptography, framing constants or relay limits.
+
 ## libtorrent
 
 Project: [libtorrent](https://libtorrent.org/)

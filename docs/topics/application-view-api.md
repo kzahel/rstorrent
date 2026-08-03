@@ -61,6 +61,9 @@ This topic owns:
 
 [`application-control.md`](application-control.md) owns commands, durable
 application revisions, and the application-service authority.
+[`application-connection-architecture.md`](application-connection-architecture.md)
+owns multiplexed WebSocket calls and view attachments, IPC adaptation and
+future encrypted relay layering.
 [`client-view-delivery-policy.md`](client-view-delivery-policy.md) owns
 client-selected cadence, low-bandwidth and background policy, and the evidence
 required to calibrate those choices.
@@ -432,7 +435,7 @@ contract. The server may deliver current-state changes immediately with
 bounded latest-value coalescing; the client store and renderer decide when to
 paint. Ordered events retain their separate loss and backpressure semantics.
 
-## Provisional Remote Routes
+## Provisional Remote Routes And Connection
 
 The remote adapter reserves this shape for the first tactical:
 
@@ -443,13 +446,22 @@ POST   /api/v1/view-sets
 PUT    /api/v1/view-sets/{id}/views
 GET    /api/v1/view-sets/{id}/updates?after=...&wait_ms=...
 DELETE /api/v1/view-sets/{id}
-GET    /api/v1/stream
+GET    /api/v1/connect
 ```
 
-`/api/v1/stream` is a WebSocket upgrade that attaches an existing view set and
-cursor after authentication. The exact authentication mechanism is outside
-this topic. The current loopback `/control` WebSocket remains a proof and may
-be adapted or retired; preserving its path is not a compatibility requirement.
+`/api/v1/connect` is the preferred provisional versioned WebSocket upgrade. It
+authenticates once and carries typed hello, command, view-set creation/update/
+close, attachment, batch and exact cursor-acknowledgement frames directly. It
+does not require an HTTP-created view set, and one socket multiplexes every
+bounded view attachment for that client/backend connection. The accepted
+framing, ownership, resume and relay-compatible layering live in
+[`application-connection-architecture.md`](application-connection-architecture.md).
+
+The exact authentication mechanism remains outside this topic. The current
+loopback `/control` WebSocket is the legacy per-projection proof and must not be
+silently evolved into the new connection. It may be retired after every
+consumer is inventoried; preserving its path is not a compatibility
+requirement.
 
 The local Tauri product maps these semantic calls to commands and later
 Channels. It does not bind a loopback port or serialize through HTTP merely to

@@ -69,6 +69,9 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`application-view-api.md`](application-view-api.md): leased view sets,
   named snapshots and diffs, cursor recovery, polling and streaming delivery,
   generated TypeScript/schema, and provisional remote routes.
+- [`application-connection-architecture.md`](application-connection-architecture.md):
+  one typed application API over HTTP, multiplexed WebSocket and Tauri IPC,
+  resumable view attachments, and future opaque encrypted relay layering.
 - [`client-view-delivery-policy.md`](client-view-delivery-policy.md):
   client-selected real-time, balanced, low-bandwidth and background view
   cadence, lifecycle policy, observer cost, and required evidence.
