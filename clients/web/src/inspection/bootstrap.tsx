@@ -9,6 +9,7 @@ import { LiveApplication } from "./live/LiveApplication";
 import type { DemoScenarioId } from "./model";
 import { HttpApplicationClient } from "../api/client";
 import { TauriApplicationViewClient } from "../tauri-view-client";
+import { WebSocketApplicationViewClient } from "../websocket-view-client";
 import "./global.css";
 
 export function startDemoInspection(parameters: URLSearchParams): void {
@@ -33,12 +34,25 @@ export async function startLiveInspection(
     throw new Error("live gateway must use an HTTP loopback address");
   }
   const token = parameters.get("token");
-  const client = new HttpApplicationClient(
-    baseUrl.href,
-    token,
-    window.location.origin,
-  );
-  const waitMillis = parsePollMillis(parameters.get("poll_ms"));
+  const transport = parameters.get("transport");
+  if (transport !== null && transport !== "http") {
+    throw new Error("live transport must be omitted or set to http");
+  }
+  if (transport !== "http" && parameters.has("poll_ms")) {
+    throw new Error("poll_ms requires the diagnostic transport=http mode");
+  }
+  const waitMillis =
+    transport === "http"
+      ? parsePollMillis(parameters.get("poll_ms"))
+      : undefined;
+  const client =
+    transport === "http"
+      ? new HttpApplicationClient(
+          baseUrl.href,
+          token,
+          window.location.origin,
+        )
+      : new WebSocketApplicationViewClient(baseUrl.href, token);
   const application = await LiveApplication.open(client, {
     ...(waitMillis === undefined ? {} : { waitMillis }),
   });

@@ -27,7 +27,9 @@ test("live disk inspection observes pressure and exact recovery", async ({
     "controlled slow-storage gateway is opt-in",
   );
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(`/?live=${encodeURIComponent(gateway!)}&poll_ms=100`);
+  await page.goto(
+    `/?live=${encodeURIComponent(gateway!)}&transport=http&poll_ms=100`,
+  );
   await expect(
     page.getByRole("navigation", { name: "Torrent library" }),
   ).toBeVisible();
@@ -91,7 +93,9 @@ test("live piece inspection follows active work through verification", async ({
     await route.continue();
   });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(`/?live=${encodeURIComponent(gateway!)}&poll_ms=100`);
+  await page.goto(
+    `/?live=${encodeURIComponent(gateway!)}&transport=http&poll_ms=100`,
+  );
   await expect(
     page.getByRole("navigation", { name: "Torrent library" }),
   ).toBeVisible();
@@ -195,7 +199,9 @@ test("live peer inspection follows a controlled verified transfer", async ({
     }
   });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(`/?live=${encodeURIComponent(gateway!)}&poll_ms=100`);
+  await page.goto(
+    `/?live=${encodeURIComponent(gateway!)}&transport=http&poll_ms=100`,
+  );
   await expect(
     page.getByRole("navigation", { name: "Torrent library" }),
   ).toBeVisible();

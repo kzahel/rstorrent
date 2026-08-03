@@ -2,6 +2,7 @@ import type {
   ActivePiece,
   ApiErrorEnvelope,
   ApiHello,
+  ApplicationServerFrame,
   GatewayServerMessage,
   IndexRange,
   OpenViewSetResponse,
@@ -17,6 +18,7 @@ import { assertApiSchema, SchemaError } from "./api/schema";
 
 const MAX_FRAME_BYTES = 512 * 1024;
 const MAX_HTTP_RESPONSE_BYTES = 16 * 1024 * 1024;
+const MAX_APPLICATION_FRAME_BYTES = MAX_HTTP_RESPONSE_BYTES + 4 * 1024;
 const MAX_COLLECTION = 100_000;
 const MAX_ACTIVE_PEERS = 256;
 const PEER_FLAGS = [
@@ -122,6 +124,11 @@ export function decodeApiHello(source: string): ApiHello {
     "ApiHello",
     parseBoundedJson(source, MAX_FRAME_BYTES, "API hello response"),
   );
+  validateApiHello(value);
+  return value;
+}
+
+function validateApiHello(value: ApiHello): void {
   if (value.api.minimum > 1 || value.api.current < 1) {
     throw new ContractError("API version 1 is not supported by the server");
   }
@@ -154,6 +161,101 @@ export function decodeApiHello(source: string): ApiHello {
   ) {
     throw new ContractError("API queue limits are inconsistent");
   }
+}
+
+export function decodeApplicationServerFrame(
+  source: string,
+): ApplicationServerFrame {
+  const value = generated<ApplicationServerFrame>(
+    "ApplicationServerFrame",
+    parseBoundedJson(
+      source,
+      MAX_APPLICATION_FRAME_BYTES,
+      "application WebSocket frame",
+    ),
+  );
+  switch (value.type) {
+    case "connected":
+      if (value.api_version !== 1 || value.encoding !== "json") {
+        throw new ContractError("unsupported application connection contract");
+      }
+      validateApiHello(value.hello);
+      boundedInteger(
+        value.connection_limits.max_attachments,
+        "maximum attachments",
+        1,
+        65_535,
+      );
+      boundedInteger(
+        value.connection_limits.max_pending_calls,
+        "maximum pending calls",
+        1,
+        65_535,
+      );
+      boundedInteger(
+        value.connection_limits.max_client_message_bytes,
+        "maximum client message bytes",
+        1,
+        MAX_U32,
+      );
+      boundedInteger(
+        value.connection_limits.max_application_payload_bytes,
+        "maximum application payload bytes",
+        1,
+        MAX_U32,
+      );
+      boundedInteger(
+        value.connection_limits.heartbeat_idle_millis,
+        "heartbeat idle",
+        1,
+        MAX_U32,
+      );
+      boundedInteger(
+        value.connection_limits.heartbeat_timeout_millis,
+        "heartbeat timeout",
+        1,
+        MAX_U32,
+      );
+      break;
+    case "result":
+      connectionIdentifier(value.call_id, "call ID");
+      switch (value.result.type) {
+        case "command_response":
+          validateResponse(value.result.response);
+          break;
+        case "view_set_opened":
+          validateOpenViewSetResponse(value.result.response);
+          break;
+        case "view_set_updated":
+        case "view_set_closed":
+          break;
+      }
+      break;
+    case "call_error":
+      connectionIdentifier(value.call_id, "call ID");
+      validateApplicationConnectionError(value.error);
+      break;
+    case "attached":
+      connectionIdentifier(value.call_id, "call ID");
+      connectionIdentifier(value.stream_id, "stream ID");
+      identifier(value.view_set_id, "view-set ID");
+      break;
+    case "view_batch":
+      connectionIdentifier(value.stream_id, "stream ID");
+      validateUpdateBatch(value.batch);
+      break;
+    case "stream_error":
+      connectionIdentifier(value.stream_id, "stream ID");
+      validateApplicationConnectionError(value.error);
+      break;
+    case "detached":
+      connectionIdentifier(value.call_id, "call ID");
+      connectionIdentifier(value.stream_id, "stream ID");
+      break;
+    case "connection_error":
+      validateApplicationConnectionError(value.error);
+      break;
+  }
   return value;
 }
 
@@ -180,6 +282,11 @@ export function decodeOpenViewSetResponse(source: string): OpenViewSetResponse {
     "OpenViewSetResponse",
     parseBoundedJson(source, MAX_HTTP_RESPONSE_BYTES, "open view-set response"),
   );
+  validateOpenViewSetResponse(value);
+  return value;
+}
+
+function validateOpenViewSetResponse(value: OpenViewSetResponse): void {
   identifier(value.view_set_id, "view-set ID");
   decimal(value.lease_millis, "view-set lease");
   boundedInteger(value.effective_queue_bytes, "view-set queue bytes", 1, MAX_U32);
@@ -187,7 +294,6 @@ export function decodeOpenViewSetResponse(source: string): OpenViewSetResponse {
   if (value.initial.view_set_id !== value.view_set_id) {
     throw new ContractError("initial batch belongs to another view set");
   }
-  return value;
 }
 
 export function decodeUpdateBatch(source: string): UpdateBatch {
@@ -232,6 +338,35 @@ function validateUpdateBatch(batch: UpdateBatch): void {
         break;
     }
   }
+}
+
+function connectionIdentifier(value: unknown, label: string): string {
+  const parsed = boundedString(value, label, 64);
+  if (!/^[A-Za-z0-9._-]+$/.test(parsed)) {
+    throw new ContractError(`${label} is invalid`);
+  }
+  return parsed;
+}
+
+function validateApplicationConnectionError(value: {
+  readonly code: string;
+  readonly message: string;
+}): void {
+  oneOf(value.code, "application connection error code", [
+    "authentication_failed",
+    "invalid_version",
+    "invalid_message",
+    "invalid_call",
+    "resource_limit",
+    "unknown_view_set",
+    "consumer_busy",
+    "view_set_closed",
+    "unknown_stream",
+    "invalid_cursor",
+    "response_too_large",
+    "internal",
+  ]);
+  boundedString(value.message, "application connection error message", 1_024);
 }
 
 function validateResponse(value: unknown): void {
