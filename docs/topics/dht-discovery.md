@@ -245,6 +245,13 @@ The completed DHT foundation does not imply:
 These deferrals do not permit a disposable lookup client, an unbounded routing
 table, or a runtime that cannot be stopped and resumed cleanly.
 
+Planned Tactical [`065`](../tactical/065-dht-observatory.md) adds a read-only
+product inspection surface without changing these protocol deferrals. It
+projects bounded aggregate counters, all 160 IPv4 XOR-distance bucket
+occupancies, and at most 16 active lookup summaries. The first slice explicitly
+does not expose raw routing-node endpoints or DHT controls and does not change
+the Partial protocol-support claim.
+
 ## Maintenance Contract
 
 Every later DHT tactical updates this topic, the BEP rows in

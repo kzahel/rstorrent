@@ -312,6 +312,21 @@ that scope and its cleanup or compatibility rules explicitly.
   persisted user-selected roots, default/add-option policy, trusted local
   folder pickers, and shared add/Settings UX while deferring staged magnet file
   selection plus Linux and Windows native evidence.
+- [`062-user-visible-publication-layout.md`](062-user-visible-publication-layout.md):
+  complete; publishes completed downloads in a user-visible torrent-named
+  layout while retaining private staging and exact restart behavior.
+- [`063-live-file-selection.md`](063-live-file-selection.md): complete; adds
+  durable live Normal/Skip file selection, metadata-only add intent, exact
+  boundary-piece storage behavior, and safe joined generation replacement.
+- [`064-registry-backed-swarm-inspection.md`](064-registry-backed-swarm-inspection.md):
+  planned; turns the bounded peer registry into the torrent-scoped Swarm view
+  while preserving Peers as active connection generations.
+- [`065-dht-observatory.md`](065-dht-observatory.md): planned; adds a
+  session-scoped DHT observatory centered on truthful 160-bucket XOR-distance
+  occupancy and bounded active lookup summaries rather than a raw node table.
+- [`066-smooth-session-speed-history.md`](066-smooth-session-speed-history.md):
+  planned; retains bounded exact session byte history and renders a smooth
+  hand-rolled high-DPI Canvas chart without a general chart dependency.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

@@ -174,10 +174,13 @@ Tactical `035` makes the active lifecycle vocabulary transport-neutral:
 The Peers application view contains every active connection generation in
 those phases. It retains a disconnecting row until task, registry, scheduler,
 request, and payload cleanup finish, then removes it. It contains no
-disconnected history. The future Swarm view instead projects all retained
-peer records, including idle, backed-off, failed, banned, dialing, and
-connected records. A UI projection may map these owners coherently but cannot
-become another lifecycle authority.
+disconnected history. Planned Tactical
+[`064`](../tactical/064-registry-backed-swarm-inspection.md) makes Swarm project
+all retained peer records, including eligible, not-connectable, backed-off,
+failure-limited, banned, dialing, and connected records, with the registry's
+existing 1,000-record bound. It is current retained state, not a connection
+history. A UI projection may map these owners coherently but cannot become
+another lifecycle authority.
 
 The current `PeerRegistry`, `PeerSocketSet`, and `SwarmState` remain valid
 subowners with distinct invariants. `TorrentPeerCoordinator` now coordinates

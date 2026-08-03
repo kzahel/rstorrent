@@ -118,6 +118,17 @@ settings, and other session or product concerns use an identifiable right-side
 global group. The accepted storage and piece split lives in
 [`disk-and-piece-inspection`](disk-and-piece-inspection.md).
 
+The remaining detail-tab direction is also accepted. Tactical
+[`064`](../tactical/064-registry-backed-swarm-inspection.md) makes Swarm a
+bounded table over retained registry records while Peers remains active
+connections. Tactical [`065`](../tactical/065-dht-observatory.md) makes DHT a
+session observatory led by a 160-bucket XOR-distance ribbon and bounded lookup
+summaries, with no force graph, globe, or raw node table in the first slice.
+Tactical [`066`](../tactical/066-smooth-session-speed-history.md) makes Speed a
+session-owned three-window history rendered by local high-DPI Canvas code; RAF
+smooths and pans only between exact received anchors, and no general chart
+dependency is selected.
+
 Use three top-level application destinations rather than making one sidebar
 carry product navigation, torrent filtering, and media organization:
 

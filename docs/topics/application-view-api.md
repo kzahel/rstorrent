@@ -579,9 +579,14 @@ Disk activity is implemented as one global `session_disk` view by
 including bounded pipeline state, keyed active piece attempts, lease recovery,
 and terminal owner cleanup.
 The selected-torrent piece activity contract is generalized and rendered by
-Tactical `045`. Speed history, swarm state, and DHT follow through named views
-according to inspection value. Files is implemented by Tactical `041` and
-trackers by Tactical `043`. Unsupported views
+Tactical `045`. Files is implemented by Tactical `041` and trackers by
+Tactical `043`. The accepted planned sequence adds `torrent_swarm`,
+`session_dht`, and `session_speed` through Tacticals
+[`064`](../tactical/064-registry-backed-swarm-inspection.md),
+[`065`](../tactical/065-dht-observatory.md), and
+[`066`](../tactical/066-smooth-session-speed-history.md). Swarm is keyed
+registry state; DHT is one bounded latest session observation; Speed is a
+bounded session history with keyed completed-bucket patches. Unsupported views
 must report unsupported or unavailable explicitly rather than fabricate empty
 data.
 

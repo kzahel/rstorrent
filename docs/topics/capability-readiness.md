@@ -91,10 +91,13 @@ material before opening another storage implementation tactical.
 
 ### Next
 
-1. **Deepen peer inspection only if engine selection needs it.** A
-   registry-backed Swarm view remains the strongest missing inspection
-   candidate, but it should not displace a reproducible download correctness
-   or storage bottleneck merely to add another tab.
+1. **Complete the accepted missing-detail sequence when it is activated.**
+   Planned Tacticals [`064`](../tactical/064-registry-backed-swarm-inspection.md),
+   [`065`](../tactical/065-dht-observatory.md), and
+   [`066`](../tactical/066-smooth-session-speed-history.md) add the
+   registry-backed Swarm table, routing-space DHT observatory, and bounded
+   smooth Speed history in that order. They do not change the current engine
+   measurement gate merely by being planned.
 
 ### Later
 
@@ -177,7 +180,7 @@ does not.
 | --- | --- | --- | --- | --- |
 | Durable semantic application control | Implemented | deterministic, runtime, web, AVD, physical | Archive, fenced keep/delete removal, metadata-only add, and joined live file selection are implemented; stable public compatibility and general multi-torrent scheduling remain absent. | [`application-control`](application-control.md) |
 | Leased application view sets and delivery clients | Implemented | deterministic, runtime, interop, web, Tauri | Named summary, piece, structured diagnostic, active-peer, complete-file, tracker-lifecycle, and global Disk views have bounded replay/reset, independent lease expiry, fresh-snapshot recovery, diagnostic HTTP polling, acknowledged browser WebSocket streaming, and acknowledged in-process Tauri streaming. The retained observer matrices still expose Summary reset storms and trace/all-view serialization pressure; swarm views and stable public compatibility remain unimplemented. | [`application-view-api`](application-view-api.md), [`application-connection-architecture`](application-connection-architecture.md) |
-| Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive surface now has Library, Transfers, and Workbench destinations, truthful bounded torrent-backed cards, shared multi-selection, magnets, metadata-only add, live Normal/Skip file actions, archives, guarded removal, live peer/file/tracker inspection, global Disk pressure, and bounded Canvas Pieces; a real media catalog/playback, `.torrent` file intake, and remaining detail feeds are incomplete. | [`client-surfaces`](client-surfaces.md), [`application-interface-direction`](application-interface-direction.md) |
+| Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive surface now has Library, Transfers, and Workbench destinations, truthful bounded torrent-backed cards, shared multi-selection, magnets, metadata-only add, live Normal/Skip file actions, archives, guarded removal, live peer/file/tracker inspection, global Disk pressure, and bounded Canvas Pieces; a real media catalog/playback and `.torrent` file intake remain incomplete, while Swarm, DHT, and Speed now have accepted planned Tacticals `064`--`066`. | [`client-surfaces`](client-surfaces.md), [`application-interface-direction`](application-interface-direction.md) |
 | Android Compose foreground client | Partial | runtime, AVD, physical | General settings, connectivity policy, and complete torrent controls remain incomplete. | [`client-surfaces`](client-surfaces.md) |
 | Derived progress and bounded diagnostics | Implemented | deterministic, runtime, interop, web, AVD | Structured hierarchical records, typed context, capture interest, explicit source/delivery/local loss, and the global ordered console are complete; scheduler and per-peer facts must grow with their corresponding owners. | [`application-control`](application-control.md) |
 | Offline, loopback-only, and online egress policy | Implemented | deterministic, runtime, web, AVD | Policy is fixed for one service lifetime; Android VPN and metered-network controls are absent. | [`application-control`](application-control.md) |
