@@ -515,15 +515,19 @@ forcing desktop or another root to serialize.
 ## File-Handle Ownership
 
 Workers need stable destination identities without opening a file per block.
-Path-backed storage should use a bounded retained handle table or cache whose
-entries can be shared immutably by positional jobs. Jobs keep their handle
-alive through completion; eviction never invalidates running work.
+Path and Android SAF storage should share a session-wide bounded retained
+handle table whose entries can be shared immutably by positional jobs. Jobs
+keep their handle alive through completion; eviction removes the cache
+reference but never invalidates running work.
 
-Descriptor-backed SAF storage cannot assume it can reopen arbitrary files and
-may retain the supplied owned descriptors for the torrent lifetime. Descriptor
-count remains bounded by validated metainfo and the platform manifest. The
-session scheduler accounts for these two policies explicitly rather than
-pretending every backend has path semantics.
+Acquisition differs without forking payload I/O. Path storage opens a safe
+native path locally. On a SAF cache miss, the Android platform owner resolves
+or creates one exact provider document and lends a descriptor for Rust to
+duplicate. Hits, positional I/O, hashing, durability, LRU eviction, and
+in-flight ownership remain in Rust. Descriptor count is bounded by the shared
+pool rather than validated metainfo size or a startup manifest. The detailed
+capability, cancellation, part-file, and provider lifecycle is owned by
+[`android-saf-storage.md`](android-saf-storage.md).
 
 The hash path should stop duplicating each wanted-file handle for every piece
 once handles are safely shareable for positional access;

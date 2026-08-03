@@ -57,6 +57,9 @@ Topics own the current truth for a continuing concern. Tactical docs under
   proposed maximum-throughput receive-to-storage pipeline, positional I/O,
   write/hash joins, part-file coordination, batched durability, and
   session/root scheduling.
+- [`android-saf-storage.md`](android-saf-storage.md): persisted Android tree
+  capabilities, dynamic document acquisition, shared session-wide descriptor
+  pooling, lazy part storage, and the Kotlin namespace/Rust payload boundary.
 - [`oracle-driven-engine-campaign.md`](oracle-driven-engine-campaign.md):
   source-first libtorrent-oracle runbook, parity gates, autonomous restart
   checkpoint, milestone sequence, and transition to measured BEP breadth.

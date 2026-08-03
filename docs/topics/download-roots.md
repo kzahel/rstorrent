@@ -50,7 +50,10 @@ It complements:
   presentation and browser-local versus durable state; and
 - [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
   which owns content I/O, staging, hashing, durability, and root-level resource
-  scheduling.
+  scheduling; and
+- [`android-saf-storage.md`](android-saf-storage.md), which owns dynamic SAF
+  document acquisition, descriptor lifetime, and the platform namespace/Rust
+  payload boundary beneath an established root.
 
 This topic does not implement torrent relocation, automatic content import,
 numeric or piece priorities, fast resume, browser filesystem I/O, or dynamic

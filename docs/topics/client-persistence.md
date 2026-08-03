@@ -230,14 +230,18 @@ transitions without depending on SQL. The application service may batch those
 transitions into database transactions. Piece blocks and payload buffers do
 not cross the application or platform boundary.
 
-Platform-capability storage uses a coarse two-phase handoff. When a magnet's
-verified metadata first establishes its layout, the application service may
-wait for its platform adapter to supply a bounded descriptor manifest for the
-selected root. The adapter owns capability acquisition and reopening; the
-service and engine own torrent-coordinate validation, descriptor duplication,
-recheck, and verified progress. This handoff is not a portable application
+Platform-capability storage uses dynamic, bounded descriptor acquisition. When
+verified metadata establishes a safe layout, the application service retains
+the selected stable root identity but does not request a startup manifest
+proportional to torrent file count. A shared session file pool asks the
+platform adapter for one existing or newly created document on a cache miss;
+Rust duplicates the returned descriptor and owns torrent-coordinate I/O,
+recheck, and verified progress. The adapter owns capability resolution and
+provider namespace operations. This handoff is not a portable application
 command and must not expose URI or descriptor values to browser or remote
-clients.
+clients. The accepted Android boundary and replacement of the fixed proof
+manifest are recorded in
+[`android-saf-storage.md`](android-saf-storage.md).
 
 Publication through a platform provider is also explicit and two-phase.
 Engine preparation and per-file hashes become durable before the adapter
