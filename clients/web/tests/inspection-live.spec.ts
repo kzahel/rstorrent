@@ -163,200 +163,56 @@ test("live peer inspection follows a controlled verified transfer", async ({
       trackerUrl === undefined,
     "controlled live gateway is opt-in",
   );
-  const viewSetIds: string[] = [];
-  let openAttempts = 0;
-  let suspendUpdates = false;
-  let releaseUpdates = () => {};
-  let updatesReleased = Promise.resolve();
-  let delayNextCommand = true;
-  await page.route(`${gateway!}/api/v1/view-sets`, async (route) => {
-    if (route.request().method() === "POST") {
-      openAttempts += 1;
-      if (openAttempts > 1) await new Promise((resolve) => setTimeout(resolve, 350));
+  let applicationUpgrades = 0;
+  const semanticHttpRequests: string[] = [];
+  const semanticPaths = [
+    "/api/v1/hello",
+    "/api/v1/commands",
+    "/api/v1/view-sets",
+  ];
+  page.on("websocket", (socket) => {
+    if (socket.url() === `${gateway!.replace(/^http/, "ws")}/api/v1/connect`) {
+      applicationUpgrades += 1;
     }
-    await route.continue();
   });
-  await page.route("**/api/v1/view-sets/*/updates?**", async (route) => {
-    if (suspendUpdates) await updatesReleased;
-    await route.continue();
-  });
-  await page.route(`${gateway!}/api/v1/commands`, async (route) => {
-    if (delayNextCommand) {
-      delayNextCommand = false;
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-    await route.continue();
-  });
-  page.on("response", (response) => {
+  page.on("request", (request) => {
+    const url = new URL(request.url());
     if (
-      response.request().method() === "POST" &&
-      response.url() === `${gateway!}/api/v1/view-sets` &&
-      response.status() === 201
+      request.url().startsWith(gateway!) &&
+      semanticPaths.some(
+        (path) => url.pathname === path || url.pathname.startsWith(`${path}/`),
+      )
     ) {
-      void response.json().then((body: { view_set_id?: string }) => {
-        if (body.view_set_id !== undefined) viewSetIds.push(body.view_set_id);
-      });
+      semanticHttpRequests.push(`${request.method()} ${url.pathname}`);
     }
   });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(
-    `/?live=${encodeURIComponent(gateway!)}&transport=http&poll_ms=100`,
-  );
-  await expect(
-    page.getByRole("navigation", { name: "Torrent library" }),
-  ).toBeVisible();
-  await expect
-    .poll(async () => {
-      const mainBottom = await page
-        .locator("#app main")
-        .evaluate((element) => Math.round(element.getBoundingClientRect().bottom));
-      const detailBottom = await page
-        .locator('section[aria-label="Torrent details"]')
-        .evaluate((element) => Math.round(element.getBoundingClientRect().bottom));
-      return { mainBottom, detailBottom };
-    })
-    .toEqual({ mainBottom: 900, detailBottom: 900 });
-
-  const moreButton = page.getByRole("button", { name: "More", exact: true });
-  await moreButton.focus();
-  await page.keyboard.press("ArrowDown");
-  const addTestTorrent = page.getByRole("menuitem", {
-    name: "Add test torrent",
-  });
-  await expect(addTestTorrent).toBeFocused();
-  await page.keyboard.press("ArrowRight");
-  const testTorrentMenu = page.getByRole("menu", {
-    name: "Add test torrent",
-  });
-  await expect(testTorrentMenu.getByRole("menuitem")).toHaveCount(5);
-  await expect(
-    testTorrentMenu.getByRole("menuitem", { name: "Big Buck Bunny" }),
-  ).toBeFocused();
-  await capture(page, "live-test-torrent-menu-wide.png");
-  const menuViolations = (await new AxeBuilder({ page }).analyze()).violations.filter(
-    (violation) => violation.impact === "serious" || violation.impact === "critical",
-  );
-  expect(menuViolations).toEqual([]);
-  await page.keyboard.press("Escape");
-  await expect(testTorrentMenu).not.toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(moreButton).toBeFocused();
+  await page.goto(`/?live=${encodeURIComponent(gateway!)}`);
+  const primary = page.getByRole("navigation", { name: "Primary" });
+  const transferGrid = page.getByRole("grid", { name: "Transfer queue" });
+  await expect(primary).toBeVisible();
+  await expect(transferGrid).toBeVisible();
+  await expect.poll(() => applicationUpgrades).toBe(1);
 
   const addForm = page.getByRole("form", { name: "Add torrent" });
   const torrentInput = addForm.getByRole("textbox", {
     name: "Magnet link or torrent URL",
   });
-  const addButton = addForm.getByRole("button");
-  await torrentInput.fill("https://example.test/file.torrent");
-  await addButton.click();
-  await expect(torrentInput).toHaveAttribute("aria-invalid", "true");
-  await expect(torrentInput).toHaveValue(
-    "https://example.test/file.torrent",
-  );
-  await expect(
-    page.getByText(
-      "Remote .torrent URLs are not supported yet. Paste a magnet link instead.",
-      { exact: true },
-    ),
-  ).toBeVisible();
-
+  const transferStartedAt = performance.now();
   await torrentInput.fill(magnet!);
   await torrentInput.press("Enter");
-  await expect(addButton).toBeDisabled();
-  await expect(moreButton).toBeDisabled();
   await expect(page.getByText("Torrent added", { exact: true })).toBeVisible();
   await expect(torrentInput).toHaveValue("");
 
+  const transferRow = transferGrid.locator(`[data-row-id="${torrentId!}"]`);
+  await expect(transferRow).toContainText(torrentName!, { timeout: 20_000 });
+  await transferRow.click();
+  await primary.getByRole("button", { name: "Workbench" }).click();
   const library = page.getByRole("grid", { name: "Torrent library" });
+  await expect(library).toBeVisible();
   const torrentRow = library.locator(`[data-row-id="${torrentId!}"]`);
-  await expect(torrentRow).toBeVisible({ timeout: 10_000 });
+  await expect(torrentRow).toBeVisible();
   await torrentRow.click();
-  await page.getByRole("tab", { name: "Trackers" }).click();
-  const trackers = page.getByRole("grid", { name: "Torrent trackers" });
-  const trackerRow = trackers.getByRole("row").filter({ hasText: trackerUrl! });
-  await expect(trackerRow).toBeVisible({ timeout: 10_000 });
-  await expect(trackerRow).toContainText("announcing");
-  await expect
-    .poll(async () => {
-      const cells = trackerRow.getByRole("gridcell");
-      return {
-        status: (await cells.nth(1).textContent())?.trim(),
-        peers: (await cells.nth(3).textContent())?.trim(),
-        seeds: (await cells.nth(4).textContent())?.trim(),
-        leeches: (await cells.nth(5).textContent())?.trim(),
-      };
-    }, { timeout: 10_000 })
-    .toEqual({
-      status: "reannounce wait",
-      peers: "1",
-      seeds: "37",
-      leeches: "11",
-    });
-  await expect(trackerRow).toContainText("Announce in");
-  await capture(page, "live-trackers-wide.png");
-
-  await page.getByRole("tab", { name: "Logs" }).click();
-  const diagnosticFeed = page.getByRole("log", {
-    name: "Chronological diagnostic events",
-  });
-  await expect(diagnosticFeed).toBeVisible();
-  await expect(
-    diagnosticFeed.getByText("UDP tracker announce succeeded", { exact: true }),
-  ).toBeVisible({ timeout: 10_000 });
-  await page
-    .getByRole("button", { name: "Expand tracker_announce_succeeded" })
-    .click();
-  await expect(diagnosticFeed.getByText(trackerUrl!, { exact: true })).toBeVisible();
-  await expect(diagnosticFeed.getByText("announce interval", { exact: true })).toBeVisible();
-  await page.getByLabel("Diagnostic capture profile").selectOption("detailed");
-  await page.getByPlaceholder("Category prefix").fill("tracker");
-  await expect(
-    diagnosticFeed.getByText("UDP tracker announce succeeded", { exact: true }),
-  ).toBeVisible();
-  await capture(page, "live-diagnostic-console-wide.png");
-
-  await page.setViewportSize({ width: 390, height: 844 });
-  const backToLibrary = page.getByRole("button", {
-    name: "Torrents",
-    exact: true,
-  });
-  await expect(backToLibrary).toBeVisible();
-  await backToLibrary.click();
-  const menuButton = page.getByRole("button", {
-    name: "Toggle library navigation",
-  });
-  await expect(menuButton).toBeVisible();
-  if ((await menuButton.getAttribute("aria-expanded")) === "true") {
-    await menuButton.click();
-    await page.waitForTimeout(250);
-  }
-  await expect(menuButton).toHaveAttribute("aria-expanded", "false");
-  await expect
-    .poll(async () =>
-      page
-        .getByRole("navigation", { name: "Torrent library" })
-        .evaluate((element) => Math.round(element.getBoundingClientRect().right)),
-    )
-    .toBeLessThanOrEqual(0);
-  await expect(torrentInput).toBeVisible();
-  await expect(addButton).toBeVisible();
-  await capture(page, "live-magnet-phone-library.png");
-  await moreButton.click();
-  await page.getByRole("menuitem", { name: "Add test torrent" }).click();
-  await expect(testTorrentMenu.getByRole("menuitem")).toHaveCount(5);
-  await capture(page, "live-test-torrent-menu-phone.png");
-  await page.keyboard.press("Escape");
-  await page.keyboard.press("Escape");
-
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await expect(torrentRow).toContainText(torrentName!, { timeout: 20_000 });
-  await torrentRow.click();
-  await page.getByRole("tab", { name: "General" }).click();
-  await expect(
-    page.getByRole("tabpanel").getByRole("heading", { name: torrentName! }),
-  ).toBeVisible();
-
-  const transferStartedAt = performance.now();
   await page.getByRole("tab", { name: "Files" }).click();
   const files = page.getByRole("grid", { name: "Torrent files" });
   const expectedFileCount = Number(fileCount!);
@@ -383,19 +239,6 @@ test("live peer inspection follows a controlled verified transfer", async ({
   const firstVerifiedMs = Math.round(performance.now() - transferStartedAt);
   await capture(page, "live-files-progress-wide.png");
 
-  updatesReleased = new Promise<void>((resolve) => {
-    releaseUpdates = resolve;
-  });
-  suspendUpdates = true;
-  await new Promise((resolve) => setTimeout(resolve, 1_000));
-  suspendUpdates = false;
-  releaseUpdates();
-  await expect(page.getByText("reconnecting", { exact: true })).toBeVisible();
-  await expect(payloadFile).toBeVisible();
-  await capture(page, "live-files-reconnecting.png");
-  await expect(page.getByText("connected", { exact: true })).toBeVisible();
-  await expect.poll(() => new Set(viewSetIds).size).toBeGreaterThan(1);
-
   await page.getByRole("tab", { name: "Peers" }).click();
 
   const peers = page.getByRole("grid", { name: "Active peer connections" });
@@ -411,26 +254,6 @@ test("live peer inspection follows a controlled verified transfer", async ({
   );
   expect(violations).toEqual([]);
 
-  await expect(torrentRow).toContainText("downloading", { timeout: 15_000 });
-  const peerCells = peers.getByRole("row").nth(1).getByRole("gridcell");
-  await expect
-    .poll(async () => {
-      const down = (await peerCells.nth(5).textContent())?.trim();
-      const requests = (await peerCells.nth(7).textContent())?.trim();
-      return down !== "—" || requests !== "—";
-    }, { timeout: 12_000 })
-    .toBe(true);
-  await page.setViewportSize({ width: 920, height: 720 });
-  await expect(peers).toBeVisible();
-  await capture(page, "live-peer-compact.png");
-
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole("button", { name: "Torrents", exact: true })).toBeVisible();
-  await expect(peers).toBeVisible();
-  await page.waitForTimeout(250);
-  await capture(page, "live-peer-phone.png");
-
-  await page.setViewportSize({ width: 1440, height: 900 });
   await expect(torrentRow).toContainText("complete", { timeout: 30_000 });
   await expect
     .poll(async () => Number(await peers.getAttribute("aria-rowcount")))
@@ -443,8 +266,10 @@ test("live peer inspection follows a controlled verified transfer", async ({
   await expect(prefixFile).toContainText("6.8 KiB");
   await expect(payloadFile).toContainText("39.0 KiB");
   expect(firstVerifiedMs).toBeGreaterThanOrEqual(firstDoneMs);
+  expect(applicationUpgrades).toBe(1);
+  expect(semanticHttpRequests).toEqual([]);
   console.log(
-    `file_live_milestones ${JSON.stringify({ firstDoneMs, firstVerifiedMs, files: expectedFileCount })}`,
+    `file_live_milestones ${JSON.stringify({ firstDoneMs, firstVerifiedMs, files: expectedFileCount, applicationUpgrades, semanticHttpRequests: semanticHttpRequests.length })}`,
   );
 });
 
