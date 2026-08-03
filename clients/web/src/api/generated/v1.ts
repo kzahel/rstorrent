@@ -169,3 +169,17 @@ export type UpdateBatch = { api_version: number, view_set_id: string, epoch: str
 
 export type OpenViewSetResponse = { view_set_id: string, lease_millis: string, effective_queue_bytes: number, effective_views: Array<ViewSpec>, initial: UpdateBatch, };
 
+export type ApplicationCall = { "type": "dispatch", request: RequestEnvelope, } | { "type": "open_view_set", request: OpenViewSetRequest, } | { "type": "update_view_set", view_set_id: string, request: UpdateViewSetRequest, } | { "type": "close_view_set", view_set_id: string, };
+
+export type ApplicationCallResult = { "type": "command_response", response: ResponseEnvelope, } | { "type": "view_set_opened", response: OpenViewSetResponse, } | { "type": "view_set_updated" } | { "type": "view_set_closed" };
+
+export type ApplicationConnectionErrorCode = "authentication_failed" | "invalid_version" | "invalid_message" | "invalid_call" | "resource_limit" | "unknown_view_set" | "consumer_busy" | "view_set_closed" | "unknown_stream" | "invalid_cursor" | "response_too_large" | "internal";
+
+export type ApplicationConnectionError = { code: ApplicationConnectionErrorCode, message: string, };
+
+export type ApplicationConnectionLimits = { max_attachments: number, max_pending_calls: number, max_client_message_bytes: number, max_application_payload_bytes: number, heartbeat_idle_millis: number, heartbeat_timeout_millis: number, };
+
+export type ApplicationClientFrame = { "type": "connect", api_version: number, encoding: ApiEncoding, client_instance_id: string, token?: string | null, } | { "type": "call", call_id: string, operation: ApplicationCall, } | { "type": "attach", call_id: string, stream_id: string, view_set_id: string, after: string, } | { "type": "ack", stream_id: string, cursor: string, } | { "type": "detach", call_id: string, stream_id: string, };
+
+export type ApplicationServerFrame = { "type": "connected", api_version: number, encoding: ApiEncoding, hello: ApiHello, connection_limits: ApplicationConnectionLimits, } | { "type": "result", call_id: string, result: ApplicationCallResult, } | { "type": "call_error", call_id: string, error: ApplicationConnectionError, } | { "type": "attached", call_id: string, stream_id: string, view_set_id: string, } | { "type": "view_batch", stream_id: string, batch: UpdateBatch, } | { "type": "stream_error", stream_id: string, error: ApplicationConnectionError, } | { "type": "detached", call_id: string, stream_id: string, } | { "type": "connection_error", error: ApplicationConnectionError, };
+

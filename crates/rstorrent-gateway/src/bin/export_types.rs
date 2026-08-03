@@ -3,25 +3,27 @@ use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
 use rstorrent_gateway::{
-    ApiError, ApiErrorCode, ApiErrorEnvelope, GatewayClientMessage, GatewayErrorCode,
-    GatewayServerMessage,
+    ApiError, ApiErrorCode, ApiErrorEnvelope, ApplicationClientFrame, ApplicationConnectionError,
+    ApplicationConnectionErrorCode, ApplicationConnectionLimits, ApplicationServerFrame,
+    GatewayClientMessage, GatewayErrorCode, GatewayServerMessage,
 };
 use rstorrent_session::{
     ActivePiece, ActivePieceStageView, ApiEncoding, ApiHello, ApiLimits, ApiVersion,
-    CapabilityStatus, Command, DeliveryMode, DeliveryPolicy, DiagnosticCategory, DiagnosticEvent,
-    DiagnosticField, DiagnosticFilter, DiagnosticProfile, DiagnosticRetention, DiagnosticSeverity,
-    DiagnosticSubject, DiagnosticValue, DiskCheckpointStageView, DiskPieceStageView, DiskPieceView,
-    DiskPipelineView, DiskPressureView, ErrorCode, ErrorResponse, FileCatalogState,
-    FileSelectionView, FileView, IndexRange, OpenViewSetOptions, OpenViewSetRequest,
-    OpenViewSetResponse, PeerDirection, PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView,
-    PeerLifecycle, PeerRequestPhase, PeerRole, PeerSourceView, PeerTransportKind, PeerView,
-    ProgressAction, ProgressAssessment, ProgressDisposition, ProgressPhase, ProgressReason,
-    RemovalDataPolicy, RemovalState, RequestEnvelope, ResetReason, ResponseEnvelope,
-    ResponseOutcome, ServiceSnapshot, StorageState, SubscriptionSpec, TorrentSnapshot,
-    TorrentState, TorrentView, TrackerAnnounceEventView, TrackerCatalogState,
-    TrackerNextActionView, TrackerSourceView, TrackerStatusView, TrackerTransportView, TrackerView,
-    UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector,
-    ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate, ViewUpdatePayload,
+    ApplicationCall, ApplicationCallResult, CapabilityStatus, Command, DeliveryMode,
+    DeliveryPolicy, DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
+    DiagnosticProfile, DiagnosticRetention, DiagnosticSeverity, DiagnosticSubject, DiagnosticValue,
+    DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
+    ErrorCode, ErrorResponse, FileCatalogState, FileSelectionView, FileView, IndexRange,
+    OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
+    PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerRequestPhase,
+    PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
+    ProgressDisposition, ProgressPhase, ProgressReason, RemovalDataPolicy, RemovalState,
+    RequestEnvelope, ResetReason, ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState,
+    SubscriptionSpec, TorrentSnapshot, TorrentState, TorrentView, TrackerAnnounceEventView,
+    TrackerCatalogState, TrackerNextActionView, TrackerSourceView, TrackerStatusView,
+    TrackerTransportView, TrackerView, UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy,
+    ViewPatch, ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate,
+    ViewUpdatePayload,
 };
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -144,6 +146,13 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<ViewSetUpdate>(&mut declarations)?;
     append::<UpdateBatch>(&mut declarations)?;
     append::<OpenViewSetResponse>(&mut declarations)?;
+    append::<ApplicationCall>(&mut declarations)?;
+    append::<ApplicationCallResult>(&mut declarations)?;
+    append::<ApplicationConnectionErrorCode>(&mut declarations)?;
+    append::<ApplicationConnectionError>(&mut declarations)?;
+    append::<ApplicationConnectionLimits>(&mut declarations)?;
+    append::<ApplicationClientFrame>(&mut declarations)?;
+    append::<ApplicationServerFrame>(&mut declarations)?;
     write_file(output, declarations)
 }
 
@@ -162,6 +171,8 @@ fn write_schema(output: &Path) -> Result<(), Box<dyn Error>> {
     add_schema::<UpdateViewSetRequest>(&mut definitions, "UpdateViewSetRequest")?;
     add_schema::<OpenViewSetResponse>(&mut definitions, "OpenViewSetResponse")?;
     add_schema::<UpdateBatch>(&mut definitions, "UpdateBatch")?;
+    add_schema::<ApplicationClientFrame>(&mut definitions, "ApplicationClientFrame")?;
+    add_schema::<ApplicationServerFrame>(&mut definitions, "ApplicationServerFrame")?;
 
     let document = Value::Object(Map::from_iter([
         (

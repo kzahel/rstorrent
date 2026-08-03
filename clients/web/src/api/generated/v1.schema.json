@@ -242,6 +242,515 @@
       ],
       "type": "object"
     },
+    "ApplicationCall": {
+      "oneOf": [
+        {
+          "properties": {
+            "request": {
+              "$ref": "#/$defs/RequestEnvelope"
+            },
+            "type": {
+              "const": "dispatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "request"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "request": {
+              "$ref": "#/$defs/OpenViewSetRequest"
+            },
+            "type": {
+              "const": "open_view_set",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "request"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "request": {
+              "$ref": "#/$defs/UpdateViewSetRequest"
+            },
+            "type": {
+              "const": "update_view_set",
+              "type": "string"
+            },
+            "view_set_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "view_set_id",
+            "request"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "close_view_set",
+              "type": "string"
+            },
+            "view_set_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "view_set_id"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ApplicationCallResult": {
+      "oneOf": [
+        {
+          "properties": {
+            "response": {
+              "$ref": "#/$defs/ResponseEnvelope"
+            },
+            "type": {
+              "const": "command_response",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "response"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "response": {
+              "$ref": "#/$defs/OpenViewSetResponse"
+            },
+            "type": {
+              "const": "view_set_opened",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "response"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "view_set_updated",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "view_set_closed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ApplicationClientFrame": {
+      "oneOf": [
+        {
+          "properties": {
+            "api_version": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "client_instance_id": {
+              "type": "string"
+            },
+            "encoding": {
+              "$ref": "#/$defs/ApiEncoding"
+            },
+            "token": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "connect",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "api_version",
+            "encoding",
+            "client_instance_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "call_id": {
+              "type": "string"
+            },
+            "operation": {
+              "$ref": "#/$defs/ApplicationCall"
+            },
+            "type": {
+              "const": "call",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "call_id",
+            "operation"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "after": {
+              "type": "string"
+            },
+            "call_id": {
+              "type": "string"
+            },
+            "stream_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "attach",
+              "type": "string"
+            },
+            "view_set_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "call_id",
+            "stream_id",
+            "view_set_id",
+            "after"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "cursor": {
+              "type": "string"
+            },
+            "stream_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "ack",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "stream_id",
+            "cursor"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "call_id": {
+              "type": "string"
+            },
+            "stream_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "detach",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "call_id",
+            "stream_id"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ApplicationConnectionError": {
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ApplicationConnectionErrorCode"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "ApplicationConnectionErrorCode": {
+      "enum": [
+        "authentication_failed",
+        "invalid_version",
+        "invalid_message",
+        "invalid_call",
+        "resource_limit",
+        "unknown_view_set",
+        "consumer_busy",
+        "view_set_closed",
+        "unknown_stream",
+        "invalid_cursor",
+        "response_too_large",
+        "internal"
+      ],
+      "type": "string"
+    },
+    "ApplicationConnectionLimits": {
+      "properties": {
+        "heartbeat_idle_millis": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "heartbeat_timeout_millis": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_application_payload_bytes": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_attachments": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_client_message_bytes": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_pending_calls": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_attachments",
+        "max_pending_calls",
+        "max_client_message_bytes",
+        "max_application_payload_bytes",
+        "heartbeat_idle_millis",
+        "heartbeat_timeout_millis"
+      ],
+      "type": "object"
+    },
+    "ApplicationServerFrame": {
+      "oneOf": [
+        {
+          "properties": {
+            "api_version": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "connection_limits": {
+              "$ref": "#/$defs/ApplicationConnectionLimits"
+            },
+            "encoding": {
+              "$ref": "#/$defs/ApiEncoding"
+            },
+            "hello": {
+              "$ref": "#/$defs/ApiHello"
+            },
+            "type": {
+              "const": "connected",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "api_version",
+            "encoding",
+            "hello",
+            "connection_limits"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "call_id": {
+              "type": "string"
+            },
+            "result": {
+              "$ref": "#/$defs/ApplicationCallResult"
+            },
+            "type": {
+              "const": "result",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "call_id",
+            "result"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "call_id": {
+              "type": "string"
+            },
+            "error": {
+              "$ref": "#/$defs/ApplicationConnectionError"
+            },
+            "type": {
+              "const": "call_error",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "call_id",
+            "error"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "call_id": {
+              "type": "string"
+            },
+            "stream_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "attached",
+              "type": "string"
+            },
+            "view_set_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "call_id",
+            "stream_id",
+            "view_set_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "batch": {
+              "$ref": "#/$defs/UpdateBatch"
+            },
+            "stream_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "view_batch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "stream_id",
+            "batch"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/ApplicationConnectionError"
+            },
+            "stream_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "stream_error",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "stream_id",
+            "error"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "call_id": {
+              "type": "string"
+            },
+            "stream_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "detached",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "call_id",
+            "stream_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/ApplicationConnectionError"
+            },
+            "type": {
+              "const": "connection_error",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "CapabilityStatus": {
       "enum": [
         "available",

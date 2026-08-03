@@ -13,7 +13,7 @@ rstorrent-session = { path = "../rstorrent-session" }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "sync"] }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-util = { workspace = true }
 tower-http = { workspace = true, features = ["cors"] }
 ts-rs = { workspace = true }

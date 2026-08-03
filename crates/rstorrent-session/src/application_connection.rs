@@ -8,6 +8,7 @@ use ts_rs::TS;
 use crate::{
     ApplicationError, ApplicationService, OpenViewSetRequest, OpenViewSetResponse, RequestEnvelope,
     ResponseEnvelope, UpdateBatch, UpdateViewSetRequest, ViewSet, ViewSetError, ViewSetOwner,
+    application_error_response,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -80,9 +81,20 @@ impl ApplicationService {
         call: ApplicationCall,
     ) -> Result<ApplicationCallResult, ApplicationCallError> {
         match call {
-            ApplicationCall::Dispatch { request } => Ok(ApplicationCallResult::CommandResponse {
-                response: Box::new(self.dispatch(*request).await?),
-            }),
+            ApplicationCall::Dispatch { request } => {
+                let request_id = request.request_id.clone();
+                let response = match self.dispatch(*request).await {
+                    Ok(response) => response,
+                    Err(error) => application_error_response(
+                        request_id,
+                        self.revision().unwrap_or_default(),
+                        &error,
+                    ),
+                };
+                Ok(ApplicationCallResult::CommandResponse {
+                    response: Box::new(response),
+                })
+            }
             ApplicationCall::OpenViewSet { request } => Ok(ApplicationCallResult::ViewSetOpened {
                 response: Box::new(self.open_view_set(owner.clone(), request)?),
             }),

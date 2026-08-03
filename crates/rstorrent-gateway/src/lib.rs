@@ -2,6 +2,13 @@
 
 //! Bounded loopback HTTP and WebSocket adapter for the application contract.
 
+mod application_websocket;
+
+pub use application_websocket::{
+    ApplicationClientFrame, ApplicationConnectionError, ApplicationConnectionErrorCode,
+    ApplicationConnectionLimits, ApplicationServerFrame,
+};
+
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
@@ -271,6 +278,8 @@ struct GatewayState {
     service: Arc<Mutex<ApplicationService>>,
     connections: Arc<Semaphore>,
     http_owner_namespace: u64,
+    connection_registry: application_websocket::ApplicationConnectionRegistry,
+    gateway_shutdown: CancellationToken,
 }
 
 impl fmt::Debug for GatewayState {
@@ -302,6 +311,8 @@ pub async fn bind(
         service,
         connections: Arc::new(Semaphore::new(config.max_connections)),
         http_owner_namespace: NEXT_HTTP_OWNER.fetch_add(1, Ordering::Relaxed),
+        connection_registry: application_websocket::ApplicationConnectionRegistry::new(),
+        gateway_shutdown: CancellationToken::new(),
     };
     Ok(GatewayServer {
         listener,
@@ -332,6 +343,7 @@ impl GatewayServer {
 
     pub async fn serve(self, shutdown: CancellationToken) -> Result<(), GatewayError> {
         let service = self.state.service.clone();
+        let gateway_shutdown = self.state.gateway_shutdown.clone();
         let allowed_origin =
             HeaderValue::from_str(&self.state.allowed_origin).expect("validated allowed origin");
         let cors = CorsLayer::new()
@@ -345,6 +357,10 @@ impl GatewayServer {
             ]);
         let router = Router::new()
             .route("/control", get(upgrade))
+            .route(
+                "/api/v1/connect",
+                get(application_websocket::upgrade_application_connection),
+            )
             .route("/api/v1/hello", get(api_hello))
             .route("/api/v1/commands", post(api_command))
             .route("/api/v1/view-sets", post(open_view_set))
@@ -368,6 +384,7 @@ impl GatewayServer {
         )
         .with_graceful_shutdown(async move {
             shutdown.cancelled().await;
+            gateway_shutdown.cancel();
             service.lock().await.close_view_sets();
         })
         .await
@@ -404,7 +421,11 @@ async fn api_hello(State(state): State<GatewayState>, headers: HeaderMap) -> Res
     if let Err(error) = authenticate_http(&state, &headers) {
         return error.into_response();
     }
-    json_response(StatusCode::OK, &state.service.lock().await.api_hello())
+    let hello = {
+        let service = state.service.lock().await;
+        application_websocket::application_hello(&service)
+    };
+    json_response(StatusCode::OK, &hello)
 }
 
 async fn api_command(
@@ -585,7 +606,7 @@ fn authenticate_http(
         })
         .ok_or(HttpAuthError::Owner)?;
     Ok(ViewSetOwner::trusted(format!(
-        "gateway-http-{}-{owner}",
+        "gateway-client-{}-{owner}",
         state.http_owner_namespace
     )))
 }
@@ -1044,9 +1065,11 @@ mod tests {
 
     use futures_util::{SinkExt, StreamExt};
     use rstorrent_session::{
-        ApplicationConfig, ApplicationService, Command, ConfiguredStorageRoot, DeliveryPolicy,
-        NetworkConfig, NetworkPolicy, OpenViewSetResponse, RequestEnvelope, ResponseOutcome,
-        SubscriptionSpec, UpdateBatch, ViewProjection, ViewSelector, ViewUpdatePayload,
+        ApplicationCall, ApplicationCallResult, ApplicationConfig, ApplicationService, Command,
+        ConfiguredStorageRoot, DeliveryPolicy, NetworkConfig, NetworkPolicy, OpenViewSetOptions,
+        OpenViewSetRequest, OpenViewSetResponse, RequestEnvelope, ResponseOutcome,
+        SubscriptionSpec, UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewProjection,
+        ViewSelector, ViewSpec, ViewUpdatePayload,
     };
     use tokio::sync::Mutex;
     use tokio_tungstenite::connect_async;
@@ -1055,6 +1078,7 @@ mod tests {
     use tokio_util::sync::CancellationToken;
 
     use super::{
+        ApplicationClientFrame, ApplicationConnectionErrorCode, ApplicationServerFrame,
         GATEWAY_CONTRACT_VERSION, GatewayAuthentication, GatewayClientMessage, GatewayConfig,
         GatewayErrorCode, GatewayServerMessage, bind, constant_time_equal,
     };
@@ -1103,6 +1127,38 @@ mod tests {
             panic!("expected text response");
         };
         serde_json::from_str(&text).expect("decode response")
+    }
+
+    async fn read_application_message(
+        socket: &mut tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+    ) -> ApplicationServerFrame {
+        let message = tokio::time::timeout(Duration::from_secs(1), socket.next())
+            .await
+            .expect("application response timed out")
+            .expect("application connection closed")
+            .expect("application websocket response");
+        let Message::Text(text) = message else {
+            panic!("expected application text response");
+        };
+        serde_json::from_str(&text).expect("decode application response")
+    }
+
+    async fn send_application_message(
+        socket: &mut tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        frame: &ApplicationClientFrame,
+    ) {
+        socket
+            .send(Message::Text(
+                serde_json::to_string(frame)
+                    .expect("encode application frame")
+                    .into(),
+            ))
+            .await
+            .expect("send application frame");
     }
 
     async fn http_request(
@@ -1192,6 +1248,217 @@ mod tests {
         assert!(constant_time_equal(b"token", b"token"));
         assert!(!constant_time_equal(b"token", b"taken"));
         assert!(!constant_time_equal(b"token", b"token-longer"));
+    }
+
+    #[tokio::test]
+    async fn application_connection_multiplexes_calls_and_acknowledged_views() {
+        let root = test_root("application-websocket");
+        let service = test_service(&root).await;
+        let origin = "http://127.0.0.1:5173";
+        let server = bind(
+            GatewayConfig {
+                bind: "127.0.0.1:0".parse().expect("address"),
+                authentication: GatewayAuthentication::Bearer {
+                    token: "correct-token".to_owned(),
+                },
+                allowed_origin: origin.to_owned(),
+                max_connections: 2,
+            },
+            service.clone(),
+        )
+        .await
+        .expect("bind");
+        let address = server.local_addr();
+        let shutdown = CancellationToken::new();
+        let task = tokio::spawn(server.serve(shutdown.clone()));
+        let mut request = format!("ws://{address}/api/v1/connect")
+            .into_client_request()
+            .expect("request");
+        request
+            .headers_mut()
+            .insert("Origin", origin.parse().expect("origin"));
+        let (mut socket, _) = connect_async(request).await.expect("connect");
+        send_application_message(
+            &mut socket,
+            &ApplicationClientFrame::Connect {
+                api_version: rstorrent_session::API_VERSION,
+                encoding: rstorrent_session::ApiEncoding::Json,
+                client_instance_id: "00000000000000000000000000000001".to_owned(),
+                token: Some("correct-token".to_owned()),
+            },
+        )
+        .await;
+        let ApplicationServerFrame::Connected { hello, .. } =
+            read_application_message(&mut socket).await
+        else {
+            panic!("expected connected response");
+        };
+        assert!(
+            hello
+                .deliveries
+                .contains(&rstorrent_session::DeliveryMode::Stream)
+        );
+
+        let library = ViewSpec::TorrentList {
+            view_id: "library".to_owned(),
+            delivery: ViewDeliveryPolicy::default(),
+        };
+        send_application_message(
+            &mut socket,
+            &ApplicationClientFrame::Call {
+                call_id: "open".to_owned(),
+                operation: ApplicationCall::OpenViewSet {
+                    request: OpenViewSetRequest {
+                        views: vec![library.clone()],
+                        options: OpenViewSetOptions::default(),
+                    },
+                },
+            },
+        )
+        .await;
+        let ApplicationServerFrame::Result {
+            call_id,
+            result: ApplicationCallResult::ViewSetOpened { response },
+        } = read_application_message(&mut socket).await
+        else {
+            panic!("expected open result");
+        };
+        assert_eq!(call_id, "open");
+        let opened = *response;
+        send_application_message(
+            &mut socket,
+            &ApplicationClientFrame::Attach {
+                call_id: "attach".to_owned(),
+                stream_id: "general".to_owned(),
+                view_set_id: opened.view_set_id.clone(),
+                after: opened.initial.cursor.clone(),
+            },
+        )
+        .await;
+        assert!(matches!(
+            read_application_message(&mut socket).await,
+            ApplicationServerFrame::Attached { ref stream_id, .. } if stream_id == "general"
+        ));
+
+        send_application_message(
+            &mut socket,
+            &ApplicationClientFrame::Call {
+                call_id: "update-one".to_owned(),
+                operation: ApplicationCall::UpdateViewSet {
+                    view_set_id: opened.view_set_id.clone(),
+                    request: UpdateViewSetRequest {
+                        views: vec![
+                            library.clone(),
+                            ViewSpec::SessionDisk {
+                                view_id: "disk".to_owned(),
+                                delivery: ViewDeliveryPolicy::default(),
+                            },
+                        ],
+                    },
+                },
+            },
+        )
+        .await;
+        let mut first_batch = None;
+        let mut update_result = false;
+        while first_batch.is_none() || !update_result {
+            match read_application_message(&mut socket).await {
+                ApplicationServerFrame::ViewBatch { stream_id, batch }
+                    if stream_id == "general" =>
+                {
+                    first_batch = Some(*batch);
+                }
+                ApplicationServerFrame::Result {
+                    call_id,
+                    result: ApplicationCallResult::ViewSetUpdated,
+                } if call_id == "update-one" => update_result = true,
+                other => panic!("unexpected application frame: {other:?}"),
+            }
+        }
+        let first_batch = first_batch.expect("first batch");
+
+        send_application_message(
+            &mut socket,
+            &ApplicationClientFrame::Call {
+                call_id: "snapshot".to_owned(),
+                operation: ApplicationCall::Dispatch {
+                    request: Box::new(RequestEnvelope {
+                        version: rstorrent_session::CONTROL_VERSION,
+                        request_id: "snapshot-command".to_owned(),
+                        expected_revision: None,
+                        command: Command::Snapshot,
+                    }),
+                },
+            },
+        )
+        .await;
+        assert!(matches!(
+            read_application_message(&mut socket).await,
+            ApplicationServerFrame::Result {
+                ref call_id,
+                result: ApplicationCallResult::CommandResponse { .. },
+            } if call_id == "snapshot"
+        ));
+
+        send_application_message(
+            &mut socket,
+            &ApplicationClientFrame::Ack {
+                stream_id: "general".to_owned(),
+                cursor: first_batch.cursor,
+            },
+        )
+        .await;
+        send_application_message(
+            &mut socket,
+            &ApplicationClientFrame::Call {
+                call_id: "update-two".to_owned(),
+                operation: ApplicationCall::UpdateViewSet {
+                    view_set_id: opened.view_set_id,
+                    request: UpdateViewSetRequest {
+                        views: vec![library],
+                    },
+                },
+            },
+        )
+        .await;
+        let mut second_cursor = None;
+        while second_cursor.is_none() {
+            if let ApplicationServerFrame::ViewBatch { stream_id, batch } =
+                read_application_message(&mut socket).await
+                && stream_id == "general"
+            {
+                second_cursor = Some(batch.cursor.clone());
+            }
+        }
+        send_application_message(
+            &mut socket,
+            &ApplicationClientFrame::Ack {
+                stream_id: "general".to_owned(),
+                cursor: "999".to_owned(),
+            },
+        )
+        .await;
+        loop {
+            if matches!(
+                read_application_message(&mut socket).await,
+                ApplicationServerFrame::StreamError {
+                    ref stream_id,
+                    ref error,
+                } if stream_id == "general"
+                    && error.code == ApplicationConnectionErrorCode::InvalidCursor
+            ) {
+                break;
+            }
+        }
+
+        socket.close(None).await.expect("close");
+        shutdown.cancel();
+        task.await
+            .expect("server join")
+            .expect("server termination");
+        service.lock().await.shutdown().await.expect("shutdown");
+        drop(service);
+        std::fs::remove_dir_all(root).expect("remove root");
     }
 
     #[tokio::test]
