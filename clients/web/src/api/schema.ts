@@ -1,16 +1,23 @@
-import Ajv2020, { type ValidateFunction } from "ajv/dist/2020";
+import {
+  type StandaloneValidateFunction,
+  validateApiErrorEnvelope,
+  validateApiHello,
+  validateApplicationServerFrame,
+  validateChooseDownloadRootResponse,
+  validateOpenViewSetResponse,
+  validateResponseEnvelope,
+  validateUpdateBatch,
+} from "./generated/v1.validators.js";
 
-import schema from "./generated/v1.schema.json";
-
-const SCHEMA_ID = "https://rstorrent.invalid/schemas/api/v1";
-const ajv = new Ajv2020({
-  allErrors: true,
-  strict: true,
-  validateFormats: false,
-});
-ajv.addSchema(schema, SCHEMA_ID);
-
-const validators = new Map<string, ValidateFunction>();
+const validators = new Map<string, StandaloneValidateFunction>([
+  ["ApiHello", validateApiHello],
+  ["ApplicationServerFrame", validateApplicationServerFrame],
+  ["ResponseEnvelope", validateResponseEnvelope],
+  ["ApiErrorEnvelope", validateApiErrorEnvelope],
+  ["ChooseDownloadRootResponse", validateChooseDownloadRootResponse],
+  ["OpenViewSetResponse", validateOpenViewSetResponse],
+  ["UpdateBatch", validateUpdateBatch],
+]);
 
 export class SchemaError extends Error {}
 
@@ -18,16 +25,21 @@ export function assertApiSchema<T>(
   definition: string,
   value: unknown,
 ): asserts value is T {
-  let validator = validators.get(definition);
+  const validator = validators.get(definition);
   if (validator === undefined) {
-    validator = ajv.getSchema(`${SCHEMA_ID}#/$defs/${definition}`);
-    if (validator === undefined) {
-      throw new SchemaError(`generated schema ${definition} is unavailable`);
-    }
-    validators.set(definition, validator);
+    throw new SchemaError(`generated schema ${definition} is unavailable`);
   }
   if (!validator(value)) {
-    const detail = ajv.errorsText(validator.errors, { separator: "; " });
+    const detail = errorsText(validator.errors);
     throw new SchemaError(`${definition} failed schema validation: ${detail}`);
   }
+}
+
+function errorsText(errors: StandaloneValidateFunction["errors"]): string {
+  if (errors === undefined || errors === null || errors.length === 0) {
+    return "No errors";
+  }
+  return errors
+    .map((error) => `data${error.instancePath} ${error.message}`)
+    .join("; ");
 }

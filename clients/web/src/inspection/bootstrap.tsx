@@ -68,16 +68,6 @@ export async function startTauriInspection(): Promise<void> {
   renderInspection(new InspectionController(application));
 }
 
-export function renderBootstrapError(error: unknown): void {
-  const rootElement = applicationRoot();
-  const message = error instanceof Error ? error.message : String(error);
-  rootElement.replaceChildren();
-  const alert = document.createElement("div");
-  alert.setAttribute("role", "alert");
-  alert.textContent = `Unable to start live inspection: ${message}`;
-  rootElement.append(alert);
-}
-
 function renderInspection(controller: InspectionController): void {
   controller.start();
   createRoot(applicationRoot()).render(

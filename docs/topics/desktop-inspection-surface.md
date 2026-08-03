@@ -112,6 +112,15 @@ mixed frontend or arbitrary logger arguments. The feed is global, strictly
 chronological, and virtualized; capture interest and local display filters are
 intentionally separate.
 
+The embedded desktop keeps Tauri's strict script policy and does not enable
+`unsafe-eval`. Ajv remains the generated-contract validator, but its seven
+application entry-point validators are compiled into deterministic standalone
+ES modules during generation and before every frontend build. The shipped
+webview therefore retains runtime structural validation without carrying or
+invoking Ajv's runtime compiler. The production build also rejects JavaScript
+bundles containing direct `eval` or the `Function` constructor, which guards
+the CSP compatibility required by `./scripts/desktop`.
+
 ## Platform Split
 
 Desktop/web and Android presentation are allowed to diverge from this point.

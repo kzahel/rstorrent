@@ -5,16 +5,22 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "build": "vite build",
+    "prebuild": "npm run generate:validators",
+    "build": "vite build && npm run check:csp",
+    "check:csp": "node scripts/check-csp-safe-dist.mjs",
+    "predev": "npm run generate:validators",
     "dev": "vite",
-    "generate": "cargo run -p rstorrent-gateway --bin export_types -- src/api/generated/v1.ts src/api/generated/v1.schema.json src/fixtures/reactive-trace.json src/fixtures/view-set-trace.json",
+    "generate": "npm run generate:contract && npm run generate:validators",
+    "generate:contract": "cargo run -p rstorrent-gateway --bin export_types -- src/api/generated/v1.ts src/api/generated/v1.schema.json src/fixtures/reactive-trace.json src/fixtures/view-set-trace.json",
+    "generate:validators": "node scripts/generate-validators.mjs",
+    "pretest": "npm run generate:validators",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "pretypecheck": "npm run generate:validators",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",
-    "ajv": "8.20.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "zustand": "5.0.14"
@@ -29,6 +35,7 @@
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "@types/ws": "8.18.1",
+    "ajv": "8.20.0",
     "jsdom": "29.1.1",
     "typescript": "7.0.2",
     "vite": "8.1.5",
