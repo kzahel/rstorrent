@@ -15,11 +15,12 @@ and headless-browser evidence passes. Linux Zenity WebUI evidence covers
 choose/cancel, first default, exact per-torrent roots, restart, repair cancel,
 and unavailable paths; the same command/persistence behaviors pass through
 Tauri, but its current WebKitGTK production bundle fails before rendering the
-live React surface. A manual macOS chooser/restart smoke also remains required
-because Computer Use cannot attach to the transient system folder panel.
-Windows remains unimplemented, and Android already proves one user-selected
-persisted SAF root but not general multi-root management. Staged magnet
-metadata and file selection remain explicitly deferred to a later slice.
+live React surface. Tactical `063` adds the checked-by-default start-content
+option, metadata-only intake with no payload artifact, and live path-backed
+file selection in the Files tab. A manual macOS chooser/restart smoke also
+remains required because Computer Use cannot attach to the transient system
+folder panel. Windows remains unimplemented, and Android already proves one
+user-selected persisted SAF root but not general multi-root management.
 
 ## Scope
 
@@ -52,8 +53,8 @@ It complements:
   scheduling.
 
 This topic does not implement torrent relocation, automatic content import,
-dynamic file priorities, fast resume, browser filesystem I/O, or the later
-staged magnet file-selection flow.
+numeric or piece priorities, fast resume, browser filesystem I/O, or dynamic
+Android SAF descriptor replacement.
 
 ## Terms And Ownership
 
@@ -116,11 +117,12 @@ and is a separate feature.
 
 ### Default root and per-add choice
 
-The product follows the current JSTorrent behavior:
+The root and preference policy follows the current JSTorrent behavior, with
+the deliberate simpler add dialog recorded below:
 
 - **Show options when adding torrents** defaults on.
-- The add dialog preselects the current default root and initially selects all
-  files once file selection exists.
+- The add dialog preselects the current default root and checks the independent
+  start-content option. File selection stays in the Files tab.
 - The first configured root becomes the default automatically.
 - Selecting a different established root for one torrent does not silently
   change the default.
@@ -129,8 +131,8 @@ The product follows the current JSTorrent behavior:
 - **Don't show again** is an accessible shortcut for turning off the add-option
   preference. Settings can turn it back on.
 - When add options are off, an ordinary add uses the available default root
-  and all files. A missing, unavailable, or permission-lost default overrides
-  that preference and requires root selection or repair.
+  and starts all files. A missing, unavailable, or permission-lost default
+  overrides that preference and requires root selection or repair.
 
 Changing the default affects future torrents only. Every accepted torrent is
 pinned to the root selected for that add. It is never silently redirected
@@ -161,54 +163,30 @@ An unavailable root is a missing prerequisite, not evidence that torrent
 metadata, the database, or verified-piece state is corrupt. Preserve user
 intent and expose an actionable waiting/repair state.
 
-## Current Root-Selection Slice
+## Implemented Root And Start-Content Flow
 
-The first root tactical should solve the immediate product problem without
-absorbing the later magnet file-selection state machine:
+The shared add dialog intentionally stays small. It selects one established
+root and exposes one checked-by-default option: **Start downloading files when
+metadata is available**. It does not contain a file tree or a second selection
+modal.
 
-- persist and project established roots plus one default root;
-- acquire, register, select, and repair a desktop root through a local platform
-  capability;
-- make the behavior available from both Tauri and `./scripts/webui`;
-- require root choice on the first add and use the selected/default root for
-  all files;
-- add the root controls and truthful unavailable states to the shared React
-  surface;
-- keep Android's user-selected SAF root behavior aligned without requiring a
-  multi-root Android redesign in the same slice; and
-- remove the implicit app-data payload root from ordinary interactive product
-  behavior.
+When that option is cleared, the normal durable torrent record and metadata
+worker remain the only owners. BEP 9 metadata is acquired and verified while
+durable content intent is paused. No output directory, staging tree, wanted
+file, or part file is created. Once metadata is available, the user opens the
+ordinary Files tab, changes any non-padding file between `Normal` and `Skip`,
+and presses Start. That selection is durable and shared by every presentation.
 
-This slice may continue to add every file because runtime initial file
-selection is not yet implemented. It must describe that limit honestly and
-must not fabricate a file chooser whose choices cannot reach durable engine
-state.
+The root behavior remains unchanged: a fresh profile still requires a folder,
+a per-add root does not change the default, and hiding add options uses the
+usable default with start-content enabled. The metadata-only choice is not
+remembered as a hidden policy.
 
-## Deferred Staged Magnet And File Selection
-
-The complete JSTorrent-like add experience is accepted direction but belongs
-to a later tactical. A magnet does not reveal its file list until verified
-metadata arrives, while the current RSTorrent `add_magnet` command requires a
-root and skip list immediately. Implementing the final flow therefore needs a
-durable or explicitly owned pending-add/configuration transition, not only a
-new React dialog.
-
-The later desired flow is:
-
-1. user submits a magnet or opens a `.torrent` file;
-2. a magnet may acquire and verify metadata while content storage remains
-   disabled;
-3. the add dialog displays a loading state and then the bounded file list;
-4. the user chooses a root and wanted files;
-5. one confirmation durably records root, initial selection, and running
-   intent before content starts; and
-6. cancel removes the pending intake and joins any metadata owner without
-   leaving payload artifacts.
-
-`.torrent` input already has metadata and can display files immediately once
-that intake exists. The later tactical must define duplicate-add behavior,
-pending-intake restart semantics, cancellation, queueing, and file-count/UI
-bounds. Dynamic priority changes after content starts remain separable work.
+Future `.torrent` byte intake may begin with metadata already present, but it
+should use this same root, start-content, and Files-tab selection model. A
+staged file-picker dialog is not current direction. Duplicate intake,
+pre-metadata cancellation, and `.torrent` source handling remain separate
+work rather than reasons to introduce a second pending-add authority now.
 
 ## Desktop, WebUI, And Remote Boundaries
 
@@ -321,8 +299,8 @@ starting map, relative to the JSTorrent repository root:
 | --- | --- | --- |
 | Default add preference | `packages/engine/src/config/config-schema.ts::showFileSelection` | Showing file/location options defaults on. |
 | User-add policy | `packages/client/src/utils/add-torrent-options.ts::getUserAddTorrentOptions` | User adds honor the preference; restore and diagnostic paths do not pretend to be user adds. |
-| Pending metadata and confirmation | `packages/client/src/AppContent.tsx` file-selection queue and confirm handlers | A pending magnet may fetch metadata, but root and file choice precede content activity. |
-| Combined dialog | `packages/ui/src/components/FileSelectionModal.tsx` | Default root, roots, free space, loading metadata, files, summary, cancel, download, and Don't show again belong in one flow. |
+| Pending metadata and confirmation | `packages/client/src/AppContent.tsx` file-selection queue and confirm handlers | Metadata can be fetched without content; RSTorrent retains that property with durable paused intent rather than a modal-owned queue. |
+| Combined dialog | `packages/ui/src/components/FileSelectionModal.tsx` | JSTorrent combines root and file choice; RSTorrent intentionally keeps only root/start intent in Add and uses the ordinary Files tab for selection. |
 | First root and default | `packages/client/src/App.tsx` root setup handlers | The first usable root becomes default; later changes are explicit. |
 | Root settings | `packages/client/src/components/SettingsOverlay.tsx` | Roots can be added, defaulted, removed with warning, and paired with the add-options preference. |
 | Root/default synchronization | `packages/client/src/engine-manager/daemon-engine-manager.ts` | Root inventory, persisted default, live engine state, and platform host state must be reconciled deliberately. |
@@ -353,8 +331,8 @@ source, fixture, or asset is imported by this topic.
   overwrite, merge, or trust content.
 - Interactive and headless add paths distinguish user consent from explicit
   developer/test root injection.
-- The first root slice may download all files, but it cannot claim the deferred
-  metadata-backed file-selection UX is implemented.
+- Metadata-only add may perform bounded metadata networking and parsing but
+  cannot create a payload, staging, or part artifact.
 
 ## Recommended Next Work
 
@@ -367,7 +345,7 @@ still missing. Implement and validate the Windows picker separately. Keep
 first-root, stable-ID, default, repair, and per-torrent semantics identical
 while allowing native capability handling to differ.
 
-Tactical 062 completes the user-visible multi-file publication-layout slice.
-The later magnet metadata/file-selection transition remains separate; open its
-tactical only when that application-view work is authorized and design the
-pending-intake owner from the verified metadata boundary.
+Tactical 062 completes the user-visible multi-file publication-layout slice,
+and Tactical 063 completes the current metadata-only/live-selection flow.
+Later intake work should add `.torrent` sources or pre-metadata cancellation
+without moving file selection out of the Files tab.

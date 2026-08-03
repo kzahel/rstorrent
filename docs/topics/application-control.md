@@ -24,7 +24,9 @@ connection correlation the owner of durable request identity. No stable public
 remote wire format is accepted. Tactical `049` evolves diagnostics into
 hierarchical structured records with explicit capture interest and distinct
 source, delivery, and local loss while keeping them separate from commands and
-product-state authority.
+product-state authority. Tactical `063` adds metadata-only magnet intent and
+durable live `Normal`/`Skip` file selection through the same semantic command
+boundary.
 
 ## Scope
 
@@ -104,6 +106,14 @@ Tactical `062` keeps publication naming behind this boundary. Verified
 metainfo and the selected root resolve a durable relative publication
 component inside the application/engine layers; no presentation command gains
 a local path, proposed filename, or infohash-layout switch.
+
+Tactical `063` keeps file selection semantic as well. The command carries a
+bounds-checked torrent identity, file indices, and `Normal` or `Skip`; it does
+not expose numeric engine priorities, storage paths, part slots, or picker
+internals. Selection commits before the active immutable engine generation is
+cancelled and joined. Metadata acquisition may continue for a paused
+start-content intent, but content storage remains unopened until explicit
+resume.
 
 Authorization is transport context, not a user-supplied command field. A
 future remote transport must authenticate a principal, attach verified
@@ -198,6 +208,15 @@ The live web adapter gives every application instance a random 128-bit request
 namespace followed by a monotonic sequence. This preserves durable retry and
 correlation semantics without reusing `web-1` for an unrelated command after a
 reload or in another tab.
+
+Tactical `063` implements live path-backed file selection as a deliberately
+coarse control fence. The store validates all targeted non-padding files and
+commits the sparse selection atomically. A matching active owner is then
+cancelled and joined before a replacement generation rechecks and starts under
+the new immutable plan. All-skipped content becomes idle without losing
+running intent, while promotion from a complete selection returns to checking.
+Dynamic platform-capability selection fails closed until descriptor reacquire
+and provider lifecycle have their own design.
 
 Later work must define multi-torrent scheduling, stable product error
 taxonomy, capability installation, production remote

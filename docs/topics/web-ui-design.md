@@ -55,11 +55,13 @@ recorded in
 [`application-interface-direction.md`](application-interface-direction.md).
 Tactical `058` replaces persistent torrent checkboxes with a discoverable
 selection mode, separates the current torrent from batch command targets, and
-applies the same interaction locally to Files. Files now exposes disabled
-Download and Skip actions without claiming runtime mutation support.
+applies the same interaction locally to Files. It initially staged disabled
+file actions without claiming runtime mutation support.
 Tactical `059` restores a permanently reserved checkbox column specifically on
 actionable tables and adds sorted Shift-range selection without recoupling the
-current row and batch command set.
+current row and batch command set. Tactical `063` activates that Files-local
+selection with exactly `Normal` and `Skip`, and keeps Add limited to root plus
+one checked-by-default start-content option.
 
 ## Purpose
 
@@ -371,8 +373,10 @@ Download roots, the default root, and the choice attached to a torrent are
 also durable application state rather than browser-local preferences. The
 shared React surface requests a platform-owned picker capability and selects
 established root identities; it never persists an ambient path or browser
-directory handle. The accepted UX and deferred metadata-backed file-selection
-flow live in [`download-roots.md`](download-roots.md).
+directory handle. The accepted root, start-content, and metadata-backed file
+selection flow lives in [`download-roots.md`](download-roots.md).
+Metadata-only intake uses durable paused application intent; the Files tab
+remains the only file-selection surface.
 
 ## Validation Direction
 
@@ -423,10 +427,18 @@ and semantic enum order is explicit. Live update sorting is opt-in so changing
 rates or progress do not make rows jump while being inspected.
 
 Tactical `058` adds a Files-local current row and explicit multi-selection
-using the shared table interaction. The visible More menu contains Download and
-Skip download, but both remain disabled with an unavailable reason because no
-runtime file-selection command exists. This is intentional UI staging, not an
-optimistic command or a support claim.
+using the shared table interaction. Tactical `063` activates its More menu
+with exactly `Normal` and `Skip` for the current row or selected range. The
+live adapter sends bounded semantic file indices, displays command results,
+and waits for the authoritative Files view to change the priority column. Demo
+scenarios retain disabled actions with an explicit reason rather than
+pretending to mutate engine state.
+
+The Add dialog now has one checked-by-default **Start downloading files when
+metadata is available** checkbox. Clearing it acquires metadata without
+creating content artifacts and directs the user to the Files tab; no file tree
+or second modal is introduced. Hiding add options continues to use the usable
+default root and starts content normally.
 
 Column visibility, widths, sort, and live-sort preference persist per table in
 a versioned browser-local setting. Resize separators work by pointer and

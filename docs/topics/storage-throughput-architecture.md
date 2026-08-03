@@ -10,7 +10,9 @@ durability split and immutable positional-plan foundation. Tactical
 the bounded generation join, independent write/hash execution, large-transfer
 gate and application-path correction. The accepted end-state still leaves
 measurement of pending-write read-through and session/root fairness as later
-slices.
+slices. Tactical `063` implements live path-backed file selection with a
+coarse joined torrent-generation fence, retained physical routes, lazy part
+creation, and exact verified-span promotion.
 
 ## Purpose And Scope
 
@@ -403,6 +405,17 @@ it into the part file. RSTorrent may choose different product semantics later,
 but it should not pay a migration barrier on every normal block in anticipation
 of that uncommon operation.
 
+Tactical `063` implements the first correct control boundary more coarsely than
+the targeted end-state above. Durable selection commits first; the application
+then cancels and joins the entire matching engine generation before reopening
+with immutable plans. Existing destinations retain their physical route when
+lowered. Missing skipped destinations route through a part file created only
+by the first actual part write. Promotion creates the destination, exports
+available verified spans, rechecks missing sources conservatively, and unlinks
+the path part file after its final slot is released. This deliberately spends
+peer reconnection on an uncommon user action while keeping hot writes free of
+a mutable priority fence.
+
 ## Durability And Batched Resume Checkpoints
 
 Per-piece `sync_data` plus one SQLite transaction has been removed from the
@@ -622,7 +635,7 @@ reports actionable without turning logs into application state.
 | Write/hash result | One enforced execution order | Hash and final write callbacks can arrive in either order | Explicit piece-generation join accepts either completion order |
 | Part-file payload | Mutable cursor behind the torrent owner | Slot map is locked; payload I/O is positional outside it | One slot coordinator plus concurrent positional slot payload workers |
 | Part-file metadata | Slot change is immediately synchronized | Dirty slot metadata flush is separate from payload writes | Dirty mapping generations join batched durability epochs |
-| Selection changes | General live changes are absent; materialization is coarse | Asynchronous fenced jobs export part data; wanted-to-skipped does not migrate existing files | Targeted file/range routing-generation fence; unrelated I/O continues |
+| Selection changes | Live path-backed Normal/Skip uses a joined torrent-generation fence; SAF mutation is absent | Asynchronous fenced jobs export part data; wanted-to-skipped does not migrate existing files | Targeted file/range routing-generation fence if measured reconnection cost justifies it |
 | Durability/resume | Resumable selective storage performs per-piece payload sync followed by a per-piece `FULL` SQLite transaction; single-file staging syncs only at finalization | Resume snapshot persistence remains caller-owned rather than a per-piece SQL barrier | Bounded dirty epoch, one sync per destination, one merged SQLite transaction |
 | Aggregate scheduling | Torrent-local resource authority | Session disk pool, 1 MiB default queued-byte watermark and ten generic threads | Session/root capacity and fairness with measured backend-specific limits |
 

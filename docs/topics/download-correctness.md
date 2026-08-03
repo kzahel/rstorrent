@@ -43,6 +43,9 @@ gates pass after the concurrency change.
 Tactical `046` closes a cancellation ownership race in public and
 session-facing wrappers: terminal metadata/content results now follow the
 supervisors' joined cleanup and final empty peer observation.
+Tactical `063` adds live binary file selection while retaining full boundary
+piece verification, conservative recheck, explicit generation joins, and exact
+part-to-file materialization.
 
 ## Scope
 
@@ -217,6 +220,7 @@ related unit test exists.
 | DL-C23 | An expired request is reassigned and the old generation sends its block late | Current ownership and payload accounting remain correct; valid late data is harmless and cannot release another attempt. | Passing deterministic ownership/accounting and loopback late-payload evidence. |
 | DL-C24 | All current peers are unproductive and no replacement is eligible | The torrent retains discovery/retry deadlines and avoids destructive reconnect churn; it reports waiting rather than blocked. | Passing deterministic deadline and loopback no-churn evidence. |
 | DL-C25 | Hostile peer churn and observations fill every configured bound | Registry, connection, dial, request, payload, event, task, history, and diagnostic limits hold while uniquely useful or active state is protected. | Passing bounded deterministic state plus queue-saturation, cancellation, churn, and exact-join runtime evidence for the installed owner. |
+| DL-C26 | A multi-file torrent changes between Skip and Normal before and after content starts | Metadata-only intake creates no payload artifact; Skip changes wanted-piece planning only after the old generation joins; Normal rechecks current sources, materializes verified skipped spans, and removes an empty part file without false have state. | Passing selective-storage, store, two-generation loopback, and bearer-authenticated controlled browser/libtorrent evidence from Tactical `063`. |
 
 ## Required Scheduler Observability
 

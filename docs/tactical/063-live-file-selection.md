@@ -1,6 +1,6 @@
 # Tactical 063: Live File Selection
 
-Status: Active
+Status: Complete (2026-08-03)
 
 Topics: `application-control`, `client-persistence`, `download-correctness`,
 `download-roots`, `storage-throughput-architecture`, `web-ui-design`
@@ -237,7 +237,7 @@ application's existing single-active-torrent rule remains in force.
 4. Run focused engine/session/web tests, authenticated headless browser
    evidence, the Rust workspace baseline, and generated-contract checks.
 5. Update this tactical and the owning topics/readiness matrix with exact
-   evidence before the implementation commit.
+   evidence before the final evidence commit.
 
 ## Validation Matrix
 
@@ -280,8 +280,8 @@ application's existing single-active-torrent rule remains in force.
   flow against a controlled multi-file fixture;
 - `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, and
   `cargo test --workspace`;
-- generated TypeScript/Kotlin contract checks, web typecheck, component tests,
-  production build, and focused browser tests.
+- generated TypeScript contract checks, Android-facing Rust all-target checks,
+  web typecheck, component tests, production build, and focused browser tests.
 
 ## Accepted Design Differences
 
@@ -300,4 +300,64 @@ change would violate the capability and restart contracts.
 
 ## Evidence
 
-Pending implementation.
+Implementation landed in six bounded commits:
+
+- `0337531` records this source-first tactical and its accepted semantics;
+- `28a1003` makes path part storage lazy and implements retained routing,
+  verified-span promotion, conservative missing-source handling, and final
+  slot cleanup;
+- `b4168d7` adds durable metadata-only intent and live semantic file-priority
+  control with a joined immutable-generation replacement;
+- `588e10f` carries the generated API through the add dialog and Files table;
+- `604fb8a` preserves exact published-tree resume validation with owned part
+  artifacts; and
+- `5b7af42` adds the authenticated controlled browser/libtorrent proof.
+
+The engine tests prove that fresh create and resume retain no part handle or
+path, the first part-routed write creates both, a lowered existing file keeps
+its destination route, promotion exports exact verified spans, missing current
+sources clear have claims, and releasing the final slot removes the part path.
+The structural resource high water remains one optional retained part handle
+and one part artifact per torrent generation; no queue, worker, or detached
+task was added.
+
+The store and application tests prove bounded sorted file indices, padding and
+metadata validation, sparse durable rows, idempotent no-ops, all-skipped idle
+state, complete-to-checking promotion, safe active-generation join/restart,
+and fail-closed platform-capability mutation. A real loopback BEP 9 test
+verifies metadata-only add reaches paused verified metadata with
+`StorageState::None` and no output, staging, or part artifact. A second
+two-generation loopback test observes Skip idle the first engine and Normal
+start the replacement generation.
+
+The generated TypeScript API exposes semantic `"normal" | "skip"` rather than
+an ordinal scale. Vitest covers checked and unchecked add submission, exact
+request encoding, enabled live Files actions, and disabled demo mutations.
+The production browser proof used bearer-authenticated WebSocket control and
+libtorrent `2.0.13.0` with a 122-file, 17-piece fixture. It observed an empty
+download root after metadata verification and again after a paused Skip;
+Start then published wanted content with one part artifact and no skipped
+destination; Normal materialized the exact 7,000-byte boundary file and
+removed the final part artifact. The final 40,000-byte payload SHA-1 was
+`ea72e3546b649ee43d7b28d57e86af4624092e2d`, and gateway shutdown and temporary
+artifact cleanup joined successfully.
+
+Validation completed with:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace --all-targets -- -D warnings`;
+- `cargo test --workspace -q`: 381 passed and 3 opt-in public-network tests
+  ignored;
+- `npm run generate`, followed by a clean generated-contract rerun;
+- `npm run typecheck`;
+- `npm test`: 117 passed and 2 skipped;
+- `npm run build`;
+- `npm run test:e2e`: 15 permanent demo cases passed and 5 opt-in live
+  cases skipped; and
+- `uv run --project tests/interop
+  tests/interop/browser_peer_inspection_surface.py --file-selection`: one
+  authenticated controlled browser case passed.
+
+Deliberate deferrals remain the non-goals above: high/low priorities,
+selection in the add dialog, mutable in-generation picking, dynamic SAF
+descriptor replacement, and multi-torrent scheduling.

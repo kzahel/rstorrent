@@ -13,6 +13,9 @@ durable archive state, and an explicit restartable removal job spanning SQLite
 and path or SAF cleanup. Tactical `061` advances the root registry to schema
 version `5`; Tactical `062` advances it to version `6` with a durable verified
 publication component and managed-artifact ownership.
+Tactical `063` now makes the existing sparse file-selection rows a live
+transactional control and separates paused start-content intent from metadata
+acquisition without adding a second pending-torrent authority.
 
 ## Scope
 
@@ -330,6 +333,13 @@ removal transitions should be transactional inside the database. Filesystem
 publication and deletion cannot share a transaction with SQLite; represent
 their intermediate state explicitly and make restart cleanup idempotent.
 
+Tactical `063` implements selection change against the existing sparse rows.
+The transaction validates the complete bounded target set before changing any
+row, stores only skipped overrides, and retains the request receipt at the
+same revision. A no-op is replay-safe. Metadata-only add uses ordinary durable
+paused intent while allowing the metadata worker to finish; restart restores
+that acquisition without preparing payload storage.
+
 Tactical `040` implements that removal boundary. A torrent row remains the
 foreign-key authority while a bounded removal job records generation, data
 policy, stage, and error. Startup finishes pending path work before restoring
@@ -449,6 +459,12 @@ full-info-hash staging/part ownership. Path create/resume, Files projection,
 collision handling, restart, and managed removal now share that durable plan;
 schema-5 hash-layout rows fail closed for resume and remain explicitly
 removable without automatic relocation.
+
+[`../tactical/063-live-file-selection.md`](../tactical/063-live-file-selection.md)
+adds durable bounded `Normal`/`Skip` mutation without a schema change. Store
+and application evidence covers sparse restoration, receipt replay, invalid
+and padding indices, all-skipped idle state, joined generation replacement,
+and metadata-only restart with no content artifact.
 
 This evidence does not broaden into a general multi-torrent scheduler, stable
 public wire protocol, UI settings catalog, remote listener,
