@@ -30,6 +30,7 @@ impl DownloadDirectoryPicker for NativeDownloadDirectoryPicker {
 #[derive(Debug)]
 pub enum PickerError {
     Unsupported,
+    Unavailable,
     InvalidStartingDirectory,
     Launch(std::io::Error),
     Failed(String),
@@ -42,6 +43,9 @@ impl fmt::Display for PickerError {
             Self::Unsupported => {
                 formatter.write_str("download folder picker is not implemented on this platform")
             }
+            Self::Unavailable => formatter.write_str(
+                "download folder picker requires Zenity or KDialog on this Linux desktop",
+            ),
             Self::InvalidStartingDirectory => formatter
                 .write_str("download folder picker requires an existing starting directory"),
             Self::Launch(error) => write!(formatter, "launch download folder picker: {error}"),
@@ -100,7 +104,68 @@ end run
     parse_selected_path(&output.stdout)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+async fn choose_native_download_directory(
+    starting_directory: &Path,
+) -> Result<Option<PathBuf>, PickerError> {
+    use std::io::ErrorKind;
+    use tokio::process::Command;
+
+    if !starting_directory.is_dir() {
+        return Err(PickerError::InvalidStartingDirectory);
+    }
+
+    let mut zenity = Command::new("zenity");
+    zenity.kill_on_drop(true).args([
+        "--file-selection",
+        "--directory",
+        "--title=Choose a download folder",
+        "--filename",
+    ]);
+    // Zenity interprets `--filename` as a selection and opens its parent.
+    // A nonexistent child therefore opens the requested starting directory
+    // while leaving that directory itself as the initial chooser result.
+    zenity.arg(starting_directory.join("__rstorrent_folder_picker_start__"));
+    match zenity.output().await {
+        Ok(output) => return parse_linux_picker_output("zenity", output),
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Err(error) => return Err(PickerError::Launch(error)),
+    }
+
+    let mut kdialog = Command::new("kdialog");
+    kdialog
+        .kill_on_drop(true)
+        .arg("--getexistingdirectory")
+        .arg(starting_directory)
+        .args(["--title", "Choose a download folder"]);
+    match kdialog.output().await {
+        Ok(output) => parse_linux_picker_output("kdialog", output),
+        Err(error) if error.kind() == ErrorKind::NotFound => Err(PickerError::Unavailable),
+        Err(error) => Err(PickerError::Launch(error)),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn parse_linux_picker_output(
+    program: &str,
+    output: std::process::Output,
+) -> Result<Option<PathBuf>, PickerError> {
+    if output.status.success() {
+        return parse_selected_path(&output.stdout);
+    }
+    if output.status.code() == Some(1) {
+        return Ok(None);
+    }
+
+    let mut message = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+    message.truncate(message.floor_char_boundary(MAX_ERROR_BYTES));
+    if message.is_empty() {
+        message = format!("{program} exited with {}", output.status);
+    }
+    Err(PickerError::Failed(message))
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 async fn choose_native_download_directory(
     starting_directory: &Path,
 ) -> Result<Option<PathBuf>, PickerError> {
@@ -151,6 +216,40 @@ mod tests {
         assert!(matches!(
             parse_selected_path(&vec![b'x'; 4097]),
             Err(PickerError::InvalidOutput)
+        ));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn classifies_linux_selection_cancellation_and_failure() {
+        use std::os::unix::process::ExitStatusExt;
+        use std::process::{ExitStatus, Output};
+
+        let output = |status, stdout: &[u8], stderr: &[u8]| Output {
+            status: ExitStatus::from_raw(status),
+            stdout: stdout.to_vec(),
+            stderr: stderr.to_vec(),
+        };
+
+        assert_eq!(
+            super::parse_linux_picker_output(
+                "zenity",
+                output(0, b"/tmp/selected folder\n", b"ignored warning"),
+            )
+            .expect("selection"),
+            Some(PathBuf::from("/tmp/selected folder"))
+        );
+        assert_eq!(
+            super::parse_linux_picker_output("zenity", output(1 << 8, b"", b""))
+                .expect("cancellation"),
+            None
+        );
+        assert!(matches!(
+            super::parse_linux_picker_output(
+                "zenity",
+                output(5 << 8, b"", b"backend timed out"),
+            ),
+            Err(PickerError::Failed(message)) if message == "backend timed out"
         ));
     }
 }

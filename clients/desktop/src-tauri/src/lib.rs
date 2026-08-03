@@ -350,14 +350,13 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("build RSTorrent desktop application");
     application.run(|handle, event| match event {
-        RunEvent::ExitRequested { api, .. } => {
+        RunEvent::ExitRequested { api, .. }
             if !handle
                 .state::<DesktopState>()
                 .allow_exit
-                .load(Ordering::Acquire)
-            {
-                api.prevent_exit();
-            }
+                .load(Ordering::Acquire) =>
+        {
+            api.prevent_exit();
         }
         #[cfg(target_os = "macos")]
         RunEvent::Reopen { .. } => {
