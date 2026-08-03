@@ -30,6 +30,11 @@ import {
   saveNavigationPreferences,
   type NavigationPreferences,
 } from "./navigation";
+import {
+  loadSpeedPreferences,
+  saveSpeedPreferences,
+} from "./speed-preferences";
+import type { SpeedMetric, SpeedRange } from "../api";
 
 export interface PresentationState {
   readonly destination: ApplicationDestination;
@@ -57,6 +62,8 @@ export interface PresentationState {
   readonly logExpandedIds: readonly string[];
   readonly logClearThroughSequence: string | null;
   readonly logFollowing: boolean;
+  readonly speedRange: SpeedRange;
+  readonly speedMetrics: readonly SpeedMetric[];
 }
 
 export interface InspectionState extends InspectionSnapshot {
@@ -96,6 +103,8 @@ export interface InspectionActions {
   readonly toggleLogExpanded: (sequence: string) => void;
   readonly clearVisibleLogs: () => void;
   readonly setLogFollowing: (following: boolean) => void;
+  readonly setSpeedRange: (range: SpeedRange) => void;
+  readonly toggleSpeedMetric: (metric: SpeedMetric) => void;
 }
 
 export type InspectionStore = InspectionState & InspectionActions;
@@ -124,6 +133,7 @@ const EMPTY_SNAPSHOT: InspectionSnapshot = {
   trackersByTorrent: {},
   piecesByTorrent: {},
   disk: emptyDiskSet(),
+  speed: null,
   logs: [],
   logLoss: {
     sourceEvictedCount: 0,
@@ -141,6 +151,7 @@ const EMPTY_SNAPSHOT: InspectionSnapshot = {
     trackers: { status: "not_requested" },
     pieces: { status: "not_requested" },
     disk: { status: "not_requested" },
+    speed: { status: "not_requested" },
     logs: { status: "not_requested" },
   },
 };
@@ -171,6 +182,8 @@ const DEFAULT_PRESENTATION: PresentationState = {
   logExpandedIds: [],
   logClearThroughSequence: null,
   logFollowing: true,
+  speedRange: "seconds30",
+  speedMetrics: ["payload_received", "staged_write", "payload_verified"],
 };
 
 export function createInspectionStore(
@@ -184,10 +197,16 @@ export function createInspectionStore(
     appearanceStorage === undefined
       ? loadNavigationPreferences()
       : loadNavigationPreferences(appearanceStorage);
+  const speedPreferences =
+    appearanceStorage === undefined
+      ? loadSpeedPreferences()
+      : loadSpeedPreferences(appearanceStorage);
   const initialPresentation = {
     ...DEFAULT_PRESENTATION,
     ...navigation,
     ...appearance,
+    speedRange: speedPreferences.range,
+    speedMetrics: speedPreferences.metrics,
   };
   const persistAppearance = (preferences: {
     readonly interfaceSize: InterfaceSize;
@@ -369,6 +388,36 @@ export function createInspectionStore(
         presentation: { ...state.presentation, activeTab },
       }));
     },
+    setSpeedRange: (speedRange) => {
+      set((state) => {
+        const speed = {
+          range: speedRange,
+          metrics: state.presentation.speedMetrics,
+        };
+        if (appearanceStorage === undefined) saveSpeedPreferences(speed);
+        else saveSpeedPreferences(speed, appearanceStorage);
+        return { presentation: { ...state.presentation, speedRange } };
+      });
+    },
+    toggleSpeedMetric: (metric) => {
+      set((state) => {
+        const selected = state.presentation.speedMetrics;
+        const speedMetrics = selected.includes(metric)
+          ? selected.length === 1
+            ? selected
+            : selected.filter((candidate) => candidate !== metric)
+          : selected.length >= 8
+            ? selected
+            : [...selected, metric];
+        const speed = {
+          range: state.presentation.speedRange,
+          metrics: speedMetrics,
+        };
+        if (appearanceStorage === undefined) saveSpeedPreferences(speed);
+        else saveSpeedPreferences(speed, appearanceStorage);
+        return { presentation: { ...state.presentation, speedMetrics } };
+      });
+    },
     setDetailPanePercent: (percent) => {
       set((state) => ({
         presentation: {
@@ -518,6 +567,7 @@ export function reduceInspectionUpdate(
   let trackersByTorrent = state.trackersByTorrent;
   let piecesByTorrent = state.piecesByTorrent;
   let disk = state.disk;
+  let speed = state.speed;
   let logs = state.logs;
   let logLoss = state.logLoss;
 
@@ -624,6 +674,9 @@ export function reduceInspectionUpdate(
   if (update.disk !== undefined) {
     disk = update.disk;
   }
+  if (update.speed !== undefined) {
+    speed = update.speed;
+  }
 
   if (update.pieces !== undefined) {
     piecesByTorrent = update.pieces;
@@ -665,6 +718,7 @@ export function reduceInspectionUpdate(
     trackersByTorrent,
     piecesByTorrent,
     disk,
+    speed,
     logs,
     logLoss,
     presentation: {

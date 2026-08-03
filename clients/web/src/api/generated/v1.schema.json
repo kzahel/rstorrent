@@ -2436,6 +2436,170 @@
       ],
       "type": "object"
     },
+    "SpeedCurrentRate": {
+      "properties": {
+        "bytes": {
+          "type": "string"
+        },
+        "metric": {
+          "$ref": "#/$defs/SpeedMetric"
+        }
+      },
+      "required": [
+        "metric",
+        "bytes"
+      ],
+      "type": "object"
+    },
+    "SpeedHistoryView": {
+      "properties": {
+        "bucket_millis": {
+          "type": "string"
+        },
+        "captured_millis": {
+          "type": "string"
+        },
+        "catalog": {
+          "items": {
+            "$ref": "#/$defs/SpeedMetricAvailability"
+          },
+          "type": "array"
+        },
+        "complete_through_millis": {
+          "type": "string"
+        },
+        "current": {
+          "items": {
+            "$ref": "#/$defs/SpeedCurrentRate"
+          },
+          "type": "array"
+        },
+        "history_epoch": {
+          "type": "string"
+        },
+        "live": {
+          "type": "boolean"
+        },
+        "persistence": {
+          "$ref": "#/$defs/SpeedPersistenceState"
+        },
+        "range": {
+          "$ref": "#/$defs/SpeedRange"
+        },
+        "series": {
+          "items": {
+            "$ref": "#/$defs/SpeedSeriesView"
+          },
+          "type": "array"
+        },
+        "start_millis": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "captured_millis",
+        "history_epoch",
+        "range",
+        "bucket_millis",
+        "start_millis",
+        "complete_through_millis",
+        "live",
+        "persistence",
+        "current",
+        "series",
+        "catalog"
+      ],
+      "type": "object"
+    },
+    "SpeedMetric": {
+      "enum": [
+        "payload_received",
+        "staged_write",
+        "payload_verified",
+        "peer_wire_received",
+        "peer_wire_sent",
+        "peer_protocol_received",
+        "peer_protocol_sent",
+        "metadata_payload_received",
+        "metadata_payload_sent",
+        "peer_unclassified_received",
+        "peer_unclassified_sent",
+        "dht_received",
+        "dht_sent",
+        "tracker_received",
+        "tracker_sent",
+        "logical_hash_read",
+        "payload_redundant",
+        "payload_hash_failed",
+        "payload_uploaded"
+      ],
+      "type": "string"
+    },
+    "SpeedMetricAvailability": {
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "metric": {
+          "$ref": "#/$defs/SpeedMetric"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "metric",
+        "available"
+      ],
+      "type": "object"
+    },
+    "SpeedPersistenceState": {
+      "enum": [
+        "healthy",
+        "degraded"
+      ],
+      "type": "string"
+    },
+    "SpeedRange": {
+      "enum": [
+        "seconds30",
+        "minutes2",
+        "minutes10",
+        "hour1",
+        "hours24",
+        "days30",
+        "years2"
+      ],
+      "type": "string"
+    },
+    "SpeedSeriesView": {
+      "properties": {
+        "current_rate_bytes": {
+          "type": "string"
+        },
+        "metric": {
+          "$ref": "#/$defs/SpeedMetric"
+        },
+        "values": {
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "metric",
+        "current_rate_bytes",
+        "values"
+      ],
+      "type": "object"
+    },
     "StorageRootAvailability": {
       "enum": [
         "available",
@@ -3253,6 +3417,22 @@
         },
         {
           "properties": {
+            "history": {
+              "$ref": "#/$defs/SpeedHistoryView"
+            },
+            "type": {
+              "const": "session_speed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "history"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "removed": {
               "items": {
                 "type": "string"
@@ -3604,6 +3784,22 @@
         },
         {
           "properties": {
+            "history": {
+              "$ref": "#/$defs/SpeedHistoryView"
+            },
+            "type": {
+              "const": "session_speed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "history"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "peers": {
               "items": {
                 "$ref": "#/$defs/PeerView"
@@ -3846,6 +4042,39 @@
           "required": [
             "type",
             "view_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "delivery": {
+              "$ref": "#/$defs/ViewDeliveryPolicy",
+              "default": {
+                "min_interval_millis": 0
+              }
+            },
+            "metrics": {
+              "items": {
+                "$ref": "#/$defs/SpeedMetric"
+              },
+              "type": "array"
+            },
+            "range": {
+              "$ref": "#/$defs/SpeedRange"
+            },
+            "type": {
+              "const": "session_speed",
+              "type": "string"
+            },
+            "view_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "view_id",
+            "range",
+            "metrics"
           ],
           "type": "object"
         },

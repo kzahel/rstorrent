@@ -24,6 +24,7 @@ export class InspectionController {
     torrentId: null,
     detail: null,
     logCapture: null,
+    speed: null,
   };
   private desiredVersion = 0;
   private syncedVersion = -1;
@@ -132,11 +133,11 @@ function delay(millis: number, signal: AbortSignal): Promise<void> {
 function desiredViewsFor(state: InspectionStore): DesiredInspectionViews {
   const presentation = state.presentation;
   if (presentation.destination !== "workbench") {
-    return { library: true, torrentId: null, detail: null, logCapture: null };
+    return { library: true, torrentId: null, detail: null, logCapture: null, speed: null };
   }
   const activeTorrentId = presentation.activeTorrentId;
   if (presentation.layout === "phone" && !presentation.detailOpen) {
-    return { library: true, torrentId: null, detail: null, logCapture: null };
+    return { library: true, torrentId: null, detail: null, logCapture: null, speed: null };
   }
   const torrentId = activeTorrentId;
   const detail = desiredDetailForTab(presentation.activeTab, torrentId);
@@ -149,6 +150,13 @@ function desiredViewsFor(state: InspectionStore): DesiredInspectionViews {
         ? {
             profile: presentation.logCaptureProfile,
             torrentId: presentation.logCaptureTorrentId,
+          }
+        : null,
+    speed:
+      detail === "speed"
+        ? {
+            range: presentation.speedRange,
+            metrics: presentation.speedMetrics,
           }
         : null,
   };
@@ -164,5 +172,16 @@ function sameViews(
     left.detail === right.detail &&
     left.logCapture?.profile === right.logCapture?.profile &&
     left.logCapture?.torrentId === right.logCapture?.torrentId
+    && left.speed?.range === right.speed?.range
+    && sameSeries(left.speed?.metrics, right.speed?.metrics)
   );
+}
+
+function sameSeries(
+  left: readonly string[] | undefined,
+  right: readonly string[] | undefined,
+): boolean {
+  return left === right ||
+    (left !== undefined && right !== undefined &&
+      left.length === right.length && left.every((value, index) => value === right[index]));
 }

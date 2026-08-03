@@ -53,6 +53,7 @@ const FILES_VIEW_ID = "torrent-files";
 const TRACKERS_VIEW_ID = "torrent-trackers";
 const PIECES_VIEW_ID = "torrent-pieces";
 const DISK_VIEW_ID = "session-disk";
+const SPEED_VIEW_ID = "session-speed";
 const LOGS_VIEW_ID = "logs";
 
 export interface LiveApplicationOptions extends ViewControllerOptions {
@@ -95,6 +96,7 @@ export class LiveApplication implements InspectionApplication {
       torrentId: null,
       detail: null,
       logCapture: null,
+      speed: null,
     };
     const application = new LiveApplication(client, desired);
     application.hello = await client.hello();
@@ -376,6 +378,7 @@ export class LiveApplication implements InspectionApplication {
         pieces: staleIfMaterialized(this.snapshot.viewStatus.pieces, error),
         disk: staleIfMaterialized(this.snapshot.viewStatus.disk, error),
         logs: staleIfMaterialized(this.snapshot.viewStatus.logs, error),
+        speed: staleIfMaterialized(this.snapshot.viewStatus.speed, error),
       },
     };
     this.emit({ type: "snapshot", snapshot: this.snapshot });
@@ -470,6 +473,23 @@ export class LiveApplication implements InspectionApplication {
         delivery: { min_interval_millis: 100 },
       });
     }
+    if (views.detail === "speed" && capabilities.has("session_speed")) {
+      const range = views.speed?.range ?? "seconds30";
+      specs.push({
+        type: "session_speed",
+        view_id: SPEED_VIEW_ID,
+        range,
+        metrics: [...(views.speed?.metrics ?? [
+          "payload_received",
+          "staged_write",
+          "payload_verified",
+        ])],
+        delivery: {
+          min_interval_millis:
+            range === "seconds30" ? 100 : range === "minutes2" ? 500 : 1_000,
+        },
+      });
+    }
     if (views.detail === "logs" && capabilities.has("diagnostics")) {
       const capture = views.logCapture ?? {
         profile: "normal" as const,
@@ -530,6 +550,7 @@ function mapViewState(
   const trackers = projection(state, TRACKERS_VIEW_ID, "trackers");
   const pieces = projection(state, PIECES_VIEW_ID, "piece_activity");
   const disk = projection(state, DISK_VIEW_ID, "session_disk");
+  const speed = projection(state, SPEED_VIEW_ID, "session_speed");
   const diagnostics = projection(state, LOGS_VIEW_ID, "diagnostics");
   const torrentRows = new Map<string, TorrentRow>();
   if (library !== null) {
@@ -583,7 +604,14 @@ function mapViewState(
     revision: safeNumber(state.durableRevision),
     session: {
       connection,
-      downloadRate: rows.reduce((total, row) => total + row.downloadRate, 0),
+      downloadRate:
+        speed?.history.series.find((series) => series.metric === "payload_received") === undefined
+          ? rows.reduce((total, row) => total + row.downloadRate, 0)
+          : safeNumber(
+              speed.history.series.find(
+                (series) => series.metric === "payload_received",
+              )?.current_rate_bytes ?? "0",
+            ),
       uploadRate: null,
       dhtNodes: null,
       knownPeers: null,
@@ -598,6 +626,7 @@ function mapViewState(
     trackersByTorrent,
     piecesByTorrent,
     disk: disk === null ? emptyDiskSet() : mapDisk(disk),
+    speed: speed?.history ?? null,
     logs,
     logLoss: {
       sourceEvictedCount:
@@ -659,6 +688,12 @@ function mapViewState(
         disk !== null,
         "Disk inspection is unavailable",
       ),
+      speed: materialization(
+        desired.detail === "speed",
+        capabilities.has("session_speed"),
+        speed !== null,
+        "Speed history is unavailable",
+      ),
       logs: materialization(
         desired.detail === "logs",
         capabilities.has("diagnostics"),
@@ -718,6 +753,7 @@ function transitionSnapshot(
     trackersByTorrent: {},
     piecesByTorrent: {},
     disk: current.disk,
+    speed: current.speed,
     logs: [],
     logLoss: {
       ...current.logLoss,
@@ -757,6 +793,11 @@ function transitionSnapshot(
         desired.detail === "disk",
         capabilities.has("session_disk"),
         current.viewStatus.disk,
+      ),
+      speed: transitionStatus(
+        desired.detail === "speed",
+        capabilities.has("session_speed"),
+        current.viewStatus.speed,
       ),
       logs: transitionStatus(
         desired.detail === "logs",
@@ -1261,6 +1302,7 @@ function emptyLiveSnapshot(
     trackersByTorrent: {},
     piecesByTorrent: {},
     disk: emptyDiskSet(),
+    speed: null,
     logs: [],
     logLoss: {
       sourceEvictedCount: 0,
@@ -1285,6 +1327,10 @@ function emptyLiveSnapshot(
           ? { status: "loading" }
           : { status: "not_requested" },
       disk: desired.detail === "disk" ? { status: "loading" } : { status: "not_requested" },
+      speed:
+        desired.detail === "speed"
+          ? { status: "loading" }
+          : { status: "not_requested" },
       logs: desired.detail === "logs" ? { status: "loading" } : { status: "not_requested" },
     },
   };
@@ -1300,7 +1346,18 @@ function sameViews(
     left.detail === right.detail &&
     left.logCapture?.profile === right.logCapture?.profile &&
     left.logCapture?.torrentId === right.logCapture?.torrentId
+    && left.speed?.range === right.speed?.range
+    && sameMetricSelection(left.speed?.metrics, right.speed?.metrics)
   );
+}
+
+function sameMetricSelection(
+  left: readonly string[] | undefined,
+  right: readonly string[] | undefined,
+): boolean {
+  return left === right ||
+    (left !== undefined && right !== undefined && left.length === right.length &&
+      left.every((metric, index) => metric === right[index]));
 }
 
 function asError(error: unknown): Error {

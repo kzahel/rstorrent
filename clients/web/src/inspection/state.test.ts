@@ -245,6 +245,7 @@ function snapshot(rows: readonly TorrentRow[]): InspectionSnapshot {
     trackersByTorrent: {},
     piecesByTorrent: {},
     disk: emptyDiskSet(),
+    speed: null,
     logs: [],
     logLoss: {
       sourceEvictedCount: 0,
@@ -262,6 +263,7 @@ function snapshot(rows: readonly TorrentRow[]): InspectionSnapshot {
       trackers: { status: "not_requested" },
       pieces: { status: "not_requested" },
       disk: { status: "not_requested" },
+      speed: { status: "not_requested" },
       logs: { status: "not_requested" },
     },
   };

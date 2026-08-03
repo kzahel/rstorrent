@@ -4,6 +4,9 @@ import type {
   PeerDisconnectReason,
   PeerFlagView,
   PeerSourceView,
+  SpeedHistoryView,
+  SpeedMetric,
+  SpeedRange,
   SwarmCatalogState,
   SwarmCountsView,
   SwarmPeerState,
@@ -94,6 +97,7 @@ export interface InspectionViewStatus {
   readonly trackers: ViewMaterialization;
   readonly pieces: ViewMaterialization;
   readonly disk: ViewMaterialization;
+  readonly speed: ViewMaterialization;
   readonly logs: ViewMaterialization;
 }
 
@@ -108,11 +112,16 @@ export interface DesiredInspectionViews {
     | "files"
     | "pieces"
     | "disk"
+    | "speed"
     | "logs"
     | null;
   readonly logCapture: {
     readonly profile: "normal" | "detailed" | "trace";
     readonly torrentId: string | null;
+  } | null;
+  readonly speed?: {
+    readonly range: SpeedRange;
+    readonly metrics: readonly SpeedMetric[];
   } | null;
 }
 
@@ -414,6 +423,7 @@ export interface InspectionSnapshot {
   readonly trackersByTorrent: Readonly<Record<string, TrackerSet>>;
   readonly piecesByTorrent: Readonly<Record<string, PieceMapSet>>;
   readonly disk: DiskSet;
+  readonly speed: SpeedHistoryView | null;
   readonly logs: readonly LogRow[];
   readonly logLoss: LogLoss;
   readonly viewStatus: InspectionViewStatus;
@@ -460,6 +470,7 @@ export type InspectionUpdate =
       })[];
       readonly pieces?: Readonly<Record<string, PieceMapSet>>;
       readonly disk?: DiskSet;
+      readonly speed?: SpeedHistoryView;
       readonly logs?: {
         readonly append: readonly LogRow[];
         readonly sourceEvictedCount: number;
@@ -513,6 +524,15 @@ export type DemoScenarioId =
   | "disk-error"
   | "slow-disk-pressure"
   | "diagnostic-console"
+  | "speed-steady"
+  | "speed-bursty"
+  | "speed-idle"
+  | "speed-hash-retry"
+  | "speed-traffic-breakdown"
+  | "speed-history"
+  | "speed-unavailable-upload"
+  | "speed-stale"
+  | "speed-reset"
   | "empty-library";
 
 export interface DemoScenarioSummary {

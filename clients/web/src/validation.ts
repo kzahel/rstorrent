@@ -438,6 +438,9 @@ function validateViewSnapshot(value: unknown): void {
       pieces.forEach(validateDiskPiece);
       break;
     }
+    case "session_speed":
+      validateSpeedHistory(snapshot.history);
+      break;
     case "peers": {
       const owningTorrent = string(snapshot.torrent_id, "peer-view torrent ID");
       torrentId(owningTorrent);
@@ -564,6 +567,9 @@ function validateViewPatch(value: unknown): void {
       );
       break;
     }
+    case "session_speed":
+      validateSpeedHistory(patch.history);
+      break;
     case "peers": {
       const owningTorrent = string(patch.torrent_id, "peer-view torrent ID");
       torrentId(owningTorrent);
@@ -641,6 +647,92 @@ function validateViewPatch(value: unknown): void {
     }
     default:
       throw new ContractError("unknown view patch type");
+  }
+}
+
+const SPEED_METRICS = [
+  "payload_received",
+  "staged_write",
+  "payload_verified",
+  "peer_wire_received",
+  "peer_wire_sent",
+  "peer_protocol_received",
+  "peer_protocol_sent",
+  "metadata_payload_received",
+  "metadata_payload_sent",
+  "peer_unclassified_received",
+  "peer_unclassified_sent",
+  "dht_received",
+  "dht_sent",
+  "tracker_received",
+  "tracker_sent",
+  "logical_hash_read",
+  "payload_redundant",
+  "payload_hash_failed",
+  "payload_uploaded",
+] as const;
+
+function validateSpeedHistory(value: unknown): void {
+  const history = asRecord(value, "speed history");
+  decimal(history.captured_millis, "speed capture time");
+  boundedString(history.history_epoch, "speed history epoch", 128);
+  oneOf(history.range, "speed range", [
+    "seconds30",
+    "minutes2",
+    "minutes10",
+    "hour1",
+    "hours24",
+    "days30",
+    "years2",
+  ]);
+  decimal(history.bucket_millis, "speed bucket interval");
+  decimal(history.start_millis, "speed history start");
+  decimal(history.complete_through_millis, "speed complete-through time");
+  if (typeof history.live !== "boolean") {
+    throw new ContractError("speed live flag is not boolean");
+  }
+  oneOf(history.persistence, "speed persistence state", ["healthy", "degraded"]);
+  const current = array(history.current, "speed current rates");
+  if (current.length > SPEED_METRICS.length) {
+    throw new ContractError("speed current rates exceed their bound");
+  }
+  for (const item of current) {
+    const rate = asRecord(item, "speed current rate");
+    oneOf(rate.metric, "speed metric", SPEED_METRICS);
+    decimal(rate.bytes, "speed current rate bytes");
+  }
+  const series = array(history.series, "speed series");
+  if (series.length === 0 || series.length > 8) {
+    throw new ContractError("speed history requires 1..=8 series");
+  }
+  let bucketCount: number | null = null;
+  const selected = new Set<string>();
+  for (const item of series) {
+    const row = asRecord(item, "speed series");
+    const metric = oneOf(row.metric, "speed metric", SPEED_METRICS);
+    if (selected.has(metric)) throw new ContractError("speed series are duplicated");
+    selected.add(metric);
+    decimal(row.current_rate_bytes, "speed current rate");
+    const values = array(row.values, "speed values");
+    bucketCount ??= values.length;
+    if (values.length !== bucketCount || values.length > 2_880) {
+      throw new ContractError("speed series lengths are inconsistent or unbounded");
+    }
+    values.forEach((sample) => {
+      if (sample !== null) decimal(sample, "speed bucket bytes");
+    });
+  }
+  const catalog = array(history.catalog, "speed metric catalog");
+  if (catalog.length > SPEED_METRICS.length) {
+    throw new ContractError("speed metric catalog exceeds its bound");
+  }
+  for (const item of catalog) {
+    const entry = asRecord(item, "speed metric availability");
+    oneOf(entry.metric, "speed metric", SPEED_METRICS);
+    if (typeof entry.available !== "boolean") {
+      throw new ContractError("speed metric availability is not boolean");
+    }
+    optionalString(entry.reason, "speed metric unavailability reason", 256);
   }
 }
 

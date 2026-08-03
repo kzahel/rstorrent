@@ -132,6 +132,11 @@ function cloneSnapshot(snapshot: ViewSnapshot): ViewSnapshot {
         pipeline: { ...snapshot.pipeline },
         pieces: [...snapshot.pieces],
       };
+    case "session_speed":
+      return {
+        ...snapshot,
+        history: cloneSpeedHistory(snapshot.history),
+      };
     case "peers":
       return { ...snapshot, peers: [...snapshot.peers] };
     case "swarm":
@@ -206,6 +211,11 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
         pieces: [...pieces.values()],
       };
     }
+    case "session_speed":
+      return {
+        type: "session_speed",
+        history: cloneSpeedHistory(patch.history),
+      };
     case "peers": {
       if (snapshot.type !== "peers") throw new Error("unreachable");
       const peers = new Map(
@@ -283,6 +293,20 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
       };
     }
   }
+}
+
+function cloneSpeedHistory(
+  history: Extract<ViewSnapshot, { type: "session_speed" }>["history"],
+): Extract<ViewSnapshot, { type: "session_speed" }>["history"] {
+  return {
+    ...history,
+    current: history.current.map((entry) => ({ ...entry })),
+    series: history.series.map((series) => ({
+      ...series,
+      values: [...series.values],
+    })),
+    catalog: history.catalog.map((entry) => ({ ...entry })),
+  };
 }
 
 function mergeDiagnostics(

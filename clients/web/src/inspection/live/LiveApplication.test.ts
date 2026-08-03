@@ -631,6 +631,15 @@ function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
           pieces: [],
         },
       };
+    case "session_speed":
+      return {
+        type: "snapshot",
+        view_id: view.view_id,
+        snapshot: {
+          type: "session_speed",
+          history: speedHistory(),
+        },
+      };
     case "diagnostics":
       return {
         type: "snapshot",
@@ -647,6 +656,36 @@ function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
     case "piece_activity":
       throw new Error("piece view is not used by live inspection");
   }
+}
+
+function speedHistory() {
+  return {
+    captured_millis: "1300",
+    history_epoch: "test-speed-1",
+    range: "seconds30" as const,
+    bucket_millis: "100",
+    start_millis: "1000",
+    complete_through_millis: "1299",
+    live: true,
+    persistence: "healthy" as const,
+    current: [
+      { metric: "payload_received" as const, bytes: "4096" },
+    ],
+    series: [
+      {
+        metric: "payload_received" as const,
+        current_rate_bytes: "4096",
+        values: ["1024", "2048", "1024"],
+      },
+    ],
+    catalog: [
+      {
+        metric: "payload_received" as const,
+        available: true,
+        reason: null,
+      },
+    ],
+  };
 }
 
 function swarmPeer(generation: number) {

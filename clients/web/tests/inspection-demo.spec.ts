@@ -593,6 +593,50 @@ test("global disk pipeline shows pressure and responsive piece work", async ({
   await capture(page, "rstorrent-disk-phone.png");
 });
 
+test("speed history stays exact, selectable, and accessible", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 820 });
+  await openScenario(page, "speed-bursty", 42_000);
+  await page.getByRole("tab", { name: "Speed" }).click();
+
+  const panel = page.getByLabel("Session speed history");
+  const chart = page.getByRole("img", { name: /Speed history chart/ });
+  await expect(panel).toContainText("Session · All torrents");
+  await expect(chart).toBeVisible();
+  await expect(page.getByLabel("Selected speed window summaries")).toContainText(
+    "Received",
+  );
+
+  await chart.focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(panel.getByRole("status")).toContainText(/Received.*\/s/);
+
+  await panel.getByRole("button", { name: "DHT in" }).click();
+  await expect(panel.getByText("4 of 8")).toBeVisible();
+  const historyRange = panel.getByRole("combobox", { name: "History" });
+  await historyRange.selectOption("hours24");
+  await expect(historyRange).toHaveValue("hours24");
+
+  const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
+    (violation) => violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+  await capture(page, "rstorrent-speed-wide.png");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page
+    .getByRole("grid", { name: "Torrent library" })
+    .getByRole("row")
+    .filter({ hasText: "Big Buck Bunny" })
+    .click();
+  await expect(chart).toBeVisible();
+  await capture(page, "rstorrent-speed-phone.png");
+
+  await page.setViewportSize({ width: 1280, height: 820 });
+  await openScenario(page, "speed-stale", 42_000);
+  await page.getByRole("tab", { name: "Speed" }).click();
+  await expect(page.getByText("Frozen · stale")).toBeVisible();
+});
+
 test("piece canvas shows retry truth and bounds a large torrent", async ({
   page,
 }) => {

@@ -15,6 +15,7 @@ import type {
   TrackerRow,
   TrackerSet,
 } from "../model";
+import type { SpeedHistoryView } from "../../api";
 import { emptyDiskSet } from "../state";
 
 const BASE_TIME_MS = Date.UTC(2026, 7, 1, 8, 0, 0);
@@ -101,6 +102,69 @@ export const DEMO_SCENARIOS: readonly DemoScenarioSummary[] = [
     autoplay: true,
   },
   {
+    id: "speed-steady",
+    title: "Speed · steady",
+    description: "A sustained transfer with a narrow, stable rate envelope.",
+    durationMs: 90_000,
+    autoplay: true,
+  },
+  {
+    id: "speed-bursty",
+    title: "Speed · bursty",
+    description: "Short payload bursts separate receive, staging, and verification.",
+    durationMs: 90_000,
+    autoplay: true,
+  },
+  {
+    id: "speed-idle",
+    title: "Speed · idle",
+    description: "Complete zero buckets remain distinct from stale or missing data.",
+    durationMs: 60_000,
+    autoplay: false,
+  },
+  {
+    id: "speed-hash-retry",
+    title: "Speed · hash retry",
+    description: "Failed work remains counted before a clean retry verifies.",
+    durationMs: 45_000,
+    autoplay: true,
+  },
+  {
+    id: "speed-traffic-breakdown",
+    title: "Speed · traffic",
+    description: "Peer, metadata, DHT, tracker, and hash traffic are all active.",
+    durationMs: 60_000,
+    autoplay: true,
+  },
+  {
+    id: "speed-history",
+    title: "Speed · history gaps",
+    description: "Retained history contains explicit process-offline gaps.",
+    durationMs: 60_000,
+    autoplay: false,
+  },
+  {
+    id: "speed-unavailable-upload",
+    title: "Speed · unavailable upload",
+    description: "Payload upload is unavailable rather than reported as zero.",
+    durationMs: 60_000,
+    autoplay: false,
+  },
+  {
+    id: "speed-stale",
+    title: "Speed · stale",
+    description: "The last authoritative plot freezes when delivery stops.",
+    durationMs: 60_000,
+    autoplay: false,
+  },
+  {
+    id: "speed-reset",
+    title: "Speed · epoch reset",
+    description: "A new history epoch replaces the previous plot across a gap.",
+    durationMs: 60_000,
+    autoplay: true,
+  },
+  {
     id: "empty-library",
     title: "Empty library",
     description: "A clean first-run library with no active torrents.",
@@ -170,6 +234,7 @@ export function buildScenarioSnapshot(
     trackersByTorrent,
     piecesByTorrent,
     disk,
+    speed: buildSpeedHistory(elapsed, scenarioId),
     logs: content.logs.slice(-2_048),
     logLoss: {
       sourceEvictedCount: 0,
@@ -187,9 +252,137 @@ export function buildScenarioSnapshot(
       trackers: { status: "ready" },
       pieces: { status: "ready" },
       disk: { status: "ready" },
+      speed: scenarioId === "speed-stale"
+        ? { status: "stale", reason: "Demo delivery paused" }
+        : { status: "ready" },
       logs: { status: "ready" },
     },
   };
+}
+
+function buildSpeedHistory(
+  elapsedMs: number,
+  scenarioId: DemoScenarioId,
+): SpeedHistoryView {
+  const count = 300;
+  const bucketMillis = 100;
+  const animatedElapsed = scenarioId === "speed-stale" ? 25_000 : elapsedMs;
+  const completeThrough = 1_700_000_000_000 +
+    Math.floor(animatedElapsed / bucketMillis) * bucketMillis;
+  const start = completeThrough - (count - 1) * bucketMillis;
+  const makeValues = (scale: number, lag: number) =>
+    Array.from({ length: count }, (_, index) => {
+      const phase = (index + Math.floor(elapsedMs / bucketMillis) - lag) / 18;
+      const steady = scenarioId === "speed-steady";
+      const bursty = scenarioId === "speed-bursty";
+      const idle = scenarioId === "speed-idle";
+      const envelope = steady ? 0.82 + Math.sin(phase / 5) * 0.035 :
+        0.62 + Math.sin(phase / 4) * 0.18;
+      const pulse = bursty ? Math.max(0, Math.sin(phase)) ** 5 * 0.72 :
+        Math.max(0, Math.sin(phase)) * 0.28;
+      if (scenarioId === "speed-history" && index > 105 && index < 155) return null;
+      if (scenarioId === "speed-reset" && index < 80) return null;
+      return Math.round((idle ? 0 : scale * (envelope + pulse)) * bucketMillis / 1000).toString();
+    });
+  const catalog: SpeedHistoryView["catalog"] = [
+    ...[
+      "payload_received",
+      "staged_write",
+      "payload_verified",
+      "peer_wire_received",
+      "peer_wire_sent",
+      "peer_protocol_received",
+      "peer_protocol_sent",
+      "metadata_payload_received",
+      "metadata_payload_sent",
+      "peer_unclassified_received",
+      "peer_unclassified_sent",
+      "dht_received",
+      "dht_sent",
+      "tracker_received",
+      "tracker_sent",
+      "logical_hash_read",
+      "payload_redundant",
+      "payload_hash_failed",
+    ].map((metric) => ({
+      metric: metric as SpeedHistoryView["catalog"][number]["metric"],
+      available: true,
+      reason: null,
+    })),
+    {
+      metric: "payload_uploaded",
+      available: false,
+      reason: "Upload and seeding are not implemented",
+    },
+  ];
+  return {
+    captured_millis: completeThrough.toString(),
+    history_epoch: scenarioId === "speed-reset" && elapsedMs >= 30_000
+      ? "demo-speed-2"
+      : "demo-speed-1",
+    range: "seconds30",
+    bucket_millis: bucketMillis.toString(),
+    start_millis: start.toString(),
+    complete_through_millis: completeThrough.toString(),
+    live: true,
+    persistence: "healthy",
+    current: catalog
+      .filter((entry) => entry.available)
+      .map((entry) => ({
+        metric: entry.metric,
+        bytes:
+          entry.metric === "payload_received"
+            ? scenarioId === "speed-idle" ? "0" : "7864320"
+            : entry.metric === "staged_write"
+              ? scenarioId === "speed-idle" ? "0" : "7340032"
+              : entry.metric === "payload_verified"
+                ? scenarioId === "speed-idle" ? "0" : "6815744"
+                : demoTrafficRate(entry.metric, scenarioId),
+      })),
+    series: [
+      {
+        metric: "payload_received",
+        current_rate_bytes: "7864320",
+        values: makeValues(8 * 1024 * 1024, 0),
+      },
+      {
+        metric: "staged_write",
+        current_rate_bytes: "7340032",
+        values: makeValues(7.4 * 1024 * 1024, 3),
+      },
+      {
+        metric: "payload_verified",
+        current_rate_bytes: "6815744",
+        values: makeValues(6.8 * 1024 * 1024, 7),
+      },
+    ],
+    catalog,
+  };
+}
+
+function demoTrafficRate(
+  metric: SpeedHistoryView["catalog"][number]["metric"],
+  scenarioId: DemoScenarioId,
+): string {
+  if (scenarioId !== "speed-traffic-breakdown" && scenarioId !== "speed-hash-retry") {
+    return "0";
+  }
+  const rates: Partial<Record<typeof metric, string>> = {
+    peer_wire_received: "8431200",
+    peer_wire_sent: "182000",
+    peer_protocol_received: "294000",
+    peer_protocol_sent: "96000",
+    metadata_payload_received: "42000",
+    metadata_payload_sent: "8000",
+    dht_received: "18000",
+    dht_sent: "12000",
+    tracker_received: "1400",
+    tracker_sent: "900",
+    logical_hash_read: "7020000",
+    payload_redundant: "96000",
+    payload_hash_failed: scenarioId === "speed-hash-retry" ? "2097152" : "8000",
+  };
+  return rates[metric] ?? "0";
 }
 
 interface ScenarioContent {
@@ -231,6 +424,16 @@ function buildScenarioContent(
       return diskError(elapsedMs);
     case "diagnostic-console":
       return diagnosticConsole(elapsedMs);
+    case "speed-steady":
+    case "speed-bursty":
+    case "speed-idle":
+    case "speed-hash-retry":
+    case "speed-traffic-breakdown":
+    case "speed-history":
+    case "speed-unavailable-upload":
+    case "speed-stale":
+    case "speed-reset":
+      return healthyDownload(elapsedMs);
     case "empty-library":
       return { torrents: [], peers: {}, logs: [] };
     }

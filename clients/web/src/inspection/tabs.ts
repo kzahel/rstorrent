@@ -14,7 +14,7 @@ export const DETAIL_TABS: readonly {
   { id: "pieces", label: "Pieces", scope: "torrent", view: "pieces" },
   { id: "disk", label: "Disk", scope: "session", view: "disk" },
   { id: "logs", label: "Logs", scope: "session", view: "logs" },
-  { id: "speed", label: "Speed", scope: "session", view: null },
+  { id: "speed", label: "Speed", scope: "session", view: "speed" },
   { id: "dht", label: "DHT", scope: "session", view: null },
 ];
 

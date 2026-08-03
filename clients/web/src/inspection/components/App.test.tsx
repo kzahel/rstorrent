@@ -722,6 +722,7 @@ describe("inspection application", () => {
         torrentId: null,
         detail: null,
         logCapture: null,
+        speed: null,
       }),
     );
 
@@ -740,6 +741,7 @@ describe("inspection application", () => {
         torrentId: null,
         detail: null,
         logCapture: null,
+        speed: null,
       }),
     );
   });

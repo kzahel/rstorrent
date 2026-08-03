@@ -1,4 +1,5 @@
 import type { InspectionApplication } from "../application";
+import type { SpeedHistoryView, SpeedMetric, SpeedRange } from "../../api";
 import type {
   CommandResult,
   DesiredInspectionViews,
@@ -268,7 +269,9 @@ function sameDesiredViews(
     left.torrentId === right.torrentId &&
     left.detail === right.detail &&
     left.logCapture?.profile === right.logCapture?.profile &&
-    left.logCapture?.torrentId === right.logCapture?.torrentId
+    left.logCapture?.torrentId === right.logCapture?.torrentId &&
+    left.speed?.range === right.speed?.range &&
+    sameStrings(left.speed?.metrics, right.speed?.metrics)
   );
 }
 
@@ -353,6 +356,10 @@ function materializeDemoViews(
     trackersByTorrent,
     piecesByTorrent,
     disk: desired.detail === "disk" ? source.disk : emptyDiskSet(),
+    speed:
+      desired.detail === "speed"
+        ? materializeDemoSpeed(source.speed, desired.speed)
+        : null,
     logs: desired.detail === "logs" ? source.logs : [],
     logLoss:
       desired.detail === "logs"
@@ -398,12 +405,120 @@ function materializeDemoViews(
         desired.detail === "disk"
           ? { status: "ready" }
           : { status: "not_requested" },
+      speed:
+        desired.detail === "speed"
+          ? source.viewStatus.speed
+          : { status: "not_requested" },
       logs:
         desired.detail === "logs"
           ? { status: "ready" }
           : { status: "not_requested" },
     },
   };
+}
+
+const DEMO_SPEED_RANGES: Readonly<
+  Record<SpeedRange, { bucketMillis: number; count: number; live: boolean }>
+> = {
+  seconds30: { bucketMillis: 100, count: 300, live: true },
+  minutes2: { bucketMillis: 500, count: 240, live: true },
+  minutes10: { bucketMillis: 2_000, count: 300, live: true },
+  hour1: { bucketMillis: 10_000, count: 360, live: true },
+  hours24: { bucketMillis: 60_000, count: 1_440, live: false },
+  days30: { bucketMillis: 15 * 60_000, count: 2_880, live: false },
+  years2: { bucketMillis: 24 * 60 * 60_000, count: 730, live: false },
+};
+
+function materializeDemoSpeed(
+  source: SpeedHistoryView | null,
+  selection: DesiredInspectionViews["speed"],
+): SpeedHistoryView | null {
+  if (source === null) return null;
+  const range = selection?.range ?? source.range;
+  const metrics = selection?.metrics ?? source.series.map((series) => series.metric);
+  const selectedSource = metrics.map((metric) =>
+    source.series.find((series) => series.metric === metric),
+  );
+  if (range === source.range && selectedSource.every((series) => series !== undefined)) {
+    return {
+      ...source,
+      series: selectedSource.filter((series) => series !== undefined),
+    };
+  }
+  const config = DEMO_SPEED_RANGES[range];
+  const sourceComplete = numberOrZero(source.complete_through_millis);
+  const completeThrough = Math.floor(sourceComplete / config.bucketMillis) * config.bucketMillis;
+  const start = completeThrough - (config.count - 1) * config.bucketMillis;
+  const current = new Map(source.current.map((entry) => [entry.metric, numberOrZero(entry.bytes)]));
+  const received = current.get("payload_received") ?? 0;
+  return {
+    ...source,
+    captured_millis: sourceComplete.toString(),
+    range,
+    bucket_millis: config.bucketMillis.toString(),
+    start_millis: start.toString(),
+    complete_through_millis: completeThrough.toString(),
+    live: config.live,
+    series: metrics.map((metric, metricIndex) => {
+      const rate = demoMetricRate(metric, current, received);
+      return {
+        metric,
+        current_rate_bytes: Math.round(rate).toString(),
+        values: Array.from({ length: config.count }, (_, index) => {
+          const absoluteBucket = Math.floor(completeThrough / config.bucketMillis) -
+            config.count + index + 1;
+          const phase = absoluteBucket / 18 - metricIndex * 0.24;
+          const envelope = 0.68 + Math.sin(phase / 4.3) * 0.17;
+          const pulse = Math.max(0, Math.sin(phase)) * 0.22;
+          return Math.round(rate * (envelope + pulse) * config.bucketMillis / 1_000).toString();
+        }),
+      };
+    }),
+  };
+}
+
+function demoMetricRate(
+  metric: SpeedMetric,
+  current: ReadonlyMap<SpeedMetric, number>,
+  received: number,
+): number {
+  const explicit = current.get(metric) ?? 0;
+  if (explicit > 0) return explicit;
+  switch (metric) {
+    case "peer_wire_received": return received * 1.06;
+    case "peer_wire_sent": return received * 0.018;
+    case "peer_protocol_received": return received * 0.035;
+    case "peer_protocol_sent": return received * 0.012;
+    case "metadata_payload_received": return received * 0.004;
+    case "metadata_payload_sent": return received * 0.0008;
+    case "peer_unclassified_received": return received * 0.0002;
+    case "peer_unclassified_sent": return received * 0.00015;
+    case "dht_received": return 18_000;
+    case "dht_sent": return 12_000;
+    case "tracker_received": return 1_400;
+    case "tracker_sent": return 900;
+    case "logical_hash_read": return received * 0.87;
+    case "payload_redundant": return received * 0.012;
+    case "payload_hash_failed": return received * 0.001;
+    case "payload_uploaded": return 0;
+    case "payload_received":
+    case "staged_write":
+    case "payload_verified":
+      return explicit;
+  }
+}
+
+function numberOrZero(value: string): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+function sameStrings(
+  left: readonly string[] | undefined,
+  right: readonly string[] | undefined,
+): boolean {
+  return left?.length === right?.length &&
+    (left?.every((value, index) => value === right?.[index]) ?? true);
 }
 
 function applyOverlays(
