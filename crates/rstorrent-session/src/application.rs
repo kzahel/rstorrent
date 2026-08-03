@@ -12,7 +12,7 @@ use rstorrent_engine::{
     DiskCheckpointStage, DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink,
     DownloadControl, DownloadError, DownloadResourceLimits, NetworkConfig, PlatformStorageClient,
     PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash,
-    ResumableMagnetDownloadConfig, ResumedStorage, StorageFilePool,
+    ResumableMagnetDownloadConfig, ResumedStorage, StorageFilePool, StorageFilePoolSnapshot,
     download_magnet_metadata_with_dht, plan_descriptor_storage,
     resume_magnet_to_descriptors_with_control, resume_magnet_with_control, torrent_storage_paths,
     verify_prepared_descriptors, verify_prepared_platform_files,
@@ -765,6 +765,10 @@ impl ApplicationService {
         Ok(self
             .store_mut()?
             .load_prepared_files(&torrent_id.to_ascii_lowercase())?)
+    }
+
+    pub fn storage_file_pool_snapshot(&self) -> StorageFilePoolSnapshot {
+        self.storage_file_pool.snapshot()
     }
 
     pub async fn prepare_platform_publication(

@@ -5,13 +5,23 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.os.CancellationSignal
 import android.provider.DocumentsContract
 import java.io.Closeable
 import org.rstorrent.bootstrap.uniffi.SafDescriptor
+import org.rstorrent.bootstrap.uniffi.SafDynamicFileRole
 import org.rstorrent.bootstrap.uniffi.SafFileRole
 import org.rstorrent.bootstrap.uniffi.SafRemovalPlan
 import org.rstorrent.bootstrap.uniffi.SafStorage
+import org.rstorrent.bootstrap.uniffi.SafStorageAccess
+import org.rstorrent.bootstrap.uniffi.SafStorageFailureKind
 import org.rstorrent.bootstrap.uniffi.SafStoragePlan
+import org.rstorrent.bootstrap.uniffi.SafStorageRequest
+
+class SafStorageRequestException(
+    val kind: SafStorageFailureKind,
+    message: String,
+) : IllegalStateException(message)
 
 class ProductSafStorageHandles internal constructor(
     private val wanted: List<Pair<UInt, ParcelFileDescriptor>>,
@@ -138,6 +148,110 @@ object ProductSafDocuments {
         }
     }
 
+    fun openDynamic(
+        context: Context,
+        treeUri: Uri,
+        request: SafStorageRequest,
+        cancellation: CancellationSignal,
+    ): ParcelFileDescriptor {
+        require(hasGrant(context, treeUri)) {
+            "persisted SAF grant is unavailable"
+        }
+        require(request.path.isNotEmpty()) { "SAF request path is empty" }
+        request.path.forEach(::requireValidComponent)
+        val create = request.access == SafStorageAccess.READ_WRITE_CREATE
+        var parent = documentUri(treeUri)
+        for (component in request.path.dropLast(1)) {
+            parent =
+                findUniqueChild(context, parent, component)
+                    ?: if (create) {
+                        synchronized(this) {
+                            findUniqueChild(context, parent, component)
+                                ?: createDocument(
+                                    context,
+                                    parent,
+                                    DocumentsContract.Document.MIME_TYPE_DIR,
+                                    component,
+                                )
+                        }
+                    } else {
+                        throw SafStorageRequestException(
+                            SafStorageFailureKind.MISSING,
+                            "managed SAF parent is absent",
+                        )
+                    }
+        }
+        val name = request.path.last()
+        val document =
+            findUniqueChild(context, parent, name)
+                ?: if (create) {
+                    synchronized(this) {
+                        findUniqueChild(context, parent, name)
+                            ?: createDocument(context, parent, MIME_BINARY, name)
+                    }
+                } else {
+                    throw SafStorageRequestException(
+                        SafStorageFailureKind.MISSING,
+                        "managed SAF file is absent",
+                    )
+                }
+        val mode =
+            when (request.access) {
+                SafStorageAccess.READ_EXISTING -> "r"
+                SafStorageAccess.READ_WRITE_EXISTING,
+                SafStorageAccess.READ_WRITE_CREATE,
+                -> "rw"
+            }
+        return requireNotNull(
+            context.contentResolver.openFileDescriptor(document, mode, cancellation),
+        ) { "provider refused a SAF descriptor" }
+    }
+
+    fun deleteDynamic(
+        context: Context,
+        treeUri: Uri,
+        request: SafStorageRequest,
+    ) {
+        require(hasGrant(context, treeUri)) { "persisted SAF grant is unavailable" }
+        require(request.role == SafDynamicFileRole.PART) {
+            "only the managed part file may be deleted dynamically"
+        }
+        require(request.path.isNotEmpty()) { "SAF request path is empty" }
+        request.path.forEach(::requireValidComponent)
+        var current = documentUri(treeUri)
+        for (component in request.path) {
+            current = findUniqueChild(context, current, component) ?: return
+        }
+        check(DocumentsContract.deleteDocument(context.contentResolver, current)) {
+            "provider refused managed SAF file deletion"
+        }
+    }
+
+    fun publish(
+        context: Context,
+        treeUri: Uri,
+        name: String,
+    ) {
+        require(hasGrant(context, treeUri)) { "persisted SAF grant is unavailable" }
+        requireValidComponent(name)
+        val root = documentUri(treeUri)
+        val staging = findUniqueChild(context, root, ".$name.rstorrent-staging")
+        val existingFinal = findUniqueChild(context, root, name)
+        check(staging == null || existingFinal == null) {
+            "both staging and published SAF outputs exist"
+        }
+        if (existingFinal == null) {
+            requireNotNull(staging) { "SAF staging output is absent" }
+            requireNotNull(
+                DocumentsContract.renameDocument(
+                    context.contentResolver,
+                    staging,
+                    name,
+                ),
+            ) { "provider refused final SAF publication" }
+        }
+    }
+
     fun publishAndOpen(
         context: Context,
         treeUri: Uri,
@@ -224,6 +338,16 @@ object ProductSafDocuments {
             ?: createDocument(context, parent, MIME_BINARY, name)
     }
 
+    private fun requireValidComponent(component: String) {
+        require(
+            component.isNotEmpty() &&
+                component != "." &&
+                component != ".." &&
+                component.length <= 255 &&
+                component.none { it == '/' || it == '\\' || it == '\u0000' },
+        ) { "invalid SAF path component" }
+    }
+
     private fun requirePath(
         context: Context,
         root: Uri,
@@ -276,7 +400,12 @@ object ProductSafDocuments {
             )?.use { cursor ->
                 while (cursor.moveToNext()) {
                     if (cursor.getString(1) != name) continue
-                    check(match == null) { "provider returned duplicate child $name" }
+                    if (match != null) {
+                        throw SafStorageRequestException(
+                            SafStorageFailureKind.NAME_COLLISION,
+                            "provider returned duplicate child $name",
+                        )
+                    }
                     match =
                         DocumentsContract.buildDocumentUriUsingTree(
                             parent,

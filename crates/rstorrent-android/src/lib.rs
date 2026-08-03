@@ -13,8 +13,10 @@ use std::time::{Duration, Instant};
 use rstorrent_engine::{
     DescriptorFile, DescriptorFileRole, DescriptorStorage, DescriptorStoragePlan, DownloadConfig,
     DownloadControl, DownloadError, DownloadProgress, DownloadReport, DownloadResourceLimits,
-    NetworkConfig, NetworkPolicy, download_verified_piece_to_descriptors_with_control,
-    download_verified_piece_with_control, plan_descriptor_storage,
+    NetworkConfig, NetworkPolicy, PlatformStorageBroker, PlatformStorageFailure,
+    PlatformStorageFailureKind, StorageFileAccess, StorageFileRole,
+    download_verified_piece_to_descriptors_with_control, download_verified_piece_with_control,
+    plan_descriptor_storage, platform_storage_channel,
 };
 use rstorrent_protocol::bencode::MAX_BENCODE_INPUT_LENGTH;
 use rstorrent_protocol::metainfo::Metainfo;
@@ -81,6 +83,7 @@ impl AndroidClientError {
 #[derive(Debug, uniffi::Object)]
 pub struct AndroidApplicationClient {
     service: AsyncMutex<Option<ApplicationService>>,
+    platform_storage: Arc<PlatformStorageBroker>,
 }
 
 #[derive(Debug, uniffi::Object)]
@@ -92,12 +95,18 @@ pub struct AndroidViewSubscription {
 impl AndroidApplicationClient {
     #[uniffi::constructor]
     pub async fn open(config: AndroidApplicationConfig) -> Result<Arc<Self>, AndroidClientError> {
-        let application_config = validate_application_config(config)?;
+        let (platform_client, platform_storage) = platform_storage_channel();
+        let platform_enabled = config.platform_storage;
+        let mut application_config = validate_application_config(config)?;
+        if platform_enabled {
+            application_config.platform_storage_client = Some(platform_client);
+        }
         let service = ApplicationService::open(application_config)
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()))?;
         Ok(Arc::new(Self {
             service: AsyncMutex::new(Some(service)),
+            platform_storage,
         }))
     }
 
@@ -188,6 +197,34 @@ impl AndroidApplicationClient {
             .collect()
     }
 
+    pub async fn prepare_dynamic_saf_publication(
+        &self,
+        torrent_id: String,
+    ) -> Result<String, AndroidClientError> {
+        self.service
+            .lock()
+            .await
+            .as_mut()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .prepare_platform_publication(&torrent_id)
+            .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
+    pub async fn confirm_dynamic_saf_publication(
+        &self,
+        torrent_id: String,
+    ) -> Result<(), AndroidClientError> {
+        self.service
+            .lock()
+            .await
+            .as_mut()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .confirm_platform_publication(&torrent_id)
+            .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
     pub async fn confirm_saf_publication(
         &self,
         torrent_id: String,
@@ -229,6 +266,17 @@ impl AndroidApplicationClient {
             .as_mut()
             .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
             .mark_storage_unavailable(&torrent_id, &message)
+            .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
+    pub async fn prepare_saf_tree_replacement(&self) -> Result<Option<String>, AndroidClientError> {
+        self.service
+            .lock()
+            .await
+            .as_mut()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .prepare_platform_storage_replacement("downloads")
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()))
     }
@@ -280,7 +328,126 @@ impl AndroidApplicationClient {
             .map_err(|error| AndroidClientError::message(error.to_string()))
     }
 
+    pub async fn next_saf_storage_request(&self) -> Option<SafStorageRequest> {
+        self.platform_storage.next_request().await.map(|request| {
+            let (role, file_index) = match request.role {
+                StorageFileRole::Payload(file_index) => (
+                    SafDynamicFileRole::Payload,
+                    u32::try_from(file_index).unwrap_or(u32::MAX),
+                ),
+                StorageFileRole::Part => (SafDynamicFileRole::Part, 0),
+            };
+            SafStorageRequest {
+                request_id: request.request_id,
+                root_id: request.root_id,
+                storage_id: request.storage_id,
+                namespace_generation: request.namespace_generation,
+                role,
+                file_index,
+                path: request.path,
+                access: match request.access {
+                    StorageFileAccess::ReadExisting => SafStorageAccess::ReadExisting,
+                    StorageFileAccess::ReadWriteExisting => SafStorageAccess::ReadWriteExisting,
+                    StorageFileAccess::ReadWriteCreate => SafStorageAccess::ReadWriteCreate,
+                },
+                delete: request.delete,
+                timeout_millis: request.timeout_millis,
+            }
+        })
+    }
+
+    pub async fn saf_storage_pool_snapshot(
+        &self,
+    ) -> Result<SafStoragePoolSnapshot, AndroidClientError> {
+        let snapshot = self
+            .service
+            .lock()
+            .await
+            .as_ref()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .storage_file_pool_snapshot();
+        Ok(SafStoragePoolSnapshot {
+            limit: snapshot.limit as u64,
+            current_owned: snapshot.current_owned as u64,
+            owned_high_water: snapshot.owned_high_water as u64,
+            cached_entries: snapshot.cached_entries as u64,
+            hits: snapshot.hits,
+            misses: snapshot.misses,
+            evictions: snapshot.evictions,
+            singleflight_waits: snapshot.singleflight_waits,
+            mode_upgrades: snapshot.mode_upgrades,
+            open_failures: snapshot.open_failures,
+            resource_retries: snapshot.resource_retries,
+            platform_pending: snapshot.platform_pending as u64,
+            platform_pending_high_water: snapshot.platform_pending_high_water as u64,
+        })
+    }
+
+    pub fn complete_saf_storage_request(
+        &self,
+        request_id: u64,
+        fd: i32,
+        access: SafStorageAccess,
+    ) -> Result<bool, AndroidClientError> {
+        if !self.platform_storage.is_pending(request_id) {
+            return Ok(false);
+        }
+        let mut file = match duplicate_descriptor(fd) {
+            Ok(file) => file,
+            Err(message) => {
+                self.platform_storage.complete_error(
+                    request_id,
+                    PlatformStorageFailure::new(PlatformStorageFailureKind::Internal, message),
+                );
+                return Ok(false);
+            }
+        };
+        if let Err(message) = validate_descriptor_access(fd, access) {
+            self.platform_storage.complete_error(
+                request_id,
+                PlatformStorageFailure::new(PlatformStorageFailureKind::ProviderRefused, message),
+            );
+            return Ok(false);
+        }
+        if let Err(error) = file.stream_position() {
+            self.platform_storage.complete_error(
+                request_id,
+                PlatformStorageFailure::new(
+                    PlatformStorageFailureKind::NonSeekable,
+                    error.to_string(),
+                ),
+            );
+            return Ok(false);
+        }
+        Ok(self.platform_storage.complete_file(request_id, file))
+    }
+
+    pub fn fail_saf_storage_request(
+        &self,
+        request_id: u64,
+        kind: SafStorageFailureKind,
+        message: String,
+    ) -> bool {
+        let kind = match kind {
+            SafStorageFailureKind::Missing => PlatformStorageFailureKind::Missing,
+            SafStorageFailureKind::GrantUnavailable => PlatformStorageFailureKind::GrantUnavailable,
+            SafStorageFailureKind::NameCollision => PlatformStorageFailureKind::NameCollision,
+            SafStorageFailureKind::ProviderRefused => PlatformStorageFailureKind::ProviderRefused,
+            SafStorageFailureKind::NonSeekable => PlatformStorageFailureKind::NonSeekable,
+            SafStorageFailureKind::Cancelled => PlatformStorageFailureKind::Cancelled,
+            SafStorageFailureKind::DeadlineExceeded => PlatformStorageFailureKind::DeadlineExceeded,
+            SafStorageFailureKind::Internal => PlatformStorageFailureKind::Internal,
+        };
+        self.platform_storage
+            .complete_error(request_id, PlatformStorageFailure::new(kind, message))
+    }
+
+    pub fn complete_saf_storage_delete(&self, request_id: u64) -> bool {
+        self.platform_storage.complete_deleted(request_id)
+    }
+
     pub async fn shutdown(&self) -> Result<(), AndroidClientError> {
+        self.platform_storage.cancel_all();
         let service = self.service.lock().await.take();
         if let Some(mut service) = service {
             service
@@ -393,6 +560,62 @@ pub struct SafStorage {
     pub part_fd: i32,
     pub reopened_part_fd: i32,
     pub materialization_files: Vec<SafDescriptor>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, uniffi::Enum)]
+pub enum SafDynamicFileRole {
+    Payload,
+    Part,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, uniffi::Enum)]
+pub enum SafStorageAccess {
+    ReadExisting,
+    ReadWriteExisting,
+    ReadWriteCreate,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, uniffi::Enum)]
+pub enum SafStorageFailureKind {
+    Missing,
+    GrantUnavailable,
+    NameCollision,
+    ProviderRefused,
+    NonSeekable,
+    Cancelled,
+    DeadlineExceeded,
+    Internal,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct SafStorageRequest {
+    pub request_id: u64,
+    pub root_id: String,
+    pub storage_id: String,
+    pub namespace_generation: u64,
+    pub role: SafDynamicFileRole,
+    pub file_index: u32,
+    pub path: Vec<String>,
+    pub access: SafStorageAccess,
+    pub delete: bool,
+    pub timeout_millis: u64,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct SafStoragePoolSnapshot {
+    pub limit: u64,
+    pub current_owned: u64,
+    pub owned_high_water: u64,
+    pub cached_entries: u64,
+    pub hits: u64,
+    pub misses: u64,
+    pub evictions: u64,
+    pub singleflight_waits: u64,
+    pub mode_upgrades: u64,
+    pub open_failures: u64,
+    pub resource_retries: u64,
+    pub platform_pending: u64,
+    pub platform_pending_high_water: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, uniffi::Enum)]
@@ -966,9 +1189,35 @@ fn duplicate_descriptor(fd: i32) -> Result<File, String> {
     Ok(unsafe { File::from_raw_fd(owned_fd) })
 }
 
+#[cfg(unix)]
+fn validate_descriptor_access(fd: i32, access: SafStorageAccess) -> Result<(), String> {
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    if flags < 0 {
+        return Err(format!(
+            "inspect descriptor access: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    let mode = flags & libc::O_ACCMODE;
+    let compatible = match access {
+        SafStorageAccess::ReadExisting => mode != libc::O_WRONLY,
+        SafStorageAccess::ReadWriteExisting | SafStorageAccess::ReadWriteCreate => {
+            mode == libc::O_RDWR
+        }
+    };
+    compatible
+        .then_some(())
+        .ok_or_else(|| "provider descriptor mode is incompatible with the request".to_owned())
+}
+
 #[cfg(not(unix))]
 fn duplicate_descriptor(_fd: i32) -> Result<File, String> {
     Err("descriptor storage requires a Unix platform".to_owned())
+}
+
+#[cfg(not(unix))]
+fn validate_descriptor_access(_fd: i32, _access: SafStorageAccess) -> Result<(), String> {
+    Err("SAF descriptors require a Unix target".to_owned())
 }
 
 fn inspect_descriptor(

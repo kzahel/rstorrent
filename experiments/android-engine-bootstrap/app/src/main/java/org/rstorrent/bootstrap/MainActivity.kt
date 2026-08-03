@@ -154,6 +154,13 @@ class MainActivity : ComponentActivity() {
         }
         requestNotificationPermission()
         startProductService()
+        if (
+            ProductSafDocuments.isDebuggable(this) &&
+            command.getBooleanExtra(EXTRA_PRODUCT_SELECT_SAF, false)
+        ) {
+            command.removeExtra(EXTRA_PRODUCT_SELECT_SAF)
+            launchProductTreePicker()
+        }
         if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
             bindProductService()
         }
@@ -287,6 +294,7 @@ class MainActivity : ComponentActivity() {
         private const val TREE_REQUEST = 51
         private const val PRODUCT_TREE_REQUEST = 53
         const val EXTRA_PRODUCT_MAGNET = "product_magnet"
+        const val EXTRA_PRODUCT_SELECT_SAF = "product_select_saf"
         const val EXTRA_PRODUCT_RELEASE_SAF_GRANT = "product_release_saf_grant"
         const val EXTRA_PRODUCT_CRASH_AFTER_SAF_RENAME =
             "product_crash_after_saf_rename"

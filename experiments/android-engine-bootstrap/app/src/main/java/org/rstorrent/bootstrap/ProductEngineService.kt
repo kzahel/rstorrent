@@ -11,6 +11,7 @@ import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Binder
 import android.os.Build
+import android.os.CancellationSignal
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
@@ -30,10 +31,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.rstorrent.bootstrap.uniffi.AndroidApplicationClient
 import org.rstorrent.bootstrap.uniffi.AndroidApplicationConfig
 import org.rstorrent.bootstrap.uniffi.AndroidNetworkPolicy
 import org.rstorrent.bootstrap.uniffi.AndroidViewSubscription
+import org.rstorrent.bootstrap.uniffi.SafStorageFailureKind
 import org.rstorrent.session.uniffi.Command
 import org.rstorrent.session.uniffi.DeliveryPolicy
 import org.rstorrent.session.uniffi.DiagnosticCategory
@@ -76,7 +79,7 @@ class ProductEngineService : Service() {
     private var diagnosticSeverity = DiagnosticSeverity.INFO
     private var diagnosticCategories: List<DiagnosticCategory> = emptyList()
     private var selectedTorrent: String? = null
-    private var safTreeUri: Uri? = null
+    @Volatile private var safTreeUri: Uri? = null
     private val safWork = ConcurrentHashMap.newKeySet<String>()
     private val crashAfterSafRename = AtomicBoolean(false)
     private var powerLock: PowerManager.WakeLock? = null
@@ -119,6 +122,9 @@ class ProductEngineService : Service() {
                         ),
                     )
                 listJob = consume(requireNotNull(listSubscription), driveSaf = true)
+                repeat(SAF_PROVIDER_CONCURRENCY) {
+                    scope.launch(Dispatchers.IO) { driveSafStorageRequests() }
+                }
                 subscribeDiagnostics()
                 mutableState.update { it.copy(ready = true, error = null) }
                 clientReady.complete(Unit)
@@ -166,19 +172,32 @@ class ProductEngineService : Service() {
             mutableState.update { it.copy(error = "Select a download folder first") }
             return
         }
-        dispatch(Command.AddMagnet(magnet.trim(), "downloads", emptyList()))
+        dispatch(Command.AddMagnet(magnet.trim(), "downloads", true, emptyList()))
     }
 
     fun setSafTree(treeUri: Uri) {
-        safTreeUri = treeUri
-        mutableState.update {
-            it.copy(
-                storageRootReady = true,
-                storageRootLabel = treeUri.lastPathSegment,
-                error = null,
-            )
+        scope.launch {
+            try {
+                clientReady.await()
+                val restart = client.prepareSafTreeReplacement()
+                safTreeUri = treeUri
+                Log.i(TAG, "saf_tree_ready uri=$treeUri")
+                mutableState.update {
+                    it.copy(
+                        storageRootReady = true,
+                        storageRootLabel = treeUri.lastPathSegment,
+                        error = null,
+                    )
+                }
+                advanceSaf(mutableState.value)
+                mutableState.value.torrents.values
+                    .filter { it.state == TorrentState.AWAITING_STORAGE }
+                    .forEach { resume(it.torrentId) }
+                restart?.let(::resume)
+            } catch (error: Throwable) {
+                reportError(error)
+            }
         }
-        advanceSaf(mutableState.value)
     }
 
     fun enableCrashAfterSafRenameForTest() {
@@ -343,7 +362,6 @@ class ProductEngineService : Service() {
                     "removal"
                 } else {
                     when (torrent.state) {
-                        TorrentState.AWAITING_STORAGE -> "storage"
                         TorrentState.AWAITING_PUBLICATION -> "publication"
                         else -> continue
                     }
@@ -353,43 +371,30 @@ class ProductEngineService : Service() {
             scope.launch {
                 try {
                     when (action) {
-                        "storage" -> {
-                            Log.i(TAG, "saf_storage_open torrent=${torrent.torrentId}")
-                            val plan = client.safStoragePlan(torrent.torrentId)
-                            Log.i(TAG, "saf_storage_planned torrent=${torrent.torrentId}")
-                            ProductSafDocuments.openStaging(this@ProductEngineService, treeUri, plan)
-                                .use { handles ->
-                                    Log.i(
-                                        TAG,
-                                        "saf_storage_descriptors_open torrent=${torrent.torrentId}",
-                                    )
-                                    client.startSaf(torrent.torrentId, handles.storage())
-                                }
-                            Log.i(TAG, "saf_storage_started torrent=${torrent.torrentId}")
-                        }
                         "publication" -> {
                             Log.i(TAG, "saf_publication_begin torrent=${torrent.torrentId}")
                             check(client.preparedSafFiles(torrent.torrentId).isNotEmpty()) {
                                 "native prepared publication manifest is empty"
                             }
-                            val plan = client.safStoragePlan(torrent.torrentId)
-                            ProductSafDocuments
-                                .publishAndOpen(this@ProductEngineService, treeUri, plan)
-                                .use { handles ->
-                                    if (crashAfterSafRename.compareAndSet(true, false)) {
-                                        Log.i(
-                                            TAG,
-                                            "saf_test_crash_after_rename " +
-                                                "torrent=${torrent.torrentId}",
-                                        )
-                                        android.os.Process.killProcess(android.os.Process.myPid())
-                                        error("process survived SAF publication crash injection")
-                                    }
-                                    client.confirmSafPublication(
-                                        torrent.torrentId,
-                                        handles.descriptors(),
-                                    )
-                                }
+                            val name = client.prepareDynamicSafPublication(torrent.torrentId)
+                            ProductSafDocuments.publish(this@ProductEngineService, treeUri, name)
+                            if (crashAfterSafRename.compareAndSet(true, false)) {
+                                Log.i(
+                                    TAG,
+                                    "saf_test_crash_after_rename torrent=${torrent.torrentId}",
+                                )
+                                android.os.Process.killProcess(android.os.Process.myPid())
+                                error("process survived SAF publication crash injection")
+                            }
+                            client.confirmDynamicSafPublication(torrent.torrentId)
+                            val storageMetrics = client.safStoragePoolSnapshot()
+                            Log.i(
+                                TAG,
+                                "saf_storage_metrics torrent=${torrent.torrentId} " +
+                                    "limit=${storageMetrics.limit} " +
+                                    "owned_high_water=${storageMetrics.ownedHighWater} " +
+                                    "pending_high_water=${storageMetrics.platformPendingHighWater}",
+                            )
                             Log.i(TAG, "saf_publication_confirmed torrent=${torrent.torrentId}")
                         }
                         "removal" -> {
@@ -406,16 +411,7 @@ class ProductEngineService : Service() {
                         else -> error("unknown SAF action $action")
                     }
                 } catch (error: Throwable) {
-                    if (action == "storage") {
-                        try {
-                            client.markSafUnavailable(
-                                torrent.torrentId,
-                                error.message ?: error.toString(),
-                            )
-                        } catch (markError: Throwable) {
-                            error.addSuppressed(markError)
-                        }
-                    } else if (action == "removal") {
+                    if (action == "removal") {
                         try {
                             val plan = client.safRemovalPlan(torrent.torrentId)
                             client.failSafRemoval(
@@ -431,6 +427,68 @@ class ProductEngineService : Service() {
                 } finally {
                     safWork.remove(key)
                 }
+            }
+        }
+    }
+
+    private suspend fun driveSafStorageRequests() {
+        while (!stopped.get()) {
+            val request = client.nextSafStorageRequest() ?: return
+            val cancellation = CancellationSignal()
+            try {
+                withTimeout(request.timeoutMillis.toLong()) {
+                    val treeUri =
+                        ProductSafDocuments.selectedTree(this@ProductEngineService)
+                            ?: throw SafStorageRequestException(
+                                SafStorageFailureKind.GRANT_UNAVAILABLE,
+                                "persisted SAF grant is unavailable",
+                            )
+                    if (request.delete) {
+                        ProductSafDocuments.deleteDynamic(
+                            this@ProductEngineService,
+                            treeUri,
+                            request,
+                        )
+                        client.completeSafStorageDelete(request.requestId)
+                    } else {
+                        ProductSafDocuments
+                            .openDynamic(
+                                this@ProductEngineService,
+                                treeUri,
+                                request,
+                                cancellation,
+                            ).use { descriptor ->
+                                client.completeSafStorageRequest(
+                                    request.requestId,
+                                    descriptor.fd,
+                                    request.access,
+                                )
+                            }
+                    }
+                }
+            } catch (error: kotlinx.coroutines.TimeoutCancellationException) {
+                cancellation.cancel()
+                client.failSafStorageRequest(
+                    request.requestId,
+                    SafStorageFailureKind.DEADLINE_EXCEEDED,
+                    "SAF provider request exceeded its deadline",
+                )
+            } catch (error: SafStorageRequestException) {
+                client.failSafStorageRequest(request.requestId, error.kind, error.message ?: "")
+            } catch (error: SecurityException) {
+                client.failSafStorageRequest(
+                    request.requestId,
+                    SafStorageFailureKind.GRANT_UNAVAILABLE,
+                    error.message ?: "SAF grant is unavailable",
+                )
+            } catch (error: Throwable) {
+                client.failSafStorageRequest(
+                    request.requestId,
+                    SafStorageFailureKind.PROVIDER_REFUSED,
+                    error.message ?: error.toString(),
+                )
+            } finally {
+                cancellation.cancel()
             }
         }
     }
@@ -611,6 +669,7 @@ class ProductEngineService : Service() {
         const val ACTION_STOP = "org.rstorrent.bootstrap.PRODUCT_STOP"
         private const val CHANNEL_ID = "rstorrent-product"
         private const val NOTIFICATION_ID = 42
+        private const val SAF_PROVIDER_CONCURRENCY = 4
         private const val TAG = "RSTorrentProduct"
     }
 }

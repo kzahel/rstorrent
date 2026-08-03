@@ -165,6 +165,8 @@ pub struct StorageFilePoolSnapshot {
     pub mode_upgrades: u64,
     pub open_failures: u64,
     pub resource_retries: u64,
+    pub platform_pending: usize,
+    pub platform_pending_high_water: usize,
 }
 
 #[derive(Debug)]
@@ -634,6 +636,16 @@ impl StorageFilePool {
 
     pub fn snapshot(&self) -> StorageFilePoolSnapshot {
         let state = self.state_guard();
+        let platform_pending = self
+            .inner
+            .platform
+            .as_ref()
+            .map_or(0, PlatformStorageClient::pending);
+        let platform_pending_high_water = self
+            .inner
+            .platform
+            .as_ref()
+            .map_or(0, PlatformStorageClient::pending_high_water);
         StorageFilePoolSnapshot {
             limit: self.inner.limit,
             current_owned: self
@@ -653,6 +665,8 @@ impl StorageFilePool {
             mode_upgrades: self.inner.metrics.mode_upgrades.load(Ordering::Relaxed),
             open_failures: self.inner.metrics.open_failures.load(Ordering::Relaxed),
             resource_retries: self.inner.metrics.resource_retries.load(Ordering::Relaxed),
+            platform_pending,
+            platform_pending_high_water,
         }
     }
 

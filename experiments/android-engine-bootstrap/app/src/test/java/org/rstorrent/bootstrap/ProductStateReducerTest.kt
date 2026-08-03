@@ -15,6 +15,7 @@ import org.rstorrent.session.uniffi.ProgressDisposition
 import org.rstorrent.session.uniffi.ProgressPhase
 import org.rstorrent.session.uniffi.ProgressReason
 import org.rstorrent.session.uniffi.StorageState
+import org.rstorrent.session.uniffi.StorageSettingsSnapshot
 import org.rstorrent.session.uniffi.TorrentState
 import org.rstorrent.session.uniffi.TorrentView
 import org.rstorrent.session.uniffi.ViewPatch
@@ -188,6 +189,7 @@ class ProductStateReducerTest {
                         ViewUpdatePayload.Snapshot(
                             ViewSnapshot.TorrentList(
                                 listOf(torrent("first", TorrentState.DOWNLOADING)),
+                                storage(),
                             ),
                         ),
                 ),
@@ -204,6 +206,7 @@ class ProductStateReducerTest {
                             ViewPatch.TorrentList(
                                 listOf(torrent("second", TorrentState.PAUSED)),
                                 listOf("first"),
+                                null,
                             ),
                         ),
                 ),
@@ -219,12 +222,15 @@ class ProductStateReducerTest {
                     revision = "9",
                     payload =
                         ViewUpdatePayload.Patch(
-                            ViewPatch.TorrentList(emptyList(), emptyList()),
+                            ViewPatch.TorrentList(emptyList(), emptyList(), null),
                         ),
                 ),
             )
         }
     }
+
+    private fun storage(): StorageSettingsSnapshot =
+        StorageSettingsSnapshot(emptyList(), null, false)
 
     private fun update(
         sequence: String,

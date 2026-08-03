@@ -333,13 +333,35 @@ def verify_target(target: AdbTarget, kind: str) -> dict[str, str]:
     device = target.property("ro.product.device")
     abis = target.property("ro.product.cpu.abilist")
     fingerprint = target.property("ro.build.fingerprint")
+    if kind == "avd":
+        variants = (
+            (EXPECTED_AVD_API, "sdk_gphone64_x86_64", "emu64xa", "x86_64"),
+            (EXPECTED_AVD_API, "sdk_gphone64_arm64", "emu64a", "arm64-v8a"),
+        )
+        matched = next(
+            (
+                variant
+                for variant in variants
+                if (api, model, device) == variant[:3]
+            ),
+            None,
+        )
+        if matched is None:
+            raise ProbeFailure(
+                f"refusing unexpected avd target: api={api}, model={model}, "
+                f"device={device}; expected one of {variants}"
+            )
+        expected_abi = matched[3]
+        if expected_abi not in abis.split(","):
+            raise ProbeFailure(f"target lacks packaged {expected_abi} ABI: {abis}")
+        return {
+            "api": api,
+            "model": model,
+            "device": device,
+            "abis": abis,
+            "fingerprint": fingerprint,
+        }
     expected = {
-        "avd": (
-            EXPECTED_AVD_API,
-            "sdk_gphone64_x86_64",
-            "emu64xa",
-            "x86_64",
-        ),
         "chromeos": (
             EXPECTED_CHROMEOS_API,
             EXPECTED_CHROMEOS_MODEL,

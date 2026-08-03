@@ -10,6 +10,8 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
+import shlex
 import shutil
 import socket
 import struct
@@ -37,6 +39,7 @@ CANCELLATION_STORAGE_DELAY_MILLIS = 5_000
 RESULT_TIMEOUT_SECONDS = 45
 PROFILE_CHOICES = (
     "success",
+    "product-dynamic-saf",
     "slow-storage",
     "cancellation",
     "peer-failure",
@@ -131,6 +134,7 @@ class SeedFixture:
     expected_file_hashes: dict[str, str]
     piece_hashes: list[str]
     info_hash: str
+    name: str
     session: Any
     handle: Any
     host_port: int
@@ -161,6 +165,7 @@ class SeedFixture:
             expected_file_hashes=expected_file_hashes,
             piece_hashes=piece_hashes,
             info_hash=str(torrent_info.info_hashes().v1),
+            name=str(torrent_info.name()),
             session=session,
             handle=handle,
             host_port=host_port,
@@ -1261,6 +1266,221 @@ def run_preexisting_profile(
     }
 
 
+def product_fd_count(target: Any) -> int:
+    pid_text = target.shell(["pidof", PACKAGE], check=False).stdout.strip()
+    if not pid_text:
+        processes = target.shell(["ps", "-A", "-o", "PID,NAME"], check=False)
+        for line in processes.stdout.splitlines():
+            fields = line.split()
+            if len(fields) >= 2 and fields[-1] == PACKAGE:
+                pid_text = fields[0]
+                break
+    if not pid_text:
+        return 0
+    pid = pid_text.split()[0]
+    listing = target.shell(
+        ["run-as", PACKAGE, "ls", f"/proc/{pid}/fd"],
+        check=False,
+    )
+    if listing.returncode != 0:
+        return 0
+    return len(listing.stdout.split())
+
+
+def wait_product_publication(
+    target: Any,
+    torrent_id: str,
+    baseline_fds: int,
+) -> tuple[dict[str, int], int]:
+    deadline = time.monotonic() + 90
+    high_water_fds = baseline_fds
+    metric_pattern = re.compile(
+        rf"saf_storage_metrics torrent={re.escape(torrent_id)} "
+        r"limit=(\d+) owned_high_water=(\d+) pending_high_water=(\d+)"
+    )
+    logs = ""
+    while time.monotonic() < deadline:
+        high_water_fds = max(high_water_fds, product_fd_count(target))
+        logs = target.run(
+            ["logcat", "-d", "-v", "brief", "RSTorrentProduct:I", "*:S"],
+            timeout=15,
+            check=False,
+        ).stdout
+        if f"saf_publication_confirmed torrent={torrent_id}" in logs:
+            match = metric_pattern.search(logs)
+            if match is None:
+                raise BootstrapFailure("dynamic SAF publication omitted storage metrics")
+            return (
+                {
+                    "limit": int(match.group(1)),
+                    "owned_high_water": int(match.group(2)),
+                    "pending_high_water": int(match.group(3)),
+                },
+                high_water_fds,
+            )
+        if "product service initialization failed" in logs:
+            raise BootstrapFailure(f"product service failed\n{logs}")
+        time.sleep(0.2)
+    raise BootstrapFailure(
+        "dynamic SAF product download did not publish before timeout\n" + logs
+    )
+
+
+def run_product_dynamic_saf_profile(
+    target: Any,
+    target_kind: str,
+    identity: dict[str, str],
+    probe: ModuleType,
+    interop: ModuleType,
+    ordinal: int,
+    storage: str,
+) -> dict[str, Any]:
+    if not storage.startswith("saf-"):
+        raise BootstrapFailure("product-dynamic-saf requires a SAF storage mode")
+    grant_storage = "sdcard" if storage == "saf-sdcard" else "internal"
+    fixture = SeedFixture.create(interop, f"{target_kind}-product-dynamic-saf-{ordinal}")
+    transport: ReverseTransport | None = None
+    output_root = f"{probe.grant_path(grant_storage)}/{fixture.name}"
+    staging_root = f"{probe.grant_path(grant_storage)}/.{fixture.name}.rstorrent-staging"
+    part_path = f"{probe.grant_path(grant_storage)}/.{fixture.name}.rstorrent-parts"
+    try:
+        clear_application(target)
+        probe.prepare_grant_folder(target, grant_storage)
+        target.shell(
+            ["pm", "grant", PACKAGE, "android.permission.POST_NOTIFICATIONS"],
+            check=False,
+        )
+        selected = target.shell(
+            [
+                "am",
+                "start",
+                "-n",
+                ACTIVITY,
+                "--ez",
+                "product_select_saf",
+                "true",
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in selected.stdout or (
+            selected.returncode != 0 and "Starting:" not in selected.stdout
+        ):
+            raise BootstrapFailure(
+                "could not launch product SAF picker: "
+                f"code={selected.returncode} stdout={selected.stdout} stderr={selected.stderr}"
+            )
+        probe.automate_tree_grant(target, grant_storage)
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if app_text(target, "shared_prefs/product-saf.xml"):
+                break
+            time.sleep(0.2)
+        else:
+            raise BootstrapFailure("product SAF grant was not persisted")
+
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            logs = target.run(
+                ["logcat", "-d", "-v", "brief", "RSTorrentProduct:I", "*:S"],
+                timeout=15,
+                check=False,
+            ).stdout
+            if "saf_tree_ready" in logs:
+                break
+            time.sleep(0.2)
+        else:
+            raise BootstrapFailure("product service did not activate the persisted SAF tree")
+
+        baseline_fds = product_fd_count(target)
+        transport = ReverseTransport.create(
+            target,
+            target_kind,
+            fixture.host_port,
+            ordinal,
+        )
+        magnet = (
+            f"magnet:?xt=urn:btih:{fixture.info_hash}"
+            f"&dn={fixture.name}&x.pe=127.0.0.1:{transport.device_port}"
+        )
+        started = target.shell(
+            [
+                "am",
+                "start",
+                "-n",
+                ACTIVITY,
+                "--es",
+                "product_magnet",
+                shlex.quote(magnet),
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in started.stdout or (
+            started.returncode != 0 and "Starting:" not in started.stdout
+        ):
+            raise BootstrapFailure(
+                "could not add product magnet: "
+                f"code={started.returncode} stdout={started.stdout} stderr={started.stderr}"
+            )
+        metrics, fd_high_water = wait_product_publication(
+            target,
+            fixture.info_hash,
+            baseline_fds,
+        )
+        if metrics["limit"] != 40:
+            raise BootstrapFailure(f"unexpected storage handle limit: {metrics}")
+        if metrics["owned_high_water"] > metrics["limit"]:
+            raise BootstrapFailure(f"storage handle limit was exceeded: {metrics}")
+        if metrics["pending_high_water"] > 16:
+            raise BootstrapFailure(f"platform request queue bound was exceeded: {metrics}")
+        if baseline_fds and fd_high_water - baseline_fds > 48:
+            raise BootstrapFailure(
+                "process descriptor delta exceeded Rust plus provider bounds: "
+                f"baseline={baseline_fds} high_water={fd_high_water}"
+            )
+
+        for relative_path, _, padding in fixture_files():
+            path = f"{output_root}/{relative_path}"
+            exists = target.shell(["test", "-f", path], check=False).returncode == 0
+            if padding:
+                if exists:
+                    raise BootstrapFailure(f"padding file was published: {relative_path}")
+                continue
+            if not exists:
+                raise BootstrapFailure(f"product output is absent: {relative_path}")
+            digest = target.shell(["sha1sum", path]).stdout.split()[0]
+            if digest != fixture.expected_file_hashes[relative_path]:
+                raise BootstrapFailure(f"product output hash differs: {relative_path}")
+        for unexpected in (staging_root, part_path, f"{probe.grant_path(grant_storage)}/{fixture.info_hash}"):
+            if target.shell(["test", "-e", unexpected], check=False).returncode == 0:
+                raise BootstrapFailure(f"unexpected managed artifact survived: {unexpected}")
+
+        return {
+            "target": target_kind,
+            "profile": "product-dynamic-saf",
+            "run": ordinal,
+            "identity": identity,
+            "torrent_id": fixture.info_hash,
+            "publication_name": fixture.name,
+            "storage_metrics": metrics,
+            "process_fds": {
+                "baseline": baseline_fds,
+                "high_water": fd_high_water,
+                "final": product_fd_count(target),
+            },
+            "peer_connections": peer_count(fixture),
+        }
+    finally:
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        for exact_path in (output_root, staging_root, part_path):
+            target.shell(["rm", "-rf", exact_path], check=False)
+        probe.remove_grant_folder(target, grant_storage)
+        if transport is not None:
+            transport.close()
+        fixture.close()
+
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -1331,7 +1551,7 @@ def main() -> int:
         probe.install_apk(target, arguments.target, apk)
 
         for profile in profiles:
-            repetitions = arguments.runs if profile == "success" else 1
+            repetitions = arguments.runs if profile in ("success", "product-dynamic-saf") else 1
             for ordinal in range(1, repetitions + 1):
                 if profile == "cancellation":
                     result = run_cancellation_profile(
@@ -1350,6 +1570,16 @@ def main() -> int:
                         identity,
                         interop,
                         ordinal,
+                    )
+                elif profile == "product-dynamic-saf":
+                    result = run_product_dynamic_saf_profile(
+                        target,
+                        arguments.target,
+                        identity,
+                        probe,
+                        interop,
+                        ordinal,
+                        arguments.storage,
                     )
                 else:
                     result = run_standard_profile(
