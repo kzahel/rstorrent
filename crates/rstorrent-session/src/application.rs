@@ -19,8 +19,8 @@ use rstorrent_protocol::metainfo::Metainfo;
 use tokio::task::JoinHandle;
 
 use crate::control::{
-    Command, ErrorCode, RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope,
-    ResponseOutcome, StorageRootSnapshot, StorageState, TorrentState,
+    Command, ErrorCode, FilePriority, RemovalDataPolicy, RemovalState, RequestEnvelope,
+    ResponseEnvelope, ResponseOutcome, StorageRootSnapshot, StorageState, TorrentState,
 };
 use crate::diagnostics::{
     DiagnosticCategory, DiagnosticDraft, DiagnosticField, DiagnosticSeverity, DiagnosticSubject,
@@ -255,6 +255,23 @@ impl ApplicationService {
     ) -> Result<ResponseEnvelope, ApplicationError> {
         self.reap_finished().await?;
         let command = request.command.clone();
+        let file_priority_changed = match &command {
+            Command::SetFilePriority {
+                torrent_id,
+                file_indices,
+                priority,
+            } => self
+                .store_mut()?
+                .load_resume(&torrent_id.to_ascii_lowercase())
+                .map(|resume| {
+                    file_indices.iter().any(|file_index| {
+                        let skipped = resume.skip_files.binary_search(file_index).is_ok();
+                        skipped != matches!(priority, FilePriority::Skip)
+                    })
+                })
+                .unwrap_or(true),
+            _ => false,
+        };
         let selected_root = match &command {
             Command::AddMagnet { storage_root, .. }
             | Command::SetDefaultStorageRoot { storage_root } => Some(storage_root.as_str()),
@@ -292,6 +309,9 @@ impl ApplicationService {
                         .map(|magnet| encode_info_hash(magnet.info_hash))
                 }
                 Command::Resume { torrent_id } => Some(torrent_id.to_ascii_lowercase()),
+                Command::SetFilePriority { torrent_id, .. } => {
+                    Some(torrent_id.to_ascii_lowercase())
+                }
                 _ => None,
             };
             if target.is_some_and(|target| target != active.torrent_id) {
@@ -350,6 +370,22 @@ impl ApplicationService {
                     &[],
                 )?;
                 self.pause(&torrent_id).await?;
+            }
+            Command::SetFilePriority { torrent_id, .. } => {
+                let torrent_id = torrent_id.to_ascii_lowercase();
+                self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    category::STORAGE_IO,
+                    "file_priority_changed",
+                    Some(&torrent_id),
+                    "Torrent file priority changed",
+                    &[],
+                )?;
+                if file_priority_changed {
+                    self.pause(&torrent_id).await?;
+                    self.refresh_views()?;
+                    self.start_if_possible(&torrent_id).await?;
+                }
             }
             Command::Archive { torrent_id } => {
                 self.views.record_diagnostic(
@@ -924,15 +960,15 @@ impl ApplicationService {
             .map(|torrent| torrent.torrent_id)
             .collect::<Vec<_>>();
         for torrent_id in torrent_ids {
-            let desired_running = match self.load_resume_conservative(&torrent_id) {
-                Ok(resume) => resume.desired_running,
+            let should_start = match self.load_resume_conservative(&torrent_id) {
+                Ok(resume) => resume.desired_running || resume.raw_info.is_none(),
                 Err(error) => {
                     self.store_mut()?
                         .mark_needs_repair(&torrent_id, &error.to_string())?;
                     continue;
                 }
             };
-            if desired_running {
+            if should_start {
                 self.start_if_possible(&torrent_id).await?;
                 break;
             }
@@ -1058,11 +1094,11 @@ impl ApplicationService {
                 return Ok(());
             }
         };
-        if !resume.desired_running
-            || matches!(
-                resume.state,
-                TorrentState::Paused | TorrentState::NeedsRepair
-            )
+        if matches!(
+            resume.state,
+            TorrentState::NeedsRepair | TorrentState::Complete
+        ) || (resume.raw_info.is_some()
+            && (!resume.desired_running || resume.state == TorrentState::Paused))
         {
             return Ok(());
         }
@@ -1118,6 +1154,7 @@ impl ApplicationService {
             let control = self.download_control(torrent_id);
             let task_control = control.clone();
             let magnet = resume.magnet;
+            let wait_for_storage = resume.desired_running;
             let network = self.network;
             let dht = self.dht.as_ref().map(DhtService::handle);
             let operation = async move {
@@ -1126,9 +1163,11 @@ impl ApplicationService {
                 checkpoints
                     .metadata_verified(&raw_info)
                     .map_err(DownloadError::Checkpoint)?;
-                checkpoints
-                    .waiting_for_storage()
-                    .map_err(DownloadError::Checkpoint)?;
+                if wait_for_storage {
+                    checkpoints
+                        .waiting_for_storage()
+                        .map_err(DownloadError::Checkpoint)?;
+                }
                 Ok(ApplicationTaskReport::Metadata)
             };
             let task = self.spawn_supervised_task(torrent_id, operation)?;
@@ -1142,6 +1181,57 @@ impl ApplicationService {
         let StorageRootLocation::Path(root) = root else {
             unreachable!("platform root returned above")
         };
+        if resume.storage_state == StorageState::None
+            && let Some(raw_info) = resume.raw_info.as_ref()
+        {
+            let metainfo = Metainfo::from_info_bytes(raw_info)
+                .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+            let paths = torrent_storage_paths(&root, &metainfo.name, metainfo.info_hash)
+                .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+            let collision = [
+                ("output", paths.output),
+                ("staging output", paths.staging),
+                ("part file", paths.part),
+            ]
+            .into_iter()
+            .find(|(_, path)| std::fs::symlink_metadata(path).is_ok());
+            if let Some((artifact, path)) = collision {
+                self.store_mut()?.mark_needs_repair(
+                    torrent_id,
+                    &format!("{artifact} already exists: {}", path.display()),
+                )?;
+                self.refresh_views()?;
+                return Ok(());
+            }
+        }
+        if resume.raw_info.is_none() && !resume.desired_running {
+            let checkpoints = Arc::new(StoreCheckpointSink {
+                store: self.store.clone(),
+                storage_roots: self.storage_roots.clone(),
+                torrent_id: torrent_id.to_owned(),
+                views: self.views.clone(),
+            });
+            let control = self.download_control(torrent_id);
+            let task_control = control.clone();
+            let magnet = resume.magnet;
+            let network = self.network;
+            let dht = self.dht.as_ref().map(DhtService::handle);
+            let operation = async move {
+                let raw_info =
+                    download_magnet_metadata_with_dht(magnet, network, task_control, dht).await?;
+                checkpoints
+                    .metadata_verified(&raw_info)
+                    .map_err(DownloadError::Checkpoint)?;
+                Ok(ApplicationTaskReport::Metadata)
+            };
+            let task = self.spawn_supervised_task(torrent_id, operation)?;
+            self.active = Some(ActiveDownload {
+                torrent_id: torrent_id.to_owned(),
+                control,
+                task,
+            });
+            return Ok(());
+        }
         let skip_files = resume
             .skip_files
             .iter()
@@ -2560,13 +2650,18 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use rstorrent_engine::dht::BootstrapNode;
-    use rstorrent_engine::{DownloadError, NetworkConfig, NetworkPolicy};
+    use rstorrent_engine::{DownloadError, NetworkConfig, NetworkPolicy, torrent_storage_paths};
     use rstorrent_protocol::dht::{
         DhtEndpoint, DhtIp, Message as DhtMessage, NodeId, decode_message as decode_dht,
         encode_response as encode_dht_response,
     };
+    use rstorrent_protocol::metadata::{
+        MetadataMessage, encode_extension_handshake, encode_metadata_data, parse_metadata_message,
+    };
     use rstorrent_protocol::peer_wire::{
-        HANDSHAKE_LENGTH, PeerMessage, decode_handshake, encode_handshake, encode_message,
+        EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX, FrameDecoder,
+        HANDSHAKE_LENGTH, PeerMessage, decode_handshake, encode_handshake,
+        encode_handshake_with_reserved, encode_message,
     };
     use rusqlite::Connection;
     use sha1::{Digest, Sha1};
@@ -2579,11 +2674,11 @@ mod tests {
     };
     use crate::{
         CONTROL_VERSION, Command, ConfiguredStorageRoot, DeliveryPolicy, DiagnosticFilter,
-        DiagnosticProfile, DiagnosticSeverity, OpenViewSetOptions, OpenViewSetRequest,
-        ProgressDisposition, ProgressReason, RemovalDataPolicy, RemovalState, RequestEnvelope,
-        ResponseOutcome, SessionStore, StorageState, SubscriptionSpec, TorrentState,
-        ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetError, ViewSetOwner,
-        ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdatePayload,
+        DiagnosticProfile, DiagnosticSeverity, FilePriority, OpenViewSetOptions,
+        OpenViewSetRequest, ProgressDisposition, ProgressReason, RemovalDataPolicy, RemovalState,
+        RequestEnvelope, ResponseOutcome, SessionStore, StorageState, SubscriptionSpec,
+        TorrentState, ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetError,
+        ViewSetOwner, ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdatePayload,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -2620,8 +2715,33 @@ mod tests {
             command: Command::AddMagnet {
                 magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe=127.0.0.1:1"),
                 storage_root: "downloads".to_owned(),
+                start_content: true,
                 skip_files: Vec::new(),
             },
+        }
+    }
+
+    fn multi_file_info() -> Vec<u8> {
+        let mut info = b"d5:filesld6:lengthi4e4:pathl5:a.bineed6:lengthi4e4:pathl5:b.bineee4:name5:multi12:piece lengthi4e6:pieces40:".to_vec();
+        info.extend_from_slice(&[b'a'; 20]);
+        info.extend_from_slice(&[b'b'; 20]);
+        info.push(b'e');
+        info
+    }
+
+    async fn read_peer_message(
+        stream: &mut tokio::net::TcpStream,
+        decoder: &mut FrameDecoder,
+        pending: &mut std::collections::VecDeque<PeerMessage>,
+    ) -> PeerMessage {
+        loop {
+            if let Some(message) = pending.pop_front() {
+                return message;
+            }
+            let mut bytes = [0_u8; 1024];
+            let length = stream.read(&mut bytes).await.expect("read peer message");
+            assert_ne!(length, 0, "peer closed before expected message");
+            pending.extend(decoder.push(&bytes[..length]).expect("decode peer message"));
         }
     }
 
@@ -2665,6 +2785,140 @@ mod tests {
             .expect("waiter timed out")
             .expect("waiter task");
         assert_eq!(result, Err(ViewSetError::Closed));
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn metadata_only_add_verifies_metadata_without_content_artifacts() {
+        let root = test_root("metadata-only-add");
+        let raw_info = multi_file_info();
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind metadata peer");
+        let address = listener.local_addr().expect("metadata peer address");
+        let peer_task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept metadata peer");
+            let mut handshake = [0; HANDSHAKE_LENGTH];
+            stream
+                .read_exact(&mut handshake)
+                .await
+                .expect("read metadata handshake");
+            let handshake =
+                decode_handshake(&handshake, info_hash).expect("metadata handshake identity");
+            assert!(handshake.supports_extensions());
+            let mut reserved = [0; 8];
+            reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+            stream
+                .write_all(&encode_handshake_with_reserved(
+                    info_hash,
+                    *b"-RS-META-ONLY-000000",
+                    reserved,
+                ))
+                .await
+                .expect("send metadata handshake");
+            let mut decoder = FrameDecoder::new();
+            let mut pending = std::collections::VecDeque::new();
+            assert!(matches!(
+                read_peer_message(&mut stream, &mut decoder, &mut pending).await,
+                PeerMessage::Extended { id: 0, .. }
+            ));
+            stream
+                .write_all(
+                    &encode_message(&PeerMessage::Extended {
+                        id: 0,
+                        payload: encode_extension_handshake(Some(raw_info.len())),
+                    })
+                    .expect("encode extension handshake"),
+                )
+                .await
+                .expect("send extension handshake");
+            let PeerMessage::Extended {
+                id: 1,
+                payload: request,
+            } = read_peer_message(&mut stream, &mut decoder, &mut pending).await
+            else {
+                panic!("metadata request expected");
+            };
+            assert_eq!(
+                parse_metadata_message(&request).expect("parse metadata request"),
+                MetadataMessage::Request { piece: 0 }
+            );
+            stream
+                .write_all(
+                    &encode_message(&PeerMessage::Extended {
+                        id: 1,
+                        payload: encode_metadata_data(0, raw_info.len(), &raw_info)
+                            .expect("encode metadata"),
+                    })
+                    .expect("encode metadata message"),
+                )
+                .await
+                .expect("send metadata");
+            let mut tail = [0; 32];
+            match stream.read(&mut tail).await {
+                Ok(0) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset => {}
+                outcome => panic!("metadata connection did not close: {outcome:?}"),
+            }
+        });
+
+        let mut service = ApplicationService::open(config(&root))
+            .await
+            .expect("open application");
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "metadata-only-add".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={address}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: false,
+                    skip_files: Vec::new(),
+                },
+            })
+            .await
+            .expect("add metadata-only torrent");
+        let snapshot = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            let mut ready = None;
+            for sequence in 0..100 {
+                tokio::task::yield_now().await;
+                let response = service
+                    .dispatch(RequestEnvelope {
+                        version: CONTROL_VERSION,
+                        request_id: format!("metadata-snapshot-{sequence}"),
+                        expected_revision: None,
+                        command: Command::Snapshot,
+                    })
+                    .await
+                    .expect("metadata snapshot");
+                let ResponseOutcome::Success { snapshot } = response.outcome else {
+                    panic!("snapshot failed");
+                };
+                if snapshot.torrents[0].metadata_available {
+                    ready = Some(snapshot);
+                    break;
+                }
+            }
+            ready.expect("metadata did not become available")
+        })
+        .await
+        .expect("metadata-only add timed out");
+        assert_eq!(snapshot.torrents[0].state, TorrentState::Paused);
+        assert_eq!(snapshot.torrents[0].storage_state, StorageState::None);
+        let paths = torrent_storage_paths(&root.join("payload"), "multi", info_hash)
+            .expect("plan content paths");
+        assert!(!paths.output.exists());
+        assert!(!paths.staging.exists());
+        assert!(!paths.part.exists());
+        tokio::time::timeout(std::time::Duration::from_secs(1), peer_task)
+            .await
+            .expect("metadata peer did not join")
+            .expect("metadata peer task");
+        service.shutdown().await.expect("shutdown");
         drop(service);
         fs::remove_dir_all(root).expect("remove test root");
     }
@@ -2893,6 +3147,7 @@ mod tests {
                 command: Command::AddMagnet {
                     magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={address}"),
                     storage_root: "downloads".to_owned(),
+                    start_content: true,
                     skip_files: Vec::new(),
                 },
             })
@@ -3041,6 +3296,145 @@ mod tests {
         .expect("pause did not publish terminal peer views");
 
         service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn file_priority_joins_generation_idles_all_skip_and_restarts_normal() {
+        let root = test_root("file-priority-generation");
+        let configuration = config(&root);
+        let raw_info = multi_file_info();
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind content peer");
+        let address = listener.local_addr().expect("content peer address");
+        let (accepted_sender, mut accepted_receiver) = tokio::sync::mpsc::unbounded_channel();
+        let peer_task = tokio::spawn(async move {
+            for generation in 0..2 {
+                let (mut stream, _) = listener.accept().await.expect("accept content peer");
+                let mut handshake = [0; HANDSHAKE_LENGTH];
+                stream
+                    .read_exact(&mut handshake)
+                    .await
+                    .expect("read content handshake");
+                decode_handshake(&handshake, info_hash).expect("content handshake identity");
+                stream
+                    .write_all(&encode_handshake(info_hash, *b"-RS-FILE-PRIO-000000"))
+                    .await
+                    .expect("send content handshake");
+                stream
+                    .write_all(
+                        &encode_message(&PeerMessage::Bitfield(vec![0xc0])).expect("bitfield"),
+                    )
+                    .await
+                    .expect("send content bitfield");
+                accepted_sender
+                    .send(generation)
+                    .expect("report accepted generation");
+                let mut buffer = [0; 128];
+                loop {
+                    match stream.read(&mut buffer).await {
+                        Ok(0) => break,
+                        Ok(_) => {}
+                        Err(error)
+                            if matches!(
+                                error.kind(),
+                                std::io::ErrorKind::ConnectionReset
+                                    | std::io::ErrorKind::BrokenPipe
+                            ) =>
+                        {
+                            break;
+                        }
+                        Err(error) => panic!("wait for joined generation: {error}"),
+                    }
+                }
+            }
+        });
+
+        let mut store = SessionStore::open(
+            &configuration.profile_root,
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open setup store");
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-file-priority".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={address}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: true,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add content torrent");
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record content metadata");
+        drop(store);
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open content service");
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(1), accepted_receiver.recv())
+                .await
+                .expect("first generation did not connect"),
+            Some(0)
+        );
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "skip-every-file".to_owned(),
+                expected_revision: None,
+                command: Command::SetFilePriority {
+                    torrent_id: torrent_id.clone(),
+                    file_indices: vec![0, 1],
+                    priority: FilePriority::Skip,
+                },
+            })
+            .await
+            .expect("skip all files");
+        assert!(service.active.is_none());
+        let idle = service
+            .load_resume_conservative(&torrent_id)
+            .expect("load all-skipped state");
+        assert!(idle.desired_running);
+        assert_eq!(idle.state, TorrentState::Paused);
+        assert_eq!(idle.skip_files, vec![0, 1]);
+
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "restore-normal-file".to_owned(),
+                expected_revision: None,
+                command: Command::SetFilePriority {
+                    torrent_id: torrent_id.clone(),
+                    file_indices: vec![1],
+                    priority: FilePriority::Normal,
+                },
+            })
+            .await
+            .expect("restore normal file");
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(1), accepted_receiver.recv())
+                .await
+                .expect("replacement generation did not connect"),
+            Some(1)
+        );
+        let paths = torrent_storage_paths(&root.join("payload"), "multi", info_hash)
+            .expect("plan storage paths");
+        assert!(!paths.part.exists());
+        service.shutdown().await.expect("shutdown");
+        tokio::time::timeout(std::time::Duration::from_secs(1), peer_task)
+            .await
+            .expect("peer generations did not join")
+            .expect("peer task");
         drop(service);
         fs::remove_dir_all(root).expect("remove test root");
     }
@@ -3669,6 +4063,7 @@ mod tests {
                         "magnet:?xt=urn:btih:{torrent_id}&tr=udp%3A%2F%2F192.0.2.1%3A6969%2Fannounce"
                     ),
                     storage_root: "downloads".to_owned(),
+                    start_content: true,
                     skip_files: Vec::new(),
                 },
             })

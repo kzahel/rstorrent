@@ -227,6 +227,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
             command: Command::AddMagnet {
                 magnet: arguments.magnet.clone(),
                 storage_root: "downloads".to_owned(),
+                start_content: true,
                 skip_files: Vec::new(),
             },
         })

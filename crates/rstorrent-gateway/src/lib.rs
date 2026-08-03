@@ -1314,6 +1314,7 @@ mod tests {
                     command: Command::AddMagnet {
                         magnet,
                         storage_root: "downloads".to_owned(),
+                        start_content: true,
                         skip_files: Vec::new(),
                     },
                 })

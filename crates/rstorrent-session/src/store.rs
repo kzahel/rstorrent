@@ -12,10 +12,10 @@ use rstorrent_protocol::metainfo::{MAX_FILES, MAX_PIECES, Metainfo};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use crate::control::{
-    Command, ErrorCode, RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope,
-    ServiceSnapshot, StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot,
-    StorageState, TorrentSnapshot, TorrentState, decode_info_hash, encode_info_hash,
-    parse_revision, validate_identifier, validate_request,
+    Command, ErrorCode, FilePriority, RemovalDataPolicy, RemovalState, RequestEnvelope,
+    ResponseEnvelope, ServiceSnapshot, StorageRootAvailability, StorageRootSnapshot,
+    StorageSettingsSnapshot, StorageState, TorrentSnapshot, TorrentState, decode_info_hash,
+    encode_info_hash, parse_revision, validate_identifier, validate_request,
 };
 use crate::have::{HaveError, HaveState};
 
@@ -1834,12 +1834,25 @@ fn apply_mutation(
         Command::AddMagnet {
             magnet,
             storage_root,
+            start_content,
             skip_files,
         } => add_magnet(
             transaction,
             magnet,
             storage_root,
+            *start_content,
             skip_files,
+            current_revision,
+        ),
+        Command::SetFilePriority {
+            torrent_id,
+            file_indices,
+            priority,
+        } => set_file_priority(
+            transaction,
+            torrent_id,
+            file_indices,
+            *priority,
             current_revision,
         ),
         Command::SetDefaultStorageRoot { storage_root } => {
@@ -1977,6 +1990,7 @@ fn add_magnet(
     transaction: &Transaction<'_>,
     source: &str,
     storage_root: &str,
+    start_content: bool,
     skip_files: &[u32],
     current_revision: u64,
 ) -> Result<u64, (ErrorCode, String)> {
@@ -2030,11 +2044,12 @@ fn add_magnet(
                 info_hash, magnet, storage_root, desired_state, state,
                 storage_state, managed_artifacts, created_revision,
                 updated_revision
-             ) VALUES (?1, ?2, ?3, 'running', ?4, ?5, 'none', ?6, ?6)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'none', ?7, ?7)",
             params![
                 magnet.info_hash.as_slice(),
                 canonical_magnet(&magnet),
                 storage_root,
+                if start_content { "running" } else { "paused" },
                 TorrentState::AwaitingMetadata.as_str(),
                 StorageState::None.as_str(),
                 revision_sql
@@ -2050,6 +2065,163 @@ fn add_magnet(
             )
             .map_err(internal_error)?;
     }
+    Ok(revision)
+}
+
+fn set_file_priority(
+    transaction: &Transaction<'_>,
+    torrent_id: &str,
+    file_indices: &[u32],
+    priority: FilePriority,
+    current_revision: u64,
+) -> Result<u64, (ErrorCode, String)> {
+    let info_hash = decode_info_hash(torrent_id).ok_or_else(|| {
+        (
+            ErrorCode::InvalidRequest,
+            "invalid torrent identity".to_owned(),
+        )
+    })?;
+    let row = transaction
+        .query_row(
+            "SELECT t.raw_info, t.desired_state, t.state, t.storage_state,
+                    sr.kind, r.info_hash IS NOT NULL
+             FROM torrents t
+             JOIN storage_roots sr ON sr.root_id = t.storage_root
+             LEFT JOIN removal_jobs r ON r.info_hash = t.info_hash
+             WHERE t.info_hash = ?1",
+            [info_hash.as_slice()],
+            |row| {
+                Ok((
+                    row.get::<_, Option<Vec<u8>>>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, bool>(5)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                ErrorCode::UnknownTorrent,
+                format!(
+                    "torrent {} is not in the profile",
+                    torrent_id.to_ascii_lowercase()
+                ),
+            )
+        })?;
+    if row.5 {
+        return Err((
+            ErrorCode::InvalidTorrentState,
+            "torrent removal is already in progress".to_owned(),
+        ));
+    }
+    if row.4 != "path" {
+        return Err((
+            ErrorCode::InvalidTorrentState,
+            "live file selection is not available for platform storage".to_owned(),
+        ));
+    }
+    let raw_info = row.0.ok_or_else(|| {
+        (
+            ErrorCode::InvalidTorrentState,
+            "file selection requires verified metadata".to_owned(),
+        )
+    })?;
+    let metainfo = Metainfo::from_info_bytes(&raw_info)
+        .map_err(|error| (ErrorCode::InvalidDurableState, error.to_string()))?;
+    for &file_index in file_indices {
+        let file_index = usize::try_from(file_index).map_err(|_| {
+            (
+                ErrorCode::InvalidRequest,
+                "file selection index exceeds the supported file bound".to_owned(),
+            )
+        })?;
+        let file = metainfo.files.get(file_index).ok_or_else(|| {
+            (
+                ErrorCode::InvalidRequest,
+                format!("file index {file_index} is outside verified metadata"),
+            )
+        })?;
+        if file.padding {
+            return Err((
+                ErrorCode::InvalidRequest,
+                format!("padding file {file_index} cannot be selected"),
+            ));
+        }
+    }
+    let mut skipped = read_selection(transaction, &info_hash)
+        .map_err(|error| internal_message(&error.to_string()))?;
+    let initially_skipped = skipped.clone();
+    for &file_index in file_indices {
+        match priority {
+            FilePriority::Normal => skipped.retain(|index| *index != file_index),
+            FilePriority::Skip => {
+                if let Err(position) = skipped.binary_search(&file_index) {
+                    skipped.insert(position, file_index);
+                }
+            }
+        }
+    }
+    if skipped == initially_skipped {
+        return Ok(current_revision);
+    }
+    let current_state = TorrentState::parse(&row.2)
+        .ok_or_else(|| internal_message("database contains an invalid torrent state"))?;
+    let storage_state = StorageState::parse(&row.3)
+        .ok_or_else(|| internal_message("database contains an invalid storage state"))?;
+    if current_state == TorrentState::NeedsRepair
+        || storage_state == StorageState::NeedsRepair
+        || current_state == TorrentState::AwaitingPublication
+        || storage_state == StorageState::Prepared
+    {
+        return Err((
+            ErrorCode::InvalidTorrentState,
+            "file selection cannot change during repair or publication".to_owned(),
+        ));
+    }
+    let wanted_count = metainfo
+        .files
+        .iter()
+        .enumerate()
+        .filter(|(index, file)| !file.padding && skipped.binary_search(&(*index as u32)).is_err())
+        .count();
+    let next_state = if row.1 == "paused" || wanted_count == 0 {
+        TorrentState::Paused
+    } else {
+        TorrentState::Checking
+    };
+    let revision = next_revision(transaction, current_revision)?;
+    transaction
+        .execute(
+            "DELETE FROM file_selection WHERE info_hash = ?1",
+            [info_hash.as_slice()],
+        )
+        .map_err(internal_error)?;
+    for file_index in skipped {
+        transaction
+            .execute(
+                "INSERT INTO file_selection(info_hash, file_index, wanted)
+                 VALUES (?1, ?2, 0)",
+                params![info_hash.as_slice(), i64::from(file_index)],
+            )
+            .map_err(internal_error)?;
+    }
+    transaction
+        .execute(
+            "UPDATE torrents
+             SET state = ?2, error = NULL, updated_revision = ?3
+             WHERE info_hash = ?1",
+            params![
+                info_hash.as_slice(),
+                next_state.as_str(),
+                i64::try_from(revision)
+                    .map_err(|_| internal_message("profile revision overflow"))?
+            ],
+        )
+        .map_err(internal_error)?;
     Ok(revision)
 }
 
@@ -2582,8 +2754,8 @@ mod tests {
         SessionStore, StoreError,
     };
     use crate::{
-        CONTROL_VERSION, Command, ErrorCode, RemovalDataPolicy, RemovalState, RequestEnvelope,
-        ResponseOutcome, StorageState, TorrentState,
+        CONTROL_VERSION, Command, ErrorCode, FilePriority, RemovalDataPolicy, RemovalState,
+        RequestEnvelope, ResponseOutcome, StorageState, TorrentState,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -2623,6 +2795,7 @@ mod tests {
                 command: Command::AddMagnet {
                     magnet: source.to_owned(),
                     storage_root: "downloads".to_owned(),
+                    start_content: true,
                     skip_files: Vec::new(),
                 },
             })
@@ -2664,9 +2837,148 @@ mod tests {
                     "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213&x.pe=127.0.0.1:1"
                         .to_owned(),
                 storage_root: "downloads".to_owned(),
+                start_content: true,
                 skip_files: vec![1, 3],
             },
         }
+    }
+
+    fn multi_file_info() -> Vec<u8> {
+        let mut info = b"d5:filesld6:lengthi4e4:pathl5:a.bineed6:lengthi4e4:pathl5:b.bineee4:name5:multi12:piece lengthi4e6:pieces40:".to_vec();
+        info.extend_from_slice(&[b'a'; 20]);
+        info.extend_from_slice(&[b'b'; 20]);
+        info.push(b'e');
+        info
+    }
+
+    #[test]
+    fn metadata_only_add_and_binary_file_priority_are_durable() {
+        let root = test_root("file-priority");
+        let configured = configured_root(&root);
+        let mut store = SessionStore::open(&root, "default", &[configured]).expect("open store");
+        let raw_info = multi_file_info();
+        let torrent_id = crate::control::encode_info_hash(Sha1::digest(&raw_info).into());
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "metadata-only-add".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: false,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add metadata-only torrent");
+        let pending = store.load_resume(&torrent_id).expect("load pending add");
+        assert!(!pending.desired_running);
+        assert_eq!(pending.state, TorrentState::AwaitingMetadata);
+        assert_eq!(pending.storage_state, StorageState::None);
+
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record metadata");
+        let ready = store
+            .load_resume(&torrent_id)
+            .expect("load metadata-only add");
+        assert_eq!(ready.state, TorrentState::Paused);
+        assert_eq!(ready.storage_state, StorageState::None);
+
+        let skip = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "skip-file".to_owned(),
+            expected_revision: None,
+            command: Command::SetFilePriority {
+                torrent_id: torrent_id.clone(),
+                file_indices: vec![1],
+                priority: FilePriority::Skip,
+            },
+        };
+        let skipped = store.handle_durable(&skip).expect("skip file");
+        assert!(matches!(skipped.outcome, ResponseOutcome::Success { .. }));
+        let selected = store.load_resume(&torrent_id).expect("load selection");
+        assert_eq!(selected.skip_files, vec![1]);
+        assert_eq!(selected.state, TorrentState::Paused);
+        assert_eq!(
+            store.handle_durable(&skip).expect("replay skip receipt"),
+            skipped
+        );
+
+        drop(store);
+        let reopened =
+            SessionStore::open(&root, "default", &[configured_root(&root)]).expect("reopen store");
+        assert_eq!(
+            reopened
+                .load_resume(&torrent_id)
+                .expect("load reopened selection")
+                .skip_files,
+            vec![1]
+        );
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove profile");
+    }
+
+    #[test]
+    fn all_skipped_idles_running_intent_and_normal_restarts_checking() {
+        let root = test_root("all-skipped");
+        let configured = configured_root(&root);
+        let mut store = SessionStore::open(&root, "default", &[configured]).expect("open store");
+        let raw_info = multi_file_info();
+        let torrent_id = crate::control::encode_info_hash(Sha1::digest(&raw_info).into());
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "running-add".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: true,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add running torrent");
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record metadata");
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "skip-all".to_owned(),
+                expected_revision: None,
+                command: Command::SetFilePriority {
+                    torrent_id: torrent_id.clone(),
+                    file_indices: vec![0, 1],
+                    priority: FilePriority::Skip,
+                },
+            })
+            .expect("skip all files");
+        let idle = store
+            .load_resume(&torrent_id)
+            .expect("load all-skipped state");
+        assert!(idle.desired_running);
+        assert_eq!(idle.state, TorrentState::Paused);
+        assert_eq!(idle.skip_files, vec![0, 1]);
+
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "normal-one".to_owned(),
+                expected_revision: None,
+                command: Command::SetFilePriority {
+                    torrent_id: torrent_id.clone(),
+                    file_indices: vec![1],
+                    priority: FilePriority::Normal,
+                },
+            })
+            .expect("restore normal priority");
+        let checking = store.load_resume(&torrent_id).expect("load checking state");
+        assert!(checking.desired_running);
+        assert_eq!(checking.state, TorrentState::Checking);
+        assert_eq!(checking.skip_files, vec![0]);
+        drop(store);
+        fs::remove_dir_all(root).expect("remove profile");
     }
 
     #[test]
@@ -2958,6 +3270,7 @@ mod tests {
                 command: Command::AddMagnet {
                     magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
                     storage_root: "downloads".to_owned(),
+                    start_content: true,
                     skip_files: Vec::new(),
                 },
             })
@@ -3279,6 +3592,7 @@ mod tests {
             command: Command::AddMagnet {
                 magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe=127.0.0.1:1"),
                 storage_root: "downloads".to_owned(),
+                start_content: true,
                 skip_files: Vec::new(),
             },
         };
@@ -3323,6 +3637,7 @@ mod tests {
                 command: Command::AddMagnet {
                     magnet: format!("magnet:?xt=urn:btih:{reserved_id}"),
                     storage_root: "downloads".to_owned(),
+                    start_content: true,
                     skip_files: Vec::new(),
                 },
             })
@@ -3356,6 +3671,7 @@ mod tests {
                 command: Command::AddMagnet {
                     magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe=127.0.0.1:1"),
                     storage_root: "downloads".to_owned(),
+                    start_content: true,
                     skip_files: Vec::new(),
                 },
             })
@@ -3430,6 +3746,7 @@ mod tests {
             command: Command::AddMagnet {
                 magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe=127.0.0.1:1"),
                 storage_root: "downloads".to_owned(),
+                start_content: true,
                 skip_files: Vec::new(),
             },
         };

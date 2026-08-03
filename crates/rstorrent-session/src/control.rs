@@ -28,8 +28,15 @@ pub enum Command {
     AddMagnet {
         magnet: String,
         storage_root: String,
+        #[serde(default = "default_true")]
+        start_content: bool,
         #[serde(default)]
         skip_files: Vec<u32>,
+    },
+    SetFilePriority {
+        torrent_id: String,
+        file_indices: Vec<u32>,
+        priority: FilePriority,
     },
     SetDefaultStorageRoot {
         storage_root: String,
@@ -70,11 +77,24 @@ impl Command {
                 | Self::RemoveStorageRoot { .. }
                 | Self::Pause { .. }
                 | Self::Resume { .. }
+                | Self::SetFilePriority { .. }
                 | Self::Archive { .. }
                 | Self::RestoreArchive { .. }
                 | Self::RemoveTorrent { .. }
         )
     }
+}
+
+const fn default_true() -> bool {
+    true
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum FilePriority {
+    Normal,
+    Skip,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -374,6 +394,7 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
         Command::AddMagnet {
             magnet,
             storage_root,
+            start_content: _,
             skip_files,
         } => {
             if magnet.len() > MAX_MAGNET_LENGTH {
@@ -393,6 +414,35 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
             }
             let mut previous = None;
             for index in skip_files {
+                if usize::try_from(*index).map_or(true, |index| index >= MAX_FILES) {
+                    return Err((
+                        ErrorCode::InvalidRequest,
+                        "file selection index exceeds the supported file bound".to_owned(),
+                    ));
+                }
+                if previous.is_some_and(|previous| previous >= *index) {
+                    return Err((
+                        ErrorCode::InvalidRequest,
+                        "file selection indices must be sorted and unique".to_owned(),
+                    ));
+                }
+                previous = Some(*index);
+            }
+        }
+        Command::SetFilePriority {
+            torrent_id,
+            file_indices,
+            priority: _,
+        } => {
+            validate_torrent_id(torrent_id)?;
+            if file_indices.is_empty() || file_indices.len() > MAX_FILES {
+                return Err((
+                    ErrorCode::InvalidRequest,
+                    format!("file selection must contain between 1 and {MAX_FILES} entries"),
+                ));
+            }
+            let mut previous = None;
+            for index in file_indices {
                 if usize::try_from(*index).map_or(true, |index| index >= MAX_FILES) {
                     return Err((
                         ErrorCode::InvalidRequest,
@@ -505,7 +555,8 @@ fn hex_digit(byte: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CONTROL_VERSION, Command, ErrorCode, RequestEnvelope, encode_info_hash, validate_request,
+        CONTROL_VERSION, Command, ErrorCode, FilePriority, RequestEnvelope, encode_info_hash,
+        validate_request,
     };
 
     #[test]
@@ -519,6 +570,7 @@ mod tests {
                     "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213&x.pe=127.0.0.1:1"
                         .to_owned(),
                 storage_root: "downloads".to_owned(),
+                start_content: true,
                 skip_files: vec![1, 3],
             },
         };
@@ -532,6 +584,41 @@ mod tests {
             validate_request(&invalid).map_err(|error| error.0),
             Err(ErrorCode::InvalidRequest)
         );
+    }
+
+    #[test]
+    fn add_defaults_to_starting_content_and_file_priority_is_bounded() {
+        let add: RequestEnvelope = serde_json::from_str(
+            r#"{"version":1,"request_id":"add","command":{"type":"add_magnet","magnet":"magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213","storage_root":"downloads"}}"#,
+        )
+        .expect("decode legacy add envelope");
+        assert!(matches!(
+            add.command,
+            Command::AddMagnet {
+                start_content: true,
+                ..
+            }
+        ));
+
+        let mut request = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "priority".to_owned(),
+            expected_revision: None,
+            command: Command::SetFilePriority {
+                torrent_id: "000102030405060708090a0b0c0d0e0f10111213".to_owned(),
+                file_indices: vec![1, 3],
+                priority: FilePriority::Skip,
+            },
+        };
+        assert_eq!(validate_request(&request), Ok(()));
+        if let Command::SetFilePriority { file_indices, .. } = &mut request.command {
+            *file_indices = vec![3, 1];
+        }
+        assert!(validate_request(&request).is_err());
+        if let Command::SetFilePriority { file_indices, .. } = &mut request.command {
+            file_indices.clear();
+        }
+        assert!(validate_request(&request).is_err());
     }
 
     #[test]
