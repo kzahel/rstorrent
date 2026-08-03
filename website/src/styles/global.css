@@ -1,0 +1,258 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+:root {
+  color-scheme: dark;
+  font-family:
+    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #e8f2f5;
+  background: #0a1014;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+html {
+  min-width: 300px;
+  min-height: 100%;
+  background: #0a1014;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  overflow-x: hidden;
+  background:
+    radial-gradient(circle at 18% 18%, rgb(76 194 228 / 14%), transparent 30rem),
+    radial-gradient(circle at 85% 78%, rgb(255 139 92 / 8%), transparent 26rem),
+    #0a1014;
+}
+
+body::before {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  content: "";
+  opacity: 0.22;
+  background-image:
+    linear-gradient(rgb(255 255 255 / 3%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 3%) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(to bottom, black, transparent 80%);
+}
+
+main {
+  display: grid;
+  min-height: calc(100vh - 5rem);
+  place-items: center;
+  padding: clamp(3rem, 9vw, 7rem) 1.5rem 2rem;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 41rem);
+  gap: clamp(2rem, 6vw, 5rem);
+  width: min(100%, 59rem);
+  align-items: center;
+}
+
+.brand-mark {
+  position: relative;
+  display: grid;
+  width: clamp(8rem, 18vw, 11.5rem);
+  aspect-ratio: 1;
+  place-items: center;
+  border: 1px solid rgb(111 218 244 / 48%);
+  border-radius: 2rem;
+  background:
+    linear-gradient(145deg, rgb(76 194 228 / 17%), rgb(76 194 228 / 3%)),
+    rgb(13 23 29 / 88%);
+  box-shadow:
+    0 2.25rem 6rem rgb(0 0 0 / 38%),
+    inset 0 1px rgb(255 255 255 / 8%);
+  transform: rotate(-3deg);
+}
+
+.brand-mark::after {
+  position: absolute;
+  inset: 0.55rem;
+  content: "";
+  border: 1px solid rgb(255 255 255 / 6%);
+  border-radius: 1.55rem;
+}
+
+.brand-mark span {
+  color: #70dcf5;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: clamp(2.65rem, 7vw, 4.4rem);
+  font-weight: 700;
+  letter-spacing: -0.12em;
+  line-height: 1;
+  transform: translateX(-0.06em);
+}
+
+.brand-mark i {
+  position: absolute;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: #ff8b5c;
+  box-shadow: 0 0 1rem rgb(255 139 92 / 72%);
+}
+
+.brand-mark i:nth-of-type(1) {
+  top: 1.25rem;
+  right: 1.25rem;
+}
+
+.brand-mark i:nth-of-type(2) {
+  right: 1.25rem;
+  bottom: 1.25rem;
+}
+
+.brand-mark i:nth-of-type(3) {
+  bottom: 1.25rem;
+  left: 1.25rem;
+}
+
+.copy {
+  min-width: 0;
+}
+
+.status {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+  margin: 0 0 1.15rem;
+  color: #8fa4ac;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.73rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.status span {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: #4cc2e4;
+  box-shadow: 0 0 1rem rgb(76 194 228 / 70%);
+}
+
+h1 {
+  margin: 0;
+  color: #f6fbfc;
+  font-size: clamp(3.2rem, 10vw, 6.8rem);
+  font-weight: 720;
+  letter-spacing: -0.075em;
+  line-height: 0.88;
+}
+
+.lead {
+  max-width: 34rem;
+  margin: 1.6rem 0 0;
+  color: #cfdee3;
+  font-size: clamp(1.25rem, 3vw, 1.7rem);
+  line-height: 1.35;
+}
+
+.description {
+  max-width: 36rem;
+  margin: 1.25rem 0 0;
+  color: #8fa4ac;
+  font-size: 1rem;
+  line-height: 1.75;
+}
+
+.github-link {
+  display: inline-flex;
+  gap: 0.75rem;
+  align-items: center;
+  min-height: 3rem;
+  margin-top: 2rem;
+  padding: 0 1.1rem;
+  border: 1px solid #4cc2e4;
+  border-radius: 0.65rem;
+  color: #071014;
+  background: #70dcf5;
+  font-weight: 700;
+  text-decoration: none;
+  box-shadow: 0 0.8rem 2.4rem rgb(76 194 228 / 15%);
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease;
+}
+
+.github-link:hover {
+  border-color: #a6ecfc;
+  background: #a6ecfc;
+  transform: translateY(-1px);
+}
+
+.github-link:focus-visible,
+footer a:focus-visible {
+  outline: 3px solid #ff8b5c;
+  outline-offset: 4px;
+}
+
+.availability {
+  margin: 1rem 0 0;
+  color: #6f858e;
+  font-size: 0.82rem;
+}
+
+footer {
+  display: flex;
+  min-height: 5rem;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem 1.5rem;
+  border-top: 1px solid rgb(255 255 255 / 6%);
+  color: #667b83;
+  font-size: 0.76rem;
+  text-align: center;
+}
+
+footer p {
+  margin: 0;
+}
+
+footer a {
+  color: #9bb1b9;
+  text-underline-offset: 0.2em;
+}
+
+@media (max-width: 680px) {
+  main {
+    place-items: start center;
+    padding-top: 3rem;
+  }
+
+  .hero {
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+
+  .brand-mark {
+    width: 7.25rem;
+    border-radius: 1.5rem;
+  }
+
+  .brand-mark::after {
+    border-radius: 1.1rem;
+  }
+
+  h1 {
+    font-size: clamp(3.45rem, 19vw, 5.5rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .github-link {
+    transition: none;
+  }
+}
