@@ -1,0 +1,217 @@
+schema_version = 1
+profile_id = "github-ubuntu-24.04-x64"
+description = "Generous GitHub-hosted Ubuntu x64 catastrophe baseline"
+calibration_status = "uncalibrated"
+
+[requirements]
+systems = ["linux"]
+architectures = ["x86_64"]
+minimum_logical_cpus = 2
+minimum_memory_gib = 6
+minimum_temporary_free_gib = 8
+github_actions = true
+github_runner_os = "Linux"
+github_runner_arch = "X64"
+
+[throughput]
+smoke_runs = 1
+full_runs = 1
+timeout_seconds = 1200
+
+[[throughput.cases]]
+id = "1g-256k-4w4h"
+tiers = ["smoke", "full"]
+size_mib = 1024
+piece_size_kib = 256
+write_concurrency = 4
+hash_concurrency = 4
+
+[throughput.cases.required]
+minimum_mib_s = 20.0
+minimum_libtorrent_ratio = 0.10
+
+[[throughput.cases]]
+id = "1g-1m-4w4h"
+tiers = ["full"]
+size_mib = 1024
+piece_size_kib = 1024
+write_concurrency = 4
+hash_concurrency = 4
+
+[throughput.cases.required]
+minimum_mib_s = 20.0
+minimum_libtorrent_ratio = 0.10
+
+[[throughput.cases]]
+id = "1g-4m-4w4h"
+tiers = ["full"]
+size_mib = 1024
+piece_size_kib = 4096
+write_concurrency = 4
+hash_concurrency = 4
+
+[throughput.cases.required]
+minimum_mib_s = 20.0
+minimum_libtorrent_ratio = 0.10
+
+[[throughput.cases]]
+id = "1g-16m-4w4h"
+tiers = ["full"]
+size_mib = 1024
+piece_size_kib = 16384
+write_concurrency = 4
+hash_concurrency = 4
+
+[throughput.cases.required]
+minimum_mib_s = 20.0
+minimum_libtorrent_ratio = 0.10
+
+[application_observation]
+size_mib = 512
+piece_size_kib = 256
+smoke_runs = 1
+full_runs = 1
+timeout_seconds = 900
+slow_consumer_delay_millis = 1000
+
+[[application_observation.cases]]
+id = "app-idle"
+mode = "idle"
+tiers = ["smoke", "full"]
+
+[application_observation.cases.required]
+minimum_mib_s = 10.0
+maximum_resets = 0
+maximum_queue_high_water_bytes = 0
+
+[[application_observation.cases]]
+id = "app-library"
+mode = "library"
+tiers = ["full"]
+
+[application_observation.cases.required]
+minimum_mib_s = 5.0
+minimum_idle_ratio = 0.05
+maximum_resets = 8192
+maximum_queue_high_water_bytes = 41943040
+
+[[application_observation.cases]]
+id = "app-general"
+mode = "general"
+tiers = ["full"]
+
+[application_observation.cases.required]
+minimum_mib_s = 5.0
+minimum_idle_ratio = 0.05
+maximum_resets = 8192
+maximum_queue_high_water_bytes = 41943040
+
+[[application_observation.cases]]
+id = "app-peers"
+mode = "peers"
+tiers = ["full"]
+
+[application_observation.cases.required]
+minimum_mib_s = 5.0
+minimum_idle_ratio = 0.05
+maximum_resets = 8192
+maximum_queue_high_water_bytes = 41943040
+
+[[application_observation.cases]]
+id = "app-files"
+mode = "files"
+tiers = ["full"]
+
+[application_observation.cases.required]
+minimum_mib_s = 5.0
+minimum_idle_ratio = 0.05
+maximum_resets = 8192
+maximum_queue_high_water_bytes = 41943040
+
+[[application_observation.cases]]
+id = "app-trackers"
+mode = "trackers"
+tiers = ["full"]
+
+[application_observation.cases.required]
+minimum_mib_s = 5.0
+minimum_idle_ratio = 0.05
+maximum_resets = 8192
+maximum_queue_high_water_bytes = 41943040
+
+[[application_observation.cases]]
+id = "app-pieces"
+mode = "pieces"
+tiers = ["full"]
+
+[application_observation.cases.required]
+minimum_mib_s = 5.0
+minimum_idle_ratio = 0.05
+maximum_resets = 8192
+maximum_queue_high_water_bytes = 41943040
+
+[[application_observation.cases]]
+id = "app-disk"
+mode = "disk"
+tiers = ["full"]
+
+[application_observation.cases.required]
+minimum_mib_s = 5.0
+minimum_idle_ratio = 0.05
+maximum_resets = 8192
+maximum_queue_high_water_bytes = 41943040
+
+[[application_observation.cases]]
+id = "app-logs-normal"
+mode = "logs-normal"
+tiers = ["full"]
+
+[application_observation.cases.required]
+minimum_mib_s = 5.0
+minimum_idle_ratio = 0.05
+maximum_resets = 8192
+maximum_queue_high_water_bytes = 41943040
+
+[[application_observation.cases]]
+id = "app-logs-detailed"
+mode = "logs-detailed"
+tiers = ["full"]
+
+[application_observation.cases.required]
+minimum_mib_s = 5.0
+minimum_idle_ratio = 0.05
+maximum_resets = 8192
+maximum_queue_high_water_bytes = 41943040
+
+[[application_observation.cases]]
+id = "app-logs-trace"
+mode = "logs-trace"
+tiers = ["full"]
+
+[application_observation.cases.required]
+minimum_mib_s = 5.0
+minimum_idle_ratio = 0.05
+maximum_resets = 8192
+maximum_queue_high_water_bytes = 41943040
+
+[[application_observation.cases]]
+id = "app-all"
+mode = "all"
+tiers = ["smoke", "full"]
+
+[application_observation.cases.required]
+minimum_mib_s = 5.0
+minimum_idle_ratio = 0.05
+maximum_resets = 8192
+maximum_queue_high_water_bytes = 41943040
+
+[[application_observation.cases]]
+id = "app-slow-all"
+mode = "slow-all"
+tiers = ["smoke", "full"]
+
+[application_observation.cases.required]
+minimum_mib_s = 3.0
+minimum_idle_ratio = 0.025
+maximum_resets = 64
+maximum_queue_high_water_bytes = 41943040

@@ -1,0 +1,466 @@
+schema_version = 1
+profile_id = "kmacbook-m4pro"
+description = "Local Apple M4 Pro throughput and application-view baseline"
+calibration_status = "calibrated"
+
+[requirements]
+systems = ["darwin"]
+architectures = ["arm64"]
+cpu_model_contains = "Apple M4 Pro"
+minimum_logical_cpus = 14
+minimum_memory_gib = 48
+minimum_temporary_free_gib = 24
+github_actions = false
+
+[throughput]
+smoke_runs = 1
+full_runs = 3
+timeout_seconds = 900
+
+[[throughput.cases]]
+id = "1g-256k-4w4h"
+tiers = ["smoke", "full"]
+size_mib = 1024
+piece_size_kib = 256
+write_concurrency = 4
+hash_concurrency = 4
+
+[throughput.cases.observed]
+median_mib_s = 506.3
+libtorrent_median_mib_s = 481.6
+libtorrent_ratio = 1.051
+runs = 3
+commit = "d1a2259"
+date = "2026-08-02"
+note = "Tactical 054 retained warm-cache cohort"
+
+[throughput.cases.required]
+minimum_mib_s = 275.0
+minimum_libtorrent_ratio = 0.50
+
+[[throughput.cases]]
+id = "1g-1m-4w4h"
+tiers = ["full"]
+size_mib = 1024
+piece_size_kib = 1024
+write_concurrency = 4
+hash_concurrency = 4
+
+[throughput.cases.observed]
+median_mib_s = 699.3
+libtorrent_median_mib_s = 497.5
+libtorrent_ratio = 1.406
+runs = 3
+commit = "d1a2259"
+date = "2026-08-02"
+note = "Tactical 054 retained warm-cache cohort"
+
+[throughput.cases.required]
+minimum_mib_s = 375.0
+minimum_libtorrent_ratio = 0.60
+
+[[throughput.cases]]
+id = "1g-4m-4w4h"
+tiers = ["full"]
+size_mib = 1024
+piece_size_kib = 4096
+write_concurrency = 4
+hash_concurrency = 4
+
+[throughput.cases.observed]
+median_mib_s = 757.6
+libtorrent_median_mib_s = 515.3
+libtorrent_ratio = 1.470
+runs = 3
+commit = "d1a2259"
+date = "2026-08-02"
+note = "Tactical 054 retained warm-cache cohort"
+
+[throughput.cases.required]
+minimum_mib_s = 400.0
+minimum_libtorrent_ratio = 0.60
+
+[[throughput.cases]]
+id = "1g-16m-4w4h"
+tiers = ["full"]
+size_mib = 1024
+piece_size_kib = 16384
+write_concurrency = 4
+hash_concurrency = 4
+
+[throughput.cases.observed]
+median_mib_s = 715.3
+libtorrent_median_mib_s = 491.4
+libtorrent_ratio = 1.456
+runs = 3
+commit = "d1a2259"
+date = "2026-08-02"
+note = "Tactical 054 retained warm-cache cohort"
+
+[throughput.cases.required]
+minimum_mib_s = 350.0
+minimum_libtorrent_ratio = 0.55
+
+[[throughput.cases]]
+id = "10g-256k-4w4h"
+tiers = ["full"]
+size_mib = 10240
+piece_size_kib = 256
+write_concurrency = 4
+hash_concurrency = 4
+
+[throughput.cases.observed]
+median_mib_s = 336.2
+libtorrent_median_mib_s = 471.5
+libtorrent_ratio = 0.713
+runs = 3
+commit = "d1a2259"
+date = "2026-08-02"
+note = "Tactical 054 retained warm-cache cohort"
+
+[throughput.cases.required]
+minimum_mib_s = 225.0
+minimum_libtorrent_ratio = 0.45
+
+[[throughput.cases]]
+id = "10g-1m-4w4h"
+tiers = ["full"]
+size_mib = 10240
+piece_size_kib = 1024
+write_concurrency = 4
+hash_concurrency = 4
+
+[throughput.cases.observed]
+median_mib_s = 804.4
+libtorrent_median_mib_s = 559.2
+libtorrent_ratio = 1.438
+runs = 3
+commit = "d1a2259"
+date = "2026-08-02"
+note = "Tactical 054 retained warm-cache cohort"
+
+[throughput.cases.required]
+minimum_mib_s = 450.0
+minimum_libtorrent_ratio = 0.60
+
+[[throughput.cases]]
+id = "10g-4m-4w4h"
+tiers = ["full"]
+size_mib = 10240
+piece_size_kib = 4096
+write_concurrency = 4
+hash_concurrency = 4
+
+[throughput.cases.observed]
+median_mib_s = 1031.6
+libtorrent_median_mib_s = 1074.4
+libtorrent_ratio = 0.960
+runs = 3
+commit = "d1a2259"
+date = "2026-08-02"
+note = "Tactical 054 retained warm-cache cohort"
+
+[throughput.cases.required]
+minimum_mib_s = 600.0
+minimum_libtorrent_ratio = 0.55
+
+[[throughput.cases]]
+id = "10g-16m-4w4h"
+tiers = ["full"]
+size_mib = 10240
+piece_size_kib = 16384
+write_concurrency = 4
+hash_concurrency = 4
+
+[throughput.cases.observed]
+median_mib_s = 720.3
+libtorrent_median_mib_s = 1031.8
+libtorrent_ratio = 0.698
+runs = 3
+commit = "d1a2259"
+date = "2026-08-02"
+note = "Tactical 054 retained warm-cache cohort"
+
+[throughput.cases.required]
+minimum_mib_s = 400.0
+minimum_libtorrent_ratio = 0.40
+
+[application_observation]
+size_mib = 1024
+piece_size_kib = 256
+smoke_runs = 1
+full_runs = 3
+timeout_seconds = 600
+slow_consumer_delay_millis = 1000
+
+[[application_observation.cases]]
+id = "app-idle"
+mode = "idle"
+tiers = ["smoke", "full"]
+
+[application_observation.cases.observed]
+median_mib_s = 177.914
+idle_ratio = 1.0
+median_cpu_seconds = 6.811
+median_peak_rss_bytes = 92962816
+runs = 3
+commit = "d3e8b34"
+date = "2026-08-03"
+note = "Tactical 057 warm uncontrolled cache cohort"
+
+[application_observation.cases.required]
+minimum_mib_s = 120.0
+maximum_resets = 0
+maximum_queue_high_water_bytes = 0
+
+[[application_observation.cases]]
+id = "app-library"
+mode = "library"
+tiers = ["full"]
+
+[application_observation.cases.observed]
+median_mib_s = 166.355
+idle_ratio = 0.935
+median_cpu_seconds = 7.259
+median_peak_rss_bytes = 93601792
+runs = 3
+commit = "d3e8b34"
+date = "2026-08-03"
+note = "Tactical 057 warm uncontrolled cache cohort"
+
+[application_observation.cases.required]
+minimum_mib_s = 110.0
+minimum_idle_ratio = 0.65
+maximum_resets = 0
+maximum_queue_high_water_bytes = 4096
+
+[[application_observation.cases]]
+id = "app-general"
+mode = "general"
+tiers = ["full"]
+
+[application_observation.cases.observed]
+median_mib_s = 160.160
+idle_ratio = 0.900
+median_cpu_seconds = 7.511
+median_peak_rss_bytes = 98041856
+runs = 3
+commit = "d3e8b34"
+date = "2026-08-03"
+note = "Tactical 057 warm uncontrolled cache cohort"
+
+[application_observation.cases.required]
+minimum_mib_s = 100.0
+minimum_idle_ratio = 0.60
+maximum_resets = 1500
+maximum_queue_high_water_bytes = 1048576
+
+[[application_observation.cases]]
+id = "app-peers"
+mode = "peers"
+tiers = ["full"]
+
+[application_observation.cases.observed]
+median_mib_s = 158.698
+idle_ratio = 0.892
+median_cpu_seconds = 7.590
+median_peak_rss_bytes = 115015680
+runs = 3
+commit = "d3e8b34"
+date = "2026-08-03"
+note = "Tactical 057 warm uncontrolled cache cohort"
+
+[application_observation.cases.required]
+minimum_mib_s = 100.0
+minimum_idle_ratio = 0.60
+maximum_resets = 1500
+maximum_queue_high_water_bytes = 1048576
+
+[[application_observation.cases]]
+id = "app-files"
+mode = "files"
+tiers = ["full"]
+
+[application_observation.cases.observed]
+median_mib_s = 152.115
+idle_ratio = 0.855
+median_cpu_seconds = 7.831
+median_peak_rss_bytes = 98533376
+runs = 3
+commit = "d3e8b34"
+date = "2026-08-03"
+note = "Tactical 057 warm uncontrolled cache cohort"
+
+[application_observation.cases.required]
+minimum_mib_s = 95.0
+minimum_idle_ratio = 0.55
+maximum_resets = 1600
+maximum_queue_high_water_bytes = 1048576
+
+[[application_observation.cases]]
+id = "app-trackers"
+mode = "trackers"
+tiers = ["full"]
+
+[application_observation.cases.observed]
+median_mib_s = 158.281
+idle_ratio = 0.890
+median_cpu_seconds = 7.580
+median_peak_rss_bytes = 98811904
+runs = 3
+commit = "d3e8b34"
+date = "2026-08-03"
+note = "Tactical 057 warm uncontrolled cache cohort"
+
+[application_observation.cases.required]
+minimum_mib_s = 100.0
+minimum_idle_ratio = 0.60
+maximum_resets = 1500
+maximum_queue_high_water_bytes = 1048576
+
+[[application_observation.cases]]
+id = "app-pieces"
+mode = "pieces"
+tiers = ["full"]
+
+[application_observation.cases.observed]
+median_mib_s = 123.584
+idle_ratio = 0.695
+median_cpu_seconds = 9.363
+median_peak_rss_bytes = 99090432
+runs = 3
+commit = "d3e8b34"
+date = "2026-08-03"
+note = "Tactical 057 warm uncontrolled cache cohort"
+
+[application_observation.cases.required]
+minimum_mib_s = 75.0
+minimum_idle_ratio = 0.40
+maximum_resets = 2000
+maximum_queue_high_water_bytes = 1048576
+
+[[application_observation.cases]]
+id = "app-disk"
+mode = "disk"
+tiers = ["full"]
+
+[application_observation.cases.observed]
+median_mib_s = 154.689
+idle_ratio = 0.869
+median_cpu_seconds = 7.641
+median_peak_rss_bytes = 98648064
+runs = 3
+commit = "d3e8b34"
+date = "2026-08-03"
+note = "Tactical 057 warm uncontrolled cache cohort"
+
+[application_observation.cases.required]
+minimum_mib_s = 95.0
+minimum_idle_ratio = 0.55
+maximum_resets = 1500
+maximum_queue_high_water_bytes = 1048576
+
+[[application_observation.cases]]
+id = "app-logs-normal"
+mode = "logs-normal"
+tiers = ["full"]
+
+[application_observation.cases.observed]
+median_mib_s = 134.822
+idle_ratio = 0.758
+median_cpu_seconds = 8.750
+median_peak_rss_bytes = 100466688
+runs = 3
+commit = "d3e8b34"
+date = "2026-08-03"
+note = "Tactical 057 warm uncontrolled cache cohort"
+
+[application_observation.cases.required]
+minimum_mib_s = 80.0
+minimum_idle_ratio = 0.45
+maximum_resets = 1500
+maximum_queue_high_water_bytes = 2097152
+
+[[application_observation.cases]]
+id = "app-logs-detailed"
+mode = "logs-detailed"
+tiers = ["full"]
+
+[application_observation.cases.observed]
+median_mib_s = 126.573
+idle_ratio = 0.711
+median_cpu_seconds = 9.128
+median_peak_rss_bytes = 100581376
+runs = 3
+commit = "d3e8b34"
+date = "2026-08-03"
+note = "Tactical 057 warm uncontrolled cache cohort"
+
+[application_observation.cases.required]
+minimum_mib_s = 75.0
+minimum_idle_ratio = 0.40
+maximum_resets = 1500
+maximum_queue_high_water_bytes = 2097152
+
+[[application_observation.cases]]
+id = "app-logs-trace"
+mode = "logs-trace"
+tiers = ["full"]
+
+[application_observation.cases.observed]
+median_mib_s = 98.374
+idle_ratio = 0.553
+median_cpu_seconds = 11.551
+median_peak_rss_bytes = 103104512
+runs = 3
+commit = "d3e8b34"
+date = "2026-08-03"
+note = "Tactical 057 warm uncontrolled cache cohort"
+
+[application_observation.cases.required]
+minimum_mib_s = 60.0
+minimum_idle_ratio = 0.30
+maximum_resets = 2000
+maximum_queue_high_water_bytes = 2097152
+
+[[application_observation.cases]]
+id = "app-all"
+mode = "all"
+tiers = ["smoke", "full"]
+
+[application_observation.cases.observed]
+median_mib_s = 74.001
+idle_ratio = 0.416
+median_cpu_seconds = 14.902
+median_peak_rss_bytes = 102596608
+runs = 3
+commit = "d3e8b34"
+date = "2026-08-03"
+note = "Tactical 057 warm uncontrolled cache cohort"
+
+[application_observation.cases.required]
+minimum_mib_s = 45.0
+minimum_idle_ratio = 0.25
+maximum_resets = 2800
+maximum_queue_high_water_bytes = 2097152
+
+[[application_observation.cases]]
+id = "app-slow-all"
+mode = "slow-all"
+tiers = ["smoke", "full"]
+
+[application_observation.cases.observed]
+median_mib_s = 122.327
+idle_ratio = 0.688
+median_cpu_seconds = 9.440
+median_peak_rss_bytes = 149848064
+runs = 3
+commit = "d3e8b34"
+date = "2026-08-03"
+note = "Tactical 057 warm uncontrolled cache cohort"
+
+[application_observation.cases.required]
+minimum_mib_s = 75.0
+minimum_idle_ratio = 0.40
+maximum_resets = 16
+maximum_queue_high_water_bytes = 20971520

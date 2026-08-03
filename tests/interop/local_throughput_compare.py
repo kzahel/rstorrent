@@ -29,6 +29,14 @@ from first_verified_piece import (
     hash_file,
     wait_for_listener,
 )
+from performance_profiles import (
+    PerformanceProfileError,
+    collect_hardware_environment,
+    load_performance_profile,
+    profile_runs,
+    selected_throughput_cases,
+    validate_environment,
+)
 
 
 MIB = 1024 * 1024
@@ -57,6 +65,7 @@ class Fixture:
 
 @dataclass(frozen=True)
 class TransferResult:
+    baseline_case_id: str | None
     size_bytes: int
     piece_size: int
     piece_count: int
@@ -356,6 +365,7 @@ def run_transfer(
     timeout_seconds: int,
     write_concurrency: int,
     hash_concurrency: int,
+    baseline_case_id: str | None = None,
 ) -> TransferResult:
     torrent_path = fixture.torrents[piece_size]
     info = lt.torrent_info(str(torrent_path))
@@ -427,6 +437,7 @@ def run_transfer(
         shutil.rmtree(output_root)
         cleanup_succeeded = not output_root.exists()
         result = TransferResult(
+            baseline_case_id=baseline_case_id,
             size_bytes=fixture.size_bytes,
             piece_size=piece_size,
             piece_count=info.num_pieces(),
@@ -489,6 +500,13 @@ def command_text(command: list[str], root: Path) -> str | None:
     return completed.stdout.strip() if completed.returncode == 0 else None
 
 
+def report_path(path: Path, repository: Path) -> str:
+    try:
+        return str(path.relative_to(repository))
+    except ValueError:
+        return path.name
+
+
 def validate_piece_sizes(values: list[int]) -> list[int]:
     sizes: list[int] = []
     for kib in values:
@@ -541,13 +559,12 @@ def parse_storage_point(value: str) -> tuple[int, int]:
     return write_concurrency, hash_concurrency
 
 
-def parse_arguments() -> argparse.Namespace:
+def parse_arguments(repository: Path) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--sizes-mib",
         nargs="+",
         type=int,
-        default=[1024, 10 * 1024],
         metavar="MIB",
         help="payload sizes in MiB (default: 1024 10240)",
     )
@@ -555,14 +572,12 @@ def parse_arguments() -> argparse.Namespace:
         "--piece-sizes-kib",
         nargs="+",
         type=int,
-        default=[256, 1024, 4096, 16384],
         metavar="KIB",
     )
-    parser.add_argument("--runs", type=int, choices=range(1, 4), default=1)
+    parser.add_argument("--runs", type=int, choices=range(1, 4))
     parser.add_argument(
         "--timeout-seconds",
         type=bounded_timeout,
-        default=2 * 60 * 60,
         metavar="SECONDS",
     )
     parser.add_argument("--write-concurrency", type=int, choices=range(1, 9))
@@ -590,9 +605,77 @@ def parse_arguments() -> argparse.Namespace:
             "matching libtorrent median is below this ratio"
         ),
     )
+    parser.add_argument(
+        "--baseline-profile",
+        help=(
+            "named tests/perf/baselines profile or TOML path; cannot be combined "
+            "with free-form workload or gate options"
+        ),
+    )
+    parser.add_argument(
+        "--profile-tier",
+        choices=("smoke", "full"),
+        default="full",
+        help="workload tier selected from --baseline-profile (default: full)",
+    )
     parser.add_argument("--binary", type=Path)
     parser.add_argument("--output", type=Path, help="optional JSON result path")
     arguments = parser.parse_args()
+
+    direct_options = {
+        "--sizes-mib": arguments.sizes_mib,
+        "--piece-sizes-kib": arguments.piece_sizes_kib,
+        "--runs": arguments.runs,
+        "--timeout-seconds": arguments.timeout_seconds,
+        "--write-concurrency": arguments.write_concurrency,
+        "--hash-concurrency": arguments.hash_concurrency,
+        "--storage-points": arguments.storage_points,
+        "--minimum-rstorrent-mib-s": arguments.minimum_rstorrent_mib_s,
+        "--minimum-rstorrent-libtorrent-ratio": (
+            arguments.minimum_rstorrent_libtorrent_ratio
+        ),
+    }
+    arguments.profile = None
+    arguments.profile_path = None
+    if arguments.baseline_profile is not None:
+        conflicts = [name for name, value in direct_options.items() if value is not None]
+        if conflicts:
+            parser.error(
+                "--baseline-profile cannot be combined with " + ", ".join(conflicts)
+            )
+        try:
+            arguments.profile, arguments.profile_path = load_performance_profile(
+                repository, arguments.baseline_profile
+            )
+            selected = selected_throughput_cases(
+                arguments.profile, arguments.profile_tier
+            )
+        except PerformanceProfileError as error:
+            parser.error(str(error))
+        arguments.throughput_cases = selected
+        arguments.runs = profile_runs(
+            arguments.profile["throughput"], arguments.profile_tier
+        )
+        arguments.timeout_seconds = int(
+            arguments.profile["throughput"]["timeout_seconds"]
+        )
+        arguments.sizes_mib = list(dict.fromkeys(case["size_mib"] for case in selected))
+        arguments.piece_sizes_kib = list(
+            dict.fromkeys(case["piece_size_kib"] for case in selected)
+        )
+        arguments.piece_sizes = [piece * 1024 for piece in arguments.piece_sizes_kib]
+        arguments.storage_points = list(
+            dict.fromkeys(
+                (case["write_concurrency"], case["hash_concurrency"])
+                for case in selected
+            )
+        )
+        return arguments
+
+    arguments.sizes_mib = arguments.sizes_mib or [1024, 10 * 1024]
+    arguments.piece_sizes_kib = arguments.piece_sizes_kib or [256, 1024, 4096, 16384]
+    arguments.runs = arguments.runs or 1
+    arguments.timeout_seconds = arguments.timeout_seconds or 2 * 60 * 60
     if any(size <= 0 or size * MIB > MAX_TOTAL_SIZE for size in arguments.sizes_mib):
         parser.error(
             f"--sizes-mib values must be between 1 and {MAX_TOTAL_SIZE // MIB}"
@@ -618,6 +701,20 @@ def parse_arguments() -> argparse.Namespace:
         ]
     else:
         arguments.storage_points = list(dict.fromkeys(arguments.storage_points))
+    arguments.throughput_cases = [
+        {
+            "id": None,
+            "size_mib": size_mib,
+            "piece_size_kib": piece_size // 1024,
+            "write_concurrency": write_concurrency,
+            "hash_concurrency": hash_concurrency,
+            "observed": None,
+            "required": None,
+        }
+        for size_mib in arguments.sizes_mib
+        for piece_size in arguments.piece_sizes
+        for write_concurrency, hash_concurrency in arguments.storage_points
+    ]
     return arguments
 
 
@@ -660,6 +757,9 @@ def summarize_results(results: list[TransferResult]) -> list[dict[str, Any]]:
         )
         summaries.append(
             {
+                "baseline_case_id": next(
+                    iter({result.baseline_case_id for result in cohort})
+                ),
                 "size_bytes": size_bytes,
                 "piece_size": piece_size,
                 "runs": len(cohort),
@@ -678,15 +778,47 @@ def summarize_results(results: list[TransferResult]) -> list[dict[str, Any]]:
 
 
 def main() -> int:
-    arguments = parse_arguments()
     repository = Path(__file__).resolve().parents[2]
+    arguments = parse_arguments(repository)
+    temporary_root = Path(tempfile.gettempdir())
+    hardware_environment = collect_hardware_environment(temporary_root)
+    applicability_failures = (
+        []
+        if arguments.profile is None
+        else validate_environment(arguments.profile, hardware_environment)
+    )
+    if applicability_failures:
+        report = {
+            "schema_version": 3,
+            "scenario": "controlled-single-file-loopback-throughput",
+            "status": "not_applicable",
+            "environment": hardware_environment,
+            "baseline_profile": {
+                "profile_id": arguments.profile["profile_id"],
+                "tier": arguments.profile_tier,
+                "calibration_status": arguments.profile["calibration_status"],
+            },
+            "applicability_failures": applicability_failures,
+            "results": [],
+            "summaries": [],
+            "gate": {"passed": False, "failures": []},
+        }
+        rendered = json.dumps(report, indent=2, sort_keys=True)
+        if arguments.output is not None:
+            arguments.output.parent.mkdir(parents=True, exist_ok=True)
+            arguments.output.write_text(rendered + "\n", encoding="utf-8")
+        print(rendered)
+        for failure in applicability_failures:
+            print(f"throughput profile is not applicable: {failure}", file=sys.stderr)
+        return 2
+
     binary = (arguments.binary or build_diagnostic(repository)).resolve()
     if not binary.is_file():
         print(f"diagnostic binary is absent: {binary}", file=sys.stderr)
         return 2
     sizes = [size * MIB for size in arguments.sizes_mib]
     required_free = max(sizes) * 2 + 4 * GIB
-    available = shutil.disk_usage(tempfile.gettempdir()).free
+    available = shutil.disk_usage(temporary_root).free
     if available < required_free:
         print(
             f"insufficient temporary disk: need {required_free} bytes, "
@@ -696,19 +828,27 @@ def main() -> int:
         return 2
 
     environment = {
+        **hardware_environment,
         "repository_commit": command_text(["git", "rev-parse", "HEAD"], repository),
         "repository_dirty": bool(
             command_text(["git", "status", "--porcelain"], repository)
         ),
         "platform": platform.platform(),
-        "architecture": platform.machine(),
         "python": platform.python_version(),
         "rustc": command_text(["rustc", "--version"], repository),
         "libtorrent": lt.version,
         "rstorrent_binary_sha256": binary_sha256(binary),
-        "available_temporary_bytes_before": available,
         "source_cache_policy": "warm-uncontrolled-os-page-cache",
     }
+    throughput_case_by_id = {
+        case["id"]: case
+        for case in arguments.throughput_cases
+        if case["id"] is not None
+    }
+    workload_cases: dict[tuple[int, int], list[dict[str, Any]]] = {}
+    for case in arguments.throughput_cases:
+        key = (case["size_mib"] * MIB, case["piece_size_kib"] * 1024)
+        workload_cases.setdefault(key, []).append(case)
     results: list[TransferResult] = []
     started = time.monotonic()
     try:
@@ -716,15 +856,27 @@ def main() -> int:
             owned_root = Path(temporary)
             case_ordinal = 0
             for size_bytes in sizes:
-                fixture = create_fixture(owned_root, size_bytes, arguments.piece_sizes)
+                size_workloads = {
+                    piece_size: cases
+                    for (case_size, piece_size), cases in workload_cases.items()
+                    if case_size == size_bytes
+                }
+                fixture = create_fixture(
+                    owned_root, size_bytes, list(size_workloads.keys())
+                )
                 try:
-                    for piece_size in arguments.piece_sizes:
+                    for piece_size, selected_cases in size_workloads.items():
                         for run in range(1, arguments.runs + 1):
                             client_cases = [
-                                ("rstorrent", write_limit, hash_limit)
-                                for write_limit, hash_limit in arguments.storage_points
+                                (
+                                    "rstorrent",
+                                    case["write_concurrency"],
+                                    case["hash_concurrency"],
+                                    case["id"],
+                                )
+                                for case in selected_cases
                             ]
-                            client_cases.append(("libtorrent", 0, 0))
+                            client_cases.append(("libtorrent", 0, 0, None))
                             rotation = case_ordinal % len(client_cases)
                             owner_order = (
                                 client_cases[rotation:] + client_cases[:rotation]
@@ -734,7 +886,12 @@ def main() -> int:
                             )
                             case_root.mkdir()
                             for order, client_case in enumerate(owner_order, start=1):
-                                implementation, write_limit, hash_limit = client_case
+                                (
+                                    implementation,
+                                    write_limit,
+                                    hash_limit,
+                                    baseline_case_id,
+                                ) = client_case
                                 results.append(
                                     run_transfer(
                                         implementation,
@@ -747,6 +904,7 @@ def main() -> int:
                                         arguments.timeout_seconds,
                                         write_limit,
                                         hash_limit,
+                                        baseline_case_id,
                                     )
                                 )
                             case_root.rmdir()
@@ -765,7 +923,19 @@ def main() -> int:
             f"storage={summary['write_concurrency']}/"
             f"{summary['hash_concurrency']}"
         )
-        minimum_throughput = arguments.minimum_rstorrent_mib_s
+        baseline_case = (
+            None
+            if summary["baseline_case_id"] is None
+            else throughput_case_by_id[summary["baseline_case_id"]]
+        )
+        if baseline_case is not None:
+            summary["observed"] = baseline_case.get("observed")
+            summary["required"] = baseline_case["required"]
+        minimum_throughput = (
+            arguments.minimum_rstorrent_mib_s
+            if baseline_case is None
+            else baseline_case["required"].get("minimum_mib_s")
+        )
         if (
             minimum_throughput is not None
             and summary["rstorrent_median_mib_s"] < minimum_throughput
@@ -774,7 +944,11 @@ def main() -> int:
                 f"{label} RSTorrent median {summary['rstorrent_median_mib_s']:.3f} "
                 f"MiB/s is below {minimum_throughput:.3f} MiB/s"
             )
-        minimum_ratio = arguments.minimum_rstorrent_libtorrent_ratio
+        minimum_ratio = (
+            arguments.minimum_rstorrent_libtorrent_ratio
+            if baseline_case is None
+            else baseline_case["required"].get("minimum_libtorrent_ratio")
+        )
         if (
             minimum_ratio is not None
             and summary["rstorrent_libtorrent_ratio"] < minimum_ratio
@@ -786,9 +960,21 @@ def main() -> int:
             )
 
     report = {
-        "schema_version": 2,
+        "schema_version": 3,
         "scenario": "controlled-single-file-loopback-throughput",
+        "status": "passed" if not gate_failures else "regression",
         "environment": environment,
+        "baseline_profile": (
+            None
+            if arguments.profile is None
+            else {
+                "profile_id": arguments.profile["profile_id"],
+                "tier": arguments.profile_tier,
+                "calibration_status": arguments.profile["calibration_status"],
+                "path": report_path(arguments.profile_path, repository),
+                "requirements": arguments.profile["requirements"],
+            }
+        ),
         "config": {
             "sizes_mib": arguments.sizes_mib,
             "piece_sizes_kib": arguments.piece_sizes_kib,
@@ -803,6 +989,7 @@ def main() -> int:
             ],
             "payload_allowance_bytes": PAYLOAD_ALLOWANCE,
             "client_order": "rotating-by-case",
+            "throughput_cases": arguments.throughput_cases,
             "minimum_rstorrent_mib_s": arguments.minimum_rstorrent_mib_s,
             "minimum_rstorrent_libtorrent_ratio": (
                 arguments.minimum_rstorrent_libtorrent_ratio

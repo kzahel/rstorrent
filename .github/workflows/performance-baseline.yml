@@ -1,0 +1,90 @@
+name: Performance baseline
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/performance-baseline.yml"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "rust-toolchain.toml"
+      - "crates/rstorrent-engine/**"
+      - "crates/rstorrent-session/**"
+      - "tests/interop/**"
+      - "tests/perf/**"
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: Baseline tier to execute
+        required: true
+        default: smoke
+        type: choice
+        options:
+          - smoke
+          - full
+
+permissions:
+  contents: read
+
+concurrency:
+  group: performance-baseline-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  github-ubuntu-x64:
+    name: GitHub Ubuntu x64 (${{ github.event_name == 'schedule' && 'full' || inputs.tier || 'smoke' }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      PERFORMANCE_PROFILE: github-ubuntu-24.04-x64
+      PERFORMANCE_TIER: ${{ github.event_name == 'schedule' && 'full' || inputs.tier || 'smoke' }}
+      UV_FROZEN: "1"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Install Rust 1.97.0
+        uses: dtolnay/rust-toolchain@1.97.0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8
+        with:
+          enable-cache: true
+          cache-dependency-glob: tests/interop/uv.lock
+
+      - name: Install Python 3.12 and locked interop environment
+        run: |
+          uv python install 3.12
+          uv sync --project tests/interop --locked --python 3.12
+
+      - name: Validate profile policy
+        working-directory: tests/interop
+        run: uv run --locked python -m unittest test_performance_profiles.py
+
+      - name: Create evidence directory
+        run: mkdir -p artifacts/performance
+
+      - name: Compare engine throughput with libtorrent
+        run: |
+          uv run --project tests/interop --locked python tests/interop/local_throughput_compare.py \
+            --baseline-profile "$PERFORMANCE_PROFILE" \
+            --profile-tier "$PERFORMANCE_TIER" \
+            --output artifacts/performance/engine-throughput.json
+
+      - name: Measure application view overhead
+        run: |
+          uv run --project tests/interop --locked python tests/interop/application_view_throughput.py \
+            --baseline-profile "$PERFORMANCE_PROFILE" \
+            --profile-tier "$PERFORMANCE_TIER" \
+            --output artifacts/performance/application-views.json
+
+      - name: Upload machine-readable evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: performance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/performance/*.json
+          if-no-files-found: warn
+          retention-days: 30
