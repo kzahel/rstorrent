@@ -347,6 +347,7 @@ function validateServiceSnapshot(value: unknown): void {
   const snapshot = asRecord(value, "service snapshot");
   identifier(snapshot.profile_id, "profile ID");
   decimal(snapshot.revision, "snapshot revision");
+  validateStorageSettings(snapshot.storage);
   const torrents = array(snapshot.torrents, "torrent snapshots");
   for (const item of torrents) {
     const torrent = asRecord(item, "torrent snapshot");
@@ -398,6 +399,7 @@ function validateViewSnapshot(value: unknown): void {
   switch (string(snapshot.type, "view snapshot type")) {
     case "torrent_list":
       array(snapshot.torrents, "torrent list").forEach(validateTorrentView);
+      validateStorageSettings(snapshot.storage);
       break;
     case "torrent":
       if (snapshot.torrent !== null) validateTorrentView(snapshot.torrent);
@@ -487,6 +489,9 @@ function validateViewPatch(value: unknown): void {
     case "torrent_list":
       array(patch.upsert, "torrent upserts").forEach(validateTorrentView);
       array(patch.removed, "torrent removals").forEach(torrentId);
+      if (patch.storage !== undefined && patch.storage !== null) {
+        validateStorageSettings(patch.storage);
+      }
       break;
     case "torrent":
       if (patch.torrent !== null) validateTorrentView(patch.torrent);
@@ -566,6 +571,36 @@ function validateViewPatch(value: unknown): void {
     default:
       throw new ContractError("unknown view patch type");
   }
+}
+
+function validateStorageSettings(value: unknown): void {
+  const settings = asRecord(value, "storage settings");
+  const roots = array(settings.roots, "storage roots");
+  if (roots.length > 32) {
+    throw new ContractError("storage roots exceed their bound");
+  }
+  const rootIds = new Set<string>();
+  for (const item of roots) {
+    const root = asRecord(item, "storage root");
+    const rootId = identifier(root.root_id, "storage root ID");
+    if (rootIds.has(rootId)) {
+      throw new ContractError("storage roots contain duplicate IDs");
+    }
+    rootIds.add(rootId);
+    boundedString(root.label, "storage root label", 256);
+    optionalString(root.display_path, "storage root display path", 4_096);
+    oneOf(root.availability, "storage root availability", [
+      "available",
+      "unavailable",
+    ]);
+  }
+  if (settings.default_root !== undefined && settings.default_root !== null) {
+    const defaultRoot = identifier(settings.default_root, "default storage root");
+    if (!rootIds.has(defaultRoot)) {
+      throw new ContractError("default storage root is not configured");
+    }
+  }
+  boolean(settings.show_add_options, "show add options");
 }
 
 function validateTorrentView(value: unknown): asserts value is TorrentView {

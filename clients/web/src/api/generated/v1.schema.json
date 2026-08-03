@@ -792,6 +792,54 @@
         },
         {
           "properties": {
+            "storage_root": {
+              "type": "string"
+            },
+            "type": {
+              "const": "set_default_storage_root",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "storage_root"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "show": {
+              "type": "boolean"
+            },
+            "type": {
+              "const": "set_show_add_options",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "show"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "storage_root": {
+              "type": "string"
+            },
+            "type": {
+              "const": "remove_storage_root",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "storage_root"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "type": {
               "const": "snapshot",
               "type": "string"
@@ -1555,6 +1603,7 @@
         "request_conflict",
         "stale_revision",
         "unknown_storage_root",
+        "storage_root_in_use",
         "unknown_torrent",
         "invalid_torrent_state",
         "invalid_durable_state",
@@ -2300,6 +2349,13 @@
         "revision": {
           "type": "string"
         },
+        "storage": {
+          "$ref": "#/$defs/StorageSettingsSnapshot",
+          "default": {
+            "roots": [],
+            "show_add_options": true
+          }
+        },
         "torrents": {
           "items": {
             "$ref": "#/$defs/TorrentSnapshot"
@@ -2311,6 +2367,62 @@
         "profile_id",
         "revision",
         "torrents"
+      ],
+      "type": "object"
+    },
+    "StorageRootAvailability": {
+      "enum": [
+        "available",
+        "unavailable"
+      ],
+      "type": "string"
+    },
+    "StorageRootSnapshot": {
+      "properties": {
+        "availability": {
+          "$ref": "#/$defs/StorageRootAvailability"
+        },
+        "display_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "root_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "root_id",
+        "label",
+        "availability"
+      ],
+      "type": "object"
+    },
+    "StorageSettingsSnapshot": {
+      "properties": {
+        "default_root": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roots": {
+          "items": {
+            "$ref": "#/$defs/StorageRootSnapshot"
+          },
+          "type": "array"
+        },
+        "show_add_options": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "roots",
+        "show_add_options"
       ],
       "type": "object"
     },
@@ -2750,6 +2862,16 @@
               },
               "type": "array"
             },
+            "storage": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StorageSettingsSnapshot"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "type": {
               "const": "torrent_list",
               "type": "string"
@@ -3071,6 +3193,9 @@
       "oneOf": [
         {
           "properties": {
+            "storage": {
+              "$ref": "#/$defs/StorageSettingsSnapshot"
+            },
             "torrents": {
               "items": {
                 "$ref": "#/$defs/TorrentView"
@@ -3084,7 +3209,8 @@
           },
           "required": [
             "type",
-            "torrents"
+            "torrents",
+            "storage"
           ],
           "type": "object"
         },

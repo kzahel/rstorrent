@@ -26,8 +26,8 @@ pub use application_connection::{
 };
 pub use control::{
     CONTROL_VERSION, Command, ErrorCode, ErrorResponse, RemovalDataPolicy, RemovalState,
-    RequestEnvelope, ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState,
-    TorrentSnapshot, TorrentState,
+    RequestEnvelope, ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageRootAvailability,
+    StorageRootSnapshot, StorageSettingsSnapshot, StorageState, TorrentSnapshot, TorrentState,
 };
 pub use diagnostics::{
     DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter, DiagnosticProfile,
@@ -38,7 +38,7 @@ pub use have::{HaveError, HaveState};
 pub use rstorrent_engine::{DownloadResourceLimits, NetworkConfig, NetworkPolicy};
 pub use store::{
     ConfiguredStorageRoot, PreparedFileRecord, RemovalRecord, ResumeRecord, SessionStore,
-    StorageRootLocation, StoreError,
+    StorageRootLocation, StoreError, StoredStorageRoot,
 };
 pub use tracker_views::{
     TrackerAnnounceEventView, TrackerCatalogState, TrackerNextActionView, TrackerSourceView,

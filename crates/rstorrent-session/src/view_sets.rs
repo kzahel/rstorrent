@@ -1390,6 +1390,7 @@ mod tests {
         ServiceSnapshot {
             profile_id: "test".to_owned(),
             revision: revision.to_string(),
+            storage: Default::default(),
             torrents: vec![TorrentSnapshot {
                 torrent_id: TORRENT_ID.to_owned(),
                 storage_root: "downloads".to_owned(),
@@ -1427,6 +1428,7 @@ mod tests {
                     view_id: "library".to_owned(),
                     snapshot: ViewSnapshot::TorrentList {
                         torrents: vec![torrent_view("aa", 0)],
+                        storage: Default::default(),
                     },
                 }],
                 now,
@@ -1562,6 +1564,7 @@ mod tests {
                 ViewPatch::TorrentList {
                     upsert: vec![torrent_view("aa", 1)],
                     removed: Vec::new(),
+                    storage: None,
                 },
                 8,
             )
@@ -1606,6 +1609,7 @@ mod tests {
                     view_id: "library".to_owned(),
                     snapshot: ViewSnapshot::TorrentList {
                         torrents: vec![torrent_view("aa", 0)],
+                        storage: Default::default(),
                     },
                 }],
                 now,
@@ -1623,6 +1627,7 @@ mod tests {
                 ViewPatch::TorrentList {
                     upsert: vec![torrent_view("aa", 1)],
                     removed: Vec::new(),
+                    storage: None,
                 },
                 8,
             )

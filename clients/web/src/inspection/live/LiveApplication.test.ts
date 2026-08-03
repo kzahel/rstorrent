@@ -61,7 +61,12 @@ class FakeLiveClient implements ApplicationViewClient {
       request_id: request.request_id,
       revision: "4",
       status: "success",
-      snapshot: { profile_id: "live", revision: "4", torrents: [] },
+      snapshot: {
+        profile_id: "live",
+        revision: "4",
+        storage: { roots: [], show_add_options: true },
+        torrents: [],
+      },
     };
   }
 
@@ -389,7 +394,11 @@ function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
       return {
         type: "snapshot",
         view_id: view.view_id,
-        snapshot: { type: "torrent_list", torrents: [torrent()] },
+        snapshot: {
+          type: "torrent_list",
+          torrents: [torrent()],
+          storage: { roots: [], show_add_options: true },
+        },
       };
     case "torrent_summary":
       return {

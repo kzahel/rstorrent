@@ -13,14 +13,17 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use crate::control::{
     Command, ErrorCode, RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope,
-    ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState, decode_info_hash,
-    encode_info_hash, parse_revision, validate_identifier, validate_request,
+    ServiceSnapshot, StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot,
+    StorageState, TorrentSnapshot, TorrentState, decode_info_hash, encode_info_hash,
+    parse_revision, validate_identifier, validate_request,
 };
 use crate::have::{HaveError, HaveState};
 
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 const DATABASE_FILENAME: &str = "session.db";
 const MAX_RECEIPTS: i64 = 1024;
+pub const MAX_STORAGE_ROOTS: usize = 32;
+pub const MAX_STORAGE_ROOT_LOCATOR_LENGTH: usize = 4096;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(2);
 const DHT_TABLES_SQL: &str = "CREATE TABLE dht_state (
         singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -59,6 +62,7 @@ const REMOVAL_TABLE_SQL: &str = "CREATE TABLE removal_jobs (
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfiguredStorageRoot {
     pub id: String,
+    pub label: String,
     pub location: StorageRootLocation,
 }
 
@@ -70,18 +74,40 @@ pub enum StorageRootLocation {
 
 impl ConfiguredStorageRoot {
     pub fn path(id: impl Into<String>, path: PathBuf) -> Self {
+        let id = id.into();
+        let label = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .filter(|name| !name.is_empty())
+            .unwrap_or(&id)
+            .to_owned();
         Self {
-            id: id.into(),
+            id,
+            label,
             location: StorageRootLocation::Path(path),
         }
     }
 
     pub fn platform(id: impl Into<String>) -> Self {
+        let id = id.into();
         Self {
-            id: id.into(),
+            label: id.clone(),
+            id,
             location: StorageRootLocation::PlatformCapability,
         }
     }
+
+    pub fn with_label(mut self, label: impl Into<String>) -> Self {
+        self.label = label.into();
+        self
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StoredStorageRoot {
+    pub id: String,
+    pub label: String,
+    pub location: StorageRootLocation,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -192,6 +218,103 @@ impl SessionStore {
 
     pub fn snapshot(&self) -> Result<ServiceSnapshot, StoreError> {
         read_snapshot(&self.connection, &self.profile_id)
+    }
+
+    pub fn storage_roots(&self) -> Result<Vec<StoredStorageRoot>, StoreError> {
+        read_storage_roots(&self.connection)
+    }
+
+    pub fn install_path_storage_root(
+        &mut self,
+        root_id: &str,
+        label: &str,
+        path: &Path,
+    ) -> Result<(u64, String), StoreError> {
+        validate_storage_root(root_id, label, path)?;
+        let locator = path
+            .to_str()
+            .ok_or_else(|| {
+                StoreError::Configuration("storage root path is not valid UTF-8".to_owned())
+            })?
+            .to_owned();
+        if let Some(existing) = self
+            .connection
+            .query_row(
+                "SELECT root_id FROM storage_roots
+                 WHERE kind = 'path' AND locator = ?1",
+                [&locator],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+        {
+            return Ok((self.revision()?, existing));
+        }
+        let count: i64 =
+            self.connection
+                .query_row("SELECT COUNT(*) FROM storage_roots", [], |row| row.get(0))?;
+        if count >= i64::try_from(MAX_STORAGE_ROOTS).expect("root bound fits i64") {
+            return Err(StoreError::Configuration(format!(
+                "storage root count exceeds {MAX_STORAGE_ROOTS}"
+            )));
+        }
+        let transaction = self.connection.transaction()?;
+        let revision = increment_revision(&transaction)?;
+        transaction.execute(
+            "INSERT INTO storage_roots(root_id, label, kind, locator)
+             VALUES (?1, ?2, 'path', ?3)",
+            params![root_id, label, locator],
+        )?;
+        transaction.execute(
+            "UPDATE storage_settings SET default_root = ?1
+             WHERE singleton = 1 AND default_root IS NULL",
+            [root_id],
+        )?;
+        transaction.commit()?;
+        Ok((revision, root_id.to_owned()))
+    }
+
+    pub fn repair_path_storage_root(
+        &mut self,
+        root_id: &str,
+        label: &str,
+        path: &Path,
+    ) -> Result<u64, StoreError> {
+        validate_storage_root(root_id, label, path)?;
+        let locator = path
+            .to_str()
+            .ok_or_else(|| {
+                StoreError::Configuration("storage root path is not valid UTF-8".to_owned())
+            })?
+            .to_owned();
+        let duplicate = self
+            .connection
+            .query_row(
+                "SELECT root_id FROM storage_roots
+                 WHERE kind = 'path' AND locator = ?1 AND root_id <> ?2",
+                params![locator, root_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        if let Some(duplicate) = duplicate {
+            return Err(StoreError::Configuration(format!(
+                "selected folder is already registered as {duplicate}"
+            )));
+        }
+        let transaction = self.connection.transaction()?;
+        let revision = increment_revision(&transaction)?;
+        let updated = transaction.execute(
+            "UPDATE storage_roots
+             SET label = ?2, kind = 'path', locator = ?3
+             WHERE root_id = ?1",
+            params![root_id, label, locator],
+        )?;
+        if updated != 1 {
+            return Err(StoreError::Configuration(format!(
+                "storage root {root_id} is not configured"
+            )));
+        }
+        transaction.commit()?;
+        Ok(revision)
     }
 
     pub fn load_dht_snapshot(&self) -> Result<Option<DhtSnapshot>, StoreError> {
@@ -1203,7 +1326,17 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
              );
              CREATE TABLE storage_roots (
                 root_id TEXT PRIMARY KEY,
-                locator TEXT NOT NULL
+                label TEXT NOT NULL CHECK (length(label) BETWEEN 1 AND 256),
+                kind TEXT NOT NULL CHECK (kind IN ('path', 'platform')),
+                locator TEXT NOT NULL CHECK (length(locator) BETWEEN 1 AND 4096)
+             );
+             CREATE TABLE storage_settings (
+                singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                default_root TEXT
+                    REFERENCES storage_roots(root_id)
+                    ON UPDATE CASCADE ON DELETE SET NULL,
+                show_add_options INTEGER NOT NULL DEFAULT 1
+                    CHECK (show_add_options IN (0, 1))
              );
              CREATE TABLE torrents (
                 info_hash BLOB PRIMARY KEY CHECK (length(info_hash) = 20),
@@ -1273,6 +1406,11 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
             "INSERT INTO profile_state(singleton, profile_id, revision)
              VALUES (1, ?1, 0)",
             [profile_id],
+        )?;
+        transaction.execute(
+            "INSERT INTO storage_settings(singleton, default_root, show_add_options)
+             VALUES (1, NULL, 1)",
+            [],
         )?;
         transaction.execute_batch(DHT_TABLES_SQL)?;
         transaction.execute_batch(REMOVAL_TABLE_SQL)?;
@@ -1357,7 +1495,7 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
         )?;
         transaction.execute_batch(DHT_TABLES_SQL)?;
         transaction.execute_batch(REMOVAL_TABLE_SQL)?;
-        transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        transaction.pragma_update(None, "user_version", 4)?;
         transaction.commit()?;
     }
     if version == 2 {
@@ -1369,7 +1507,7 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
             [],
         )?;
         transaction.execute_batch(REMOVAL_TABLE_SQL)?;
-        transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        transaction.pragma_update(None, "user_version", 4)?;
         transaction.commit()?;
     }
     if version == 3 {
@@ -1380,6 +1518,42 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
             [],
         )?;
         transaction.execute_batch(REMOVAL_TABLE_SQL)?;
+        transaction.pragma_update(None, "user_version", 4)?;
+        transaction.commit()?;
+    }
+    if (1..=4).contains(&version) {
+        let transaction = connection.transaction()?;
+        transaction.execute(
+            "ALTER TABLE storage_roots ADD COLUMN label TEXT NOT NULL DEFAULT 'Downloads'
+             CHECK (length(label) BETWEEN 1 AND 256)",
+            [],
+        )?;
+        transaction.execute(
+            "ALTER TABLE storage_roots ADD COLUMN kind TEXT NOT NULL DEFAULT 'path'
+             CHECK (kind IN ('path', 'platform'))",
+            [],
+        )?;
+        transaction.execute(
+            "UPDATE storage_roots
+             SET label = root_id,
+                 kind = CASE
+                    WHEN locator = 'platform-capability:' THEN 'platform'
+                    ELSE 'path'
+                 END",
+            [],
+        )?;
+        transaction.execute_batch(
+            "CREATE TABLE storage_settings (
+                singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                default_root TEXT
+                    REFERENCES storage_roots(root_id)
+                    ON UPDATE CASCADE ON DELETE SET NULL,
+                show_add_options INTEGER NOT NULL DEFAULT 1
+                    CHECK (show_add_options IN (0, 1))
+             );
+             INSERT INTO storage_settings(singleton, default_root, show_add_options)
+             VALUES (1, NULL, 1);",
+        )?;
         transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         transaction.commit()?;
     }
@@ -1396,29 +1570,174 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
     Ok(())
 }
 
+fn validate_storage_root(root_id: &str, label: &str, path: &Path) -> Result<(), StoreError> {
+    validate_identifier(root_id, "storage root", crate::control::MAX_ROOT_ID_LENGTH)
+        .map_err(|(_, message)| StoreError::Configuration(message))?;
+    validate_root_label(label)?;
+    if !path.is_absolute() {
+        return Err(StoreError::Configuration(
+            "storage root path must be absolute".to_owned(),
+        ));
+    }
+    let locator = path.to_str().ok_or_else(|| {
+        StoreError::Configuration("storage root path is not valid UTF-8".to_owned())
+    })?;
+    validate_root_locator(locator)
+}
+
+fn validate_root_label(label: &str) -> Result<(), StoreError> {
+    if label.is_empty() || label.len() > crate::control::MAX_ROOT_LABEL_LENGTH {
+        return Err(StoreError::Configuration(format!(
+            "storage root label must be 1..={} bytes",
+            crate::control::MAX_ROOT_LABEL_LENGTH
+        )));
+    }
+    Ok(())
+}
+
+fn validate_root_locator(locator: &str) -> Result<(), StoreError> {
+    if locator.is_empty() || locator.len() > MAX_STORAGE_ROOT_LOCATOR_LENGTH {
+        return Err(StoreError::Configuration(format!(
+            "storage root locator must be 1..={MAX_STORAGE_ROOT_LOCATOR_LENGTH} bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn read_storage_roots(connection: &Connection) -> Result<Vec<StoredStorageRoot>, StoreError> {
+    let mut statement = connection.prepare(
+        "SELECT root_id, label, kind, locator
+         FROM storage_roots ORDER BY root_id",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+        ))
+    })?;
+    let mut roots = Vec::new();
+    for row in rows {
+        let (id, label, kind, locator) = row?;
+        validate_identifier(&id, "storage root", crate::control::MAX_ROOT_ID_LENGTH)
+            .map_err(|(_, message)| StoreError::DurableState(message))?;
+        validate_root_label(&label).map_err(|error| StoreError::DurableState(error.to_string()))?;
+        validate_root_locator(&locator)
+            .map_err(|error| StoreError::DurableState(error.to_string()))?;
+        let location = match kind.as_str() {
+            "path" => StorageRootLocation::Path(PathBuf::from(locator)),
+            "platform" if locator == "platform-capability:" => {
+                StorageRootLocation::PlatformCapability
+            }
+            _ => {
+                return Err(StoreError::DurableState(
+                    "invalid storage root kind or locator".to_owned(),
+                ));
+            }
+        };
+        roots.push(StoredStorageRoot {
+            id,
+            label,
+            location,
+        });
+    }
+    if roots.len() > MAX_STORAGE_ROOTS {
+        return Err(StoreError::DurableState(format!(
+            "storage root count exceeds {MAX_STORAGE_ROOTS}"
+        )));
+    }
+    Ok(roots)
+}
+
+fn read_storage_settings(connection: &Connection) -> Result<StorageSettingsSnapshot, StoreError> {
+    let (default_root, show_add_options) = connection.query_row(
+        "SELECT default_root, show_add_options
+         FROM storage_settings WHERE singleton = 1",
+        [],
+        |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, bool>(1)?)),
+    )?;
+    let roots = read_storage_roots(connection)?
+        .into_iter()
+        .map(|root| {
+            let (display_path, availability) = match &root.location {
+                StorageRootLocation::Path(path) => (
+                    path.to_str().map(str::to_owned),
+                    if path.is_dir() && std::fs::read_dir(path).is_ok() {
+                        StorageRootAvailability::Available
+                    } else {
+                        StorageRootAvailability::Unavailable
+                    },
+                ),
+                StorageRootLocation::PlatformCapability => {
+                    (None, StorageRootAvailability::Available)
+                }
+            };
+            StorageRootSnapshot {
+                root_id: root.id,
+                label: root.label,
+                display_path,
+                availability,
+            }
+        })
+        .collect();
+    Ok(StorageSettingsSnapshot {
+        roots,
+        default_root,
+        show_add_options,
+    })
+}
+
 fn register_storage_roots(
     connection: &mut Connection,
     storage_roots: &[ConfiguredStorageRoot],
 ) -> Result<(), StoreError> {
+    if storage_roots.len() > MAX_STORAGE_ROOTS {
+        return Err(StoreError::Configuration(format!(
+            "configured storage root count exceeds {MAX_STORAGE_ROOTS}"
+        )));
+    }
     let transaction = connection.transaction()?;
     for root in storage_roots {
         validate_identifier(&root.id, "storage root", crate::control::MAX_ROOT_ID_LENGTH)
             .map_err(|(_, message)| StoreError::Configuration(message))?;
-        let locator = match &root.location {
-            StorageRootLocation::Path(path) => path.to_str().ok_or_else(|| {
-                StoreError::Configuration(format!(
-                    "storage root {} is not representable as UTF-8",
-                    root.id
-                ))
-            })?,
-            StorageRootLocation::PlatformCapability => "platform-capability:",
+        validate_root_label(&root.label)?;
+        let (kind, locator) = match &root.location {
+            StorageRootLocation::Path(path) => (
+                "path",
+                path.to_str().ok_or_else(|| {
+                    StoreError::Configuration(format!(
+                        "storage root {} is not representable as UTF-8",
+                        root.id
+                    ))
+                })?,
+            ),
+            StorageRootLocation::PlatformCapability => ("platform", "platform-capability:"),
         };
+        validate_root_locator(locator)?;
         transaction.execute(
-            "INSERT INTO storage_roots(root_id, locator)
-             VALUES (?1, ?2)
-             ON CONFLICT(root_id) DO UPDATE SET locator = excluded.locator",
-            params![root.id, locator],
+            "INSERT INTO storage_roots(root_id, label, kind, locator)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(root_id) DO UPDATE SET
+                label = excluded.label,
+                kind = excluded.kind,
+                locator = excluded.locator",
+            params![root.id, root.label, kind, locator],
         )?;
+    }
+    if let Some(first) = storage_roots.first() {
+        transaction.execute(
+            "UPDATE storage_settings SET default_root = ?1
+             WHERE singleton = 1 AND default_root IS NULL",
+            [&first.id],
+        )?;
+    }
+    let count: i64 =
+        transaction.query_row("SELECT COUNT(*) FROM storage_roots", [], |row| row.get(0))?;
+    if count > i64::try_from(MAX_STORAGE_ROOTS).expect("root bound fits i64") {
+        return Err(StoreError::Configuration(format!(
+            "storage root count exceeds {MAX_STORAGE_ROOTS}"
+        )));
     }
     transaction.commit()?;
     Ok(())
@@ -1442,6 +1761,15 @@ fn apply_mutation(
             skip_files,
             current_revision,
         ),
+        Command::SetDefaultStorageRoot { storage_root } => {
+            set_default_storage_root(transaction, storage_root, current_revision)
+        }
+        Command::SetShowAddOptions { show } => {
+            set_show_add_options(transaction, *show, current_revision)
+        }
+        Command::RemoveStorageRoot { storage_root } => {
+            remove_storage_root(transaction, storage_root, current_revision)
+        }
         Command::Pause { torrent_id } => {
             set_desired_state(transaction, torrent_id, false, current_revision)
         }
@@ -1474,6 +1802,94 @@ fn apply_mutation(
             message,
         )),
     }
+}
+
+fn set_default_storage_root(
+    transaction: &Transaction<'_>,
+    storage_root: &str,
+    current_revision: u64,
+) -> Result<u64, (ErrorCode, String)> {
+    let exists = transaction
+        .query_row(
+            "SELECT 1 FROM storage_roots WHERE root_id = ?1",
+            [storage_root],
+            |_| Ok(()),
+        )
+        .optional()
+        .map_err(internal_error)?
+        .is_some();
+    if !exists {
+        return Err((
+            ErrorCode::UnknownStorageRoot,
+            format!("storage root {storage_root} is not configured"),
+        ));
+    }
+    let revision = next_revision(transaction, current_revision)?;
+    transaction
+        .execute(
+            "UPDATE storage_settings SET default_root = ?1 WHERE singleton = 1",
+            [storage_root],
+        )
+        .map_err(internal_error)?;
+    Ok(revision)
+}
+
+fn set_show_add_options(
+    transaction: &Transaction<'_>,
+    show: bool,
+    current_revision: u64,
+) -> Result<u64, (ErrorCode, String)> {
+    let revision = next_revision(transaction, current_revision)?;
+    transaction
+        .execute(
+            "UPDATE storage_settings SET show_add_options = ?1 WHERE singleton = 1",
+            [show],
+        )
+        .map_err(internal_error)?;
+    Ok(revision)
+}
+
+fn remove_storage_root(
+    transaction: &Transaction<'_>,
+    storage_root: &str,
+    current_revision: u64,
+) -> Result<u64, (ErrorCode, String)> {
+    let exists = transaction
+        .query_row(
+            "SELECT 1 FROM storage_roots WHERE root_id = ?1",
+            [storage_root],
+            |_| Ok(()),
+        )
+        .optional()
+        .map_err(internal_error)?
+        .is_some();
+    if !exists {
+        return Err((
+            ErrorCode::UnknownStorageRoot,
+            format!("storage root {storage_root} is not configured"),
+        ));
+    }
+    let references: i64 = transaction
+        .query_row(
+            "SELECT COUNT(*) FROM torrents WHERE storage_root = ?1",
+            [storage_root],
+            |row| row.get(0),
+        )
+        .map_err(internal_error)?;
+    if references != 0 {
+        return Err((
+            ErrorCode::StorageRootInUse,
+            format!("storage root {storage_root} is used by {references} retained torrent(s)"),
+        ));
+    }
+    let revision = next_revision(transaction, current_revision)?;
+    transaction
+        .execute(
+            "DELETE FROM storage_roots WHERE root_id = ?1",
+            [storage_root],
+        )
+        .map_err(internal_error)?;
+    Ok(revision)
 }
 
 fn add_magnet(
@@ -1897,6 +2313,7 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
     Ok(ServiceSnapshot {
         profile_id: profile_id.to_owned(),
         revision: revision.to_string(),
+        storage: read_storage_settings(connection)?,
         torrents,
     })
 }
@@ -2192,6 +2609,107 @@ mod tests {
     }
 
     #[test]
+    fn selected_roots_default_deduplicate_persist_and_block_referenced_removal() {
+        let root = test_root("selected-roots");
+        let payload = root.join("chosen-payload");
+        fs::create_dir_all(&payload).expect("create chosen payload root");
+        let payload = fs::canonicalize(&payload).expect("canonical payload root");
+        let mut store = SessionStore::open(&root, "default", &[]).expect("open fresh profile");
+        let fresh = store.snapshot().expect("fresh snapshot");
+        assert!(fresh.storage.roots.is_empty());
+        assert_eq!(fresh.storage.default_root, None);
+        assert!(fresh.storage.show_add_options);
+
+        let (revision, installed) = store
+            .install_path_storage_root("root_00000000000000000000000000000000", "Chosen", &payload)
+            .expect("install selected root");
+        assert_eq!(revision, 1);
+        assert_eq!(installed, "root_00000000000000000000000000000000");
+        let selected = store.snapshot().expect("selected snapshot");
+        assert_eq!(
+            selected.storage.default_root.as_deref(),
+            Some(installed.as_str())
+        );
+        assert_eq!(selected.storage.roots.len(), 1);
+        assert_eq!(
+            selected.storage.roots[0].availability,
+            crate::StorageRootAvailability::Available
+        );
+
+        let (deduplicated_revision, deduplicated) = store
+            .install_path_storage_root("root_11111111111111111111111111111111", "Alias", &payload)
+            .expect("deduplicate selected root");
+        assert_eq!(deduplicated_revision, revision);
+        assert_eq!(deduplicated, installed);
+
+        let mut add = add_request("add-selected-root");
+        let Command::AddMagnet { storage_root, .. } = &mut add.command else {
+            unreachable!("test request is add magnet")
+        };
+        *storage_root = installed.clone();
+        store.handle_durable(&add).expect("bind torrent to root");
+        let removal = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "remove-referenced-root".to_owned(),
+                expected_revision: None,
+                command: Command::RemoveStorageRoot {
+                    storage_root: installed.clone(),
+                },
+            })
+            .expect("referenced removal response");
+        assert!(matches!(
+            removal.outcome,
+            ResponseOutcome::Error {
+                error: crate::ErrorResponse {
+                    code: ErrorCode::StorageRootInUse,
+                    ..
+                }
+            }
+        ));
+        drop(store);
+
+        let reopened = SessionStore::open(&root, "default", &[]).expect("reopen profile");
+        let persisted = reopened.snapshot().expect("persisted root snapshot");
+        assert_eq!(
+            persisted.storage.default_root.as_deref(),
+            Some(installed.as_str())
+        );
+        assert_eq!(persisted.torrents[0].storage_root, installed);
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn missing_selected_root_reopens_unavailable_without_recreation() {
+        let root = test_root("unavailable-root");
+        let payload = root.join("removable-payload");
+        fs::create_dir_all(&payload).expect("create selected root");
+        let payload = fs::canonicalize(&payload).expect("canonical selected root");
+        let mut store = SessionStore::open(&root, "default", &[]).expect("open fresh profile");
+        store
+            .install_path_storage_root(
+                "root_22222222222222222222222222222222",
+                "Removable",
+                &payload,
+            )
+            .expect("install selected root");
+        drop(store);
+        fs::remove_dir(&payload).expect("make selected root unavailable");
+
+        let reopened = SessionStore::open(&root, "default", &[]).expect("reopen profile");
+        let snapshot = reopened.snapshot().expect("unavailable root snapshot");
+        assert_eq!(snapshot.storage.roots.len(), 1);
+        assert_eq!(
+            snapshot.storage.roots[0].availability,
+            crate::StorageRootAvailability::Unavailable
+        );
+        assert!(!payload.exists());
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
     fn dht_snapshot_round_trips_and_rejects_corrupt_rows() {
         let root = test_root("dht-state");
         let configured = configured_root(&root);
@@ -2251,6 +2769,9 @@ mod tests {
                  DROP TABLE dht_nodes;
                  DROP TABLE dht_state;
                  DROP TABLE removal_jobs;
+                 DROP TABLE storage_settings;
+                 ALTER TABLE storage_roots DROP COLUMN kind;
+                 ALTER TABLE storage_roots DROP COLUMN label;
                  PRAGMA user_version = 1;",
             )
             .expect("downgrade fixture to the version-one shape");
@@ -2300,6 +2821,9 @@ mod tests {
         connection
             .execute_batch(
                 "DROP TABLE removal_jobs;
+                 DROP TABLE storage_settings;
+                 ALTER TABLE storage_roots DROP COLUMN kind;
+                 ALTER TABLE storage_roots DROP COLUMN label;
                  ALTER TABLE torrents DROP COLUMN archived;
                  PRAGMA user_version = 3;",
             )

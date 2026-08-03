@@ -216,6 +216,7 @@ mod tests {
         let hub = ViewHub::new(&ServiceSnapshot {
             profile_id: "test".to_owned(),
             revision: "0".to_owned(),
+            storage: Default::default(),
             torrents: Vec::new(),
         })
         .expect("view hub");

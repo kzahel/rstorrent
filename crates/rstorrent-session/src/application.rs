@@ -20,7 +20,7 @@ use tokio::task::JoinHandle;
 
 use crate::control::{
     Command, ErrorCode, RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope,
-    ResponseOutcome, StorageState, TorrentState,
+    ResponseOutcome, StorageRootSnapshot, StorageState, TorrentState,
 };
 use crate::diagnostics::{
     DiagnosticCategory, DiagnosticDraft, DiagnosticField, DiagnosticSeverity, DiagnosticSubject,
@@ -30,7 +30,7 @@ use crate::file_views::FileProgressModel;
 use crate::have::HaveState;
 use crate::store::{
     ConfiguredStorageRoot, PreparedFileRecord, RemovalRecord, ResumeRecord, SessionStore,
-    StorageRootLocation, StoreError,
+    StorageRootLocation, StoreError, StoredStorageRoot,
 };
 use crate::tracker_views::TrackerViewModel;
 use crate::view_sets::{VIEW_SET_REAPER_INTERVAL_MILLIS, ViewSetLeaseReaper};
@@ -169,9 +169,9 @@ impl ApplicationService {
                 "test storage concurrency must be between 1 and 8".to_owned(),
             ));
         }
-        let mut storage_roots = BTreeMap::new();
+        let mut configured_root_ids = BTreeMap::new();
         for root in &config.storage_roots {
-            if storage_roots
+            if configured_root_ids
                 .insert(root.id.clone(), root.location.clone())
                 .is_some()
             {
@@ -192,6 +192,7 @@ impl ApplicationService {
             &config.profile_id,
             &config.storage_roots,
         )?;
+        let storage_roots = available_storage_roots(store.storage_roots()?);
         let (initial_dht_snapshot, dht_state_warning) = match store.load_dht_snapshot() {
             Ok(snapshot) => (snapshot, None),
             Err(error) => (None, Some(error.to_string())),
@@ -254,6 +255,35 @@ impl ApplicationService {
     ) -> Result<ResponseEnvelope, ApplicationError> {
         self.reap_finished().await?;
         let command = request.command.clone();
+        let selected_root = match &command {
+            Command::AddMagnet { storage_root, .. }
+            | Command::SetDefaultStorageRoot { storage_root } => Some(storage_root.as_str()),
+            _ => None,
+        };
+        if let Some(storage_root) = selected_root
+            && !self.storage_roots.contains_key(storage_root)
+        {
+            let snapshot = self.store_mut()?.snapshot()?;
+            let known = snapshot
+                .storage
+                .roots
+                .iter()
+                .any(|root| root.root_id == storage_root);
+            return Ok(ResponseEnvelope::error(
+                request.request_id,
+                self.store_mut()?.revision()?,
+                if known {
+                    ErrorCode::StorageNeedsRepair
+                } else {
+                    ErrorCode::UnknownStorageRoot
+                },
+                if known {
+                    format!("storage root {storage_root} is unavailable and needs repair")
+                } else {
+                    format!("storage root {storage_root} is not configured")
+                },
+            ));
+        }
         if let Some(active) = &self.active {
             let target = match &command {
                 Command::AddMagnet { magnet, .. } => {
@@ -353,6 +383,10 @@ impl ApplicationService {
                 )?;
                 self.drive_removal(&torrent_id).await?;
             }
+            Command::RemoveStorageRoot { .. } => {
+                self.reload_storage_roots()?;
+            }
+            Command::SetDefaultStorageRoot { .. } | Command::SetShowAddOptions { .. } => {}
             Command::Shutdown => {
                 self.shutdown().await?;
             }
@@ -363,6 +397,132 @@ impl ApplicationService {
 
     pub fn revision(&self) -> Result<u64, ApplicationError> {
         Ok(self.store_mut()?.revision()?)
+    }
+
+    pub fn storage_snapshot(&self) -> Result<crate::StorageSettingsSnapshot, ApplicationError> {
+        Ok(self.store_mut()?.snapshot()?.storage)
+    }
+
+    pub fn suggested_storage_root_path(
+        &self,
+        repair_root: Option<&str>,
+    ) -> Result<Option<PathBuf>, ApplicationError> {
+        let store = self.store_mut()?;
+        let snapshot = store.snapshot()?;
+        let roots = store.storage_roots()?;
+        let preferred = repair_root
+            .map(str::to_owned)
+            .or(snapshot.storage.default_root);
+        let candidate = preferred
+            .as_deref()
+            .and_then(|root_id| roots.iter().find(|root| root.id == root_id))
+            .or_else(|| {
+                roots.iter().find(|root| {
+                    matches!(&root.location, StorageRootLocation::Path(path) if path.is_dir())
+                })
+            });
+        Ok(candidate.and_then(|root| match &root.location {
+            StorageRootLocation::Path(path) if path.is_dir() => Some(path.clone()),
+            StorageRootLocation::Path(path) => path.parent().map(Path::to_path_buf),
+            StorageRootLocation::PlatformCapability => None,
+        }))
+    }
+
+    pub fn install_path_storage_root(
+        &mut self,
+        selected_path: &Path,
+    ) -> Result<StorageRootSnapshot, ApplicationError> {
+        let path = validate_selected_directory(selected_path)?;
+        let label = storage_root_label(&path);
+        let root_id = self.allocate_storage_root_id()?;
+        let (_, installed_id) = self
+            .store_mut()?
+            .install_path_storage_root(&root_id, &label, &path)?;
+        self.reload_storage_roots()?;
+        self.refresh_views()?;
+        self.storage_snapshot()?
+            .roots
+            .into_iter()
+            .find(|root| root.root_id == installed_id)
+            .ok_or_else(|| {
+                ApplicationError::Configuration(
+                    "installed storage root is missing from the durable snapshot".to_owned(),
+                )
+            })
+    }
+
+    pub fn repair_path_storage_root(
+        &mut self,
+        root_id: &str,
+        selected_path: &Path,
+    ) -> Result<StorageRootSnapshot, ApplicationError> {
+        let snapshot = self.storage_snapshot()?;
+        let root = snapshot
+            .roots
+            .iter()
+            .find(|root| root.root_id == root_id)
+            .ok_or_else(|| {
+                ApplicationError::Configuration(format!("storage root {root_id} is not configured"))
+            })?;
+        if root.availability == crate::StorageRootAvailability::Available {
+            return Err(ApplicationError::Configuration(
+                "an available root cannot be re-selected; torrent relocation is not implemented"
+                    .to_owned(),
+            ));
+        }
+        if let Some(active) = &self.active {
+            let resume = self.store_mut()?.load_resume(&active.torrent_id)?;
+            if resume.storage_root == root_id {
+                return Err(ApplicationError::Busy(active.torrent_id.clone()));
+            }
+        }
+        let path = validate_selected_directory(selected_path)?;
+        let label = storage_root_label(&path);
+        self.store_mut()?
+            .repair_path_storage_root(root_id, &label, &path)?;
+        self.reload_storage_roots()?;
+        self.refresh_views()?;
+        self.storage_snapshot()?
+            .roots
+            .into_iter()
+            .find(|root| root.root_id == root_id)
+            .ok_or_else(|| {
+                ApplicationError::Configuration(
+                    "repaired storage root is missing from the durable snapshot".to_owned(),
+                )
+            })
+    }
+
+    fn allocate_storage_root_id(&self) -> Result<String, ApplicationError> {
+        let existing = self
+            .store_mut()?
+            .storage_roots()?
+            .into_iter()
+            .map(|root| root.id)
+            .collect::<std::collections::BTreeSet<_>>();
+        for _ in 0..4 {
+            let mut bytes = [0_u8; 16];
+            getrandom::fill(&mut bytes)
+                .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+            let mut id = String::with_capacity(37);
+            id.push_str("root_");
+            for byte in bytes {
+                use std::fmt::Write as _;
+                write!(&mut id, "{byte:02x}").expect("writing to String cannot fail");
+            }
+            if !existing.contains(&id) {
+                return Ok(id);
+            }
+        }
+        Err(ApplicationError::Configuration(
+            "could not allocate a unique storage root ID".to_owned(),
+        ))
+    }
+
+    fn reload_storage_roots(&mut self) -> Result<(), ApplicationError> {
+        let roots = self.store_mut()?.storage_roots()?;
+        self.storage_roots = Arc::new(available_storage_roots(roots));
+        Ok(())
     }
 
     pub fn api_hello(&self) -> crate::ApiHello {
@@ -2072,6 +2232,48 @@ impl ViewActivitySink {
     }
 }
 
+fn available_storage_roots(roots: Vec<StoredStorageRoot>) -> BTreeMap<String, StorageRootLocation> {
+    roots
+        .into_iter()
+        .filter(|root| match &root.location {
+            StorageRootLocation::Path(path) => path.is_dir() && std::fs::read_dir(path).is_ok(),
+            StorageRootLocation::PlatformCapability => true,
+        })
+        .map(|root| (root.id, root.location))
+        .collect()
+}
+
+fn validate_selected_directory(path: &Path) -> Result<PathBuf, ApplicationError> {
+    let path = std::fs::canonicalize(path).map_err(|source| ApplicationError::Io {
+        operation: "resolve selected storage root",
+        source,
+    })?;
+    if !path.is_dir() {
+        return Err(ApplicationError::Configuration(
+            "selected storage root is not a directory".to_owned(),
+        ));
+    }
+    std::fs::read_dir(&path).map_err(|source| ApplicationError::Io {
+        operation: "read selected storage root",
+        source,
+    })?;
+    Ok(path)
+}
+
+fn storage_root_label(path: &Path) -> String {
+    let mut label = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .or_else(|| path.to_str())
+        .unwrap_or("Download folder")
+        .to_owned();
+    if label.len() > crate::control::MAX_ROOT_LABEL_LENGTH {
+        label.truncate(label.floor_char_boundary(crate::control::MAX_ROOT_LABEL_LENGTH));
+    }
+    label
+}
+
 fn durable_view_state(
     store: &SessionStore,
     storage_roots: &BTreeMap<String, StorageRootLocation>,
@@ -3267,7 +3469,7 @@ mod tests {
                 let update = summary.next_update().await.expect("summary update");
                 let is_waiting = match update.payload {
                     ViewUpdatePayload::Snapshot {
-                        snapshot: ViewSnapshot::TorrentList { torrents },
+                        snapshot: ViewSnapshot::TorrentList { torrents, .. },
                     } => torrents.first().is_some_and(|torrent| {
                         torrent.progress.disposition == ProgressDisposition::Waiting
                             && torrent.progress.reason == ProgressReason::WaitingForDiscovery
@@ -3350,7 +3552,7 @@ mod tests {
                 let update = summary.next_update().await.expect("summary update");
                 let candidate = match update.payload {
                     ViewUpdatePayload::Snapshot {
-                        snapshot: ViewSnapshot::TorrentList { mut torrents },
+                        snapshot: ViewSnapshot::TorrentList { mut torrents, .. },
                     } => torrents.pop(),
                     ViewUpdatePayload::Patch {
                         patch: ViewPatch::TorrentList { mut upsert, .. },
@@ -3413,7 +3615,7 @@ mod tests {
             .expect("summary");
         let update = summary.next_update().await.expect("summary snapshot");
         let ViewUpdatePayload::Snapshot {
-            snapshot: ViewSnapshot::TorrentList { torrents },
+            snapshot: ViewSnapshot::TorrentList { torrents, .. },
         } = update.payload
         else {
             panic!("expected torrent-list snapshot");

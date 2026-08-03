@@ -17,7 +17,8 @@ use rstorrent_session::{
     PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerRequestPhase,
     PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
     ProgressDisposition, ProgressPhase, ProgressReason, RemovalDataPolicy, RemovalState,
-    RequestEnvelope, ResetReason, ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState,
+    RequestEnvelope, ResetReason, ResponseEnvelope, ResponseOutcome, ServiceSnapshot,
+    StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot, StorageState,
     SubscriptionSpec, TorrentSnapshot, TorrentState, TorrentView, TrackerAnnounceEventView,
     TrackerCatalogState, TrackerNextActionView, TrackerSourceView, TrackerStatusView,
     TrackerTransportView, TrackerView, UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy,
@@ -72,6 +73,9 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<TorrentState>(&mut declarations)?;
     append::<StorageState>(&mut declarations)?;
     append::<TorrentSnapshot>(&mut declarations)?;
+    append::<StorageRootAvailability>(&mut declarations)?;
+    append::<StorageRootSnapshot>(&mut declarations)?;
+    append::<StorageSettingsSnapshot>(&mut declarations)?;
     append::<ServiceSnapshot>(&mut declarations)?;
     append::<ViewSelector>(&mut declarations)?;
     append::<ViewProjection>(&mut declarations)?;
@@ -313,6 +317,7 @@ fn write_view_set_fixture(output: PathBuf) -> Result<(), Box<dyn Error>> {
             view_id: "library".to_owned(),
             snapshot: ViewSnapshot::TorrentList {
                 torrents: vec![fixture_torrent(&torrent_id, 0)],
+                storage: Default::default(),
             },
         }],
     };
@@ -328,6 +333,7 @@ fn write_view_set_fixture(output: PathBuf) -> Result<(), Box<dyn Error>> {
             patch: ViewPatch::TorrentList {
                 upsert: vec![fixture_torrent(&torrent_id, 1)],
                 removed: Vec::new(),
+                storage: None,
             },
         }],
     };
@@ -347,6 +353,7 @@ fn write_view_set_fixture(output: PathBuf) -> Result<(), Box<dyn Error>> {
                 view_id: "library".to_owned(),
                 snapshot: ViewSnapshot::TorrentList {
                     torrents: vec![fixture_torrent(&torrent_id, 3)],
+                    storage: Default::default(),
                 },
             },
         ],

@@ -110,7 +110,14 @@ export function reduceUpdateBatch(
 function cloneSnapshot(snapshot: ViewSnapshot): ViewSnapshot {
   switch (snapshot.type) {
     case "torrent_list":
-      return { ...snapshot, torrents: [...snapshot.torrents] };
+      return {
+        ...snapshot,
+        torrents: [...snapshot.torrents],
+        storage: {
+          ...snapshot.storage,
+          roots: [...snapshot.storage.roots],
+        },
+      };
     case "torrent":
       return { ...snapshot };
     case "piece_activity":
@@ -154,7 +161,11 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
       for (const torrent of patch.upsert) {
         torrents.set(torrent.torrent_id, torrent);
       }
-      return { type: "torrent_list", torrents: [...torrents.values()] };
+      return {
+        type: "torrent_list",
+        torrents: [...torrents.values()],
+        storage: patch.storage ?? snapshot.storage,
+      };
     }
     case "torrent":
       return { type: "torrent", torrent: patch.torrent };

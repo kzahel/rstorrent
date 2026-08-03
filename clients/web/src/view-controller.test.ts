@@ -44,7 +44,12 @@ class FakeClient implements ApplicationViewClient {
       request_id: request.request_id,
       revision: "0",
       status: "success",
-      snapshot: { profile_id: "test", revision: "0", torrents: [] },
+      snapshot: {
+        profile_id: "test",
+        revision: "0",
+        storage: { roots: [], show_add_options: true },
+        torrents: [],
+      },
     };
   }
 
@@ -68,7 +73,11 @@ class FakeClient implements ApplicationViewClient {
       {
         type: "snapshot",
         view_id: "library",
-        snapshot: { type: "torrent_list", torrents: [] },
+        snapshot: {
+          type: "torrent_list",
+          torrents: [],
+          storage: { roots: [], show_add_options: true },
+        },
       },
     ]);
     initial.view_set_id = openedId;

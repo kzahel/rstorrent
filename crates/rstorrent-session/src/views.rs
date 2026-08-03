@@ -20,7 +20,10 @@ use rstorrent_engine::{
 };
 use rstorrent_protocol::peer_id::identify_client;
 
-use crate::control::{RemovalState, ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState};
+use crate::control::{
+    RemovalState, ServiceSnapshot, StorageSettingsSnapshot, StorageState, TorrentSnapshot,
+    TorrentState,
+};
 use crate::diagnostics::{
     DiagnosticCategory, DiagnosticDraft, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
     DiagnosticRetention, DiagnosticSeverity, DiagnosticStore, MAX_DIAGNOSTIC_PATCH_BYTES,
@@ -859,6 +862,7 @@ fn peer_sources(sources: PeerSources) -> Vec<PeerSourceView> {
 pub enum ViewSnapshot {
     TorrentList {
         torrents: Vec<TorrentView>,
+        storage: StorageSettingsSnapshot,
     },
     Torrent {
         torrent: Option<TorrentView>,
@@ -904,6 +908,8 @@ pub enum ViewPatch {
     TorrentList {
         upsert: Vec<TorrentView>,
         removed: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        storage: Option<StorageSettingsSnapshot>,
     },
     Torrent {
         torrent: Option<TorrentView>,
@@ -990,6 +996,7 @@ pub(crate) struct HubState {
     pub(crate) epoch: u64,
     pub(crate) revision: u64,
     torrents: BTreeMap<String, TorrentModel>,
+    storage: StorageSettingsSnapshot,
     disk: DiskSessionModel,
     diagnostics: DiagnosticStore,
     subscribers: BTreeMap<u64, Weak<SubscriberInner>>,
@@ -1146,6 +1153,7 @@ impl ViewHub {
                         )
                     })
                     .collect(),
+                storage: snapshot.storage.clone(),
                 disk: DiskSessionModel::default(),
                 diagnostics: DiagnosticStore::default(),
                 subscribers: BTreeMap::new(),
@@ -1211,6 +1219,7 @@ impl ViewHub {
             .lock()
             .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
         let previous = hub.torrents.clone();
+        let previous_storage = hub.storage.clone();
         let previous_disk = hub.disk.view(&hub.torrents);
         let mut next = BTreeMap::new();
         for torrent in &snapshot.torrents {
@@ -1255,10 +1264,11 @@ impl ViewHub {
         }
         hub.revision = revision;
         hub.torrents = next;
+        hub.storage = snapshot.storage.clone();
         let current_torrent_ids = hub.torrents.keys().cloned().collect::<BTreeSet<_>>();
         hub.disk.retain(&current_torrent_ids);
         let current_disk = hub.disk.view(&hub.torrents);
-        hub.publish_changes(&previous)?;
+        hub.publish_changes(&previous, Some(&previous_storage))?;
         if previous_disk != current_disk {
             hub.publish_disk_changes(&previous_disk, &current_disk)?;
         }
@@ -1446,7 +1456,7 @@ impl ViewHub {
         };
         model.progress_inputs = inputs;
         model.view.progress = assess_progress(&model.snapshot, inputs);
-        hub.publish_changes(&previous)
+        hub.publish_changes(&previous, None)
     }
 
     pub(crate) fn set_discovery_activity(
@@ -1471,7 +1481,7 @@ impl ViewHub {
         model.progress_inputs.discovery_retry_scheduled = retry_scheduled;
         model.progress_inputs.discovery_exhausted = false;
         model.view.progress = assess_progress(&model.snapshot, model.progress_inputs);
-        hub.publish_changes(&previous)
+        hub.publish_changes(&previous, None)
     }
 
     pub(crate) fn record_peer_connections(
@@ -1669,6 +1679,7 @@ impl HubState {
                     .values()
                     .map(|torrent| torrent.view.clone())
                     .collect(),
+                storage: self.storage.clone(),
             },
             (ViewSelector::Torrent { torrent_id }, ViewProjection::Summary) => {
                 ViewSnapshot::Torrent {
@@ -1772,6 +1783,7 @@ impl HubState {
     fn publish_changes(
         &mut self,
         previous: &BTreeMap<String, TorrentModel>,
+        previous_storage: Option<&StorageSettingsSnapshot>,
     ) -> Result<(), SubscriptionError> {
         let revision = self.revision;
         self.retain_live_view_sets();
@@ -1787,7 +1799,13 @@ impl HubState {
                 subscriber.enqueue_snapshot(revision, self.snapshot_for(&subscriber.spec))?;
                 continue;
             }
-            let patch = patch_for(&subscriber.spec, previous, current);
+            let patch = patch_for(
+                &subscriber.spec,
+                previous,
+                current,
+                previous_storage.filter(|storage| *storage != &self.storage),
+                &self.storage,
+            );
             if let Some(patch) = patch {
                 subscriber.enqueue_patch(revision, patch)?;
             }
@@ -1804,7 +1822,13 @@ impl HubState {
                     )?;
                     continue;
                 }
-                if let Some(patch) = patch_for(&subscription, previous, current) {
+                if let Some(patch) = patch_for(
+                    &subscription,
+                    previous,
+                    current,
+                    previous_storage.filter(|storage| *storage != &self.storage),
+                    &self.storage,
+                ) {
                     view_set.enqueue_patch(spec.view_id(), patch, revision)?;
                 }
             }
@@ -2942,6 +2966,8 @@ fn patch_for(
     spec: &SubscriptionSpec,
     previous: &BTreeMap<String, TorrentModel>,
     current: &BTreeMap<String, TorrentModel>,
+    previous_storage: Option<&StorageSettingsSnapshot>,
+    current_storage: &StorageSettingsSnapshot,
 ) -> Option<ViewPatch> {
     match (&spec.selector, spec.projection) {
         (ViewSelector::TorrentList, ViewProjection::Summary) => {
@@ -2955,8 +2981,14 @@ fn patch_for(
                 .filter(|id| !current.contains_key(*id))
                 .cloned()
                 .collect::<Vec<_>>();
-            (!upsert.is_empty() || !removed.is_empty())
-                .then_some(ViewPatch::TorrentList { upsert, removed })
+            let storage = previous_storage.map(|_| current_storage.clone());
+            (!upsert.is_empty() || !removed.is_empty() || storage.is_some()).then_some(
+                ViewPatch::TorrentList {
+                    upsert,
+                    removed,
+                    storage,
+                },
+            )
         }
         (ViewSelector::Torrent { torrent_id }, ViewProjection::Summary) => {
             let old = previous.get(torrent_id).map(|model| &model.view);
@@ -3080,6 +3112,7 @@ fn targeted_activity_patch(
             (previous_view != next_view).then(|| ViewPatch::TorrentList {
                 upsert: vec![next_view.clone()],
                 removed: Vec::new(),
+                storage: None,
             })
         }
         (
@@ -3139,6 +3172,7 @@ fn targeted_peer_patch(
             (previous_view != next_view).then(|| ViewPatch::TorrentList {
                 upsert: vec![next_view.clone()],
                 removed: Vec::new(),
+                storage: None,
             })
         }
         (
@@ -3174,6 +3208,7 @@ fn targeted_tracker_patch(
             (previous_view != next_view).then(|| ViewPatch::TorrentList {
                 upsert: vec![next_view.clone()],
                 removed: Vec::new(),
+                storage: None,
             })
         }
         (
@@ -3295,10 +3330,15 @@ fn coalesce(update: &mut ViewUpdate, next: &ViewUpdatePayload) -> bool {
 pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool {
     match (current, next) {
         (
-            ViewPatch::TorrentList { upsert, removed },
+            ViewPatch::TorrentList {
+                upsert,
+                removed,
+                storage,
+            },
             ViewPatch::TorrentList {
                 upsert: next_upsert,
                 removed: next_removed,
+                storage: next_storage,
             },
         ) => {
             let mut values = upsert
@@ -3318,6 +3358,9 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
             removed_ids.extend(next_removed.iter().cloned());
             *upsert = values.into_values().collect();
             *removed = removed_ids.into_iter().collect();
+            if next_storage.is_some() {
+                *storage = next_storage.clone();
+            }
             true
         }
         (ViewPatch::Torrent { torrent }, ViewPatch::Torrent { torrent: next }) => {
@@ -3663,6 +3706,7 @@ mod tests {
         ServiceSnapshot {
             profile_id: "test".to_owned(),
             revision: revision.to_string(),
+            storage: Default::default(),
             torrents: vec![TorrentSnapshot {
                 torrent_id: "000102030405060708090a0b0c0d0e0f10111213".to_owned(),
                 storage_root: "downloads".to_owned(),

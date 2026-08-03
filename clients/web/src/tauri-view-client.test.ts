@@ -225,7 +225,11 @@ function opened(): OpenViewSetResponse {
         {
           type: "snapshot",
           view_id: "library",
-          snapshot: { type: "torrent_list", torrents: [] },
+          snapshot: {
+            type: "torrent_list",
+            torrents: [],
+            storage: { roots: [], show_add_options: true },
+          },
         },
       ],
     },

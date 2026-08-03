@@ -358,6 +358,7 @@ function torrentBatch(displayName: string) {
         view_id: "library",
         snapshot: {
           type: "torrent_list" as const,
+          storage: { roots: [], show_add_options: true },
           torrents: [
             {
               torrent_id: "0".repeat(40),

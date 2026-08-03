@@ -49,7 +49,11 @@
                 "archived": false,
                 "delete_managed_data_supported": true
               }
-            ]
+            ],
+            "storage": {
+              "roots": [],
+              "show_add_options": true
+            }
           }
         }
       ]
@@ -140,7 +144,11 @@
                 "archived": false,
                 "delete_managed_data_supported": true
               }
-            ]
+            ],
+            "storage": {
+              "roots": [],
+              "show_add_options": true
+            }
           }
         }
       ]

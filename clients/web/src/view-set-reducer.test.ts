@@ -51,6 +51,57 @@ function batch(
 }
 
 describe("view-set reducer", () => {
+  it("applies storage settings independently of torrent rows", () => {
+    let state = reduceUpdateBatch(
+      undefined,
+      batch("0", "1", [
+        {
+          type: "snapshot",
+          view_id: "library",
+          snapshot: {
+            type: "torrent_list",
+            torrents: [],
+            storage: { roots: [], show_add_options: true },
+          },
+        },
+      ]),
+    );
+    state = reduceUpdateBatch(
+      state,
+      batch("1", "2", [
+        {
+          type: "patch",
+          view_id: "library",
+          patch: {
+            type: "torrent_list",
+            upsert: [],
+            removed: [],
+            storage: {
+              roots: [
+                {
+                  root_id: "root_a",
+                  label: "Downloads",
+                  display_path: "/Users/test/Downloads",
+                  availability: "available",
+                },
+              ],
+              default_root: "root_a",
+              show_add_options: false,
+            },
+          },
+        },
+      ]),
+    );
+    expect(state.views.library).toMatchObject({
+      type: "torrent_list",
+      torrents: [],
+      storage: {
+        default_root: "root_a",
+        show_add_options: false,
+      },
+    });
+  });
+
   it("replaces the hash-only row when verified metadata supplies a name", () => {
     let state = reduceUpdateBatch(
       undefined,
@@ -58,7 +109,11 @@ describe("view-set reducer", () => {
         {
           type: "snapshot",
           view_id: "library",
-          snapshot: { type: "torrent_list", torrents: [torrent(0)] },
+          snapshot: {
+            type: "torrent_list",
+            torrents: [torrent(0)],
+            storage: { roots: [], show_add_options: true },
+          },
         },
       ]),
     );
@@ -221,7 +276,11 @@ describe("view-set reducer", () => {
         {
           type: "snapshot",
           view_id: "library",
-          snapshot: { type: "torrent_list", torrents: [torrent(0)] },
+          snapshot: {
+            type: "torrent_list",
+            torrents: [torrent(0)],
+            storage: { roots: [], show_add_options: true },
+          },
         },
       ]),
     );
@@ -235,7 +294,11 @@ describe("view-set reducer", () => {
         },
       ]),
     );
-    expect(state.views.library).toEqual({ type: "torrent_list", torrents: [] });
+    expect(state.views.library).toEqual({
+      type: "torrent_list",
+      torrents: [],
+      storage: { roots: [], show_add_options: true },
+    });
     state = reduceUpdateBatch(
       state,
       batch("2", "3", [
@@ -249,6 +312,7 @@ describe("view-set reducer", () => {
     expect(state.views.library).toEqual({
       type: "torrent_list",
       torrents: [torrent(3)],
+      storage: { roots: [], show_add_options: true },
     });
     state = reduceUpdateBatch(
       state,
@@ -262,7 +326,11 @@ describe("view-set reducer", () => {
       {
         type: "snapshot",
         view_id: "library",
-        snapshot: { type: "torrent_list", torrents: [] },
+        snapshot: {
+          type: "torrent_list",
+          torrents: [],
+          storage: { roots: [], show_add_options: true },
+        },
       },
     ]);
     const state = reduceUpdateBatch(undefined, initial);
@@ -276,7 +344,11 @@ describe("view-set reducer", () => {
         {
           type: "snapshot",
           view_id: "library",
-          snapshot: { type: "torrent_list", torrents: [torrent(0)] },
+          snapshot: {
+            type: "torrent_list",
+            torrents: [torrent(0)],
+            storage: { roots: [], show_add_options: true },
+          },
         },
       ]),
     );

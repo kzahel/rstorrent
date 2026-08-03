@@ -431,7 +431,11 @@ function opened(id = viewSetId): OpenViewSetResponse {
         {
           type: "snapshot",
           view_id: "library",
-          snapshot: { type: "torrent_list", torrents: [] },
+          snapshot: {
+            type: "torrent_list",
+            torrents: [],
+            storage: { roots: [], show_add_options: true },
+          },
         },
       ],
     },
@@ -475,6 +479,11 @@ function commandResponse(requestId: string): ResponseEnvelope {
     request_id: requestId,
     revision: "0",
     status: "success",
-    snapshot: { profile_id: "test", revision: "0", torrents: [] },
+    snapshot: {
+      profile_id: "test",
+      revision: "0",
+      storage: { roots: [], show_add_options: true },
+      torrents: [],
+    },
   };
 }
