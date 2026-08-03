@@ -40,6 +40,9 @@ Topics own the current truth for a continuing concern. Tactical docs under
   backend/presentation separation, desktop extension use, ChromeOS Android and
   Crostini choices, launch handoff, backend isolation, and manual JSTorrent
   import.
+- [`product-state-and-feedback.md`](product-state-and-feedback.md):
+  installation identity, local usage summaries, prompt campaign state,
+  lifecycle/version facts, and explicit user-submitted diagnostic context.
 - [`capability-readiness.md`](capability-readiness.md): master engine and product
   scoreboard, evidence vocabulary, priority policy, and bounded current queue.
 - [`download-correctness.md`](download-correctness.md): completion, integrity,

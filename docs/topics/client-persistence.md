@@ -29,6 +29,11 @@ select, repair, and remove those roots and how the desktop, WebUI, and Android
 present that behavior. This topic retains the durable identity and integrity
 contracts beneath that UX.
 
+[`product-state-and-feedback.md`](product-state-and-feedback.md) owns the
+installation-wide local identity, aggregate engagement summary, prompt
+campaign dispositions, and voluntary diagnostic-submission boundary above
+profile-scoped torrent state.
+
 It does not define the final product API, select a desktop or Android UI
 architecture, prescribe every future schema column, or promise that the engine
 will become a separately supported general-purpose library.
@@ -258,6 +263,7 @@ Preserve the option through instance and directory isolation:
 
 ```text
 application data/
+  product.db
   profiles/
     <stable-profile-id>/
       session.db
@@ -286,7 +292,10 @@ future switching with these low-cost constraints:
 - profile-relative state remains beneath the profile root, while payload roots
   remain explicit external capabilities;
 - truly installation-wide bootstrap state, such as the profile registry and
-  last-selected profile, is kept outside any one profile database; and
+  last-selected profile, is kept outside any one profile database; local
+  identity, product summaries, and prompt dispositions use the installation-
+  wide `product.db` defined by
+  [`product-state-and-feedback.md`](product-state-and-feedback.md); and
 - switching an exclusive active profile quiesces and joins its engine work,
   commits or conservatively abandons pending checkpoints, closes its database
   and platform capabilities, and only then opens the next instance.
@@ -387,8 +396,9 @@ successful mutation unreadable after upgrade.
 
 - Backup, export, restore, and later schema-migration policy beyond the
   implemented transactional versions `0` through `4`.
-- The installation-level profile registry format and whether the first product
-  exposes more than its automatically created profile.
+- The installation-level profile registry format, whether it shares
+  `product.db`, and whether the first product exposes more than its
+  automatically created profile.
 - Whether Android places the database in backed-up or explicitly no-backup
   app-private storage.
 - The bounded durability epochs from
