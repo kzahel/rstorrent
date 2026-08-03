@@ -537,9 +537,7 @@ impl SessionRateHistory {
     }
 
     fn current_rate(&self, metric: SpeedMetric, now_millis: u64) -> Option<u64> {
-        let Some(tier) = self.tiers.get(&metric).and_then(|tiers| tiers.first()) else {
-            return None;
-        };
+        let tier = self.tiers.get(&metric).and_then(|tiers| tiers.first())?;
         let current_start = now_millis / 100 * 100;
         let complete = current_start.saturating_sub(100);
         (0..10_u64).try_fold(0_u64, |total, offset| {

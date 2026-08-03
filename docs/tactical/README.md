@@ -325,8 +325,9 @@ that scope and its cleanup or compatibility rules explicitly.
   session-scoped DHT observatory centered on truthful 160-bucket XOR-distance
   occupancy and bounded active lookup summaries rather than a raw node table.
 - [`066-smooth-session-speed-history.md`](066-smooth-session-speed-history.md):
-  planned; retains bounded exact session byte history and renders a smooth
-  hand-rolled high-DPI Canvas chart without a general chart dependency.
+  complete; retains bounded exact session byte history in live and durable
+  tiers and renders a smooth hand-rolled high-DPI Canvas chart without a
+  general chart dependency.
 - [`067-dynamic-platform-file-acquisition.md`](067-dynamic-platform-file-acquisition.md):
   proposed; replaces Android's eager SAF descriptor manifest with bounded
   dynamic acquisition and one session-wide Rust file pool shared with path

@@ -131,8 +131,9 @@ responsive layout, accessibility, and bounded rendering. Tactical
 [`065`](../tactical/065-dht-observatory.md) makes DHT a
 session observatory led by a 160-bucket XOR-distance ribbon and bounded lookup
 summaries, with no force graph, globe, or raw node table in the first slice.
-Tactical [`066`](../tactical/066-smooth-session-speed-history.md) makes Speed a
-session-owned range-selected history rendered by local high-DPI Canvas code.
+Completed Tactical [`066`](../tactical/066-smooth-session-speed-history.md)
+makes Speed a session-owned range-selected history rendered by local high-DPI
+Canvas code.
 Exact received, staged-write, and verified payload lead the chart; coarse
 rollups persist separately from correctness-critical session state, RAF smooths
 and pans only between exact live anchors, and no general chart dependency is

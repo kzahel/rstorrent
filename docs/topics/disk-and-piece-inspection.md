@@ -131,7 +131,7 @@ The session snapshot contains:
 The first UI is statistics-first. It shows pipeline occupancy and capacity,
 pressure/recovery state, rates, cumulative work, queue/service latency, and a
 piece-level active-work table. A short client-side history may support a compact
-chart, but transfer history belongs primarily in the planned session-owned
+chart, but transfer history belongs primarily in the implemented session-owned
 Speed view in Tactical
 [`066`](../tactical/066-smooth-session-speed-history.md). Its accepted slice
 keeps 30-second through 1-hour live tiers in memory and persists bounded
@@ -289,7 +289,7 @@ turning inspection state into storage policy.
   [`storage-throughput-architecture.md`](storage-throughput-architecture.md);
 - platform-specific filesystem throughput, cache, direct-I/O, and memory policy;
 - arbitrary history navigation, telemetry export, and physical-device IO
-  history beyond the planned bounded Speed view in Tactical `066`;
+  history beyond the implemented bounded Speed view in Tactical `066`;
 - piece priorities, piece selection commands, and interactive piece details;
 - a native Android Disk screen and convergence of its existing PieceMap on the
   generated shared contract; and

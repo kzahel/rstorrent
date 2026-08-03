@@ -1,12 +1,35 @@
 # Tactical 066: Smooth Session Speed History
 
-Status: Planned; direction accepted on 2026-08-03. Implementation has not
-begun.
+Status: Complete on 2026-08-03. The implementation landed in commits
+`f625007`, `29bb406`, `19b671f`, and `e481586`.
 
 Topics: `application-view-api`, `web-ui-design`,
 `desktop-inspection-surface`, `disk-and-piece-inspection`,
 `performance-and-live-evidence`, `capability-readiness`,
 `product-state-and-feedback`
+
+## Implemented Outcome
+
+The completed slice adds all 18 initially available byte metrics at their
+engine owners, a session-owned seven-tier history, the profile-local
+`metrics.db`, range-selected `session_speed` delivery, and the Speed detail
+surface. The default chart shows received, staged-write, and verified payload;
+the selectable catalog exposes network, discovery, hash, redundant, and failed
+work without conflating component and enclosing wire totals. Upload remains a
+typed unavailable metric.
+
+The Canvas renderer is dependency-free and high-DPI. Shape-preserving cubic
+segments pass through exact covered samples and stop at gaps. RAF owns only the
+smooth display phase and scale decay; historical ranges, hidden documents,
+stale delivery, and reduced motion do not continuously animate. Pointer and
+keyboard inspection report the underlying bucket rather than an interpolated
+value.
+
+One correctness tightening followed the main UI slice: an active coarse bucket
+persisted during clean shutdown remains incomplete after restart, and a new
+process does not publish a current rate until all ten completed 100 ms buckets
+in its trailing second have known coverage. The API represents both cases as
+`null`, distinct from a covered zero.
 
 ## Motivation
 
@@ -64,16 +87,20 @@ loopback transfer all pass. No chart dependency is added.
   payload, completed logical staging writes, and hash-verified payload, plus a
   bounded closed taxonomy for network/discovery traffic and wasted work.
 - Retain fixed 100 ms, 500 ms, 2 s, 10 s, 1 minute, 15 minute, and 1 day tiers
-  covering 30 seconds through 2 years. Roll completed child byte sums into
-  their aligned parent; never average averages.
-- Persist only the 1-minute-and-coarser closed tiers in a separate bounded
-  profile-local `metrics.db`. Keep high-resolution tiers in memory.
-- Add one application-owned rate-clock task that runs at 100 ms only while a
-  Speed view is interested. Recording and snapshot creation advance elapsed
+  covering 30 seconds through 2 years. Add each exact byte observation to all
+  aligned tier accumulators; never derive a coarser rate by averaging rates.
+- Persist only the 1-minute-and-coarser tiers in a separate bounded profile-
+  local `metrics.db`; periodic writes contain completed buckets and the clean-
+  shutdown flush may contain the active incomplete accumulator. Keep high-
+  resolution tiers in memory.
+- Add one application-owned rate-clock task that follows the fastest interested
+  live range at 100 ms, 500 ms, or 1 second and parks when only historical or
+  no Speed view is interested. Recording and snapshot creation advance elapsed
   buckets synchronously, so history remains truthful while the task is parked.
 - Add capability `session_speed`, a range-selective `ViewSpec::SessionSpeed`,
-  bounded snapshots and append/upsert patches, generated TypeScript/schema and
-  UniFFI bridge contracts, strict browser decoding, and reducer coverage.
+  bounded snapshots and coalescible selected-tier replacement patches,
+  generated TypeScript/schema and UniFFI bridge contracts, strict browser
+  decoding, and reducer coverage.
 - Render 30-second, 2-minute, 10-minute, 1-hour, 24-hour, 30-day, and 2-year
   ranges with a purpose-built Canvas plot, exact trailing-one-second current
   rates, selected-window average/peak summaries, exact-sample inspection,
@@ -209,22 +236,23 @@ leased transport -> strict browser replica
 `SessionRateHistory` is the sole mutable history owner, serialized by the
 existing view-hub synchronization boundary. Event recording obtains its
 monotonic timestamp while holding that owner, advances elapsed buckets, and
-adds the event length to its 100 ms base accumulator. Completed buckets cascade
-upward as exact byte sums. This avoids a stale timestamp racing a bucket close,
-avoids averaging averages, and keeps event-path work independent of the number
-of retained presentation tiers.
+adds the event length to each of the seven aligned tier accumulators. Direct
+exact additions were selected over a completion cascade so an inactive view
+cannot affect rollup truth and every tier remains independently bounded. This
+avoids a stale timestamp racing a bucket close and avoids averaging averages;
+event work is a fixed seven additions rather than proportional to retention.
 
 `ApplicationService` owns exactly one interval task, cancellation token, and
-join handle. While at least one Speed view is interested, the task advances
-history every 100 ms using a monotonic clock and notifies views only when a
-bucket closes. It uses skipped missed-tick behavior and advances all elapsed
-fixed boundaries in one bounded operation; it never queues overdue ticks.
-Without Speed interest it parks on a notification rather than waking ten times
-per second. Typed byte events and snapshot creation still advance history, so
-closing Speed never resets or stops measurement. Application shutdown first
-joins every byte-producing engine owner, then advances/finalizes history,
-cancels and joins the clock, flushes and joins its bounded persistence owner,
-and finally drops the view hub.
+join handle. While at least one live Speed view is interested, the task follows
+the fastest requested cadence and advances history using a monotonic clock. It
+uses skipped missed-tick behavior and advances all elapsed fixed boundaries in
+one bounded operation; it never queues overdue ticks. Without live Speed
+interest it parks on a notification except for the one-minute persistence
+deadline. Typed byte events and snapshot creation still advance history, so
+closing Speed never resets or stops measurement. Application shutdown joins
+the byte-producing engine owners before canceling and joining Speed; the Speed
+owner advances history, flushes active coarse accumulators through its
+single-slot writer queue, joins the writer thread, and then terminates.
 
 ## History Semantics And Bounds
 
@@ -261,9 +289,11 @@ bucket or manufacturing zeros.
 An elapsed bucket while the application owner was alive with no matching event
 is an exact known zero because the activity sink is synchronous with byte
 ownership. After all byte-producing engine owners join, a clean shutdown
-persists the active durable accumulator; startup can complete intervening zero
-time. An unclean shutdown may lose at most the active persistence batch and
-records that interval as a gap, not zero. If a task is delayed, `advance`
+persists the active durable accumulator as incomplete. A restart cannot prove
+the intervening time, so that partial bucket remains a gap even when restart
+occurs inside the same coarse interval. An unclean shutdown may lose at most
+the active persistence batch and likewise records that interval as a gap, not
+zero. If a task is delayed, `advance`
 closes every elapsed boundary up to each ring's capacity and fast-forwards
 older empty history without allocating per missed tick. Event ordering through
 the serialized owner prevents a late byte from entering a completed bucket.
@@ -345,16 +375,18 @@ separate process or daemon. The separation is deliberate:
 WAL with `synchronous=NORMAL`, batches all series whose one-minute-or-coarser
 buckets closed into at most one transaction per minute, and joins after a final
 bounded flush on clean shutdown. The receive/storage hot path never performs
-SQLite work or waits for this task. Queue saturation or a write failure records
-an explicit history gap and diagnostic, retains live in-memory history, and
-does not retry without a bound.
+SQLite work or waits for this task. Queue saturation or a write failure marks
+persistence degraded, retains live in-memory history, and leaves missing
+durable coverage as a gap after the next process start. It does not retry
+without a bound.
 
-The conceptual schema is one versioned table keyed by metric kind, tier, and
+The schema is one versioned table keyed by metric kind, tier, and
 UTC bucket start, storing exact bytes, duration, and coverage. It stores no
 rates, averages, peaks, display labels, or JSON. Retention deletes or replaces
 rows outside each fixed ring capacity in the same transaction. A corrupt or
-unsupported metrics database is preserved for diagnosis and replaced by a new
-history epoch without opening or mutating `session.db`.
+unsupported metrics database is left outside the active adapter, the in-memory
+owner reports degraded persistence under a new process epoch, and `session.db`
+is neither opened nor mutated by metrics recovery.
 
 Only the 1-minute, 15-minute, and 1-day tiers are durable. Clean shutdown
 persists the active coarse accumulator needed to resume exact rollup. An
@@ -369,17 +401,17 @@ the file shares a directory; that remains an explicit future product choice.
 
 ## View Contract
 
-Add capability `session_speed` and `ViewSpec::SessionSpeed { view_id, range,
-series, delivery }`. `range` selects exactly one appropriate tier; `series` is
-a duplicate-free set of at most eight kinds from the closed catalog. The
-default requests the three primary series for 30 seconds. Conceptually:
+Capability `session_speed` and `ViewSpec::SessionSpeed { view_id, range,
+metrics, delivery }` are implemented. `range` selects exactly one tier;
+`metrics` is a duplicate-free set of one through eight available kinds from
+the closed catalog. The browser requests the three primary series for 30
+seconds by default. The generated v1 shape is conceptually:
 
 ```text
 SpeedRange =
-  recent_30s | short_2m | detail_10m | hour_1h |
-  day_24h | month_30d | long_term_2y
+  seconds30 | minutes2 | minutes10 | hour1 | hours24 | days30 | years2
 
-SpeedSeriesKind =
+SpeedMetric =
   payload_received | staged_write | payload_verified |
   peer_wire_received | peer_wire_sent |
   peer_protocol_received | peer_protocol_sent |
@@ -387,79 +419,56 @@ SpeedSeriesKind =
   peer_unclassified_received | peer_unclassified_sent |
   dht_received | dht_sent | tracker_received | tracker_sent |
   logical_hash_read | payload_redundant | payload_hash_failed |
-  payload_upload
+  payload_uploaded
 
-SpeedSeriesAvailability = available | unavailable
-
-SpeedSeriesView {
-  kind,
-  availability,
-  unavailable_reason?,
-  range_bytes,
-  trailing_one_second_bytes?,
-  first_bucket_start_utc_millis,
+SpeedHistoryView {
+  captured_millis,
+  history_epoch,
+  range,
   bucket_millis,
-  capacity,
-  bucket_bytes[], // decimal string = complete, including "0"; null = gap
+  start_millis,
+  complete_through_millis,
+  live,
+  persistence,
+  current[{ metric, bytes? }],
+  series[{ metric, current_rate_bytes?, values[] }],
+  catalog[{ metric, available, reason? }]
 }
 
-SpeedBucketUpdate {
-  kind,
-  bucket_start_utc_millis,
-  bytes?, // present = complete, including "0"; absent = gap
-}
-
-SessionSpeedSnapshot {
-  lifecycle,
-  captured_utc_millis,
-  captured_monotonic_millis,
-  history_epoch,
-  range,
-  series[],
-}
-
-SessionSpeedPatch {
-  captured_utc_millis,
-  captured_monotonic_millis,
-  history_epoch,
-  range,
-  series_summaries[],
-  upsert_buckets[],
-}
+ViewSnapshot::SessionSpeed { history }
+ViewPatch::SessionSpeed { history }
 ```
 
-`range_bytes` is the exact sum of complete covered buckets in the selected
-window, excluding gaps. It is not an all-time counter. The optional
-`trailing_one_second_bytes` is computed from the completed 100 ms tier and is
-present only when that full second has known coverage; it remains independent
-of the selected historical tier. Patches carry the corresponding bounded
-per-series summaries so a client does not infer coverage from arrival cadence.
+Each aligned `values` array contains decimal byte strings for covered completed
+buckets, including `"0"`, and `null` for gaps. The server computes each optional
+`current_rate_bytes` from the completed trailing ten 100 ms buckets regardless
+of the selected historical tier. The client computes selected-window total,
+average, and peak from covered values, so those summaries cannot drift from the
+displayed range.
 
-The exact patch bucket key is `(series, range, bucket_start_utc_millis)`. A
-normal interested 30-second view appends at most one completed 100 ms bucket
-per requested available series. Coarser child and durable parent closures do
-not cross that view unless its requested range selects them. If a client falls
-behind, existing whole-view coalescing may send a larger bounded replacement or
-reset; it never creates an unbounded backlog.
+The implementation deliberately uses a whole selected-tier replacement patch
+instead of bucket append/upsert records. This matches the existing coalescing
+model, makes epoch/range replacement atomic, and remains bounded by one tier
+and eight series (at most 23,040 bucket values). A 30-second replacement has at
+most 2,400 values at the eight-series ceiling. Queue coalescing retains only
+the newest replacement; overflow still uses the existing explicit reset and
+fresh-snapshot path.
 
-`history_epoch` changes when the history owner is recreated, durable state is
-replaced, or a clock discontinuity prevents safe continuation, and it forces
-client replacement. Unsupported, unavailable, disconnected, stale, reset,
+`history_epoch` changes whenever the history owner is recreated, including
+after durable tiers are restored, and forces client replacement. Within one
+process the monotonic anchor prevents a wall-clock adjustment from reordering
+live observations. Unsupported, unavailable, disconnected, stale, reset,
 overflow, explicit gap, and valid zero history are distinct. Payload upload is
 `unavailable` with a short typed reason and no buckets, not an available series
 containing zeros.
 
-Delivery for an interested 30-second Speed view is requested at 100 ms. Other
-ranges publish bucket data no faster than their bucket width, while a compact
-trailing-one-second summary heartbeat is capped at 1 Hz. The service may
-coalesce, reset, or arrive late; capture and exact bucket timestamps remain
-authoritative. Snapshots use one aligned columnar byte array per series rather
-than repeating timestamps/durations in thousands of JSON objects: a decimal
-string, including `"0"`, is complete coverage and `null` is a gap. Patch
-updates preserve the same distinction. Switching range replaces the leased
-projection with that one bounded tier rather than downloading every retained
-tier. Closing the lease evicts the browser replica but not native rings or
-durable coarse history.
+Delivery follows the fastest interested live range: 100 ms for 30 seconds,
+500 ms for 2 minutes, and 1 second for 10 minutes or 1 hour. Historical ranges
+are static until replaced or reopened. The service may coalesce, reset, or
+arrive late; capture and exact bucket timestamps remain authoritative.
+Switching range replaces the leased projection with that one bounded tier
+rather than downloading every retained tier. Closing the lease evicts the
+browser replica but not native rings or durable coarse history.
 
 ## Canvas Rendering Contract
 
@@ -627,12 +636,80 @@ and must land with the common path.
 | Platform | Rust workspace baseline, production web build, and proportional Tauri/Android generated-contract compilation. |
 | Public live evidence | Not authorized or required. |
 
-Performance evidence records native and on-disk retained bytes, row count,
-SQLite transaction/WAL bytes, persistence queue high water, maximum serialized
-selected-range snapshot and patch size, ordinary/max Canvas draw time, RAF
-count while visible/hidden/historical, React render count, rate-task wakeups,
-and application memory high water. These are observations, not new throughput
-gates unless a later tactical authorizes one.
+The candidate profiler evidence catalog includes native and on-disk retained
+bytes, row count, SQLite transaction/WAL bytes, persistence queue high water,
+maximum serialized selected-range snapshot and patch size, ordinary/max Canvas
+draw time, RAF count while visible/hidden/historical, React render count,
+rate-task wakeups, and application memory high water. Such observations do not
+become throughput gates unless a later tactical authorizes one; the completion
+record below distinguishes collected structural evidence from deferred
+profiling.
+
+## Completion Evidence
+
+The landed implementation is supported by these durable checks:
+
+- `sole_corrupt_source_is_banned_and_clean_peer_retries_piece` is a controlled
+  loopback transfer with a corrupt first source and clean retry. It proves that
+  received and staged bytes count twice, verified bytes count once, failed and
+  logical-hash bytes remain exact, the published payload matches, peer inbound
+  component bytes equal wire bytes, and every owner joins.
+- Pure history tests prove additive retry semantics, exact sums across live and
+  hourly tiers, pre-start gaps, bounded persistence batches, separate-database
+  round trips, one-time clean flush, restart-partial gaps, and unavailable
+  current rate until a complete trailing second exists. View tests prove that
+  the single clock parks for historical/no interest and follows the fastest
+  live range.
+- The fixed native shape is 18 series by 6,250 buckets, or 112,500 bucket
+  slots. The durable shape is at most 90,900 rows. The writer channel capacity
+  and therefore its queue high water are one batch. One view carries at most
+  23,040 aligned bucket values; the normal default carries 900.
+- Geometry tests prove no monotone-segment overshoot, turning-point slope
+  limiting, gap separation, and immediate-grow/two-second-decay scale policy.
+  Preference tests prove range/series round trips and reject unavailable or
+  oversized stored selections.
+- The nine permanent Speed scenarios cover steady, bursty, idle, hash retry,
+  traffic breakdown, history gaps, unavailable upload, stale delivery, and
+  epoch reset. The targeted headless Chrome test passes at wide and phone
+  widths with exact keyboard inspection, range/series selection, stale state,
+  and no serious or critical axe violations under reduced motion.
+- Final validation passed `cargo fmt --all -- --check`,
+  `cargo clippy --workspace -- -D warnings`, and `cargo test --workspace` (all
+  non-public tests passed; three opt-in public-network tests remained ignored).
+  Web validation passed generated-contract regeneration, TypeScript checking,
+  132 Vitest tests with two intentional skips, the production build and CSP
+  check, and the targeted Playwright Speed scenario. The final production
+  build reported an 827.58 kB primary bundle, 164.14 kB gzip; this is a whole-
+  application observation, not a Speed-only size claim or a new gate.
+
+## Deliberate Implementation Differences And Deferrals
+
+- Exact observations enter all seven tiers directly instead of cascading
+  completed child buckets. This is still sum-preserving and bounded and avoids
+  making coarse truth depend on clock interest.
+- Selected-tier patches replace the bounded tier rather than carrying keyed
+  bucket upserts. Server current rates remain authoritative, while visible
+  total/average/peak summaries are derived by the browser from the exact
+  covered array. No monotonic timestamp is exposed in v1; monotonic time stays
+  inside the owner and `captured_millis` plus `history_epoch` delimit the
+  transport representation.
+- An unreadable or unsupported `metrics.db` leaves downloading and in-memory
+  history running with `persistence = degraded`; it is neither placed in
+  `session.db` nor automatically deleted or rewritten. A diagnostic event and
+  an explicit preserve-and-replace repair command remain future operational
+  work.
+- Peer, DHT, tracker, storage, and integrity counters are placed at their exact
+  socket or owner boundaries. The loopback retry test proves the primary and
+  peer accounting invariant; focused controlled byte-total fixtures for DHT
+  and tracker datagrams were not added in this slice.
+- Structural memory, row, queue, and transport caps were recorded. Separate
+  WAL-byte, wakeup-count, Canvas draw-time, RAF-count, and React-render-count
+  measurements were not promoted into retained artifacts because this slice
+  establishes no new performance gate. They remain appropriate additions to a
+  future application profiler if regressions make them decision-relevant.
+- Saturating arithmetic is implemented, but an astronomically saturated bucket
+  does not yet expose its own degradation state. That extremely remote
+  diagnostic remains future work.
 
 ## Escalation Contract
 

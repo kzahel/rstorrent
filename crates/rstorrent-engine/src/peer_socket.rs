@@ -300,7 +300,7 @@ fn record_incoming_message(
     peer: &PeerConnection,
     message: &PeerMessage,
 ) -> Result<(), PeerSocketError> {
-    let frame_length = encode_message(&message)
+    let frame_length = encode_message(message)
         .map_err(PeerSocketError::Frame)?
         .len();
     let (payload_length, payload_metric) = match &message {

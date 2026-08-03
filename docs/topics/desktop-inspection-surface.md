@@ -178,17 +178,16 @@ and active-peer field set, Peers-versus-Swarm membership, and local endpoint
 privacy posture. Tactical
 [`064`](../tactical/064-registry-backed-swarm-inspection.md) now projects the
 retained peer registry as the bounded, live Swarm detail. The remaining
-accepted detail direction is bounded by
-[`065`](../tactical/065-dht-observatory.md) and
-[`066`](../tactical/066-smooth-session-speed-history.md): DHT leads with
-truthful XOR-bucket occupancy and active lookups rather than a raw node table,
-and Speed uses bounded live plus durable coarse session history, range-selected
-delivery, and a hand-rolled RAF-smooth Canvas renderer. The remaining
-inspection design includes:
+accepted detail direction is bounded by planned Tactical
+[`065`](../tactical/065-dht-observatory.md): DHT leads with truthful XOR-bucket
+occupancy and active lookups rather than a raw node table. Completed Tactical
+[`066`](../tactical/066-smooth-session-speed-history.md) gives Speed bounded
+live plus durable coarse session history, range-selected delivery, and a hand-
+rolled RAF-smooth Canvas renderer. The remaining inspection design includes:
 
 - the division between later protocol-message and deeper history views;
 - sorting, filtering, selection, and row-detail semantics beyond the first
-  active-peer and planned Swarm tables;
+  active-peer and Swarm tables;
 - which endpoint, peer-client, protocol, and failure details are appropriate
   for local display or exported diagnostics;
 - visual adaptations outside the accepted Swarm, DHT, and Speed contracts; or
@@ -237,6 +236,7 @@ The surface is therefore useful for live peer, retained-swarm, file, tracker,
 piece, global disk, and structured diagnostic observation. A controlled
 libtorrent transfer proved real tracker context and merged tracker-plus-magnet
 Swarm provenance through the same console and shared pull/stream reducer
-without launching a visible client. Session-scoped DHT and Speed views remain
-accepted as planned Tacticals `065`--`066`; the existing oracle campaign
-remains the source for the next engine-correctness slice.
+without launching a visible client. The session-scoped Speed view is
+implemented by Tactical `066`; the DHT view remains accepted as planned
+Tactical `065`, and the existing oracle campaign remains the source for the
+next engine-correctness slice.
