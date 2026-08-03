@@ -19,13 +19,13 @@ import { SpeedPanel } from "./SpeedPanel";
 import styles from "./DetailPane.module.css";
 
 export function DetailPane() {
-  const activeTorrentId = useInspectionStore(
-    (state) => state.presentation.activeTorrentId,
+  const currentTorrentId = useInspectionStore(
+    (state) => state.presentation.currentTorrentId,
   );
   const torrent = useInspectionStore((state) =>
-    state.presentation.activeTorrentId === null
+    state.presentation.currentTorrentId === null
       ? undefined
-      : state.torrents[state.presentation.activeTorrentId],
+      : state.torrents[state.presentation.currentTorrentId],
   );
   const activeTab = useInspectionStore((state) => state.presentation.activeTab);
   const layout = useInspectionStore((state) => state.presentation.layout);
@@ -133,16 +133,16 @@ export function DetailPane() {
       >
         {torrent === undefined && activeTab !== "logs" && activeTab !== "disk" && activeTab !== "speed" ? (
           <EmptyDetail />
-        ) : activeTab === "peers" && activeTorrentId !== null ? (
-          <PeerTable torrentId={activeTorrentId} />
-        ) : activeTab === "swarm" && activeTorrentId !== null ? (
-          <SwarmTable torrentId={activeTorrentId} />
-        ) : activeTab === "trackers" && activeTorrentId !== null ? (
-          <TrackerTable torrentId={activeTorrentId} />
-        ) : activeTab === "files" && activeTorrentId !== null ? (
-          <FileTable torrentId={activeTorrentId} />
-        ) : activeTab === "pieces" && activeTorrentId !== null ? (
-          <PieceMapPanel torrentId={activeTorrentId} />
+        ) : activeTab === "peers" && currentTorrentId !== null ? (
+          <PeerTable torrentId={currentTorrentId} />
+        ) : activeTab === "swarm" && currentTorrentId !== null ? (
+          <SwarmTable torrentId={currentTorrentId} />
+        ) : activeTab === "trackers" && currentTorrentId !== null ? (
+          <TrackerTable torrentId={currentTorrentId} />
+        ) : activeTab === "files" && currentTorrentId !== null ? (
+          <FileTable torrentId={currentTorrentId} />
+        ) : activeTab === "pieces" && currentTorrentId !== null ? (
+          <PieceMapPanel torrentId={currentTorrentId} />
         ) : activeTab === "disk" ? (
           <DiskPanel />
         ) : activeTab === "speed" ? (
@@ -166,13 +166,13 @@ function formatTabCount(count: number): string {
 function GeneralDetail({
   torrent,
 }: {
-  readonly torrent: NonNullable<ReturnType<typeof useActiveTorrent>>;
+  readonly torrent: NonNullable<ReturnType<typeof useCurrentTorrent>>;
 }) {
   return (
     <div className={styles.general}>
       <section className={styles.summaryCard}>
         <div>
-          <p className={styles.eyebrow}>Active transfer</p>
+          <p className={styles.eyebrow}>Current transfer</p>
           <h2>{torrent.name}</h2>
           <p>{torrent.progressReason}</p>
         </div>
@@ -210,11 +210,11 @@ function GeneralDetail({
   );
 }
 
-function useActiveTorrent() {
+function useCurrentTorrent() {
   return useInspectionStore((state) =>
-    state.presentation.activeTorrentId === null
+    state.presentation.currentTorrentId === null
       ? undefined
-      : state.torrents[state.presentation.activeTorrentId],
+      : state.torrents[state.presentation.currentTorrentId],
   );
 }
 

@@ -176,10 +176,10 @@ export function PeerTable({ torrentId }: { readonly torrentId: string }) {
   const peerSet = useInspectionStore(
     (state) => state.peersByTorrent[torrentId],
   );
-  const activePeerId = useInspectionStore(
-    (state) => state.presentation.activePeerId,
+  const currentPeerId = useInspectionStore(
+    (state) => state.presentation.currentPeerId,
   );
-  const setActivePeer = useInspectionStore((state) => state.setActivePeer);
+  const setCurrentPeer = useInspectionStore((state) => state.setCurrentPeer);
   const materialization = useInspectionStore((state) => state.viewStatus.peers);
   const interfaceSize = useInspectionStore(
     (state) => state.presentation.interfaceSize,
@@ -200,8 +200,8 @@ export function PeerTable({ torrentId }: { readonly torrentId: string }) {
       getRowId={(row) => row.connectionId}
       columns={COLUMNS}
       interfaceSize={interfaceSize}
-      activeRowId={activePeerId}
-      onActivate={(row) => setActivePeer(row.connectionId)}
+      currentRowId={currentPeerId}
+      onActivate={(row) => setCurrentPeer(row.connectionId)}
       emptyMessage={peerEmptyMessage(materialization)}
     />
   );

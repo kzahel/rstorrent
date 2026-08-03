@@ -104,7 +104,7 @@ describe("inspection application", () => {
     expect(flagLegend).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "General" }));
-    expect(screen.getByText("Active transfer")).toBeVisible();
+    expect(screen.getByText("Current transfer")).toBeVisible();
     expect(peersTab).toHaveTextContent(peerCount!);
     await user.click(screen.getByRole("tab", { name: "Logs" }));
     expect(
@@ -323,6 +323,9 @@ describe("inspection application", () => {
     expect(
       within(files).getByRole("checkbox", { name: "Select asset-001.mkv" }),
     ).not.toBeChecked();
+    expect(
+      within(files).getByRole("checkbox", { name: "Deselect asset-003.mp4" }),
+    ).toBeChecked();
 
     await user.click(screen.getAllByRole("button", { name: "Columns" }).at(-1)!);
     await user.click(screen.getByRole("checkbox", { name: "Storage Path" }));
@@ -565,7 +568,7 @@ describe("inspection application", () => {
     expect(screen.getByText("2 selected for actions")).toBeVisible();
   });
 
-  it("keeps keyboard active detail separate from batch targets", async () => {
+  it("keeps the detail row within the checked selection", async () => {
     const user = userEvent.setup();
     renderScenario("healthy-download", 42_000);
     await user.click(screen.getByRole("button", { name: "Workbench" }));
@@ -602,7 +605,17 @@ describe("inspection application", () => {
       name: /Arch Linux 2026\.08\.01 x86_64/,
     });
     expect(arch).toHaveAttribute("aria-current", "true");
-    expect(screen.getByText("3 selected for actions")).toBeVisible();
+    expect(screen.queryByText("3 selected for actions")).not.toBeInTheDocument();
+    expect(
+      within(grid).getByRole("checkbox", {
+        name: "Deselect Arch Linux 2026.08.01 x86_64",
+      }),
+    ).toBeChecked();
+    expect(
+      within(grid).getByRole("checkbox", {
+        name: "Select Big Buck Bunny 1080p surround",
+      }),
+    ).not.toBeChecked();
     expect(
       within(detail).getByRole("heading", {
         name: "Arch Linux 2026.08.01 x86_64",
@@ -650,7 +663,7 @@ describe("inspection application", () => {
     expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
   });
 
-  it("runs uniform batch commands sequentially and reports partial failure", async () => {
+  it("runs multi-row commands sequentially and reports partial failure", async () => {
     const user = userEvent.setup();
     const snapshot = {
       ...buildScenarioSnapshot("healthy-download", 42_000, false, 1),
@@ -664,9 +677,6 @@ describe("inspection application", () => {
       sintel.id,
     );
     renderApplication(application);
-    await user.click(
-      screen.getByRole("button", { name: "Select rows in Transfer queue" }),
-    );
     await user.click(
       screen.getByRole("checkbox", { name: "Select Sintel 4K open movie" }),
     );
@@ -701,7 +711,7 @@ describe("inspection application", () => {
       "page",
     );
     await user.click(screen.getByRole("tab", { name: "General" }));
-    expect(screen.getByText("Active transfer")).toBeVisible();
+    expect(screen.getByText("Current transfer")).toBeVisible();
     expect(screen.getAllByText("Sintel 4K open movie").length).toBeGreaterThan(0);
   });
 

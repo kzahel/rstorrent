@@ -132,7 +132,7 @@
   box-shadow: 0 0.38rem 1rem rgb(15 34 54 / 13%);
 }
 
-.card[data-active="true"] > button {
+.card[data-current="true"] > button {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 26%, transparent);
 }

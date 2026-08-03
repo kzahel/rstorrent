@@ -45,23 +45,21 @@ export interface VirtualTableProps<Row> {
   readonly columns: readonly VirtualColumn<Row>[];
   readonly interfaceSize: InterfaceSize;
   readonly overscan?: number;
-  readonly activeRowId?: string | null;
-  readonly batchSelection?: VirtualTableBatchSelection<Row>;
+  readonly currentRowId?: string | null;
+  readonly selection?: VirtualTableSelection<Row>;
   readonly onActivate?: (row: Row) => void;
-  readonly onClearActive?: () => void;
+  readonly onClearCurrent?: () => void;
   readonly emptyMessage: string;
   readonly initialSort?: { readonly columnId: string; readonly direction: "asc" | "desc" };
 }
 
-export interface VirtualTableBatchSelection<Row> {
-  readonly active: boolean;
-  readonly batchSelectedIds: ReadonlySet<string>;
+export interface VirtualTableSelection<Row> {
+  readonly selectedIds: ReadonlySet<string>;
   readonly getRowLabel: (row: Row) => string;
-  readonly onEnterBatch: (row?: Row) => void;
-  readonly onExitBatch: () => void;
-  readonly onToggleBatch: (row: Row) => void;
-  readonly onReplaceBatch: (rows: readonly Row[]) => void;
-  readonly onSetAllBatch: (rows: readonly Row[], selected: boolean) => void;
+  readonly onChange: (
+    selectedIds: readonly string[],
+    currentRowId: string | null,
+  ) => void;
 }
 
 interface SortState {
@@ -87,10 +85,10 @@ export function VirtualTable<Row>({
   columns,
   interfaceSize,
   overscan = 8,
-  activeRowId = null,
-  batchSelection,
+  currentRowId = null,
+  selection,
   onActivate,
-  onClearActive,
+  onClearCurrent,
   emptyMessage,
   initialSort,
 }: VirtualTableProps<Row>) {
@@ -142,16 +140,6 @@ export function VirtualTable<Row>({
     },
     [],
   );
-
-  useEffect(() => {
-    if (batchSelection?.active !== true || longPressRef.current === null) return;
-    globalThis.clearTimeout(longPressRef.current.timer);
-    longPressRef.current = null;
-  }, [batchSelection?.active]);
-
-  useEffect(() => {
-    if (batchSelection?.active !== true) selectionAnchorIdRef.current = null;
-  }, [batchSelection?.active]);
 
   useEffect(() => {
     const loaded = loadTableConfig(tableId, columns);
@@ -236,16 +224,16 @@ export function VirtualTable<Row>({
   }, [columns, frozenOrder, getRowId, liveSort, rows, sort]);
 
   useEffect(() => {
-    const activeIndex =
-      activeRowId === null
+    const currentIndex =
+      currentRowId === null
         ? -1
-        : sortedRows.findIndex((row) => getRowId(row) === activeRowId);
+        : sortedRows.findIndex((row) => getRowId(row) === currentRowId);
     setFocusIndex((current) =>
-      activeIndex >= 0
-        ? activeIndex
+      currentIndex >= 0
+        ? currentIndex
         : Math.max(0, Math.min(sortedRows.length - 1, current)),
     );
-  }, [activeRowId, getRowId, sortedRows]);
+  }, [currentRowId, getRowId, sortedRows]);
 
   useEffect(() => {
     if (sort === null || liveSort || frozenOrder !== null) return;
@@ -265,10 +253,10 @@ export function VirtualTable<Row>({
     Math.ceil(viewportSize.height / tableRowHeight) + overscan * 2;
   const lastIndex = Math.min(sortedRows.length, firstIndex + visibleCount);
   const renderedRows = sortedRows.slice(firstIndex, lastIndex);
-  const batchSelectionAvailable = batchSelection !== undefined;
-  const selectionColumnWidth = batchSelectionAvailable ? 44 : 0;
+  const selectionAvailable = selection !== undefined;
+  const selectionColumnWidth = selectionAvailable ? 44 : 0;
   const gridTemplateColumns = [
-    ...(batchSelectionAvailable ? [`${selectionColumnWidth}px`] : []),
+    ...(selectionAvailable ? [`${selectionColumnWidth}px`] : []),
     ...visibleColumns.map((column) => `${column.width}px`),
   ].join(" ");
   const minimumWidth =
@@ -300,8 +288,7 @@ export function VirtualTable<Row>({
     rowId: string,
   ) => {
     if (
-      batchSelection === undefined ||
-      batchSelection.active ||
+      selection === undefined ||
       event.pointerType === "mouse" ||
       event.button !== 0
     ) {
@@ -316,8 +303,7 @@ export function VirtualTable<Row>({
       if (press?.pointerId !== pointerId || press.rowId !== rowId) return;
       longPressRef.current = null;
       suppressClickRowRef.current = rowId;
-      selectionAnchorIdRef.current = rowId;
-      batchSelection.onEnterBatch(row);
+      toggleRowSelection(row, rowId);
     }, 500);
     longPressRef.current = {
       pointerId,
@@ -349,46 +335,75 @@ export function VirtualTable<Row>({
       suppressClickRowRef.current = null;
       if (suppressedRow === rowId) return;
     }
-    if (batchSelection !== undefined && event.shiftKey) {
-      replaceBatchSelectionRange(row, rowId, true);
+    if (selection !== undefined && event.shiftKey) {
+      replaceSelectionRange(row, rowId, true);
       return;
     }
-    if (batchSelection !== undefined && (event.metaKey || event.ctrlKey)) {
-      toggleRowBatchSelection(row, rowId);
+    if (selection !== undefined && (event.metaKey || event.ctrlKey)) {
+      toggleRowSelection(row, rowId);
       return;
     }
+    selectOnlyRow(row, rowId);
+  };
+
+  const selectOnlyRow = (row: Row, rowId: string) => {
     selectionAnchorIdRef.current = rowId;
+    selection?.onChange([rowId], rowId);
     onActivate?.(row);
   };
 
-  const enterRowBatchSelection = (row: Row, rowId: string) => {
+  const toggleRowSelection = (row: Row, rowId: string) => {
+    if (selection === undefined) return;
     selectionAnchorIdRef.current = rowId;
-    batchSelection?.onEnterBatch(row);
+    const next = new Set(selection.selectedIds);
+    if (next.has(rowId)) next.delete(rowId);
+    else next.add(rowId);
+    const nextCurrentId = currentAfterToggle(next, rowId);
+    selection.onChange([...next], nextCurrentId);
   };
 
-  const toggleRowBatchSelection = (row: Row, rowId: string) => {
-    selectionAnchorIdRef.current = rowId;
-    batchSelection?.onToggleBatch(row);
+  const currentAfterToggle = (
+    selectedIds: ReadonlySet<string>,
+    toggledId: string,
+  ): string | null => {
+    if (currentRowId !== null && selectedIds.has(currentRowId)) {
+      return currentRowId;
+    }
+    if (currentRowId === null && selectedIds.has(toggledId)) return toggledId;
+    const toggledIndex = sortedRows.findIndex(
+      (candidate) => getRowId(candidate) === toggledId,
+    );
+    for (let distance = 1; distance < sortedRows.length; distance += 1) {
+      const after = sortedRows[toggledIndex + distance];
+      if (after !== undefined && selectedIds.has(getRowId(after))) {
+        return getRowId(after);
+      }
+      const before = sortedRows[toggledIndex - distance];
+      if (before !== undefined && selectedIds.has(getRowId(before))) {
+        return getRowId(before);
+      }
+    }
+    return selectedIds.values().next().value ?? null;
   };
 
-  const replaceBatchSelectionRange = (
+  const replaceSelectionRange = (
     row: Row,
     rowId: string,
     activateEndpoint: boolean,
   ) => {
-    if (batchSelection === undefined) return;
+    if (selection === undefined) return;
     let anchorId = selectionAnchorIdRef.current;
     let anchorIndex =
       anchorId === null
         ? -1
         : sortedRows.findIndex((candidate) => getRowId(candidate) === anchorId);
-    if (anchorIndex < 0 && activeRowId !== null) {
+    if (anchorIndex < 0 && currentRowId !== null) {
       const currentIndex = sortedRows.findIndex(
-        (candidate) => getRowId(candidate) === activeRowId,
+        (candidate) => getRowId(candidate) === currentRowId,
       );
       if (currentIndex >= 0) {
         anchorIndex = currentIndex;
-        anchorId = activeRowId;
+        anchorId = currentRowId;
       }
     }
     const clickedIndex = sortedRows.findIndex(
@@ -402,13 +417,22 @@ export function VirtualTable<Row>({
     selectionAnchorIdRef.current = anchorId;
     const start = Math.min(anchorIndex, clickedIndex);
     const end = Math.max(anchorIndex, clickedIndex);
-    batchSelection.onReplaceBatch(sortedRows.slice(start, end + 1));
+    selection.onChange(
+      sortedRows.slice(start, end + 1).map(getRowId),
+      rowId,
+    );
     if (activateEndpoint) onActivate?.(row);
   };
 
   const activateBackground = () => {
-    if (batchSelection?.active === true) batchSelection.onExitBatch();
-    else onClearActive?.();
+    selection?.onChange([], null);
+    onClearCurrent?.();
+  };
+
+  const collapseSelectionToCurrent = () => {
+    if (selection === undefined || currentRowId === null) return;
+    selectionAnchorIdRef.current = currentRowId;
+    selection.onChange([currentRowId], currentRowId);
   };
 
   const changeSort = (column: VirtualColumn<Row>) => {
@@ -424,18 +448,17 @@ export function VirtualTable<Row>({
     setFrozenOrder(sortRows(rows, getRowId, column, next.direction).map(getRowId));
   };
 
-  const moveRowFocus = (nextIndex: number, extendBatch: boolean) => {
+  const moveRowFocus = (nextIndex: number, extendSelection: boolean) => {
     if (sortedRows.length === 0) return;
     const clamped = Math.max(0, Math.min(sortedRows.length - 1, nextIndex));
     const row = sortedRows[clamped];
     if (row === undefined) return;
     const rowId = getRowId(row);
     setFocusIndex(clamped);
-    if (extendBatch && batchSelection !== undefined) {
-      replaceBatchSelectionRange(row, rowId, true);
+    if (extendSelection && selection !== undefined) {
+      replaceSelectionRange(row, rowId, true);
     } else {
-      selectionAnchorIdRef.current = rowId;
-      onActivate?.(row);
+      selectOnlyRow(row, rowId);
     }
     const viewport = viewportRef.current;
     if (viewport !== null) {
@@ -529,21 +552,44 @@ export function VirtualTable<Row>({
     headerHelp === null
       ? undefined
       : visibleColumns.find((column) => column.id === headerHelp.columnId);
-  const batchSelectedVisibleCount =
-    batchSelection === undefined
+  const selectedVisibleCount =
+    selection === undefined
       ? 0
       : sortedRows.filter((row) =>
-          batchSelection.batchSelectedIds.has(getRowId(row)),
+          selection.selectedIds.has(getRowId(row)),
         ).length;
-  const hiddenBatchSelectedCount =
-    batchSelection === undefined
+  const hiddenSelectedCount =
+    selection === undefined
       ? 0
       : Math.max(
           0,
-          batchSelection.batchSelectedIds.size - batchSelectedVisibleCount,
+          selection.selectedIds.size - selectedVisibleCount,
         );
-  const allVisibleBatchSelected =
-    sortedRows.length > 0 && batchSelectedVisibleCount === sortedRows.length;
+  const allVisibleSelected =
+    sortedRows.length > 0 && selectedVisibleCount === sortedRows.length;
+  const showSelectionSummary =
+    selection !== undefined &&
+    (selection.selectedIds.size > 1 || hiddenSelectedCount > 0);
+
+  const toggleAllVisibleSelection = () => {
+    if (selection === undefined) return;
+    const next = new Set(selection.selectedIds);
+    for (const row of sortedRows) {
+      const rowId = getRowId(row);
+      if (allVisibleSelected) next.delete(rowId);
+      else next.add(rowId);
+    }
+    const nextCurrentId =
+      currentRowId !== null && next.has(currentRowId)
+        ? currentRowId
+        : sortedRows
+            .map(getRowId)
+            .find((rowId) => next.has(rowId)) ??
+          next.values().next().value ??
+          null;
+    selectionAnchorIdRef.current = nextCurrentId;
+    selection.onChange([...next], nextCurrentId);
+  };
 
   const toggleHeaderHelp = (
     trigger: HTMLButtonElement,
@@ -583,40 +629,23 @@ export function VirtualTable<Row>({
         <span>
           {sortedRows.length.toLocaleString()} rows
         </span>
-        {batchSelection === undefined ? null : batchSelection.active ? (
+        {!showSelectionSummary || selection === undefined ? null : (
           <>
             <strong className={styles.selectionStatus} aria-live="polite">
-              {batchSelection.batchSelectedIds.size.toLocaleString()} selected
+              {selection.selectedIds.size.toLocaleString()} selected
               {" for actions"}
-              {hiddenBatchSelectedCount === 0
+              {hiddenSelectedCount === 0
                 ? null
-                : ` (${hiddenBatchSelectedCount.toLocaleString()} outside this view)`}
+                : ` (${hiddenSelectedCount.toLocaleString()} outside this view)`}
             </strong>
             <button
               type="button"
               aria-label={`Done selecting rows in ${label}`}
-              onClick={batchSelection.onExitBatch}
+              onClick={collapseSelectionToCurrent}
             >
               Done
             </button>
           </>
-        ) : (
-          <button
-            type="button"
-            aria-label={`Select rows in ${label}`}
-            disabled={sortedRows.length === 0}
-            onClick={() => {
-              const row = sortedRows.find(
-                (candidate) => getRowId(candidate) === activeRowId,
-              );
-              if (row !== undefined) {
-                selectionAnchorIdRef.current = getRowId(row);
-              }
-              batchSelection.onEnterBatch(row);
-            }}
-          >
-            Select
-          </button>
         )}
         <button
           ref={columnsButtonRef}
@@ -705,16 +734,20 @@ export function VirtualTable<Row>({
         role="grid"
         aria-label={label}
         aria-rowcount={sortedRows.length + 1}
-        aria-colcount={visibleColumns.length + (batchSelectionAvailable ? 1 : 0)}
-        aria-multiselectable={batchSelectionAvailable ? true : undefined}
+        aria-colcount={visibleColumns.length + (selectionAvailable ? 1 : 0)}
+        aria-multiselectable={selectionAvailable ? true : undefined}
         onScroll={handleScroll}
         onClick={(event) => {
           if (event.target === event.currentTarget) activateBackground();
         }}
         onKeyDown={(event) => {
-          if (event.key === "Escape" && batchSelection?.active === true) {
+          if (
+            event.key === "Escape" &&
+            selection !== undefined &&
+            selection.selectedIds.size > 1
+          ) {
             event.preventDefault();
-            batchSelection.onExitBatch();
+            collapseSelectionToCurrent();
             return;
           }
           if (
@@ -729,15 +762,16 @@ export function VirtualTable<Row>({
             event.key.toLowerCase() === "a" &&
             (event.metaKey || event.ctrlKey) &&
             !event.altKey &&
-            batchSelection !== undefined &&
+            selection !== undefined &&
             sortedRows.length > 0
           ) {
             event.preventDefault();
-            const active = sortedRows.find(
-              (row) => getRowId(row) === activeRowId,
+            const current = sortedRows.find(
+              (row) => getRowId(row) === currentRowId,
             );
-            selectionAnchorIdRef.current = getRowId(active ?? sortedRows[0]!);
-            batchSelection.onReplaceBatch(sortedRows);
+            const nextCurrentId = getRowId(current ?? sortedRows[0]!);
+            selectionAnchorIdRef.current = nextCurrentId;
+            selection.onChange(sortedRows.map(getRowId), nextCurrentId);
           } else if (event.key === "ArrowDown") {
             event.preventDefault();
             moveRowFocus(focusIndex + 1, event.shiftKey);
@@ -760,14 +794,11 @@ export function VirtualTable<Row>({
           } else if (event.key === " ") {
             const row = sortedRows[focusIndex];
             if (row === undefined) return;
-            if (batchSelection !== undefined) {
+            if (selection !== undefined) {
               event.preventDefault();
               const rowId = getRowId(row);
-              if (event.shiftKey) replaceBatchSelectionRange(row, rowId, true);
-              else if (batchSelection.active) {
-                toggleRowBatchSelection(row, rowId);
-              }
-              else enterRowBatchSelection(row, rowId);
+              if (event.shiftKey) replaceSelectionRange(row, rowId, true);
+              else toggleRowSelection(row, rowId);
             } else if (onActivate !== undefined) {
               event.preventDefault();
               onActivate(row);
@@ -777,7 +808,7 @@ export function VirtualTable<Row>({
         data-testid="virtual-table"
       >
       <div className={styles.header} role="row" style={gridStyle}>
-        {batchSelection === undefined ? null : (
+        {selection === undefined ? null : (
           <div
             className={styles.selectionHeaderCell}
             role="columnheader"
@@ -787,30 +818,24 @@ export function VirtualTable<Row>({
               if (event.target === event.currentTarget) {
                 selectionAnchorIdRef.current =
                   sortedRows.length === 0 ? null : getRowId(sortedRows[0]!);
-                batchSelection.onSetAllBatch(
-                  sortedRows,
-                  !allVisibleBatchSelected,
-                );
+                toggleAllVisibleSelection();
               }
             }}
           >
             <SelectionCheckbox
-              checked={allVisibleBatchSelected}
+              checked={allVisibleSelected}
               indeterminate={
-                batchSelectedVisibleCount > 0 && !allVisibleBatchSelected
+                selectedVisibleCount > 0 && !allVisibleSelected
               }
               label={
-                allVisibleBatchSelected
+                allVisibleSelected
                   ? "Deselect all rows"
                   : "Select all rows"
               }
               onChange={() => {
                 selectionAnchorIdRef.current =
                   sortedRows.length === 0 ? null : getRowId(sortedRows[0]!);
-                batchSelection.onSetAllBatch(
-                  sortedRows,
-                  !allVisibleBatchSelected,
-                );
+                toggleAllVisibleSelection();
               }}
             />
           </div>
@@ -898,22 +923,21 @@ export function VirtualTable<Row>({
           {renderedRows.map((row, offset) => {
             const index = firstIndex + offset;
             const rowId = getRowId(row);
-            const checked =
-              batchSelection?.batchSelectedIds.has(rowId) ?? false;
-            const active = rowId === activeRowId;
+            const checked = selection?.selectedIds.has(rowId) ?? false;
+            const current = rowId === currentRowId;
             return (
               <div
                 key={rowId}
                 className={styles.row}
                 role="row"
                 aria-rowindex={index + 2}
-                aria-selected={batchSelectionAvailable ? checked : undefined}
-                aria-current={active ? "true" : undefined}
+                aria-selected={selectionAvailable ? checked : undefined}
+                aria-current={current ? "true" : undefined}
                 tabIndex={index === focusIndex ? 0 : -1}
                 data-row-index={index}
                 data-row-id={rowId}
-                data-active={active}
-                data-batch-selected={checked}
+                data-current={current}
+                data-selected={checked}
                 style={{
                   ...gridStyle,
                   transform: `translateY(${index * tableRowHeight}px)`,
@@ -921,7 +945,7 @@ export function VirtualTable<Row>({
                 onFocus={(event) => {
                   if (event.target !== event.currentTarget) return;
                   setFocusIndex(index);
-                  if (!active) onActivate?.(row);
+                  if (currentRowId === null) selectOnlyRow(row, rowId);
                 }}
                 onPointerDown={(event) => startLongPress(event, row, rowId)}
                 onPointerMove={continueLongPress}
@@ -938,7 +962,7 @@ export function VirtualTable<Row>({
                   activateRow(event, row, rowId);
                 }}
               >
-                {batchSelection === undefined ? null : (
+                {selection === undefined ? null : (
                   <div
                     className={styles.selectionCell}
                     role="gridcell"
@@ -946,18 +970,18 @@ export function VirtualTable<Row>({
                       event.stopPropagation();
                       if (event.target === event.currentTarget) {
                         if (event.shiftKey) {
-                          replaceBatchSelectionRange(row, rowId, true);
-                        } else toggleRowBatchSelection(row, rowId);
+                          replaceSelectionRange(row, rowId, true);
+                        } else toggleRowSelection(row, rowId);
                       }
                     }}
                   >
                     <SelectionCheckbox
                       checked={checked}
                       indeterminate={false}
-                      label={`${checked ? "Deselect" : "Select"} ${batchSelection.getRowLabel(row)}`}
-                      onChange={() => toggleRowBatchSelection(row, rowId)}
+                      label={`${checked ? "Deselect" : "Select"} ${selection.getRowLabel(row)}`}
+                      onChange={() => toggleRowSelection(row, rowId)}
                       onShiftChange={() =>
-                        replaceBatchSelectionRange(row, rowId, true)
+                        replaceSelectionRange(row, rowId, true)
                       }
                     />
                   </div>

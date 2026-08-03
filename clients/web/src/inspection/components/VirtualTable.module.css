@@ -275,7 +275,7 @@
   background: var(--surface-hover);
 }
 
-.row[data-batch-selected="true"] {
+.row[data-selected="true"] {
   background: color-mix(
     in srgb,
     var(--selection) 58%,
@@ -283,7 +283,7 @@
   );
 }
 
-.row[data-active="true"] {
+.row[data-current="true"] {
   background: var(--selection);
   box-shadow: inset 3px 0 var(--accent);
 }

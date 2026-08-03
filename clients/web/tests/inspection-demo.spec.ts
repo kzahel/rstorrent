@@ -63,7 +63,7 @@ test("primary destinations preserve shared source state", async ({ page }) => {
     "page",
   );
   await page.getByRole("tab", { name: "General" }).click();
-  await expect(page.getByText("Active transfer")).toBeVisible();
+  await expect(page.getByText("Current transfer")).toBeVisible();
   await expect(page.getByText("Sintel 4K open movie").first()).toBeVisible();
 
   const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
@@ -156,7 +156,17 @@ test("wide inspection surface is accessible and drivable", async ({ page }) => {
   await expect(page.getByText("3 selected for actions")).toBeVisible();
   await page.keyboard.press("ArrowUp");
   await expect(torrentRows.nth(1)).toHaveAttribute("aria-current", "true");
-  await expect(page.getByText("3 selected for actions")).toBeVisible();
+  await expect(page.getByText("3 selected for actions")).toHaveCount(0);
+  await expect(
+    page.getByRole("checkbox", {
+      name: "Deselect Arch Linux 2026.08.01 x86_64",
+    }),
+  ).toBeChecked();
+  await expect(
+    page.getByRole("checkbox", {
+      name: "Select Big Buck Bunny 1080p surround",
+    }),
+  ).not.toBeChecked();
   await expect(
     detail.getByRole("heading", { name: "Arch Linux 2026.08.01 x86_64" }),
   ).toBeVisible();
@@ -937,6 +947,9 @@ test("full file catalog stays virtualized across wide compact and phone layouts"
   await expect(
     files.getByRole("checkbox", { name: "Select asset-001.mkv" }),
   ).not.toBeChecked();
+  await expect(
+    files.getByRole("checkbox", { name: "Deselect asset-003.mp4" }),
+  ).toBeChecked();
 
   const columns = page.getByRole("button", { name: "Columns" }).last();
   await columns.click();

@@ -116,32 +116,17 @@ export function TorrentTable() {
   const category = useInspectionStore(
     (state) => state.presentation.workbenchCategory,
   );
-  const batchSelectedIds = useInspectionStore(
-    (state) => state.presentation.batchSelectedTorrentIds,
+  const selectedTorrentIds = useInspectionStore(
+    (state) => state.presentation.selectedTorrentIds,
   );
-  const activeTorrentId = useInspectionStore(
-    (state) => state.presentation.activeTorrentId,
+  const currentTorrentId = useInspectionStore(
+    (state) => state.presentation.currentTorrentId,
   );
-  const batchSelectionMode = useInspectionStore(
-    (state) => state.presentation.torrentBatchSelectionMode,
+  const setTorrentSelection = useInspectionStore(
+    (state) => state.setTorrentSelection,
   );
   const openTorrentDetail = useInspectionStore(
     (state) => state.openTorrentDetail,
-  );
-  const clearActiveTorrent = useInspectionStore(
-    (state) => state.clearActiveTorrent,
-  );
-  const enterTorrentBatchSelection = useInspectionStore(
-    (state) => state.enterTorrentBatchSelection,
-  );
-  const exitTorrentBatchSelection = useInspectionStore(
-    (state) => state.exitTorrentBatchSelection,
-  );
-  const toggleTorrentBatchSelection = useInspectionStore(
-    (state) => state.toggleTorrentBatchSelection,
-  );
-  const replaceTorrentBatchSelection = useInspectionStore(
-    (state) => state.replaceTorrentBatchSelection,
   );
   const demo = useInspectionStore((state) => state.demo);
   const materialization = useInspectionStore((state) => state.viewStatus.library);
@@ -156,9 +141,9 @@ export function TorrentTable() {
         .filter((row) => torrentMatchesCategory(row, category)),
     [category, order, torrents],
   );
-  const batchSelectedIdSet = useMemo(
-    () => new Set(batchSelectedIds),
-    [batchSelectedIds],
+  const selectedIdSet = useMemo(
+    () => new Set(selectedTorrentIds),
+    [selectedTorrentIds],
   );
 
   return (
@@ -169,27 +154,13 @@ export function TorrentTable() {
       getRowId={(row) => row.id}
       columns={COLUMNS}
       interfaceSize={interfaceSize}
-      activeRowId={activeTorrentId}
-      batchSelection={{
-        active: batchSelectionMode,
-        batchSelectedIds: batchSelectedIdSet,
+      currentRowId={currentTorrentId}
+      selection={{
+        selectedIds: selectedIdSet,
         getRowLabel: (row) => row.name,
-        onEnterBatch: (row) => enterTorrentBatchSelection(row?.id),
-        onExitBatch: exitTorrentBatchSelection,
-        onToggleBatch: (row) => toggleTorrentBatchSelection(row.id),
-        onReplaceBatch: (rangeRows) =>
-          replaceTorrentBatchSelection(rangeRows.map((row) => row.id)),
-        onSetAllBatch: (visibleRows, selected) => {
-          const visibleIds = new Set(visibleRows.map((row) => row.id));
-          replaceTorrentBatchSelection(
-            selected
-              ? [...batchSelectedIds, ...visibleIds]
-              : batchSelectedIds.filter((id) => !visibleIds.has(id)),
-          );
-        },
+        onChange: setTorrentSelection,
       }}
       onActivate={(row) => openTorrentDetail(row.id)}
-      onClearActive={clearActiveTorrent}
       emptyMessage={
         materialization.status !== "ready"
           ? materializationMessage(materialization)

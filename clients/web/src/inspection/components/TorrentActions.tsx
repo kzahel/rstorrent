@@ -29,14 +29,8 @@ interface PendingAdd {
 
 export function TorrentActions() {
   const torrents = useInspectionStore((state) => state.torrents);
-  const batchSelectedIds = useInspectionStore(
-    (state) => state.presentation.batchSelectedTorrentIds,
-  );
-  const activeTorrentId = useInspectionStore(
-    (state) => state.presentation.activeTorrentId,
-  );
-  const batchSelectionMode = useInspectionStore(
-    (state) => state.presentation.torrentBatchSelectionMode,
+  const selectedTorrentIds = useInspectionStore(
+    (state) => state.presentation.selectedTorrentIds,
   );
   const demo = useInspectionStore((state) => state.demo);
   const storage = useInspectionStore((state) => state.storage);
@@ -54,16 +48,11 @@ export function TorrentActions() {
   const statusId = useId();
   const targetRows = useMemo(
     () => {
-      const targetIds = batchSelectionMode
-        ? batchSelectedIds
-        : activeTorrentId === null
-          ? []
-          : [activeTorrentId];
-      return targetIds
+      return selectedTorrentIds
         .map((id) => torrents[id])
         .filter((row): row is TorrentRow => row !== undefined);
     },
-    [activeTorrentId, batchSelectedIds, batchSelectionMode, torrents],
+    [selectedTorrentIds, torrents],
   );
   const canStart =
     targetRows.length > 0 &&

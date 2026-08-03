@@ -25,7 +25,7 @@ describe("inspection store", () => {
     expect(store.getState().torrents.first?.progress).toBe(0.7);
   });
 
-  it("clears a removed active torrent without inventing a fallback", () => {
+  it("clears a removed singleton selection without inventing a fallback", () => {
     const store = createInspectionStore();
     store.getState().applyUpdate({
       type: "snapshot",
@@ -37,12 +37,12 @@ describe("inspection store", () => {
       revision: 2,
       torrents: { upsert: [], removed: ["second"], order: ["first"] },
     });
-    expect(store.getState().presentation.activeTorrentId).toBeNull();
-    expect(store.getState().presentation.batchSelectedTorrentIds).toEqual([]);
+    expect(store.getState().presentation.currentTorrentId).toBeNull();
+    expect(store.getState().presentation.selectedTorrentIds).toEqual([]);
     expect(store.getState().presentation.detailOpen).toBe(false);
   });
 
-  it("keeps active and batch-selected torrents independent", () => {
+  it("keeps current constrained to the checked torrent selection", () => {
     const store = createInspectionStore(null);
     store.getState().applyUpdate({
       type: "snapshot",
@@ -52,57 +52,59 @@ describe("inspection store", () => {
         row("third", "complete"),
       ]),
     });
+    expect(store.getState().presentation.currentTorrentId).toBe("first");
+    expect(store.getState().presentation.selectedTorrentIds).toEqual(["first"]);
+
     store
       .getState()
-      .replaceTorrentBatchSelection(["first", "second", "second"]);
-    store.getState().toggleTorrentBatchSelection("third");
-    expect(store.getState().presentation.batchSelectedTorrentIds).toEqual([
+      .setTorrentSelection(["first", "second", "second", "third"], "second");
+    expect(store.getState().presentation.currentTorrentId).toBe("second");
+    expect(store.getState().presentation.selectedTorrentIds).toEqual([
       "first",
       "second",
       "third",
     ]);
-    expect(store.getState().presentation.activeTorrentId).toBe("first");
-    expect(store.getState().presentation.torrentBatchSelectionMode).toBe(true);
-
-    store.getState().setActiveTorrent("second");
-    expect(store.getState().presentation.activeTorrentId).toBe("second");
-    expect(store.getState().presentation.batchSelectedTorrentIds).toEqual([
+    store.getState().openTorrentDetail("first");
+    expect(store.getState().presentation.currentTorrentId).toBe("first");
+    expect(store.getState().presentation.selectedTorrentIds).toEqual([
       "first",
       "second",
       "third",
     ]);
+    expect(store.getState().presentation.detailOpen).toBe(true);
 
     store.getState().applyUpdate({
       type: "patch",
       revision: 2,
       torrents: {
         upsert: [],
-        removed: ["second", "third"],
-        order: ["first"],
+        removed: ["first"],
+        order: ["second", "third"],
       },
     });
-    expect(store.getState().presentation.batchSelectedTorrentIds).toEqual([
-      "first",
+    expect(store.getState().presentation.selectedTorrentIds).toEqual([
+      "second",
+      "third",
     ]);
-    expect(store.getState().presentation.activeTorrentId).toBeNull();
+    expect(store.getState().presentation.currentTorrentId).toBe("second");
+    expect(store.getState().presentation.detailOpen).toBe(false);
 
-    store.getState().setActiveTorrent("first");
-    expect(store.getState().presentation.torrentBatchSelectionMode).toBe(true);
-    expect(store.getState().presentation.batchSelectedTorrentIds).toEqual([
-      "first",
-    ]);
-    store.getState().exitTorrentBatchSelection();
-    expect(store.getState().presentation.torrentBatchSelectionMode).toBe(false);
-    expect(store.getState().presentation.batchSelectedTorrentIds).toEqual([]);
-    expect(store.getState().presentation.activeTorrentId).toBe("first");
-    store.getState().clearActiveTorrent();
-    expect(store.getState().presentation.activeTorrentId).toBeNull();
+    store.getState().selectOnlyTorrent("third");
+    expect(store.getState().presentation.currentTorrentId).toBe("third");
+    expect(store.getState().presentation.selectedTorrentIds).toEqual(["third"]);
+    store.getState().clearTorrentSelection();
+    expect(store.getState().presentation.currentTorrentId).toBeNull();
+    expect(store.getState().presentation.selectedTorrentIds).toEqual([]);
     store.getState().applyUpdate({
       type: "patch",
       revision: 3,
-      torrents: { upsert: [{ ...row("first", "paused"), progress: 0.5 }], removed: [] },
+      torrents: {
+        upsert: [{ ...row("third", "paused"), progress: 0.5 }],
+        removed: [],
+      },
     });
-    expect(store.getState().presentation.activeTorrentId).toBeNull();
+    expect(store.getState().presentation.currentTorrentId).toBeNull();
+    expect(store.getState().presentation.selectedTorrentIds).toEqual([]);
   });
 
   it("keeps destination filters independent and persists navigation", () => {
