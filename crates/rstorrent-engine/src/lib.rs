@@ -14,6 +14,7 @@ mod peer_socket;
 mod positional_io;
 mod selective_storage;
 mod storage;
+mod storage_file_pool;
 pub mod swarm;
 mod tracker;
 
@@ -48,6 +49,14 @@ pub use selective_storage::{
     plan_descriptor_storage, remove_selective_part_if_present, remove_selective_staging_if_present,
     selective_part_path, selective_staging_path, torrent_storage_paths, validate_publication_name,
     verify_prepared_descriptors,
+};
+pub use storage_file_pool::{
+    DEFAULT_STORAGE_FILE_LIMIT, PLATFORM_STORAGE_REQUEST_CAPACITY,
+    PLATFORM_STORAGE_REQUEST_TIMEOUT, PlatformStorageBroker, PlatformStorageClient,
+    PlatformStorageFailure, PlatformStorageFailureKind, PlatformStorageRequest,
+    PlatformStorageTarget, StorageFileAccess, StorageFileHandle, StorageFileKey,
+    StorageFileLocator, StorageFilePool, StorageFilePoolError, StorageFilePoolSnapshot,
+    StorageFileReference, StorageFileRole, platform_storage_channel,
 };
 pub use tracker::{
     TrackerAnnounceEvent, TrackerNextAction, TrackerRuntimeRecordSnapshot, TrackerRuntimeSnapshot,
