@@ -44,17 +44,18 @@ pub use peer_runtime::{
 };
 pub use selective_storage::{
     DescriptorFile, DescriptorFileRole, DescriptorStorage, DescriptorStoragePlan,
-    DescriptorStoragePlanFile, MaterializationReport, PreparedFileHash, ResumedStorage,
-    SelectiveStorage, SelectiveStorageError, SelectiveWriteStats, TorrentStoragePaths,
-    plan_descriptor_storage, remove_selective_part_if_present, remove_selective_staging_if_present,
-    selective_part_path, selective_staging_path, torrent_storage_paths, validate_publication_name,
-    verify_prepared_descriptors,
+    DescriptorStoragePlanFile, MaterializationReport, PlatformStorageSpec, PreparedFileHash,
+    ResumedStorage, SelectiveStorage, SelectiveStorageError, SelectiveWriteStats,
+    TorrentStoragePaths, plan_descriptor_storage, remove_selective_part_if_present,
+    remove_selective_staging_if_present, selective_part_path, selective_staging_path,
+    torrent_storage_paths, validate_publication_name, verify_prepared_descriptors,
+    verify_prepared_platform_files,
 };
 pub use storage_file_pool::{
     DEFAULT_STORAGE_FILE_LIMIT, PLATFORM_STORAGE_REQUEST_CAPACITY,
     PLATFORM_STORAGE_REQUEST_TIMEOUT, PlatformStorageBroker, PlatformStorageClient,
     PlatformStorageFailure, PlatformStorageFailureKind, PlatformStorageRequest,
-    PlatformStorageTarget, StorageFileAccess, StorageFileHandle, StorageFileKey,
+    PlatformStorageTarget, StorageFileAccess, StorageFileHandle, StorageFileKey, StorageFileLease,
     StorageFileLocator, StorageFilePool, StorageFilePoolError, StorageFilePoolSnapshot,
     StorageFileReference, StorageFileRole, platform_storage_channel,
 };

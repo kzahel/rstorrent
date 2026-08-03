@@ -16,9 +16,16 @@ use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 
 use crate::checkpoint::DurabilityTarget;
-use crate::part_file::{PartFile, PartFileError, PartFileIdentity, PartFileSpan};
+use crate::part_file::{
+    PartFile, PartFileCheckpointReference, PartFileError, PartFileIdentity, PartFileSpan,
+};
 use crate::positional_io::{read_exact_at, write_all_at};
 use crate::storage::VERIFICATION_CHUNK_LENGTH;
+use crate::storage_file_pool::{
+    DEFAULT_STORAGE_FILE_LIMIT, PlatformStorageFailureKind, PlatformStorageTarget,
+    StorageFileAccess, StorageFileKey, StorageFileLease, StorageFileLocator, StorageFilePool,
+    StorageFilePoolError, StorageFileReference, StorageFileRole,
+};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SelectiveWriteStats {
@@ -86,6 +93,16 @@ pub struct PreparedFileHash {
     pub file_index: usize,
     pub length: u64,
     pub sha1: [u8; 20],
+}
+
+#[derive(Clone, Debug)]
+pub struct PlatformStorageSpec {
+    pub pool: StorageFilePool,
+    pub root_id: String,
+    pub storage_id: String,
+    pub publication_name: String,
+    pub namespace_generation: u64,
+    pub published: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -270,6 +287,19 @@ impl Error for SelectiveStorageError {
     }
 }
 
+impl SelectiveStorageError {
+    pub fn platform_failure_kind(&self) -> Option<PlatformStorageFailureKind> {
+        match self {
+            Self::PartFile(error) => error.platform_failure_kind(),
+            Self::Io { source, .. } => source
+                .get_ref()
+                .and_then(|error| error.downcast_ref::<StorageFilePoolError>())
+                .and_then(StorageFilePoolError::platform_failure_kind),
+            _ => None,
+        }
+    }
+}
+
 impl From<LayoutError> for SelectiveStorageError {
     fn from(error: LayoutError) -> Self {
         Self::Layout(error)
@@ -288,6 +318,12 @@ enum StorageBacking {
         output_root: PathBuf,
         staging_root: PathBuf,
         part_path: PathBuf,
+        part_reference: StorageFileReference,
+        storage_id: String,
+    },
+    Platform {
+        spec: PlatformStorageSpec,
+        part_reference: StorageFileReference,
     },
     Descriptors {
         reopened_part_file: Option<std::fs::File>,
@@ -302,34 +338,181 @@ pub struct SelectiveStorage {
     layout: TorrentLayout,
     selection: FileSelection,
     files: Vec<Option<RetainedFile>>,
+    skipped_sources: Vec<Option<RetainedFileSource>>,
     part_file: Option<PartFile>,
-    part_checkpoint_handle: Option<Arc<OnceLock<Arc<std::fs::File>>>>,
+    part_checkpoint_handle: Option<Arc<OnceLock<CheckpointFileReference>>>,
     verified: Vec<bool>,
     published: bool,
 }
 
-pub(crate) type CheckpointHandles = BTreeMap<DurabilityTarget, Arc<OnceLock<Arc<std::fs::File>>>>;
+pub(crate) type CheckpointHandles =
+    BTreeMap<DurabilityTarget, Arc<OnceLock<CheckpointFileReference>>>;
+
+#[derive(Clone, Debug)]
+pub(crate) enum CheckpointFileReference {
+    Dynamic(StorageFileReference),
+    Fixed(StorageFileLease),
+}
+
+impl CheckpointFileReference {
+    pub(crate) async fn acquire(&self) -> Result<StorageFileLease, SelectiveStorageError> {
+        match self {
+            Self::Dynamic(reference) => reference
+                .open(StorageFileAccess::ReadWriteExisting)
+                .await
+                .map(StorageFileLease::from)
+                .map_err(|error| SelectiveStorageError::Io {
+                    operation: "acquire durability checkpoint file",
+                    source: io::Error::other(error),
+                }),
+            Self::Fixed(file) => Ok(file.clone()),
+        }
+    }
+}
 
 #[derive(Debug)]
 struct RetainedFile {
-    control: File,
-    positional: Arc<std::fs::File>,
+    source: RetainedFileSource,
     routing_generation: u64,
+}
+
+#[derive(Clone, Debug)]
+enum RetainedFileSource {
+    Dynamic {
+        reference: StorageFileReference,
+        file_index: usize,
+        expected_length: u64,
+    },
+    Fixed(StorageFileLease),
+}
+
+impl RetainedFileSource {
+    async fn acquire(
+        &self,
+        access: StorageFileAccess,
+    ) -> Result<StorageFileLease, SelectiveStorageError> {
+        match self {
+            Self::Dynamic {
+                reference,
+                file_index,
+                expected_length,
+            } => {
+                let file = reference
+                    .open(access)
+                    .await
+                    .map(StorageFileLease::from)
+                    .map_err(|error| SelectiveStorageError::Io {
+                        operation: "acquire selected file",
+                        source: io::Error::other(error),
+                    })?;
+                let actual = file
+                    .file()
+                    .metadata()
+                    .map_err(|source| SelectiveStorageError::Io {
+                        operation: "inspect acquired selected file",
+                        source,
+                    })?
+                    .len();
+                if actual == *expected_length {
+                    return Ok(file);
+                }
+                if matches!(access, StorageFileAccess::ReadWriteCreate) && actual == 0 {
+                    file.file().set_len(*expected_length).map_err(|source| {
+                        SelectiveStorageError::Io {
+                            operation: "size acquired selected file",
+                            source,
+                        }
+                    })?;
+                    return Ok(file);
+                }
+                Err(SelectiveStorageError::UnexpectedFileLength {
+                    file_index: *file_index,
+                    expected: *expected_length,
+                    actual,
+                })
+            }
+            Self::Fixed(file) => Ok(file.clone()),
+        }
+    }
+
+    fn checkpoint_reference(&self) -> CheckpointFileReference {
+        match self {
+            Self::Dynamic { reference, .. } => CheckpointFileReference::Dynamic(reference.clone()),
+            Self::Fixed(file) => CheckpointFileReference::Fixed(file.clone()),
+        }
+    }
+
+    async fn is_available(&self) -> Result<bool, SelectiveStorageError> {
+        match self {
+            Self::Dynamic {
+                reference,
+                expected_length,
+                ..
+            } => {
+                let file = match reference.open(StorageFileAccess::ReadExisting).await {
+                    Ok(file) => file,
+                    Err(StorageFilePoolError::Io { source, .. })
+                        if source.kind() == io::ErrorKind::NotFound =>
+                    {
+                        return Ok(false);
+                    }
+                    Err(StorageFilePoolError::PlatformFailure(failure))
+                        if failure.kind == PlatformStorageFailureKind::Missing =>
+                    {
+                        return Ok(false);
+                    }
+                    Err(error) => {
+                        return Err(SelectiveStorageError::Io {
+                            operation: "probe selected file source",
+                            source: io::Error::other(error),
+                        });
+                    }
+                };
+                Ok(file
+                    .file()
+                    .metadata()
+                    .map_err(|source| SelectiveStorageError::Io {
+                        operation: "inspect selected file source",
+                        source,
+                    })?
+                    .len()
+                    == *expected_length)
+            }
+            Self::Fixed(_) => Ok(true),
+        }
+    }
 }
 
 impl RetainedFile {
     async fn new(control: File, operation: &'static str) -> Result<Self, SelectiveStorageError> {
-        let positional = control
-            .try_clone()
-            .await
-            .map_err(|source| SelectiveStorageError::Io { operation, source })?
-            .into_std()
-            .await;
+        let file = control.into_std().await;
+        let _ = operation;
         Ok(Self {
-            control,
-            positional: Arc::new(positional),
+            source: RetainedFileSource::Fixed(StorageFileLease::fixed(file)),
             routing_generation: 0,
         })
+    }
+
+    fn dynamic(reference: StorageFileReference, file_index: usize, expected_length: u64) -> Self {
+        Self {
+            source: RetainedFileSource::Dynamic {
+                reference,
+                file_index,
+                expected_length,
+            },
+            routing_generation: 0,
+        }
+    }
+
+    async fn acquire(
+        &self,
+        access: StorageFileAccess,
+    ) -> Result<StorageFileLease, SelectiveStorageError> {
+        self.source.acquire(access).await
+    }
+
+    fn checkpoint_reference(&self) -> CheckpointFileReference {
+        self.source.checkpoint_reference()
     }
 }
 
@@ -359,10 +542,28 @@ enum SelectiveWriteDestination {
 
 #[derive(Debug)]
 struct ExecutableWriteSpan {
-    file: Arc<std::fs::File>,
+    file: ExecutableFileSource,
     file_offset: u64,
     block_offset: usize,
     length: usize,
+}
+
+#[derive(Clone, Debug)]
+enum ExecutableFileSource {
+    Wanted(RetainedFileSource),
+    Part(PartFileCheckpointReference),
+}
+
+impl ExecutableFileSource {
+    async fn acquire_write(&self) -> Result<StorageFileLease, SelectiveStorageError> {
+        match self {
+            Self::Wanted(source) => source.acquire(StorageFileAccess::ReadWriteCreate).await,
+            Self::Part(source) => source
+                .acquire(StorageFileAccess::ReadWriteExisting)
+                .await
+                .map_err(SelectiveStorageError::PartFile),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -375,25 +576,26 @@ pub(crate) struct SelectiveWriteJob {
 impl SelectiveWriteJob {
     pub(crate) async fn execute(self) -> Result<SelectiveWriteStats, SelectiveStorageError> {
         let payload = self.payload;
-        tokio::task::spawn_blocking(move || {
-            for span in self.spans {
+        for span in self.spans {
+            let file = span.file.acquire_write().await?;
+            let payload = payload.clone();
+            tokio::task::spawn_blocking(move || {
                 write_all_at(
-                    &span.file,
+                    file.file(),
                     &payload[span.block_offset..span.block_offset + span.length],
                     span.file_offset,
-                )?;
-            }
-            Ok::<(), io::Error>(())
-        })
-        .await
-        .map_err(|source| SelectiveStorageError::Io {
-            operation: "join positional selected write",
-            source: io::Error::other(source),
-        })?
-        .map_err(|source| SelectiveStorageError::Io {
-            operation: "write positional selected range",
-            source,
-        })?;
+                )
+            })
+            .await
+            .map_err(|source| SelectiveStorageError::Io {
+                operation: "join positional selected write",
+                source: io::Error::other(source),
+            })?
+            .map_err(|source| SelectiveStorageError::Io {
+                operation: "write positional selected range",
+                source,
+            })?;
+        }
         Ok(self.stats)
     }
 }
@@ -415,12 +617,12 @@ pub(crate) struct SelectiveHashPlan {
 #[derive(Clone, Debug)]
 enum BlockingHashSpan {
     WantedFile {
-        file: Arc<std::fs::File>,
+        file: RetainedFileSource,
         file_offset: u64,
         length: usize,
     },
     PartFile {
-        file: Arc<std::fs::File>,
+        file: PartFileCheckpointReference,
         span: PartFileSpan,
     },
     Padding {
@@ -431,86 +633,91 @@ enum BlockingHashSpan {
 type BlockingHashResult = Result<([u8; 20], SelectiveHashIoStats), SelectiveStorageError>;
 
 impl SelectiveHashPlan {
-    fn hash(self) -> BlockingHashResult {
+    async fn hash(self) -> BlockingHashResult {
         let mut hasher = Sha1::new();
-        let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
         let mut stats = SelectiveHashIoStats {
             blocking_jobs: 1,
             ..SelectiveHashIoStats::default()
         };
         for span in self.spans {
             let mut consumed = 0_usize;
-            match span {
+            let (file, file_offset, span_length, part_file) = match span {
                 BlockingHashSpan::WantedFile {
                     file,
                     file_offset,
                     length: span_length,
-                } => {
-                    while consumed < span_length {
-                        let length = (span_length - consumed).min(buffer.len());
-                        let offset = file_offset
-                            .checked_add(u64::try_from(consumed).map_err(|_| {
-                                SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow)
-                            })?)
-                            .ok_or(SelectiveStorageError::Layout(
-                                LayoutError::ArithmeticOverflow,
-                            ))?;
-                        read_exact_at(&file, &mut buffer[..length], offset).map_err(|source| {
-                            SelectiveStorageError::Io {
-                                operation:
-                                    "read selected staging range in blocking verification job",
-                                source,
-                            }
-                        })?;
-                        stats.wanted_file_reads = stats.wanted_file_reads.saturating_add(1);
-                        hasher.update(&buffer[..length]);
-                        consumed += length;
-                    }
-                }
-                BlockingHashSpan::PartFile { file, span } => {
-                    while consumed < span.length {
-                        let length = (span.length - consumed).min(buffer.len());
-                        let offset = span
-                            .file_offset
-                            .checked_add(u64::try_from(consumed).map_err(|_| {
-                                SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow)
-                            })?)
-                            .ok_or(SelectiveStorageError::Layout(
-                                LayoutError::ArithmeticOverflow,
-                            ))?;
-                        read_exact_at(&file, &mut buffer[..length], offset).map_err(|source| {
-                            SelectiveStorageError::Io {
-                                operation: "read part-file range in blocking verification job",
-                                source,
-                            }
-                        })?;
-                        stats.part_file_reads = stats.part_file_reads.saturating_add(1);
-                        hasher.update(&buffer[..length]);
-                        consumed += length;
-                    }
-                }
+                } => (
+                    file.acquire(StorageFileAccess::ReadExisting).await?,
+                    file_offset,
+                    span_length,
+                    false,
+                ),
+                BlockingHashSpan::PartFile { file, span } => (
+                    file.acquire(StorageFileAccess::ReadExisting)
+                        .await
+                        .map_err(SelectiveStorageError::PartFile)?,
+                    span.file_offset,
+                    span.length,
+                    true,
+                ),
                 BlockingHashSpan::Padding {
                     length: span_length,
                 } => {
-                    buffer.fill(0);
+                    let buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
                     while consumed < span_length {
                         let length = (span_length - consumed).min(buffer.len());
                         hasher.update(&buffer[..length]);
                         consumed += length;
                     }
+                    continue;
                 }
+            };
+            while consumed < span_length {
+                let length = (span_length - consumed).min(VERIFICATION_CHUNK_LENGTH);
+                let offset = file_offset
+                    .checked_add(u64::try_from(consumed).map_err(|_| {
+                        SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow)
+                    })?)
+                    .ok_or(SelectiveStorageError::Layout(
+                        LayoutError::ArithmeticOverflow,
+                    ))?;
+                let read_file = file.clone();
+                let bytes = tokio::task::spawn_blocking(move || {
+                    let mut bytes = vec![0_u8; length];
+                    read_exact_at(read_file.file(), &mut bytes, offset)?;
+                    Ok::<Vec<u8>, io::Error>(bytes)
+                })
+                .await
+                .map_err(|source| SelectiveStorageError::Io {
+                    operation: "join selected piece blocking verification job",
+                    source: io::Error::other(source),
+                })?
+                .map_err(|source| SelectiveStorageError::Io {
+                    operation: if part_file {
+                        "read part-file range in blocking verification job"
+                    } else {
+                        "read selected staging range in blocking verification job"
+                    },
+                    source,
+                })?;
+                if part_file {
+                    stats.part_file_reads = stats.part_file_reads.saturating_add(1);
+                } else {
+                    stats.wanted_file_reads = stats.wanted_file_reads.saturating_add(1);
+                }
+                hasher.update(&bytes);
+                consumed += length;
             }
         }
         Ok((hasher.finalize().into(), stats))
     }
 
     pub(crate) async fn execute(self) -> Result<[u8; 20], SelectiveStorageError> {
-        await_blocking_hash(tokio::task::spawn_blocking(move || self.hash()))
-            .await
-            .map(|(hash, _stats)| hash)
+        self.hash().await.map(|(hash, _stats)| hash)
     }
 }
 
+#[cfg(test)]
 async fn await_blocking_hash(
     task: tokio::task::JoinHandle<BlockingHashResult>,
 ) -> BlockingHashResult {
@@ -518,6 +725,19 @@ async fn await_blocking_hash(
         operation: "join selected piece blocking verification job",
         source: io::Error::other(source),
     })?
+}
+
+async fn sync_file(
+    file: StorageFileLease,
+    operation: &'static str,
+) -> Result<(), SelectiveStorageError> {
+    tokio::task::spawn_blocking(move || file.file().sync_data())
+        .await
+        .map_err(|source| SelectiveStorageError::Io {
+            operation: "join selected file sync",
+            source: io::Error::other(source),
+        })?
+        .map_err(|source| SelectiveStorageError::Io { operation, source })
 }
 
 impl SelectiveStorage {
@@ -535,11 +755,38 @@ impl SelectiveStorage {
         Self::create_with_paths(paths, metainfo, layout, selection).await
     }
 
+    pub(crate) async fn create_with_pool(
+        output_root: PathBuf,
+        metainfo: &Metainfo,
+        layout: TorrentLayout,
+        selection: FileSelection,
+        pool: StorageFilePool,
+    ) -> Result<Self, SelectiveStorageError> {
+        let paths = TorrentStoragePaths {
+            staging: selective_staging_path(&output_root)?,
+            part: selective_part_path(&output_root)?,
+            output: output_root,
+        };
+        Self::create_with_paths_and_pool(paths, metainfo, layout, selection, pool).await
+    }
+
     pub(crate) async fn create_with_paths(
         paths: TorrentStoragePaths,
         metainfo: &Metainfo,
         layout: TorrentLayout,
         selection: FileSelection,
+    ) -> Result<Self, SelectiveStorageError> {
+        let pool = StorageFilePool::new(DEFAULT_STORAGE_FILE_LIMIT, None)
+            .expect("default storage file limit is nonzero");
+        Self::create_with_paths_and_pool(paths, metainfo, layout, selection, pool).await
+    }
+
+    pub(crate) async fn create_with_paths_and_pool(
+        paths: TorrentStoragePaths,
+        metainfo: &Metainfo,
+        layout: TorrentLayout,
+        selection: FileSelection,
+        pool: StorageFilePool,
     ) -> Result<Self, SelectiveStorageError> {
         let TorrentStoragePaths {
             output: output_root,
@@ -556,13 +803,7 @@ impl SelectiveStorage {
             return Err(SelectiveStorageError::ExistingPartFile(part_path));
         }
 
-        tokio::fs::create_dir(&staging_root)
-            .await
-            .map_err(|source| SelectiveStorageError::Io {
-                operation: "create selected staging root",
-                source,
-            })?;
-
+        let storage_id = storage_instance_id(metainfo.info_hash);
         let mut files = Vec::with_capacity(layout.files().len());
         for (file_index, metainfo_file) in layout.files().iter().enumerate() {
             if metainfo_file.padding || !selection.is_wanted(file_index) {
@@ -570,35 +811,26 @@ impl SelectiveStorage {
                 continue;
             }
             let path = joined_path(&staging_root, &metainfo_file.path);
-            let parent = path
-                .parent()
-                .ok_or(SelectiveStorageError::InvalidOutputPath)?;
-            tokio::fs::create_dir_all(parent).await.map_err(|source| {
-                SelectiveStorageError::Io {
-                    operation: "create selected file parent",
-                    source,
-                }
-            })?;
-            let file = OpenOptions::new()
-                .read(true)
-                .write(true)
-                .create_new(true)
-                .open(&path)
-                .await
-                .map_err(|source| SelectiveStorageError::Io {
-                    operation: "create selected staging file",
-                    source,
-                })?;
-            file.set_len(metainfo_file.length).await.map_err(|source| {
-                SelectiveStorageError::Io {
-                    operation: "size selected staging file",
-                    source,
-                }
-            })?;
-            files.push(Some(
-                RetainedFile::new(file, "retain selected staging file").await?,
-            ));
+            files.push(Some(RetainedFile::dynamic(
+                path_storage_reference(
+                    &pool,
+                    &storage_id,
+                    0,
+                    StorageFileRole::Payload(file_index),
+                    path,
+                ),
+                file_index,
+                metainfo_file.length,
+            )));
         }
+
+        let part_reference = path_storage_reference(
+            &pool,
+            &storage_id,
+            0,
+            StorageFileRole::Part,
+            part_path.clone(),
+        );
 
         let identity = PartFileIdentity {
             info_hash: metainfo.info_hash,
@@ -607,22 +839,117 @@ impl SelectiveStorage {
             total_length: layout.total_length(),
         };
         let piece_count = layout.piece_count();
+        let skipped_sources = vec![None; layout.files().len()];
 
         Ok(Self {
             backing: StorageBacking::Paths {
                 output_root,
                 staging_root,
                 part_path,
+                part_reference,
+                storage_id,
             },
             identity,
             layout,
             selection,
             files,
+            skipped_sources,
             part_file: None,
             part_checkpoint_handle: None,
             verified: vec![false; piece_count],
             published: false,
         })
+    }
+
+    pub async fn create_with_platform(
+        spec: PlatformStorageSpec,
+        metainfo: &Metainfo,
+        layout: TorrentLayout,
+        selection: FileSelection,
+        verified: Vec<bool>,
+    ) -> Result<(Self, ResumedStorage), SelectiveStorageError> {
+        validate_publication_name(&spec.publication_name)?;
+        if spec.storage_id != storage_instance_id(metainfo.info_hash) {
+            return Err(SelectiveStorageError::InvalidStorageOperation(
+                "platform storage identity",
+            ));
+        }
+        if verified.len() != layout.piece_count() {
+            return Err(SelectiveStorageError::InvalidVerifiedPiece {
+                piece_index: verified.len(),
+            });
+        }
+        let resuming = verified.iter().any(|piece| *piece);
+        let mut files = Vec::with_capacity(layout.files().len());
+        let mut skipped_sources = Vec::with_capacity(layout.files().len());
+        for (file_index, metainfo_file) in layout.files().iter().enumerate() {
+            if metainfo_file.padding {
+                files.push(None);
+                skipped_sources.push(None);
+                continue;
+            }
+            let source = RetainedFileSource::Dynamic {
+                reference: platform_storage_reference(
+                    &spec,
+                    StorageFileRole::Payload(file_index),
+                    metainfo_file.path.clone(),
+                ),
+                file_index,
+                expected_length: metainfo_file.length,
+            };
+            if selection.is_wanted(file_index) {
+                files.push(Some(RetainedFile {
+                    source,
+                    routing_generation: 0,
+                }));
+                skipped_sources.push(None);
+            } else if resuming {
+                files.push(None);
+                skipped_sources.push(Some(source));
+            } else {
+                files.push(None);
+                skipped_sources.push(None);
+            }
+        }
+        let part_reference = platform_storage_reference(&spec, StorageFileRole::Part, Vec::new());
+        let identity = PartFileIdentity {
+            info_hash: metainfo.info_hash,
+            piece_count: layout.piece_count(),
+            piece_length: layout.piece_length(),
+            total_length: layout.total_length(),
+        };
+        let piece_count = layout.piece_count();
+        let resumed = if verified.iter().any(|piece| *piece) {
+            if spec.published {
+                ResumedStorage::Published
+            } else {
+                ResumedStorage::Staging
+            }
+        } else {
+            ResumedStorage::Created
+        };
+        Ok((
+            Self {
+                backing: StorageBacking::Platform {
+                    spec: spec.clone(),
+                    part_reference,
+                },
+                identity,
+                layout,
+                selection,
+                files,
+                skipped_sources,
+                part_file: None,
+                part_checkpoint_handle: None,
+                verified: if resumed == ResumedStorage::Created {
+                    vec![false; piece_count]
+                } else {
+                    verified
+                },
+                published: spec.published,
+            },
+            resumed,
+        ))
     }
 
     pub async fn create_with_descriptors(
@@ -746,6 +1073,7 @@ impl SelectiveStorage {
             })?;
         drop(PartFile::open_preopened(validation_reopen, identity).await?);
         let piece_count = layout.piece_count();
+        let skipped_sources = vec![None; layout.files().len()];
 
         Ok(Self {
             backing: StorageBacking::Descriptors {
@@ -756,6 +1084,7 @@ impl SelectiveStorage {
             layout,
             selection,
             files,
+            skipped_sources,
             part_file: Some(part_file),
             part_checkpoint_handle: None,
             verified: vec![false; piece_count],
@@ -834,6 +1163,7 @@ impl SelectiveStorage {
             })?;
         drop(PartFile::open_preopened(validation_reopen, identity).await?);
 
+        let skipped_sources = vec![None; layout.files().len()];
         Ok(Self {
             backing: StorageBacking::Descriptors {
                 reopened_part_file: Some(descriptors.reopened_part_file),
@@ -843,6 +1173,7 @@ impl SelectiveStorage {
             layout,
             selection,
             files,
+            skipped_sources,
             part_file: Some(part_file),
             part_checkpoint_handle: None,
             verified,
@@ -872,6 +1203,19 @@ impl SelectiveStorage {
         selection: FileSelection,
         verified: Vec<bool>,
     ) -> Result<(Self, ResumedStorage), SelectiveStorageError> {
+        let pool = StorageFilePool::new(DEFAULT_STORAGE_FILE_LIMIT, None)
+            .expect("default storage file limit is nonzero");
+        Self::resume_with_paths_and_pool(paths, metainfo, layout, selection, verified, pool).await
+    }
+
+    pub(crate) async fn resume_with_paths_and_pool(
+        paths: TorrentStoragePaths,
+        metainfo: &Metainfo,
+        layout: TorrentLayout,
+        selection: FileSelection,
+        verified: Vec<bool>,
+        pool: StorageFilePool,
+    ) -> Result<(Self, ResumedStorage), SelectiveStorageError> {
         if verified.len() != layout.piece_count() {
             return Err(SelectiveStorageError::InvalidVerifiedPiece {
                 piece_index: verified.len(),
@@ -888,7 +1232,7 @@ impl SelectiveStorage {
         let part_exists = path_exists(&part_path, "inspect resumable part file").await?;
 
         if !output_exists && !staging_exists && !part_exists {
-            let storage = Self::create_with_paths(
+            let storage = Self::create_with_paths_and_pool(
                 TorrentStoragePaths {
                     output: output_root,
                     staging: staging_root,
@@ -897,6 +1241,7 @@ impl SelectiveStorage {
                 metainfo,
                 layout,
                 selection,
+                pool,
             )
             .await?;
             return Ok((storage, ResumedStorage::Created));
@@ -913,6 +1258,8 @@ impl SelectiveStorage {
         } else {
             (&staging_root, ResumedStorage::Staging, false)
         };
+        let namespace_generation = u64::from(published);
+        let storage_id = storage_instance_id(metainfo.info_hash);
         let tree_metadata = tokio::fs::symlink_metadata(tree_root)
             .await
             .map_err(|source| SelectiveStorageError::Io {
@@ -926,10 +1273,12 @@ impl SelectiveStorage {
         }
 
         let mut files = Vec::with_capacity(layout.files().len());
+        let mut skipped_sources = Vec::with_capacity(layout.files().len());
         let mut promoted_files = Vec::new();
         for (file_index, metainfo_file) in layout.files().iter().enumerate() {
             if metainfo_file.padding {
                 files.push(None);
+                skipped_sources.push(None);
                 continue;
             }
             let path = joined_path(tree_root, &metainfo_file.path);
@@ -945,55 +1294,46 @@ impl SelectiveStorage {
                             actual: metadata.len(),
                         });
                     }
-                    files.push(Some(
-                        RetainedFile::new(
-                            OpenOptions::new()
-                                .read(true)
-                                .write(true)
-                                .open(&path)
-                                .await
-                                .map_err(|source| SelectiveStorageError::Io {
-                                    operation: "open resumable selected file",
-                                    source,
-                                })?,
-                            "retain resumable selected file",
-                        )
-                        .await?,
-                    ));
+                    let source = RetainedFileSource::Dynamic {
+                        reference: path_storage_reference(
+                            &pool,
+                            &storage_id,
+                            namespace_generation,
+                            StorageFileRole::Payload(file_index),
+                            path,
+                        ),
+                        file_index,
+                        expected_length: metainfo_file.length,
+                    };
+                    if selection.is_wanted(file_index) {
+                        files.push(Some(RetainedFile {
+                            source,
+                            routing_generation: 0,
+                        }));
+                        skipped_sources.push(None);
+                    } else {
+                        files.push(None);
+                        skipped_sources.push(Some(source));
+                    }
                 }
                 Err(source) if source.kind() == io::ErrorKind::NotFound => {
                     if !selection.is_wanted(file_index) {
                         files.push(None);
+                        skipped_sources.push(None);
                         continue;
                     }
-                    let parent = path
-                        .parent()
-                        .ok_or(SelectiveStorageError::InvalidOutputPath)?;
-                    tokio::fs::create_dir_all(parent).await.map_err(|source| {
-                        SelectiveStorageError::Io {
-                            operation: "create promoted file parent",
-                            source,
-                        }
-                    })?;
-                    let file = OpenOptions::new()
-                        .read(true)
-                        .write(true)
-                        .create_new(true)
-                        .open(&path)
-                        .await
-                        .map_err(|source| SelectiveStorageError::Io {
-                            operation: "create promoted selected file",
-                            source,
-                        })?;
-                    file.set_len(metainfo_file.length).await.map_err(|source| {
-                        SelectiveStorageError::Io {
-                            operation: "size promoted selected file",
-                            source,
-                        }
-                    })?;
-                    files.push(Some(
-                        RetainedFile::new(file, "retain promoted selected file").await?,
-                    ));
+                    files.push(Some(RetainedFile::dynamic(
+                        path_storage_reference(
+                            &pool,
+                            &storage_id,
+                            namespace_generation,
+                            StorageFileRole::Payload(file_index),
+                            path,
+                        ),
+                        file_index,
+                        metainfo_file.length,
+                    )));
+                    skipped_sources.push(None);
                     promoted_files.push(file_index);
                 }
                 Err(source) => {
@@ -1011,8 +1351,22 @@ impl SelectiveStorage {
             piece_length: layout.piece_length(),
             total_length: layout.total_length(),
         };
+        let part_reference = path_storage_reference(
+            &pool,
+            &storage_id,
+            namespace_generation,
+            StorageFileRole::Part,
+            part_path.clone(),
+        );
         let part_file = if part_exists {
-            Some(PartFile::open(part_path.clone(), identity).await?)
+            Some(
+                PartFile::open_with_reference(
+                    part_reference.clone(),
+                    Some(part_path.clone()),
+                    identity,
+                )
+                .await?,
+            )
         } else {
             None
         };
@@ -1021,11 +1375,14 @@ impl SelectiveStorage {
                 output_root,
                 staging_root,
                 part_path,
+                part_reference,
+                storage_id,
             },
             identity,
             layout,
             selection,
             files,
+            skipped_sources,
             part_file,
             part_checkpoint_handle: None,
             verified,
@@ -1070,7 +1427,7 @@ impl SelectiveStorage {
     pub fn part_path(&self) -> Option<&Path> {
         match &self.backing {
             StorageBacking::Paths { part_path, .. } => Some(part_path),
-            StorageBacking::Descriptors { .. } => None,
+            StorageBacking::Platform { .. } | StorageBacking::Descriptors { .. } => None,
         }
     }
 
@@ -1204,7 +1561,10 @@ impl SelectiveStorage {
                     if file.routing_generation != routing_generation {
                         return Err(SelectiveStorageError::StaleWriteRoute { file_index });
                     }
-                    (file.positional.clone(), file_offset)
+                    (
+                        ExecutableFileSource::Wanted(file.source.clone()),
+                        file_offset,
+                    )
                 }
                 SelectiveWriteDestination::PartFile(part_span) => {
                     let part_file = self
@@ -1212,7 +1572,10 @@ impl SelectiveStorage {
                         .as_ref()
                         .ok_or(SelectiveStorageError::NotPublished)?;
                     part_file.validate_span(part_span)?;
-                    (part_file.positional_handle(), part_span.file_offset)
+                    (
+                        ExecutableFileSource::Part(part_file.checkpoint_reference()),
+                        part_span.file_offset,
+                    )
                 }
             };
             executable.push(ExecutableWriteSpan {
@@ -1296,7 +1659,7 @@ impl SelectiveStorage {
                         .as_ref()
                         .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?;
                     spans.push(BlockingHashSpan::WantedFile {
-                        file: file.positional.clone(),
+                        file: file.source.clone(),
                         file_offset,
                         length: segment.length,
                     });
@@ -1308,9 +1671,25 @@ impl SelectiveStorage {
                     file_index,
                     file_offset,
                 } => {
-                    if let Some(file) = self.files[file_index].as_ref() {
+                    let part_span = self
+                        .part_file
+                        .as_ref()
+                        .filter(|part_file| part_file.has_piece(piece_index).unwrap_or(false))
+                        .map(|part_file| {
+                            let span = part_file.plan_read_piece_range(
+                                piece_index,
+                                segment.piece_offset,
+                                segment.length,
+                            )?;
+                            part_file.validate_span(span)?;
+                            Ok::<_, PartFileError>((part_file.checkpoint_reference(), span))
+                        })
+                        .transpose()?;
+                    if let Some((file, span)) = part_span {
+                        spans.push(BlockingHashSpan::PartFile { file, span });
+                    } else if let Some(file) = self.skipped_sources[file_index].as_ref() {
                         spans.push(BlockingHashSpan::WantedFile {
-                            file: file.positional.clone(),
+                            file: file.clone(),
                             file_offset,
                             length: segment.length,
                         });
@@ -1326,7 +1705,7 @@ impl SelectiveStorage {
                         )?;
                         part_file.validate_span(span)?;
                         spans.push(BlockingHashSpan::PartFile {
-                            file: part_file.positional_handle(),
+                            file: part_file.checkpoint_reference(),
                             span,
                         });
                     }
@@ -1354,7 +1733,7 @@ impl SelectiveStorage {
         piece_index: u32,
     ) -> Result<([u8; 20], SelectiveHashIoStats), SelectiveStorageError> {
         let plan = self.prepare_hash(piece_index)?;
-        await_blocking_hash(tokio::task::spawn_blocking(move || plan.hash())).await
+        plan.hash().await
     }
 
     pub fn record_verified(&mut self, piece_index: usize) -> Result<(), SelectiveStorageError> {
@@ -1399,22 +1778,22 @@ impl SelectiveStorage {
             let Some(file) = file else {
                 continue;
             };
-            let handle =
-                file.positional
-                    .try_clone()
-                    .map_err(|source| SelectiveStorageError::Io {
-                        operation: "duplicate selected file for durability checkpoint",
-                        source,
-                    })?;
             let cell = Arc::new(OnceLock::new());
-            cell.set(Arc::new(handle))
+            cell.set(file.checkpoint_reference())
                 .expect("new selected-file checkpoint cell is empty");
             handles.insert(DurabilityTarget::WantedFile(file_index), cell);
         }
         let part_cell = Arc::new(OnceLock::new());
         if let Some(part_file) = self.part_file.as_ref() {
             part_cell
-                .set(Arc::new(part_file.duplicate_for_checkpoint().await?))
+                .set(match part_file.checkpoint_reference() {
+                    PartFileCheckpointReference::Dynamic(reference) => {
+                        CheckpointFileReference::Dynamic(reference)
+                    }
+                    PartFileCheckpointReference::Fixed(file) => {
+                        CheckpointFileReference::Fixed(file)
+                    }
+                })
                 .expect("new part-file checkpoint cell is empty");
         }
         self.part_checkpoint_handle = Some(part_cell.clone());
@@ -1462,16 +1841,12 @@ impl SelectiveStorage {
             }
         }
         for file_index in wanted_files {
-            self.files[file_index]
+            let file = self.files[file_index]
                 .as_ref()
                 .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?
-                .control
-                .sync_data()
-                .await
-                .map_err(|source| SelectiveStorageError::Io {
-                    operation: "flush verified selected piece",
-                    source,
-                })?;
+                .acquire(StorageFileAccess::ReadWriteExisting)
+                .await?;
+            sync_file(file, "flush verified selected piece").await?;
         }
         if sync_part {
             self.part_file_mut()?.sync_payload().await?;
@@ -1481,13 +1856,32 @@ impl SelectiveStorage {
 
     pub async fn publish(&mut self) -> Result<(), SelectiveStorageError> {
         self.sync_verified().await?;
-        let (output_root, staging_root) = match &self.backing {
+        for (file_index, metainfo_file) in self.layout.files().iter().enumerate() {
+            if metainfo_file.length == 0
+                && !metainfo_file.padding
+                && self.selection.is_wanted(file_index)
+            {
+                self.files[file_index]
+                    .as_ref()
+                    .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?
+                    .acquire(StorageFileAccess::ReadWriteCreate)
+                    .await?;
+            }
+        }
+        let (output_root, staging_root, pool, storage_id) = match &self.backing {
             StorageBacking::Paths {
                 output_root,
                 staging_root,
+                part_reference,
+                storage_id,
                 ..
-            } => (output_root.clone(), staging_root.clone()),
-            StorageBacking::Descriptors { .. } => {
+            } => (
+                output_root.clone(),
+                staging_root.clone(),
+                part_reference.pool().clone(),
+                storage_id.clone(),
+            ),
+            StorageBacking::Platform { .. } | StorageBacking::Descriptors { .. } => {
                 return Err(SelectiveStorageError::InvalidStorageOperation(
                     "path publication",
                 ));
@@ -1497,12 +1891,45 @@ impl SelectiveStorage {
         if path_exists(&output_root, "inspect selected output before publish").await? {
             return Err(SelectiveStorageError::ExistingOutput(output_root));
         }
+        pool.invalidate_storage(&storage_id);
         tokio::fs::rename(&staging_root, &output_root)
             .await
             .map_err(|source| SelectiveStorageError::Io {
                 operation: "publish selected tree",
                 source,
             })?;
+        for (file_index, metainfo_file) in self.layout.files().iter().enumerate() {
+            let Some(file) = self.files[file_index].as_mut() else {
+                continue;
+            };
+            let routing_generation = file.routing_generation;
+            *file = RetainedFile::dynamic(
+                path_storage_reference(
+                    &pool,
+                    &storage_id,
+                    1,
+                    StorageFileRole::Payload(file_index),
+                    joined_path(&output_root, &metainfo_file.path),
+                ),
+                file_index,
+                metainfo_file.length,
+            );
+            file.routing_generation = routing_generation;
+        }
+        if let StorageBacking::Paths {
+            part_path,
+            part_reference,
+            ..
+        } = &mut self.backing
+        {
+            *part_reference = path_storage_reference(
+                &pool,
+                &storage_id,
+                1,
+                StorageFileRole::Part,
+                part_path.clone(),
+            );
+        }
         self.published = true;
         Ok(())
     }
@@ -1514,6 +1941,41 @@ impl SelectiveStorage {
             ));
         }
         self.sync_verified().await?;
+        for (file_index, metainfo_file) in self.layout.files().iter().enumerate() {
+            if metainfo_file.length == 0
+                && !metainfo_file.padding
+                && self.selection.is_wanted(file_index)
+            {
+                self.files[file_index]
+                    .as_ref()
+                    .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?
+                    .acquire(StorageFileAccess::ReadWriteCreate)
+                    .await?;
+            }
+        }
+        self.published = true;
+        Ok(())
+    }
+
+    pub async fn prepare_platform(&mut self) -> Result<(), SelectiveStorageError> {
+        if !matches!(self.backing, StorageBacking::Platform { .. }) {
+            return Err(SelectiveStorageError::InvalidStorageOperation(
+                "platform preparation",
+            ));
+        }
+        self.sync_verified().await?;
+        for (file_index, metainfo_file) in self.layout.files().iter().enumerate() {
+            if metainfo_file.length == 0
+                && !metainfo_file.padding
+                && self.selection.is_wanted(file_index)
+            {
+                self.files[file_index]
+                    .as_ref()
+                    .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?
+                    .acquire(StorageFileAccess::ReadWriteCreate)
+                    .await?;
+            }
+        }
         self.published = true;
         Ok(())
     }
@@ -1539,22 +2001,19 @@ impl SelectiveStorage {
             }
         }
 
-        for file in self.files.iter().flatten() {
-            file.control
-                .sync_data()
-                .await
-                .map_err(|source| SelectiveStorageError::Io {
-                    operation: "flush selected staging file",
-                    source,
-                })?;
+        for (file_index, file) in self.files.iter().enumerate() {
+            let Some(file) = file else { continue };
+            if self.layout.files()[file_index].length == 0 {
+                continue;
+            }
+            sync_file(
+                file.acquire(StorageFileAccess::ReadWriteCreate).await?,
+                "flush selected staging file",
+            )
+            .await?;
         }
         if let Some(part_file) = self.part_file.as_ref() {
             part_file.sync_payload().await?;
-        }
-        if matches!(self.backing, StorageBacking::Paths { .. }) {
-            self.files.iter_mut().for_each(|file| {
-                file.take();
-            });
         }
         Ok(())
     }
@@ -1565,8 +2024,17 @@ impl SelectiveStorage {
         }
         self.part_file.take();
         self.part_file = Some(match &mut self.backing {
-            StorageBacking::Paths { part_path, .. } => {
-                PartFile::open(part_path.clone(), self.identity).await?
+            StorageBacking::Paths {
+                part_path,
+                part_reference,
+                ..
+            } => {
+                PartFile::open_with_reference(
+                    part_reference.clone(),
+                    Some(part_path.clone()),
+                    self.identity,
+                )
+                .await?
             }
             StorageBacking::Descriptors {
                 reopened_part_file, ..
@@ -1578,12 +2046,15 @@ impl SelectiveStorage {
                 )?;
                 PartFile::open_preopened(file, self.identity).await?
             }
+            StorageBacking::Platform { part_reference, .. } => {
+                PartFile::open_with_reference(part_reference.clone(), None, self.identity).await?
+            }
         });
         Ok(())
     }
 
-    pub(crate) fn has_piece_sources(
-        &self,
+    pub(crate) async fn has_piece_sources(
+        &mut self,
         piece_index: u32,
     ) -> Result<bool, SelectiveStorageError> {
         let piece_length = self.layout.piece_length_at(piece_index)?;
@@ -1593,9 +2064,23 @@ impl SelectiveStorage {
         let piece_index = usize::try_from(piece_index)
             .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
         for segment in segments {
-            if let SegmentTarget::SkippedFile { file_index, .. } = segment.target
-                && self.files[file_index].is_none()
-            {
+            if let SegmentTarget::SkippedFile { file_index, .. } = segment.target {
+                if let Some(source) = self.skipped_sources[file_index].clone() {
+                    if source.is_available().await? {
+                        continue;
+                    }
+                    self.skipped_sources[file_index] = None;
+                }
+                if self.part_file.is_none()
+                    && let StorageBacking::Platform { part_reference, .. } = &self.backing
+                {
+                    self.part_file = PartFile::open_optional_with_reference(
+                        part_reference.clone(),
+                        None,
+                        self.identity,
+                    )
+                    .await?;
+                }
                 let Some(part_file) = self.part_file.as_ref() else {
                     return Ok(false);
                 };
@@ -1635,6 +2120,33 @@ impl SelectiveStorage {
                     piece_index: piece_index_usize,
                 });
             }
+        }
+
+        if let StorageBacking::Platform { spec, .. } = &self.backing {
+            if !spec.published {
+                return Err(SelectiveStorageError::InvalidStorageOperation(
+                    "materialize unpublished platform file",
+                ));
+            }
+            self.files[file_index] = Some(RetainedFile::dynamic(
+                platform_storage_reference(
+                    spec,
+                    StorageFileRole::Payload(file_index),
+                    metainfo_file.path.clone(),
+                ),
+                file_index,
+                metainfo_file.length,
+            ));
+            self.restore_promoted_file(file_index).await?;
+            let slots_before = self.part_slots();
+            self.selection.set_wanted(&self.layout, file_index, true)?;
+            self.release_unused_part_slots().await?;
+            return Ok(MaterializationReport {
+                file_index,
+                bytes: metainfo_file.length,
+                slots_before,
+                slots_after: self.part_slots(),
+            });
         }
 
         let (mut output, paths) = match &mut self.backing {
@@ -1681,6 +2193,7 @@ impl SelectiveStorage {
                     })?;
                 (File::from_std(file), None)
             }
+            StorageBacking::Platform { .. } => unreachable!("platform handled above"),
         };
         let write_result = async {
             output
@@ -1784,7 +2297,10 @@ impl SelectiveStorage {
     pub async fn finalize_descriptor_hashes(
         &mut self,
     ) -> Result<Vec<PreparedFileHash>, SelectiveStorageError> {
-        if !matches!(self.backing, StorageBacking::Descriptors { .. }) {
+        if !matches!(
+            self.backing,
+            StorageBacking::Descriptors { .. } | StorageBacking::Platform { .. }
+        ) {
             return Err(SelectiveStorageError::InvalidStorageOperation(
                 "descriptor hash finalization",
             ));
@@ -1793,40 +2309,41 @@ impl SelectiveStorage {
             return Err(SelectiveStorageError::NotPublished);
         }
         let mut hashes = Vec::new();
-        let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
         for (file_index, metainfo_file) in self.layout.files().iter().enumerate() {
             if metainfo_file.padding || !self.selection.is_wanted(file_index) {
                 continue;
             }
             let file = self.files[file_index]
-                .as_mut()
+                .as_ref()
                 .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?;
-            file.control
-                .seek(SeekFrom::Start(0))
-                .await
-                .map_err(|source| SelectiveStorageError::Io {
-                    operation: "seek prepared descriptor for hashing",
-                    source,
-                })?;
-            let mut remaining = metainfo_file.length;
-            let mut hasher = Sha1::new();
-            while remaining != 0 {
-                let length = usize::try_from(remaining.min(buffer.len() as u64))
-                    .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
-                file.control
-                    .read_exact(&mut buffer[..length])
-                    .await
-                    .map_err(|source| SelectiveStorageError::Io {
-                        operation: "read prepared descriptor for hashing",
-                        source,
-                    })?;
-                hasher.update(&buffer[..length]);
-                remaining -= length as u64;
-            }
+            let file = file.acquire(StorageFileAccess::ReadExisting).await?;
+            let file_length = metainfo_file.length;
+            let sha1 = tokio::task::spawn_blocking(move || {
+                let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
+                let mut offset = 0_u64;
+                let mut hasher = Sha1::new();
+                while offset < file_length {
+                    let length = usize::try_from((file_length - offset).min(buffer.len() as u64))
+                        .map_err(|_| io::Error::other("prepared file length overflow"))?;
+                    read_exact_at(file.file(), &mut buffer[..length], offset)?;
+                    hasher.update(&buffer[..length]);
+                    offset += length as u64;
+                }
+                Ok::<[u8; 20], io::Error>(hasher.finalize().into())
+            })
+            .await
+            .map_err(|source| SelectiveStorageError::Io {
+                operation: "join prepared descriptor hash",
+                source: io::Error::other(source),
+            })?
+            .map_err(|source| SelectiveStorageError::Io {
+                operation: "hash prepared descriptor",
+                source,
+            })?;
             hashes.push(PreparedFileHash {
                 file_index,
                 length: metainfo_file.length,
-                sha1: hasher.finalize().into(),
+                sha1,
             });
         }
         self.files.iter_mut().for_each(|file| {
@@ -1843,18 +2360,31 @@ impl SelectiveStorage {
 
     async fn ensure_part_file(&mut self) -> Result<&mut PartFile, SelectiveStorageError> {
         if self.part_file.is_none() {
-            let part_path = match &self.backing {
-                StorageBacking::Paths { part_path, .. } => part_path.clone(),
+            let (part_path, part_reference) = match &self.backing {
+                StorageBacking::Paths {
+                    part_path,
+                    part_reference,
+                    ..
+                } => (Some(part_path.clone()), part_reference.clone()),
                 StorageBacking::Descriptors { .. } => {
                     return Err(SelectiveStorageError::InvalidStorageOperation(
                         "lazy descriptor part-file creation",
                     ));
                 }
+                StorageBacking::Platform { part_reference, .. } => (None, part_reference.clone()),
             };
-            let part_file = PartFile::create(part_path, self.identity).await?;
+            let part_file =
+                PartFile::create_with_reference(part_reference, part_path, self.identity).await?;
             if let Some(handle) = self.part_checkpoint_handle.as_ref() {
                 handle
-                    .set(Arc::new(part_file.duplicate_for_checkpoint().await?))
+                    .set(match part_file.checkpoint_reference() {
+                        PartFileCheckpointReference::Dynamic(reference) => {
+                            CheckpointFileReference::Dynamic(reference)
+                        }
+                        PartFileCheckpointReference::Fixed(file) => {
+                            CheckpointFileReference::Fixed(file)
+                        }
+                    })
                     .map_err(|_| {
                         SelectiveStorageError::InvalidStorageOperation(
                             "replace registered part-file checkpoint handle",
@@ -1882,8 +2412,8 @@ impl SelectiveStorage {
         let destination = self.files[file_index]
             .as_ref()
             .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?
-            .positional
-            .clone();
+            .acquire(StorageFileAccess::ReadWriteCreate)
+            .await?;
         let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
         let mut file_offset = 0_u64;
         while file_offset < metainfo_file.length {
@@ -1916,7 +2446,7 @@ impl SelectiveStorage {
                 let destination = destination.clone();
                 let payload: Arc<[u8]> = Arc::from(&buffer[..length]);
                 tokio::task::spawn_blocking(move || {
-                    write_all_at(&destination, &payload, file_offset)
+                    write_all_at(destination.file(), &payload, file_offset)
                 })
                 .await
                 .map_err(|source| SelectiveStorageError::Io {
@@ -1935,16 +2465,7 @@ impl SelectiveStorage {
                         LayoutError::ArithmeticOverflow,
                     ))?;
         }
-        self.files[file_index]
-            .as_ref()
-            .expect("promoted file remains retained")
-            .control
-            .sync_data()
-            .await
-            .map_err(|source| SelectiveStorageError::Io {
-                operation: "flush promoted selected file",
-                source,
-            })
+        sync_file(destination, "flush promoted selected file").await
     }
 
     async fn release_unused_part_slots(&mut self) -> Result<(), SelectiveStorageError> {
@@ -1985,9 +2506,14 @@ impl SelectiveStorage {
             return Ok(());
         }
         match &mut self.backing {
-            StorageBacking::Paths { part_path, .. } => {
+            StorageBacking::Paths {
+                part_path,
+                part_reference,
+                ..
+            } => {
                 self.part_checkpoint_handle.take();
                 self.part_file.take();
+                part_reference.pool().invalidate_key(part_reference.key());
                 remove_file_if_present(part_path).await.map_err(|source| {
                     SelectiveStorageError::Io {
                         operation: "remove empty part file",
@@ -1996,6 +2522,17 @@ impl SelectiveStorage {
                 })?;
             }
             StorageBacking::Descriptors { .. } => {}
+            StorageBacking::Platform { part_reference, .. } => {
+                self.part_checkpoint_handle.take();
+                self.part_file.take();
+                part_reference
+                    .delete()
+                    .await
+                    .map_err(|error| SelectiveStorageError::Io {
+                        operation: "delete empty platform part file",
+                        source: io::Error::other(error),
+                    })?;
+            }
         }
         Ok(())
     }
@@ -2139,6 +2676,84 @@ pub async fn verify_prepared_descriptors(
             return Err(SelectiveStorageError::PreparedHashMismatch {
                 file_index: prepared.file_index,
             });
+        }
+    }
+    Ok(())
+}
+
+pub async fn verify_prepared_platform_files(
+    spec: &PlatformStorageSpec,
+    metainfo: &Metainfo,
+    prepared: &[PreparedFileHash],
+) -> Result<(), SelectiveStorageError> {
+    if !spec.published {
+        return Err(SelectiveStorageError::InvalidStorageOperation(
+            "verify unpublished platform namespace",
+        ));
+    }
+    for expected in prepared {
+        let metainfo_file = metainfo.files.get(expected.file_index).ok_or(
+            SelectiveStorageError::InvalidDescriptorManifest {
+                role: "published",
+                file_index: expected.file_index,
+                reason: "file index is out of range",
+            },
+        )?;
+        let reference = platform_storage_reference(
+            spec,
+            StorageFileRole::Payload(expected.file_index),
+            metainfo_file.path.clone(),
+        );
+        let file = reference
+            .open(StorageFileAccess::ReadExisting)
+            .await
+            .map(StorageFileLease::from)
+            .map_err(|error| SelectiveStorageError::Io {
+                operation: "acquire published platform file",
+                source: io::Error::other(error),
+            })?;
+        let actual_length = file
+            .file()
+            .metadata()
+            .map_err(|source| SelectiveStorageError::Io {
+                operation: "inspect published platform file",
+                source,
+            })?
+            .len();
+        if actual_length != expected.length {
+            return Err(SelectiveStorageError::UnexpectedFileLength {
+                file_index: expected.file_index,
+                expected: expected.length,
+                actual: actual_length,
+            });
+        }
+        let expected_hash = expected.sha1;
+        let file_index = expected.file_index;
+        let length = expected.length;
+        let actual_hash = tokio::task::spawn_blocking(move || {
+            let mut hasher = Sha1::new();
+            let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
+            let mut offset = 0_u64;
+            while offset < length {
+                let read_length = usize::try_from((length - offset).min(buffer.len() as u64))
+                    .map_err(|_| io::Error::other("published file length overflow"))?;
+                read_exact_at(file.file(), &mut buffer[..read_length], offset)?;
+                hasher.update(&buffer[..read_length]);
+                offset += read_length as u64;
+            }
+            Ok::<[u8; 20], io::Error>(hasher.finalize().into())
+        })
+        .await
+        .map_err(|source| SelectiveStorageError::Io {
+            operation: "join published platform verification",
+            source: io::Error::other(source),
+        })?
+        .map_err(|source| SelectiveStorageError::Io {
+            operation: "verify published platform file",
+            source,
+        })?;
+        if actual_hash != expected_hash {
+            return Err(SelectiveStorageError::PreparedHashMismatch { file_index });
         }
     }
     Ok(())
@@ -2338,6 +2953,65 @@ fn joined_path(root: &Path, components: &[String]) -> PathBuf {
     path
 }
 
+fn storage_instance_id(info_hash: [u8; 20]) -> String {
+    let mut id = String::with_capacity(40);
+    for byte in info_hash {
+        write!(&mut id, "{byte:02x}").expect("writing to a string cannot fail");
+    }
+    id
+}
+
+fn path_storage_reference(
+    pool: &StorageFilePool,
+    storage_id: &str,
+    namespace_generation: u64,
+    role: StorageFileRole,
+    path: PathBuf,
+) -> StorageFileReference {
+    StorageFileReference::new(
+        pool.clone(),
+        StorageFileKey {
+            storage_id: storage_id.to_owned(),
+            namespace_generation,
+            role,
+        },
+        StorageFileLocator::Path(path),
+    )
+}
+
+fn platform_storage_reference(
+    spec: &PlatformStorageSpec,
+    role: StorageFileRole,
+    components: Vec<String>,
+) -> StorageFileReference {
+    let path = match role {
+        StorageFileRole::Payload(_) => {
+            let namespace = if spec.published {
+                spec.publication_name.clone()
+            } else {
+                format!(".{}.rstorrent-staging", spec.publication_name)
+            };
+            std::iter::once(namespace).chain(components).collect()
+        }
+        StorageFileRole::Part => vec![format!(".{}.rstorrent-parts", spec.publication_name)],
+    };
+    StorageFileReference::new(
+        spec.pool.clone(),
+        StorageFileKey {
+            storage_id: spec.storage_id.clone(),
+            namespace_generation: spec.namespace_generation,
+            role,
+        },
+        StorageFileLocator::Platform(PlatformStorageTarget {
+            root_id: spec.root_id.clone(),
+            storage_id: spec.storage_id.clone(),
+            namespace_generation: spec.namespace_generation,
+            role,
+            path,
+        }),
+    )
+}
+
 async fn path_exists(path: &Path, operation: &'static str) -> Result<bool, SelectiveStorageError> {
     tokio::fs::try_exists(path)
         .await
@@ -2370,6 +3044,7 @@ pub async fn remove_selective_part_if_present(output_root: &Path) -> Result<(), 
 
 #[cfg(test)]
 mod tests {
+    use std::io;
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -2379,14 +3054,16 @@ mod tests {
     use sha1::{Digest, Sha1};
 
     use crate::checkpoint::DurabilityTarget;
+    use crate::storage_file_pool::{StorageFileAccess, StorageFilePool, platform_storage_channel};
 
     use super::{
-        BlockingHashResult, DescriptorFile, DescriptorStorage, PreparedFileHash, ResumedStorage,
-        SelectiveStorage, SelectiveStorageError, SelectiveWriteDestination, SelectiveWritePlan,
-        SelectiveWriteSpan, SelectiveWriteStats, VERIFICATION_CHUNK_LENGTH, await_blocking_hash,
-        collect_descriptors, materialization_path, remove_selective_part_if_present,
-        remove_selective_staging_if_present, selective_part_path, selective_staging_path,
-        torrent_storage_paths, verify_prepared_descriptors,
+        BlockingHashResult, DescriptorFile, DescriptorStorage, PlatformStorageSpec,
+        PreparedFileHash, ResumedStorage, SelectiveStorage, SelectiveStorageError,
+        SelectiveWriteDestination, SelectiveWritePlan, SelectiveWriteSpan, SelectiveWriteStats,
+        VERIFICATION_CHUNK_LENGTH, await_blocking_hash, collect_descriptors, materialization_path,
+        remove_selective_part_if_present, remove_selective_staging_if_present, selective_part_path,
+        selective_staging_path, storage_instance_id, torrent_storage_paths,
+        verify_prepared_descriptors, verify_prepared_platform_files,
     };
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -2605,17 +3282,12 @@ mod tests {
             storage.execute_write_plan(plan).await,
             Err(SelectiveStorageError::StaleWriteRoute { file_index: 0 })
         ));
-        let mut bytes = [1_u8; 8];
-        crate::positional_io::read_exact_at(
-            &storage.files[0]
-                .as_ref()
-                .expect("first wanted file")
-                .positional,
-            &mut bytes,
-            0,
-        )
-        .expect("read untouched file");
-        assert_eq!(bytes, [0; 8]);
+        assert!(
+            !selective_staging_path(&output)
+                .expect("staging path")
+                .exists(),
+            "a rejected immutable plan must not create its destination"
+        );
         clean(&output).await;
     }
 
@@ -2729,16 +3401,19 @@ mod tests {
         storage.files[0]
             .as_ref()
             .expect("wanted file")
-            .control
-            .set_len(16_384)
+            .acquire(StorageFileAccess::ReadWriteExisting)
             .await
+            .expect("acquire wanted file")
+            .file()
+            .set_len(16_384)
             .expect("truncate staging file");
         assert!(matches!(
             storage.hash_piece(0).await,
-            Err(SelectiveStorageError::Io {
-                operation: "read selected staging range in blocking verification job",
-                source,
-            }) if source.kind() == std::io::ErrorKind::UnexpectedEof
+            Err(SelectiveStorageError::UnexpectedFileLength {
+                file_index: 0,
+                expected: 32_768,
+                actual: 16_384,
+            })
         ));
         clean(&output).await;
     }
@@ -2848,6 +3523,169 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dynamic_platform_storage_is_lazy_and_verifies_after_publication() {
+        let root = test_path("dynamic-platform");
+        clean(&root).await;
+        tokio::fs::create_dir_all(&root)
+            .await
+            .expect("create fake provider root");
+        let (platform, broker) = platform_storage_channel();
+        let pool = StorageFilePool::new(4, Some(platform)).expect("platform pool");
+        let provider_root = root.clone();
+        let provider = tokio::spawn(async move {
+            while let Some(request) = broker.next_request().await {
+                let path = request
+                    .path
+                    .iter()
+                    .fold(provider_root.clone(), |path, component| {
+                        path.join(component)
+                    });
+                if request.delete {
+                    let result = match std::fs::remove_file(&path) {
+                        Ok(()) => Ok(()),
+                        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+                        Err(error) => Err(error),
+                    };
+                    match result {
+                        Ok(()) => {
+                            broker.complete_deleted(request.request_id);
+                        }
+                        Err(error) => {
+                            broker.complete_error(
+                                request.request_id,
+                                crate::storage_file_pool::PlatformStorageFailure::new(
+                                    crate::storage_file_pool::PlatformStorageFailureKind::Internal,
+                                    error.to_string(),
+                                ),
+                            );
+                        }
+                    }
+                    continue;
+                }
+                if matches!(request.access, StorageFileAccess::ReadWriteCreate) {
+                    std::fs::create_dir_all(path.parent().expect("provider path parent"))
+                        .expect("create provider parents");
+                }
+                let mut options = std::fs::OpenOptions::new();
+                options
+                    .read(true)
+                    .write(!matches!(request.access, StorageFileAccess::ReadExisting));
+                options.create(matches!(request.access, StorageFileAccess::ReadWriteCreate));
+                match options.open(path) {
+                    Ok(file) => {
+                        broker.complete_file(request.request_id, file);
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                        broker.complete_error(
+                            request.request_id,
+                            crate::storage_file_pool::PlatformStorageFailure::new(
+                                crate::storage_file_pool::PlatformStorageFailureKind::Missing,
+                                "missing",
+                            ),
+                        );
+                    }
+                    Err(error) => {
+                        broker.complete_error(
+                            request.request_id,
+                            crate::storage_file_pool::PlatformStorageFailure::new(
+                                crate::storage_file_pool::PlatformStorageFailureKind::Internal,
+                                error.to_string(),
+                            ),
+                        );
+                    }
+                }
+            }
+        });
+
+        let metainfo = fixture();
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[1, 2]).expect("selection");
+        let bytes = torrent_bytes(&metainfo);
+        let spec = PlatformStorageSpec {
+            pool: pool.clone(),
+            root_id: "downloads".to_owned(),
+            storage_id: storage_instance_id(metainfo.info_hash),
+            publication_name: metainfo.name.clone(),
+            namespace_generation: 0,
+            published: false,
+        };
+        let (mut storage, resumed) = SelectiveStorage::create_with_platform(
+            spec.clone(),
+            &metainfo,
+            layout.clone(),
+            selection,
+            vec![false; layout.piece_count()],
+        )
+        .await
+        .expect("create platform storage");
+        assert_eq!(resumed, ResumedStorage::Created);
+        assert!(
+            std::fs::read_dir(&root)
+                .expect("empty provider root")
+                .next()
+                .is_none()
+        );
+        assert_eq!(pool.snapshot().current_owned, 0);
+
+        for piece_index in [0_u32, 2, 3, 4] {
+            for request in layout
+                .request_ranges(piece_index, &storage.selection)
+                .expect("piece requests")
+            {
+                let offset =
+                    piece_index as usize * layout.piece_length() as usize + request.begin as usize;
+                storage
+                    .write_block(
+                        piece_index,
+                        request.begin,
+                        bytes[offset..offset + request.length as usize].to_vec(),
+                    )
+                    .await
+                    .expect("write platform block");
+            }
+            let offset = piece_index as usize * layout.piece_length() as usize;
+            let length = layout.piece_length_at(piece_index).expect("piece length") as usize;
+            assert_eq!(
+                storage
+                    .hash_piece(piece_index)
+                    .await
+                    .expect("hash platform piece"),
+                <[u8; 20]>::from(Sha1::digest(&bytes[offset..offset + length]))
+            );
+            storage
+                .record_verified(piece_index as usize)
+                .expect("record platform piece");
+        }
+        storage.prepare_platform().await.expect("prepare platform");
+        let prepared = storage
+            .finalize_descriptor_hashes()
+            .await
+            .expect("hash prepared platform files");
+        pool.invalidate_storage(&spec.storage_id);
+        std::fs::rename(
+            root.join(format!(".{}.rstorrent-staging", metainfo.name)),
+            root.join(&metainfo.name),
+        )
+        .expect("publish fake provider tree");
+        let published = PlatformStorageSpec {
+            namespace_generation: 1,
+            published: true,
+            ..spec
+        };
+        verify_prepared_platform_files(&published, &metainfo, &prepared)
+            .await
+            .expect("verify dynamic publication");
+        assert!(pool.snapshot().owned_high_water <= 4);
+
+        drop(storage);
+        drop(published);
+        pool.shutdown().await.expect("shutdown pool");
+        drop(pool);
+        provider.await.expect("join fake provider");
+        clean(&root).await;
+    }
+
+    #[tokio::test]
     async fn stages_hashes_publishes_reopens_and_materializes() {
         let output = test_path("fixture");
         clean(&output).await;
@@ -2865,11 +3703,7 @@ mod tests {
         assert_eq!(storage.padding_bytes(), 3_304);
         assert!(!tokio::fs::try_exists(&output).await.expect("output state"));
         let staging = selective_staging_path(&output).expect("staging path");
-        assert!(
-            tokio::fs::try_exists(staging.join("wanted/start.bin"))
-                .await
-                .expect("wanted staging")
-        );
+        assert!(!tokio::fs::try_exists(&staging).await.expect("lazy staging"));
         assert!(
             !tokio::fs::try_exists(staging.join("skip/large.bin"))
                 .await
@@ -3007,7 +3841,7 @@ mod tests {
         .await
         .expect("create resumable storage");
         assert_eq!(resumed, ResumedStorage::Created);
-        assert!(paths.staging.exists());
+        assert!(!paths.staging.exists());
         assert!(!paths.part.exists());
         for request in layout
             .request_ranges(0, &selection)
@@ -3206,7 +4040,7 @@ mod tests {
         .await
         .expect("resume lowered storage");
         assert_eq!(resumed, ResumedStorage::Staging);
-        assert!(storage.has_piece_sources(0).expect("piece sources"));
+        assert!(storage.has_piece_sources(0).await.expect("piece sources"));
         assert_eq!(
             storage.hash_piece(0).await.expect("hash retained route"),
             <[u8; 20]>::from(Sha1::digest(&bytes[..metainfo.piece_length as usize]))
@@ -3216,8 +4050,8 @@ mod tests {
                 .write_stats(0, 0, metainfo.piece_length as usize)
                 .expect("retained route stats"),
             SelectiveWriteStats {
-                wanted_bytes: metainfo.piece_length as usize,
-                skipped_bytes: 0,
+                wanted_bytes: 20_000,
+                skipped_bytes: metainfo.piece_length as usize - 20_000,
             }
         );
         assert!(!paths.part.exists());

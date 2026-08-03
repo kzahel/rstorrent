@@ -90,6 +90,29 @@ impl StorageFileReference {
     ) -> Result<Arc<StorageFileHandle>, StorageFilePoolError> {
         self.pool.open(self, access).await
     }
+
+    pub async fn delete(&self) -> Result<(), StorageFilePoolError> {
+        self.pool.invalidate_key(&self.key);
+        match &self.locator {
+            StorageFileLocator::Path(path) => match tokio::fs::remove_file(path).await {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+                Err(source) => Err(StorageFilePoolError::Io {
+                    operation: "delete storage file",
+                    source,
+                }),
+            },
+            StorageFileLocator::Platform(target) => {
+                self.pool
+                    .inner
+                    .platform
+                    .as_ref()
+                    .ok_or(StorageFilePoolError::PlatformUnavailable)?
+                    .delete(target)
+                    .await
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -101,6 +124,31 @@ pub struct StorageFileHandle {
 impl StorageFileHandle {
     pub fn file(&self) -> &std::fs::File {
         &self.file
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum StorageFileLease {
+    Pooled(Arc<StorageFileHandle>),
+    Fixed(Arc<std::fs::File>),
+}
+
+impl StorageFileLease {
+    pub fn fixed(file: std::fs::File) -> Self {
+        Self::Fixed(Arc::new(file))
+    }
+
+    pub fn file(&self) -> &std::fs::File {
+        match self {
+            Self::Pooled(handle) => handle.file(),
+            Self::Fixed(file) => file,
+        }
+    }
+}
+
+impl From<Arc<StorageFileHandle>> for StorageFileLease {
+    fn from(handle: Arc<StorageFileHandle>) -> Self {
+        Self::Pooled(handle)
     }
 }
 
@@ -122,6 +170,7 @@ pub struct StorageFilePoolSnapshot {
 #[derive(Debug)]
 pub enum StorageFilePoolError {
     Closed,
+    Invalidated,
     InvalidPath,
     PlatformUnavailable,
     PlatformFailure(PlatformStorageFailure),
@@ -135,6 +184,7 @@ impl fmt::Display for StorageFilePoolError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Closed => formatter.write_str("storage file pool is closed"),
+            Self::Invalidated => formatter.write_str("storage file acquisition was invalidated"),
             Self::InvalidPath => formatter.write_str("storage file path has no parent"),
             Self::PlatformUnavailable => {
                 formatter.write_str("platform storage broker is unavailable")
@@ -150,6 +200,16 @@ impl Error for StorageFilePoolError {
         match self {
             Self::PlatformFailure(error) => Some(error),
             Self::Io { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+}
+
+impl StorageFilePoolError {
+    pub fn platform_failure_kind(&self) -> Option<PlatformStorageFailureKind> {
+        match self {
+            Self::PlatformUnavailable => Some(PlatformStorageFailureKind::Cancelled),
+            Self::PlatformFailure(failure) => Some(failure.kind),
             _ => None,
         }
     }
@@ -198,12 +258,19 @@ pub struct PlatformStorageRequest {
     pub role: StorageFileRole,
     pub path: Vec<String>,
     pub access: StorageFileAccess,
+    pub delete: bool,
     pub timeout_millis: u64,
+}
+
+#[derive(Debug)]
+enum PlatformStorageResponse {
+    File(std::fs::File),
+    Deleted,
 }
 
 struct PendingPlatformStorageRequest {
     request: PlatformStorageRequest,
-    reply: oneshot::Sender<Result<std::fs::File, PlatformStorageFailure>>,
+    reply: oneshot::Sender<Result<PlatformStorageResponse, PlatformStorageFailure>>,
 }
 
 #[derive(Clone, Debug)]
@@ -229,6 +296,7 @@ impl PlatformStorageClient {
             role: target.role,
             path: target.path.clone(),
             access,
+            delete: false,
             timeout_millis: u64::try_from(PLATFORM_STORAGE_REQUEST_TIMEOUT.as_millis())
                 .expect("platform timeout fits u64 milliseconds"),
         };
@@ -242,13 +310,61 @@ impl PlatformStorageClient {
         let result = timeout(PLATFORM_STORAGE_REQUEST_TIMEOUT, response).await;
         self.pending.fetch_sub(1, Ordering::AcqRel);
         match result {
-            Ok(Ok(Ok(file))) => Ok(file),
+            Ok(Ok(Ok(PlatformStorageResponse::File(file)))) => Ok(file),
+            Ok(Ok(Ok(PlatformStorageResponse::Deleted))) => Err(
+                StorageFilePoolError::PlatformFailure(PlatformStorageFailure::new(
+                    PlatformStorageFailureKind::Internal,
+                    "platform returned deletion for an open request",
+                )),
+            ),
             Ok(Ok(Err(error))) => Err(StorageFilePoolError::PlatformFailure(error)),
             Ok(Err(_)) => Err(StorageFilePoolError::PlatformUnavailable),
             Err(_) => Err(StorageFilePoolError::PlatformFailure(
                 PlatformStorageFailure::new(
                     PlatformStorageFailureKind::DeadlineExceeded,
                     "platform storage request exceeded its deadline",
+                ),
+            )),
+        }
+    }
+
+    async fn delete(&self, target: &PlatformStorageTarget) -> Result<(), StorageFilePoolError> {
+        let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
+        let request = PlatformStorageRequest {
+            request_id,
+            root_id: target.root_id.clone(),
+            storage_id: target.storage_id.clone(),
+            namespace_generation: target.namespace_generation,
+            role: target.role,
+            path: target.path.clone(),
+            access: StorageFileAccess::ReadWriteExisting,
+            delete: true,
+            timeout_millis: u64::try_from(PLATFORM_STORAGE_REQUEST_TIMEOUT.as_millis())
+                .expect("platform timeout fits u64 milliseconds"),
+        };
+        let (reply, response) = oneshot::channel();
+        self.sender
+            .send(PendingPlatformStorageRequest { request, reply })
+            .await
+            .map_err(|_| StorageFilePoolError::PlatformUnavailable)?;
+        let pending = self.pending.fetch_add(1, Ordering::AcqRel) + 1;
+        update_high_water(&self.pending_high_water, pending);
+        let result = timeout(PLATFORM_STORAGE_REQUEST_TIMEOUT, response).await;
+        self.pending.fetch_sub(1, Ordering::AcqRel);
+        match result {
+            Ok(Ok(Ok(PlatformStorageResponse::Deleted))) => Ok(()),
+            Ok(Ok(Ok(PlatformStorageResponse::File(_)))) => Err(
+                StorageFilePoolError::PlatformFailure(PlatformStorageFailure::new(
+                    PlatformStorageFailureKind::Internal,
+                    "platform returned a file for a deletion request",
+                )),
+            ),
+            Ok(Ok(Err(error))) => Err(StorageFilePoolError::PlatformFailure(error)),
+            Ok(Err(_)) => Err(StorageFilePoolError::PlatformUnavailable),
+            Err(_) => Err(StorageFilePoolError::PlatformFailure(
+                PlatformStorageFailure::new(
+                    PlatformStorageFailureKind::DeadlineExceeded,
+                    "platform storage deletion exceeded its deadline",
                 ),
             )),
         }
@@ -266,7 +382,9 @@ impl PlatformStorageClient {
 #[derive(Debug)]
 pub struct PlatformStorageBroker {
     receiver: AsyncMutex<mpsc::Receiver<PendingPlatformStorageRequest>>,
-    pending: Mutex<HashMap<u64, oneshot::Sender<Result<std::fs::File, PlatformStorageFailure>>>>,
+    pending: Mutex<
+        HashMap<u64, oneshot::Sender<Result<PlatformStorageResponse, PlatformStorageFailure>>>,
+    >,
 }
 
 impl PlatformStorageBroker {
@@ -285,7 +403,17 @@ impl PlatformStorageBroker {
     pub fn complete_file(&self, request_id: u64, file: std::fs::File) -> bool {
         self.pending_guard()
             .remove(&request_id)
-            .is_some_and(|reply| reply.send(Ok(file)).is_ok())
+            .is_some_and(|reply| reply.send(Ok(PlatformStorageResponse::File(file))).is_ok())
+    }
+
+    pub fn is_pending(&self, request_id: u64) -> bool {
+        self.pending_guard().contains_key(&request_id)
+    }
+
+    pub fn complete_deleted(&self, request_id: u64) -> bool {
+        self.pending_guard()
+            .remove(&request_id)
+            .is_some_and(|reply| reply.send(Ok(PlatformStorageResponse::Deleted)).is_ok())
     }
 
     pub fn complete_error(&self, request_id: u64, failure: PlatformStorageFailure) -> bool {
@@ -306,8 +434,10 @@ impl PlatformStorageBroker {
 
     fn pending_guard(
         &self,
-    ) -> MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<std::fs::File, PlatformStorageFailure>>>>
-    {
+    ) -> MutexGuard<
+        '_,
+        HashMap<u64, oneshot::Sender<Result<PlatformStorageResponse, PlatformStorageFailure>>>,
+    > {
         self.pending
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -341,6 +471,7 @@ struct PoolEntry {
 struct PoolState {
     entries: HashMap<StorageFileKey, PoolEntry>,
     key_locks: HashMap<StorageFileKey, Weak<AsyncMutex<()>>>,
+    storage_versions: HashMap<String, u64>,
     clock: u64,
     closed: bool,
 }
@@ -446,6 +577,8 @@ impl StorageFilePool {
         };
         drop(removed);
 
+        let storage_version = self.storage_version(&reference.key.storage_id)?;
+
         let permit = self.acquire_permit().await?;
         let file = match self.acquire_file(&reference.locator, access).await {
             Ok(file) => file,
@@ -474,6 +607,15 @@ impl StorageFilePool {
             let mut state = self.state_guard();
             if state.closed {
                 return Err(StorageFilePoolError::Closed);
+            }
+            if state
+                .storage_versions
+                .get(&reference.key.storage_id)
+                .copied()
+                .unwrap_or_default()
+                != storage_version
+            {
+                return Err(StorageFilePoolError::Invalidated);
             }
             state.clock = state.clock.wrapping_add(1);
             let last_used = state.clock;
@@ -517,6 +659,11 @@ impl StorageFilePool {
     pub fn invalidate_storage(&self, storage_id: &str) {
         let removed = {
             let mut state = self.state_guard();
+            let version = state
+                .storage_versions
+                .entry(storage_id.to_owned())
+                .or_default();
+            *version = version.wrapping_add(1);
             let keys = state
                 .entries
                 .keys()
@@ -531,8 +678,42 @@ impl StorageFilePool {
     }
 
     pub fn invalidate_key(&self, key: &StorageFileKey) {
-        let removed = self.state_guard().entries.remove(key);
+        let removed = {
+            let mut state = self.state_guard();
+            let version = state
+                .storage_versions
+                .entry(key.storage_id.clone())
+                .or_default();
+            *version = version.wrapping_add(1);
+            state.entries.remove(key)
+        };
         drop(removed);
+    }
+
+    pub fn invalidate_all(&self) {
+        let removed = {
+            let mut state = self.state_guard();
+            for version in state.storage_versions.values_mut() {
+                *version = version.wrapping_add(1);
+            }
+            state
+                .entries
+                .drain()
+                .map(|(_, entry)| entry)
+                .collect::<Vec<_>>()
+        };
+        drop(removed);
+    }
+
+    fn storage_version(&self, storage_id: &str) -> Result<u64, StorageFilePoolError> {
+        let mut state = self.state_guard();
+        if state.closed {
+            return Err(StorageFilePoolError::Closed);
+        }
+        Ok(*state
+            .storage_versions
+            .entry(storage_id.to_owned())
+            .or_default())
     }
 
     pub async fn shutdown(&self) -> Result<(), StorageFilePoolError> {
@@ -885,5 +1066,75 @@ mod tests {
         drop(handle);
         pool.shutdown().await.expect("shutdown");
         std::fs::remove_file(root).expect("cleanup");
+    }
+
+    #[tokio::test]
+    async fn invalidation_fences_an_in_flight_platform_completion() {
+        let (client, broker) = platform_storage_channel();
+        let pool = StorageFilePool::new(2, Some(client)).expect("pool");
+        let reference = StorageFileReference::new(
+            pool.clone(),
+            StorageFileKey {
+                storage_id: "torrent".to_owned(),
+                namespace_generation: 0,
+                role: StorageFileRole::Part,
+            },
+            StorageFileLocator::Platform(super::PlatformStorageTarget {
+                root_id: "root".to_owned(),
+                storage_id: "torrent".to_owned(),
+                namespace_generation: 0,
+                role: StorageFileRole::Part,
+                path: vec!["part".to_owned()],
+            }),
+        );
+        let open =
+            tokio::spawn(async move { reference.open(StorageFileAccess::ReadWriteCreate).await });
+        let request = broker.next_request().await.expect("request");
+        pool.invalidate_storage("torrent");
+        let path = temp_root("invalidation");
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .expect("platform file");
+        assert!(broker.complete_file(request.request_id, file));
+        assert!(matches!(
+            open.await.expect("open task"),
+            Err(super::StorageFilePoolError::Invalidated)
+        ));
+        assert_eq!(pool.snapshot().cached_entries, 0);
+        pool.shutdown().await.expect("shutdown");
+        std::fs::remove_file(path).expect("cleanup");
+    }
+
+    #[tokio::test]
+    async fn bounds_ten_thousand_logical_files_across_hundred_torrents() {
+        let root = temp_root("logical-scale");
+        let pool = StorageFilePool::new(8, None).expect("pool");
+        for logical_index in 0..10_000 {
+            let file_index = logical_index % 100;
+            let reference = StorageFileReference::new(
+                pool.clone(),
+                StorageFileKey {
+                    storage_id: format!("torrent-{}", logical_index / 100),
+                    namespace_generation: 0,
+                    role: StorageFileRole::Payload(file_index),
+                },
+                StorageFileLocator::Path(root.join(format!("{file_index}.bin"))),
+            );
+            drop(
+                reference
+                    .open(StorageFileAccess::ReadWriteCreate)
+                    .await
+                    .expect("open logical file"),
+            );
+        }
+        let snapshot = pool.snapshot();
+        assert_eq!(snapshot.owned_high_water, 8);
+        assert_eq!(snapshot.cached_entries, 8);
+        assert!(snapshot.evictions >= 9_992);
+        pool.shutdown().await.expect("shutdown");
+        std::fs::remove_dir_all(root).expect("cleanup");
     }
 }

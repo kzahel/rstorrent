@@ -5,11 +5,13 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use rstorrent_protocol::metainfo::MAX_PIECE_LENGTH;
-use tokio::fs::{File, OpenOptions};
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
-
 use crate::positional_io::{read_exact_at, write_all_at};
+use crate::storage_file_pool::{
+    PlatformStorageFailureKind, StorageFileAccess, StorageFileKey, StorageFileLease,
+    StorageFileLocator, StorageFilePool, StorageFilePoolError, StorageFileReference,
+    StorageFileRole,
+};
+use rstorrent_protocol::metainfo::MAX_PIECE_LENGTH;
 
 const MAGIC: &[u8; 8] = b"RSPART01";
 const VERSION: u32 = 1;
@@ -157,15 +159,80 @@ impl Error for PartFileError {
     }
 }
 
+impl PartFileError {
+    pub(crate) fn platform_failure_kind(&self) -> Option<PlatformStorageFailureKind> {
+        let Self::Io { source, .. } = self else {
+            return None;
+        };
+        source
+            .get_ref()
+            .and_then(|error| error.downcast_ref::<StorageFilePoolError>())
+            .and_then(StorageFilePoolError::platform_failure_kind)
+    }
+}
+
 #[derive(Debug)]
 pub struct PartFile {
-    file: File,
-    positional: Arc<std::fs::File>,
+    source: PartFileSource,
     path: Option<PathBuf>,
     identity: PartFileIdentity,
     header_length: u64,
     slots: Vec<Option<u32>>,
     mapping_generations: Vec<u64>,
+}
+
+#[derive(Clone, Debug)]
+enum PartFileSource {
+    Dynamic(StorageFileReference),
+    Fixed(StorageFileLease),
+}
+
+impl PartFileSource {
+    async fn acquire(&self, access: StorageFileAccess) -> Result<StorageFileLease, PartFileError> {
+        match self {
+            Self::Dynamic(reference) => reference
+                .open(access)
+                .await
+                .map(StorageFileLease::from)
+                .map_err(|error| PartFileError::Io {
+                    operation: "acquire part file",
+                    source: io::Error::other(error),
+                }),
+            Self::Fixed(file) => Ok(file.clone()),
+        }
+    }
+
+    fn checkpoint_reference(&self) -> PartFileCheckpointReference {
+        match self {
+            Self::Dynamic(reference) => PartFileCheckpointReference::Dynamic(reference.clone()),
+            Self::Fixed(file) => PartFileCheckpointReference::Fixed(file.clone()),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum PartFileCheckpointReference {
+    Dynamic(StorageFileReference),
+    Fixed(StorageFileLease),
+}
+
+impl PartFileCheckpointReference {
+    pub(crate) async fn acquire(
+        &self,
+        access: StorageFileAccess,
+    ) -> Result<StorageFileLease, PartFileError> {
+        match self {
+            Self::Dynamic(reference) => reference
+                .open(access)
+                .await
+                .map(StorageFileLease::from)
+                .map_err(|error| PartFileError::Io {
+                    operation: "acquire part-file operation handle",
+                    source: io::Error::other(error),
+                }),
+            Self::Fixed(file) => Ok(file.clone()),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -179,43 +246,59 @@ pub(crate) struct PartFileSpan {
 
 impl PartFile {
     pub async fn create(path: PathBuf, identity: PartFileIdentity) -> Result<Self, PartFileError> {
-        let file = match OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create_new(true)
-            .open(&path)
-            .await
-        {
-            Ok(file) => file,
-            Err(source) if source.kind() == io::ErrorKind::AlreadyExists => {
-                return Err(PartFileError::Existing(path));
-            }
-            Err(source) => {
-                return Err(PartFileError::Io {
-                    operation: "create part file",
-                    source,
-                });
-            }
-        };
-        Self::initialize(file, Some(path), identity).await
+        if path.try_exists().map_err(|source| PartFileError::Io {
+            operation: "inspect new part file",
+            source,
+        })? {
+            return Err(PartFileError::Existing(path));
+        }
+        let pool = StorageFilePool::new(1, None).expect("one-file part pool is valid");
+        let reference = StorageFileReference::new(
+            pool,
+            StorageFileKey {
+                storage_id: path.to_string_lossy().into_owned(),
+                namespace_generation: 0,
+                role: StorageFileRole::Part,
+            },
+            StorageFileLocator::Path(path.clone()),
+        );
+        Self::create_with_reference(reference, Some(path), identity).await
     }
 
     pub async fn create_preopened(
         file: std::fs::File,
         identity: PartFileIdentity,
     ) -> Result<Self, PartFileError> {
-        Self::initialize(File::from_std(file), None, identity).await
+        let file = StorageFileLease::fixed(file);
+        Self::initialize(file.clone(), PartFileSource::Fixed(file), None, identity).await
+    }
+
+    pub(crate) async fn create_with_reference(
+        reference: StorageFileReference,
+        path: Option<PathBuf>,
+        identity: PartFileIdentity,
+    ) -> Result<Self, PartFileError> {
+        let file = reference
+            .open(StorageFileAccess::ReadWriteCreate)
+            .await
+            .map(StorageFileLease::from)
+            .map_err(|error| PartFileError::Io {
+                operation: "acquire new part file",
+                source: io::Error::other(error),
+            })?;
+        Self::initialize(file, PartFileSource::Dynamic(reference), path, identity).await
     }
 
     async fn initialize(
-        mut file: File,
+        file: StorageFileLease,
+        source: PartFileSource,
         path: Option<PathBuf>,
         identity: PartFileIdentity,
     ) -> Result<Self, PartFileError> {
         let header_length = validate_identity(identity)?;
         let existing_length = file
+            .file()
             .metadata()
-            .await
             .map_err(|source| PartFileError::Io {
                 operation: "inspect new part-file descriptor",
                 source,
@@ -226,12 +309,6 @@ impl PartFile {
                 length: existing_length,
             });
         }
-        file.seek(SeekFrom::Start(0))
-            .await
-            .map_err(|source| PartFileError::Io {
-                operation: "seek new part-file descriptor",
-                source,
-            })?;
         let header_length_usize =
             usize::try_from(header_length).map_err(|_| PartFileError::OffsetOverflow)?;
         let mut header = vec![0_u8; header_length_usize];
@@ -255,21 +332,23 @@ impl PartFile {
             header[entry..entry + SLOT_ENTRY_LENGTH].copy_from_slice(&MISSING_SLOT.to_be_bytes());
         }
 
-        file.write_all(&header)
-            .await
-            .map_err(|source| PartFileError::Io {
-                operation: "write part-file header",
-                source,
-            })?;
-        file.sync_data().await.map_err(|source| PartFileError::Io {
-            operation: "flush part-file header",
+        let initialize_file = file.clone();
+        tokio::task::spawn_blocking(move || {
+            write_all_at(initialize_file.file(), &header, 0)?;
+            initialize_file.file().sync_data()
+        })
+        .await
+        .map_err(|source| PartFileError::Io {
+            operation: "join part-file initialization",
+            source: io::Error::other(source),
+        })?
+        .map_err(|source| PartFileError::Io {
+            operation: "initialize part-file header",
             source,
         })?;
-        let positional = retained_positional_handle(&file).await?;
 
         Ok(Self {
-            file,
-            positional,
+            source,
             path,
             identity,
             header_length,
@@ -279,34 +358,82 @@ impl PartFile {
     }
 
     pub async fn open(path: PathBuf, expected: PartFileIdentity) -> Result<Self, PartFileError> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&path)
-            .await
-            .map_err(|source| PartFileError::Io {
-                operation: "open part file",
-                source,
-            })?;
-        Self::open_file(file, Some(path), expected).await
+        let pool = StorageFilePool::new(1, None).expect("one-file part pool is valid");
+        let reference = StorageFileReference::new(
+            pool,
+            StorageFileKey {
+                storage_id: path.to_string_lossy().into_owned(),
+                namespace_generation: 0,
+                role: StorageFileRole::Part,
+            },
+            StorageFileLocator::Path(path.clone()),
+        );
+        Self::open_with_reference(reference, Some(path), expected).await
     }
 
     pub async fn open_preopened(
         file: std::fs::File,
         expected: PartFileIdentity,
     ) -> Result<Self, PartFileError> {
-        Self::open_file(File::from_std(file), None, expected).await
+        let file = StorageFileLease::fixed(file);
+        Self::open_file(file.clone(), PartFileSource::Fixed(file), None, expected).await
+    }
+
+    pub(crate) async fn open_with_reference(
+        reference: StorageFileReference,
+        path: Option<PathBuf>,
+        expected: PartFileIdentity,
+    ) -> Result<Self, PartFileError> {
+        let file = reference
+            .open(StorageFileAccess::ReadWriteExisting)
+            .await
+            .map(StorageFileLease::from)
+            .map_err(|error| PartFileError::Io {
+                operation: "acquire existing part file",
+                source: io::Error::other(error),
+            })?;
+        Self::open_file(file, PartFileSource::Dynamic(reference), path, expected).await
+    }
+
+    pub(crate) async fn open_optional_with_reference(
+        reference: StorageFileReference,
+        path: Option<PathBuf>,
+        expected: PartFileIdentity,
+    ) -> Result<Option<Self>, PartFileError> {
+        let file = match reference.open(StorageFileAccess::ReadWriteExisting).await {
+            Ok(file) => StorageFileLease::from(file),
+            Err(StorageFilePoolError::Io { source, .. })
+                if source.kind() == io::ErrorKind::NotFound =>
+            {
+                return Ok(None);
+            }
+            Err(StorageFilePoolError::PlatformFailure(failure))
+                if failure.kind == PlatformStorageFailureKind::Missing =>
+            {
+                return Ok(None);
+            }
+            Err(error) => {
+                return Err(PartFileError::Io {
+                    operation: "acquire optional existing part file",
+                    source: io::Error::other(error),
+                });
+            }
+        };
+        Self::open_file(file, PartFileSource::Dynamic(reference), path, expected)
+            .await
+            .map(Some)
     }
 
     async fn open_file(
-        mut file: File,
+        file: StorageFileLease,
+        source: PartFileSource,
         path: Option<PathBuf>,
         expected: PartFileIdentity,
     ) -> Result<Self, PartFileError> {
         let expected_header_length = validate_identity(expected)?;
         let file_length = file
+            .file()
             .metadata()
-            .await
             .map_err(|source| PartFileError::Io {
                 operation: "inspect part file",
                 source,
@@ -330,18 +457,10 @@ impl PartFile {
         let expected_header_usize =
             usize::try_from(expected_header_length).map_err(|_| PartFileError::OffsetOverflow)?;
         let mut header = vec![0_u8; expected_header_usize];
-        file.seek(SeekFrom::Start(0))
-            .await
-            .map_err(|source| PartFileError::Io {
-                operation: "seek part-file header",
-                source,
-            })?;
-        file.read_exact(&mut header)
-            .await
-            .map_err(|source| PartFileError::Io {
-                operation: "read part-file header",
-                source,
-            })?;
+        read_exact_at(file.file(), &mut header, 0).map_err(|source| PartFileError::Io {
+            operation: "read part-file header",
+            source,
+        })?;
 
         if &header[..8] != MAGIC {
             return Err(PartFileError::InvalidMagic);
@@ -413,10 +532,8 @@ impl PartFile {
             slots.push(Some(slot));
         }
 
-        let positional = retained_positional_handle(&file).await?;
         Ok(Self {
-            file,
-            positional,
+            source,
             path,
             identity: expected,
             header_length: expected_header_length,
@@ -448,9 +565,12 @@ impl PartFile {
             .plan_write_piece_range(piece_index, offset, bytes.len())
             .await?;
         self.validate_span(span)?;
-        let file = self.positional.clone();
+        let file = self
+            .source
+            .acquire(StorageFileAccess::ReadWriteExisting)
+            .await?;
         let payload: Arc<[u8]> = Arc::from(bytes);
-        tokio::task::spawn_blocking(move || write_all_at(&file, &payload, span.file_offset))
+        tokio::task::spawn_blocking(move || write_all_at(file.file(), &payload, span.file_offset))
             .await
             .map_err(|source| PartFileError::Io {
                 operation: "join positional part-file write",
@@ -473,10 +593,10 @@ impl PartFile {
             .file_offset
             .checked_add(bytes.len() as u64)
             .ok_or(PartFileError::OffsetOverflow)?;
-        let file_length = self
-            .file
+        let file = self.source.acquire(StorageFileAccess::ReadExisting).await?;
+        let file_length = file
+            .file()
             .metadata()
-            .await
             .map_err(|source| PartFileError::Io {
                 operation: "inspect part-file payload",
                 source,
@@ -489,11 +609,10 @@ impl PartFile {
                 file_length,
             });
         }
-        let file = self.positional.clone();
         let length = bytes.len();
         let result = tokio::task::spawn_blocking(move || {
             let mut payload = vec![0_u8; length];
-            read_exact_at(&file, &mut payload, span.file_offset)?;
+            read_exact_at(file.file(), &mut payload, span.file_offset)?;
             Ok::<Vec<u8>, io::Error>(payload)
         })
         .await
@@ -515,35 +634,31 @@ impl PartFile {
             return Ok(false);
         }
         self.write_slot_entry(piece_index, None).await?;
-        self.file
-            .sync_data()
-            .await
-            .map_err(|source| PartFileError::Io {
-                operation: "flush released part-file slot entry",
-                source,
-            })?;
+        self.sync_payload().await?;
         self.slots[piece_index] = None;
         self.bump_mapping_generation(piece_index);
         Ok(true)
     }
 
     pub async fn sync_payload(&self) -> Result<(), PartFileError> {
-        self.file
-            .sync_data()
+        let file = self
+            .source
+            .acquire(StorageFileAccess::ReadWriteExisting)
+            .await?;
+        tokio::task::spawn_blocking(move || file.file().sync_data())
             .await
+            .map_err(|source| PartFileError::Io {
+                operation: "join part-file payload flush",
+                source: io::Error::other(source),
+            })?
             .map_err(|source| PartFileError::Io {
                 operation: "flush part-file payload",
                 source,
             })
     }
 
-    pub(crate) async fn duplicate_for_checkpoint(&self) -> Result<std::fs::File, PartFileError> {
-        self.positional
-            .try_clone()
-            .map_err(|source| PartFileError::Io {
-                operation: "duplicate part file for durability checkpoint",
-                source,
-            })
+    pub(crate) fn checkpoint_reference(&self) -> PartFileCheckpointReference {
+        self.source.checkpoint_reference()
     }
 
     pub(crate) async fn plan_write_piece_range(
@@ -592,10 +707,6 @@ impl PartFile {
         Ok(())
     }
 
-    pub(crate) fn positional_handle(&self) -> Arc<std::fs::File> {
-        self.positional.clone()
-    }
-
     async fn ensure_slot(&mut self, piece_index: usize) -> Result<u32, PartFileError> {
         self.validate_piece_index(piece_index)?;
         if let Some(slot) = self.slots[piece_index] {
@@ -612,19 +723,21 @@ impl PartFile {
             .ok_or(PartFileError::OffsetOverflow)?;
         let slot = u32::try_from(slot).map_err(|_| PartFileError::OffsetOverflow)?;
         let slot_end = self.payload_offset(slot, self.identity.piece_length, 0)?;
-        let current_length = self
-            .file
+        let file = self
+            .source
+            .acquire(StorageFileAccess::ReadWriteExisting)
+            .await?;
+        let current_length = file
+            .file()
             .metadata()
-            .await
             .map_err(|source| PartFileError::Io {
                 operation: "inspect part-file slot allocation",
                 source,
             })?
             .len();
         if current_length < slot_end {
-            self.file
+            file.file()
                 .set_len(slot_end)
-                .await
                 .map_err(|source| PartFileError::Io {
                     operation: "size part-file slot allocation",
                     source,
@@ -647,9 +760,12 @@ impl PartFile {
             Some(slot) => i32::try_from(slot).map_err(|_| PartFileError::OffsetOverflow)?,
             None => MISSING_SLOT,
         };
-        let file = self.positional.clone();
+        let file = self
+            .source
+            .acquire(StorageFileAccess::ReadWriteExisting)
+            .await?;
         let bytes = value.to_be_bytes();
-        tokio::task::spawn_blocking(move || write_all_at(&file, &bytes, offset))
+        tokio::task::spawn_blocking(move || write_all_at(file.file(), &bytes, offset))
             .await
             .map_err(|source| PartFileError::Io {
                 operation: "join positional part-file slot write",
@@ -751,19 +867,6 @@ impl PartFile {
     }
 }
 
-async fn retained_positional_handle(file: &File) -> Result<Arc<std::fs::File>, PartFileError> {
-    let positional = file
-        .try_clone()
-        .await
-        .map_err(|source| PartFileError::Io {
-            operation: "retain part file for positional access",
-            source,
-        })?
-        .into_std()
-        .await;
-    Ok(Arc::new(positional))
-}
-
 fn validate_identity(identity: PartFileIdentity) -> Result<u64, PartFileError> {
     if identity.piece_count == 0 {
         return Err(PartFileError::InvalidIdentity("piece count is zero"));
@@ -832,6 +935,7 @@ mod tests {
 
     use tokio::io::{AsyncSeekExt, AsyncWriteExt, SeekFrom};
 
+    use crate::storage_file_pool::StorageFileAccess;
     use rstorrent_protocol::metainfo::MAX_PIECE_LENGTH;
 
     use super::{
@@ -1185,9 +1289,12 @@ mod tests {
         part.write_piece_range(0, 100, b"x")
             .await
             .expect("allocate short payload");
-        part.file
-            .set_len(part.header_length + 101)
+        part.source
+            .acquire(StorageFileAccess::ReadWriteExisting)
             .await
+            .expect("acquire part file")
+            .file()
+            .set_len(part.header_length + 101)
             .expect("truncate allocated slot");
         assert!(matches!(
             part.read_piece_range(0, 101, &mut byte).await,

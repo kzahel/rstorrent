@@ -8,12 +8,14 @@ use std::time::Duration;
 
 use rstorrent_engine::dht::{DhtConfig, DhtError, DhtService};
 use rstorrent_engine::{
-    DescriptorFile, DescriptorStorage, DescriptorStoragePlan, DiskCheckpointStage,
-    DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink, DownloadControl,
-    DownloadError, DownloadResourceLimits, NetworkConfig, PreparedFileHash,
-    ResumableMagnetDownloadConfig, ResumedStorage, download_magnet_metadata_with_dht,
-    plan_descriptor_storage, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
-    torrent_storage_paths, verify_prepared_descriptors,
+    DEFAULT_STORAGE_FILE_LIMIT, DescriptorFile, DescriptorStorage, DescriptorStoragePlan,
+    DiskCheckpointStage, DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink,
+    DownloadControl, DownloadError, DownloadResourceLimits, NetworkConfig, PlatformStorageClient,
+    PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash,
+    ResumableMagnetDownloadConfig, ResumedStorage, StorageFilePool,
+    download_magnet_metadata_with_dht, plan_descriptor_storage,
+    resume_magnet_to_descriptors_with_control, resume_magnet_with_control, torrent_storage_paths,
+    verify_prepared_descriptors, verify_prepared_platform_files,
 };
 use rstorrent_protocol::metainfo::Metainfo;
 use tokio::task::JoinHandle;
@@ -65,6 +67,8 @@ pub struct ApplicationConfig {
     pub checkpoint_commit_delay_for_testing: Duration,
     #[doc(hidden)]
     pub checkpoint_stage_trace_for_testing: bool,
+    #[doc(hidden)]
+    pub platform_storage_client: Option<PlatformStorageClient>,
 }
 
 impl ApplicationConfig {
@@ -90,6 +94,7 @@ impl ApplicationConfig {
             checkpoint_sync_delay_for_testing: Duration::ZERO,
             checkpoint_commit_delay_for_testing: Duration::ZERO,
             checkpoint_stage_trace_for_testing: false,
+            platform_storage_client: None,
         }
     }
 }
@@ -127,6 +132,7 @@ pub struct ApplicationService {
     checkpoint_sync_delay_for_testing: Duration,
     checkpoint_commit_delay_for_testing: Duration,
     checkpoint_stage_trace_for_testing: bool,
+    storage_file_pool: StorageFilePool,
     active: Option<ActiveDownload>,
     dht: Option<DhtService>,
     views: ViewHub,
@@ -216,6 +222,11 @@ impl ApplicationService {
             checkpoint_sync_delay_for_testing: config.checkpoint_sync_delay_for_testing,
             checkpoint_commit_delay_for_testing: config.checkpoint_commit_delay_for_testing,
             checkpoint_stage_trace_for_testing: config.checkpoint_stage_trace_for_testing,
+            storage_file_pool: StorageFilePool::new(
+                DEFAULT_STORAGE_FILE_LIMIT,
+                config.platform_storage_client,
+            )
+            .map_err(|error| ApplicationError::Configuration(error.to_owned()))?,
             active: None,
             dht: Some(dht),
             views,
@@ -756,6 +767,93 @@ impl ApplicationService {
             .load_prepared_files(&torrent_id.to_ascii_lowercase())?)
     }
 
+    pub async fn prepare_platform_publication(
+        &mut self,
+        torrent_id: &str,
+    ) -> Result<String, ApplicationError> {
+        self.reap_finished().await?;
+        let torrent_id = torrent_id.to_ascii_lowercase();
+        let resume = self.load_resume_conservative(&torrent_id)?;
+        if resume.state != TorrentState::AwaitingPublication
+            || !matches!(
+                self.storage_roots.get(&resume.storage_root),
+                Some(StorageRootLocation::PlatformCapability)
+            )
+        {
+            return Err(ApplicationError::Configuration(
+                "torrent is not awaiting platform publication".to_owned(),
+            ));
+        }
+        let raw_info = resume.raw_info.ok_or_else(|| {
+            ApplicationError::Configuration("torrent metadata is not available".to_owned())
+        })?;
+        let metainfo = Metainfo::from_info_bytes(&raw_info)
+            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+        self.storage_file_pool.invalidate_storage(&torrent_id);
+        Ok(metainfo.name)
+    }
+
+    pub async fn confirm_platform_publication(
+        &mut self,
+        torrent_id: &str,
+    ) -> Result<(), ApplicationError> {
+        self.reap_finished().await?;
+        let torrent_id = torrent_id.to_ascii_lowercase();
+        let resume = self.load_resume_conservative(&torrent_id)?;
+        if resume.state == TorrentState::Complete && resume.storage_state == StorageState::Published
+        {
+            return Ok(());
+        }
+        if resume.state != TorrentState::AwaitingPublication
+            || !matches!(
+                self.storage_roots.get(&resume.storage_root),
+                Some(StorageRootLocation::PlatformCapability)
+            )
+        {
+            return Err(ApplicationError::Configuration(
+                "torrent is not awaiting platform publication".to_owned(),
+            ));
+        }
+        let raw_info = resume.raw_info.ok_or_else(|| {
+            ApplicationError::Configuration("torrent metadata is not available".to_owned())
+        })?;
+        let metainfo = Metainfo::from_info_bytes(&raw_info)
+            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+        let expected = self
+            .store_mut()?
+            .load_prepared_files(&torrent_id)?
+            .into_iter()
+            .map(|file| PreparedFileHash {
+                file_index: file.file_index,
+                length: file.length,
+                sha1: file.sha1,
+            })
+            .collect::<Vec<_>>();
+        if expected.is_empty() {
+            return Err(ApplicationError::Configuration(
+                "torrent has no prepared publication manifest".to_owned(),
+            ));
+        }
+        verify_prepared_platform_files(
+            &PlatformStorageSpec {
+                pool: self.storage_file_pool.clone(),
+                root_id: resume.storage_root,
+                storage_id: torrent_id.clone(),
+                publication_name: metainfo.name.clone(),
+                namespace_generation: 1,
+                published: true,
+            },
+            &metainfo,
+            &expected,
+        )
+        .await
+        .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+        self.store_mut()?
+            .confirm_prepared_publication(&torrent_id)?;
+        self.refresh_views()?;
+        Ok(())
+    }
+
     pub async fn confirm_descriptor_publication(
         &mut self,
         torrent_id: &str,
@@ -807,8 +905,36 @@ impl ApplicationService {
         }
         self.store_mut()?
             .mark_awaiting_storage(&torrent_id, Some(message))?;
+        self.storage_file_pool.invalidate_storage(&torrent_id);
         self.refresh_views()?;
         Ok(())
+    }
+
+    pub async fn prepare_platform_storage_replacement(
+        &mut self,
+        root_id: &str,
+    ) -> Result<Option<String>, ApplicationError> {
+        self.reap_finished().await?;
+        if !matches!(
+            self.storage_roots.get(root_id),
+            Some(StorageRootLocation::PlatformCapability)
+        ) {
+            return Err(ApplicationError::Configuration(format!(
+                "storage root {root_id} is not a platform capability"
+            )));
+        }
+        let restart = if let Some(active) = &self.active {
+            let torrent_id = active.torrent_id.clone();
+            let resume = self.load_resume_conservative(&torrent_id)?;
+            (resume.storage_root == root_id).then_some(torrent_id)
+        } else {
+            None
+        };
+        if let Some(torrent_id) = restart.as_deref() {
+            self.pause(torrent_id).await?;
+        }
+        self.storage_file_pool.invalidate_all();
+        Ok(restart)
     }
 
     pub async fn platform_removal_plan(
@@ -837,6 +963,7 @@ impl ApplicationService {
         if let Some(publication_name) = removal.publication_name.as_deref() {
             require_publication_name(Some(publication_name), &metainfo)?;
         }
+        self.storage_file_pool.invalidate_storage(&torrent_id);
         let plan = plan_descriptor_storage(&metainfo, &[], &[])
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
         Ok(PlatformRemovalPlan {
@@ -926,6 +1053,10 @@ impl ApplicationService {
                 Ok(Err(_)) | Err(_) => {}
             }
         }
+        self.storage_file_pool
+            .shutdown()
+            .await
+            .map_err(|error| ApplicationError::Join(error.to_string()))?;
         if let Some(dht) = self.dht.take() {
             let snapshot = dht.shutdown().await?;
             self.store_mut()?.save_dht_snapshot(snapshot)?;
@@ -1134,59 +1265,94 @@ impl ApplicationService {
                 return Ok(());
             }
         };
-        if matches!(root, StorageRootLocation::PlatformCapability) {
+        let platform_root = matches!(root, StorageRootLocation::PlatformCapability);
+        if platform_root {
             if resume.state == TorrentState::AwaitingPublication {
                 return Ok(());
             }
-            if resume.raw_info.is_some() {
-                if resume.state != TorrentState::AwaitingStorage {
-                    self.store_mut()?.mark_awaiting_storage(torrent_id, None)?;
-                    self.refresh_views()?;
-                }
+            if resume.raw_info.is_none() {
+                let checkpoints = Arc::new(StoreCheckpointSink {
+                    store: self.store.clone(),
+                    storage_roots: self.storage_roots.clone(),
+                    torrent_id: torrent_id.to_owned(),
+                    views: self.views.clone(),
+                });
+                let control = self.download_control(torrent_id);
+                let task_control = control.clone();
+                let magnet = resume.magnet.clone();
+                let continue_downloading = resume.desired_running;
+                let skip_files = resume
+                    .skip_files
+                    .iter()
+                    .map(|index| *index as usize)
+                    .collect::<Vec<_>>();
+                let root_id = resume.storage_root.clone();
+                let storage_id = torrent_id.to_owned();
+                let storage_pool = self.storage_file_pool.clone();
+                let resource_limits = self.download_resource_limits;
+                let network = self.network;
+                let dht = self.dht.as_ref().map(DhtService::handle);
+                let operation = async move {
+                    let raw_info = download_magnet_metadata_with_dht(
+                        magnet.clone(),
+                        network,
+                        task_control.clone(),
+                        dht.clone(),
+                    )
+                    .await?;
+                    checkpoints
+                        .metadata_verified(&raw_info)
+                        .map_err(DownloadError::Checkpoint)?;
+                    if !continue_downloading {
+                        return Ok(ApplicationTaskReport::Metadata);
+                    }
+                    let metainfo =
+                        Metainfo::from_info_bytes(&raw_info).map_err(DownloadError::Metainfo)?;
+                    task_control.set_platform_storage(PlatformStorageSpec {
+                        pool: storage_pool,
+                        root_id,
+                        storage_id,
+                        publication_name: metainfo.name,
+                        namespace_generation: 0,
+                        published: false,
+                    });
+                    resume_magnet_with_control(
+                        ResumableMagnetDownloadConfig {
+                            magnet,
+                            storage_root: PathBuf::new(),
+                            network,
+                            resource_limits,
+                            skip_files,
+                            verified_info: Some(raw_info),
+                            verified_pieces: Vec::new(),
+                            dht,
+                        },
+                        checkpoints,
+                        task_control,
+                    )
+                    .await
+                    .map(|_| ApplicationTaskReport::Download)
+                };
+                let task = self.spawn_supervised_task(torrent_id, operation)?;
+                self.active = Some(ActiveDownload {
+                    torrent_id: torrent_id.to_owned(),
+                    control,
+                    task,
+                });
                 return Ok(());
             }
-            let checkpoints = Arc::new(StoreCheckpointSink {
-                store: self.store.clone(),
-                storage_roots: self.storage_roots.clone(),
-                torrent_id: torrent_id.to_owned(),
-                views: self.views.clone(),
-            });
-            let control = self.download_control(torrent_id);
-            let task_control = control.clone();
-            let magnet = resume.magnet;
-            let wait_for_storage = resume.desired_running;
-            let network = self.network;
-            let dht = self.dht.as_ref().map(DhtService::handle);
-            let operation = async move {
-                let raw_info =
-                    download_magnet_metadata_with_dht(magnet, network, task_control, dht).await?;
-                checkpoints
-                    .metadata_verified(&raw_info)
-                    .map_err(DownloadError::Checkpoint)?;
-                if wait_for_storage {
-                    checkpoints
-                        .waiting_for_storage()
-                        .map_err(DownloadError::Checkpoint)?;
-                }
-                Ok(ApplicationTaskReport::Metadata)
-            };
-            let task = self.spawn_supervised_task(torrent_id, operation)?;
-            self.active = Some(ActiveDownload {
-                torrent_id: torrent_id.to_owned(),
-                control,
-                task,
-            });
-            return Ok(());
         }
-        let StorageRootLocation::Path(root) = root else {
-            unreachable!("platform root returned above")
+        let root_path = match &root {
+            StorageRootLocation::Path(root) => root.clone(),
+            StorageRootLocation::PlatformCapability => PathBuf::new(),
         };
-        if resume.storage_state == StorageState::None
+        if !platform_root
+            && resume.storage_state == StorageState::None
             && let Some(raw_info) = resume.raw_info.as_ref()
         {
             let metainfo = Metainfo::from_info_bytes(raw_info)
                 .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-            let paths = torrent_storage_paths(&root, &metainfo.name, metainfo.info_hash)
+            let paths = torrent_storage_paths(&root_path, &metainfo.name, metainfo.info_hash)
                 .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
             let collision = [
                 ("output", paths.output),
@@ -1247,7 +1413,7 @@ impl ApplicationService {
             .map_or_else(Vec::new, |have| have.pieces().to_vec());
         let config = ResumableMagnetDownloadConfig {
             magnet: resume.magnet,
-            storage_root: root,
+            storage_root: root_path,
             network: self.network,
             resource_limits: self.download_resource_limits,
             skip_files,
@@ -1262,6 +1428,22 @@ impl ApplicationService {
             views: self.views.clone(),
         });
         let control = self.download_control(torrent_id);
+        if platform_root {
+            let raw_info = config
+                .verified_info
+                .as_ref()
+                .expect("platform content start requires verified metadata");
+            let metainfo = Metainfo::from_info_bytes(raw_info)
+                .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+            control.set_platform_storage(PlatformStorageSpec {
+                pool: self.storage_file_pool.clone(),
+                root_id: resume.storage_root.clone(),
+                storage_id: torrent_id.to_owned(),
+                publication_name: metainfo.name,
+                namespace_generation: 0,
+                published: false,
+            });
+        }
         let task_control = control.clone();
         let operation = async move {
             resume_magnet_with_control(config, checkpoints, task_control)
@@ -1279,6 +1461,7 @@ impl ApplicationService {
 
     fn download_control(&self, torrent_id: &str) -> DownloadControl {
         let control = DownloadControl::new();
+        control.set_storage_file_pool(self.storage_file_pool.clone());
         control.set_storage_write_delay(self.storage_write_delay_for_testing);
         control
             .set_storage_execution_limits_for_testing(
@@ -1584,6 +1767,39 @@ fn handle_task_outcome(
                 )
                 .map_err(|error| error.to_string())
         }
+        Err(DownloadError::SelectiveStorage(error))
+            if error.platform_failure_kind()
+                == Some(PlatformStorageFailureKind::GrantUnavailable) =>
+        {
+            let detail = error.to_string();
+            {
+                let mut store = store
+                    .lock()
+                    .map_err(|_| "session store lock is poisoned".to_owned())?;
+                store
+                    .mark_awaiting_storage(torrent_id, Some(&detail))
+                    .map_err(|error| error.to_string())?;
+                let (snapshot, durable) =
+                    durable_view_state(&store, storage_roots).map_err(|error| error.to_string())?;
+                drop(store);
+                views
+                    .replace_durable(&snapshot, &durable)
+                    .map_err(|error| error.to_string())?;
+            }
+            views
+                .set_progress_inputs(torrent_id, ProgressInputs::default())
+                .map_err(|error| error.to_string())?;
+            views
+                .record_diagnostic(
+                    DiagnosticSeverity::Warning,
+                    category::PLATFORM_ADAPTER,
+                    "platform_storage_grant_unavailable",
+                    Some(torrent_id),
+                    "Platform storage grant is unavailable",
+                    &[("detail", &detail)],
+                )
+                .map_err(|error| error.to_string())
+        }
         Err(error) => {
             let cleanup_failed = matches!(&error, DownloadError::PeerCleanup { .. });
             let detail = error.to_string();
@@ -1662,26 +1878,6 @@ impl StoreCheckpointSink {
         };
         self.views
             .replace_durable(&snapshot, &durable)
-            .map_err(|error| error.to_string())
-    }
-
-    fn waiting_for_storage(&self) -> Result<(), String> {
-        self.store().and_then(|mut store| {
-            store
-                .mark_awaiting_storage(&self.torrent_id, None)
-                .map(|_| ())
-                .map_err(|error| error.to_string())
-        })?;
-        self.refresh()?;
-        self.views
-            .record_diagnostic(
-                DiagnosticSeverity::Info,
-                category::STORAGE_IO,
-                "storage_selection_required",
-                Some(&self.torrent_id),
-                "Verified metadata is waiting for platform storage",
-                &[],
-            )
             .map_err(|error| error.to_string())
     }
 }

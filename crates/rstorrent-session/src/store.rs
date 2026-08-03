@@ -2118,12 +2118,6 @@ fn set_file_priority(
             "torrent removal is already in progress".to_owned(),
         ));
     }
-    if row.4 != "path" {
-        return Err((
-            ErrorCode::InvalidTorrentState,
-            "live file selection is not available for platform storage".to_owned(),
-        ));
-    }
     let raw_info = row.0.ok_or_else(|| {
         (
             ErrorCode::InvalidTorrentState,

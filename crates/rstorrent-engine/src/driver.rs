@@ -55,15 +55,16 @@ use crate::peer_socket::{
     self, PeerConnection, PeerSetError, PeerSetEvent, PeerSocketError, PeerSocketSet, PeerTaskEvent,
 };
 use crate::selective_storage::{
-    CheckpointHandles, DescriptorStorage, PreparedFileHash, ResumedStorage, SelectiveHashPlan,
-    SelectiveStorage, SelectiveStorageError, SelectiveWriteJob, remove_selective_part_if_present,
-    remove_selective_staging_if_present, torrent_storage_paths_for_output,
-    validate_publication_name,
+    CheckpointHandles, DescriptorStorage, PlatformStorageSpec, PreparedFileHash, ResumedStorage,
+    SelectiveHashPlan, SelectiveStorage, SelectiveStorageError, SelectiveWriteJob,
+    remove_selective_part_if_present, remove_selective_staging_if_present,
+    torrent_storage_paths_for_output, validate_publication_name,
 };
 use crate::storage::{
     StagingFile, StagingHashPlan, StagingWritePlan, StorageError, VERIFICATION_CHUNK_LENGTH,
     remove_staging_if_present, staging_path,
 };
+use crate::storage_file_pool::StorageFilePool;
 use crate::swarm::{
     BlockKey, ConnectionId, ConnectionRemoval, ConnectionWindowPhaseSnapshot, NoRequestReason,
     PendingDialId, PieceGeneration, PieceHashFailure, PiecePlan, ReceiveDisposition, SwarmConfig,
@@ -525,6 +526,8 @@ struct DownloadControlInner {
     peer_registry_activity: Mutex<PeerRegistryActivityState>,
     peer_connections: Mutex<PeerConnectionDiagnosticState>,
     metadata_diagnostics: Mutex<MetadataDiagnosticState>,
+    storage_file_pool: Mutex<Option<StorageFilePool>>,
+    platform_storage: Mutex<Option<PlatformStorageSpec>>,
     safe_cancel_state: AtomicUsize,
 }
 
@@ -843,6 +846,8 @@ impl DownloadControl {
                 peer_registry_activity: Mutex::new(PeerRegistryActivityState::default()),
                 peer_connections: Mutex::new(PeerConnectionDiagnosticState::default()),
                 metadata_diagnostics: Mutex::new(MetadataDiagnosticState::default()),
+                storage_file_pool: Mutex::new(None),
+                platform_storage: Mutex::new(None),
                 safe_cancel_state: AtomicUsize::new(0),
             }),
         }
@@ -864,6 +869,38 @@ impl DownloadControl {
 
     pub fn is_cancelled(&self) -> bool {
         self.inner.cancellation.is_cancelled()
+    }
+
+    pub fn set_storage_file_pool(&self, pool: StorageFilePool) {
+        *self
+            .inner
+            .storage_file_pool
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(pool);
+    }
+
+    pub fn set_platform_storage(&self, storage: PlatformStorageSpec) {
+        *self
+            .inner
+            .platform_storage
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(storage);
+    }
+
+    fn storage_file_pool(&self) -> Option<StorageFilePool> {
+        self.inner
+            .storage_file_pool
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    fn platform_storage(&self) -> Option<PlatformStorageSpec> {
+        self.inner
+            .platform_storage
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 
     pub fn snapshot(&self) -> DownloadProgress {
@@ -6273,7 +6310,7 @@ async fn sync_checkpoint_targets(
     handles: &CheckpointHandles,
     batch: &CheckpointBatch,
 ) -> Result<(), DownloadError> {
-    let targets = batch
+    let references = batch
         .targets
         .iter()
         .copied()
@@ -6288,10 +6325,18 @@ async fn sync_checkpoint_targets(
                             "checkpoint target {target:?} has no sync handle"
                         )))
                     },
-                    |file| Ok((target, file)),
+                    |reference| Ok((target, reference)),
                 )
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let mut targets = Vec::with_capacity(references.len());
+    for (target, reference) in references {
+        let file = reference
+            .acquire()
+            .await
+            .map_err(DownloadError::SelectiveStorage)?;
+        targets.push((target, file));
+    }
     let mut targets = targets.into_iter();
     let mut running = JoinSet::new();
     let mut first_error = None;
@@ -6300,7 +6345,7 @@ async fn sync_checkpoint_targets(
             let Some((target, file)) = targets.next() else {
                 break;
             };
-            running.spawn_blocking(move || (target, file.sync_data()));
+            running.spawn_blocking(move || (target, file.file().sync_data()));
         }
         let Some(result) = running.join_next().await else {
             break;
@@ -8188,6 +8233,13 @@ async fn run_selective_download(
     .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
 
     let descriptor_backed = descriptors.is_some();
+    let platform_storage = control.platform_storage();
+    let platform_backed = platform_storage.is_some();
+    if descriptor_backed && platform_backed {
+        return Err(DownloadError::StorageTask(
+            "descriptor and platform storage cannot be combined".to_owned(),
+        ));
+    }
     let mut verified_pieces = match &resume {
         Some(resume) if resume.verified_pieces.is_empty() => vec![false; layout.piece_count()],
         Some(resume) if resume.verified_pieces.len() == layout.piece_count() => {
@@ -8203,91 +8255,141 @@ async fn run_selective_download(
         None => vec![false; layout.piece_count()],
     };
     let storage_creation = control.enter_safe_cancel_critical()?;
-    let (mut storage, resumed_storage) = match (descriptors, &resume) {
-        (Some(descriptors), None) => (
-            SelectiveStorage::create_with_descriptors(
-                &metainfo,
-                layout.clone(),
-                selection,
-                &config.materialize_files,
-                descriptors,
-            )
-            .await
-            .map_err(DownloadError::SelectiveStorage)?,
-            None,
-        ),
-        (None, Some(resume)) => {
-            let paths =
-                torrent_storage_paths_for_output(config.output_path.clone(), metainfo.info_hash)
-                    .map_err(DownloadError::SelectiveStorage)?;
-            let (storage, resumed) = SelectiveStorage::resume_with_paths(
-                paths,
-                &metainfo,
-                layout.clone(),
-                selection,
-                verified_pieces.clone(),
-            )
-            .await
-            .map_err(DownloadError::SelectiveStorage)?;
+    let (mut storage, resumed_storage) = if let Some(platform) = platform_storage {
+        let (storage, resumed) = SelectiveStorage::create_with_platform(
+            platform,
+            &metainfo,
+            layout.clone(),
+            selection,
+            verified_pieces.clone(),
+        )
+        .await
+        .map_err(DownloadError::SelectiveStorage)?;
+        if let Some(resume) = &resume {
             resume
                 .checkpoints
                 .storage_prepared(resumed)
                 .map_err(DownloadError::Checkpoint)?;
-            (storage, Some(resumed))
         }
-        (None, None) => (
-            SelectiveStorage::create(
-                config.output_path.clone(),
-                &metainfo,
-                layout.clone(),
-                selection,
-            )
-            .await
-            .map_err(DownloadError::SelectiveStorage)?,
-            None,
-        ),
-        (Some(descriptors), Some(resume)) => {
-            let descriptor_is_empty = descriptors
-                .part_file
-                .metadata()
-                .map_err(|source| DownloadError::Io {
-                    operation: "inspect resumable descriptor part file",
-                    source,
-                })?
-                .len()
-                == 0;
-            let initialize = resume.initialize_descriptors && descriptor_is_empty;
-            let storage = if initialize {
+        (storage, Some(resumed))
+    } else {
+        match (descriptors, &resume) {
+            (Some(descriptors), None) => (
                 SelectiveStorage::create_with_descriptors(
                     &metainfo,
                     layout.clone(),
                     selection,
-                    &[],
+                    &config.materialize_files,
                     descriptors,
                 )
                 .await
-                .map_err(DownloadError::SelectiveStorage)?
-            } else {
-                SelectiveStorage::resume_with_descriptors(
-                    &metainfo,
-                    layout.clone(),
-                    selection,
-                    descriptors,
-                    verified_pieces.clone(),
+                .map_err(DownloadError::SelectiveStorage)?,
+                None,
+            ),
+            (None, Some(resume)) => {
+                let paths = torrent_storage_paths_for_output(
+                    config.output_path.clone(),
+                    metainfo.info_hash,
                 )
-                .await
-                .map_err(DownloadError::SelectiveStorage)?
-            };
-            let resumed = if initialize {
-                ResumedStorage::Created
-            } else {
-                ResumedStorage::Staging
-            };
-            resume
-                .checkpoints
-                .storage_prepared(resumed)
-                .map_err(DownloadError::Checkpoint)?;
-            (storage, Some(resumed))
+                .map_err(DownloadError::SelectiveStorage)?;
+                let (storage, resumed) = match control.storage_file_pool() {
+                    Some(pool) => {
+                        SelectiveStorage::resume_with_paths_and_pool(
+                            paths,
+                            &metainfo,
+                            layout.clone(),
+                            selection,
+                            verified_pieces.clone(),
+                            pool,
+                        )
+                        .await
+                    }
+                    None => {
+                        SelectiveStorage::resume_with_paths(
+                            paths,
+                            &metainfo,
+                            layout.clone(),
+                            selection,
+                            verified_pieces.clone(),
+                        )
+                        .await
+                    }
+                }
+                .map_err(DownloadError::SelectiveStorage)?;
+                resume
+                    .checkpoints
+                    .storage_prepared(resumed)
+                    .map_err(DownloadError::Checkpoint)?;
+                (storage, Some(resumed))
+            }
+            (None, None) => {
+                let storage = match control.storage_file_pool() {
+                    Some(pool) => {
+                        SelectiveStorage::create_with_pool(
+                            config.output_path.clone(),
+                            &metainfo,
+                            layout.clone(),
+                            selection,
+                            pool,
+                        )
+                        .await
+                    }
+                    None => {
+                        SelectiveStorage::create(
+                            config.output_path.clone(),
+                            &metainfo,
+                            layout.clone(),
+                            selection,
+                        )
+                        .await
+                    }
+                }
+                .map_err(DownloadError::SelectiveStorage)?;
+                (storage, None)
+            }
+            (Some(descriptors), Some(resume)) => {
+                let descriptor_is_empty = descriptors
+                    .part_file
+                    .metadata()
+                    .map_err(|source| DownloadError::Io {
+                        operation: "inspect resumable descriptor part file",
+                        source,
+                    })?
+                    .len()
+                    == 0;
+                let initialize = resume.initialize_descriptors && descriptor_is_empty;
+                let storage = if initialize {
+                    SelectiveStorage::create_with_descriptors(
+                        &metainfo,
+                        layout.clone(),
+                        selection,
+                        &[],
+                        descriptors,
+                    )
+                    .await
+                    .map_err(DownloadError::SelectiveStorage)?
+                } else {
+                    SelectiveStorage::resume_with_descriptors(
+                        &metainfo,
+                        layout.clone(),
+                        selection,
+                        descriptors,
+                        verified_pieces.clone(),
+                    )
+                    .await
+                    .map_err(DownloadError::SelectiveStorage)?
+                };
+                let resumed = if initialize {
+                    ResumedStorage::Created
+                } else {
+                    ResumedStorage::Staging
+                };
+                resume
+                    .checkpoints
+                    .storage_prepared(resumed)
+                    .map_err(DownloadError::Checkpoint)?;
+                (storage, Some(resumed))
+            }
         }
     };
     drop(storage_creation);
@@ -8312,6 +8414,7 @@ async fn run_selective_download(
                         .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
                     if !storage
                         .has_piece_sources(piece_index_u32)
+                        .await
                         .map_err(DownloadError::SelectiveStorage)?
                     {
                         *verified = false;
@@ -8402,6 +8505,11 @@ async fn run_selective_download(
             .prepare_descriptors()
             .await
             .map_err(DownloadError::SelectiveStorage)?;
+    } else if platform_backed {
+        storage
+            .prepare_platform()
+            .await
+            .map_err(DownloadError::SelectiveStorage)?;
     } else if storage.is_published() {
         storage
             .finish_published()
@@ -8413,7 +8521,10 @@ async fn run_selective_download(
             .await
             .map_err(DownloadError::SelectiveStorage)?;
     }
-    if !descriptor_backed && let Some(resume) = &resume {
+    if !descriptor_backed
+        && !platform_backed
+        && let Some(resume) = &resume
+    {
         resume
             .checkpoints
             .published()
@@ -8434,7 +8545,7 @@ async fn run_selective_download(
             .bytes;
     }
     let part_slots_after_materialization = storage.part_slots();
-    let prepared_files = if descriptor_backed {
+    let prepared_files = if descriptor_backed || platform_backed {
         storage
             .finalize_descriptor_hashes()
             .await
@@ -8442,7 +8553,9 @@ async fn run_selective_download(
     } else {
         Vec::new()
     };
-    if descriptor_backed && let Some(resume) = &resume {
+    if (descriptor_backed || platform_backed)
+        && let Some(resume) = &resume
+    {
         resume
             .checkpoints
             .descriptor_prepared(&prepared_files)
@@ -8614,9 +8727,11 @@ mod tests {
     };
     use crate::peer_runtime::PeerConnectionLifecycle;
     use crate::selective_storage::{
-        CheckpointHandles, SelectiveStorageError, selective_part_path, selective_staging_path,
+        CheckpointFileReference, CheckpointHandles, SelectiveStorageError, selective_part_path,
+        selective_staging_path,
     };
     use crate::storage::{StagingFile, StorageError, staging_path};
+    use crate::storage_file_pool::StorageFileLease;
     use crate::swarm::{
         BlockKey, DEFAULT_INITIAL_REQUESTS_PER_CONNECTION, DEFAULT_MAX_ESTABLISHED_CONNECTIONS,
         DEFAULT_MAX_PENDING_DIALS, PieceGeneration,
@@ -8776,7 +8891,9 @@ mod tests {
             .expect("create checkpoint sync target");
         let handle = Arc::new(std::sync::OnceLock::new());
         handle
-            .set(Arc::new(file))
+            .set(CheckpointFileReference::Fixed(StorageFileLease::fixed(
+                file,
+            )))
             .expect("new checkpoint test cell is empty");
         (path, BTreeMap::from([(DurabilityTarget::PartFile, handle)]))
     }
@@ -15512,16 +15629,11 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             download_control,
         ));
 
-        timeout(Duration::from_secs(1), async {
-            loop {
-                if tokio::fs::try_exists(&staging).await.expect("staging") {
-                    break;
-                }
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .expect("engine created owned artifacts");
+        assert!(
+            !tokio::fs::try_exists(&staging)
+                .await
+                .expect("staging remains lazy")
+        );
         assert!(
             !tokio::fs::try_exists(&part)
                 .await
