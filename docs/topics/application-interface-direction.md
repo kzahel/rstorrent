@@ -149,6 +149,14 @@ Tactical `058` makes those separate states: ordinary row activation establishes
 the current single-command target, while explicit selection mode owns the
 checked batch-command set without changing the current/detail torrent.
 
+The accepted continuing vocabulary and interaction are now owned by
+[`table-interaction.md`](table-interaction.md). The singular current/detail
+torrent is the **active row**; checked multi-command targets are the **batch
+selection**. Keyboard row focus follows the active row, so Arrow navigation
+updates Workbench detail immediately rather than moving an independent cursor.
+Multiple batch-selected torrents never produce unioned detail data; detail
+continues to represent the one active torrent.
+
 ## Implemented Initial Cross-Section
 
 Tactical `055` implements the application shell without changing Rust views,

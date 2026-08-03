@@ -61,7 +61,11 @@ Tactical `059` restores a permanently reserved checkbox column specifically on
 actionable tables and adds sorted Shift-range selection without recoupling the
 current row and batch command set. Tactical `063` activates that Files-local
 selection with exactly `Normal` and `Skip`, and keeps Add limited to root plus
-one checked-by-default start-content option.
+one checked-by-default start-content option. The accepted successor interaction
+contract now lives in [`table-interaction.md`](table-interaction.md): it names
+the singular detail-owning row as active, names checked command targets as the
+batch selection, makes row focus follow active navigation, and adds
+Shift+Arrow plus platform select-all as pending implementation work.
 
 ## Purpose
 
@@ -197,15 +201,17 @@ click, or a fine pointer. Context menus may complement visible or otherwise
 discoverable actions but cannot be their only access path. Density may adapt
 without removing information or making controls too small to operate.
 
-Actionable tables reserve a visible checkbox column so batch behavior is
-discoverable and entering selection mode never shifts data columns. Checkbox,
-select-all, visible Select, and keyboard Space can enter the mode;
-Command/Control-click and a bounded touch/pen long press are accelerators.
-Shift-click selects an inclusive range from the latest anchor in current
-sorted/filtered order and can grow or shrink that range. In the mode, row
-activation toggles checks and Done or Escape clears the batch set. Outside it,
-row activation owns one current item, commands target that item, and empty
-table space can clear it. Read-only inspection tables do not gain checkboxes.
+The continuing actionable-table interaction contract lives in
+[`table-interaction.md`](table-interaction.md). It distinguishes one active row
+that owns detail from checked batch-command targets, while treating keyboard
+row focus as mechanics that follow the active row rather than a third visible
+selection. Row-body activation retains that meaning during batch selection;
+Arrow navigation changes the active row and detail, Shift+Arrow extends or
+shrinks the batch range, and Command/Control+A selects the complete current
+filtered table. Actionable tables retain visible checkboxes; read-only
+inspection tables do not gain batch behavior without row actions. The current
+implementation still follows Tacticals `058`--`059` until a bounded tactical
+applies this successor direction.
 
 Torrent-detail tab selection is a paint-only state change. Labels retain the
 same font metrics, the underline is out of layout flow, and bounded count

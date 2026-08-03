@@ -96,6 +96,9 @@ Topics own the current truth for a continuing concern. Tactical docs under
   presentation, JSTorrent-inspired information hierarchy, category layer,
   Zustand state ownership, adaptive master/detail navigation, accessibility,
   and virtualized scale direction.
+- [`table-interaction.md`](table-interaction.md): shared active-row,
+  batch-selection, keyboard-focus, master/detail, range, and select-all
+  behavior for actionable virtual tables.
 - [`disk-and-piece-inspection.md`](disk-and-piece-inspection.md): global
   storage-pipeline pressure and piece-level work inspection together with the
   selected-torrent compact Canvas piece overview.
