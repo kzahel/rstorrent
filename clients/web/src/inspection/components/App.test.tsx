@@ -95,6 +95,10 @@ describe("inspection application", () => {
     });
     expect(within(flagLegend).getByText("Incoming")).toBeVisible();
     expect(within(flagLegend).getByText("Encrypted")).toBeVisible();
+    expect(within(flagLegend).queryByText(/case-sensitive/)).not.toBeInTheDocument();
+    expect(
+      within(flagLegend).queryByText(/remote peer initiated/),
+    ).not.toBeInTheDocument();
     await user.keyboard("{Escape}");
     expect(flagLegend).not.toBeInTheDocument();
 

@@ -7,6 +7,7 @@ pub mod dht;
 pub mod magnet;
 pub mod metadata;
 pub mod metainfo;
+pub mod peer_id;
 pub mod peer_wire;
 pub mod piece;
 pub mod storage_layout;

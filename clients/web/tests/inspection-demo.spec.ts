@@ -141,6 +141,8 @@ test("peer flags expose a complete accessible legend without sorting", async ({
   await page.setViewportSize({ width: 1024, height: 720 });
   await openScenario(page, "healthy-download", 42_000);
 
+  const peers = page.getByRole("grid", { name: "Active peer connections" });
+  await expect(peers.getByText("libtorrent 2.0.13").first()).toBeVisible();
   const header = page.getByRole("columnheader", { name: "Flags" });
   const help = page.getByRole("button", { name: "Explain Flags" });
   await expect(page.getByLabel(/^Peer flags:/).first()).toBeVisible();
@@ -152,6 +154,12 @@ test("peer flags expose a complete accessible legend without sorting", async ({
   await expect(legend.locator("dt code")).toHaveCount(16);
   await expect(legend.getByText("Incoming", { exact: true })).toBeVisible();
   await expect(legend.getByText("Encrypted", { exact: true })).toBeVisible();
+  await expect(legend.getByText(/case-sensitive/)).toHaveCount(0);
+  await expect(legend.getByText(/remote peer initiated/)).toHaveCount(0);
+  const compactLegendBounds = await legend.boundingBox();
+  expect(compactLegendBounds).not.toBeNull();
+  expect(compactLegendBounds!.width).toBeLessThanOrEqual(260);
+  expect(compactLegendBounds!.height).toBeLessThanOrEqual(460);
   await expect(header).not.toHaveAttribute("aria-sort");
   expect(
     (await new AxeBuilder({ page }).analyze()).violations.filter(
@@ -171,6 +179,7 @@ test("peer flags expose a complete accessible legend without sorting", async ({
   await settings.getByRole("radio", { name: /Compact/ }).check();
   await page.keyboard.press("Escape");
   await page.setViewportSize({ width: 920, height: 720 });
+  await expect(peers.getByText("libtorrent 2.0.13").first()).toBeVisible();
   await help.scrollIntoViewIfNeeded();
   await expect
     .poll(async () => Math.round((await help.boundingBox())?.width ?? 0))

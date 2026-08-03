@@ -1,6 +1,6 @@
 # Tactical 056: Peer Client Identification
 
-Status: In progress on 2026-08-03.
+Status: Complete on 2026-08-03.
 
 Topics: `peer-lifecycle`, `application-view-api`, `web-ui-design`
 
@@ -186,7 +186,8 @@ boundary; React owns only display and sorting.
 - uppercase, lowercase, dot, and dash version digits at values 10--63;
 - registered, current first-party, and printable unknown client codes;
 - `LT` libtorrent versus `lt` rTorrent;
-- Shadow ASCII and binary versions, including unknown one-byte codes;
+- registered Shadow ASCII and binary versions, with unknown one-byte codes
+  rejected rather than guessed;
 - Mainline one- and multi-digit components, missing delimiters, and too-long
   components;
 - BitComet versus BitLord marker and binary decimal version bytes;
@@ -211,6 +212,48 @@ boundary; React owns only display and sorting.
 - targeted headless browser assertion that a Client value remains visible in
   the existing Peer table under light and dark themes; and
 - remove all temporary browser evidence before completion.
+
+## Implementation And Evidence
+
+`rstorrent-protocol::peer_id` now owns one pure identifier over the fixed
+20-byte handshake value. Its static catalog covers the BEP 20 registry plus
+current RSTorrent, JSTorrent, rqbit, WebTorrent-family, and mature-client
+codes. Azureus, registered Shadow, Mainline, BitComet/BitLord, XBT, Opera, and
+Tixati shapes are independently parsed with explicit delimiters and character
+bounds. Unknown well-formed Azureus codes retain only their two sanitized code
+bytes; arbitrary suffixes and malformed IDs never enter the label.
+
+`PeerView::from_observation` derives the label from its existing coherent
+`peer_id`. It publishes `Available` only with a recognized label and
+`Unavailable` before handshake or for unknown evidence. The generated
+`client_name` property, live adapter, React row model, sortable Client column,
+cell title, and em-dash fallback were already complete and remain unchanged.
+The TypeScript/schema/trace generator produced no diff, and
+`VIEW_CONTRACT_VERSION`/`API_VERSION` remain unchanged.
+
+Completed validation:
+
+- `cargo fmt --all -- --check`: pass;
+- `cargo clippy --workspace -- -D warnings`: pass;
+- `cargo test --workspace`: 353 passed, 3 ignored public-network probes;
+- peer-ID parser coverage: 6 focused tests covering common registered codes,
+  full version alphabet, unknown-code sanitization, Shadow/Mainline, specified
+  legacy formats, malformed/ambiguous inputs, and every registered output
+  bound;
+- session view-set coverage: a completed `-UT3550-` handshake publishes
+  `µTorrent 3.5.5` with `Available` capability in its keyed upsert;
+- `npm run generate --prefix clients/web`: pass with no generated type,
+  schema, or fixture diff;
+- `npm run typecheck --prefix clients/web`: pass;
+- `npm test --prefix clients/web`: 106 passed, 2 skipped;
+- `npm run build --prefix clients/web`: pass; and
+- targeted Chrome Playwright peer-table check: 1 passed, preserving a visible
+  `libtorrent 2.0.13` Client value in light/Standard and dark/Compact layouts
+  alongside the existing accessibility assertions.
+
+No new dependency, runtime task, retained collection, temporary fixture,
+screenshot, protocol version, or view version was introduced. BEP 10 `v`
+retention and precedence remain the deliberate follow-up described above.
 
 ## Stopping Condition
 

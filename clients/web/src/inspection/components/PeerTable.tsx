@@ -121,6 +121,7 @@ const COLUMNS: readonly VirtualColumn<PeerRow>[] = [
     sortable: true,
     sortValue: (row) => formatPeerFlags(row.flags),
     headerHelp: <PeerFlagLegend />,
+    headerHelpWidth: 260,
     render: (row) => {
       const glyphs = formatPeerFlags(row.flags);
       const description = describePeerFlags(row.flags);
@@ -148,11 +149,6 @@ function PeerFlagLegend() {
   return (
     <div className={styles.legend}>
       <strong>Peer flag legend</strong>
-      <p>
-        Flags are case-sensitive and describe current connection state, not
-        discovery. Only known present flags appear; an absent flag may be
-        false or unavailable.
-      </p>
       {PEER_FLAG_GROUPS.map((group) => (
         <section key={group}>
           <h3>{group}</h3>
@@ -165,9 +161,8 @@ function PeerFlagLegend() {
                 <div key={flag} className={styles.legendRow}>
                   <dt>
                     <code>{definition.glyph}</code>
-                    <span>{definition.label}</span>
                   </dt>
-                  <dd>{definition.description}</dd>
+                  <dd>{definition.label}</dd>
                 </div>
               );
             })}

@@ -18,6 +18,7 @@ use rstorrent_engine::{
     PeerConnectionObservation, PeerConnectionRole, PeerRequestWindowPhase, PeerTransport,
     TrackerRuntimeSnapshot,
 };
+use rstorrent_protocol::peer_id::identify_client;
 
 use crate::control::{RemovalState, ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState};
 use crate::diagnostics::{
@@ -685,6 +686,12 @@ impl PeerView {
         peer: &PeerConnectionObservation,
     ) -> Self {
         let content = peer.content.as_ref();
+        let client_name = peer.peer_id.as_ref().and_then(identify_client);
+        let client_name_capability = if client_name.is_some() {
+            CapabilityStatus::Available
+        } else {
+            CapabilityStatus::Unavailable
+        };
         let mut view = Self {
             connection_id: peer.connection_id.get().to_string(),
             torrent_id: torrent_id.to_owned(),
@@ -715,7 +722,7 @@ impl PeerView {
             local_endpoint: None,
             sources: peer_sources(peer.sources),
             peer_id: peer.peer_id.map(hex_peer_id),
-            client_name: None,
+            client_name,
             supports_extensions: peer.supports_extensions,
             supports_ut_metadata: None,
             local_interested: content.map(|_| true),
@@ -761,7 +768,7 @@ impl PeerView {
             }),
             capabilities: PeerFieldCapabilities {
                 local_endpoint: CapabilityStatus::Unsupported,
-                client_name: CapabilityStatus::Unsupported,
+                client_name: client_name_capability,
                 ut_metadata: CapabilityStatus::Unavailable,
                 interest_directions: CapabilityStatus::Unavailable,
                 local_choke: CapabilityStatus::Unsupported,

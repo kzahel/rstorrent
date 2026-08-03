@@ -376,6 +376,9 @@ describe("LiveApplication", () => {
       "extension_protocol",
       "utp",
     ]);
+    expect(
+      recovered.peersByTorrent[TORRENT_ID]?.rows["connection-2"]?.client,
+    ).toBe("µTorrent 3.5.5");
     await application.close();
   });
 });
@@ -587,7 +590,7 @@ function peer(generation: number): PeerView {
     local_endpoint: null,
     sources: ["manual"],
     peer_id: null,
-    client_name: null,
+    client_name: generation === 1 ? null : "µTorrent 3.5.5",
     supports_extensions: true,
     supports_ut_metadata: true,
     local_interested: true,
@@ -614,7 +617,7 @@ function peer(generation: number): PeerView {
     disconnect_reason: null,
     capabilities: {
       local_endpoint: "unavailable",
-      client_name: "unavailable",
+      client_name: generation === 1 ? "unavailable" : "available",
       ut_metadata: "unavailable",
       interest_directions: "unavailable",
       local_choke: "unavailable",

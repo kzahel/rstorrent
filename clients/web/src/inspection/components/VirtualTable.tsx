@@ -32,6 +32,7 @@ export interface VirtualColumn<Row> {
   readonly sortKind?: "text" | "number" | "decimal";
   readonly sortOrder?: readonly string[];
   readonly headerHelp?: ReactNode;
+  readonly headerHelpWidth?: number;
   readonly render: (row: Row) => ReactNode;
 }
 
@@ -364,7 +365,10 @@ export function VirtualTable<Row>({
     const bounds = trigger.getBoundingClientRect();
     const viewportWidth = globalThis.innerWidth || 1_024;
     const viewportHeight = globalThis.innerHeight || 768;
-    const width = Math.min(352, Math.max(0, viewportWidth - 16));
+    const width = Math.min(
+      column.headerHelpWidth ?? 352,
+      Math.max(0, viewportWidth - 16),
+    );
     const left = Math.max(
       8,
       Math.min(bounds.right - width, viewportWidth - width - 8),

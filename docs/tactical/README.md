@@ -291,7 +291,7 @@ that scope and its cleanup or compatibility rules explicitly.
   top-level destinations, adds truthful bounded clean views and shared
   multi-selection, and preserves the existing dense surface as Workbench.
 - [`056-peer-client-identification.md`](056-peer-client-identification.md):
-  in progress; identifies common clients and versions from bounded handshake
+  complete; identifies common clients and versions from bounded handshake
   peer IDs and completes the existing active-peer Client projection.
 
 Tactical `015` completed the oracle campaign's headless measurement

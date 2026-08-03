@@ -1959,6 +1959,8 @@ mod tests {
                 ..
             }] if upsert.len() == 1
                 && upsert[0].lifecycle == crate::PeerLifecycle::TransportConnecting
+                && upsert[0].client_name.is_none()
+                && upsert[0].capabilities.client_name == crate::CapabilityStatus::Unavailable
                 && upsert[0].peer_flags == [
                     crate::PeerFlagView::Incoming,
                     crate::PeerFlagView::ExtensionProtocol,
@@ -1970,6 +1972,7 @@ mod tests {
         peer.lifecycle = PeerConnectionLifecycle::Connected;
         peer.role = PeerConnectionRole::Content;
         peer.lifecycle_changed_at = Duration::from_millis(12);
+        peer.peer_id = Some(*b"-UT3550-abcdefghijkl");
         peer.content = Some(PeerContentActivity {
             choking: true,
             wanted_piece_count: 8,
@@ -1997,6 +2000,8 @@ mod tests {
                 patch: ViewPatch::Peers { upsert, removed, .. },
                 ..
             }] if upsert.len() == 1
+                && upsert[0].client_name.as_deref() == Some("µTorrent 3.5.5")
+                && upsert[0].capabilities.client_name == crate::CapabilityStatus::Available
                 && upsert[0].peer_flags == [
                     crate::PeerFlagView::Incoming,
                     crate::PeerFlagView::DownloadChoked,
