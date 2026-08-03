@@ -206,9 +206,10 @@ Activating it by mouse, keyboard, or touch opens a nonmodal legend grouped as:
 3. negotiated capability; and
 4. exceptional scheduler/integrity state.
 
-The legend is deliberately terse: it contains only its title, compact section
-labels, and case-sensitive glyph/name pairs. It omits introductory copy and
-per-flag descriptions; this topic remains the detailed semantics reference.
+The legend is deliberately terse: it contains only compact section labels and
+case-sensitive glyph/name pairs. It omits a redundant title, introductory
+copy, and per-flag descriptions; this topic remains the detailed semantics
+reference.
 The button does not sort the column. Escape and outside activation dismiss the
 popover while preserving predictable focus. A hover-only `title` tooltip is
 not the primary interaction.
@@ -274,8 +275,9 @@ The Flags cell, sort key, full accessible label, and four-section legend all
 come from `clients/web/src/inspection/peerFlags.ts`. A distinct 24 px header
 help button opens keyboard-scrollable content, never sorts the column, and
 dismisses with Escape or outside activation. The 2026-08-03 presentation
-refinement reduced the legend to a 260 px compact glyph/name table with caption
-type, single-line rows, low-profile section labels, and no explanatory prose.
+refinement reduced the legend to a 260 px compact glyph/name table with 11 px
+regular-weight type, 16 px single-line rows, low-profile section labels, no
+redundant title, and no explanatory prose.
 Standard Light and Compact Dark passed viewport-bound and serious/critical axe
 checks. The full Rust workspace, generated drift, TypeScript, unit/component,
 production build, and headless browser suites passed; exact commands and

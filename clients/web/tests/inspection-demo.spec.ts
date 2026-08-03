@@ -181,12 +181,33 @@ test("peer flags expose a complete accessible legend without sorting", async ({
   await expect(legend.locator("dt code")).toHaveCount(16);
   await expect(legend.getByText("Incoming", { exact: true })).toBeVisible();
   await expect(legend.getByText("Encrypted", { exact: true })).toBeVisible();
+  await expect(
+    legend.getByText("Peer flag legend", { exact: true }),
+  ).toHaveCount(0);
   await expect(legend.getByText(/case-sensitive/)).toHaveCount(0);
   await expect(legend.getByText(/remote peer initiated/)).toHaveCount(0);
+  const legendType = await legend.evaluate((element) => {
+    const content = element.firstElementChild;
+    const nodes = [
+      content?.querySelector("h3"),
+      content?.querySelector("dt code"),
+      content?.querySelector("dd"),
+    ].filter((node): node is Element => node !== null && node !== undefined);
+    return {
+      fontSizes: nodes.map((node) =>
+        Number.parseFloat(globalThis.getComputedStyle(node).fontSize),
+      ),
+      fontWeights: nodes.map(
+        (node) => globalThis.getComputedStyle(node).fontWeight,
+      ),
+    };
+  });
+  expect(Math.max(...legendType.fontSizes)).toBeLessThanOrEqual(11);
+  expect(legendType.fontWeights).toEqual(["400", "400", "400"]);
   const compactLegendBounds = await legend.boundingBox();
   expect(compactLegendBounds).not.toBeNull();
   expect(compactLegendBounds!.width).toBeLessThanOrEqual(260);
-  expect(compactLegendBounds!.height).toBeLessThanOrEqual(460);
+  expect(compactLegendBounds!.height).toBeLessThanOrEqual(360);
   await expect(header).not.toHaveAttribute("aria-sort");
   expect(
     (await new AxeBuilder({ page }).analyze()).violations.filter(

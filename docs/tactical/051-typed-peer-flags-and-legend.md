@@ -306,6 +306,13 @@ Implemented:
   did not change. Standard Light and Compact Dark captures showed every entry
   in a panel no wider than 260 px and no taller than 460 px; both were inspected
   and removed.
+- A second 2026-08-03 refinement corrected the legend's document-portal type
+  fallback. Interface-size variables live on the application element and do
+  not inherit into the body-level portal, so the intended caption declaration
+  had fallen back to the 16 px document default. The peer-specific legend now
+  sets explicit 11 px type, removes the redundant title and strong or semibold
+  weights, and uses 16 px rows with tighter gaps. The help target, semantic
+  content, and general popover behavior remain unchanged.
 
 Validation completed:
 
@@ -330,6 +337,18 @@ The 2026-08-03 compact-legend refinement additionally passed:
   covering absent prose, all 16 glyph/name pairs, the 260 by 460 px bounds,
   Standard Light, Compact Dark, focus/dismissal, and serious/critical axe
   analysis
+
+The follow-up portal-type correction passed:
+
+- `git diff --check`
+- `npm run typecheck`
+- `npm test` (113 passed, 2 skipped)
+- `npm run build`
+- targeted `npm run test:e2e -- --grep "peer flags expose"` (1 passed),
+  asserting at most 11 px and weight 400 for the section, glyph, and name; no
+  redundant title; a complete height below 360 px; Standard Light and Compact
+  Dark contrast; focus/dismissal; and empty serious/critical axe findings
+- inspected Standard Light and Compact Dark captures, then removed them
 
 Deliberate gaps remain those in `peer-flag-vocabulary`: the reserved advanced
 states do not appear until their engine owners exist; ordinary incoming and

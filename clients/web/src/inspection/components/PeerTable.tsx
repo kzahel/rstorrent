@@ -148,7 +148,6 @@ const PEER_FLAG_GROUPS: readonly PeerFlagGroup[] = [
 function PeerFlagLegend() {
   return (
     <div className={styles.legend}>
-      <strong>Peer flag legend</strong>
       {PEER_FLAG_GROUPS.map((group) => (
         <section key={group}>
           <h3>{group}</h3>
