@@ -147,6 +147,11 @@ JSTorrent is a behavior and evidence source. Its QuickJS embeddings,
 native-host protocol, IO daemon, extension companion topology, TypeScript APIs,
 and persistence formats are not migration requirements.
 
+The accepted download-root and add-options behavior is mapped to exact sibling
+starting points in [`topics/download-roots.md`](topics/download-roots.md).
+That map is a product cheat sheet for future implementation, not permission to
+copy JSTorrent's storage manager, host topology, or persistence format.
+
 Tactical `008` adapted the grid sizing, state layering, and color semantics
 from JSTorrent's
 `android/app/src/main/java/com/jstorrent/app/ui/components/PieceMap.kt` at

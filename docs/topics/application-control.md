@@ -96,7 +96,9 @@ authentication credentials or durable application state.
 Storage roots and platform capabilities are installed when an application
 service instance is constructed or through a later platform-specific
 capability operation. A remotely meaningful command selects an established
-root identity; it never supplies an ambient local path or open descriptor.
+root identity; it never supplies an ambient local path or open descriptor. The
+accepted first-add, default-root, local picker, and remote-presentation behavior
+is recorded in [`download-roots.md`](download-roots.md).
 
 Authorization is transport context, not a user-supplied command field. A
 future remote transport must authenticate a principal, attach verified

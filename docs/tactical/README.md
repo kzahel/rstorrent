@@ -307,6 +307,11 @@ that scope and its cleanup or compatibility rules explicitly.
   connection, retains HTTP only as an explicit loopback diagnostic, shares
   exact acknowledgement with Tauri, and retires the superseded `/control`
   protocol and direct-DOM frontend after migrating their useful evidence.
+- [`061-user-selected-download-roots.md`](061-user-selected-download-roots.md):
+  authorized for macOS; replaces implicit app-data payload storage with
+  persisted user-selected roots, default/add-option policy, trusted local
+  folder pickers, and shared add/Settings UX while deferring staged magnet file
+  selection plus Linux and Windows native evidence.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

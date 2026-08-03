@@ -19,6 +19,11 @@ portability, storage-root identity, and the boundary between the reusable
 torrent engine and the first-party application service shared by platform
 clients.
 
+[`download-roots.md`](download-roots.md) owns how users acquire, default,
+select, repair, and remove those roots and how the desktop, WebUI, and Android
+present that behavior. This topic retains the durable identity and integrity
+contracts beneath that UX.
+
 It does not define the final product API, select a desktop or Android UI
 architecture, prescribe every future schema column, or promise that the engine
 will become a separately supported general-purpose library.
@@ -386,6 +391,9 @@ successful mutation unreadable after upgrade.
   in [`product-surfaces-and-migration.md`](product-surfaces-and-migration.md).
 - How storage roots are remapped or replaced across platform backup/restore
   when an opaque locator or grant is not transferable.
+- User-selected first-root, default-root, per-add, repair, and platform-picker
+  behavior is accepted in [`download-roots.md`](download-roots.md) but not yet
+  implemented outside the existing single-root Android SAF path.
 
 ## Implemented Evidence
 

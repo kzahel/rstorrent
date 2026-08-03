@@ -367,6 +367,13 @@ activity, queue state, storage, and content retention remain separate engine
 or application concepts. The API design must make those distinctions explicit
 before controls are implemented.
 
+Download roots, the default root, and the choice attached to a torrent are
+also durable application state rather than browser-local preferences. The
+shared React surface requests a platform-owned picker capability and selects
+established root identities; it never persists an ambient path or browser
+directory handle. The accepted UX and deferred metadata-backed file-selection
+flow live in [`download-roots.md`](download-roots.md).
+
 ## Validation Direction
 
 Routine validation uses the authenticated headless browser host and does not
