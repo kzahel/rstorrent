@@ -3,8 +3,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use rstorrent_session::{
-    ApiHello, ApplicationService, DeliveryMode, OpenViewSetRequest, OpenViewSetResponse,
-    UpdateBatch, UpdateViewSetRequest, ViewSet, ViewSetError, ViewSetOwner,
+    AcknowledgedViewStream, AcknowledgedViewStreamError, ApiHello, ApplicationService,
+    DeliveryMode, OpenViewSetRequest, OpenViewSetResponse, UpdateBatch, UpdateViewSetRequest,
+    ViewSet, ViewSetError, ViewSetOwner,
 };
 use serde::Serialize;
 use tauri::ipc::Channel;
@@ -319,30 +320,30 @@ async fn stop_view_stream(stream: DesktopViewStream) {
 
 async fn run_view_stream<F>(
     view_set: ViewSet,
-    mut after: String,
+    after: String,
     cancellation: CancellationToken,
     mut acknowledgements: mpsc::Receiver<String>,
     mut send: F,
 ) where
     F: FnMut(DesktopViewStreamEvent) -> Result<(), ()>,
 {
+    let mut stream = AcknowledgedViewStream::new(view_set, after);
     loop {
         let batch = tokio::select! {
             biased;
             () = cancellation.cancelled() => break,
-            result = view_set.next_updates(&after, VIEW_STREAM_WAIT_MILLIS) => {
+            result = stream.next_batch(VIEW_STREAM_WAIT_MILLIS) => {
                 match result {
                     Ok(batch) => batch,
                     Err(error) => {
                         let _ = send(DesktopViewStreamEvent::Error {
-                            error: desktop_view_error(error),
+                            error: desktop_stream_error(error),
                         });
                         break;
                     }
                 }
             }
         };
-        let expected_cursor = batch.cursor.clone();
         if send(DesktopViewStreamEvent::Batch {
             batch: Box::new(batch),
         })
@@ -358,16 +359,12 @@ async fn run_view_stream<F>(
         let Some(acknowledgement) = acknowledgement else {
             break;
         };
-        if acknowledgement != expected_cursor {
+        if let Err(error) = stream.acknowledge(&acknowledgement) {
             let _ = send(DesktopViewStreamEvent::Error {
-                error: DesktopApiError::new(
-                    "invalid_cursor",
-                    "view stream acknowledgement does not match the delivered cursor",
-                ),
+                error: desktop_stream_error(error),
             });
             break;
         }
-        after = acknowledgement;
     }
 }
 
@@ -425,6 +422,20 @@ fn desktop_view_error(error: ViewSetError) -> DesktopApiError {
         ViewSetError::Internal(_) => "internal",
     };
     DesktopApiError::new(code, error.to_string())
+}
+
+fn desktop_stream_error(error: AcknowledgedViewStreamError) -> DesktopApiError {
+    match error {
+        AcknowledgedViewStreamError::ViewSet(error) => desktop_view_error(error),
+        AcknowledgedViewStreamError::AcknowledgementOutstanding => DesktopApiError::new(
+            "concurrent_pull",
+            "view stream already has an unacknowledged batch",
+        ),
+        AcknowledgedViewStreamError::InvalidAcknowledgement => DesktopApiError::new(
+            "invalid_cursor",
+            "view stream acknowledgement does not match the delivered cursor",
+        ),
+    }
 }
 
 async fn take_view_set_streams(

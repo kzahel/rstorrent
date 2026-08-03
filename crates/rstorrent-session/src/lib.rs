@@ -6,6 +6,7 @@
 uniffi::setup_scaffolding!();
 
 mod application;
+mod application_connection;
 mod control;
 mod diagnostics;
 mod file_views;
@@ -18,6 +19,10 @@ mod views;
 pub use application::{
     ApplicationConfig, ApplicationError, ApplicationService, PlatformRemovalPlan,
     application_error_response,
+};
+pub use application_connection::{
+    AcknowledgedViewStream, AcknowledgedViewStreamError, ApplicationCall, ApplicationCallError,
+    ApplicationCallResult,
 };
 pub use control::{
     CONTROL_VERSION, Command, ErrorCode, ErrorResponse, RemovalDataPolicy, RemovalState,
