@@ -132,9 +132,11 @@ responsive layout, accessibility, and bounded rendering. Tactical
 session observatory led by a 160-bucket XOR-distance ribbon and bounded lookup
 summaries, with no force graph, globe, or raw node table in the first slice.
 Tactical [`066`](../tactical/066-smooth-session-speed-history.md) makes Speed a
-session-owned three-window history rendered by local high-DPI Canvas code; RAF
-smooths and pans only between exact received anchors, and no general chart
-dependency is selected.
+session-owned range-selected history rendered by local high-DPI Canvas code.
+Exact received, staged-write, and verified payload lead the chart; coarse
+rollups persist separately from correctness-critical session state, RAF smooths
+and pans only between exact live anchors, and no general chart dependency is
+selected.
 
 Use three top-level application destinations rather than making one sidebar
 carry product navigation, torrent filtering, and media organization:

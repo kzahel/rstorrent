@@ -587,10 +587,11 @@ and `session_speed` through Tacticals
 [`065`](../tactical/065-dht-observatory.md), and
 [`066`](../tactical/066-smooth-session-speed-history.md). Swarm is keyed
 registry state with active, inactive, and torrent-missing catalogs; DHT is one
-bounded latest session observation; Speed is a bounded session history with
-keyed completed-bucket patches. Unsupported views
-must report unsupported or unavailable explicitly rather than fabricate empty
-data.
+bounded latest session observation; Speed is a range-selected bounded session
+history with keyed completed-bucket patches and server-owned coarse retention,
+so a fresh client receives its requested tier rather than the full database.
+Unsupported views must report unsupported or unavailable explicitly rather
+than fabricate empty data.
 
 ## Implemented Foundation
 

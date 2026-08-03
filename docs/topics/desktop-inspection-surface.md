@@ -182,8 +182,9 @@ accepted detail direction is bounded by
 [`065`](../tactical/065-dht-observatory.md) and
 [`066`](../tactical/066-smooth-session-speed-history.md): DHT leads with
 truthful XOR-bucket occupancy and active lookups rather than a raw node table,
-and Speed uses bounded session history with a hand-rolled RAF-smooth Canvas
-renderer. The remaining inspection design includes:
+and Speed uses bounded live plus durable coarse session history, range-selected
+delivery, and a hand-rolled RAF-smooth Canvas renderer. The remaining
+inspection design includes:
 
 - the division between later protocol-message and deeper history views;
 - sorting, filtering, selection, and row-detail semantics beyond the first

@@ -133,9 +133,11 @@ pressure/recovery state, rates, cumulative work, queue/service latency, and a
 piece-level active-work table. A short client-side history may support a compact
 chart, but transfer history belongs primarily in the planned session-owned
 Speed view in Tactical
-[`066`](../tactical/066-smooth-session-speed-history.md). Its accepted first
-slice is bounded in memory to 30-second, 2-minute, and 10-minute tiers and is
-not durable across application sessions.
+[`066`](../tactical/066-smooth-session-speed-history.md). Its accepted slice
+keeps 30-second through 1-hour live tiers in memory and persists bounded
+1-minute, 15-minute, and 1-day rollups through two years in a separate metrics
+store. Received, logical staging-write, and hash-verified payload retain
+distinct meanings.
 
 Slow storage is ordinary flow control, not a peer error. New payload assignment
 must stop at a high watermark, already-promised bounded work may overshoot only
@@ -286,8 +288,8 @@ turning inspection state into storage policy.
   concurrency in
   [`storage-throughput-architecture.md`](storage-throughput-architecture.md);
 - platform-specific filesystem throughput, cache, direct-I/O, and memory policy;
-- durable or longer-than-10-minute rate history beyond the planned bounded
-  Speed view in Tactical `066`;
+- arbitrary history navigation, telemetry export, and physical-device IO
+  history beyond the planned bounded Speed view in Tactical `066`;
 - piece priorities, piece selection commands, and interactive piece details;
 - a native Android Disk screen and convergence of its existing PieceMap on the
   generated shared contract; and
