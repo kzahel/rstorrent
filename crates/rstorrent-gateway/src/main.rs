@@ -137,6 +137,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     )
     .await?;
     eprintln!("gateway listening on {}", server.local_addr());
+    let connection_metrics = server.connection_metrics();
     let shutdown = CancellationToken::new();
     let signal_shutdown = shutdown.clone();
     tokio::spawn(async move {
@@ -144,6 +145,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         signal_shutdown.cancel();
     });
     server.serve(shutdown).await?;
+    eprintln!(
+        "gateway_connection_metrics {}",
+        serde_json::to_string(&connection_metrics.snapshot())?
+    );
     application.lock().await.shutdown().await?;
     Ok(())
 }

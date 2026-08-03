@@ -6,7 +6,8 @@ mod application_websocket;
 
 pub use application_websocket::{
     ApplicationClientFrame, ApplicationConnectionError, ApplicationConnectionErrorCode,
-    ApplicationConnectionLimits, ApplicationServerFrame,
+    ApplicationConnectionLimits, ApplicationConnectionMetrics,
+    ApplicationConnectionMetricsSnapshot, ApplicationFrameMetrics, ApplicationServerFrame,
 };
 
 use std::error::Error;
@@ -206,6 +207,7 @@ struct GatewayState {
     connections: Arc<Semaphore>,
     http_owner_namespace: u64,
     connection_registry: application_websocket::ApplicationConnectionRegistry,
+    connection_metrics: ApplicationConnectionMetrics,
     gateway_shutdown: CancellationToken,
 }
 
@@ -239,6 +241,7 @@ pub async fn bind(
         connections: Arc::new(Semaphore::new(config.max_connections)),
         http_owner_namespace: NEXT_HTTP_OWNER.fetch_add(1, Ordering::Relaxed),
         connection_registry: application_websocket::ApplicationConnectionRegistry::new(),
+        connection_metrics: ApplicationConnectionMetrics::default(),
         gateway_shutdown: CancellationToken::new(),
     };
     Ok(GatewayServer {
@@ -266,6 +269,10 @@ impl fmt::Debug for GatewayServer {
 impl GatewayServer {
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
+    }
+
+    pub fn connection_metrics(&self) -> ApplicationConnectionMetrics {
+        self.state.connection_metrics.clone()
     }
 
     pub async fn serve(self, shutdown: CancellationToken) -> Result<(), GatewayError> {
@@ -637,9 +644,10 @@ mod tests {
     use rstorrent_session::{
         ApplicationCall, ApplicationCallResult, ApplicationConfig, ApplicationService, Command,
         ConfiguredStorageRoot, NetworkConfig, NetworkPolicy, OpenViewSetOptions,
-        OpenViewSetRequest, OpenViewSetResponse, RequestEnvelope, UpdateBatch,
-        UpdateViewSetRequest, ViewDeliveryPolicy, ViewSpec,
+        OpenViewSetRequest, OpenViewSetResponse, RequestEnvelope, SessionStore, UpdateBatch,
+        UpdateViewSetRequest, ViewDeliveryPolicy, ViewSetUpdate, ViewSnapshot, ViewSpec,
     };
+    use sha1::{Digest, Sha1};
     use tokio::sync::Mutex;
     use tokio_tungstenite::connect_async;
     use tokio_tungstenite::tungstenite::Message;
@@ -1011,6 +1019,218 @@ mod tests {
         service.lock().await.shutdown().await.expect("shutdown");
         drop(service);
         std::fs::remove_dir_all(root).expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn large_file_snapshot_keeps_command_latency_bounded() {
+        let root = test_root("large-application-frame");
+        let profile = root.join("profile");
+        let payload = root.join("payload");
+        let configured = ConfiguredStorageRoot::path("downloads", payload.clone());
+        let raw_info = large_file_raw_info();
+        let torrent_id = hex_digest(Sha1::digest(&raw_info).as_slice());
+        let magnet = format!("magnet:?xt=urn:btih:{torrent_id}&x.pe=127.0.0.1:1");
+        {
+            let mut store = SessionStore::open(&profile, "test", std::slice::from_ref(&configured))
+                .expect("open seeded store");
+            let response = store
+                .handle_durable(&RequestEnvelope {
+                    version: rstorrent_session::CONTROL_VERSION,
+                    request_id: "seed-large-files".to_owned(),
+                    expected_revision: None,
+                    command: Command::AddMagnet {
+                        magnet,
+                        storage_root: "downloads".to_owned(),
+                        skip_files: Vec::new(),
+                    },
+                })
+                .expect("seed torrent");
+            assert!(matches!(
+                response.outcome,
+                rstorrent_session::ResponseOutcome::Success { .. }
+            ));
+            store
+                .record_metadata(&torrent_id, &raw_info)
+                .expect("record large metadata");
+        }
+        let service = Arc::new(Mutex::new(
+            ApplicationService::open(ApplicationConfig::new(
+                profile,
+                "test".to_owned(),
+                vec![configured],
+                NetworkConfig::new(
+                    NetworkPolicy::LoopbackOnly,
+                    Duration::from_secs(1),
+                    Duration::from_secs(1),
+                ),
+            ))
+            .await
+            .expect("open application"),
+        ));
+        let origin = "http://127.0.0.1:5173";
+        let server = bind(
+            GatewayConfig {
+                bind: "127.0.0.1:0".parse().expect("address"),
+                authentication: GatewayAuthentication::Bearer {
+                    token: "correct-token".to_owned(),
+                },
+                allowed_origin: origin.to_owned(),
+                max_connections: 1,
+            },
+            service.clone(),
+        )
+        .await
+        .expect("bind");
+        let metrics = server.connection_metrics();
+        let address = server.local_addr();
+        let shutdown = CancellationToken::new();
+        let task = tokio::spawn(server.serve(shutdown.clone()));
+        let mut request = format!("ws://{address}/api/v1/connect")
+            .into_client_request()
+            .expect("request");
+        request
+            .headers_mut()
+            .insert("Origin", origin.parse().expect("origin"));
+        let (mut socket, _) = connect_async(request).await.expect("connect");
+        send_application_message(
+            &mut socket,
+            &ApplicationClientFrame::Connect {
+                api_version: rstorrent_session::API_VERSION,
+                encoding: rstorrent_session::ApiEncoding::Json,
+                client_instance_id: "00000000000000000000000000000001".to_owned(),
+                token: Some("correct-token".to_owned()),
+            },
+        )
+        .await;
+        assert!(matches!(
+            read_application_message(&mut socket).await,
+            ApplicationServerFrame::Connected { .. }
+        ));
+        send_application_message(
+            &mut socket,
+            &ApplicationClientFrame::Call {
+                call_id: "large-open".to_owned(),
+                operation: ApplicationCall::OpenViewSet {
+                    request: OpenViewSetRequest {
+                        views: vec![ViewSpec::TorrentFiles {
+                            view_id: "files".to_owned(),
+                            torrent_id: torrent_id.clone(),
+                            delivery: ViewDeliveryPolicy::default(),
+                        }],
+                        options: OpenViewSetOptions::default(),
+                    },
+                },
+            },
+        )
+        .await;
+        let command_started = std::time::Instant::now();
+        send_application_message(
+            &mut socket,
+            &ApplicationClientFrame::Call {
+                call_id: "small-command".to_owned(),
+                operation: ApplicationCall::Dispatch {
+                    request: Box::new(RequestEnvelope {
+                        version: rstorrent_session::CONTROL_VERSION,
+                        request_id: "large-frame-snapshot".to_owned(),
+                        expected_revision: None,
+                        command: Command::Snapshot,
+                    }),
+                },
+            },
+        )
+        .await;
+        let mut large_bytes = None;
+        let mut command_latency = None;
+        while large_bytes.is_none() || command_latency.is_none() {
+            match read_application_message(&mut socket).await {
+                ApplicationServerFrame::Result {
+                    call_id,
+                    result: ApplicationCallResult::ViewSetOpened { response },
+                } if call_id == "large-open" => {
+                    let files = response
+                        .initial
+                        .updates
+                        .iter()
+                        .find_map(|update| match update {
+                            ViewSetUpdate::Snapshot {
+                                snapshot: ViewSnapshot::Files { files, .. },
+                                ..
+                            } => Some(files.len()),
+                            _ => None,
+                        });
+                    assert_eq!(files, Some(4_096));
+                    large_bytes = Some(
+                        serde_json::to_vec(&response)
+                            .expect("encode large response")
+                            .len(),
+                    );
+                }
+                ApplicationServerFrame::Result {
+                    call_id,
+                    result: ApplicationCallResult::CommandResponse { .. },
+                } if call_id == "small-command" => {
+                    command_latency = Some(command_started.elapsed());
+                }
+                other => panic!("unexpected application frame: {other:?}"),
+            }
+        }
+        let large_bytes = large_bytes.expect("large response bytes");
+        let command_latency = command_latency.expect("command latency");
+        assert!(
+            large_bytes > 1_000_000,
+            "large response was {large_bytes} bytes"
+        );
+        assert!(
+            command_latency < Duration::from_secs(2),
+            "small command took {command_latency:?} beside the large frame"
+        );
+
+        socket.close(None).await.expect("close");
+        shutdown.cancel();
+        task.await
+            .expect("server join")
+            .expect("server termination");
+        let snapshot = metrics.snapshot();
+        assert!(snapshot.outbound_message_bytes_high_water > 1_000_000);
+        assert_eq!(snapshot.active_connections, 0);
+        service.lock().await.shutdown().await.expect("shutdown");
+        drop(service);
+        std::fs::remove_dir_all(root).expect("remove root");
+        eprintln!(
+            "large_application_frame encoded_bytes={large_bytes} command_latency_micros={}",
+            command_latency.as_micros()
+        );
+    }
+
+    fn large_file_raw_info() -> Vec<u8> {
+        let mut output = Vec::new();
+        output.extend_from_slice(b"d5:filesl");
+        for index in 0..4_096_u32 {
+            output.extend_from_slice(b"d6:lengthi1e4:pathl");
+            push_bencode_bytes(&mut output, format!("directory-{index:04}").as_bytes());
+            push_bencode_bytes(&mut output, "x".repeat(128).as_bytes());
+            output.extend_from_slice(b"ee");
+        }
+        output.extend_from_slice(b"e4:name13:large-fixture12:piece lengthi16384e6:pieces20:");
+        output.extend_from_slice(&[0_u8; 20]);
+        output.push(b'e');
+        output
+    }
+
+    fn push_bencode_bytes(output: &mut Vec<u8>, value: &[u8]) {
+        output.extend_from_slice(value.len().to_string().as_bytes());
+        output.push(b':');
+        output.extend_from_slice(value);
+    }
+
+    fn hex_digest(bytes: &[u8]) -> String {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        let mut output = String::with_capacity(bytes.len() * 2);
+        for byte in bytes {
+            output.push(char::from(HEX[usize::from(byte >> 4)]));
+            output.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+        output
     }
 
     #[tokio::test]

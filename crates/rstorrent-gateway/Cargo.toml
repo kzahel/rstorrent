@@ -19,4 +19,5 @@ tower-http = { workspace = true, features = ["cors"] }
 ts-rs = { workspace = true }
 
 [dev-dependencies]
+sha1 = { workspace = true }
 tokio-tungstenite = "0.29.0"

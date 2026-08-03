@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import gc
+import json
 import os
 import shutil
 import subprocess
@@ -18,6 +19,7 @@ from application_surface_harness import (
     TOKEN,
     UPLOAD_RATE_LIMIT,
     build_gateway,
+    connection_metrics,
     start_gateway,
     stop_gateway,
     verify_payload,
@@ -107,11 +109,23 @@ def run() -> None:
             fixture.info_hash,
         )
         verify_payload(storage, fixture.info_hash, fixture.payload_hash)
-        stop_gateway(gateway)
+        gateway_diagnostics = stop_gateway(gateway)
         gateway = None
+        metrics = connection_metrics(gateway_diagnostics)
+        if metrics.get("accepted_connections") != 1:
+            raise ScenarioFailure("gateway metrics did not record one accepted connection")
+        if metrics.get("active_connections") != 0:
+            raise ScenarioFailure("gateway retained an active connection after shutdown")
+        server_frames = metrics.get("server_frames")
+        if not isinstance(server_frames, dict):
+            raise ScenarioFailure("gateway metrics omitted server frame families")
+        view_batches = server_frames.get("view_batch")
+        if not isinstance(view_batches, dict) or not view_batches.get("messages"):
+            raise ScenarioFailure("gateway metrics omitted streamed view batches")
         print(
             f"{trace} metadata_size={len(fixture.info_bytes)} pieces=3 "
-            f"payload_sha1={fixture.payload_hash} gateway_shutdown=joined cleanup=ok"
+            f"payload_sha1={fixture.payload_hash} gateway_shutdown=joined cleanup=ok "
+            f"connection_metrics={json.dumps(metrics, sort_keys=True, separators=(',', ':'))}"
         )
     except BaseException as error:
         failure = error

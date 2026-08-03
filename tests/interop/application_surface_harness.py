@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import selectors
 import signal
@@ -126,3 +127,15 @@ def stop_gateway(process: subprocess.Popen[str]) -> str:
             f"stdout:\n{stdout}\nstderr:\n{stderr}"
         )
     return stderr
+
+
+def connection_metrics(stderr: str) -> dict[str, object]:
+    prefix = "gateway_connection_metrics "
+    matches = [
+        json.loads(line[len(prefix) :])
+        for line in stderr.splitlines()
+        if line.startswith(prefix)
+    ]
+    if len(matches) != 1 or not isinstance(matches[0], dict):
+        raise ScenarioFailure("gateway did not emit one connection metrics snapshot")
+    return matches[0]

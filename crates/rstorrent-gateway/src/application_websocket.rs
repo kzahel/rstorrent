@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
@@ -41,6 +41,295 @@ pub const MAX_INVALID_MESSAGES: u8 = 3;
 
 const VIEW_STREAM_WAIT_MILLIS: u32 = 20_000;
 const DATA_RESERVATIONS: usize = 2;
+const CLIENT_FRAME_FAMILIES: [&str; 5] = ["connect", "call", "attach", "ack", "detach"];
+const SERVER_FRAME_FAMILIES: [&str; 8] = [
+    "connected",
+    "result",
+    "call_error",
+    "attached",
+    "view_batch",
+    "stream_error",
+    "detached",
+    "connection_error",
+];
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct ApplicationFrameMetrics {
+    pub messages: u64,
+    pub bytes: u64,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct ApplicationConnectionMetricsSnapshot {
+    pub accepted_connections: u64,
+    pub rejected_origins: u64,
+    pub rejected_authentication: u64,
+    pub rejected_handshakes: u64,
+    pub active_connections: usize,
+    pub active_connections_high_water: usize,
+    pub connection_takeovers: u64,
+    pub handshake_micros_total: u64,
+    pub handshake_micros_max: u64,
+    pub pending_calls_high_water: usize,
+    pub attachments_high_water: usize,
+    pub client_frames: BTreeMap<String, ApplicationFrameMetrics>,
+    pub server_frames: BTreeMap<String, ApplicationFrameMetrics>,
+    pub view_batches: u64,
+    pub empty_view_batches: u64,
+    pub acknowledgements: u64,
+    pub stream_errors: u64,
+    pub reservation_waits: u64,
+    pub reservation_wait_micros_total: u64,
+    pub reservation_wait_micros_max: u64,
+    pub outbound_items_high_water: usize,
+    pub outbound_message_bytes_high_water: usize,
+    pub delivery_latency_micros_total: u64,
+    pub delivery_latency_micros_max: u64,
+    pub pings: u64,
+    pub pongs: u64,
+    pub heartbeat_timeouts: u64,
+}
+
+#[derive(Clone, Default)]
+pub struct ApplicationConnectionMetrics {
+    inner: Arc<ApplicationConnectionMetricAtoms>,
+}
+
+#[derive(Default)]
+struct ApplicationConnectionMetricAtoms {
+    accepted_connections: AtomicU64,
+    rejected_origins: AtomicU64,
+    rejected_authentication: AtomicU64,
+    rejected_handshakes: AtomicU64,
+    active_connections: AtomicUsize,
+    active_connections_high_water: AtomicUsize,
+    connection_takeovers: AtomicU64,
+    handshake_micros_total: AtomicU64,
+    handshake_micros_max: AtomicU64,
+    pending_calls_high_water: AtomicUsize,
+    attachments_high_water: AtomicUsize,
+    client_frames: [FrameMetricAtoms; 5],
+    server_frames: [FrameMetricAtoms; 8],
+    view_batches: AtomicU64,
+    empty_view_batches: AtomicU64,
+    acknowledgements: AtomicU64,
+    stream_errors: AtomicU64,
+    reservation_waits: AtomicU64,
+    reservation_wait_micros_total: AtomicU64,
+    reservation_wait_micros_max: AtomicU64,
+    outbound_items_high_water: AtomicUsize,
+    outbound_message_bytes_high_water: AtomicUsize,
+    delivery_latency_micros_total: AtomicU64,
+    delivery_latency_micros_max: AtomicU64,
+    pings: AtomicU64,
+    pongs: AtomicU64,
+    heartbeat_timeouts: AtomicU64,
+}
+
+#[derive(Default)]
+struct FrameMetricAtoms {
+    messages: AtomicU64,
+    bytes: AtomicU64,
+}
+
+impl ApplicationConnectionMetrics {
+    pub fn snapshot(&self) -> ApplicationConnectionMetricsSnapshot {
+        let load_frames = |labels: &[&str], values: &[FrameMetricAtoms]| {
+            labels
+                .iter()
+                .zip(values)
+                .map(|(label, value)| {
+                    (
+                        (*label).to_owned(),
+                        ApplicationFrameMetrics {
+                            messages: value.messages.load(Ordering::Relaxed),
+                            bytes: value.bytes.load(Ordering::Relaxed),
+                        },
+                    )
+                })
+                .collect()
+        };
+        ApplicationConnectionMetricsSnapshot {
+            accepted_connections: self.inner.accepted_connections.load(Ordering::Relaxed),
+            rejected_origins: self.inner.rejected_origins.load(Ordering::Relaxed),
+            rejected_authentication: self.inner.rejected_authentication.load(Ordering::Relaxed),
+            rejected_handshakes: self.inner.rejected_handshakes.load(Ordering::Relaxed),
+            active_connections: self.inner.active_connections.load(Ordering::Relaxed),
+            active_connections_high_water: self
+                .inner
+                .active_connections_high_water
+                .load(Ordering::Relaxed),
+            connection_takeovers: self.inner.connection_takeovers.load(Ordering::Relaxed),
+            handshake_micros_total: self.inner.handshake_micros_total.load(Ordering::Relaxed),
+            handshake_micros_max: self.inner.handshake_micros_max.load(Ordering::Relaxed),
+            pending_calls_high_water: self.inner.pending_calls_high_water.load(Ordering::Relaxed),
+            attachments_high_water: self.inner.attachments_high_water.load(Ordering::Relaxed),
+            client_frames: load_frames(&CLIENT_FRAME_FAMILIES, &self.inner.client_frames),
+            server_frames: load_frames(&SERVER_FRAME_FAMILIES, &self.inner.server_frames),
+            view_batches: self.inner.view_batches.load(Ordering::Relaxed),
+            empty_view_batches: self.inner.empty_view_batches.load(Ordering::Relaxed),
+            acknowledgements: self.inner.acknowledgements.load(Ordering::Relaxed),
+            stream_errors: self.inner.stream_errors.load(Ordering::Relaxed),
+            reservation_waits: self.inner.reservation_waits.load(Ordering::Relaxed),
+            reservation_wait_micros_total: self
+                .inner
+                .reservation_wait_micros_total
+                .load(Ordering::Relaxed),
+            reservation_wait_micros_max: self
+                .inner
+                .reservation_wait_micros_max
+                .load(Ordering::Relaxed),
+            outbound_items_high_water: self.inner.outbound_items_high_water.load(Ordering::Relaxed),
+            outbound_message_bytes_high_water: self
+                .inner
+                .outbound_message_bytes_high_water
+                .load(Ordering::Relaxed),
+            delivery_latency_micros_total: self
+                .inner
+                .delivery_latency_micros_total
+                .load(Ordering::Relaxed),
+            delivery_latency_micros_max: self
+                .inner
+                .delivery_latency_micros_max
+                .load(Ordering::Relaxed),
+            pings: self.inner.pings.load(Ordering::Relaxed),
+            pongs: self.inner.pongs.load(Ordering::Relaxed),
+            heartbeat_timeouts: self.inner.heartbeat_timeouts.load(Ordering::Relaxed),
+        }
+    }
+
+    fn rejected_origin(&self) {
+        self.inner.rejected_origins.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn rejected_authentication(&self) {
+        self.inner
+            .rejected_authentication
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn rejected_handshake(&self) {
+        self.inner
+            .rejected_handshakes
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn accepted(&self, takeover: bool, handshake: Duration) {
+        self.inner
+            .accepted_connections
+            .fetch_add(1, Ordering::Relaxed);
+        let active = self
+            .inner
+            .active_connections
+            .fetch_add(1, Ordering::Relaxed)
+            + 1;
+        observe_high_water(&self.inner.active_connections_high_water, active);
+        if takeover {
+            self.inner
+                .connection_takeovers
+                .fetch_add(1, Ordering::Relaxed);
+        }
+        let micros = duration_micros(handshake);
+        self.inner
+            .handshake_micros_total
+            .fetch_add(micros, Ordering::Relaxed);
+        observe_high_water_u64(&self.inner.handshake_micros_max, micros);
+    }
+
+    fn connection_closed(&self) {
+        self.inner
+            .active_connections
+            .fetch_sub(1, Ordering::Relaxed);
+    }
+
+    fn record_client_frame(&self, frame: &ApplicationClientFrame, bytes: usize) {
+        let index = match frame {
+            ApplicationClientFrame::Connect { .. } => 0,
+            ApplicationClientFrame::Call { .. } => 1,
+            ApplicationClientFrame::Attach { .. } => 2,
+            ApplicationClientFrame::Ack { .. } => 3,
+            ApplicationClientFrame::Detach { .. } => 4,
+        };
+        record_frame(&self.inner.client_frames[index], bytes);
+        if matches!(frame, ApplicationClientFrame::Ack { .. }) {
+            self.inner.acknowledgements.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn record_server_frame(&self, frame: &ApplicationServerFrame, bytes: usize) {
+        let index = match frame {
+            ApplicationServerFrame::Connected { .. } => 0,
+            ApplicationServerFrame::Result { .. } => 1,
+            ApplicationServerFrame::CallError { .. } => 2,
+            ApplicationServerFrame::Attached { .. } => 3,
+            ApplicationServerFrame::ViewBatch { batch, .. } => {
+                self.inner.view_batches.fetch_add(1, Ordering::Relaxed);
+                if batch.updates.is_empty() {
+                    self.inner
+                        .empty_view_batches
+                        .fetch_add(1, Ordering::Relaxed);
+                }
+                4
+            }
+            ApplicationServerFrame::StreamError { .. } => {
+                self.inner.stream_errors.fetch_add(1, Ordering::Relaxed);
+                5
+            }
+            ApplicationServerFrame::Detached { .. } => 6,
+            ApplicationServerFrame::ConnectionError { .. } => 7,
+        };
+        record_frame(&self.inner.server_frames[index], bytes);
+        observe_high_water(&self.inner.outbound_message_bytes_high_water, bytes);
+    }
+
+    fn observe_pending(&self, pending: usize) {
+        observe_high_water(&self.inner.pending_calls_high_water, pending);
+    }
+
+    fn observe_attachments(&self, attachments: usize) {
+        observe_high_water(&self.inner.attachments_high_water, attachments);
+    }
+
+    fn observe_outbound_items(&self, items: usize) {
+        observe_high_water(&self.inner.outbound_items_high_water, items);
+    }
+
+    fn reservation_wait(&self, elapsed: Duration) {
+        let micros = duration_micros(elapsed);
+        if micros > 0 {
+            self.inner.reservation_waits.fetch_add(1, Ordering::Relaxed);
+        }
+        self.inner
+            .reservation_wait_micros_total
+            .fetch_add(micros, Ordering::Relaxed);
+        observe_high_water_u64(&self.inner.reservation_wait_micros_max, micros);
+    }
+
+    fn delivered(&self, elapsed: Duration) {
+        let micros = duration_micros(elapsed);
+        self.inner
+            .delivery_latency_micros_total
+            .fetch_add(micros, Ordering::Relaxed);
+        observe_high_water_u64(&self.inner.delivery_latency_micros_max, micros);
+    }
+}
+
+fn record_frame(metric: &FrameMetricAtoms, bytes: usize) {
+    metric.messages.fetch_add(1, Ordering::Relaxed);
+    metric.bytes.fetch_add(bytes as u64, Ordering::Relaxed);
+}
+
+fn observe_high_water(metric: &AtomicUsize, value: usize) {
+    metric.fetch_max(value, Ordering::Relaxed);
+}
+
+fn observe_high_water_u64(metric: &AtomicU64, value: u64) {
+    metric.fetch_max(value, Ordering::Relaxed);
+}
+
+fn duration_micros(duration: Duration) -> u64 {
+    duration.as_micros().min(u128::from(u64::MAX)) as u64
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 pub struct ApplicationConnectionLimits {
@@ -208,7 +497,7 @@ impl ApplicationConnectionRegistry {
         generation: u64,
         cancellation: CancellationToken,
         done: CancellationToken,
-    ) {
+    ) -> bool {
         let previous = self.state.lock().await.connections.insert(
             owner,
             RegistryConnection {
@@ -217,10 +506,12 @@ impl ApplicationConnectionRegistry {
                 done,
             },
         );
+        let takeover = previous.is_some();
         if let Some(previous) = previous {
             previous.cancellation.cancel();
             previous.done.cancelled().await;
         }
+        takeover
     }
 
     async fn release_connection(&self, owner: &str, generation: u64) {
@@ -302,6 +593,7 @@ pub(crate) async fn upgrade_application_connection(
         .and_then(|value| value.to_str().ok())
         != Some(state.allowed_origin.as_ref())
     {
+        state.connection_metrics.rejected_origin();
         return StatusCode::FORBIDDEN.into_response();
     }
     let Ok(permit) = state.connections.clone().try_acquire_owned() else {
@@ -317,6 +609,7 @@ pub(crate) async fn upgrade_application_connection(
 struct OutboundFrame {
     frame: ApplicationServerFrame,
     _reservation: Option<OwnedSemaphorePermit>,
+    queued_at: Instant,
 }
 
 enum WriterCommand {
@@ -341,6 +634,7 @@ async fn serve_application_connection(
     state: GatewayState,
     _permit: OwnedSemaphorePermit,
 ) {
+    let handshake_started = Instant::now();
     let (websocket_writer, mut websocket_reader) = socket.split();
     let connection_cancel = CancellationToken::new();
     let connection_done = CancellationToken::new();
@@ -351,6 +645,7 @@ async fn serve_application_connection(
         control_reader,
         data_reader,
         connection_cancel.clone(),
+        state.connection_metrics.clone(),
     ));
 
     let connected = match tokio::time::timeout(
@@ -360,17 +655,23 @@ async fn serve_application_connection(
     .await
     {
         Ok(Some(Ok(Message::Text(text)))) if text.len() <= MAX_INCOMING_MESSAGE_BYTES => {
-            serde_json::from_str::<ApplicationClientFrame>(&text).ok()
+            serde_json::from_str::<ApplicationClientFrame>(&text)
+                .ok()
+                .map(|frame| (frame, text.len()))
         }
         _ => None,
     };
-    let Some(ApplicationClientFrame::Connect {
-        api_version,
-        encoding,
-        client_instance_id,
-        token,
-    }) = connected
+    let Some((
+        ApplicationClientFrame::Connect {
+            api_version,
+            encoding,
+            client_instance_id,
+            token,
+        },
+        connect_bytes,
+    )) = connected
     else {
+        state.connection_metrics.rejected_handshake();
         fatal_connection(
             &control,
             ApplicationConnectionErrorCode::InvalidMessage,
@@ -381,7 +682,17 @@ async fn serve_application_connection(
         finish_writer(control, data, writer).await;
         return;
     };
+    state.connection_metrics.record_client_frame(
+        &ApplicationClientFrame::Connect {
+            api_version,
+            encoding,
+            client_instance_id: client_instance_id.clone(),
+            token: None,
+        },
+        connect_bytes,
+    );
     if api_version != API_VERSION || encoding != ApiEncoding::Json {
+        state.connection_metrics.rejected_handshake();
         fatal_connection(
             &control,
             ApplicationConnectionErrorCode::InvalidVersion,
@@ -395,6 +706,7 @@ async fn serve_application_connection(
     if !valid_client_instance_id(&client_instance_id)
         || !connection_token_matches(&state.authentication, token.as_deref())
     {
+        state.connection_metrics.rejected_authentication();
         fatal_connection(
             &control,
             ApplicationConnectionErrorCode::AuthenticationFailed,
@@ -412,7 +724,7 @@ async fn serve_application_connection(
     );
     let owner = ViewSetOwner::trusted(owner_key.clone());
     let connection_generation = state.connection_registry.generation();
-    state
+    let takeover = state
         .connection_registry
         .activate_connection(
             owner_key.clone(),
@@ -421,6 +733,9 @@ async fn serve_application_connection(
             connection_done.clone(),
         )
         .await;
+    state
+        .connection_metrics
+        .accepted(takeover, handshake_started.elapsed());
     let hello = {
         let service = state.service.lock().await;
         application_hello(&service)
@@ -465,6 +780,11 @@ async fn serve_application_connection(
             _ = heartbeat.tick() => {
                 if let Some((_, sent)) = &outstanding_ping {
                     if sent.elapsed() >= Duration::from_millis(HEARTBEAT_TIMEOUT_MILLIS) {
+                        state
+                            .connection_metrics
+                            .inner
+                            .heartbeat_timeouts
+                            .fetch_add(1, Ordering::Relaxed);
                         break;
                     }
                 } else if last_client_activity.elapsed()
@@ -476,6 +796,11 @@ async fn serve_application_connection(
                     {
                         break;
                     }
+                    state
+                        .connection_metrics
+                        .inner
+                        .pings
+                        .fetch_add(1, Ordering::Relaxed);
                     outstanding_ping = Some((nonce, Instant::now()));
                 }
             }
@@ -508,6 +833,11 @@ async fn serve_application_connection(
                             .is_some_and(|(expected, _)| expected.as_slice() == payload.as_ref())
                         {
                             outstanding_ping = None;
+                            state
+                                .connection_metrics
+                                .inner
+                                .pongs
+                                .fetch_add(1, Ordering::Relaxed);
                         }
                     }
                     Message::Ping(payload) => {
@@ -546,6 +876,9 @@ async fn serve_application_connection(
                             ).await;
                             continue;
                         };
+                        state
+                            .connection_metrics
+                            .record_client_frame(&frame, text.len());
                         if matches!(frame, ApplicationClientFrame::Connect { .. }) {
                             invalid_messages = invalid_messages.saturating_add(1);
                             if invalid_messages >= MAX_INVALID_MESSAGES {
@@ -598,6 +931,7 @@ async fn serve_application_connection(
         .connection_registry
         .release_connection(&owner_key, connection_generation)
         .await;
+    state.connection_metrics.connection_closed();
     connection_done.cancel();
     let (code, reason) = if service_shutdown {
         (1001, "service shutdown")
@@ -660,13 +994,19 @@ async fn handle_client_frame(
                 .await;
                 return;
             }
+            state
+                .connection_metrics
+                .observe_pending(pending_len(pending_ids));
             let service = state.service.clone();
             let owner = owner.clone();
             let control = control.clone();
             let reservations = reservations.clone();
             let pending_ids = pending_ids.clone();
+            let metrics = state.connection_metrics.clone();
             calls.spawn(async move {
+                let reservation_started = Instant::now();
                 let reservation = reservations.acquire_owned().await.ok();
+                metrics.reservation_wait(reservation_started.elapsed());
                 let result = service
                     .lock()
                     .await
@@ -725,6 +1065,9 @@ async fn handle_client_frame(
                 .await;
                 return;
             }
+            state
+                .connection_metrics
+                .observe_pending(pending_len(pending_ids));
             if attachments.len() >= MAX_ATTACHMENTS_PER_CONNECTION {
                 remove_pending(pending_ids, &call_id);
                 send_call_error(
@@ -801,6 +1144,7 @@ async fn handle_client_frame(
                 data.clone(),
                 reservations.clone(),
                 state.connection_registry.clone(),
+                state.connection_metrics.clone(),
                 pump_stopped.clone(),
             ));
             if let Some(replaced) = attachments.insert(
@@ -814,6 +1158,9 @@ async fn handle_client_frame(
             ) {
                 stop_attachment(replaced).await;
             }
+            state
+                .connection_metrics
+                .observe_attachments(attachments.len());
         }
         ApplicationClientFrame::Ack { stream_id, cursor } => {
             if !valid_identifier(&stream_id) || !valid_cursor(&cursor) {
@@ -861,6 +1208,9 @@ async fn handle_client_frame(
                 .await;
                 return;
             }
+            state
+                .connection_metrics
+                .observe_pending(pending_len(pending_ids));
             let Some(active) = attachments.remove(&stream_id) else {
                 remove_pending(pending_ids, &call_id);
                 send_call_error(
@@ -897,10 +1247,12 @@ async fn run_attachment(
     data: mpsc::Sender<OutboundFrame>,
     reservations: Arc<Semaphore>,
     registry: ApplicationConnectionRegistry,
+    metrics: ApplicationConnectionMetrics,
     stopped: mpsc::Sender<PumpStopped>,
 ) {
     let view_set_id = stream.view_set_id().to_owned();
     loop {
+        let reservation_started = Instant::now();
         let reservation = tokio::select! {
             biased;
             () = cancellation.cancelled() => break,
@@ -909,6 +1261,7 @@ async fn run_attachment(
                 reservation
             }
         };
+        metrics.reservation_wait(reservation_started.elapsed());
         let batch = tokio::select! {
             biased;
             () = cancellation.cancelled() => break,
@@ -945,6 +1298,7 @@ async fn run_attachment(
                 batch: Box::new(batch),
             },
             _reservation: Some(reservation),
+            queued_at: Instant::now(),
         };
         let sent = tokio::select! {
             biased;
@@ -994,8 +1348,10 @@ async fn run_writer(
     mut control: mpsc::Receiver<WriterCommand>,
     mut data: mpsc::Receiver<OutboundFrame>,
     cancellation: CancellationToken,
+    metrics: ApplicationConnectionMetrics,
 ) {
     loop {
+        metrics.observe_outbound_items(control.len().saturating_add(data.len()));
         let command = match control.try_recv() {
             Ok(command) => Some(command),
             Err(mpsc::error::TryRecvError::Empty) => tokio::select! {
@@ -1010,19 +1366,28 @@ async fn run_writer(
         let Some(command) = command else {
             break;
         };
-        let message = match command {
+        metrics.observe_outbound_items(
+            1_usize.saturating_add(control.len().saturating_add(data.len())),
+        );
+        let (message, queued_at) = match command {
             WriterCommand::Frame(outgoing) => {
                 let encoded = match serde_json::to_string(&outgoing.frame) {
-                    Ok(encoded) if encoded.len() <= MAX_SERVER_MESSAGE_BYTES => encoded,
+                    Ok(encoded) if encoded.len() <= MAX_SERVER_MESSAGE_BYTES => {
+                        metrics.record_server_frame(&outgoing.frame, encoded.len());
+                        encoded
+                    }
                     _ => break,
                 };
-                Message::Text(encoded.into())
+                (Message::Text(encoded.into()), Some(outgoing.queued_at))
             }
-            WriterCommand::Transport(message) => message,
+            WriterCommand::Transport(message) => (message, None),
         };
         let closing = matches!(message, Message::Close(_));
         if websocket.send(message).await.is_err() || closing {
             break;
+        }
+        if let Some(queued_at) = queued_at {
+            metrics.delivered(queued_at.elapsed());
         }
     }
     cancellation.cancel();
@@ -1048,6 +1413,7 @@ async fn send_control(
         .send(WriterCommand::Frame(OutboundFrame {
             frame,
             _reservation: reservation,
+            queued_at: Instant::now(),
         }))
         .await
         .map_err(|_| ())
@@ -1123,6 +1489,10 @@ fn remove_pending(pending: &StdMutex<BTreeSet<String>>, call_id: &str) {
         .lock()
         .expect("pending call lock poisoned")
         .remove(call_id);
+}
+
+fn pending_len(pending: &StdMutex<BTreeSet<String>>) -> usize {
+    pending.lock().expect("pending call lock poisoned").len()
 }
 
 fn valid_identifier(value: &str) -> bool {
@@ -1267,7 +1637,7 @@ mod tests {
         let registry = ApplicationConnectionRegistry::new();
         let first_cancel = CancellationToken::new();
         let first_done = CancellationToken::new();
-        registry
+        let first_takeover = registry
             .activate_connection(
                 "owner".to_owned(),
                 1,
@@ -1275,6 +1645,7 @@ mod tests {
                 first_done.clone(),
             )
             .await;
+        assert!(!first_takeover);
 
         let second_cancel = CancellationToken::new();
         let second_done = CancellationToken::new();
@@ -1284,12 +1655,12 @@ mod tests {
         let takeover = tokio::spawn(async move {
             takeover_registry
                 .activate_connection("owner".to_owned(), 2, takeover_cancel, takeover_done)
-                .await;
+                .await
         });
         first_cancel.cancelled().await;
         assert!(!takeover.is_finished());
         first_done.cancel();
-        takeover.await.expect("takeover task");
+        assert!(takeover.await.expect("takeover task"));
         registry.release_connection("owner", 1).await;
 
         let third_cancel = CancellationToken::new();
@@ -1298,12 +1669,12 @@ mod tests {
         let third = tokio::spawn(async move {
             third_registry
                 .activate_connection("owner".to_owned(), 3, third_cancel, third_done)
-                .await;
+                .await
         });
         second_cancel.cancelled().await;
         assert!(!third.is_finished());
         second_done.cancel();
-        third.await.expect("third connection");
+        assert!(third.await.expect("third connection"));
     }
 
     #[tokio::test]
