@@ -2,54 +2,10 @@
 
 Topic: `capability-readiness`
 
-Status: This is the master roll-up for current product and engine readiness.
-RSTorrent now completes controlled v1 downloads through bounded simultaneous
-peers, live tracker/DHT discovery, request expiry, and replacement, including
-ordinary multi-piece single-file content. The active source-first campaign
-now drives metadata, first-piece, sustained-transfer, endgame, and publication
-parity through the completed paired libtorrent comparator before measured BEP
-breadth. Endgame and v1 hash-failure recovery now have exact bounded evidence.
-Bounded storage now remains live independently from peer events, but its
-corrected localhost benchmark did not improve. Paired peer-utility timelines
-then isolated a source-rich product-path run which retained 119 eligible peers
-behind an eight-attempt half-open ceiling. That cohort is now 30 with exact
-adversarial evidence. Fair supervisor intake now admits DHT results and fills
-that cohort during storage pressure. Coalesced selective hashing now removes
-redundant seeks, but a controlled profile remained neutral and public storage
-occupancy stayed saturated. The complete common piece hash now runs behind one
-bounded blocking positional-I/O boundary, but controlled and public timing
-again stayed neutral. The duration slice attributed 93--94% of public wall
-time to serialized storage service. Bounded coalesced batches now reduce
-roughly 5,700 logical blocks to about 500 physical writes, but controlled wall
-time stayed neutral and public write plus hash service still consumed 93--94%.
-Tactical `052` now separates hash verification from bounded batched
-durability, cuts the retained SQLite-backed cohort median by 7.4%, and reduces
-514 post-metadata revisions to 18. Tactical `053` now removes cursor and
-per-piece-handle barriers through retained generation-checked positional plans;
-its engine median improves 5.9% and write service falls by roughly four
-seconds. Tactical `054` now adds bounded independent write/hash execution and
-checked scheduler and per-piece indexes whose repeated controlled 10 GiB rows
-all complete below 32 seconds. The final 4 MiB median reaches 96% of
-libtorrent, `4/4` beats the `8/4` finalist, and the retained application
-profile now matches its engine control after removing per-block Disk
-projection. Selective, restart, crash, platform, controlled libtorrent and one
-exact public full-download pair all pass; Tactical `054` is complete.
-Tactical `033` now completes the leased application view-set and headless
-polling foundation. Tactical `034` completes the responsive frontend,
-deterministic demo adapter, adaptive inspection hierarchy, and virtual table
-foundation. Tactical `035` completes stable Rust torrent and active-peer
-inspection projections, the semantic live adapter, independently reaped
-leases, and suspended-client recovery through a fresh snapshot. The next
-product-observability cross-section should be selected from actual inspection
-value before the engine campaign resumes. Tactical `039` also corrects the
-product's inherited two-block pipeline: desktop and Android now use explicit,
-generous, independently bounded request, received-payload, and active-piece
-profiles. Tactical `040` adds durable archive and restartable torrent removal
-across path and Android SAF storage, plus the guarded web confirmation flow.
-Tactical `041` adds complete live file geometry and progress, Tactical `042`
-publishes the verified metainfo name, and Tactical `043` adds an authoritative
-schedule-backed tracker lifecycle through the responsive web surface and a
-controlled tracker-only browser proof.
+Status: Authoritative cross-cutting feature-readiness scoreboard and current
+work queue for the functional, unreleased alpha. The tables below record
+current support, evidence, and highest-risk gaps; implementation history
+remains in the linked tacticals and focused topics.
 
 ## Purpose And Ownership
 
