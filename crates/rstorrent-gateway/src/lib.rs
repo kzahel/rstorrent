@@ -1022,6 +1022,159 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn application_connection_rejects_bad_handshakes_and_repeated_invalid_input() {
+        let root = test_root("application-websocket-rejections");
+        let service = test_service(&root).await;
+        let origin = "http://127.0.0.1:5173";
+        let server = bind(
+            GatewayConfig {
+                bind: "127.0.0.1:0".parse().expect("address"),
+                authentication: GatewayAuthentication::Bearer {
+                    token: "correct-token".to_owned(),
+                },
+                allowed_origin: origin.to_owned(),
+                max_connections: 4,
+            },
+            service.clone(),
+        )
+        .await
+        .expect("bind");
+        let metrics = server.connection_metrics();
+        let address = server.local_addr();
+        let shutdown = CancellationToken::new();
+        let task = tokio::spawn(server.serve(shutdown.clone()));
+
+        let mut wrong_origin = format!("ws://{address}/api/v1/connect")
+            .into_client_request()
+            .expect("request");
+        wrong_origin.headers_mut().insert(
+            "Origin",
+            "https://attacker.invalid".parse().expect("origin"),
+        );
+        let error = connect_async(wrong_origin)
+            .await
+            .expect_err("wrong origin must not upgrade");
+        assert!(matches!(
+            error,
+            tokio_tungstenite::tungstenite::Error::Http(response)
+                if response.status() == axum::http::StatusCode::FORBIDDEN
+        ));
+
+        for (api_version, token, expected) in [
+            (
+                rstorrent_session::API_VERSION,
+                Some("wrong-token"),
+                ApplicationConnectionErrorCode::AuthenticationFailed,
+            ),
+            (
+                rstorrent_session::API_VERSION + 1,
+                Some("correct-token"),
+                ApplicationConnectionErrorCode::InvalidVersion,
+            ),
+        ] {
+            let mut request = format!("ws://{address}/api/v1/connect")
+                .into_client_request()
+                .expect("request");
+            request
+                .headers_mut()
+                .insert("Origin", origin.parse().expect("origin"));
+            let (mut socket, _) = connect_async(request).await.expect("connect");
+            send_application_message(
+                &mut socket,
+                &ApplicationClientFrame::Connect {
+                    api_version,
+                    encoding: rstorrent_session::ApiEncoding::Json,
+                    client_instance_id: "00000000000000000000000000000001".to_owned(),
+                    token: token.map(str::to_owned),
+                },
+            )
+            .await;
+            assert!(matches!(
+                read_application_message(&mut socket).await,
+                ApplicationServerFrame::ConnectionError { error }
+                    if error.code == expected
+            ));
+        }
+
+        let mut request = format!("ws://{address}/api/v1/connect")
+            .into_client_request()
+            .expect("request");
+        request
+            .headers_mut()
+            .insert("Origin", origin.parse().expect("origin"));
+        let (mut silent_socket, _) = connect_async(request).await.expect("connect");
+        let timeout_message = tokio::time::timeout(Duration::from_secs(6), silent_socket.next())
+            .await
+            .expect("handshake rejection timed out")
+            .expect("handshake socket closed without an error")
+            .expect("read handshake rejection");
+        let Message::Text(timeout_text) = timeout_message else {
+            panic!("expected handshake rejection text");
+        };
+        assert!(matches!(
+            serde_json::from_str::<ApplicationServerFrame>(&timeout_text)
+                .expect("decode handshake rejection"),
+            ApplicationServerFrame::ConnectionError { error }
+                if error.code == ApplicationConnectionErrorCode::InvalidMessage
+        ));
+
+        let mut request = format!("ws://{address}/api/v1/connect")
+            .into_client_request()
+            .expect("request");
+        request
+            .headers_mut()
+            .insert("Origin", origin.parse().expect("origin"));
+        let (mut socket, _) = connect_async(request).await.expect("connect");
+        send_application_message(
+            &mut socket,
+            &ApplicationClientFrame::Connect {
+                api_version: rstorrent_session::API_VERSION,
+                encoding: rstorrent_session::ApiEncoding::Json,
+                client_instance_id: "00000000000000000000000000000001".to_owned(),
+                token: Some("correct-token".to_owned()),
+            },
+        )
+        .await;
+        assert!(matches!(
+            read_application_message(&mut socket).await,
+            ApplicationServerFrame::Connected { .. }
+        ));
+        for _ in 0..3 {
+            socket
+                .send(Message::Text("{}".into()))
+                .await
+                .expect("send invalid frame");
+            assert!(matches!(
+                read_application_message(&mut socket).await,
+                ApplicationServerFrame::ConnectionError { error }
+                    if error.code == ApplicationConnectionErrorCode::InvalidMessage
+            ));
+        }
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(1), socket.next())
+                .await
+                .expect("protocol close timed out")
+                .expect("connection ended before close")
+                .expect("read close"),
+            Message::Close(_)
+        ));
+
+        shutdown.cancel();
+        task.await
+            .expect("server join")
+            .expect("server termination");
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.rejected_origins, 1);
+        assert_eq!(snapshot.rejected_authentication, 1);
+        assert_eq!(snapshot.rejected_handshakes, 2);
+        assert_eq!(snapshot.accepted_connections, 1);
+        assert_eq!(snapshot.active_connections, 0);
+        service.lock().await.shutdown().await.expect("shutdown");
+        drop(service);
+        std::fs::remove_dir_all(root).expect("remove root");
+    }
+
+    #[tokio::test]
     async fn large_file_snapshot_keeps_command_latency_bounded() {
         let root = test_root("large-application-frame");
         let profile = root.join("profile");

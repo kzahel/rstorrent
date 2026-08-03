@@ -18,8 +18,10 @@ the joined metadata/content supervisor result and its final empty peer
 observation. Tactical `048` adapts the same commands and leased view sets to
 the in-process Tauri product without introducing a local server. The live web
 adapter now gives each application instance a random request-ID namespace so
-durable receipts do not conflict across reloads or tabs. No stable public
-remote wire format is accepted yet. Tactical `049` evolves diagnostics into
+durable receipts do not conflict across reloads or tabs. Tactical `060`
+carries the same typed calls over one bounded loopback WebSocket without making
+connection correlation the owner of durable request identity. No stable public
+remote wire format is accepted. Tactical `049` evolves diagnostics into
 hierarchical structured records with explicit capture interest and distinct
 source, delivery, and local loss while keeping them separate from commands and
 product-state authority.

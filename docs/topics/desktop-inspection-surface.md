@@ -21,10 +21,12 @@ counts, retry/reannounce timing, and failure context through that surface.
 Tacticals `044`--`045` add global receive/write/hash pressure and a bounded
 selected-torrent piece overview with controlled live evidence. Tactical `048`
 makes this React surface the ordinary Tauri entry through acknowledged
-in-process leased-view streaming while preserving HTTP polling as its headless
-browser seam. Tactical `049` completes a global Chrome DevTools-like ordered
-Logs console with structured context, deliberate capture interest, local
-filtering, explicit loss, bounded virtualization, and no persistence.
+in-process leased-view streaming. Tactical `060` makes one multiplexed
+WebSocket the ordinary live-browser seam and retains HTTP polling only as an
+explicit loopback diagnostic comparison. Tactical `049` completes a global
+Chrome DevTools-like ordered Logs console with structured context, deliberate
+capture interest, local filtering, explicit loss, bounded virtualization, and
+no persistence.
 Tactical `050` extends the shared React Settings surface with browser-local
 Auto, Light, and Dark themes, preserving Interface size and applying persisted
 appearance before React content.

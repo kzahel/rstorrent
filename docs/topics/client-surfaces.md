@@ -147,11 +147,12 @@ fresh strict-TypeScript React application using component-scoped CSS Modules.
 It preserves JSTorrent's information hierarchy without inheriting its source
 architecture and adapts one library/list/detail model from wide desktop to
 phone-sized browser layouts. Stable Rust torrent and peer views are now mapped
-through the new live application adapter. The older direct-DOM surface remains
-only as the no-mode legacy gateway entry and is no longer a compatibility or
-proof target. Tactical `060` makes the modern named demo the no-mode root and
-deletes that direct-DOM client after replacement evidence is green. The
-detailed direction and open choices live in
+through the new live application adapter. Tactical `060` deletes the older
+direct-DOM gateway surface, makes the modern named demo the no-mode root, and
+moves ordinary live-browser calls and view sets onto one multiplexed
+WebSocket. HTTP remains available only as an explicit loopback diagnostic
+query, while Tauri stays in process. The detailed direction and open choices
+live in
 [`web-ui-design.md`](web-ui-design.md).
 
 The initial browser surface may prove the network transport on loopback with

@@ -214,6 +214,114 @@ describe("multiplexed application WebSocket adapter", () => {
     await client.close();
   });
 
+  it("keeps two attached view sets independent on one socket", async () => {
+    const sockets: FakeWebSocket[] = [];
+    const acknowledgements: Array<{ streamId: string; cursor: string }> = [];
+    let openedCount = 0;
+    const secondViewSetId = "vs_111102030405060708090a0b0c0d0e0f";
+    const viewSetByStream = new Map<string, string>();
+    const factory: ApplicationWebSocketFactory = (url) => {
+      const socket = new FakeWebSocket(url, (frame, active) => {
+        queueMicrotask(() => {
+          if (frame.type === "connect") active.server(connected());
+          if (frame.type === "call") {
+            if (frame.operation.type === "open_view_set") {
+              const openedId = openedCount++ === 0 ? viewSetId : secondViewSetId;
+              active.server({
+                type: "result",
+                call_id: frame.call_id,
+                result: {
+                  type: "view_set_opened",
+                  response: opened(openedId),
+                },
+              });
+            } else if (frame.operation.type === "dispatch") {
+              active.server({
+                type: "result",
+                call_id: frame.call_id,
+                result: {
+                  type: "command_response",
+                  response: commandResponse(frame.operation.request.request_id),
+                },
+              });
+            }
+          }
+          if (frame.type === "attach") {
+            viewSetByStream.set(frame.stream_id, frame.view_set_id);
+            active.server({
+              type: "attached",
+              call_id: frame.call_id,
+              stream_id: frame.stream_id,
+              view_set_id: frame.view_set_id,
+            });
+            active.server({
+              type: "view_batch",
+              stream_id: frame.stream_id,
+              batch: batch("1", "2", frame.view_set_id),
+            });
+          }
+          if (frame.type === "ack") {
+            acknowledgements.push({
+              streamId: frame.stream_id,
+              cursor: frame.cursor,
+            });
+            active.server({
+              type: "view_batch",
+              stream_id: frame.stream_id,
+              batch: batch(
+                frame.cursor,
+                "3",
+                viewSetByStream.get(frame.stream_id) ?? viewSetId,
+              ),
+            });
+          }
+          if (frame.type === "detach") {
+            active.server({
+              type: "detached",
+              call_id: frame.call_id,
+              stream_id: frame.stream_id,
+            });
+          }
+        });
+      });
+      sockets.push(socket);
+      return socket;
+    };
+    const client = new WebSocketApplicationViewClient(
+      "http://127.0.0.1:3030/",
+      null,
+      factory,
+      clientInstanceId,
+    );
+    const firstOpen = client.openViewSet({ views: [listView], options: {} });
+    sockets[0]?.open();
+    const first = await firstOpen;
+    const second = await client.openViewSet({ views: [listView], options: {} });
+    const firstStream = await client.streamUpdates(first.view_set_id, "1");
+    const secondStream = await client.streamUpdates(second.view_set_id, "1");
+    const firstIterator = firstStream[Symbol.asyncIterator]();
+    const secondIterator = secondStream[Symbol.asyncIterator]();
+    await expect(firstIterator.next()).resolves.toMatchObject({
+      value: { cursor: "2", view_set_id: viewSetId },
+    });
+    await expect(secondIterator.next()).resolves.toMatchObject({
+      value: { cursor: "2", view_set_id: secondViewSetId },
+    });
+
+    await expect(secondIterator.next()).resolves.toMatchObject({
+      value: { cursor: "3", view_set_id: secondViewSetId },
+    });
+    await expect(client.dispatch(snapshotRequest("alongside-stall"))).resolves.toMatchObject({
+      request_id: "alongside-stall",
+    });
+    expect(sockets).toHaveLength(1);
+    expect(acknowledgements).toEqual([{ streamId: "view-2", cursor: "2" }]);
+
+    await firstStream.close();
+    await secondStream.close();
+    await client.close();
+  });
+
   it("does not replay a pending command and reuses client identity on reconnect", async () => {
     const sockets: FakeWebSocket[] = [];
     const factory: ApplicationWebSocketFactory = (url) => {
@@ -306,15 +414,15 @@ function hello(): ApiHello {
   };
 }
 
-function opened(): OpenViewSetResponse {
+function opened(id = viewSetId): OpenViewSetResponse {
   return {
-    view_set_id: viewSetId,
+    view_set_id: id,
     lease_millis: "300000",
     effective_queue_bytes: 262_144,
     effective_views: [listView],
     initial: {
       api_version: 1,
-      view_set_id: viewSetId,
+      view_set_id: id,
       epoch: "1",
       base_cursor: "0",
       cursor: "1",
@@ -330,10 +438,14 @@ function opened(): OpenViewSetResponse {
   };
 }
 
-function batch(baseCursor: string, cursor: string): UpdateBatch {
+function batch(
+  baseCursor: string,
+  cursor: string,
+  id = viewSetId,
+): UpdateBatch {
   return {
     api_version: 1,
-    view_set_id: viewSetId,
+    view_set_id: id,
     epoch: "1",
     base_cursor: baseCursor,
     cursor,

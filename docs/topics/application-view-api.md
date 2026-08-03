@@ -19,11 +19,10 @@ attempt diffs and fresh-epoch bitmap replacement. Tactical `048` makes pull
 and stream interchangeable TypeScript delivery capabilities and implements
 acknowledged Tauri Channel delivery against the same leased view sets,
 controller, reducer, and Zustand transaction. The existing Tactical `008`
-subscriptions remain compatibility adapters. Accepted Tactical `060` specifies
+subscriptions remain compatibility adapters. Tactical `060` now implements
 one multiplexed WebSocket for every ordinary browser call and view stream,
-with HTTP retained only as an explicit loopback diagnostic; implementation has
-not started. Binary encoding remains deferred, and no stable public remote
-wire compatibility is claimed yet.
+with HTTP retained only as an explicit loopback diagnostic. Binary encoding
+remains deferred, and no stable public remote wire compatibility is claimed.
 Tactical `049` completes the diagnostics specialization: hierarchical
 categories, structured bounded subjects and fields, capture interest,
 separate source/delivery/local loss semantics, and one ordered console over
@@ -459,13 +458,11 @@ bounded view attachment for that client/backend connection. The accepted
 framing, ownership, resume and relay-compatible layering live in
 [`application-connection-architecture.md`](application-connection-architecture.md).
 
-The exact authentication mechanism remains outside this topic. The current
-loopback `/control` WebSocket is the legacy per-projection proof and must not be
-silently evolved into the new connection. Tactical `060`'s completed inventory
-found only the old direct-DOM frontend and superseded tests inside RSTorrent;
-it will delete them and the route after migrating useful evidence. Preserving
-the path is not a compatibility requirement. JSTorrent's unrelated I/O-daemon
-endpoint with the same path is outside this repository and decision.
+The exact remote authentication mechanism remains outside this topic. Tactical
+`060` deleted RSTorrent's legacy loopback `/control` WebSocket after migrating
+its useful origin, authentication, dispatch, bounded-delivery and shutdown
+evidence to `/api/v1/connect`. JSTorrent's unrelated I/O-daemon endpoint with
+the same path is outside this repository and decision.
 
 The local Tauri product maps these semantic calls to commands and later
 Channels. It does not bind a loopback port or serialize through HTTP merely to
@@ -836,16 +833,15 @@ interactive machine.
 4. Tactical `048` adds streaming as an interchangeable delivery adapter after
    polling behavior and reducer recovery are stable, and implements it for the
    in-process Tauri product. This step is complete.
-5. Accepted Tactical `060` implements one multiplexed WebSocket as the
-   ordinary browser application connection while retaining HTTP only as an
-   explicit loopback diagnostic comparison.
+5. Tactical `060` implements one multiplexed WebSocket as the ordinary browser
+   application connection while retaining HTTP only as an explicit loopback
+   diagnostic comparison. This step is complete.
 6. Measure update volume, decode/reduce cost, rendering, and memory before
    selecting binary encoding or finer-grained row patches.
 
-Tacticals `033`, `034`, `035`, and `048` completed the first four steps. The
-next view should follow observed inspection value. Browser WebSocket delivery
-now has the accepted bounded Tactical `060`; binary encoding remains a
-measurement-driven change rather than a prerequisite.
+Tacticals `033`, `034`, `035`, `048`, and `060` completed the first five steps.
+The next view should follow observed inspection value. Binary encoding remains
+a measurement-driven change rather than a prerequisite.
 
 ## References And Deliberate Differences
 

@@ -86,25 +86,8 @@ test("live disk inspection observes pressure and exact recovery", async ({
     "controlled slow-storage gateway is opt-in",
   );
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(
-    `/?live=${encodeURIComponent(gateway!)}&transport=http&poll_ms=100`,
-  );
-  await expect(
-    page.getByRole("navigation", { name: "Torrent library" }),
-  ).toBeVisible();
-
-  const addForm = page.getByRole("form", { name: "Add torrent" });
-  const torrentInput = addForm.getByRole("textbox", {
-    name: "Magnet link or torrent URL",
-  });
-  await torrentInput.fill(magnet!);
-  await torrentInput.press("Enter");
-  await expect(page.getByText("Torrent added", { exact: true })).toBeVisible();
-
-  const torrentRow = page
-    .getByRole("grid", { name: "Torrent library" })
-    .locator(`[data-row-id="${torrentId!}"]`);
-  await expect(torrentRow).toBeVisible({ timeout: 10_000 });
+  await page.goto(`/?live=${encodeURIComponent(gateway!)}`);
+  const torrentRow = await addAndOpenInWorkbench(page, magnet!, torrentId!);
   await page.getByRole("tab", { name: "Disk" }).click();
   const pieces = page.getByRole("grid", { name: "Active storage pieces" });
   await expect(page.getByLabel("Disk pressure Backpressured")).toBeVisible({
@@ -144,34 +127,10 @@ test("live piece inspection follows active work through verification", async ({
       torrentName === undefined,
     "controlled piece-map gateway is opt-in",
   );
-  let suspendUpdates = false;
-  let releaseUpdates = () => {};
-  let updatesReleased = Promise.resolve();
-  await page.route("**/api/v1/view-sets/*/updates?**", async (route) => {
-    if (suspendUpdates) await updatesReleased;
-    await route.continue();
-  });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(
-    `/?live=${encodeURIComponent(gateway!)}&transport=http&poll_ms=100`,
-  );
-  await expect(
-    page.getByRole("navigation", { name: "Torrent library" }),
-  ).toBeVisible();
-
-  const input = page
-    .getByRole("form", { name: "Add torrent" })
-    .getByRole("textbox", { name: "Magnet link or torrent URL" });
+  await page.goto(`/?live=${encodeURIComponent(gateway!)}`);
   const startedAt = performance.now();
-  await input.fill(magnet!);
-  await input.press("Enter");
-  await expect(page.getByText("Torrent added", { exact: true })).toBeVisible();
-
-  const torrentRow = page
-    .getByRole("grid", { name: "Torrent library" })
-    .locator(`[data-row-id="${torrentId!}"]`);
-  await expect(torrentRow).toBeVisible({ timeout: 10_000 });
-  await torrentRow.click();
+  const torrentRow = await addAndOpenInWorkbench(page, magnet!, torrentId!);
   await page.getByRole("tab", { name: "Pieces" }).click();
   const pieceMap = page.getByRole("img", { name: /pieces:/ });
   await expect(pieceMap).toBeVisible({ timeout: 20_000 });
@@ -180,17 +139,6 @@ test("live piece inspection follows active work through verification", async ({
     .toMatch(/pieces: [\d,]+ verified, [1-9][\d,]* active/);
   const firstActiveMs = Math.round(performance.now() - startedAt);
   await capture(page, "live-pieces-active-wide.png");
-
-  updatesReleased = new Promise<void>((resolve) => {
-    releaseUpdates = resolve;
-  });
-  suspendUpdates = true;
-  await new Promise((resolve) => setTimeout(resolve, 1_000));
-  suspendUpdates = false;
-  releaseUpdates();
-  await expect(page.getByText("reconnecting", { exact: true })).toBeVisible();
-  await expect(page.getByText("connected", { exact: true })).toBeVisible();
-  await expect(pieceMap).toBeVisible();
 
   const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
     (violation) =>
@@ -331,6 +279,33 @@ test("live peer inspection follows a controlled verified transfer", async ({
     `file_live_milestones ${JSON.stringify({ firstDoneMs, firstVerifiedMs, files: expectedFileCount, applicationUpgrades, semanticHttpRequests: semanticHttpRequests.length })}`,
   );
 });
+
+async function addAndOpenInWorkbench(
+  page: Page,
+  liveMagnet: string,
+  liveTorrentId: string,
+): Promise<Locator> {
+  const primary = page.getByRole("navigation", { name: "Primary" });
+  const transfers = page.getByRole("grid", { name: "Transfer queue" });
+  await expect(primary).toBeVisible();
+  await expect(transfers).toBeVisible();
+  const input = page
+    .getByRole("form", { name: "Add torrent" })
+    .getByRole("textbox", { name: "Magnet link or torrent URL" });
+  await input.fill(liveMagnet);
+  await input.press("Enter");
+  await expect(page.getByText("Torrent added", { exact: true })).toBeVisible();
+  const transferRow = transfers.locator(`[data-row-id="${liveTorrentId}"]`);
+  await expect(transferRow).toBeVisible({ timeout: 10_000 });
+  await transferRow.click();
+  await primary.getByRole("button", { name: "Workbench" }).click();
+  const torrentRow = page
+    .getByRole("grid", { name: "Torrent library" })
+    .locator(`[data-row-id="${liveTorrentId}"]`);
+  await expect(torrentRow).toBeVisible({ timeout: 10_000 });
+  await torrentRow.click();
+  return torrentRow;
+}
 
 async function scrollToEnd(grid: Locator) {
   await grid.evaluate((element) => {

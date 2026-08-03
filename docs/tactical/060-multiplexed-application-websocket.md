@@ -1,6 +1,6 @@
 # Tactical 060: Multiplexed Application WebSocket
 
-Status: Accepted; implementation not started.
+Status: Complete on 2026-08-03.
 
 Topics: `application-connection-architecture`, `application-view-api`,
 `client-view-delivery-policy`, `client-surfaces`, `web-ui-design`,
@@ -8,11 +8,11 @@ Topics: `application-connection-architecture`, `application-view-api`,
 
 ## Motivation And Outcome
 
-The browser currently implements `ApplicationViewClient` with one HTTP request
-per command or view-set mutation and a repeated long poll for each active view
-set. This remains a useful diagnostic comparison, but it creates avoidable
-request traffic at real-time cadence and does not exercise the accepted
-connection architecture.
+Before this tactical, the browser implemented `ApplicationViewClient` with one
+HTTP request per command or view-set mutation and a repeated long poll for each
+active view set. That remains a useful diagnostic comparison, but it creates
+avoidable request traffic at real-time cadence and does not exercise the
+accepted connection architecture.
 
 Make one loopback WebSocket the ordinary live-browser application connection.
 That socket directly negotiates the API, dispatches commands, opens, updates
@@ -35,7 +35,7 @@ an explicit diagnostic HTTP comparison, deterministic browser and gateway
 evidence, a recorded paired transport smoke, and deletion of the superseded
 `/control` protocol and direct-DOM frontend after their evidence is migrated.
 
-## Current-State Evidence
+## Pre-Implementation Evidence
 
 - `clients/web/src/inspection/bootstrap.tsx::startLiveInspection` constructs
   `HttpApplicationClient`; `poll_ms` only changes the long-poll wait.
@@ -878,6 +878,64 @@ and aggregate sizes:
 Do not log bearer tokens, full request/frame bodies, magnets, torrent IDs,
 filesystem paths, diagnostics fields or raw view snapshots merely to obtain
 transport evidence.
+
+## Completion Evidence
+
+The implementation landed in independently green slices:
+
+- `8b1c41a` defines the transport-independent typed call/result contract and
+  `AcknowledgedViewStream`, then moves Tauri's Channel pump onto that exact
+  acknowledgement owner without changing its external adapter.
+- `ef57485` adds `/api/v1/connect`, exact Origin and first-frame bearer
+  authentication, bounded calls and identifiers, generation-safe connection
+  and attachment takeover, two worst-case data reservations, fair control/data
+  writing, heartbeat and joined cancellation.
+- `222c868` adds the runtime-validating TypeScript adapter and selects it for
+  ordinary live browsing. One socket owns every call and stream; pending
+  commands fail without replay; `transport=http` is the only diagnostic
+  override and `poll_ms` is rejected elsewhere.
+- `863020e` migrates reusable interop helpers, deletes `/control`, its legacy
+  Rust/TypeScript/schema frames, the direct-DOM client graph and superseded
+  tests, and makes the named modern demo the no-mode root. A replacement test
+  retains the ordinary router `404` for `/control`.
+- `0ba2926` exposes aggregate nonsecret connection metrics by bounded frame
+  family and records the final snapshot at gateway shutdown. The 4,096-file
+  test produces a 1,426,924-byte response while the adjacent command completes
+  in 11,835 microseconds and the declared high waters remain exact.
+- `68e5a46` moves the controlled libtorrent browser transfer onto the default
+  connection. Its production page performs one application upgrade and zero
+  semantic HTTP requests while dispatching magnet intake and consuming
+  Transfers, Files and Peers through completion.
+- `a14dfc8` adds the reusable paired browser adapter smoke. The retained 1 GiB,
+  1 MiB-piece Apple M4 Pro run measures HTTP at 305.9 MiB/s with 38 semantic
+  requests and WebSocket at 363.8 MiB/s with one upgrade, zero semantic HTTP,
+  24 batches/acks and the same exact payload SHA-1. The 1.189 ratio is evidence,
+  not a promoted floor.
+
+Additional deterministic coverage proves two independently attached view sets
+share one socket while one remains unacknowledged and the other advances with a
+command; malformed reducer input emits no acknowledgement; physical reconnect
+reuses client identity without replaying a pending command; old generation
+cleanup cannot remove a takeover; and wrong Origin, token, API version and the
+five-second handshake timeout or third invalid message receive the bounded
+rejection. The pending-correlation test admits exactly 16 IDs and rejects a
+duplicate or seventeenth. Existing view-hub and controller tests retain replay,
+reset, lease expiry and fresh-open semantics.
+
+The controlled Files/Peers, Disk and Pieces libtorrent fixtures now all select
+the ordinary WebSocket adapter. HTTP long-poll unit, browser and application
+tests remain green only through explicit diagnostic selection. Generated
+contract drift checks contain the application frames and no legacy gateway
+message declaration; repository runtime/test search contains no `/control`
+consumer.
+
+JSON v1 remains one semantic message per WebSocket message because the measured
+1.43 MiB case did not require chunking on loopback. The gateway metrics cover
+connection acceptance/rejection, takeover, frame counts/bytes, high waters,
+reservation wait, delivery latency and heartbeat activity. Semantic reset,
+expiry and fresh-open outcomes remain owned by the view hub/controller rather
+than duplicated as connection counters. Remote framing latency, binary codecs,
+compression, relay security and production listening remain separate work.
 
 ## Stopping And Escalation
 

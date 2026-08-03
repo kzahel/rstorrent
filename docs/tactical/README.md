@@ -303,10 +303,10 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; keeps checkbox columns visible on actionable tables and adds
   sorted Shift-range selection across torrent and Files surfaces.
 - [`060-multiplexed-application-websocket.md`](060-multiplexed-application-websocket.md):
-  accepted; will make one bounded multiplexed WebSocket the ordinary
-  live-browser connection while retaining HTTP only as an explicit loopback
-  diagnostic, then retire the superseded `/control` protocol and direct-DOM
-  frontend after migrating their useful evidence.
+  complete; makes one bounded multiplexed WebSocket the ordinary live-browser
+  connection, retains HTTP only as an explicit loopback diagnostic, shares
+  exact acknowledgement with Tauri, and retires the superseded `/control`
+  protocol and direct-DOM frontend after migrating their useful evidence.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

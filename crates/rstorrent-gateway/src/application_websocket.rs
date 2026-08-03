@@ -1592,8 +1592,10 @@ fn acknowledged_stream_error(error: AcknowledgedViewStreamError) -> ApplicationC
 mod tests {
     use super::{
         ApplicationClientFrame, ApplicationConnectionErrorCode, ApplicationConnectionRegistry,
-        CLIENT_INSTANCE_ID_BYTES, valid_client_instance_id, valid_cursor, valid_identifier,
+        CLIENT_INSTANCE_ID_BYTES, MAX_PENDING_CALLS, insert_pending, valid_client_instance_id,
+        valid_cursor, valid_identifier,
     };
+    use std::collections::BTreeSet;
     use tokio_util::sync::CancellationToken;
 
     #[test]
@@ -1630,6 +1632,17 @@ mod tests {
             serde_json::to_string(&code).expect("error code"),
             "\"consumer_busy\""
         );
+    }
+
+    #[test]
+    fn pending_correlations_reject_duplicates_and_the_seventeenth_id() {
+        let pending = std::sync::Mutex::new(BTreeSet::new());
+        for index in 0..MAX_PENDING_CALLS {
+            assert!(insert_pending(&pending, &format!("call-{index}")));
+        }
+        assert!(!insert_pending(&pending, "call-0"));
+        assert!(!insert_pending(&pending, "call-over-limit"));
+        assert_eq!(pending.into_inner().expect("pending IDs").len(), 16);
     }
 
     #[tokio::test]

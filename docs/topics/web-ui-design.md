@@ -27,11 +27,11 @@ the global Settings sheet and versioned Compact, Standard, and Spacious
 interface sizes, makes readable Standard the default, and keeps virtual-table
 geometry coherent with presentation sizing. Tactical `048` replaces the
 legacy Tauri entry with the same React inspection application using
-acknowledged in-process leased-view streaming. The browser still uses HTTP
-polling today; accepted Tactical `060` will replace its ordinary application
-path with one multiplexed WebSocket while retaining HTTP only as an explicit
-loopback diagnostic comparison. It will then delete the superseded direct-DOM
-gateway entry and make the modern named demo the no-mode root. Tactical `049`
+acknowledged in-process leased-view streaming. Tactical `060` now gives the
+ordinary browser one multiplexed WebSocket for all calls and view sets,
+retains HTTP only through the explicit `transport=http` loopback diagnostic
+query, deletes the superseded direct-DOM gateway entry, and makes the modern
+named demo the no-mode root. Tactical `049`
 completes the accepted
 global Logs design: a dedicated virtualized chronological console with
 structured expansion, separate capture and display filters, bottom-follow/

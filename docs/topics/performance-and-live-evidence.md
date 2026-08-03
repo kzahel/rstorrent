@@ -43,6 +43,47 @@ termination are hard gates. Public download speed and reference ratios are
 reported distributions until the harness has enough repeated evidence to set a
 stable regression policy.
 
+## Browser Adapter Throughput Evidence: 2026-08-03
+
+Tactical `060` adds
+`tests/interop/application_transport_throughput.py`, an opt-in paired browser
+adapter smoke. It generates one deterministic multi-file v1 torrent with a
+large payload, keeps one pinned libtorrent 2.0.13 seeder, starts a clean
+gateway/profile for each adapter, and drives the production web build through
+headless Playwright. Each case must publish the exact payload SHA-1 and cleanly
+join before the next begins. The report records hardware, run order, semantic
+HTTP requests, WebSocket upgrades, gateway frame/byte counters and queue/
+latency high waters. It deliberately defines no pass floor from a single
+cohort.
+
+On `kmacbook` (Apple M4 Pro, 14 logical CPUs, 48 GiB) the retained HTTP-then-
+WebSocket run used a 1 GiB payload, 1 MiB pieces and warm uncontrolled OS page
+cache. HTTP completed in 3.348 seconds at 305.9 MiB/s and made 38 semantic API
+requests. WebSocket completed in 2.815 seconds at 363.8 MiB/s, a 1.189
+throughput ratio, with exactly one application upgrade and zero semantic HTTP
+requests. It carried 24 view batches and acknowledgements, 20,102 encoded
+view-batch bytes, an 846-byte largest outbound message and 62 microseconds
+maximum enqueue-to-send latency. Both outputs matched SHA-1
+`5c60b5002d23d55a1f6ca8498c4fa16d40e163bd`; both gateways and payload roots
+cleaned up.
+
+The ordinary controlled browser transfer separately crossed Transfers and
+Workbench, observed Files and Peers, and published its 122-file fixture using
+one WebSocket and no semantic HTTP requests. The adversarial 4,096-file
+snapshot encoded to 1,426,924 bytes while an adjacent command completed in
+11,835 microseconds. These are direct loopback observations, not remote
+latency or codec claims.
+
+The reproducible full command is:
+
+```bash
+source ~/.profile
+uv run --project tests/interop \
+  tests/interop/application_transport_throughput.py \
+  --size-mib 1024 --piece-size-kib 1024 --timeout-seconds 240 \
+  --output /tmp/rstorrent-application-transport-1g.json
+```
+
 ## Headless Comparator
 
 The comparator is a CLI or application-service harness. It must not launch the

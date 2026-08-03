@@ -2,19 +2,17 @@
 
 Topic: `application-connection-architecture`
 
-Status: Accepted direction with implementation specified by Tactical `060` but
-not started. HTTP long polling and acknowledged per-view-set Tauri Channel
-delivery are implemented. The retained `/control` WebSocket is a legacy
-per-projection proof scheduled for evidence migration and deletion in Tactical
-`060`. The target browser and future remote shape is one authenticated,
-multiplexed
-application connection that carries typed calls, commands, view-set creation
-and mutation, streamed `UpdateBatch` values and exact cursor acknowledgements.
-One physical WebSocket serves every view set belonging to that frontend-to-
-backend connection. Future relay delivery wraps the same application frames in
-an end-to-end encrypted circuit rather than creating another application API.
-Ordinary browser use selects the multiplexed connection; HTTP is an explicit
-loopback diagnostic comparison, never automatic fallback or a concurrent lane.
+Status: The direct loopback application connection is implemented by Tactical
+`060`. Ordinary browser use sends typed calls, commands, view-set mutations,
+streamed `UpdateBatch` values and exact cursor acknowledgements through one
+bounded `/api/v1/connect` WebSocket. HTTP long polling remains an explicit
+loopback diagnostic adapter, and acknowledged per-view-set Tauri Channel
+delivery shares the extracted Rust acknowledgement core without opening a
+socket. The legacy `/control` route, frames, direct-DOM frontend and superseded
+tests are deleted. Future relay delivery still wraps these application frames
+in an end-to-end encrypted circuit rather than creating another application
+API; the production listener, authentication and encryption campaign remains
+unauthorized and unimplemented.
 
 ## Purpose And Scope
 
@@ -341,20 +339,19 @@ fact that both adapters share semantic ownership.
 
 ### Browser WebSocket
 
-The modern browser endpoint is a new versioned application connection, not a
-silent extension of legacy `/control`. It authenticates once, negotiates
-capabilities and carries every typed operation plus all attached view streams
-on one socket. The preferred provisional route is `/api/v1/connect`; an
-implementing tactical may change the URL only while updating this topic and
-the application-view route record together.
+The modern browser endpoint was introduced as a new versioned application
+connection rather than extending legacy `/control`. It authenticates once,
+negotiates capabilities and carries every typed operation plus all attached
+view streams on one socket. Its provisional route is `/api/v1/connect`;
+changing that route requires updating this topic and the application-view
+route record together.
 
 This is the ordinary browser product path. An explicitly selected loopback
 HTTP diagnostic session uses no WebSocket, and a normal WebSocket session uses
-no semantic HTTP calls. Legacy `/control` is neither path. There is no
-automatic fallback or hybrid HTTP-call/WebSocket-update mode. Tactical `060`
-deletes the legacy route and direct-DOM client after the replacement proves
-equivalent useful origin, authentication, command, delivery and shutdown
-behavior.
+no semantic HTTP calls. There is no automatic fallback or hybrid HTTP-call/
+WebSocket-update mode. Tactical `060` deleted the legacy route and direct-DOM
+client after proving equivalent useful origin, authentication, command,
+delivery and shutdown behavior.
 
 JSON text frames are the first diagnostic codec. A future binary codec is a
 connection negotiation that produces the same generated DTOs and reducer
@@ -514,9 +511,9 @@ RSTorrent intentionally differs:
   relay discovery, limits or release-compatibility policy without a separate
   security and dependency decision.
 
-## Migration Direction
+## Implementation And Future Migration
 
-Implementation should proceed in bounded slices:
+The direct-browser slice completed these bounded steps:
 
 1. Record a tactical with the exact generated frame contract, owner map,
    bounds, threat model, cancellation map and updated YepAnywhere audit.
@@ -524,19 +521,22 @@ Implementation should proceed in bounded slices:
    existing application-service and view-set operations without duplicating
    semantic state.
 3. Implement a new loopback-only versioned WebSocket adapter and generated
-   TypeScript client alongside HTTP long polling and legacy `/control`.
-   Select WebSocket for ordinary browser use while retaining HTTP only as an
-   explicit loopback diagnostic mode.
+   TypeScript client alongside HTTP long polling. Select WebSocket for ordinary
+   browser use while retaining HTTP only as an explicit loopback diagnostic
+   mode.
 4. Prove WebSocket creation, update, attachment, exact post-reducer ack,
    multi-view-set fairness, reconnect and bounded failure through the same
    reducer traces as HTTP and Tauri.
 5. Measure request count, bytes, CPU, allocation, queue high water, resets and
    producer throughput against current HTTP and Tauri baselines.
-6. Migrate useful legacy `/control` evidence, move any shared test helpers and
+6. Migrate useful legacy `/control` evidence, move shared test helpers and
    delete the old gateway frames, route, direct-DOM client and generated types.
-7. Unify the Tauri attachment owner and, when justified, replace per-stream
-   Channels with one window-level multiplexed Channel without routing native
-   calls through HTTP or JSON unnecessarily.
+
+Steps one through six are complete in Tactical `060`. Future bounded work may:
+
+7. Further unify the Tauri attachment owner and, when justified, replace
+   per-stream Channels with one window-level multiplexed Channel without
+   routing native calls through HTTP or JSON unnecessarily.
 8. Design and implement relay authentication/encryption as its own security
    campaign using the already-proven direct application frames.
 
