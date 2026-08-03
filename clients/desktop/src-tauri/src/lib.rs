@@ -74,17 +74,15 @@ async fn choose_download_root(
     let starting_directory = suggested
         .or_else(home_directory)
         .ok_or_else(|| "no usable folder-picker starting directory is available".to_owned())?;
-    let selected = tauri::async_runtime::spawn_blocking(move || {
-        NativeDownloadDirectoryPicker.choose(&starting_directory)
-    })
-    .await
-    .map_err(|error| format!("download folder picker task failed: {error}"))?
-    .map_err(|error| match error {
-        PickerError::Unsupported => {
-            "download folder picker is not implemented on this platform".to_owned()
-        }
-        error => error.to_string(),
-    })?;
+    let selected = NativeDownloadDirectoryPicker
+        .choose(&starting_directory)
+        .await
+        .map_err(|error| match error {
+            PickerError::Unsupported => {
+                "download folder picker is not implemented on this platform".to_owned()
+            }
+            error => error.to_string(),
+        })?;
     let Some(selected) = selected else {
         return Ok(None);
     };

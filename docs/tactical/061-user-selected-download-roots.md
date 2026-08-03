@@ -1,7 +1,12 @@
 # Tactical 061: User-Selected Download Roots
 
-Status: Authorized for macOS implementation on 2026-08-03. Linux, Windows,
-and Android parity are bounded follow-up validation slices.
+Status: Implemented for the macOS code paths on 2026-08-03. Store,
+application, transport, and shared-UI evidence passes. The native chooser was
+launched through Computer Use, but its transient macOS system panel was not
+addressable by the available automation; one manual validation pass covering
+choose, cancel, and restart in both interactive products still closes the
+macOS stopping condition. Linux, Windows, and Android parity remain bounded
+follow-up slices.
 
 Topics: `download-roots`, `application-control`, `client-persistence`,
 `web-ui-design`, `product-surfaces-and-migration`,
@@ -9,10 +14,11 @@ Topics: `download-roots`, `application-control`, `client-persistence`,
 
 ## Motivation And Outcome
 
-The desktop product and `./scripts/webui` currently configure a path-backed
-root named `downloads` beneath application-private state. The React add path
-then submits that root and all files without presenting storage choice. This
-is useful bring-up behavior but is not an acceptable product destination.
+Before this tactical, the desktop product and `./scripts/webui` configured a
+path-backed root named `downloads` beneath application-private state. The
+React add path then submitted that root and all files without presenting
+storage choice. That useful bring-up behavior was not an acceptable product
+destination.
 
 Implement the first JSTorrent-like root-selection slice on macOS. A fresh
 interactive profile has no payload root. The first torrent add opens a shared
@@ -318,4 +324,75 @@ contradicts `download-roots.md`.
 
 ## Completion Evidence
 
-Not yet recorded.
+### Landed checkpoints
+
+- `10fee9d` defines the accepted behavior, JSTorrent oracle, bounded macOS
+  slice, and platform follow-ups.
+- `f64b419` adds schema version 5, the durable root registry/default and add
+  preference, runtime install/repair/removal, availability projection, and
+  generated client contracts.
+- `2db2422` removes implicit app-data payload roots and adds the macOS picker,
+  Tauri operation, authenticated loopback operation, and optional explicit
+  developer root injection.
+- `457df14` adds the shared location-only add dialog and root-management
+  Settings experience, including first-root selection, per-add overrides,
+  **Don't show again**, repair, default, and removal actions.
+- The final checkpoint makes native picker execution asynchronous and
+  kill-on-drop, records the evidence below, and preserves honest non-macOS
+  unsupported behavior.
+
+### Automated evidence
+
+Completed on macOS on 2026-08-03:
+
+- `cargo test -p rstorrent-session --no-fail-fast`: 81 session library tests
+  plus the crate's additional test targets passed.
+- `cargo test -p rstorrent-platform -p rstorrent-gateway -p rstorrent-desktop`:
+  2 platform, 15 gateway, and 3 desktop tests passed. These include picker
+  starting-path/error behavior, exact Origin/authentication enforcement,
+  installed-root response, and repair-ID forwarding.
+- `npm run typecheck --prefix clients/web` passed.
+- `npm test --prefix clients/web` passed: 20 test files, 115 tests passed and
+  2 unrelated tests skipped.
+- `npm run build --prefix clients/web` passed with the existing Vite chunk-size
+  warning.
+- With an isolated Vite server on port 4178,
+  `RSTORRENT_PLAYWRIGHT_BASE_URL=http://127.0.0.1:4178 npm run test:e2e`
+  passed 15 wide/phone tests; 4 live-fixture tests were intentionally skipped.
+- `cargo fmt --all -- --check`,
+  `cargo clippy --workspace -- -D warnings`, and `cargo test --workspace` all
+  passed on the final tree. The workspace test run included 174 engine tests
+  passed with 3 opt-in live tests ignored, 81 session tests, 70 protocol tests,
+  and every platform, gateway, desktop, Android, binary, architecture, and
+  doc-test target without a failure.
+
+### Computer Use macOS evidence and remaining manual gate
+
+An isolated `./scripts/webui --no-open` profile was run on port 4179 with no
+configured root. Computer Use submitted a retained test magnet and observed:
+
+- the first-add **Choose download options** dialog;
+- the required-folder explanation, **Choose folder...**, explicit all-files
+  copy and later-file-selection deferral, and disabled confirmation;
+- launch of `/usr/bin/osascript` and macOS's transient Open and Save Panel
+  Service, starting from Home; and
+- after the test-owned picker process was terminated, an actionable picker
+  error, re-enabled choose action, disabled add action, and the original magnet
+  still present. No torrent or implicit payload root was created.
+
+The available Computer Use runtime could enumerate Chrome and ordinary
+applications but could not attach to
+`com.apple.appkit.xpc.openAndSavePanelService`; addressing that process or its
+XPC path timed out. The chooser therefore could not be selected or cancelled
+through automation. The isolated test browser tab was closed, the server was
+stopped, and its temporary profile and destination were moved to Trash.
+
+Still required before changing this tactical to completed:
+
+1. manually choose and cancel the macOS system panel once through both a fresh
+   Tauri profile and a fresh `scripts/webui` profile;
+2. restart each profile and observe the same selected root/default and exact
+   torrent binding; and
+3. execute the future native Linux and Windows picker/build slices in
+   interactive sessions. Those platform slices do not block the scoped macOS
+   implementation, but they remain prerequisites for a cross-platform claim.

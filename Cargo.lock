@@ -2759,6 +2759,9 @@ dependencies = [
 [[package]]
 name = "rstorrent-platform"
 version = "0.1.0"
+dependencies = [
+ "tokio",
+]
 
 [[package]]
 name = "rstorrent-protocol"

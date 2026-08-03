@@ -434,32 +434,27 @@ async fn choose_download_root(
             "no usable folder-picker starting directory is available",
         );
     };
-    let picker = state.download_directory_picker.clone();
-    let selected =
-        match tokio::task::spawn_blocking(move || picker.choose(&starting_directory)).await {
-            Ok(Ok(selected)) => selected,
-            Ok(Err(PickerError::Unsupported)) => {
-                return api_error(
-                    StatusCode::NOT_IMPLEMENTED,
-                    ApiErrorCode::Internal,
-                    "download folder picker is not implemented on this platform",
-                );
-            }
-            Ok(Err(error)) => {
-                return api_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    ApiErrorCode::Internal,
-                    &error.to_string(),
-                );
-            }
-            Err(error) => {
-                return api_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    ApiErrorCode::Internal,
-                    &format!("download folder picker task failed: {error}"),
-                );
-            }
-        };
+    let selected = match state
+        .download_directory_picker
+        .choose(&starting_directory)
+        .await
+    {
+        Ok(selected) => selected,
+        Err(PickerError::Unsupported) => {
+            return api_error(
+                StatusCode::NOT_IMPLEMENTED,
+                ApiErrorCode::Internal,
+                "download folder picker is not implemented on this platform",
+            );
+        }
+        Err(error) => {
+            return api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ApiErrorCode::Internal,
+                &error.to_string(),
+            );
+        }
+    };
     let root = if let Some(selected) = selected {
         let mut service = state.service.lock().await;
         let result = if let Some(root_id) = request.repair_root.as_deref() {
@@ -746,7 +741,7 @@ mod tests {
     use std::time::Duration;
 
     use futures_util::{SinkExt, StreamExt};
-    use rstorrent_platform::{DownloadDirectoryPicker, PickerError};
+    use rstorrent_platform::DownloadDirectoryPicker;
     use rstorrent_session::{
         ApplicationCall, ApplicationCallResult, ApplicationConfig, ApplicationService, Command,
         ConfiguredStorageRoot, NetworkConfig, NetworkPolicy, OpenViewSetOptions,
@@ -774,10 +769,15 @@ mod tests {
     }
 
     impl DownloadDirectoryPicker for FixedDirectoryPicker {
-        fn choose(&self, starting_directory: &Path) -> Result<Option<PathBuf>, PickerError> {
-            assert!(starting_directory.is_dir());
-            self.calls.fetch_add(1, Ordering::Relaxed);
-            Ok(self.selected.clone())
+        fn choose<'a>(
+            &'a self,
+            starting_directory: &'a Path,
+        ) -> rstorrent_platform::PickerFuture<'a> {
+            Box::pin(async move {
+                assert!(starting_directory.is_dir());
+                self.calls.fetch_add(1, Ordering::Relaxed);
+                Ok(self.selected.clone())
+            })
         }
     }
 

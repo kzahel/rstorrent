@@ -2,13 +2,19 @@
 
 Topic: `download-roots`
 
-Status: Product behavior accepted in maintainer discussion on 2026-08-03.
-Desktop and the manual WebUI still install one implicit app-data-backed root
-named `downloads`, and the live add path still selects that root and every file
-without asking. Android already proves a user-selected persisted SAF root, but
-general root management is not implemented. The first implementation slice
-should establish user-selected roots and default-root behavior; staged magnet
-metadata and file selection are explicitly deferred to a later slice.
+Status: Product behavior accepted in maintainer discussion on 2026-08-03 and
+implemented for the macOS code paths in
+[`061-user-selected-download-roots.md`](../tactical/061-user-selected-download-roots.md).
+Fresh desktop and manual-WebUI profiles no longer install an implicit
+app-data-backed payload root. The shared add flow requires a chosen folder,
+retains a torrent-specific opaque root ID, and provides durable default,
+preference, add, repair, and bounded removal controls. Store, adapter, React,
+and headless-browser evidence passes; a manual macOS chooser/restart smoke is
+still required because Computer Use cannot attach to the transient system
+folder panel. Linux and Windows native pickers remain unimplemented, and
+Android already proves one user-selected persisted SAF root but not general
+multi-root management. Staged magnet metadata and file selection remain
+explicitly deferred to a later slice.
 
 ## Scope
 
@@ -337,13 +343,14 @@ source, fixture, or asset is imported by this topic.
 
 ## Recommended Next Work
 
-When root implementation is authorized, create one bounded tactical for the
-root registry/default, local picker capability, Tauri/WebUI presentation,
-first-add requirement, truthful all-files behavior, root repair, and removal
-of the implicit app-data product root. It must read this topic plus the
-persistence, application-control, client-surface, and web-UI topics it names.
+Close the remaining manual macOS chooser/restart evidence in Tactical 061,
+then implement and validate the native Linux and Windows picker adapters in
+interactive sessions. Keep their first-root, stable-ID, default, repair, and
+per-torrent semantics identical while allowing native capability handling to
+differ.
 
-Do not include the pending magnet metadata/file-selection transition in that
-tactical. Open a later tactical from the deferred flow above after root
-selection is established and the command/state ownership can be designed from
-the verified metadata boundary.
+The next product slice should address user-visible publication layout because
+selected roots still contain the existing hash-named bring-up layout. Do not
+fold the pending magnet metadata/file-selection transition into that work.
+Open its later tactical only after root selection is established and the
+pending-intake ownership can be designed from the verified metadata boundary.

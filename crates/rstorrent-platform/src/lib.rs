@@ -4,21 +4,26 @@
 
 use std::error::Error;
 use std::fmt;
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 
 const MAX_SELECTED_PATH_BYTES: usize = 4096;
 const MAX_ERROR_BYTES: usize = 1024;
 
 pub trait DownloadDirectoryPicker: Send + Sync + 'static {
-    fn choose(&self, starting_directory: &Path) -> Result<Option<PathBuf>, PickerError>;
+    fn choose<'a>(&'a self, starting_directory: &'a Path) -> PickerFuture<'a>;
 }
+
+pub type PickerFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Option<PathBuf>, PickerError>> + Send + 'a>>;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NativeDownloadDirectoryPicker;
 
 impl DownloadDirectoryPicker for NativeDownloadDirectoryPicker {
-    fn choose(&self, starting_directory: &Path) -> Result<Option<PathBuf>, PickerError> {
-        choose_native_download_directory(starting_directory)
+    fn choose<'a>(&'a self, starting_directory: &'a Path) -> PickerFuture<'a> {
+        Box::pin(choose_native_download_directory(starting_directory))
     }
 }
 
@@ -58,10 +63,10 @@ impl Error for PickerError {
 }
 
 #[cfg(target_os = "macos")]
-fn choose_native_download_directory(
+async fn choose_native_download_directory(
     starting_directory: &Path,
 ) -> Result<Option<PathBuf>, PickerError> {
-    use std::process::Command;
+    use tokio::process::Command;
 
     const SCRIPT: &str = r#"
 on run argv
@@ -78,11 +83,12 @@ end run
     if !starting_directory.is_dir() {
         return Err(PickerError::InvalidStartingDirectory);
     }
-    let output = Command::new("/usr/bin/osascript")
+    let mut command = Command::new("/usr/bin/osascript");
+    command
+        .kill_on_drop(true)
         .args(["-e", SCRIPT, "--"])
-        .arg(starting_directory)
-        .output()
-        .map_err(PickerError::Launch)?;
+        .arg(starting_directory);
+    let output = command.output().await.map_err(PickerError::Launch)?;
     if !output.status.success() {
         let mut message = String::from_utf8_lossy(&output.stderr).trim().to_owned();
         message.truncate(message.floor_char_boundary(MAX_ERROR_BYTES));
@@ -95,7 +101,7 @@ end run
 }
 
 #[cfg(not(target_os = "macos"))]
-fn choose_native_download_directory(
+async fn choose_native_download_directory(
     starting_directory: &Path,
 ) -> Result<Option<PathBuf>, PickerError> {
     if !starting_directory.is_dir() {
