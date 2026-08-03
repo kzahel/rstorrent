@@ -1045,6 +1045,74 @@ RSTorrent reported zero piece-hash failures, 4,849,664 redundant bytes,
 source-order- and peer-population-dependent observation, not evidence that
 RSTorrent is generally faster or a new public regression threshold.
 
+## Hardware Performance Baselines: 2026-08-03
+
+Tactical `057` turns the Tactical `054` matrix into explicit, reviewable
+performance policy. Profiles under `tests/perf/baselines` select exact rows,
+repetitions and hardware/runner requirements; they keep observed calibration
+separate from required floors. An inapplicable environment exits before
+fixture allocation and reports `not_applicable`. Hostname, CPU, memory,
+temporary filesystem, toolchain, commit, binary SHA-256 and uncontrolled cache
+policy remain evidence rather than implicit profile selectors.
+
+The local retained commands are:
+
+```bash
+uv run --project tests/interop --locked python \
+  tests/interop/local_throughput_compare.py \
+  --baseline-profile kmacbook-m4pro --profile-tier smoke \
+  --output /tmp/rstorrent-engine-throughput.json
+
+uv run --project tests/interop --locked python \
+  tests/interop/application_view_throughput.py \
+  --baseline-profile kmacbook-m4pro --profile-tier full \
+  --output /tmp/rstorrent-application-views.json
+```
+
+`smoke` protects 1 GiB/256 KiB at `4/4`; `full` retains the three-run 1 GiB
+and 10 GiB matrix at 256 KiB, 1 MiB, 4 MiB and 16 MiB. The local smoke after
+profile integration measured RSTorrent at 615.6 MiB/s and libtorrent at
+485.1 MiB/s, passed the row's 275 MiB/s and 0.50-ratio floors, and retained
+exact bytes, whole-file SHA-1, zero failed/redundant payload, publication and
+cleanup.
+
+The application runner holds one deterministic 1 GiB/256 KiB fixture and
+pinned libtorrent seed while rotating three runs over idle, each production
+view combination, every view, and a one-second all-view consumer. Every one of
+the 39 application transfers verified 4,096 pieces, compared the exact
+published payload and removed its case root. The calibrated medians are:
+
+| Mode | MiB/s | Idle ratio | Serialized/batch stream | Maximum resets |
+| --- | ---: | ---: | ---: | ---: |
+| idle | 177.9 | 100.0% | 0 | 0 |
+| library | 166.4 | 93.5% | 49 KB | 0 |
+| general | 160.2 | 90.0% | 1.43 MB | 898 |
+| peers | 158.7 | 89.2% | 2.96 MB | 902 |
+| trackers | 158.3 | 89.0% | 1.60 MB | 900 |
+| disk | 154.7 | 86.9% | 65.3 MB | 924 |
+| files | 152.1 | 85.5% | 50.1 MB | 1,000 |
+| logs-normal | 134.8 | 75.8% | 397.4 MB | 914 |
+| logs-detailed | 126.6 | 71.1% | 547.6 MB | 921 |
+| pieces | 123.6 | 69.5% | 48.6 MB | 1,231 |
+| slow-all | 122.3 | 68.8% | 9.21 MB | 9 |
+| logs-trace | 98.4 | 55.3% | 1.081 GB | 1,287 |
+| all | 74.0 | 41.6% | 1.742 GB | 1,737 |
+
+Library alone stays incremental. Summary introduces repeated overflow resets;
+trace Diagnostics is the worst individual throughput and serialized-volume
+offender, and the all-view adversary compounds the costs. The profile accepts
+the measured behavior with regression headroom while the application-view
+topic owns reducing it; those ceilings do not classify the reset storm as an
+efficient target.
+
+`.github/workflows/performance-baseline.yml` runs the uncalibrated, generous
+GitHub Ubuntu 24.04 x64 smoke on relevant pull requests, the full tier weekly,
+and either tier on manual dispatch. It validates explicit runner identity,
+runs both comparators and uploads only JSON evidence. Its initial 20 MiB/s,
+0.10 libtorrent-ratio and 3--10 MiB/s application floors are catastrophe
+detectors, not hosted-hardware performance claims; calibration requires a
+retained CI cohort.
+
 ## Maintenance Contract
 
 Feature tacticals add measurements only when their owner can report them

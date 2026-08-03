@@ -293,6 +293,9 @@ that scope and its cleanup or compatibility rules explicitly.
 - [`056-peer-client-identification.md`](056-peer-client-identification.md):
   complete; identifies common clients and versions from bounded handshake
   peer IDs and completes the existing active-peer Client projection.
+- [`057-hardware-performance-baselines.md`](057-hardware-performance-baselines.md):
+  complete; retains hardware-matched 1/10 GiB engine gates and paired
+  per-view/adversarial application throughput evidence in local and CI tiers.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

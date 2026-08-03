@@ -35,6 +35,10 @@ projection from the handshake peer ID. The Rust protocol utility owns bounded
 fingerprint parsing, the application view owns capability state, and clients
 continue to render the generated field without a competing parser or a
 contract-version change.
+Tactical `057` adds a retained producer-throughput matrix over the exact
+production view combinations. It changes no semantic API, but makes observer
+cost, serialized update volume, queue high water and reset recovery explicit
+hardware-profile evidence.
 
 ## Purpose And Scope
 
@@ -775,6 +779,24 @@ EOF; the already-open leased view set receives the exact connection ID in a
 Peers `removed` patch and a complete torrent-summary row with zero active peer
 connections and zero payload rate. No React filter or durable-state refresh
 manufactures the removal.
+
+Tactical `057` measured three rotating 1 GiB cohorts on the local Apple M4 Pro
+profile. The idle SQLite application median was 177.9 MiB/s and Library alone
+was 166.4 MiB/s with zero resets. The ordinary Library-plus-Summary shape was
+160.2 MiB/s but recovered from about 900 queue overflows per transfer. The
+worst individual specialization was trace Diagnostics at 98.4 MiB/s and
+1.081 GB of serialized update batches; Pieces followed at 123.6 MiB/s. Every
+view together fell to 74.0 MiB/s and serialized 1.742 GB while incurring up to
+1,737 resets. A deliberately one-second consumer completed at 122.3 MiB/s
+with nine reset snapshots and a 16.78 MB queue high water.
+
+These are now reproducible regression observations, not accepted efficiency
+targets. Library's zero-reset behavior proves the common Summary/reset path is
+already material before detail views amplify it. The next API optimization
+should therefore reduce snapshot reconstruction and repeated JSON delivery,
+starting with Summary and trace Diagnostics, while preserving cursor,
+coalescing and fresh-snapshot recovery semantics. Browser decode/reducer/paint
+cost remains a distinct measurement boundary.
 
 Public swarms and visible Tauri launch are unnecessary for this foundation.
 The browser gateway, temporary profiles, controlled libtorrent peer, and pure
