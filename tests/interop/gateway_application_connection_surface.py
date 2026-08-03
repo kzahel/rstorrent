@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise the leased polling view set against a controlled libtorrent seed."""
+"""Exercise the multiplexed browser contract against a libtorrent seed."""
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ from pathlib import Path
 
 import libtorrent as lt
 
-from first_verified_piece import ScenarioFailure, add_seed, create_session, wait_for_listener
 from application_surface_harness import (
     ORIGIN,
     TOKEN,
@@ -23,6 +22,7 @@ from application_surface_harness import (
     stop_gateway,
     verify_payload,
 )
+from first_verified_piece import ScenarioFailure, add_seed, create_session, wait_for_listener
 from magnet_metadata import create_fixture, magnet_uri
 
 
@@ -49,7 +49,7 @@ def run_typescript_client(
             "--prefix",
             "clients/web",
             "--",
-            "src/view-set-interop.test.ts",
+            "src/application-connection-interop.test.ts",
             "--disableConsoleIntercept",
         ],
         cwd=repository,
@@ -61,26 +61,26 @@ def run_typescript_client(
     )
     if completed.returncode != 0:
         raise ScenarioFailure(
-            "TypeScript view-set client failed\n"
+            "TypeScript application connection failed\n"
             f"stdout:\n{completed.stdout}\n"
             f"stderr:\n{completed.stderr}"
         )
-    if "view_set_interop" not in completed.stdout:
+    if "application_connection_interop" not in completed.stdout:
         raise ScenarioFailure(
-            "TypeScript view-set client did not record its live trace\n"
+            "TypeScript client did not record its live trace\n"
             f"stdout:\n{completed.stdout}\n"
             f"stderr:\n{completed.stderr}"
         )
     return next(
         line.strip()
         for line in completed.stdout.splitlines()
-        if "view_set_interop" in line
+        if "application_connection_interop" in line
     )
 
 
 def run() -> None:
     repository = Path(__file__).resolve().parents[2]
-    run_path = Path(tempfile.mkdtemp(prefix="rstorrent-gateway-view-set-"))
+    run_path = Path(tempfile.mkdtemp(prefix="rstorrent-application-connection-"))
     session: lt.session | None = None
     handle: lt.torrent_handle | None = None
     gateway: subprocess.Popen[str] | None = None
@@ -91,7 +91,12 @@ def run() -> None:
         session = create_session()
         session.apply_settings({"upload_rate_limit": UPLOAD_RATE_LIMIT})
         port = wait_for_listener(session, diagnostics)
-        handle = add_seed(session, fixture.torrent_info, fixture.seed_directory, diagnostics)
+        handle = add_seed(
+            session,
+            fixture.torrent_info,
+            fixture.seed_directory,
+            diagnostics,
+        )
         binary = build_gateway(repository)
         storage = run_path / "downloads"
         gateway, address = start_gateway(binary, run_path / "profile", storage)

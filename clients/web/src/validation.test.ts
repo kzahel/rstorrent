@@ -2,34 +2,23 @@ import { describe, expect, it } from "vitest";
 
 import {
   ContractError,
-  decodeGatewayServerMessage,
+  decodeApplicationServerFrame,
   decodeUpdateBatch,
 } from "./validation";
 
-describe("gateway validation", () => {
+describe("application connection validation", () => {
   it("rejects unknown variants and non-canonical ranges", () => {
     expect(() =>
-      decodeGatewayServerMessage(JSON.stringify({ type: "invented" })),
+      decodeApplicationServerFrame(JSON.stringify({ type: "invented" })),
     ).toThrow(ContractError);
     expect(() =>
-      decodeGatewayServerMessage(
+      decodeApplicationServerFrame(
         JSON.stringify({
-          type: "update",
-          update: {
-            contract_version: 2,
-            stream_id: "1",
-            epoch: "1",
-            sequence: "1",
-            base_revision: "0",
-            revision: "0",
-            type: "snapshot",
-            snapshot: {
-              type: "piece_activity",
-              torrent_id: "0".repeat(40),
-              piece_count: 2,
-              verified: [{ start: 1, end_exclusive: 3 }],
-              active: [],
-            },
+          type: "view_batch",
+          stream_id: "view-1",
+          batch: {
+            ...peerBatch("0".repeat(40)),
+            epoch: "not-decimal",
           },
         }),
       ),

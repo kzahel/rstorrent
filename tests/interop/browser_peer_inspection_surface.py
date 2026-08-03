@@ -18,7 +18,7 @@ from pathlib import Path
 
 import libtorrent as lt
 
-from browser_reactive_surface import reserve_loopback_port, stop_process
+from browser_surface_harness import reserve_loopback_port, stop_process
 from first_verified_piece import (
     ScenarioFailure,
     add_seed,
@@ -26,7 +26,7 @@ from first_verified_piece import (
     create_session,
     wait_for_listener,
 )
-from gateway_reactive_surface import build_gateway, verify_payload
+from application_surface_harness import build_gateway, verify_payload
 from magnet_metadata import ROOT_NAME, create_fixture, magnet_uri
 from udp_tracker_magnet import OneShotUdpTracker, tracker_magnet
 

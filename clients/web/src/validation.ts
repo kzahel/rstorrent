@@ -3,7 +3,6 @@ import type {
   ApiErrorEnvelope,
   ApiHello,
   ApplicationServerFrame,
-  GatewayServerMessage,
   IndexRange,
   OpenViewSetResponse,
   ResponseEnvelope,
@@ -75,48 +74,6 @@ function generated<T>(definition: string, value: unknown): T {
     }
     throw error;
   }
-}
-
-export function decodeGatewayServerMessage(
-  source: string,
-): GatewayServerMessage {
-  const value = parseBoundedJson(source, MAX_FRAME_BYTES, "gateway frame");
-  generated<GatewayServerMessage>("GatewayServerMessage", value);
-  const record = asRecord(value, "gateway message");
-  switch (string(record.type, "message type")) {
-    case "authenticated":
-      boundedInteger(record.contract_version, "contract version", 1, 65_535);
-      break;
-    case "response":
-      validateResponse(record.response);
-      break;
-    case "subscribed":
-    case "unsubscribed":
-      identifier(record.request_id, "request ID");
-      decimal(record.stream_id, "stream ID");
-      break;
-    case "update":
-      validateUpdate(record.update);
-      break;
-    case "error":
-      if (record.request_id !== undefined && record.request_id !== null) {
-        identifier(record.request_id, "request ID");
-      }
-      oneOf(record.code, "gateway error code", [
-        "authentication_required",
-        "authentication_failed",
-        "invalid_version",
-        "invalid_message",
-        "resource_limit",
-        "unknown_subscription",
-        "internal",
-      ]);
-      boundedString(record.message, "error message", 1_024);
-      break;
-    default:
-      throw new ContractError("unknown gateway message type");
-  }
-  return value as GatewayServerMessage;
 }
 
 export function decodeApiHello(source: string): ApiHello {
@@ -963,6 +920,9 @@ function validateActivePiece(
     "received",
     "stored",
     "hashing",
+    "checkpoint_dirty",
+    "checkpoint_syncing",
+    "checkpoint_committing",
     "failed",
   ]);
   validateRanges(active.requested, pieceLength, "requested blocks");

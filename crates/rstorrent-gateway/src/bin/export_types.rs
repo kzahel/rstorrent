@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use rstorrent_gateway::{
     ApiError, ApiErrorCode, ApiErrorEnvelope, ApplicationClientFrame, ApplicationConnectionError,
     ApplicationConnectionErrorCode, ApplicationConnectionLimits, ApplicationServerFrame,
-    GatewayClientMessage, GatewayErrorCode, GatewayServerMessage,
 };
 use rstorrent_session::{
     ActivePiece, ActivePieceStageView, ApiEncoding, ApiHello, ApiLimits, ApiVersion,
@@ -127,9 +126,6 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<ResetReason>(&mut declarations)?;
     append::<ViewUpdatePayload>(&mut declarations)?;
     append::<ViewUpdate>(&mut declarations)?;
-    append::<GatewayErrorCode>(&mut declarations)?;
-    append::<GatewayClientMessage>(&mut declarations)?;
-    append::<GatewayServerMessage>(&mut declarations)?;
     append::<ApiErrorCode>(&mut declarations)?;
     append::<ApiError>(&mut declarations)?;
     append::<ApiErrorEnvelope>(&mut declarations)?;
@@ -162,7 +158,6 @@ fn append<T: TS>(output: &mut String) -> Result<(), std::fmt::Error> {
 
 fn write_schema(output: &Path) -> Result<(), Box<dyn Error>> {
     let mut definitions = Map::new();
-    add_schema::<GatewayServerMessage>(&mut definitions, "GatewayServerMessage")?;
     add_schema::<ApiErrorEnvelope>(&mut definitions, "ApiErrorEnvelope")?;
     add_schema::<ApiHello>(&mut definitions, "ApiHello")?;
     add_schema::<RequestEnvelope>(&mut definitions, "RequestEnvelope")?;

@@ -9,7 +9,6 @@ pub use application_websocket::{
     ApplicationConnectionLimits, ApplicationServerFrame,
 };
 
-use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 use std::net::SocketAddr;
@@ -17,34 +16,26 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use axum::extract::rejection::{JsonRejection, QueryRejection};
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{ConnectInfo, Path, Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use futures_util::{SinkExt, StreamExt};
 use rstorrent_session::{
-    ApplicationService, OpenViewSetRequest, RequestEnvelope, ResponseEnvelope, SubscriptionSpec,
-    UpdateViewSetRequest, ViewSetError, ViewSetOwner, ViewSubscription, ViewUpdate,
-    application_error_response,
+    ApplicationService, OpenViewSetRequest, RequestEnvelope, UpdateViewSetRequest, ViewSetError,
+    ViewSetOwner, application_error_response,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
-use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore, mpsc};
-use tokio::task::JoinHandle;
+use tokio::sync::{Mutex, Semaphore};
 use tokio_util::sync::CancellationToken;
 use tower_http::cors::CorsLayer;
 use ts_rs::TS;
 
-pub const GATEWAY_CONTRACT_VERSION: u16 = 1;
 pub const MAX_INCOMING_MESSAGE_BYTES: usize = 64 * 1024;
-pub const MAX_OUTGOING_MESSAGE_BYTES: usize = 512 * 1024;
 pub const MAX_HTTP_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
-pub const MAX_OUTGOING_MESSAGES: usize = 8;
 pub const MAX_CONNECTIONS: usize = 8;
-pub const MAX_SUBSCRIPTIONS_PER_CONNECTION: usize = 8;
 pub const MAX_TOKEN_BYTES: usize = 128;
 pub const MAX_ORIGIN_BYTES: usize = 512;
 pub const HTTP_OWNER_HEX_BYTES: usize = 32;
@@ -155,70 +146,6 @@ impl GatewayConfig {
         }
         Ok(())
     }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum GatewayClientMessage {
-    Authenticate {
-        contract_version: u16,
-        token: String,
-    },
-    Dispatch {
-        request: RequestEnvelope,
-    },
-    Subscribe {
-        request_id: String,
-        spec: SubscriptionSpec,
-    },
-    Resync {
-        request_id: String,
-        stream_id: String,
-    },
-    Unsubscribe {
-        request_id: String,
-        stream_id: String,
-    },
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum GatewayServerMessage {
-    Authenticated {
-        contract_version: u16,
-    },
-    Response {
-        response: ResponseEnvelope,
-    },
-    Subscribed {
-        request_id: String,
-        stream_id: String,
-    },
-    Update {
-        update: Box<ViewUpdate>,
-    },
-    Unsubscribed {
-        request_id: String,
-        stream_id: String,
-    },
-    Error {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        request_id: Option<String>,
-        code: GatewayErrorCode,
-        message: String,
-    },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum GatewayErrorCode {
-    AuthenticationRequired,
-    AuthenticationFailed,
-    InvalidVersion,
-    InvalidMessage,
-    ResourceLimit,
-    UnknownSubscription,
-    Internal,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -356,7 +283,6 @@ impl GatewayServer {
                 HeaderName::from_static("x-rstorrent-owner"),
             ]);
         let router = Router::new()
-            .route("/control", get(upgrade))
             .route(
                 "/api/v1/connect",
                 get(application_websocket::upgrade_application_connection),
@@ -688,362 +614,6 @@ fn valid_view_set_id(value: &str) -> bool {
         && value[3..].bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-async fn upgrade(
-    State(state): State<GatewayState>,
-    ConnectInfo(_peer): ConnectInfo<SocketAddr>,
-    headers: HeaderMap,
-    websocket: WebSocketUpgrade,
-) -> Response {
-    if headers
-        .get(header::ORIGIN)
-        .and_then(|value| value.to_str().ok())
-        != Some(state.allowed_origin.as_ref())
-    {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-    let Ok(permit) = state.connections.clone().try_acquire_owned() else {
-        return StatusCode::SERVICE_UNAVAILABLE.into_response();
-    };
-    websocket
-        .max_message_size(MAX_INCOMING_MESSAGE_BYTES)
-        .max_frame_size(MAX_INCOMING_MESSAGE_BYTES)
-        .on_upgrade(move |socket| serve_connection(socket, state, permit))
-        .into_response()
-}
-
-struct ActiveSubscription {
-    subscription: ViewSubscription,
-    cancellation: CancellationToken,
-    task: JoinHandle<()>,
-}
-
-async fn serve_connection(socket: WebSocket, state: GatewayState, _permit: OwnedSemaphorePermit) {
-    let (mut websocket_writer, mut websocket_reader) = socket.split();
-    let (outgoing, mut outgoing_reader) =
-        mpsc::channel::<GatewayServerMessage>(MAX_OUTGOING_MESSAGES);
-    let connection_cancel = CancellationToken::new();
-    let writer = tokio::spawn(async move {
-        while let Some(message) = outgoing_reader.recv().await {
-            let Ok(encoded) = serde_json::to_string(&message) else {
-                break;
-            };
-            if encoded.len() > MAX_OUTGOING_MESSAGE_BYTES
-                || websocket_writer
-                    .send(Message::Text(encoded.into()))
-                    .await
-                    .is_err()
-            {
-                break;
-            }
-        }
-    });
-    let mut authenticated = false;
-    let mut subscriptions = BTreeMap::<String, ActiveSubscription>::new();
-
-    while let Some(message) = websocket_reader.next().await {
-        let Ok(message) = message else {
-            break;
-        };
-        let Message::Text(text) = message else {
-            if matches!(message, Message::Close(_)) {
-                break;
-            }
-            send_error(
-                &outgoing,
-                None,
-                GatewayErrorCode::InvalidMessage,
-                "only text control messages are accepted",
-            )
-            .await;
-            continue;
-        };
-        if text.len() > MAX_INCOMING_MESSAGE_BYTES {
-            send_error(
-                &outgoing,
-                None,
-                GatewayErrorCode::InvalidMessage,
-                "control message exceeds the configured bound",
-            )
-            .await;
-            break;
-        }
-        let parsed = match serde_json::from_str::<GatewayClientMessage>(&text) {
-            Ok(parsed) => parsed,
-            Err(error) => {
-                send_error(
-                    &outgoing,
-                    None,
-                    GatewayErrorCode::InvalidMessage,
-                    &error.to_string(),
-                )
-                .await;
-                continue;
-            }
-        };
-
-        if !authenticated {
-            match parsed {
-                GatewayClientMessage::Authenticate {
-                    contract_version,
-                    token: _,
-                } if contract_version != GATEWAY_CONTRACT_VERSION => {
-                    send_error(
-                        &outgoing,
-                        None,
-                        GatewayErrorCode::InvalidVersion,
-                        "gateway contract version is unsupported",
-                    )
-                    .await;
-                    break;
-                }
-                GatewayClientMessage::Authenticate { token, .. }
-                    if bearer_token_matches(&state.authentication, &token) =>
-                {
-                    authenticated = true;
-                    if outgoing
-                        .send(GatewayServerMessage::Authenticated {
-                            contract_version: GATEWAY_CONTRACT_VERSION,
-                        })
-                        .await
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
-                GatewayClientMessage::Authenticate { .. } => {
-                    send_error(
-                        &outgoing,
-                        None,
-                        GatewayErrorCode::AuthenticationFailed,
-                        "gateway credential was rejected",
-                    )
-                    .await;
-                    break;
-                }
-                _ => {
-                    send_error(
-                        &outgoing,
-                        None,
-                        GatewayErrorCode::AuthenticationRequired,
-                        "authenticate before sending control messages",
-                    )
-                    .await;
-                    break;
-                }
-            }
-            continue;
-        }
-
-        match parsed {
-            GatewayClientMessage::Authenticate { .. } => {
-                send_error(
-                    &outgoing,
-                    None,
-                    GatewayErrorCode::InvalidMessage,
-                    "the connection is already authenticated",
-                )
-                .await;
-            }
-            GatewayClientMessage::Dispatch { request } => {
-                let request_id = request.request_id.clone();
-                let mut service = state.service.lock().await;
-                let response = match service.dispatch(request).await {
-                    Ok(response) => response,
-                    Err(error) => application_error_response(
-                        request_id,
-                        service.revision().unwrap_or(0),
-                        &error,
-                    ),
-                };
-                if outgoing
-                    .send(GatewayServerMessage::Response { response })
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
-            }
-            GatewayClientMessage::Subscribe { request_id, spec } => {
-                if subscriptions.len() >= MAX_SUBSCRIPTIONS_PER_CONNECTION {
-                    send_error(
-                        &outgoing,
-                        Some(request_id),
-                        GatewayErrorCode::ResourceLimit,
-                        "connection subscription limit reached",
-                    )
-                    .await;
-                    continue;
-                }
-                let subscription = {
-                    let service = state.service.lock().await;
-                    service.subscribe(spec)
-                };
-                let subscription = match subscription {
-                    Ok(subscription) => subscription,
-                    Err(error) => {
-                        send_error(
-                            &outgoing,
-                            Some(request_id),
-                            GatewayErrorCode::InvalidMessage,
-                            &error.to_string(),
-                        )
-                        .await;
-                        continue;
-                    }
-                };
-                let stream_id = subscription.stream_id();
-                let cancellation = connection_cancel.child_token();
-                if outgoing
-                    .send(GatewayServerMessage::Subscribed {
-                        request_id,
-                        stream_id: stream_id.clone(),
-                    })
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
-                let task =
-                    spawn_forwarder(subscription.clone(), outgoing.clone(), cancellation.clone());
-                subscriptions.insert(
-                    stream_id,
-                    ActiveSubscription {
-                        subscription,
-                        cancellation,
-                        task,
-                    },
-                );
-            }
-            GatewayClientMessage::Resync {
-                request_id,
-                stream_id,
-            } => {
-                let Some(active) = subscriptions.get(&stream_id) else {
-                    send_error(
-                        &outgoing,
-                        Some(request_id),
-                        GatewayErrorCode::UnknownSubscription,
-                        "subscription is not owned by this connection",
-                    )
-                    .await;
-                    continue;
-                };
-                if let Err(error) = active.subscription.resync() {
-                    send_error(
-                        &outgoing,
-                        Some(request_id),
-                        GatewayErrorCode::Internal,
-                        &error.to_string(),
-                    )
-                    .await;
-                }
-            }
-            GatewayClientMessage::Unsubscribe {
-                request_id,
-                stream_id,
-            } => {
-                let Some(active) = subscriptions.remove(&stream_id) else {
-                    send_error(
-                        &outgoing,
-                        Some(request_id),
-                        GatewayErrorCode::UnknownSubscription,
-                        "subscription is not owned by this connection",
-                    )
-                    .await;
-                    continue;
-                };
-                stop_subscription(active).await;
-                if outgoing
-                    .send(GatewayServerMessage::Unsubscribed {
-                        request_id,
-                        stream_id,
-                    })
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        }
-    }
-
-    connection_cancel.cancel();
-    for (_, active) in subscriptions {
-        stop_subscription(active).await;
-    }
-    drop(outgoing);
-    let _ = writer.await;
-}
-
-fn bearer_token_matches(authentication: &GatewayAuthentication, candidate: &str) -> bool {
-    match authentication {
-        GatewayAuthentication::Bearer { token } => {
-            constant_time_equal(candidate.as_bytes(), token.as_bytes())
-        }
-        GatewayAuthentication::UnauthenticatedLoopbackDevelopment => false,
-    }
-}
-
-fn spawn_forwarder(
-    subscription: ViewSubscription,
-    outgoing: mpsc::Sender<GatewayServerMessage>,
-    cancellation: CancellationToken,
-) -> JoinHandle<()> {
-    tokio::spawn(async move {
-        loop {
-            let update = tokio::select! {
-                () = cancellation.cancelled() => break,
-                update = subscription.next_update() => update,
-            };
-            let Some(update) = update else {
-                break;
-            };
-            let message = GatewayServerMessage::Update {
-                update: Box::new(update),
-            };
-            let encoded_len = match serde_json::to_vec(&message) {
-                Ok(bytes) => bytes.len(),
-                Err(_) => break,
-            };
-            if encoded_len > MAX_OUTGOING_MESSAGE_BYTES {
-                break;
-            }
-            tokio::select! {
-                () = cancellation.cancelled() => break,
-                result = outgoing.send(message) => {
-                    if result.is_err() {
-                        break;
-                    }
-                }
-            }
-        }
-        subscription.close();
-    })
-}
-
-async fn stop_subscription(active: ActiveSubscription) {
-    active.cancellation.cancel();
-    active.subscription.close();
-    let _ = active.task.await;
-}
-
-async fn send_error(
-    outgoing: &mpsc::Sender<GatewayServerMessage>,
-    request_id: Option<String>,
-    code: GatewayErrorCode,
-    message: &str,
-) {
-    let mut message = message.to_owned();
-    message.truncate(message.floor_char_boundary(1024));
-    let _ = outgoing
-        .send(GatewayServerMessage::Error {
-            request_id,
-            code,
-            message,
-        })
-        .await;
-}
-
 fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
     let mut difference = left.len() ^ right.len();
     for index in 0..left.len().max(right.len()) {
@@ -1066,10 +636,9 @@ mod tests {
     use futures_util::{SinkExt, StreamExt};
     use rstorrent_session::{
         ApplicationCall, ApplicationCallResult, ApplicationConfig, ApplicationService, Command,
-        ConfiguredStorageRoot, DeliveryPolicy, NetworkConfig, NetworkPolicy, OpenViewSetOptions,
-        OpenViewSetRequest, OpenViewSetResponse, RequestEnvelope, ResponseOutcome,
-        SubscriptionSpec, UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewProjection,
-        ViewSelector, ViewSpec, ViewUpdatePayload,
+        ConfiguredStorageRoot, NetworkConfig, NetworkPolicy, OpenViewSetOptions,
+        OpenViewSetRequest, OpenViewSetResponse, RequestEnvelope, UpdateBatch,
+        UpdateViewSetRequest, ViewDeliveryPolicy, ViewSpec,
     };
     use tokio::sync::Mutex;
     use tokio_tungstenite::connect_async;
@@ -1079,8 +648,7 @@ mod tests {
 
     use super::{
         ApplicationClientFrame, ApplicationConnectionErrorCode, ApplicationServerFrame,
-        GATEWAY_CONTRACT_VERSION, GatewayAuthentication, GatewayClientMessage, GatewayConfig,
-        GatewayErrorCode, GatewayServerMessage, bind, constant_time_equal,
+        GatewayAuthentication, GatewayConfig, bind, constant_time_equal,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -1111,22 +679,6 @@ mod tests {
             .await
             .expect("open service"),
         ))
-    }
-
-    async fn read_message(
-        socket: &mut tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-        >,
-    ) -> GatewayServerMessage {
-        let message = tokio::time::timeout(std::time::Duration::from_secs(1), socket.next())
-            .await
-            .expect("gateway response timed out")
-            .expect("gateway closed")
-            .expect("websocket response");
-        let Message::Text(text) = message else {
-            panic!("expected text response");
-        };
-        serde_json::from_str(&text).expect("decode response")
     }
 
     async fn read_application_message(
@@ -1482,7 +1034,7 @@ mod tests {
         let shutdown = CancellationToken::new();
         let task_shutdown = shutdown.clone();
         let task = tokio::spawn(server.serve(task_shutdown));
-        let url = format!("ws://{address}/control");
+        let url = format!("ws://{address}/api/v1/connect");
 
         let mut bad_origin = url.clone().into_client_request().expect("request");
         bad_origin.headers_mut().insert(
@@ -1496,32 +1048,20 @@ mod tests {
             .headers_mut()
             .insert("Origin", "http://127.0.0.1:5173".parse().expect("origin"));
         let (mut socket, _) = connect_async(request).await.expect("connect");
-        let mutation = GatewayClientMessage::Dispatch {
-            request: RequestEnvelope {
-                version: rstorrent_session::CONTROL_VERSION,
-                request_id: "unauthenticated-add".to_owned(),
-                expected_revision: None,
-                command: Command::AddMagnet {
-                    magnet: "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213&x.pe=127.0.0.1:1".to_owned(),
-                    storage_root: "downloads".to_owned(),
-                    skip_files: Vec::new(),
-                },
+        send_application_message(
+            &mut socket,
+            &ApplicationClientFrame::Connect {
+                api_version: rstorrent_session::API_VERSION,
+                encoding: rstorrent_session::ApiEncoding::Json,
+                client_instance_id: "00000000000000000000000000000001".to_owned(),
+                token: Some("wrong-token".to_owned()),
             },
-        };
-        socket
-            .send(Message::Text(
-                serde_json::to_string(&mutation)
-                    .expect("encode mutation")
-                    .into(),
-            ))
-            .await
-            .expect("send");
+        )
+        .await;
         assert!(matches!(
-            read_message(&mut socket).await,
-            GatewayServerMessage::Error {
-                code: GatewayErrorCode::AuthenticationRequired,
-                ..
-            }
+            read_application_message(&mut socket).await,
+            ApplicationServerFrame::ConnectionError { error }
+                if error.code == ApplicationConnectionErrorCode::AuthenticationFailed
         ));
 
         let mut request = url.into_client_request().expect("request");
@@ -1529,93 +1069,60 @@ mod tests {
             .headers_mut()
             .insert("Origin", "http://127.0.0.1:5173".parse().expect("origin"));
         let (mut socket, _) = connect_async(request).await.expect("reconnect");
-        socket
-            .send(Message::Text(
-                serde_json::to_string(&GatewayClientMessage::Authenticate {
-                    contract_version: GATEWAY_CONTRACT_VERSION,
-                    token: "correct-token".to_owned(),
-                })
-                .expect("encode auth")
-                .into(),
-            ))
-            .await
-            .expect("authenticate");
+        send_application_message(
+            &mut socket,
+            &ApplicationClientFrame::Connect {
+                api_version: rstorrent_session::API_VERSION,
+                encoding: rstorrent_session::ApiEncoding::Json,
+                client_instance_id: "00000000000000000000000000000002".to_owned(),
+                token: Some("correct-token".to_owned()),
+            },
+        )
+        .await;
         assert!(matches!(
-            read_message(&mut socket).await,
-            GatewayServerMessage::Authenticated { .. }
+            read_application_message(&mut socket).await,
+            ApplicationServerFrame::Connected { .. }
         ));
-        socket
-            .send(Message::Text(
-                serde_json::to_string(&GatewayClientMessage::Dispatch {
-                    request: RequestEnvelope {
+        send_application_message(
+            &mut socket,
+            &ApplicationClientFrame::Call {
+                call_id: "snapshot-call".to_owned(),
+                operation: ApplicationCall::Dispatch {
+                    request: Box::new(RequestEnvelope {
                         version: rstorrent_session::CONTROL_VERSION,
                         request_id: "snapshot".to_owned(),
                         expected_revision: None,
                         command: Command::Snapshot,
-                    },
-                })
-                .expect("encode snapshot")
-                .into(),
-            ))
-            .await
-            .expect("snapshot");
-        let GatewayServerMessage::Response { response } = read_message(&mut socket).await else {
+                    }),
+                },
+            },
+        )
+        .await;
+        let ApplicationServerFrame::Result {
+            result: ApplicationCallResult::CommandResponse { response },
+            ..
+        } = read_application_message(&mut socket).await
+        else {
             panic!("expected command response");
         };
-        let ResponseOutcome::Success { snapshot } = response.outcome else {
-            panic!("snapshot should succeed");
-        };
-        assert!(
-            snapshot.torrents.is_empty(),
-            "unauthenticated mutation reached the dispatcher"
-        );
-
-        socket
-            .send(Message::Text(
-                serde_json::to_string(&GatewayClientMessage::Subscribe {
-                    request_id: "subscribe".to_owned(),
-                    spec: SubscriptionSpec {
-                        selector: ViewSelector::TorrentList,
-                        projection: ViewProjection::Summary,
-                        delivery: DeliveryPolicy {
-                            min_interval_millis: 0,
-                            max_queue_bytes: 4096,
-                        },
-                        diagnostics: None,
-                    },
-                })
-                .expect("encode subscription")
-                .into(),
-            ))
-            .await
-            .expect("subscribe");
-        let GatewayServerMessage::Subscribed { stream_id, .. } = read_message(&mut socket).await
-        else {
-            panic!("subscription acknowledgement must precede updates");
-        };
-        let GatewayServerMessage::Update { update } = read_message(&mut socket).await else {
-            panic!("expected initial update");
-        };
-        assert_eq!(update.stream_id, stream_id);
-        assert!(matches!(update.payload, ViewUpdatePayload::Snapshot { .. }));
-        socket
-            .send(Message::Text(
-                serde_json::to_string(&GatewayClientMessage::Unsubscribe {
-                    request_id: "unsubscribe".to_owned(),
-                    stream_id: stream_id.clone(),
-                })
-                .expect("encode unsubscribe")
-                .into(),
-            ))
-            .await
-            .expect("unsubscribe");
         assert!(matches!(
-            read_message(&mut socket).await,
-            GatewayServerMessage::Unsubscribed {
-                stream_id: closed,
-                ..
-            } if closed == stream_id
+            response.outcome,
+            rstorrent_session::ResponseOutcome::Success { ref snapshot }
+                if snapshot.torrents.is_empty()
         ));
+        assert_eq!(
+            http_request(
+                address,
+                "GET",
+                "/control",
+                Some("correct-token"),
+                Some("http://127.0.0.1:5173"),
+                None,
+            )
+            .await
+            .0,
+            404
+        );
 
         socket.close(None).await.expect("close");
         shutdown.cancel();

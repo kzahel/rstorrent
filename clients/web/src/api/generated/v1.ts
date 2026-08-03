@@ -131,12 +131,6 @@ export type ViewUpdatePayload = { "type": "snapshot", snapshot: ViewSnapshot, } 
 
 export type ViewUpdate = { contract_version: number, stream_id: string, epoch: string, sequence: string, base_revision: string, revision: string, } & ({ "type": "snapshot", snapshot: ViewSnapshot, } | { "type": "patch", patch: ViewPatch, } | { "type": "reset_required", reason: ResetReason, });
 
-export type GatewayErrorCode = "authentication_required" | "authentication_failed" | "invalid_version" | "invalid_message" | "resource_limit" | "unknown_subscription" | "internal";
-
-export type GatewayClientMessage = { "type": "authenticate", contract_version: number, token: string, } | { "type": "dispatch", request: RequestEnvelope, } | { "type": "subscribe", request_id: string, spec: SubscriptionSpec, } | { "type": "resync", request_id: string, stream_id: string, } | { "type": "unsubscribe", request_id: string, stream_id: string, };
-
-export type GatewayServerMessage = { "type": "authenticated", contract_version: number, } | { "type": "response", response: ResponseEnvelope, } | { "type": "subscribed", request_id: string, stream_id: string, } | { "type": "update", update: ViewUpdate, } | { "type": "unsubscribed", request_id: string, stream_id: string, } | { "type": "error", request_id?: string | null, code: GatewayErrorCode, message: string, };
-
 export type ApiErrorCode = "authentication_failed" | "invalid_request" | "resource_limit" | "unknown_view_set" | "concurrent_pull" | "view_set_closed" | "response_too_large" | "internal";
 
 export type ApiError = { code: ApiErrorCode, message: string, };

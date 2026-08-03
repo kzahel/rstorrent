@@ -20,7 +20,7 @@ from first_verified_piece import (
     create_session,
     wait_for_listener,
 )
-from gateway_reactive_surface import UPLOAD_RATE_LIMIT
+from application_surface_harness import UPLOAD_RATE_LIMIT
 from magnet_metadata import create_fixture, magnet_uri
 
 
