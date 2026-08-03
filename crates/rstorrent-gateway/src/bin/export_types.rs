@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use rstorrent_gateway::{
     ApiError, ApiErrorCode, ApiErrorEnvelope, ApplicationClientFrame, ApplicationConnectionError,
     ApplicationConnectionErrorCode, ApplicationConnectionLimits, ApplicationServerFrame,
+    ChooseDownloadRootRequest, ChooseDownloadRootResponse,
 };
 use rstorrent_session::{
     ActivePiece, ActivePieceStageView, ApiEncoding, ApiHello, ApiLimits, ApiVersion,
@@ -133,6 +134,8 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<ApiErrorCode>(&mut declarations)?;
     append::<ApiError>(&mut declarations)?;
     append::<ApiErrorEnvelope>(&mut declarations)?;
+    append::<ChooseDownloadRootRequest>(&mut declarations)?;
+    append::<ChooseDownloadRootResponse>(&mut declarations)?;
     append::<ApiEncoding>(&mut declarations)?;
     append::<DeliveryMode>(&mut declarations)?;
     append::<ApiVersion>(&mut declarations)?;
@@ -163,6 +166,8 @@ fn append<T: TS>(output: &mut String) -> Result<(), std::fmt::Error> {
 fn write_schema(output: &Path) -> Result<(), Box<dyn Error>> {
     let mut definitions = Map::new();
     add_schema::<ApiErrorEnvelope>(&mut definitions, "ApiErrorEnvelope")?;
+    add_schema::<ChooseDownloadRootRequest>(&mut definitions, "ChooseDownloadRootRequest")?;
+    add_schema::<ChooseDownloadRootResponse>(&mut definitions, "ChooseDownloadRootResponse")?;
     add_schema::<ApiHello>(&mut definitions, "ApiHello")?;
     add_schema::<RequestEnvelope>(&mut definitions, "RequestEnvelope")?;
     add_schema::<ResponseEnvelope>(&mut definitions, "ResponseEnvelope")?;

@@ -410,6 +410,24 @@ impl ApplicationService {
         let store = self.store_mut()?;
         let snapshot = store.snapshot()?;
         let roots = store.storage_roots()?;
+        if let Some(root_id) = repair_root {
+            let root = snapshot
+                .storage
+                .roots
+                .iter()
+                .find(|root| root.root_id == root_id)
+                .ok_or_else(|| {
+                    ApplicationError::Configuration(format!(
+                        "storage root {root_id} is not configured"
+                    ))
+                })?;
+            if root.availability == crate::StorageRootAvailability::Available {
+                return Err(ApplicationError::Configuration(
+                    "an available root cannot be re-selected; torrent relocation is not implemented"
+                        .to_owned(),
+                ));
+            }
+        }
         let preferred = repair_root
             .map(str::to_owned)
             .or(snapshot.storage.default_root);
@@ -423,7 +441,11 @@ impl ApplicationService {
             });
         Ok(candidate.and_then(|root| match &root.location {
             StorageRootLocation::Path(path) if path.is_dir() => Some(path.clone()),
-            StorageRootLocation::Path(path) => path.parent().map(Path::to_path_buf),
+            StorageRootLocation::Path(path) => path
+                .ancestors()
+                .skip(1)
+                .find(|ancestor| ancestor.is_dir())
+                .map(Path::to_path_buf),
             StorageRootLocation::PlatformCapability => None,
         }))
     }

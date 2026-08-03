@@ -1,5 +1,7 @@
 import type {
   ApiHello,
+  ChooseDownloadRootRequest,
+  StorageRootSnapshot,
   OpenViewSetRequest,
   OpenViewSetResponse,
   RequestEnvelope,
@@ -11,6 +13,7 @@ import { JsonApiCodec, type ApiCodec } from "./codec";
 import {
   decodeApiErrorEnvelope,
   decodeApiHello,
+  decodeChooseDownloadRootResponse,
   decodeOpenViewSetResponse,
   decodeResponseEnvelope,
   decodeUpdateBatch,
@@ -24,6 +27,10 @@ export interface ApplicationViewClient {
     request: RequestEnvelope,
     signal?: AbortSignal,
   ): Promise<ResponseEnvelope>;
+  chooseDownloadRoot(
+    request: ChooseDownloadRootRequest,
+    signal?: AbortSignal,
+  ): Promise<StorageRootSnapshot | null>;
   openViewSet(
     request: OpenViewSetRequest,
     signal?: AbortSignal,
@@ -116,6 +123,20 @@ export class HttpApplicationClient implements ApplicationViewClient {
       decodeResponseEnvelope,
       signal,
     );
+  }
+
+  public async chooseDownloadRoot(
+    request: ChooseDownloadRootRequest,
+    signal?: AbortSignal,
+  ): Promise<StorageRootSnapshot | null> {
+    const response = await this.request(
+      "POST",
+      "/api/v1/platform/download-root",
+      request,
+      decodeChooseDownloadRootResponse,
+      signal,
+    );
+    return response.root;
   }
 
   public async openViewSet(

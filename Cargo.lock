@@ -2715,6 +2715,7 @@ dependencies = [
 name = "rstorrent-desktop"
 version = "0.1.0"
 dependencies = [
+ "rstorrent-platform",
  "rstorrent-session",
  "serde",
  "tauri",
@@ -2742,6 +2743,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "futures-util",
+ "rstorrent-platform",
  "rstorrent-session",
  "schemars 1.2.2",
  "serde",
@@ -2753,6 +2755,10 @@ dependencies = [
  "tower-http",
  "ts-rs",
 ]
+
+[[package]]
+name = "rstorrent-platform"
+version = "0.1.0"
 
 [[package]]
 name = "rstorrent-protocol"

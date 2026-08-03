@@ -53,6 +53,10 @@ class FakeClient implements ApplicationViewClient {
     };
   }
 
+  public async chooseDownloadRoot(): Promise<null> {
+    return null;
+  }
+
   public async openViewSet(
     _request: OpenViewSetRequest,
     signal?: AbortSignal,

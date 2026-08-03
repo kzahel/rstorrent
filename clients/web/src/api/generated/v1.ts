@@ -143,6 +143,10 @@ export type ApiError = { code: ApiErrorCode, message: string, };
 
 export type ApiErrorEnvelope = { error: ApiError, };
 
+export type ChooseDownloadRootRequest = { repair_root?: string | null, };
+
+export type ChooseDownloadRootResponse = { root: StorageRootSnapshot | null, };
+
 export type ApiEncoding = "json" | "cbor";
 
 export type DeliveryMode = "poll" | "long_poll" | "stream";

@@ -14,6 +14,7 @@ usage() {
         "" \
         "Build and run the live React inspection UI in a normal browser." \
         "State defaults to .local/webui and survives launcher restarts." \
+        "No download folder is assumed; choose one when adding a torrent." \
         "" \
         "Options:" \
         "  --no-open  Start the servers without opening a browser tab." \
@@ -110,7 +111,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 trap cleanup EXIT
 
-mkdir -p -- "$data_root/profile" "$data_root/downloads"
+mkdir -p -- "$data_root/profile"
 
 if [[ ! -x "$web_root/node_modules/.bin/vite" ||
     ! -f "$installed_lock" ||
@@ -147,7 +148,6 @@ fi
 origin="http://127.0.0.1:$web_port"
 (
     export RSTORRENT_PROFILE_ROOT="$data_root/profile"
-    export RSTORRENT_STORAGE_ROOT="$data_root/downloads"
     export RSTORRENT_GATEWAY_AUTH="unauthenticated_loopback_development"
     export RSTORRENT_GATEWAY_ORIGIN="$origin"
     export RSTORRENT_NETWORK_POLICY="${RSTORRENT_NETWORK_POLICY:-online}"

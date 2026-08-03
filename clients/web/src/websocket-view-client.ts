@@ -4,15 +4,18 @@ import type {
   ApplicationCallResult,
   ApplicationClientFrame,
   ApplicationServerFrame,
+  ChooseDownloadRootRequest,
   OpenViewSetRequest,
   OpenViewSetResponse,
   RequestEnvelope,
   ResponseEnvelope,
+  StorageRootSnapshot,
   UpdateBatch,
   UpdateViewSetRequest,
 } from "./api";
 import {
   ApplicationViewError,
+  HttpApplicationClient,
   type ApplicationUpdateStream,
   type ApplicationViewClient,
 } from "./api/client";
@@ -56,6 +59,7 @@ export class WebSocketApplicationViewClient
 {
   private readonly clientInstanceId: string;
   private readonly socketUrl: string;
+  private readonly platformClient: HttpApplicationClient;
   private readonly pending = new Map<string, PendingCorrelation>();
   private readonly streams = new Map<string, WebSocketUpdateStream>();
   private socket: ApplicationWebSocket | undefined;
@@ -92,6 +96,14 @@ export class WebSocketApplicationViewClient
     endpoint.search = "";
     endpoint.hash = "";
     this.socketUrl = endpoint.href;
+    this.platformClient = new HttpApplicationClient(
+      baseUrl,
+      token,
+      globalThis.location?.origin ?? new URL(baseUrl).origin,
+      undefined,
+      undefined,
+      clientInstanceId,
+    );
   }
 
   public async hello(signal?: AbortSignal): Promise<ApiHello> {
@@ -113,6 +125,14 @@ export class WebSocketApplicationViewClient
       throw new ContractError("dispatch returned the wrong result type");
     }
     return result.response;
+  }
+
+  public async chooseDownloadRoot(
+    request: ChooseDownloadRootRequest,
+    signal?: AbortSignal,
+  ): Promise<StorageRootSnapshot | null> {
+    this.ensureOpen();
+    return this.platformClient.chooseDownloadRoot(request, signal);
   }
 
   public async openViewSet(
@@ -223,6 +243,7 @@ export class WebSocketApplicationViewClient
     this.closing = false;
     this.connected = false;
     this.socket = undefined;
+    await this.platformClient.close();
   }
 
   public sendAcknowledgement(streamId: string, cursor: string): void {

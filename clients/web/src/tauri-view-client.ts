@@ -2,10 +2,12 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 
 import type {
   ApiHello,
+  ChooseDownloadRootRequest,
   OpenViewSetRequest,
   OpenViewSetResponse,
   RequestEnvelope,
   ResponseEnvelope,
+  StorageRootSnapshot,
   UpdateBatch,
   UpdateViewSetRequest,
 } from "./api";
@@ -71,6 +73,15 @@ export class TauriApplicationViewClient implements ApplicationViewClient {
       decodeResponseEnvelope,
       "Tauri command response",
     );
+  }
+
+  public async chooseDownloadRoot(
+    request: ChooseDownloadRootRequest,
+  ): Promise<StorageRootSnapshot | null> {
+    this.ensureOpen();
+    return this.invoke<StorageRootSnapshot | null>("choose_download_root", {
+      repairRoot: request.repair_root ?? null,
+    });
   }
 
   public async openViewSet(

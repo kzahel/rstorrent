@@ -4,6 +4,7 @@ members = [
     "crates/rstorrent-android",
     "crates/rstorrent-engine",
     "crates/rstorrent-gateway",
+    "crates/rstorrent-platform",
     "crates/rstorrent-protocol",
     "crates/rstorrent-session",
 ]

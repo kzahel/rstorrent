@@ -3,6 +3,7 @@ import type {
   ApiErrorEnvelope,
   ApiHello,
   ApplicationServerFrame,
+  ChooseDownloadRootResponse,
   IndexRange,
   OpenViewSetResponse,
   ResponseEnvelope,
@@ -231,6 +232,17 @@ export function decodeApiErrorEnvelope(source: string): ApiErrorEnvelope {
     parseBoundedJson(source, MAX_FRAME_BYTES, "API error response"),
   );
   boundedString(value.error.message, "API error message", 1_024);
+  return value;
+}
+
+export function decodeChooseDownloadRootResponse(
+  source: string,
+): ChooseDownloadRootResponse {
+  const value = generated<ChooseDownloadRootResponse>(
+    "ChooseDownloadRootResponse",
+    parseBoundedJson(source, MAX_FRAME_BYTES, "download folder response"),
+  );
+  if (value.root !== null) validateStorageRoot(value.root);
   return value;
 }
 
@@ -581,18 +593,11 @@ function validateStorageSettings(value: unknown): void {
   }
   const rootIds = new Set<string>();
   for (const item of roots) {
-    const root = asRecord(item, "storage root");
-    const rootId = identifier(root.root_id, "storage root ID");
+    const rootId = validateStorageRoot(item);
     if (rootIds.has(rootId)) {
       throw new ContractError("storage roots contain duplicate IDs");
     }
     rootIds.add(rootId);
-    boundedString(root.label, "storage root label", 256);
-    optionalString(root.display_path, "storage root display path", 4_096);
-    oneOf(root.availability, "storage root availability", [
-      "available",
-      "unavailable",
-    ]);
   }
   if (settings.default_root !== undefined && settings.default_root !== null) {
     const defaultRoot = identifier(settings.default_root, "default storage root");
@@ -601,6 +606,18 @@ function validateStorageSettings(value: unknown): void {
     }
   }
   boolean(settings.show_add_options, "show add options");
+}
+
+function validateStorageRoot(value: unknown): string {
+  const root = asRecord(value, "storage root");
+  const rootId = identifier(root.root_id, "storage root ID");
+  boundedString(root.label, "storage root label", 256);
+  optionalString(root.display_path, "storage root display path", 4_096);
+  oneOf(root.availability, "storage root availability", [
+    "available",
+    "unavailable",
+  ]);
+  return rootId;
 }
 
 function validateTorrentView(value: unknown): asserts value is TorrentView {

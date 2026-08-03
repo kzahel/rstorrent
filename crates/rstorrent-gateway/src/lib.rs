@@ -13,6 +13,7 @@ pub use application_websocket::{
 use std::error::Error;
 use std::fmt;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -22,9 +23,10 @@ use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri, he
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use rstorrent_platform::{DownloadDirectoryPicker, NativeDownloadDirectoryPicker, PickerError};
 use rstorrent_session::{
-    ApplicationService, OpenViewSetRequest, RequestEnvelope, UpdateViewSetRequest, ViewSetError,
-    ViewSetOwner, application_error_response,
+    ApplicationService, OpenViewSetRequest, RequestEnvelope, StorageRootSnapshot,
+    UpdateViewSetRequest, ViewSetError, ViewSetOwner, application_error_response,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -173,6 +175,17 @@ pub struct ApiErrorEnvelope {
     pub error: ApiError,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+pub struct ChooseDownloadRootRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repair_root: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+pub struct ChooseDownloadRootResponse {
+    pub root: Option<StorageRootSnapshot>,
+}
+
 #[derive(Debug)]
 pub enum GatewayError {
     Configuration(String),
@@ -209,6 +222,7 @@ struct GatewayState {
     connection_registry: application_websocket::ApplicationConnectionRegistry,
     connection_metrics: ApplicationConnectionMetrics,
     gateway_shutdown: CancellationToken,
+    download_directory_picker: Arc<dyn DownloadDirectoryPicker>,
 }
 
 impl fmt::Debug for GatewayState {
@@ -229,6 +243,14 @@ pub async fn bind(
     config: GatewayConfig,
     service: Arc<Mutex<ApplicationService>>,
 ) -> Result<GatewayServer, GatewayError> {
+    bind_with_picker(config, service, Arc::new(NativeDownloadDirectoryPicker)).await
+}
+
+async fn bind_with_picker(
+    config: GatewayConfig,
+    service: Arc<Mutex<ApplicationService>>,
+    download_directory_picker: Arc<dyn DownloadDirectoryPicker>,
+) -> Result<GatewayServer, GatewayError> {
     config.validate()?;
     let listener = TcpListener::bind(config.bind)
         .await
@@ -243,6 +265,7 @@ pub async fn bind(
         connection_registry: application_websocket::ApplicationConnectionRegistry::new(),
         connection_metrics: ApplicationConnectionMetrics::default(),
         gateway_shutdown: CancellationToken::new(),
+        download_directory_picker,
     };
     Ok(GatewayServer {
         listener,
@@ -296,6 +319,7 @@ impl GatewayServer {
             )
             .route("/api/v1/hello", get(api_hello))
             .route("/api/v1/commands", post(api_command))
+            .route("/api/v1/platform/download-root", post(choose_download_root))
             .route("/api/v1/view-sets", post(open_view_set))
             .route(
                 "/api/v1/view-sets/{id}/views",
@@ -382,6 +406,87 @@ async fn api_command(
         }
     };
     json_response(StatusCode::OK, &response)
+}
+
+async fn choose_download_root(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    request: Result<Json<ChooseDownloadRootRequest>, JsonRejection>,
+) -> Response {
+    if let Err(error) = authenticate_http(&state, &headers) {
+        return error.into_response();
+    }
+    let Json(request) = match request {
+        Ok(request) => request,
+        Err(error) => return invalid_request(error.body_text()),
+    };
+    let suggested = {
+        let service = state.service.lock().await;
+        match service.suggested_storage_root_path(request.repair_root.as_deref()) {
+            Ok(suggested) => suggested,
+            Err(error) => return invalid_request(error.to_string()),
+        }
+    };
+    let Some(starting_directory) = suggested.or_else(home_directory) else {
+        return api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ApiErrorCode::Internal,
+            "no usable folder-picker starting directory is available",
+        );
+    };
+    let picker = state.download_directory_picker.clone();
+    let selected =
+        match tokio::task::spawn_blocking(move || picker.choose(&starting_directory)).await {
+            Ok(Ok(selected)) => selected,
+            Ok(Err(PickerError::Unsupported)) => {
+                return api_error(
+                    StatusCode::NOT_IMPLEMENTED,
+                    ApiErrorCode::Internal,
+                    "download folder picker is not implemented on this platform",
+                );
+            }
+            Ok(Err(error)) => {
+                return api_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    ApiErrorCode::Internal,
+                    &error.to_string(),
+                );
+            }
+            Err(error) => {
+                return api_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    ApiErrorCode::Internal,
+                    &format!("download folder picker task failed: {error}"),
+                );
+            }
+        };
+    let root = if let Some(selected) = selected {
+        let mut service = state.service.lock().await;
+        let result = if let Some(root_id) = request.repair_root.as_deref() {
+            service.repair_path_storage_root(root_id, &selected)
+        } else {
+            service.install_path_storage_root(&selected)
+        };
+        match result {
+            Ok(root) => Some(root),
+            Err(error) => {
+                return api_error(
+                    StatusCode::CONFLICT,
+                    ApiErrorCode::InvalidRequest,
+                    &error.to_string(),
+                );
+            }
+        }
+    } else {
+        None
+    };
+    json_response(StatusCode::OK, &ChooseDownloadRootResponse { root })
+}
+
+fn home_directory() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .filter(|path| path.is_dir())
 }
 
 async fn open_view_set(
@@ -641,6 +746,7 @@ mod tests {
     use std::time::Duration;
 
     use futures_util::{SinkExt, StreamExt};
+    use rstorrent_platform::{DownloadDirectoryPicker, PickerError};
     use rstorrent_session::{
         ApplicationCall, ApplicationCallResult, ApplicationConfig, ApplicationService, Command,
         ConfiguredStorageRoot, NetworkConfig, NetworkPolicy, OpenViewSetOptions,
@@ -656,10 +762,24 @@ mod tests {
 
     use super::{
         ApplicationClientFrame, ApplicationConnectionErrorCode, ApplicationServerFrame,
-        GatewayAuthentication, GatewayConfig, bind, constant_time_equal,
+        ChooseDownloadRootResponse, GatewayAuthentication, GatewayConfig, bind, bind_with_picker,
+        constant_time_equal,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
+
+    struct FixedDirectoryPicker {
+        selected: Option<PathBuf>,
+        calls: AtomicU64,
+    }
+
+    impl DownloadDirectoryPicker for FixedDirectoryPicker {
+        fn choose(&self, starting_directory: &Path) -> Result<Option<PathBuf>, PickerError> {
+            assert!(starting_directory.is_dir());
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            Ok(self.selected.clone())
+        }
+    }
 
     fn test_root(label: &str) -> PathBuf {
         let sequence = NEXT_TEST.fetch_add(1, Ordering::Relaxed);
@@ -1498,6 +1618,81 @@ mod tests {
         );
 
         socket.close(None).await.expect("close");
+        shutdown.cancel();
+        task.await
+            .expect("server join")
+            .expect("server termination");
+        service.lock().await.shutdown().await.expect("shutdown");
+        drop(service);
+        std::fs::remove_dir_all(root).expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn folder_picker_requires_http_auth_and_installs_selected_root() {
+        let root = test_root("folder-picker");
+        let service = test_service(&root).await;
+        let selected = root.join("selected downloads");
+        std::fs::create_dir_all(&selected).expect("create selection");
+        let picker = Arc::new(FixedDirectoryPicker {
+            selected: Some(selected.clone()),
+            calls: AtomicU64::new(0),
+        });
+        let server = bind_with_picker(
+            GatewayConfig {
+                bind: "127.0.0.1:0".parse().expect("address"),
+                authentication: GatewayAuthentication::Bearer {
+                    token: "correct-token".to_owned(),
+                },
+                allowed_origin: "http://127.0.0.1:5173".to_owned(),
+                max_connections: 2,
+            },
+            service.clone(),
+            picker.clone(),
+        )
+        .await
+        .expect("bind");
+        let address = server.local_addr();
+        let shutdown = CancellationToken::new();
+        let task = tokio::spawn(server.serve(shutdown.clone()));
+
+        assert_eq!(
+            http_request(
+                address,
+                "POST",
+                "/api/v1/platform/download-root",
+                Some("correct-token"),
+                Some("https://attacker.invalid"),
+                Some("{}".to_owned()),
+            )
+            .await
+            .0,
+            403
+        );
+        assert_eq!(picker.calls.load(Ordering::Relaxed), 0);
+
+        let (status, body) = http_request(
+            address,
+            "POST",
+            "/api/v1/platform/download-root",
+            Some("correct-token"),
+            Some("http://127.0.0.1:5173"),
+            Some("{}".to_owned()),
+        )
+        .await;
+        assert_eq!(status, 200);
+        let response: ChooseDownloadRootResponse =
+            serde_json::from_slice(&body).expect("folder picker response");
+        let installed = response.root.expect("installed root");
+        assert_eq!(installed.label, "selected downloads");
+        assert_eq!(
+            installed.display_path.as_deref(),
+            selected
+                .canonicalize()
+                .expect("canonical selected path")
+                .to_str()
+        );
+        assert_eq!(picker.calls.load(Ordering::Relaxed), 1);
+
         shutdown.cancel();
         task.await
             .expect("server join")

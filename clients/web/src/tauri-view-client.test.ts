@@ -55,6 +55,33 @@ class FakeBridge implements TauriViewBridge {
 }
 
 describe("Tauri leased view-set adapter", () => {
+  it("invokes the native folder picker with only an optional repair ID", async () => {
+    const bridge = new FakeBridge();
+    bridge.handler = (command) => {
+      if (command === "choose_download_root") {
+        return {
+          root_id: "root_a",
+          label: "Downloads",
+          display_path: "/Users/test/Downloads",
+          availability: "available",
+        };
+      }
+      throw new Error(`unexpected command ${command}`);
+    };
+    const client = new TauriApplicationViewClient(bridge);
+
+    await expect(
+      client.chooseDownloadRoot({ repair_root: "root_missing" }),
+    ).resolves.toMatchObject({ root_id: "root_a" });
+    expect(bridge.calls).toEqual([
+      {
+        command: "choose_download_root",
+        arguments_: { repairRoot: "root_missing" },
+      },
+    ]);
+    await client.close();
+  });
+
   it("validates hello and coherent open values from structured IPC", async () => {
     const bridge = new FakeBridge();
     bridge.handler = (command) => {

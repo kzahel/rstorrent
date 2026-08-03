@@ -759,6 +759,32 @@
       ],
       "type": "string"
     },
+    "ChooseDownloadRootRequest": {
+      "properties": {
+        "repair_root": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ChooseDownloadRootResponse": {
+      "properties": {
+        "root": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StorageRootSnapshot"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
     "Command": {
       "oneOf": [
         {

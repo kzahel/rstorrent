@@ -3,8 +3,32 @@ import { describe, expect, it } from "vitest";
 import {
   ContractError,
   decodeApplicationServerFrame,
+  decodeChooseDownloadRootResponse,
   decodeUpdateBatch,
 } from "./validation";
+
+describe("download folder response validation", () => {
+  it("accepts selection or cancellation and rejects an oversized label", () => {
+    const selected = {
+      root: {
+        root_id: "root_a",
+        label: "Downloads",
+        display_path: "/Users/test/Downloads",
+        availability: "available",
+      },
+    };
+    expect(
+      decodeChooseDownloadRootResponse(JSON.stringify(selected)).root,
+    ).toMatchObject({ root_id: "root_a" });
+    expect(
+      decodeChooseDownloadRootResponse('{"root":null}').root,
+    ).toBeNull();
+    selected.root.label = "x".repeat(257);
+    expect(() =>
+      decodeChooseDownloadRootResponse(JSON.stringify(selected)),
+    ).toThrow(/label exceeds 256 bytes/);
+  });
+});
 
 describe("application connection validation", () => {
   it("rejects unknown variants and non-canonical ranges", () => {

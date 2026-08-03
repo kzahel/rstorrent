@@ -5,9 +5,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
+use rstorrent_platform::{DownloadDirectoryPicker, NativeDownloadDirectoryPicker, PickerError};
 use rstorrent_session::{
-    ApplicationConfig, ApplicationService, ConfiguredStorageRoot, NetworkConfig, NetworkPolicy,
-    RequestEnvelope, ResponseEnvelope, SubscriptionSpec, ViewSubscription, ViewUpdate,
+    ApplicationConfig, ApplicationService, NetworkConfig, NetworkPolicy, RequestEnvelope,
+    ResponseEnvelope, StorageRootSnapshot, SubscriptionSpec, ViewSubscription, ViewUpdate,
     application_error_response,
 };
 #[cfg(target_os = "macos")]
@@ -57,6 +58,54 @@ async fn application_dispatch(
             application_error_response(request_id, service.revision().unwrap_or(0), &error)
         }
     })
+}
+
+#[tauri::command]
+async fn choose_download_root(
+    state: State<'_, DesktopState>,
+    repair_root: Option<String>,
+) -> Result<Option<StorageRootSnapshot>, String> {
+    let suggested = state
+        .service
+        .lock()
+        .await
+        .suggested_storage_root_path(repair_root.as_deref())
+        .map_err(|error| error.to_string())?;
+    let starting_directory = suggested
+        .or_else(home_directory)
+        .ok_or_else(|| "no usable folder-picker starting directory is available".to_owned())?;
+    let selected = tauri::async_runtime::spawn_blocking(move || {
+        NativeDownloadDirectoryPicker.choose(&starting_directory)
+    })
+    .await
+    .map_err(|error| format!("download folder picker task failed: {error}"))?
+    .map_err(|error| match error {
+        PickerError::Unsupported => {
+            "download folder picker is not implemented on this platform".to_owned()
+        }
+        error => error.to_string(),
+    })?;
+    let Some(selected) = selected else {
+        return Ok(None);
+    };
+    let mut service = state.service.lock().await;
+    if let Some(root_id) = repair_root.as_deref() {
+        service
+            .repair_path_storage_root(root_id, &selected)
+            .map(Some)
+            .map_err(|error| error.to_string())
+    } else {
+        service
+            .install_path_storage_root(&selected)
+            .map(Some)
+            .map_err(|error| error.to_string())
+    }
+}
+
+fn home_directory() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_dir())
 }
 
 #[tauri::command]
@@ -287,6 +336,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             application_dispatch,
+            choose_download_root,
             application_view_hello,
             application_view_open,
             application_view_update,
@@ -325,10 +375,7 @@ fn desktop_application_config(app_data: &std::path::Path) -> ApplicationConfig {
     ApplicationConfig::new(
         app_data.join("profile"),
         "default".to_owned(),
-        vec![ConfiguredStorageRoot::path(
-            "downloads",
-            app_data.join("downloads"),
-        )],
+        Vec::new(),
         NetworkConfig::new(NetworkPolicy::Online, PEER_CONNECT_TIMEOUT, PEER_IO_TIMEOUT),
     )
 }
@@ -343,6 +390,7 @@ mod tests {
     fn desktop_product_explicitly_uses_online_networking() {
         let config = desktop_application_config(std::path::Path::new("/tmp/rstorrent-desktop"));
         assert_eq!(config.network.policy, NetworkPolicy::Online);
+        assert!(config.storage_roots.is_empty());
         assert_eq!(
             config.download_resource_limits,
             DownloadResourceLimits::DESKTOP

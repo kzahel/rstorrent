@@ -16,7 +16,9 @@ use tokio_util::sync::CancellationToken;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let profile_root = required_path("RSTORRENT_PROFILE_ROOT")?;
-    let storage_root = required_path("RSTORRENT_STORAGE_ROOT")?;
+    let storage_roots = optional_path("RSTORRENT_STORAGE_ROOT")?
+        .map(|path| vec![ConfiguredStorageRoot::path("downloads", path)])
+        .unwrap_or_default();
     let origin =
         env::var("RSTORRENT_GATEWAY_ORIGIN").unwrap_or_else(|_| "http://127.0.0.1:5173".to_owned());
     let authentication = env::var("RSTORRENT_GATEWAY_AUTH").unwrap_or_else(|_| "bearer".to_owned());
@@ -102,7 +104,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut application_config = ApplicationConfig::new(
         profile_root,
         "default".to_owned(),
-        vec![ConfiguredStorageRoot::path("downloads", storage_root)],
+        storage_roots,
         NetworkConfig::new(
             network_policy,
             Duration::from_secs(15),
@@ -163,4 +165,12 @@ fn required_string(name: &str) -> Result<String, Box<dyn Error>> {
 
 fn required_path(name: &str) -> Result<PathBuf, Box<dyn Error>> {
     Ok(PathBuf::from(required_string(name)?))
+}
+
+fn optional_path(name: &str) -> Result<Option<PathBuf>, Box<dyn Error>> {
+    match env::var_os(name) {
+        None => Ok(None),
+        Some(value) if value.is_empty() => Err(format!("{name} must be nonempty").into()),
+        Some(value) => Ok(Some(PathBuf::from(value))),
+    }
 }

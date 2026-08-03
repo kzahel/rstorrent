@@ -70,6 +70,10 @@ class FakeLiveClient implements ApplicationViewClient {
     };
   }
 
+  async chooseDownloadRoot(): Promise<null> {
+    return null;
+  }
+
   async openViewSet(request: OpenViewSetRequest): Promise<OpenViewSetResponse> {
     this.opens.push(request);
     this.openCount += 1;
