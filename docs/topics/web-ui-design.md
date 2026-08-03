@@ -27,8 +27,10 @@ the global Settings sheet and versioned Compact, Standard, and Spacious
 interface sizes, makes readable Standard the default, and keeps virtual-table
 geometry coherent with presentation sizing. Tactical `048` replaces the
 legacy Tauri entry with the same React inspection application using
-acknowledged in-process leased-view streaming; HTTP polling remains the
-browser/headless delivery adapter. Tactical `049` completes the accepted
+acknowledged in-process leased-view streaming. The browser still uses HTTP
+polling today; accepted Tactical `060` will replace its ordinary application
+path with one multiplexed WebSocket while retaining HTTP only as an explicit
+loopback diagnostic comparison. Tactical `049` completes the accepted
 global Logs design: a dedicated virtualized chronological console with
 structured expansion, separate capture and display filters, bottom-follow/
 new-record behavior, local clear, and no sorting or persistence. Tactical `050`
@@ -517,9 +519,10 @@ no diagnostic history or filters are written to browser storage.
    complete in Tactical `049`.
 5. Connect remaining detail views according to debugging and product value,
    keeping unsupported scaffolds truthful.
-6. Tauri streaming is complete in Tactical `048`. Measure browser update
-   volume and decode/reduce/render cost before adding WebSocket delivery,
-   binary encoding, or more specialized rendering paths.
+6. Tauri streaming is complete in Tactical `048`. Accepted Tactical `060`
+   owns the bounded multiplexed browser WebSocket and diagnostic HTTP
+   comparison. Measure browser update volume and decode/reduce/render cost
+   before adding binary encoding or more specialized rendering paths.
 
 This is continuing direction, not an active tactical or permission to build
 all stages as one slice.
@@ -534,8 +537,7 @@ all stages as one slice.
   outside the non-sortable Logs console;
 - the first supported browser and phone access posture beyond headless and
   local desktop use; and
-- the thresholds and transport shape that would justify low-latency streaming
-  or a binary codec.
+- the thresholds that would justify a binary codec.
 
 Tactical `033` completed the headless transport-independent view-set
 foundation. Tactical `034` completed the first visible React and demo-scenario

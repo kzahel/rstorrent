@@ -19,9 +19,11 @@ attempt diffs and fresh-epoch bitmap replacement. Tactical `048` makes pull
 and stream interchangeable TypeScript delivery capabilities and implements
 acknowledged Tauri Channel delivery against the same leased view sets,
 controller, reducer, and Zustand transaction. The existing Tactical `008`
-subscriptions remain compatibility adapters. Browser WebSocket delivery and
-binary encoding remain deferred, and no stable public remote wire
-compatibility is claimed yet.
+subscriptions remain compatibility adapters. Accepted Tactical `060` specifies
+one multiplexed WebSocket for every ordinary browser call and view stream,
+with HTTP retained only as an explicit loopback diagnostic; implementation has
+not started. Binary encoding remains deferred, and no stable public remote
+wire compatibility is claimed yet.
 Tactical `049` completes the diagnostics specialization: hierarchical
 categories, structured bounded subjects and fields, capture interest,
 separate source/delivery/local loss semantics, and one ordered console over
@@ -831,14 +833,17 @@ interactive machine.
    complete.
 4. Tactical `048` adds streaming as an interchangeable delivery adapter after
    polling behavior and reducer recovery are stable, and implements it for the
-   in-process Tauri product. Browser WebSocket streaming remains deferred.
-5. Measure update volume, decode/reduce cost, rendering, and memory before
+   in-process Tauri product. This step is complete.
+5. Accepted Tactical `060` implements one multiplexed WebSocket as the
+   ordinary browser application connection while retaining HTTP only as an
+   explicit loopback diagnostic comparison.
+6. Measure update volume, decode/reduce cost, rendering, and memory before
    selecting binary encoding or finer-grained row patches.
 
 Tacticals `033`, `034`, `035`, and `048` completed the first four steps. The
-next view should follow observed inspection value; browser WebSocket delivery
-and binary encoding remain measurement-driven changes rather than
-prerequisites.
+next view should follow observed inspection value. Browser WebSocket delivery
+now has the accepted bounded Tactical `060`; binary encoding remains a
+measurement-driven change rather than a prerequisite.
 
 ## References And Deliberate Differences
 
@@ -865,7 +870,7 @@ this design.
 - exact reset granularity when one view snapshot itself exceeds its bound;
 - remote authentication, pairing, TLS, exposure, and deployment posture;
 - browser router and navigation URL details;
-- the measured threshold for browser WebSocket delivery, specialized field
-  patches, or binary encoding; and
+- the measured threshold for specialized field patches or binary encoding;
+  and
 - durable label and queue semantics; archive and bounded removal/deletion are
   implemented by Tactical `040`.

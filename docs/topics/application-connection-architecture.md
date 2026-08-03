@@ -2,7 +2,8 @@
 
 Topic: `application-connection-architecture`
 
-Status: Accepted direction; not implemented. HTTP long polling and
+Status: Accepted direction with implementation specified by Tactical `060` but
+not started. HTTP long polling and
 acknowledged per-view-set Tauri Channel delivery are implemented. The retained
 `/control` WebSocket is a legacy per-projection compatibility proof. The
 target browser and future remote shape is one authenticated, multiplexed
@@ -11,6 +12,8 @@ and mutation, streamed `UpdateBatch` values and exact cursor acknowledgements.
 One physical WebSocket serves every view set belonging to that frontend-to-
 backend connection. Future relay delivery wraps the same application frames in
 an end-to-end encrypted circuit rather than creating another application API.
+Ordinary browser use selects the multiplexed connection; HTTP is an explicit
+loopback diagnostic comparison, never automatic fallback or a concurrent lane.
 
 ## Purpose And Scope
 
@@ -326,10 +329,13 @@ The next pull supplies the applied cursor and therefore acknowledges the prior
 batch. It remains the simplest headless, automation, debugging and
 low-frequency adapter.
 
-Long polling is not required to use WebSocket streaming. A client normally
-selects one coherent adapter instead of opening via HTTP and streaming over a
-socket, although the semantic ownership model does not make such a measured
-future transition impossible.
+Long polling is not required to use WebSocket streaming. The first-party web
+UI may select it explicitly on loopback for diagnostics and controlled A/B
+evidence, but does not expose transport in Settings, persist the selection or
+fall back automatically. One browser session selects one coherent adapter
+instead of opening calls through HTTP and streaming through a socket. A future
+measured handoff would require an explicit design rather than exploiting the
+fact that both adapters share semantic ownership.
 
 ### Browser WebSocket
 
@@ -339,6 +345,11 @@ capabilities and carries every typed operation plus all attached view streams
 on one socket. The preferred provisional route is `/api/v1/connect`; an
 implementing tactical may change the URL only while updating this topic and
 the application-view route record together.
+
+This is the ordinary browser product path. An explicitly selected loopback
+HTTP diagnostic session uses no WebSocket, and a normal WebSocket session uses
+no semantic HTTP calls. Legacy `/control` is neither path. There is no
+automatic fallback or hybrid HTTP-call/WebSocket-update mode.
 
 JSON text frames are the first diagnostic codec. A future binary codec is a
 connection negotiation that produces the same generated DTOs and reducer
@@ -509,6 +520,8 @@ Implementation should proceed in bounded slices:
    semantic state.
 3. Implement a new loopback-only versioned WebSocket adapter and generated
    TypeScript client alongside HTTP long polling and legacy `/control`.
+   Select WebSocket for ordinary browser use while retaining HTTP only as an
+   explicit loopback diagnostic mode.
 4. Prove WebSocket creation, update, attachment, exact post-reducer ack,
    multi-view-set fairness, reconnect and bounded failure through the same
    reducer traces as HTTP and Tauri.
@@ -546,7 +559,8 @@ Before WebSocket delivery is called implemented, prove:
 - prompt joined shutdown with calls, waits, pumps and acknowledgements active;
 - lower framing/request overhead than real-time long polling without worse
   application producer throughput or reset storms; and
-- current long polling remains green as a complete fallback.
+- current long polling remains green as an explicitly selected loopback
+  diagnostic adapter.
 
 Future relay claims additionally require opaque-relay inspection evidence,
 end-to-end authentication and encryption tests, replay/tamper rejection,
@@ -561,6 +575,10 @@ update this topic before changing any of these accepted decisions:
 - one semantic API across HTTP, WebSocket, Tauri and future relay delivery;
 - WebSocket directly supports calls and view-set creation;
 - one WebSocket multiplexes all view sets for one frontend/backend connection;
+- an ordinary browser session uses that WebSocket for every semantic call and
+  view update, with no automatic fallback or hybrid transport;
+- browser HTTP selection is explicit, loopback-only and diagnostic rather
+  than a visible or persisted product preference;
 - view-set identity is separate from connection-local stream identity;
 - neither identifier is an authorization token;
 - exact per-view-set cursor acknowledgement occurs only after application;

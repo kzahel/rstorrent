@@ -1,6 +1,6 @@
 # Tactical 060: Multiplexed Application WebSocket
 
-Status: Proposed.
+Status: Accepted; implementation not started.
 
 Topics: `application-connection-architecture`, `application-view-api`,
 `client-view-delivery-policy`, `client-surfaces`, `web-ui-design`,
@@ -10,16 +10,17 @@ Topics: `application-connection-architecture`, `application-view-api`,
 
 The browser currently implements `ApplicationViewClient` with one HTTP request
 per command or view-set mutation and a repeated long poll for each active view
-set. This is a complete and useful fallback, but it creates avoidable request
-traffic at real-time cadence and does not exercise the accepted connection
-architecture.
+set. This remains a useful diagnostic comparison, but it creates avoidable
+request traffic at real-time cadence and does not exercise the accepted
+connection architecture.
 
-Make one loopback WebSocket the default live-browser application connection.
+Make one loopback WebSocket the ordinary live-browser application connection.
 That socket directly negotiates the API, dispatches commands, opens, updates
 and closes view sets, and multiplexes every acknowledged view stream. Static
 web assets remain HTTP; torrent payload and file-content delivery do not enter
-the control connection. HTTP long polling remains a complete, explicitly
-selectable adapter for debugging, compatibility and low-frequency use.
+the control connection. HTTP long polling remains available only as a
+deliberately selected loopback diagnostic comparison, not a product setting,
+automatic fallback or second lane within a WebSocket session.
 
 This is the first implementation slice of
 [`application-connection-architecture.md`](../topics/application-connection-architecture.md).
@@ -30,8 +31,8 @@ relay.
 The stopping condition is a default live browser that performs all semantic
 application work through exactly one `/api/v1/connect` WebSocket, with bounded
 multiplexing, exact cursor acknowledgement, generation-safe reconnect,
-explicit HTTP fallback, deterministic browser and gateway evidence, and a
-recorded paired transport smoke.
+an explicit diagnostic HTTP comparison, deterministic browser and gateway
+evidence, and a recorded paired transport smoke.
 
 ## Current-State Evidence
 
@@ -86,10 +87,13 @@ recorded paired transport smoke.
 - Pending command calls are failed on disconnect and are never automatically
   replayed. Their semantic `request_id`, not the connection's `call_id`, owns
   explicit retry and idempotency.
-- The default `?live=...` browser path selects WebSocket. An explicit
-  `transport=http` selects the complete current HTTP adapter. There is no
-  silent automatic fallback that could hide a broken WebSocket path;
-  `poll_ms` is valid only for the HTTP selection.
+- The ordinary `?live=...` browser path selects WebSocket. A deliberate
+  loopback-only `transport=http` query selects the complete current HTTP
+  adapter for diagnostics and controlled A/B evidence. It is not exposed in
+  Settings, persisted or selected automatically; `poll_ms` is valid only with
+  that diagnostic selection.
+- One browser session selects exactly one coherent adapter. It never opens a
+  hybrid HTTP-call/WebSocket-update path or keeps both consumers active.
 - Legacy `/control`, the current Tauri adapter and headless HTTP callers remain
   functional while the new endpoint lands.
 
@@ -103,9 +107,9 @@ recorded paired transport smoke.
 - Add connection-generation, call, attachment, fairness, byte-budget,
   heartbeat, cancellation and takeover owners to the gateway.
 - Implement `WebSocketApplicationViewClient` behind the existing TypeScript
-  interface and make it the default live-browser adapter.
-- Preserve explicit HTTP long polling and prove semantic parity across the two
-  browser adapters.
+  interface and make it the ordinary live-browser adapter.
+- Preserve HTTP long polling as a loopback-only diagnostic override and prove
+  semantic parity across the two explicitly selected browser adapters.
 - Add bounded metrics and a paired transport smoke that identifies request,
   frame, byte, reset and queue costs.
 - Update the owning topics, generated-contract drift checks and capability
@@ -124,6 +128,8 @@ recorded paired transport smoke.
 - No Android/UniFFI migration, legacy `/control` removal or HTTP route removal.
 - No cross-tab `SharedWorker` connection, persisted view-set IDs or automatic
   command replay.
+- No automatic transport fallback, hybrid HTTP/WebSocket session, visible
+  transport setting or remote HTTP override.
 - No cadence-profile implementation, projection/reset-storm optimization or
   engine throughput policy change. The independent cadence topic remains the
   owner of requested delivery frequency.
@@ -607,11 +613,18 @@ reducer failure leaves the batch unacknowledged and closes that stream rather
 than requesting later data. `close()` stops reconnect, rejects pending work,
 awaits stream cleanup and performs a bounded normal socket close.
 
-`startLiveInspection` selects this adapter by default. `transport=http` selects
-`HttpApplicationClient`; `poll_ms` with WebSocket is rejected as a
-configuration error. Browser URL validation remains loopback HTTP because the
+`startLiveInspection` selects this adapter for ordinary use. The deliberate
+loopback-only `transport=http` diagnostic query selects
+`HttpApplicationClient`; `poll_ms` without that exact selection is rejected as
+a configuration error. Neither option appears in Settings or persisted client
+state. Browser URL validation remains loopback HTTP because the WebSocket
 adapter derives `ws://host/api/v1/connect` internally. Static application
 assets and the initial page remain ordinary HTTP.
+
+Transport selection is immutable for the lifetime of `LiveApplication`.
+Changing it requires a page reload and creates fresh client ownership; no
+view-set handoff, concurrent drain or automatic failover is implied. The
+diagnostic query is unsupported for future relayed or other remote sessions.
 
 ## Reference Findings
 
@@ -684,7 +697,8 @@ framing, limits, relay protocol or compatibility policy.
 5. Add the fair outbound scheduler, worst-case byte reservation, heartbeat,
    metrics and large-frame proof.
 6. Implement and unit-test `WebSocketApplicationViewClient`, then make it the
-   default live-browser adapter with explicit HTTP selection.
+   ordinary live-browser adapter with an explicit loopback diagnostic HTTP
+   selection.
 7. Run semantic trace parity, reconnect/takeover, browser, controlled live and
    paired transport-performance evidence. Update all owning documents and
    commit reasonable independently green slices.
@@ -732,8 +746,9 @@ framing, limits, relay protocol or compatibility policy.
   observes distinct view-set and stream IDs on the same socket.
 - Forced socket loss resumes from the last applied cursor; a shortened lease
   forces the existing fresh-open path. Reducer failure emits no ack.
-- `transport=http&poll_ms=100` retains the complete current browser suite and
-  records its expected request traffic.
+- `transport=http&poll_ms=100` deliberately selects the complete diagnostic
+  HTTP browser suite and records its expected request traffic. No test relies
+  on automatic fallback or simultaneous transports.
 - The existing controlled libtorrent-seeded browser transfer proves exact
   payload, peer/piece/file/disk observation, command receipts, lease and clean
   shutdown under WebSocket delivery.
@@ -759,9 +774,10 @@ final exact payload hash and cleanup outcome
 Add an opt-in paired 1 GiB `general`-view smoke on the calibrated MacBook using
 the same deterministic torrent, pinned libtorrent seeder and run order for
 HTTP and WebSocket browser clients. Report throughput and adapter costs; do
-not establish a new hard floor from one run. Tactical `057` remains owner of
-hardware gates, and later retained calibration may promote a stable
-browser-attached ratio there.
+not establish a new hard floor from one run. The HTTP cohort is an explicit
+diagnostic A/B run, not a product default or recovery route. Tactical `057`
+remains owner of hardware gates, and later retained calibration may promote a
+stable browser-attached ratio there.
 
 ### Commands
 
@@ -807,9 +823,10 @@ transport evidence.
 This tactical is complete when the default loopback web UI uses one bounded
 multiplexed WebSocket for all of its application calls and view sets, exact
 acknowledgement and reconnect/takeover proofs are green, HTTP remains an
-explicit complete fallback, Tauri behavior is unchanged over the shared ack
-core, the controlled browser and paired transport evidence is recorded, the
-owning topics are current, and each landed slice is committed.
+explicit loopback diagnostic comparison with no automatic or hybrid path,
+Tauri behavior is unchanged over the shared ack core, the controlled browser
+and paired transport evidence is recorded, the owning topics are current, and
+each landed slice is committed.
 
 Routine DTO extraction, gateway task ownership, generated client work, test
 fixtures and tuning within the declared bounds do not require more product

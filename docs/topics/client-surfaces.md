@@ -77,8 +77,10 @@ Their transports differ:
 
 - Tauri uses native commands for request/response and an ordered Channel with
   explicit post-application acknowledgement for low-latency view updates.
-- The browser initially uses bounded authenticated HTTP polling and may attach
-  an authenticated WebSocket to the same retained view set and cursor.
+- The browser ordinarily uses one authenticated multiplexed WebSocket for all
+  semantic calls and acknowledged view updates. Bounded HTTP long polling is
+  an explicitly selected loopback diagnostic comparison only; it is not a
+  visible preference, automatic fallback or concurrent second lane.
 
 Transport reuse is not an end in itself. A local desktop product does not open
 a listener, allocate a port, serialize through a socket, or acquire network
