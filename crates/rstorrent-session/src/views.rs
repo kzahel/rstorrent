@@ -1464,36 +1464,46 @@ impl ViewHub {
         })
     }
 
-    pub(crate) fn has_live_speed_interest(&self) -> bool {
+    pub(crate) fn speed_tick_interval(&self) -> Option<Duration> {
         let Ok(mut hub) = self.inner.lock() else {
-            return false;
+            return None;
         };
         hub.subscribers.retain(|_, weak| weak.strong_count() != 0);
-        if hub
+        let direct = hub
             .subscribers
             .values()
             .filter_map(Weak::upgrade)
-            .any(|subscriber| {
-                subscriber.spec.projection == ViewProjection::Speed
-                    && matches!(
-                        subscriber.spec.selector,
-                        ViewSelector::SessionSpeed { range, .. } if range.is_live()
-                    )
+            .filter_map(|subscriber| {
+                if subscriber.spec.projection != ViewProjection::Speed {
+                    return None;
+                }
+                match subscriber.spec.selector {
+                    ViewSelector::SessionSpeed { range, .. } => range.tick_millis(),
+                    _ => None,
+                }
             })
-        {
-            return true;
-        }
+            .min();
         hub.retain_live_view_sets();
-        hub.view_sets.values().any(|view_set| {
-            view_set.view_specs().is_ok_and(|specs| {
-                specs.iter().any(|spec| {
-                    matches!(
-                        spec,
-                        crate::ViewSpec::SessionSpeed { range, .. } if range.is_live()
-                    )
+        let leased = hub
+            .view_sets
+            .values()
+            .filter_map(|view_set| {
+                view_set.view_specs().ok().and_then(|specs| {
+                    specs
+                        .iter()
+                        .filter_map(|spec| match spec {
+                            crate::ViewSpec::SessionSpeed { range, .. } => range.tick_millis(),
+                            _ => None,
+                        })
+                        .min()
                 })
             })
-        })
+            .min();
+        direct
+            .into_iter()
+            .chain(leased)
+            .min()
+            .map(Duration::from_millis)
     }
 
     pub(crate) fn speed_interest_notify(&self) -> Arc<Notify> {
@@ -4274,7 +4284,9 @@ mod tests {
         DiagnosticValue, MAX_DIAGNOSTIC_EVENTS, MAX_DIAGNOSTIC_PATCH_EVENTS, category,
     };
     use crate::tracker_views::TrackerViewModel;
-    use crate::{ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState};
+    use crate::{
+        ServiceSnapshot, SpeedMetric, SpeedRange, StorageState, TorrentSnapshot, TorrentState,
+    };
 
     fn snapshot(revision: u64, piece_count: u32) -> ServiceSnapshot {
         ServiceSnapshot {
@@ -4310,6 +4322,44 @@ mod tests {
             },
             diagnostics: None,
         }
+    }
+
+    fn speed_spec(range: SpeedRange) -> SubscriptionSpec {
+        SubscriptionSpec {
+            selector: ViewSelector::SessionSpeed {
+                range,
+                metrics: vec![SpeedMetric::PayloadReceived],
+            },
+            projection: ViewProjection::Speed,
+            delivery: DeliveryPolicy {
+                min_interval_millis: 0,
+                max_queue_bytes: 64 * 1024,
+            },
+            diagnostics: None,
+        }
+    }
+
+    #[test]
+    fn speed_clock_uses_the_fastest_interested_live_range() {
+        let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
+        assert_eq!(hub.speed_tick_interval(), None);
+        let historical = hub
+            .subscribe(speed_spec(SpeedRange::Hours24))
+            .expect("historical subscription");
+        assert_eq!(hub.speed_tick_interval(), None);
+        let short = hub
+            .subscribe(speed_spec(SpeedRange::Minutes2))
+            .expect("short subscription");
+        assert_eq!(hub.speed_tick_interval(), Some(Duration::from_millis(500)));
+        let recent = hub
+            .subscribe(speed_spec(SpeedRange::Seconds30))
+            .expect("recent subscription");
+        assert_eq!(hub.speed_tick_interval(), Some(Duration::from_millis(100)));
+        drop(recent);
+        assert_eq!(hub.speed_tick_interval(), Some(Duration::from_millis(500)));
+        drop(short);
+        drop(historical);
+        assert_eq!(hub.speed_tick_interval(), None);
     }
 
     fn tracker_snapshot(status: TrackerRuntimeStatus, attempts: u32) -> TrackerRuntimeSnapshot {

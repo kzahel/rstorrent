@@ -166,6 +166,15 @@ impl SpeedRange {
             Self::Seconds30 | Self::Minutes2 | Self::Minutes10 | Self::Hour1
         )
     }
+
+    pub(crate) const fn tick_millis(self) -> Option<u64> {
+        match self {
+            Self::Seconds30 => Some(100),
+            Self::Minutes2 => Some(500),
+            Self::Minutes10 | Self::Hour1 => Some(1_000),
+            Self::Hours24 | Self::Days30 | Self::Years2 => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -730,12 +739,12 @@ impl SpeedHistoryRuntime {
             persistence.set_missed_tick_behavior(MissedTickBehavior::Skip);
             persistence.tick().await;
             loop {
-                if views.has_live_speed_interest() {
+                if let Some(tick) = views.speed_tick_interval() {
                     tokio::select! {
                         biased;
                         _ = task_cancellation.cancelled() => break,
                         _ = persistence.tick() => persist_history(&history, writer.as_ref()),
-                        _ = tokio::time::sleep(Duration::from_millis(100)) => {
+                        _ = tokio::time::sleep(tick) => {
                             let _ = views.publish_speed_tick();
                         }
                     }
