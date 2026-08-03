@@ -57,7 +57,8 @@ use crate::peer_socket::{
 use crate::selective_storage::{
     DescriptorStorage, PreparedFileHash, ResumedStorage, SelectiveHashPlan, SelectiveStorage,
     SelectiveStorageError, SelectiveWriteJob, remove_selective_part_if_present,
-    remove_selective_staging_if_present,
+    remove_selective_staging_if_present, torrent_storage_paths_for_output,
+    validate_publication_name,
 };
 use crate::storage::{
     StagingFile, StagingHashPlan, StagingWritePlan, StorageError, VERIFICATION_CHUNK_LENGTH,
@@ -198,7 +199,9 @@ pub struct MagnetDownloadConfig {
 #[derive(Clone, Debug)]
 pub struct ResumableMagnetDownloadConfig {
     pub magnet: String,
-    pub output_path: PathBuf,
+    /// Selected containing directory. Verified multi-file metadata supplies
+    /// the recognizable publication directory beneath this root.
+    pub storage_root: PathBuf,
     pub network: NetworkConfig,
     pub resource_limits: DownloadResourceLimits,
     pub skip_files: Vec<usize>,
@@ -5056,6 +5059,7 @@ async fn run_resumable_magnet_download(
                 "stored metadata does not match the magnet identity".to_owned(),
             ));
         }
+        validate_publication_name(&metainfo.name).map_err(DownloadError::SelectiveStorage)?;
         let content_dht = if metainfo.private {
             control.emit(DownloadActivityEvent::DhtDisabledForPrivateTorrent);
             None
@@ -5069,8 +5073,13 @@ async fn run_resumable_magnet_download(
             content_dht,
         )
         .await?;
+        let output_path = if descriptors.is_some() {
+            PathBuf::new()
+        } else {
+            config.storage_root.join(&metainfo.name)
+        };
         let content_config = ContentDownloadConfig {
-            output_path: config.output_path,
+            output_path,
             max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
             swarm_config: config.resource_limits.swarm_config(),
             skip_files: config.skip_files,
@@ -5097,12 +5106,13 @@ async fn run_resumable_magnet_download(
         TorrentPeerCoordinator::from_magnet(&magnet, config.network, control.clone(), dht).await?;
     let result = async {
         let (raw_info, metainfo) = peers.acquire_metadata(magnet.info_hash).await?;
+        validate_publication_name(&metainfo.name).map_err(DownloadError::SelectiveStorage)?;
         if let Err(message) = checkpoints.metadata_verified(&raw_info) {
             peers.close_current(None)?;
             return Err(DownloadError::Checkpoint(message));
         }
         let content_config = ContentDownloadConfig {
-            output_path: config.output_path,
+            output_path: config.storage_root.join(&metainfo.name),
             max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
             swarm_config: config.resource_limits.swarm_config(),
             skip_files: config.skip_files,
@@ -8127,8 +8137,11 @@ async fn run_selective_download(
             None,
         ),
         (None, Some(resume)) => {
-            let (storage, resumed) = SelectiveStorage::resume(
-                config.output_path.clone(),
+            let paths =
+                torrent_storage_paths_for_output(config.output_path.clone(), metainfo.info_hash)
+                    .map_err(DownloadError::SelectiveStorage)?;
+            let (storage, resumed) = SelectiveStorage::resume_with_paths(
+                paths,
                 &metainfo,
                 layout.clone(),
                 selection,

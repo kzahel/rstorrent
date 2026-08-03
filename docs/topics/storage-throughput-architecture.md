@@ -388,6 +388,15 @@ changes are infrequent control operations and may use targeted fences:
   these operations change handle or path identity. They are not ordinary
   per-block barriers.
 
+Tactical [`062`](../tactical/062-user-visible-publication-layout.md) now gives
+path identity an engine-owned plan: the final multi-file tree uses the
+verified recognizable torrent name, while staging and part artifacts use the
+full info hash. For path storage the session separately persists whether it
+owns no artifacts, only internal staging, a published tree, or the legacy hash
+layout. That ownership boundary lets joined removal clean exact artifacts
+without deleting an unrelated named destination that previously caused a
+collision.
+
 Libtorrent also treats file-priority changes as asynchronous fenced disk jobs
 and documents that changing an already-created file to skipped does not move
 it into the part file. RSTorrent may choose different product semantics later,

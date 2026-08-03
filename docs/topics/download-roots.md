@@ -5,6 +5,8 @@ Topic: `download-roots`
 Status: Product behavior accepted in maintainer discussion on 2026-08-03 and
 implemented for the macOS code paths and initial native Linux adapter in
 [`061-user-selected-download-roots.md`](../tactical/061-user-selected-download-roots.md).
+[`062-user-visible-publication-layout.md`](../tactical/062-user-visible-publication-layout.md)
+implements recognizable multi-file publication beneath those roots.
 Fresh desktop and manual-WebUI profiles no longer install an implicit
 app-data-backed payload root. The shared add flow requires a chosen folder,
 retains a torrent-specific opaque root ID, and provides durable default,
@@ -297,10 +299,11 @@ matching content through the ordinary integrity path. Automatic suffixing,
 blind overwrite, and treating same-length files as verified are not accepted
 fallbacks.
 
-The current `<root>/<info-hash>` publication shape is bring-up behavior. A
-root tactical must state whether user-visible naming is included or remains a
-bounded follow-up; root selection alone must not be described as the completed
-download-destination product if hash-only names remain.
+Tactical 062 replaces the former `<root>/<info-hash>` bring-up shape for new
+multi-file downloads. The verified safe metainfo name is durable and becomes
+the visible directory; incomplete staging and part artifacts retain hidden
+full-info-hash names. Durable ownership prevents a destination conflict from
+making an unrelated existing directory eligible for managed deletion.
 
 ## JSTorrent Product Cheat Sheet
 
@@ -364,8 +367,7 @@ still missing. Implement and validate the Windows picker separately. Keep
 first-root, stable-ID, default, repair, and per-torrent semantics identical
 while allowing native capability handling to differ.
 
-The next product slice should address user-visible publication layout because
-selected roots still contain the existing hash-named bring-up layout. Do not
-fold the pending magnet metadata/file-selection transition into that work.
-Open its later tactical only after root selection is established and the
-pending-intake ownership can be designed from the verified metadata boundary.
+Tactical 062 completes the user-visible multi-file publication-layout slice.
+The later magnet metadata/file-selection transition remains separate; open its
+tactical only when that application-view work is authorized and design the
+pending-intake owner from the verified metadata boundary.

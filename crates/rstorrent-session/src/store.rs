@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use rstorrent_engine::dht::DhtSnapshot;
-use rstorrent_engine::{PreparedFileHash, plan_descriptor_storage};
+use rstorrent_engine::{PreparedFileHash, plan_descriptor_storage, validate_publication_name};
 use rstorrent_protocol::bencode::MAX_BENCODE_INPUT_LENGTH;
 use rstorrent_protocol::dht::{DhtEndpoint, DhtIp, NodeContact, NodeId};
 use rstorrent_protocol::magnet::Magnet;
@@ -19,7 +19,7 @@ use crate::control::{
 };
 use crate::have::{HaveError, HaveState};
 
-const SCHEMA_VERSION: i64 = 5;
+const SCHEMA_VERSION: i64 = 6;
 const DATABASE_FILENAME: &str = "session.db";
 const MAX_RECEIPTS: i64 = 1024;
 pub const MAX_STORAGE_ROOTS: usize = 32;
@@ -70,6 +70,26 @@ pub struct ConfiguredStorageRoot {
 pub enum StorageRootLocation {
     Path(PathBuf),
     PlatformCapability,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ManagedArtifactState {
+    Legacy,
+    None,
+    Staging,
+    Published,
+}
+
+impl ManagedArtifactState {
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "legacy" => Some(Self::Legacy),
+            "none" => Some(Self::None),
+            "staging" => Some(Self::Staging),
+            "published" => Some(Self::Published),
+            _ => None,
+        }
+    }
 }
 
 impl ConfiguredStorageRoot {
@@ -127,6 +147,7 @@ pub struct ResumeRecord {
     pub storage_state: StorageState,
     pub desired_running: bool,
     pub raw_info: Option<Vec<u8>>,
+    pub publication_name: Option<String>,
     pub have: Option<HaveState>,
 }
 
@@ -138,6 +159,8 @@ pub struct RemovalRecord {
     pub policy: RemovalDataPolicy,
     pub state: RemovalState,
     pub raw_info: Option<Vec<u8>>,
+    pub publication_name: Option<String>,
+    pub managed_artifacts: ManagedArtifactState,
     pub error: Option<String>,
 }
 
@@ -536,7 +559,7 @@ impl SessionStore {
             .connection
             .query_row(
                 "SELECT magnet, storage_root, state, storage_state, raw_info,
-                        piece_count, have_state, desired_state
+                        publication_name, piece_count, have_state, desired_state
                  FROM torrents
                  WHERE info_hash = ?1",
                 [info_hash.as_slice()],
@@ -547,9 +570,10 @@ impl SessionStore {
                         row.get::<_, String>(2)?,
                         row.get::<_, String>(3)?,
                         row.get::<_, Option<Vec<u8>>>(4)?,
-                        row.get::<_, Option<i64>>(5)?,
-                        row.get::<_, Option<Vec<u8>>>(6)?,
-                        row.get::<_, String>(7)?,
+                        row.get::<_, Option<String>>(5)?,
+                        row.get::<_, Option<i64>>(6)?,
+                        row.get::<_, Option<Vec<u8>>>(7)?,
+                        row.get::<_, String>(8)?,
                     ))
                 },
             )
@@ -560,7 +584,7 @@ impl SessionStore {
         let storage_state = StorageState::parse(&row.3)
             .ok_or_else(|| StoreError::DurableState("invalid storage state".to_owned()))?;
         let skip_files = read_selection(&self.connection, &info_hash)?;
-        let have = match (row.5, row.6) {
+        let have = match (row.6, row.7) {
             (None, None) => None,
             (Some(piece_count), Some(bytes)) => {
                 let piece_count = bounded_piece_count(piece_count)?;
@@ -579,7 +603,7 @@ impl SessionStore {
             skip_files,
             state,
             storage_state,
-            desired_running: match row.7.as_str() {
+            desired_running: match row.8.as_str() {
                 "running" => true,
                 "paused" => false,
                 _ => {
@@ -589,6 +613,7 @@ impl SessionStore {
                 }
             },
             raw_info: row.4,
+            publication_name: row.5,
             have,
         })
     }
@@ -599,20 +624,23 @@ impl SessionStore {
         self.connection
             .query_row(
                 "SELECT r.operation_id, t.storage_root, r.data_policy, r.state,
-                        t.raw_info, r.error
+                        t.raw_info, t.publication_name, t.managed_artifacts,
+                        r.error
                  FROM removal_jobs r
                  JOIN torrents t ON t.info_hash = r.info_hash
                  WHERE r.info_hash = ?1",
                 [info_hash.as_slice()],
                 |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, String>(3)?,
-                        row.get::<_, Option<Vec<u8>>>(4)?,
-                        row.get::<_, Option<String>>(5)?,
-                    ))
+                    Ok(RemovalRow {
+                        operation_id: row.get(0)?,
+                        storage_root: row.get(1)?,
+                        data_policy: row.get(2)?,
+                        state: row.get(3)?,
+                        raw_info: row.get(4)?,
+                        publication_name: row.get(5)?,
+                        managed_artifacts: row.get(6)?,
+                        error: row.get(7)?,
+                    })
                 },
             )
             .optional()?
@@ -623,7 +651,8 @@ impl SessionStore {
     pub fn load_removals(&self) -> Result<Vec<RemovalRecord>, StoreError> {
         let mut statement = self.connection.prepare(
             "SELECT t.info_hash, r.operation_id, t.storage_root, r.data_policy,
-                    r.state, t.raw_info, r.error
+                    r.state, t.raw_info, t.publication_name,
+                    t.managed_artifacts, r.error
              FROM removal_jobs r
              JOIN torrents t ON t.info_hash = r.info_hash
              ORDER BY t.info_hash",
@@ -631,12 +660,16 @@ impl SessionStore {
         let rows = statement.query_map([], |row| {
             Ok((
                 row.get::<_, Vec<u8>>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, String>(4)?,
-                row.get::<_, Option<Vec<u8>>>(5)?,
-                row.get::<_, Option<String>>(6)?,
+                RemovalRow {
+                    operation_id: row.get(1)?,
+                    storage_root: row.get(2)?,
+                    data_policy: row.get(3)?,
+                    state: row.get(4)?,
+                    raw_info: row.get(5)?,
+                    publication_name: row.get(6)?,
+                    managed_artifacts: row.get(7)?,
+                    error: row.get(8)?,
+                },
             ))
         })?;
         let mut removals = Vec::new();
@@ -646,10 +679,7 @@ impl SessionStore {
                 .0
                 .try_into()
                 .map_err(|_| StoreError::DurableState("invalid info-hash length".to_owned()))?;
-            removals.push(removal_record(
-                &encode_info_hash(info_hash),
-                (row.1, row.2, row.3, row.4, row.5, row.6),
-            )?);
+            removals.push(removal_record(&encode_info_hash(info_hash), row.1)?);
         }
         Ok(removals)
     }
@@ -774,6 +804,8 @@ impl SessionStore {
                 "verified metadata does not match torrent identity".to_owned(),
             ));
         }
+        validate_publication_name(&metainfo.name)
+            .map_err(|error| StoreError::DurableState(error.to_string()))?;
         let have = HaveState::empty(expected_info_hash, metainfo.piece_count())?.encode();
         let transaction = self.connection.transaction()?;
         let revision = increment_revision(&transaction)?;
@@ -781,19 +813,21 @@ impl SessionStore {
         let updated = transaction.execute(
             "UPDATE torrents
              SET raw_info = ?2,
-                 piece_count = ?3,
-                 have_state = ?4,
+                 publication_name = ?3,
+                 piece_count = ?4,
+                 have_state = ?5,
                  state = CASE
                     WHEN desired_state = 'paused' THEN 'paused'
-                    ELSE ?5
+                    ELSE ?6
                  END,
-                 storage_state = ?6,
+                 storage_state = ?7,
                  error = NULL,
-                 updated_revision = ?7
+                 updated_revision = ?8
              WHERE info_hash = ?1",
             params![
                 expected_info_hash.as_slice(),
                 raw_info,
+                metainfo.name,
                 i64::try_from(metainfo.piece_count())
                     .map_err(|_| StoreError::DurableState("piece count overflow".to_owned()))?,
                 have,
@@ -903,6 +937,10 @@ impl SessionStore {
         let updated = transaction.execute(
             "UPDATE torrents
              SET storage_state = ?2,
+                 managed_artifacts = CASE
+                    WHEN ?2 = 'published' THEN 'published'
+                    ELSE 'staging'
+                 END,
                  state = CASE
                     WHEN desired_state = 'paused' THEN 'paused'
                     WHEN ?2 = 'published' THEN 'checking'
@@ -1026,7 +1064,8 @@ impl SessionStore {
         let revision_sql = sql_revision(revision)?;
         transaction.execute(
             "UPDATE torrents
-             SET state = ?2, storage_state = ?3, error = NULL,
+             SET state = ?2, storage_state = ?3,
+                 managed_artifacts = 'published', error = NULL,
                  updated_revision = ?4
              WHERE info_hash = ?1",
             params![
@@ -1217,7 +1256,12 @@ impl SessionStore {
         let revision_sql = sql_revision(revision)?;
         let updated = transaction.execute(
             "UPDATE torrents
-             SET state = ?2, storage_state = ?3, error = ?4,
+             SET state = ?2, storage_state = ?3,
+                 managed_artifacts = CASE
+                    WHEN ?3 = 'published' THEN 'published'
+                    ELSE managed_artifacts
+                 END,
+                 error = ?4,
                  updated_revision = ?5
              WHERE info_hash = ?1",
             params![
@@ -1361,6 +1405,15 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
                 raw_info BLOB CHECK (
                     raw_info IS NULL OR length(raw_info) <= 1048576
                 ),
+                publication_name TEXT CHECK (
+                    publication_name IS NULL OR
+                    length(publication_name) BETWEEN 1 AND 255
+                ),
+                managed_artifacts TEXT NOT NULL DEFAULT 'none' CHECK (
+                    managed_artifacts IN (
+                        'legacy', 'none', 'staging', 'published'
+                    )
+                ),
                 piece_count INTEGER CHECK (
                     piece_count IS NULL OR
                     (piece_count > 0 AND piece_count <= 26214)
@@ -1445,6 +1498,10 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
                 ),
                 raw_info BLOB CHECK (
                     raw_info IS NULL OR length(raw_info) <= 1048576
+                ),
+                publication_name TEXT CHECK (
+                    publication_name IS NULL OR
+                    length(publication_name) BETWEEN 1 AND 255
                 ),
                 piece_count INTEGER CHECK (
                     piece_count IS NULL OR
@@ -1553,6 +1610,30 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
              );
              INSERT INTO storage_settings(singleton, default_root, show_add_options)
              VALUES (1, NULL, 1);",
+        )?;
+        transaction.pragma_update(None, "user_version", 5)?;
+        transaction.commit()?;
+    }
+    if (1..=5).contains(&version) {
+        let transaction = connection.transaction()?;
+        if version != 1 {
+            transaction.execute(
+                "ALTER TABLE torrents ADD COLUMN publication_name TEXT
+                 CHECK (
+                    publication_name IS NULL OR
+                    length(publication_name) BETWEEN 1 AND 255
+                 )",
+                [],
+            )?;
+        }
+        transaction.execute(
+            "ALTER TABLE torrents ADD COLUMN managed_artifacts TEXT NOT NULL
+             DEFAULT 'legacy' CHECK (
+                managed_artifacts IN (
+                    'legacy', 'none', 'staging', 'published'
+                )
+             )",
+            [],
         )?;
         transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         transaction.commit()?;
@@ -1947,8 +2028,9 @@ fn add_magnet(
         .execute(
             "INSERT INTO torrents(
                 info_hash, magnet, storage_root, desired_state, state,
-                storage_state, created_revision, updated_revision
-             ) VALUES (?1, ?2, ?3, 'running', ?4, ?5, ?6, ?6)",
+                storage_state, managed_artifacts, created_revision,
+                updated_revision
+             ) VALUES (?1, ?2, ?3, 'running', ?4, ?5, 'none', ?6, ?6)",
             params![
                 magnet.info_hash.as_slice(),
                 canonical_magnet(&magnet),
@@ -2318,29 +2400,34 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
     })
 }
 
-fn removal_record(
-    torrent_id: &str,
-    row: (
-        String,
-        String,
-        String,
-        String,
-        Option<Vec<u8>>,
-        Option<String>,
-    ),
-) -> Result<RemovalRecord, StoreError> {
-    let policy = RemovalDataPolicy::parse(&row.2)
+struct RemovalRow {
+    operation_id: String,
+    storage_root: String,
+    data_policy: String,
+    state: String,
+    raw_info: Option<Vec<u8>>,
+    publication_name: Option<String>,
+    managed_artifacts: String,
+    error: Option<String>,
+}
+
+fn removal_record(torrent_id: &str, row: RemovalRow) -> Result<RemovalRecord, StoreError> {
+    let policy = RemovalDataPolicy::parse(&row.data_policy)
         .ok_or_else(|| StoreError::DurableState("invalid removal data policy".to_owned()))?;
-    let state = RemovalState::parse(&row.3)
+    let state = RemovalState::parse(&row.state)
         .ok_or_else(|| StoreError::DurableState("invalid removal state".to_owned()))?;
+    let managed_artifacts = ManagedArtifactState::parse(&row.managed_artifacts)
+        .ok_or_else(|| StoreError::DurableState("invalid managed artifact state".to_owned()))?;
     Ok(RemovalRecord {
         torrent_id: torrent_id.to_ascii_lowercase(),
-        operation_id: row.0,
-        storage_root: row.1,
+        operation_id: row.operation_id,
+        storage_root: row.storage_root,
         policy,
         state,
-        raw_info: row.4,
-        error: row.5,
+        raw_info: row.raw_info,
+        publication_name: row.publication_name,
+        managed_artifacts,
+        error: row.error,
     })
 }
 
@@ -2491,7 +2578,8 @@ mod tests {
     use sha1::{Digest, Sha1};
 
     use super::{
-        ConfiguredStorageRoot, PreparedFileRecord, SCHEMA_VERSION, SessionStore, StoreError,
+        ConfiguredStorageRoot, ManagedArtifactState, PreparedFileRecord, SCHEMA_VERSION,
+        SessionStore, StoreError,
     };
     use crate::{
         CONTROL_VERSION, Command, ErrorCode, RemovalDataPolicy, RemovalState, RequestEnvelope,
@@ -2825,6 +2913,8 @@ mod tests {
                  ALTER TABLE storage_roots DROP COLUMN kind;
                  ALTER TABLE storage_roots DROP COLUMN label;
                  ALTER TABLE torrents DROP COLUMN archived;
+                 ALTER TABLE torrents DROP COLUMN publication_name;
+                 ALTER TABLE torrents DROP COLUMN managed_artifacts;
                  PRAGMA user_version = 3;",
             )
             .expect("downgrade fixture to version-three shape");
@@ -2846,6 +2936,75 @@ mod tests {
             .expect("inspect removal table");
         assert_eq!(removal_table, 1);
         drop(connection);
+        drop(migrated);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn migrates_version_five_without_guessing_a_publication_name() {
+        let root = test_root("schema-v5-publication");
+        let configured = configured_root(&root);
+        let raw_info =
+            b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
+        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
+        let torrent_id = crate::control::encode_info_hash(info_hash);
+        let mut store =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-before-v5-migration".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
+                    storage_root: "downloads".to_owned(),
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add torrent");
+        store
+            .record_metadata(&torrent_id, raw_info)
+            .expect("record metadata");
+        let database_path = store.database_path().to_owned();
+        drop(store);
+
+        let connection = Connection::open(&database_path).expect("open raw database");
+        connection
+            .execute_batch(
+                "ALTER TABLE torrents DROP COLUMN publication_name;
+                 ALTER TABLE torrents DROP COLUMN managed_artifacts;
+                 PRAGMA user_version = 5;",
+            )
+            .expect("downgrade fixture to version-five shape");
+        drop(connection);
+
+        let mut migrated = SessionStore::open(&root, "default", &[configured]).expect("migrate v5");
+        let resume = migrated.load_resume(&torrent_id).expect("load legacy row");
+        assert_eq!(resume.raw_info.as_deref(), Some(raw_info.as_slice()));
+        assert_eq!(resume.publication_name, None);
+        migrated
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "remove-migrated-v5".to_owned(),
+                expected_revision: None,
+                command: Command::RemoveTorrent {
+                    torrent_id: torrent_id.clone(),
+                    data: RemovalDataPolicy::DeleteManaged,
+                },
+            })
+            .expect("begin migrated removal");
+        assert_eq!(
+            migrated
+                .load_removal(&torrent_id)
+                .expect("load migrated removal")
+                .managed_artifacts,
+            ManagedArtifactState::Legacy
+        );
+        let version: i64 = Connection::open(database_path)
+            .expect("inspect migrated database")
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .expect("read schema version");
+        assert_eq!(version, SCHEMA_VERSION);
         drop(migrated);
         fs::remove_dir_all(root).expect("remove test profile");
     }
@@ -3130,6 +3289,7 @@ mod tests {
         store.record_piece(&torrent_id, 0).expect("record piece");
         let resume = store.load_resume(&torrent_id).expect("load resume");
         assert_eq!(resume.raw_info.as_deref(), Some(raw_info.as_slice()));
+        assert_eq!(resume.publication_name.as_deref(), Some("test"));
         assert_eq!(resume.have.expect("have state").pieces(), &[true]);
         assert_eq!(
             store.snapshot().expect("snapshot").torrents[0].state,
@@ -3139,6 +3299,36 @@ mod tests {
         let wrong_id = "000102030405060708090a0b0c0d0e0f10111213";
         assert!(matches!(
             store.record_metadata(wrong_id, raw_info),
+            Err(StoreError::DurableState(_))
+        ));
+
+        let reserved_name = format!(
+            ".{}.rstorrent-staging",
+            "0123456789abcdef0123456789abcdef01234567"
+        );
+        let mut reserved_info = format!(
+            "d6:lengthi4e4:name{}:{}12:piece lengthi4e6:pieces20:",
+            reserved_name.len(),
+            reserved_name
+        )
+        .into_bytes();
+        reserved_info.extend_from_slice(b"aaaaaaaaaaaaaaaaaaaae");
+        let reserved_hash: [u8; 20] = Sha1::digest(&reserved_info).into();
+        let reserved_id = crate::control::encode_info_hash(reserved_hash);
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-reserved-name".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{reserved_id}"),
+                    storage_root: "downloads".to_owned(),
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add reserved-name source");
+        assert!(matches!(
+            store.record_metadata(&reserved_id, &reserved_info),
             Err(StoreError::DurableState(_))
         ));
         drop(store);

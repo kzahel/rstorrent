@@ -13,7 +13,7 @@ use rstorrent_engine::{
     DownloadError, DownloadResourceLimits, NetworkConfig, PreparedFileHash,
     ResumableMagnetDownloadConfig, ResumedStorage, download_magnet_metadata_with_dht,
     plan_descriptor_storage, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
-    selective_part_path, selective_staging_path, verify_prepared_descriptors,
+    torrent_storage_paths, verify_prepared_descriptors,
 };
 use rstorrent_protocol::metainfo::Metainfo;
 use tokio::task::JoinHandle;
@@ -29,8 +29,8 @@ use crate::diagnostics::{
 use crate::file_views::FileProgressModel;
 use crate::have::HaveState;
 use crate::store::{
-    ConfiguredStorageRoot, PreparedFileRecord, RemovalRecord, ResumeRecord, SessionStore,
-    StorageRootLocation, StoreError, StoredStorageRoot,
+    ConfiguredStorageRoot, ManagedArtifactState, PreparedFileRecord, RemovalRecord, ResumeRecord,
+    SessionStore, StorageRootLocation, StoreError, StoredStorageRoot,
 };
 use crate::tracker_views::TrackerViewModel;
 use crate::view_sets::{VIEW_SET_REAPER_INTERVAL_MILLIS, ViewSetLeaseReaper};
@@ -613,6 +613,7 @@ impl ApplicationService {
         })?;
         let metainfo = Metainfo::from_info_bytes(&raw_info)
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+        require_publication_name(resume.publication_name.as_deref(), &metainfo)?;
         let skip_files = resume
             .skip_files
             .into_iter()
@@ -658,6 +659,9 @@ impl ApplicationService {
         let raw_info = resume.raw_info.ok_or_else(|| {
             ApplicationError::Configuration("torrent metadata is not available".to_owned())
         })?;
+        let metainfo = Metainfo::from_info_bytes(&raw_info)
+            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+        require_publication_name(resume.publication_name.as_deref(), &metainfo)?;
         let initialize_storage = resume.storage_state == StorageState::None;
         let skip_files = resume
             .skip_files
@@ -670,7 +674,7 @@ impl ApplicationService {
             .map_or_else(Vec::new, |have| have.pieces().to_vec());
         let config = ResumableMagnetDownloadConfig {
             magnet: resume.magnet,
-            output_path: PathBuf::new(),
+            storage_root: PathBuf::new(),
             network: self.network,
             resource_limits: self.download_resource_limits,
             skip_files,
@@ -794,6 +798,9 @@ impl ApplicationService {
         })?;
         let metainfo = Metainfo::from_info_bytes(&raw_info)
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+        if let Some(publication_name) = removal.publication_name.as_deref() {
+            require_publication_name(Some(publication_name), &metainfo)?;
+        }
         let plan = plan_descriptor_storage(&metainfo, &[], &[])
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
         Ok(PlatformRemovalPlan {
@@ -964,8 +971,14 @@ impl ApplicationService {
                 match self.storage_roots.get(&removal.storage_root).cloned() {
                     Some(StorageRootLocation::Path(root)) => {
                         let owned_torrent_id = torrent_id.to_owned();
+                        let publication_name = removal.publication_name.clone();
                         match tokio::task::spawn_blocking(move || {
-                            delete_path_artifacts(&root, &owned_torrent_id)
+                            delete_path_artifacts(
+                                &root,
+                                &owned_torrent_id,
+                                publication_name.as_deref(),
+                                removal.managed_artifacts,
+                            )
                         })
                         .await
                         {
@@ -1069,6 +1082,13 @@ impl ApplicationService {
                 )?;
                 return Ok(());
             }
+            if resume.publication_name.as_deref() != Some(metainfo.name.as_str()) {
+                self.store_mut()?.mark_needs_repair(
+                    torrent_id,
+                    "stored publication name is missing or does not match verified metadata",
+                )?;
+                return Ok(());
+            }
         }
         let root = match self.storage_roots.get(&resume.storage_root).cloned() {
             Some(root) => root,
@@ -1137,7 +1157,7 @@ impl ApplicationService {
             .map_or_else(Vec::new, |have| have.pieces().to_vec());
         let config = ResumableMagnetDownloadConfig {
             magnet: resume.magnet,
-            output_path: root.join(torrent_id),
+            storage_root: root,
             network: self.network,
             resource_limits: self.download_resource_limits,
             skip_files,
@@ -1285,15 +1305,42 @@ impl Drop for ApplicationService {
     }
 }
 
-fn delete_path_artifacts(root: &Path, torrent_id: &str) -> Result<(), ApplicationError> {
-    let output = root.join(torrent_id);
-    let staging = selective_staging_path(&output)
-        .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-    let part = selective_part_path(&output)
-        .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-    remove_managed_directory(&output)?;
-    remove_managed_directory(&staging)?;
-    remove_managed_file(&part)?;
+fn delete_path_artifacts(
+    root: &Path,
+    torrent_id: &str,
+    publication_name: Option<&str>,
+    managed_artifacts: ManagedArtifactState,
+) -> Result<(), ApplicationError> {
+    match managed_artifacts {
+        ManagedArtifactState::None => {}
+        ManagedArtifactState::Legacy => {
+            let output = root.join(torrent_id);
+            let staging = rstorrent_engine::selective_staging_path(&output)
+                .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+            let part = rstorrent_engine::selective_part_path(&output)
+                .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+            remove_managed_directory(&output)?;
+            remove_managed_directory(&staging)?;
+            remove_managed_file(&part)?;
+        }
+        ManagedArtifactState::Staging | ManagedArtifactState::Published => {
+            let publication_name = publication_name.ok_or_else(|| {
+                ApplicationError::Configuration(
+                    "managed storage has no durable publication name".to_owned(),
+                )
+            })?;
+            let info_hash = crate::control::decode_info_hash(torrent_id).ok_or_else(|| {
+                ApplicationError::Configuration("invalid torrent identity".to_owned())
+            })?;
+            let paths = torrent_storage_paths(root, publication_name, info_hash)
+                .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+            if managed_artifacts == ManagedArtifactState::Published {
+                remove_managed_directory(&paths.output)?;
+            }
+            remove_managed_directory(&paths.staging)?;
+            remove_managed_file(&paths.part)?;
+        }
+    }
     Ok(())
 }
 
@@ -2338,6 +2385,7 @@ fn durable_view_state(
             let filesystem_content_base = filesystem_content_base(
                 storage_roots.get(&resume.storage_root),
                 &torrent.torrent_id,
+                resume.publication_name.as_deref(),
             )?;
             FileProgressModel::new(
                 metainfo,
@@ -2366,6 +2414,7 @@ fn durable_view_state(
 fn filesystem_content_base(
     storage_root: Option<&StorageRootLocation>,
     torrent_id: &str,
+    publication_name: Option<&str>,
 ) -> Result<Option<String>, ApplicationError> {
     let Some(StorageRootLocation::Path(root)) = storage_root else {
         return Ok(None);
@@ -2380,11 +2429,33 @@ fn filesystem_content_base(
             })?
             .join(root)
     };
-    root.join(torrent_id)
-        .into_os_string()
+    let path = if let Some(publication_name) = publication_name {
+        let info_hash = crate::control::decode_info_hash(torrent_id).ok_or_else(|| {
+            ApplicationError::Configuration("invalid torrent identity".to_owned())
+        })?;
+        torrent_storage_paths(&root, publication_name, info_hash)
+            .map_err(|error| ApplicationError::Configuration(error.to_string()))?
+            .output
+    } else {
+        root.join(torrent_id)
+    };
+    path.into_os_string()
         .into_string()
         .map(Some)
         .map_err(|_| ApplicationError::Configuration("storage path is not UTF-8".to_owned()))
+}
+
+fn require_publication_name(
+    publication_name: Option<&str>,
+    metainfo: &Metainfo,
+) -> Result<(), ApplicationError> {
+    if publication_name == Some(metainfo.name.as_str()) {
+        Ok(())
+    } else {
+        Err(ApplicationError::Configuration(
+            "stored publication name is missing or does not match verified metadata".to_owned(),
+        ))
+    }
 }
 
 #[derive(Debug)]
@@ -2502,14 +2573,17 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, UdpSocket};
 
-    use super::{ApplicationConfig, ApplicationService, handle_task_outcome};
+    use super::{
+        ApplicationConfig, ApplicationService, ManagedArtifactState, delete_path_artifacts,
+        handle_task_outcome,
+    };
     use crate::{
         CONTROL_VERSION, Command, ConfiguredStorageRoot, DeliveryPolicy, DiagnosticFilter,
         DiagnosticProfile, DiagnosticSeverity, OpenViewSetOptions, OpenViewSetRequest,
         ProgressDisposition, ProgressReason, RemovalDataPolicy, RemovalState, RequestEnvelope,
-        ResponseOutcome, SessionStore, SubscriptionSpec, TorrentState, ViewDeliveryPolicy,
-        ViewPatch, ViewProjection, ViewSelector, ViewSetError, ViewSetOwner, ViewSetUpdate,
-        ViewSnapshot, ViewSpec, ViewUpdatePayload,
+        ResponseOutcome, SessionStore, StorageState, SubscriptionSpec, TorrentState,
+        ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetError, ViewSetOwner,
+        ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdatePayload,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -3041,10 +3115,13 @@ mod tests {
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
+        store
+            .mark_storage_prepared(&torrent_id, StorageState::Published)
+            .expect("record published storage ownership");
         drop(store);
 
         let payload = root.join("payload");
-        let output = payload.join(&torrent_id);
+        let output = payload.join("test");
         let staging = payload.join(format!(".{torrent_id}.rstorrent-staging"));
         let part = payload.join(format!(".{torrent_id}.rstorrent-parts"));
         let sibling = payload.join("keep-me");
@@ -3082,6 +3159,112 @@ mod tests {
                 .is_empty()
         );
         service.dispatch(request).await.expect("idempotent replay");
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn staging_cleanup_preserves_an_unowned_final_destination() {
+        let root = test_root("staging-cleanup-conflict");
+        let payload = root.join("payload");
+        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let output = payload.join("named");
+        let staging = payload.join(format!(".{torrent_id}.rstorrent-staging"));
+        let part = payload.join(format!(".{torrent_id}.rstorrent-parts"));
+        fs::create_dir_all(&output).expect("create conflicting output");
+        fs::write(output.join("preserve"), b"unowned").expect("write conflicting output");
+        fs::create_dir_all(&staging).expect("create owned staging");
+        fs::write(staging.join("partial"), b"owned").expect("write staging");
+        fs::write(&part, b"owned").expect("write part");
+
+        delete_path_artifacts(
+            &payload,
+            torrent_id,
+            Some("named"),
+            ManagedArtifactState::Staging,
+        )
+        .expect("clean staging-owned artifacts");
+
+        assert_eq!(
+            fs::read(output.join("preserve")).expect("preserve conflicting output"),
+            b"unowned"
+        );
+        assert!(!staging.exists());
+        assert!(!part.exists());
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn delete_managed_removal_cleans_legacy_hash_named_artifacts() {
+        let root = test_root("remove-legacy-path");
+        let config = config(&root);
+        let raw_info = b"d5:filesld6:lengthi4e4:pathl8:file.bineee4:name5:named12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
+        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
+        let torrent_id = crate::control::encode_info_hash(info_hash);
+        let mut store = SessionStore::open(
+            &config.profile_root,
+            &config.profile_id,
+            &config.storage_roots,
+        )
+        .expect("open setup store");
+        store
+            .handle_durable(&add_request("add-remove-legacy-path", &torrent_id))
+            .expect("add torrent");
+        store
+            .record_metadata(&torrent_id, raw_info)
+            .expect("record metadata");
+        let database = store.database_path().to_owned();
+        drop(store);
+        let connection = Connection::open(database).expect("open raw database");
+        connection
+            .execute(
+                "UPDATE torrents
+                 SET publication_name = NULL, managed_artifacts = 'legacy'
+                 WHERE info_hash = ?1",
+                [info_hash.as_slice()],
+            )
+            .expect("clear publication name");
+        drop(connection);
+
+        let payload = root.join("payload");
+        let output = payload.join(&torrent_id);
+        let staging = payload.join(format!(".{torrent_id}.rstorrent-staging"));
+        let part = payload.join(format!(".{torrent_id}.rstorrent-parts"));
+        fs::create_dir_all(&output).expect("create legacy output");
+        fs::write(output.join("payload.bin"), b"payload").expect("write output");
+        fs::create_dir_all(&staging).expect("create legacy staging");
+        fs::write(staging.join("partial.bin"), b"partial").expect("write staging");
+        fs::write(&part, b"parts").expect("write part file");
+
+        let mut service = ApplicationService::open(config)
+            .await
+            .expect("open legacy service");
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "remove-legacy-with-data".to_owned(),
+                expected_revision: None,
+                command: Command::RemoveTorrent {
+                    torrent_id,
+                    data: RemovalDataPolicy::DeleteManaged,
+                },
+            })
+            .await
+            .expect("remove legacy torrent");
+        assert!(!output.exists());
+        assert!(!staging.exists());
+        assert!(!part.exists());
+        assert!(
+            service
+                .store_mut()
+                .expect("store")
+                .snapshot()
+                .expect("snapshot")
+                .torrents
+                .is_empty()
+        );
 
         service.shutdown().await.expect("shutdown");
         drop(service);
@@ -3156,6 +3339,9 @@ mod tests {
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
+        store
+            .mark_storage_prepared(&torrent_id, StorageState::Staging)
+            .expect("record staging ownership");
         drop(store);
         let part = root
             .join("payload")
@@ -3238,6 +3424,9 @@ mod tests {
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
         store
+            .mark_storage_prepared(&torrent_id, StorageState::Published)
+            .expect("record published storage ownership");
+        store
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "remove-before-restart".to_owned(),
@@ -3249,7 +3438,7 @@ mod tests {
             })
             .expect("persist pending removal");
         drop(store);
-        let output = root.join("payload").join(&torrent_id);
+        let output = root.join("payload").join("test");
         fs::create_dir_all(&output).expect("create interrupted output");
         fs::write(output.join("payload.bin"), b"payload").expect("write output");
 
@@ -3602,8 +3791,7 @@ mod tests {
     async fn startup_projects_verified_metadata_name() {
         let root = test_root("metadata-name");
         let configuration = config(&root);
-        let raw_info =
-            b"d6:lengthi4e4:name5:named12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
+        let raw_info = b"d5:filesld6:lengthi4e4:pathl8:file.bineee4:name5:named12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
         let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
         let torrent_id = super::encode_info_hash(info_hash);
         let configured_root = configuration.storage_roots[0].clone();
@@ -3643,6 +3831,35 @@ mod tests {
             panic!("expected torrent-list snapshot");
         };
         assert_eq!(torrents[0].display_name.as_deref(), Some("named"));
+
+        let files = service
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::Torrent {
+                    torrent_id: torrent_id.clone(),
+                },
+                projection: ViewProjection::Files,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 256 * 1024,
+                },
+                diagnostics: None,
+            })
+            .expect("files");
+        let update = files.next_update().await.expect("files snapshot");
+        let ViewUpdatePayload::Snapshot {
+            snapshot:
+                ViewSnapshot::Files {
+                    filesystem_content_base,
+                    ..
+                },
+        } = update.payload
+        else {
+            panic!("expected files snapshot");
+        };
+        assert_eq!(
+            filesystem_content_base.as_deref(),
+            root.join("payload").join("named").to_str()
+        );
 
         service.shutdown().await.expect("shutdown");
         drop(service);
@@ -3698,6 +3915,71 @@ mod tests {
             panic!("snapshot should succeed");
         };
         assert_eq!(snapshot.torrents[0].state, TorrentState::NeedsRepair);
+        assert_eq!(
+            fs::read_dir(root.join("payload"))
+                .expect("read empty payload root")
+                .count(),
+            0
+        );
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn legacy_metadata_without_publication_name_enters_repair() {
+        let root = test_root("legacy-publication-name");
+        let configuration = config(&root);
+        let raw_info = b"d5:filesld6:lengthi4e4:pathl8:file.bineee4:name5:named12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
+        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let configured_root = configuration.storage_roots[0].clone();
+        let mut store = SessionStore::open(
+            &configuration.profile_root,
+            &configuration.profile_id,
+            &[configured_root],
+        )
+        .expect("open store");
+        store
+            .handle_durable(&add_request("add", &torrent_id))
+            .expect("add");
+        store
+            .record_metadata(&torrent_id, raw_info)
+            .expect("record metadata");
+        let database = store.database_path().to_owned();
+        drop(store);
+
+        let connection = Connection::open(database).expect("open raw database");
+        connection
+            .execute(
+                "UPDATE torrents SET publication_name = NULL WHERE info_hash = ?1",
+                [info_hash.as_slice()],
+            )
+            .expect("clear publication name");
+        drop(connection);
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open service with legacy metadata");
+        let response = service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "snapshot".to_owned(),
+                expected_revision: None,
+                command: Command::Snapshot,
+            })
+            .await
+            .expect("snapshot");
+        let ResponseOutcome::Success { snapshot } = response.outcome else {
+            panic!("snapshot should succeed");
+        };
+        assert_eq!(snapshot.torrents[0].state, TorrentState::NeedsRepair);
+        assert!(
+            snapshot.torrents[0]
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("publication name"))
+        );
         assert_eq!(
             fs::read_dir(root.join("payload"))
                 .expect("read empty payload root")
@@ -3797,7 +4079,7 @@ mod tests {
         let crate::StorageRootLocation::Path(payload_root) = &configured_root.location else {
             unreachable!("test root is path-backed")
         };
-        let incomplete_output = payload_root.join(&torrent_id);
+        let incomplete_output = payload_root.join("root");
         fs::create_dir_all(&incomplete_output).expect("create incomplete output");
         fs::write(incomplete_output.join("preserve"), b"user artifact")
             .expect("write preserved artifact");
@@ -3806,6 +4088,7 @@ mod tests {
             .await
             .expect("open service with incomplete storage");
         let mut state = None;
+        let mut error = None;
         for sequence in 0..100 {
             tokio::task::yield_now().await;
             let response = service
@@ -3821,14 +4104,37 @@ mod tests {
                 panic!("snapshot should succeed");
             };
             state = Some(snapshot.torrents[0].state);
+            error = snapshot.torrents[0].error.clone();
             if state == Some(TorrentState::NeedsRepair) {
                 break;
             }
         }
         assert_eq!(state, Some(TorrentState::NeedsRepair));
+        assert!(
+            error
+                .as_deref()
+                .is_some_and(|error| error.contains("output already exists"))
+        );
         assert_eq!(
             fs::read(incomplete_output.join("preserve"))
                 .expect("read preserved incomplete artifact"),
+            b"user artifact"
+        );
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "remove-conflicted-torrent".to_owned(),
+                expected_revision: None,
+                command: Command::RemoveTorrent {
+                    torrent_id,
+                    data: RemovalDataPolicy::DeleteManaged,
+                },
+            })
+            .await
+            .expect("remove conflicted torrent");
+        assert_eq!(
+            fs::read(incomplete_output.join("preserve"))
+                .expect("preserve unowned conflicting destination"),
             b"user artifact"
         );
         service.shutdown().await.expect("shutdown");

@@ -10,7 +10,9 @@ storage. Tactical `052` now batches payload synchronization and have commits
 behind hash verification, and Tactical `054` retains that crash contract under
 independent write/hash execution. Tactical `040` adds schema version `4`,
 durable archive state, and an explicit restartable removal job spanning SQLite
-and path or SAF cleanup.
+and path or SAF cleanup. Tactical `061` advances the root registry to schema
+version `5`; Tactical `062` advances it to version `6` with a durable verified
+publication component and managed-artifact ownership.
 
 ## Scope
 
@@ -332,12 +334,16 @@ Tactical `040` implements that removal boundary. A torrent row remains the
 foreign-key authority while a bounded removal job records generation, data
 policy, stage, and error. Startup finishes pending path work before restoring
 running torrents and leaves platform work available for the Android service.
-Path cleanup derives only the hash-named output, staging, and part artifacts
-under the configured root; symlinks are unlinked rather than followed, absent
-artifacts are success, and siblings and the root are retained. SAF cleanup
-derives the final, staging, and part document names from verified metadata;
-Kotlin owns the persisted grant and provider calls, while Rust validates the
-operation generation before deleting the catalog row.
+For new multi-file torrents, path cleanup derives the verified named final
+directory and the full-info-hash staging and part artifacts under the
+configured root. A durable path-ownership state prevents an unowned
+destination that caused a collision from being deleted. Legacy schema-5 rows
+retain their old hash-layout cleanup plan. Symlinks are unlinked rather than
+followed, absent owned artifacts are success, and siblings and the root are
+retained. SAF cleanup derives the final, staging, and part document names from
+verified metadata; Kotlin owns the persisted grant and provider calls, while
+Rust now also requires the durable verified name and validates the operation
+generation before deleting the catalog row.
 
 Request receipts remain durable across schema evolution. Torrent snapshots
 stored before retention support replay with conservative defaults for absent
@@ -391,9 +397,10 @@ successful mutation unreadable after upgrade.
   in [`product-surfaces-and-migration.md`](product-surfaces-and-migration.md).
 - How storage roots are remapped or replaced across platform backup/restore
   when an opaque locator or grant is not transferable.
-- User-selected first-root, default-root, per-add, repair, and platform-picker
-  behavior is accepted in [`download-roots.md`](download-roots.md) but not yet
-  implemented outside the existing single-root Android SAF path.
+- User-selected first-root, default-root, per-add, repair, and macOS
+  platform-picker behavior plus recognizable multi-file publication are
+  implemented by Tacticals `061` and `062`. Linux and Windows picker adapters
+  and general Android multi-root presentation remain open.
 
 ## Implemented Evidence
 
@@ -434,6 +441,14 @@ extends that evidence to Android platform-capability storage:
   after provider rename but before SQLite completion; and
 - a deliberately revoked persisted grant restarted fail-closed without
   discarding the stable platform identity.
+
+[`../tactical/062-user-visible-publication-layout.md`](../tactical/062-user-visible-publication-layout.md)
+adds schema version `6`, atomically retains the verified multi-file
+publication component, and separates recognizable final ownership from
+full-info-hash staging/part ownership. Path create/resume, Files projection,
+collision handling, restart, and managed removal now share that durable plan;
+schema-5 hash-layout rows fail closed for resume and remain explicitly
+removable without automatic relocation.
 
 This evidence does not broaden into a general multi-torrent scheduler, stable
 public wire protocol, UI settings catalog, remote listener,

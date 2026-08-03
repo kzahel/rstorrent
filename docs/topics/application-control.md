@@ -100,6 +100,11 @@ root identity; it never supplies an ambient local path or open descriptor. The
 accepted first-add, default-root, local picker, and remote-presentation behavior
 is recorded in [`download-roots.md`](download-roots.md).
 
+Tactical `062` keeps publication naming behind this boundary. Verified
+metainfo and the selected root resolve a durable relative publication
+component inside the application/engine layers; no presentation command gains
+a local path, proposed filename, or infohash-layout switch.
+
 Authorization is transport context, not a user-supplied command field. A
 future remote transport must authenticate a principal, attach verified
 capabilities to dispatch, apply replay and rate limits, and redact sensitive

@@ -44,9 +44,10 @@ pub use peer_runtime::{
 pub use selective_storage::{
     DescriptorFile, DescriptorFileRole, DescriptorStorage, DescriptorStoragePlan,
     DescriptorStoragePlanFile, MaterializationReport, PreparedFileHash, ResumedStorage,
-    SelectiveStorage, SelectiveStorageError, SelectiveWriteStats, plan_descriptor_storage,
-    remove_selective_part_if_present, remove_selective_staging_if_present, selective_part_path,
-    selective_staging_path, verify_prepared_descriptors,
+    SelectiveStorage, SelectiveStorageError, SelectiveWriteStats, TorrentStoragePaths,
+    plan_descriptor_storage, remove_selective_part_if_present, remove_selective_staging_if_present,
+    selective_part_path, selective_staging_path, torrent_storage_paths, validate_publication_name,
+    verify_prepared_descriptors,
 };
 pub use tracker::{
     TrackerAnnounceEvent, TrackerNextAction, TrackerRuntimeRecordSnapshot, TrackerRuntimeSnapshot,
