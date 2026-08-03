@@ -3,10 +3,11 @@
 Topic: `application-connection-architecture`
 
 Status: Accepted direction with implementation specified by Tactical `060` but
-not started. HTTP long polling and
-acknowledged per-view-set Tauri Channel delivery are implemented. The retained
-`/control` WebSocket is a legacy per-projection compatibility proof. The
-target browser and future remote shape is one authenticated, multiplexed
+not started. HTTP long polling and acknowledged per-view-set Tauri Channel
+delivery are implemented. The retained `/control` WebSocket is a legacy
+per-projection proof scheduled for evidence migration and deletion in Tactical
+`060`. The target browser and future remote shape is one authenticated,
+multiplexed
 application connection that carries typed calls, commands, view-set creation
 and mutation, streamed `UpdateBatch` values and exact cursor acknowledgements.
 One physical WebSocket serves every view set belonging to that frontend-to-
@@ -43,9 +44,10 @@ views the client requests and how frequently semantic changes may be emitted.
 
 This topic records a future remote-compatibility requirement. It does not by
 itself authorize a production listener, relay service, pairing flow, account
-system, cryptographic dependency, stable public protocol or retirement of a
-current compatibility adapter. Each requires a bounded tactical and the
-security or migration decisions appropriate to it.
+system, cryptographic dependency or stable public protocol. Accepted Tactical
+`060` separately authorizes retirement of the inventoried RSTorrent gateway
+`/control` graph after replacement evidence is green; other adapter retirement
+still requires its own bounded tactical and migration decision.
 
 ## Terminology
 
@@ -349,7 +351,10 @@ the application-view route record together.
 This is the ordinary browser product path. An explicitly selected loopback
 HTTP diagnostic session uses no WebSocket, and a normal WebSocket session uses
 no semantic HTTP calls. Legacy `/control` is neither path. There is no
-automatic fallback or hybrid HTTP-call/WebSocket-update mode.
+automatic fallback or hybrid HTTP-call/WebSocket-update mode. Tactical `060`
+deletes the legacy route and direct-DOM client after the replacement proves
+equivalent useful origin, authentication, command, delivery and shutdown
+behavior.
 
 JSON text frames are the first diagnostic codec. A future binary codec is a
 connection negotiation that produces the same generated DTOs and reducer
@@ -527,11 +532,11 @@ Implementation should proceed in bounded slices:
    reducer traces as HTTP and Tauri.
 5. Measure request count, bytes, CPU, allocation, queue high water, resets and
    producer throughput against current HTTP and Tauri baselines.
-6. Unify the Tauri attachment owner and, when justified, replace per-stream
+6. Migrate useful legacy `/control` evidence, move any shared test helpers and
+   delete the old gateway frames, route, direct-DOM client and generated types.
+7. Unify the Tauri attachment owner and, when justified, replace per-stream
    Channels with one window-level multiplexed Channel without routing native
    calls through HTTP or JSON unnecessarily.
-7. Inventory and migrate every remaining legacy `/control`, old Tauri and
-   Android consumer before deleting compatibility code.
 8. Design and implement relay authentication/encryption as its own security
    campaign using the already-proven direct application frames.
 
@@ -560,7 +565,11 @@ Before WebSocket delivery is called implemented, prove:
 - lower framing/request overhead than real-time long polling without worse
   application producer throughput or reset storms; and
 - current long polling remains green as an explicitly selected loopback
-  diagnostic adapter.
+  diagnostic adapter;
+- the useful legacy origin, authentication, dispatch, delivery and shutdown
+  cases remain green against the replacement; and
+- `/control`, its generated wire types and the direct-DOM client are absent
+  after that evidence migrates.
 
 Future relay claims additionally require opaque-relay inspection evidence,
 end-to-end authentication and encryption tests, replay/tamper rejection,
@@ -579,6 +588,8 @@ update this topic before changing any of these accepted decisions:
   view update, with no automatic fallback or hybrid transport;
 - browser HTTP selection is explicit, loopback-only and diagnostic rather
   than a visible or persisted product preference;
+- the superseded RSTorrent `/control` protocol is deleted after its useful
+  evidence migrates to the new connection; it is not a compatibility surface;
 - view-set identity is separate from connection-local stream identity;
 - neither identifier is an authorization token;
 - exact per-view-set cursor acknowledgement occurs only after application;

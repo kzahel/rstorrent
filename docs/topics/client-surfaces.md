@@ -148,9 +148,10 @@ It preserves JSTorrent's information hierarchy without inheriting its source
 architecture and adapts one library/list/detail model from wide desktop to
 phone-sized browser layouts. Stable Rust torrent and peer views are now mapped
 through the new live application adapter. The older direct-DOM surface remains
-only where existing entry compatibility still requires it; it is no longer
-the proof path for new inspection work. The detailed direction and open
-choices live in
+only as the no-mode legacy gateway entry and is no longer a compatibility or
+proof target. Tactical `060` makes the modern named demo the no-mode root and
+deletes that direct-DOM client after replacement evidence is green. The
+detailed direction and open choices live in
 [`web-ui-design.md`](web-ui-design.md).
 
 The initial browser surface may prove the network transport on loopback with

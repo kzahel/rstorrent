@@ -32,7 +32,8 @@ The stopping condition is a default live browser that performs all semantic
 application work through exactly one `/api/v1/connect` WebSocket, with bounded
 multiplexing, exact cursor acknowledgement, generation-safe reconnect,
 an explicit diagnostic HTTP comparison, deterministic browser and gateway
-evidence, and a recorded paired transport smoke.
+evidence, a recorded paired transport smoke, and deletion of the superseded
+`/control` protocol and direct-DOM frontend after their evidence is migrated.
 
 ## Current-State Evidence
 
@@ -65,6 +66,35 @@ evidence, and a recorded paired transport smoke.
   first paired HTTP/WebSocket adapter smoke without redefining its engine
   baselines.
 
+## Legacy Retirement Inventory
+
+Repository and sibling-checkout inventory found no intended modern RSTorrent
+product consumer of the gateway `/control` contract:
+
+- the live React UI uses modern HTTP view sets today and migrates to
+  `/api/v1/connect`; current Tauri uses its in-process adapter, and RSTorrent
+  Android does not connect to the gateway route;
+- `clients/web/src/main.ts` still imports `legacy-main.ts` when no `live`,
+  `demo` or Tauri mode is selected. That direct-DOM client and
+  `websocket-client.ts` are the only shipped browser consumer;
+- `tests/interop/gateway_reactive_surface.py`,
+  `browser_reactive_surface.py` and `browser_diagnostics_surface.py`, their
+  TypeScript interop tests, gateway unit tests and validation fixtures retain
+  the legacy contract as historical evidence;
+- modern `gateway_view_set_surface.py`, `inspection-live.spec.ts` and the
+  controlled peer/file/tracker/disk/piece proofs already use the leased
+  application view API. Some modern Python harnesses import generic process or
+  fixture helpers from the older scripts but do not consume `/control`; those
+  helpers must move before the old scripts are deleted; and
+- JSTorrent also has endpoints named `/control`, but they belong to its
+  separate I/O-daemon protocol and checkout. RSTorrent gateway deletion must
+  not modify or claim to retire them.
+
+The gateway has no stable public compatibility promise. The legacy route is
+therefore a migration source, not a supported compatibility target. Useful
+origin, authentication, dispatch, bounded-stream and shutdown cases migrate
+to the new endpoint before deletion; historical tactical records remain.
+
 ## Stable Scenarios
 
 - One normal browser tab creates one physical application WebSocket regardless
@@ -94,14 +124,19 @@ evidence, and a recorded paired transport smoke.
   that diagnostic selection.
 - One browser session selects exactly one coherent adapter. It never opens a
   hybrid HTTP-call/WebSocket-update path or keeps both consumers active.
-- Legacy `/control`, the current Tauri adapter and headless HTTP callers remain
-  functional while the new endpoint lands.
+- Legacy `/control` remains functional only while the replacement and migrated
+  evidence land. The final green slice removes the route and direct-DOM
+  frontend. Current Tauri and headless HTTP callers remain functional.
+- A production browser bundle with no `live`, `demo` or Tauri mode loads the
+  existing modern `healthy-download` demo instead of a legacy gateway-connect
+  form.
 
 ## Scope
 
 - Define generated typed application operations, results, connection frames,
   errors and negotiated connection limits.
-- Add the loopback-only `/api/v1/connect` WebSocket beside legacy `/control`.
+- Add the loopback-only `/api/v1/connect` WebSocket temporarily beside legacy
+  `/control`, then delete the old route after equivalent evidence is green.
 - Extract one shared acknowledged-view-stream state machine used by the new
   WebSocket pumps and the current Tauri pump.
 - Add connection-generation, call, attachment, fairness, byte-budget,
@@ -112,6 +147,9 @@ evidence, and a recorded paired transport smoke.
   semantic parity across the two explicitly selected browser adapters.
 - Add bounded metrics and a paired transport smoke that identifies request,
   frame, byte, reset and queue costs.
+- Remove the legacy gateway frame types, handler, generated schemas,
+  TypeScript client, direct-DOM entry and superseded tests; preserve or move
+  generic harness helpers still used by modern proofs.
 - Update the owning topics, generated-contract drift checks and capability
   evidence.
 
@@ -125,7 +163,9 @@ evidence, and a recorded paired transport smoke.
   application socket.
 - No one-Channel-per-window Tauri migration. Tauri keeps its current invokes
   and per-stream Channels while sharing the extracted acknowledgement core.
-- No Android/UniFFI migration, legacy `/control` removal or HTTP route removal.
+- No Android/UniFFI migration or modern HTTP route removal. Deleting only the
+  inventoried RSTorrent gateway `/control` contract and its unreachable client
+  graph is in scope.
 - No cross-tab `SharedWorker` connection, persisted view-set IDs or automatic
   command replay.
 - No automatic transport fallback, hybrid HTTP/WebSocket session, visible
@@ -699,7 +739,10 @@ framing, limits, relay protocol or compatibility policy.
 6. Implement and unit-test `WebSocketApplicationViewClient`, then make it the
    ordinary live-browser adapter with an explicit loopback diagnostic HTTP
    selection.
-7. Run semantic trace parity, reconnect/takeover, browser, controlled live and
+7. Migrate useful legacy gateway/browser assertions, move shared harness
+   helpers, make the modern demo the no-mode root, then delete `/control`, its
+   generated DTOs and the unreachable direct-DOM client graph.
+8. Run semantic trace parity, reconnect/takeover, browser, controlled live and
    paired transport-performance evidence. Update all owning documents and
    commit reasonable independently green slices.
 
@@ -755,6 +798,24 @@ framing, limits, relay protocol or compatibility policy.
 - The 4,096-file fixture emits an approximately 1.5 MiB snapshot while a
   command is issued. Record snapshot encode/write duration and command-result
   latency; do not claim remote readiness from the loopback result.
+
+### Legacy retirement
+
+- Gateway tests prove `/api/v1/connect` replacements for the useful legacy
+  origin, authentication, dispatch, bounded delivery and joined-shutdown
+  cases before deleting their old assertions.
+- The production build contains no import of `legacy-main.ts`,
+  `websocket-client.ts` or the superseded application/subscription adapter.
+  The no-mode root renders the modern named demo.
+- Generated TypeScript and JSON schema contain the new application-connection
+  frames and no `GatewayClientMessage` or `GatewayServerMessage` declaration.
+- `GET /control` no longer upgrades and returns the router's ordinary not-found
+  response. Repository search finds no runtime or test reference to the
+  RSTorrent gateway route, except historical documentation explicitly naming
+  its retirement.
+- Modern browser, Tauri, HTTP diagnostic and Python interoperability harnesses
+  retain no import dependency on deleted legacy-only files. JSTorrent is
+  unchanged.
 
 ### Performance evidence
 
@@ -825,14 +886,16 @@ multiplexed WebSocket for all of its application calls and view sets, exact
 acknowledgement and reconnect/takeover proofs are green, HTTP remains an
 explicit loopback diagnostic comparison with no automatic or hybrid path,
 Tauri behavior is unchanged over the shared ack core, the controlled browser
-and paired transport evidence is recorded, the owning topics are current, and
-each landed slice is committed.
+and paired transport evidence is recorded, `/control` and the direct-DOM
+client graph are deleted after coverage migration, the owning topics are
+current, and each landed slice is committed.
 
 Routine DTO extraction, gateway task ownership, generated client work, test
 fixtures and tuning within the declared bounds do not require more product
 direction. Stop and request direction if evidence requires a production
 listener, relay/security design, new codec or dependency, public breaking
-contract, removal of an existing adapter, semantic cursor change, or
+contract, removal of an adapter other than the explicitly inventoried legacy
+`/control` graph, semantic cursor change, or
 application chunking that materially expands this slice. In particular, do
 not weaken the large-snapshot correctness or control-latency proof to avoid a
 separate framing decision.

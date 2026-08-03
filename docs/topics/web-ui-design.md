@@ -30,7 +30,9 @@ legacy Tauri entry with the same React inspection application using
 acknowledged in-process leased-view streaming. The browser still uses HTTP
 polling today; accepted Tactical `060` will replace its ordinary application
 path with one multiplexed WebSocket while retaining HTTP only as an explicit
-loopback diagnostic comparison. Tactical `049` completes the accepted
+loopback diagnostic comparison. It will then delete the superseded direct-DOM
+gateway entry and make the modern named demo the no-mode root. Tactical `049`
+completes the accepted
 global Logs design: a dedicated virtualized chronological console with
 structured expansion, separate capture and display filters, bottom-follow/
 new-record behavior, local clear, and no sorting or persistence. Tactical `050`

@@ -461,9 +461,11 @@ framing, ownership, resume and relay-compatible layering live in
 
 The exact authentication mechanism remains outside this topic. The current
 loopback `/control` WebSocket is the legacy per-projection proof and must not be
-silently evolved into the new connection. It may be retired after every
-consumer is inventoried; preserving its path is not a compatibility
-requirement.
+silently evolved into the new connection. Tactical `060`'s completed inventory
+found only the old direct-DOM frontend and superseded tests inside RSTorrent;
+it will delete them and the route after migrating useful evidence. Preserving
+the path is not a compatibility requirement. JSTorrent's unrelated I/O-daemon
+endpoint with the same path is outside this repository and decision.
 
 The local Tauri product maps these semantic calls to commands and later
 Channels. It does not bind a loopback port or serialize through HTTP merely to
