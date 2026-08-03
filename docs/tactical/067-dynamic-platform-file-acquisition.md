@@ -1,14 +1,16 @@
 # Tactical 067: Dynamic Platform File Acquisition
 
-Status: Proposed; awaiting maintainer review (2026-08-03).
+Status: Implemented and validated on the API 34 AVD (2026-08-03). Physical
+ChromeOS validation was authorized and attempted, but ARCVM ADB was
+disconnected; this is a recorded evidence gap rather than an implementation
+blocker.
 
 Topics: `android-saf-storage`, `client-persistence`, `download-correctness`,
 `download-roots`, `storage-throughput-architecture`, `capability-readiness`
 
 ## Review Decisions
 
-This tactical proposes the following decisions for maintainer review before
-implementation begins:
+The maintainer accepted the following decisions before implementation:
 
 - replace Android's complete startup descriptor manifest with per-file,
   asynchronous capability acquisition on cache misses;
@@ -26,8 +28,8 @@ implementation begins:
 - keep the existing joined publication/removal state machine, but replace
   descriptor-bearing confirmation with namespace-only acknowledgement and
   dynamic Rust reopen/verification; and
-- make AVD evidence the stopping condition. Physical ChromeOS/Android evidence
-  remains a separately authorized follow-up.
+- make AVD evidence the stopping condition. The maintainer later also
+  authorized physical ChromeOS/Android validation when a device was available.
 
 ## Motivation
 
@@ -137,8 +139,8 @@ selection, namespace transitions, and observed bounds are part of the slice.
   into part storage when a file becomes skipped.
 - A portable application command containing paths, SAF URIs, document IDs,
   descriptor numbers, or provider operations.
-- Physical Android or ChromeOS device mutation without a later explicit
-  authorization and the required testbed workflow.
+- Physical Android or ChromeOS behavior beyond the authorized validation run
+  and required testbed workflow.
 
 ## Reference Dossier
 
@@ -567,9 +569,8 @@ whole-process descriptors so a temporary platform handoff cannot be hidden.
 
 ## Staged Implementation And Logical Commits
 
-Implementation begins only after maintainer authorization of this tactical.
-The proposed slices are independently reviewable and each leaves the workspace
-green:
+Implementation began after maintainer authorization. The planned slices landed
+as independently reviewable commits and each left the workspace green:
 
 1. **Pool core and one-descriptor path handles.** Add logical keys, handle
    permits, LRU, single-flight, cancellation, metrics, and deterministic tests;
@@ -606,7 +607,7 @@ carry `Topic: android-saf-storage`.
 | Controlled path | A deterministic multi-file transfer and restart through the shared pool, plus the retained engine performance smoke. Exact payload hashes, publication, cleanup, pool counters, FD high water, and no material regression against the declared Tactical `057` floors. |
 | Controlled AVD | Metadata-only no-artifact proof; at least three simultaneous logical storage identities with at least 100 files each and a working set exceeding 40; live Skip/Normal and boundary materialization; interruption/restart; publication; grant-loss/repair; managed removal; exact hashes; descriptor and pending-request high waters. Network execution may remain serialized if the current application scheduler is single-active, but the storage-pool harness must interleave all identities. |
 | Repository | `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, Android Rust target checks, Gradle unit/instrumented tests, generated-binding checks, and documentation link/diff checks. |
-| Physical hardware | Not authorized or required for this tactical. Record as the next evidence step after a separately approved device session. |
+| Physical hardware | Authorized but not required for completion. The ChromeOS testbed doctor passed 9/9 checks; ARCVM ADB connection was refused, so no APK cycle ran. |
 
 The AVD resource report must show that increasing torrent file count does not
 increase startup descriptor count, owned storage descriptors never exceed 40,
@@ -625,7 +626,7 @@ Stop and request maintainer direction if implementation would require:
 - cloud/removable provider support or a weakened seekability/durability claim;
 - a descriptor limit above 40, provider concurrency above four, or queue above
   sixteen without controlled evidence;
-- a physical-device action; or
+- a physical-device action outside the authorization granted for this slice;
 - a change to the accepted publication, file-selection, durability, or
   product-root semantics.
 
@@ -641,7 +642,100 @@ starvation, optional advanced setting exposure, additional provider classes,
 and separately authorized physical Android/ChromeOS validation. None may add
 another descriptor cache or bypass the session-wide owner.
 
-## Evidence
+## Implementation Record
 
-No implementation or validation evidence yet. This tactical is awaiting
-maintainer review.
+The slice landed in four logical commits:
+
+- `521b82e` records the accepted dynamic SAF design and oracle dossier;
+- `bda612c` adds the bounded shared storage-file pool core;
+- `3cebed2` migrates path and platform selective storage, the part file,
+  durability, publication verification, selection, repair, removal, and
+  shutdown to lazy pooled handles; and
+- `9a86309` adds the UniFFI/Kotlin provider broker and product-path Android
+  validation harness.
+
+`ApplicationService` now owns one 40-permit pool for all path and platform
+storage. A permit remains attached to the actual Rust-owned descriptor until
+the last in-flight `Arc` drops, including after LRU eviction. The pool uses
+stable storage/generation/role keys, compatible-open single-flight, mode
+upgrade, generation invalidation, one resource-exhaustion retry, and joined
+shutdown. `SelectiveStorage` and `PartFile` retain logical references and
+acquire one handle only for an actual positioned read, write, hash, sync, or
+delete operation.
+
+The Android product no longer calls the legacy eager `startSaf` or
+descriptor-bearing publication confirmation path. Four `Dispatchers.IO`
+workers consume a bounded 16-envelope Rust channel, resolve the current
+persisted tree, open or create exactly one canonical document, and lend one
+`ParcelFileDescriptor`. Rust validates and duplicates it with close-on-exec;
+all torrent-coordinate I/O remains in Rust. Read-existing never creates,
+empty part storage is deleted idempotently, duplicate provider children are a
+typed name collision, and publication crosses only the torrent name before a
+fresh generation-scoped Rust verification.
+
+Root replacement pauses the affected active torrent, invalidates all cached
+capabilities, installs the new Kotlin locator, and resumes the former active
+torrent. Publication, unavailable storage, and managed removal invalidate
+the matching storage identity. An acquisition completing after invalidation
+is discarded before cache insertion.
+
+## Validation Evidence
+
+Repository validation passed:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace --all-targets -- -D warnings`;
+- `cargo test -p rstorrent-engine --lib -q`: 185 passed, 3 ignored;
+- `cargo test --workspace --exclude rstorrent-engine -q`, including 91
+  `rstorrent-session` tests and 6 `rstorrent-android` tests;
+- `experiments/android-engine-bootstrap/build.sh`: both locked Android Rust
+  targets, UniFFI generation, debug APK assembly, and Kotlin unit tests; and
+- Python bytecode validation for both Android runners.
+
+Deterministic pool evidence opens 10,000 logical keys representing 100
+torrent identities with 100 files each. The configured eight-handle test pool
+reported an eight-descriptor high water, retained eight cache entries, and
+evicted at least 9,992 entries. Separate tests cover compatible same-key
+single-flight, read-to-write upgrade, in-flight eviction retention,
+read-existing non-creation, stale completion after invalidation, late broker
+completion, and zero-handle joined shutdown. The fake platform selective test
+creates no provider artifact at construction, exercises payload and part
+routing plus hashing, renames staging, and verifies every published file
+through fresh dynamic opens.
+
+Three fresh `product-dynamic-saf` cycles passed on the API 34 ARM64
+`jstorrent-tablet` AVD. Each cycle acquired the persisted tree through the
+system picker, obtained metadata from the controlled pinned-libtorrent peer,
+downloaded through `AndroidApplicationClient` and the dynamic provider
+workers, published the exact `fixture` directory, and SHA-1 verified every
+non-padding file. Each rejected an info-hash output directory and proved the
+staging namespace, padding file, and empty part artifact were absent after
+publication. All test grants, files, APK state, reverse ports, seeds, and AVD
+processes were removed.
+
+The three pool resource records were identical: limit `40`, Rust-owned
+descriptor high water `6`, and platform pending-request high water `3` of the
+bounded `16`. Whole-process descriptor baselines were `106`, `107`, and `113`;
+the observed high water and final count were `137` in each run. The largest
+observed delta was `31`, within the 40 Rust-owned plus four temporary-provider
+envelope.
+
+Physical validation followed the required ChromeOS testbed workflow. The
+testbed doctor reported nine passed checks and no failures, including SSH,
+active user session, and writable rootfs. `chromeos adb-connect` then failed
+with connection refused at `127.0.0.1:5555`; ARCVM ADB was unavailable, so the
+physical APK cycle remains unclaimed.
+
+## Deliberate Evidence Limits
+
+The legacy fixed-descriptor APIs and Tactical 004/005 diagnostic harness
+remain only as bounded historical proof infrastructure; the product service
+does not call them. The new AVD profile proves the real all-Normal product
+path, provider acquisition, publication, lazy empty-part behavior, exact
+hashes, and resource bounds. Live Skip/Normal, interruption/restart,
+grant-loss repair, and removal retain deterministic/session coverage and the
+earlier durable SAF lifecycle evidence, but were not all repeated as separate
+dynamic-provider AVD profiles in this slice. Per-provider latency histograms
+and Disk-view exposure also remain diagnostic follow-up; the implemented
+snapshot exposes pool hits, misses, evictions, failures, owned descriptors,
+and pending-request high water without paths, URIs, IDs, or descriptors.

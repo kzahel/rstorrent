@@ -2,9 +2,11 @@
 
 This is the Tactical 004/005 integration harness. It packages the real
 `rstorrent-engine` behind generated UniFFI Kotlin bindings and gives one
-foreground service sole ownership of the native session. It is not a product
-UI. It supports the original app-private path-backed diagnostic and selective
-storage through an explicitly granted Android Storage Access Framework tree.
+foreground service sole ownership of the native session. It contains the
+current Compose product surface plus the original bounded diagnostic harness.
+It supports app-private path-backed diagnostics and both legacy proof and
+dynamic product storage through an explicitly granted Android Storage Access
+Framework tree.
 
 Build both locked Android ABIs and the debug APK:
 
@@ -37,6 +39,9 @@ python3 experiments/android-engine-bootstrap/run_bootstrap.py \
 python3 experiments/android-engine-bootstrap/run_bootstrap.py \
   --target chromeos --storage saf-internal --runs 3 --profile success
 python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target avd --storage saf-internal --runs 3 \
+  --profile product-dynamic-saf
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
   --target motox4 --storage saf-sdcard --runs 3 --profile success
 ```
 
@@ -47,6 +52,14 @@ picker, creates the Rust-generated document plan, waits for native
 `PREPARED`, publishes by provider rename, force-stops the process, reopens
 every final document in a fresh process, verifies exact length and SHA-1 in
 Rust, then removes the published and part documents and releases the grant.
+
+The `product-dynamic-saf` profile exercises the real application service. It
+grants a tree, adds a controlled loopback magnet, serves provider requests
+through the four Kotlin workers, performs payload I/O in Rust, publishes by
+name-only namespace acknowledgement, and verifies every non-padding file. It
+rejects info-hash output directories, eager/empty part artifacts, and staging
+survivors while recording the 40-handle native pool, 16-request channel, and
+whole-process descriptor high water.
 
 Every device command is addressed through the exact verified target
 controller. The runner owns and removes its reverse port, controlled seed,

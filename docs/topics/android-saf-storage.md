@@ -2,14 +2,15 @@
 
 Topic: `android-saf-storage`
 
-Status: Dynamic capability acquisition and a shared session-wide file pool
-were accepted in maintainer discussion on 2026-08-03. Existing Android SAF
-storage, restart, publication, and physical-device evidence remain valid, but
-the fixed startup descriptor manifest is now classified as bounded proof
-infrastructure rather than an acceptable product architecture. No dynamic
-broker or shared file pool is implemented yet. Tactical
-[`067`](../tactical/067-dynamic-platform-file-acquisition.md) is proposed and
-awaiting maintainer review before implementation.
+Status: Tactical
+[`067`](../tactical/067-dynamic-platform-file-acquisition.md) implements
+dynamic capability acquisition, one 40-descriptor session pool shared by path
+and SAF storage, live Normal/Skip platform support, lazy payload/part
+artifacts, and fresh dynamic publication verification. Three product-path API
+34 AVD cycles pass with exact hashes and bounded Rust/process descriptor
+evidence. The fixed startup manifest remains only in legacy diagnostic proof
+APIs and is not an acceptable or used product architecture. A newly
+authorized physical run was attempted, but ChromeOS ARCVM ADB was unavailable.
 
 ## Scope
 
@@ -61,18 +62,20 @@ facts that remain in force:
 - Grant loss and provider refusal are availability failures, not evidence that
   metadata or verified client state is corrupt.
 
-The product path nevertheless has a structural limit. Kotlin currently creates
-every initially wanted document plus the part document, opens all of them, and
-passes one complete manifest into Rust. `SelectiveStorage` retains a control
-handle and a cloned positional handle per wanted file. The part document is
-created eagerly, descriptor-backed live file selection fails closed, and the
-descriptor count grows with the selected metainfo rather than an explicit
-session resource budget.
+The product path now restores only durable root identity, selection, storage
+phase, metadata, and conservative verified state. `ApplicationService` owns
+one pool whose permits count actual Rust-owned handles, including evicted
+handles still retained by immutable jobs. Kotlin resolves one exact document
+per cache miss using four bounded provider workers and closes the borrowed PFD
+after synchronous Rust duplication. `SelectiveStorage` and `PartFile` keep
+logical references rather than retained manifests, so construction and
+metadata-only work create no payload or part artifacts.
 
-Tactical [`063`](../tactical/063-live-file-selection.md) deliberately completed
-live `Normal`/`Skip` behavior only for path storage. Its shared selection,
-routing, lazy-part, materialization, and restart semantics are the basis for
-SAF parity; its fixed-manifest exclusion is the gap owned here.
+Tactical [`063`](../tactical/063-live-file-selection.md)'s `Normal`/`Skip`,
+boundary routing, lazy-part, retained-destination, materialization, and
+restart semantics now apply to platform storage through the same Rust
+implementation. Higher and lower priorities remain deliberately absent from
+the UI and this boundary.
 
 ## Accepted Architecture
 
@@ -344,47 +347,37 @@ JSTorrent demonstrates the platform capability and records valuable provider
 failure history. RSTorrent does not adopt its per-read JavaScript/Kotlin data
 bridge; after acquisition, payload I/O remains in Rust.
 
-## Known Gaps
+## Current Evidence And Known Gaps
 
-- No dynamic Rust-to-Android acquisition request or response contract exists.
-- The current `SelectiveStorage` retains wanted descriptors per torrent rather
-  than using a shared bounded pool.
-- The current Android adapter eagerly creates the part document and every
-  initially wanted document.
-- Descriptor-backed resume cannot currently acquire newly wanted
-  materialization destinations.
-- The exact single-descriptor Rust handle shape and its integration with Tokio
-  blocking work and durability checkpoints need implementation evidence.
-- Tactical `067` proposes the broker's pending-open bound, timeout, retry, and
-  provider-error taxonomy; they remain subject to maintainer review and
-  implementation evidence.
-- Android SAF file-pool hit rate, provider latency, descriptor high-water,
-  multi-torrent behavior, publication invalidation, and live selection have no
-  end-to-end evidence.
+- Deterministic pool coverage proves 10,000 logical file keys across 100
+  torrent identities, compatible single-flight, access upgrade, stale
+  completion fencing, late responses, and exact handle accounting.
+- Fake-platform selective storage proves lazy construction, payload and part
+  routing, positioned Rust hashing, namespace rename, and fresh dynamic
+  published verification.
+- Three fresh product-path AVD cycles report a native descriptor high water of
+  6/40 and pending-request high water of 3/16. Whole-process baselines were
+  106/107/113 descriptors and observed high water was 137. Every published
+  non-padding file matched SHA-1; no info-hash directory, staging namespace,
+  or empty part artifact survived.
+- The current resource snapshot exposes pool and request counters, but
+  provider latency histograms, typed result counts, and Disk-view presentation
+  remain follow-up observability work.
+- The AVD product profile covers the all-Normal transfer and lazy empty-part
+  case. Dynamic-provider live Skip/Normal, interruption/restart, grant repair,
+  and removal retain deterministic/session and earlier durable SAF evidence
+  but were not each repeated in a dedicated new AVD profile.
+- ChromeOS hardware was reachable and passed its nine-check doctor, but ARCVM
+  ADB refused connection, so no new physical dynamic-provider claim is made.
 - Seeding is not implemented. Future upload reads must use this same shared
   pool rather than adding a separate seeding descriptor cache.
 
 ## Recommended Next Work
 
-Review and, if accepted, authorize Tactical
-[`067`](../tactical/067-dynamic-platform-file-acquisition.md) for dynamic
-platform file acquisition and the shared session file pool. Its stopping
-condition requires:
-
-- no startup descriptor manifest or descriptor count proportional to torrent
-  file count;
-- a common path/SAF open-file table with an enforced actual-FD bound;
-- asynchronous, cancellable, single-flight SAF acquisition on cache misses;
-- no Kotlin payload transfer on hits or misses;
-- read-existing behavior that creates no artifacts;
-- write-created wanted files, lazy part creation, live Skip/Normal
-  materialization, and empty-part deletion;
-- joined publication, restart, repair, removal, and shutdown behavior;
-- deterministic pool/ownership/failure tests plus controlled multi-torrent SAF
-  evidence on the AVD before authorized physical-device validation; and
-- updated readiness and throughput evidence with measured hit rate, provider
-  latency, pending requests, and process descriptor high-water.
-
-Until that tactical lands, fixed-manifest Android storage remains supported
-only for the already proven bounded product path. Do not extend it to live
-selection, seeding, general multi-torrent scale, or another descriptor role.
+Do not extend the legacy fixed-manifest proof APIs. The next storage work may
+add the remaining provider-latency/result observability or repeat the dynamic
+repair/removal/live-selection profiles on AVD and hardware when that evidence
+has product value. The larger functional dependency is seeding: it must use
+this pool for upload reads and must not introduce another descriptor cache.
+General root management, cloud/removable provider support, and an exposed
+advanced file-pool setting still require their own product decisions.

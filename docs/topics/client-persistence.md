@@ -15,7 +15,10 @@ version `5`; Tactical `062` advances it to version `6` with a durable verified
 publication component and managed-artifact ownership.
 Tactical `063` now makes the existing sparse file-selection rows a live
 transactional control and separates paused start-content intent from metadata
-acquisition without adding a second pending-torrent authority.
+acquisition without adding a second pending-torrent authority. Tactical `067`
+replaces the Android product's fixed startup descriptor manifest with lazy,
+bounded platform acquisition while preserving the same durable root,
+selection, checkpoint, publication, repair, and removal authority.
 
 ## Scope
 

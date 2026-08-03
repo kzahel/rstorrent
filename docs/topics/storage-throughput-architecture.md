@@ -12,7 +12,9 @@ gate and application-path correction. The accepted end-state still leaves
 measurement of pending-write read-through and session/root fairness as later
 slices. Tactical `063` implements live path-backed file selection with a
 coarse joined torrent-generation fence, retained physical routes, lazy part
-creation, and exact verified-span promotion.
+creation, and exact verified-span promotion. Tactical `067` now routes path
+and Android SAF files through one session-wide 40-descriptor pool and performs
+all payload I/O in Rust after lazy platform capability acquisition.
 
 ## Purpose And Scope
 
@@ -515,7 +517,7 @@ forcing desktop or another root to serialize.
 ## File-Handle Ownership
 
 Workers need stable destination identities without opening a file per block.
-Path and Android SAF storage should share a session-wide bounded retained
+Path and Android SAF storage now share a session-wide bounded retained
 handle table whose entries can be shared immutably by positional jobs. Jobs
 keep their handle alive through completion; eviction removes the cache
 reference but never invalidates running work.
@@ -639,7 +641,7 @@ reports actionable without turning logs into application state.
 | Write/hash result | One enforced execution order | Hash and final write callbacks can arrive in either order | Explicit piece-generation join accepts either completion order |
 | Part-file payload | Mutable cursor behind the torrent owner | Slot map is locked; payload I/O is positional outside it | One slot coordinator plus concurrent positional slot payload workers |
 | Part-file metadata | Slot change is immediately synchronized | Dirty slot metadata flush is separate from payload writes | Dirty mapping generations join batched durability epochs |
-| Selection changes | Live path-backed Normal/Skip uses a joined torrent-generation fence; SAF mutation is absent | Asynchronous fenced jobs export part data; wanted-to-skipped does not migrate existing files | Targeted file/range routing-generation fence if measured reconnection cost justifies it |
+| Selection changes | Live path and dynamic-SAF Normal/Skip use a joined torrent-generation fence | Asynchronous fenced jobs export part data; wanted-to-skipped does not migrate existing files | Targeted file/range routing-generation fence if measured reconnection cost justifies it |
 | Durability/resume | Resumable selective storage performs per-piece payload sync followed by a per-piece `FULL` SQLite transaction; single-file staging syncs only at finalization | Resume snapshot persistence remains caller-owned rather than a per-piece SQL barrier | Bounded dirty epoch, one sync per destination, one merged SQLite transaction |
 | Aggregate scheduling | Torrent-local resource authority | Session disk pool, 1 MiB default queued-byte watermark and ten generic threads | Session/root capacity and fairness with measured backend-specific limits |
 
