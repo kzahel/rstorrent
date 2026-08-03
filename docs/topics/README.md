@@ -69,6 +69,9 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`application-view-api.md`](application-view-api.md): leased view sets,
   named snapshots and diffs, cursor recovery, polling and streaming delivery,
   generated TypeScript/schema, and provisional remote routes.
+- [`client-view-delivery-policy.md`](client-view-delivery-policy.md):
+  client-selected real-time, balanced, low-bandwidth and background view
+  cadence, lifecycle policy, observer cost, and required evidence.
 - [`client-surfaces.md`](client-surfaces.md): shared browser/Tauri web
   presentation, Android Compose adaptation, generated client types, reactive
   view delivery, and platform lifecycle boundaries.

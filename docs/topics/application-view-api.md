@@ -61,6 +61,9 @@ This topic owns:
 
 [`application-control.md`](application-control.md) owns commands, durable
 application revisions, and the application-service authority.
+[`client-view-delivery-policy.md`](client-view-delivery-policy.md) owns
+client-selected cadence, low-bandwidth and background policy, and the evidence
+required to calibrate those choices.
 [`web-ui-design.md`](web-ui-design.md) owns React, Zustand, presentation state,
 and rendering. [`client-surfaces.md`](client-surfaces.md) owns the platform
 adapters and their lifecycle.
