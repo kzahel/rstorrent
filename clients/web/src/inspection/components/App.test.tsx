@@ -104,7 +104,7 @@ describe("inspection application", () => {
     expect(flagLegend).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "General" }));
-    expect(screen.getByText("Selected transfer")).toBeVisible();
+    expect(screen.getByText("Active transfer")).toBeVisible();
     expect(peersTab).toHaveTextContent(peerCount!);
     await user.click(screen.getByRole("tab", { name: "Logs" }));
     expect(
@@ -305,10 +305,21 @@ describe("inspection application", () => {
     );
     await user.keyboard("{Escape}");
 
-    fireEvent.click(within(files).getAllByRole("row")[2]!, { shiftKey: true });
+    firstFile.focus();
+    await user.keyboard("{ArrowDown}");
+    const secondFile = within(files).getAllByRole("row")[2]!;
+    expect(secondFile).toHaveAttribute("aria-current", "true");
+    await user.keyboard("{Shift>}{ArrowDown}{/Shift}");
     expect(files).toHaveAttribute("aria-multiselectable", "true");
-    expect(screen.getByText("2 selected")).toBeVisible();
-    fireEvent.keyDown(files, { key: "Escape" });
+    expect(screen.getByText("2 selected for actions")).toBeVisible();
+    expect(within(files).getAllByRole("row")[3]).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    await user.keyboard("{Control>}a{/Control}");
+    expect(screen.getByText("4,095 selected for actions")).toBeVisible();
+    expect(within(files).getAllByRole("row").length).toBeLessThanOrEqual(100);
+    await user.keyboard("{Escape}");
     expect(
       within(files).getByRole("checkbox", { name: "Select asset-001.mkv" }),
     ).not.toBeChecked();
@@ -318,7 +329,7 @@ describe("inspection application", () => {
     expect(within(files).getByRole("columnheader", { name: /Storage Path/ })).toBeVisible();
   });
 
-  it("sends Skip and Normal for the selected live torrent files", async () => {
+  it("sends Skip and Normal for the active live torrent files", async () => {
     const user = userEvent.setup();
     const snapshot = buildScenarioSnapshot("file-progress", 24_000, false, 1);
     const application = new RecordingLiveApplication({
@@ -535,8 +546,12 @@ describe("inspection application", () => {
     fireEvent.click(screen.getByRole("row", { name: /Sintel 4K open movie/ }), {
       shiftKey: true,
     });
-    expect(screen.getByText("2 selected")).toBeVisible();
+    expect(screen.getByText("2 selected for actions")).toBeVisible();
     expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: /Paused/ }));
+    expect(
+      screen.getByText("2 selected for actions (1 outside this view)"),
+    ).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Workbench" }));
     expect(
@@ -547,7 +562,56 @@ describe("inspection application", () => {
     expect(
       screen.getByRole("checkbox", { name: "Deselect Sintel 4K open movie" }),
     ).toBeChecked();
-    expect(screen.getByText("2 selected")).toBeVisible();
+    expect(screen.getByText("2 selected for actions")).toBeVisible();
+  });
+
+  it("keeps keyboard active detail separate from batch targets", async () => {
+    const user = userEvent.setup();
+    renderScenario("healthy-download", 42_000);
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(screen.getByRole("tab", { name: "General" }));
+
+    const grid = screen.getByRole("grid", { name: "Torrent library" });
+    const detail = screen.getByRole("region", { name: "Torrent details" });
+    const bunny = within(grid).getByRole("row", {
+      name: /Big Buck Bunny 1080p surround/,
+    });
+    bunny.focus();
+    await user.keyboard("{ArrowDown}");
+    const sintel = within(grid).getByRole("row", {
+      name: /Sintel 4K open movie/,
+    });
+    expect(sintel).toHaveAttribute("aria-current", "true");
+    expect(
+      within(detail).getByRole("heading", { name: "Sintel 4K open movie" }),
+    ).toBeVisible();
+
+    await user.keyboard("{Shift>}{ArrowUp}{/Shift}");
+    expect(bunny).toHaveAttribute("aria-current", "true");
+    expect(screen.getByText("2 selected for actions")).toBeVisible();
+    expect(
+      within(detail).getByRole("heading", {
+        name: "Big Buck Bunny 1080p surround",
+      }),
+    ).toBeVisible();
+
+    await user.keyboard("{Control>}a{/Control}");
+    expect(screen.getByText("3 selected for actions")).toBeVisible();
+    await user.keyboard("{ArrowUp}");
+    const arch = within(grid).getByRole("row", {
+      name: /Arch Linux 2026\.08\.01 x86_64/,
+    });
+    expect(arch).toHaveAttribute("aria-current", "true");
+    expect(screen.getByText("3 selected for actions")).toBeVisible();
+    expect(
+      within(detail).getByRole("heading", {
+        name: "Arch Linux 2026.08.01 x86_64",
+      }),
+    ).toBeVisible();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByText("3 selected for actions")).not.toBeInTheDocument();
+    expect(arch).toHaveAttribute("aria-current", "true");
   });
 
   it("targets an ordinary row action and clears it from table background", async () => {
@@ -628,7 +692,7 @@ describe("inspection application", () => {
 
     await user.click(
       screen.getByRole("button", {
-        name: "Select Sintel 4K open movie in Library",
+        name: "Activate Sintel 4K open movie in Library",
       }),
     );
     await user.click(screen.getByRole("button", { name: "Open in Workbench" }));
@@ -637,7 +701,7 @@ describe("inspection application", () => {
       "page",
     );
     await user.click(screen.getByRole("tab", { name: "General" }));
-    expect(screen.getByText("Selected transfer")).toBeVisible();
+    expect(screen.getByText("Active transfer")).toBeVisible();
     expect(screen.getAllByText("Sintel 4K open movie").length).toBeGreaterThan(0);
   });
 

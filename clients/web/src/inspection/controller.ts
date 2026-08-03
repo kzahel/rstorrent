@@ -134,11 +134,11 @@ function desiredViewsFor(state: InspectionStore): DesiredInspectionViews {
   if (presentation.destination !== "workbench") {
     return { library: true, torrentId: null, detail: null, logCapture: null };
   }
-  const selected = presentation.selectedTorrentId;
+  const activeTorrentId = presentation.activeTorrentId;
   if (presentation.layout === "phone" && !presentation.detailOpen) {
     return { library: true, torrentId: null, detail: null, logCapture: null };
   }
-  const torrentId = selected;
+  const torrentId = activeTorrentId;
   const detail = desiredDetailForTab(presentation.activeTab, torrentId);
   return {
     library: presentation.layout !== "phone",

@@ -23,11 +23,22 @@ test("primary destinations preserve shared source state", async ({ page }) => {
     name: "Select Sintel 4K open movie",
   });
   await expect(sintelCheck).not.toBeChecked();
+  const bunnyRow = page.getByRole("row").filter({
+    hasText: "Big Buck Bunny 1080p surround",
+  });
   const transferRow = page.getByRole("row").filter({ hasText: "Sintel" });
+  await bunnyRow.click();
   const normalColumns = await transferRow.getAttribute("style");
   await transferRow.click({ modifiers: ["Shift"] });
-  await expect(page.getByText("2 selected")).toBeVisible();
+  await expect(page.getByText("2 selected for actions")).toBeVisible();
   await expect(transferRow).toHaveAttribute("style", normalColumns ?? "");
+  await page
+    .getByRole("navigation", { name: "Transfer filters" })
+    .getByRole("button", { name: /Paused/ })
+    .click();
+  await expect(
+    page.getByText("2 selected for actions (1 outside this view)"),
+  ).toBeVisible();
   await primary.getByRole("button", { name: "Workbench" }).click();
   await expect(
     page.getByRole("checkbox", {
@@ -44,7 +55,7 @@ test("primary destinations preserve shared source state", async ({ page }) => {
   await expect(page.getByRole("button", { name: /^Play / })).toHaveCount(0);
   await capture(page, "rstorrent-library-wide.png");
   await page
-    .getByRole("button", { name: "Select Sintel 4K open movie in Library" })
+    .getByRole("button", { name: "Activate Sintel 4K open movie in Library" })
     .click();
   await page.getByRole("button", { name: "Open in Workbench" }).click();
   await expect(primary.getByRole("button", { name: "Workbench" })).toHaveAttribute(
@@ -52,7 +63,7 @@ test("primary destinations preserve shared source state", async ({ page }) => {
     "page",
   );
   await page.getByRole("tab", { name: "General" }).click();
-  await expect(page.getByText("Selected transfer")).toBeVisible();
+  await expect(page.getByText("Active transfer")).toBeVisible();
   await expect(page.getByText("Sintel 4K open movie").first()).toBeVisible();
 
   const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
@@ -123,10 +134,35 @@ test("wide inspection surface is accessible and drivable", async ({ page }) => {
   const torrentRows = page
     .getByRole("grid", { name: "Torrent library" })
     .getByRole("row");
+  const detail = page.getByRole("region", { name: "Torrent details" });
+  await page.getByRole("tab", { name: "General" }).click();
   await torrentRows.nth(2).focus();
   await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("Enter");
-  await expect(page.getByText("Sintel 4K open movie").first()).toBeVisible();
+  await expect(torrentRows.nth(3)).toHaveAttribute("aria-current", "true");
+  await expect(
+    detail.getByRole("heading", { name: "Sintel 4K open movie" }),
+  ).toBeVisible();
+
+  await page.keyboard.press("Shift+ArrowUp");
+  await expect(torrentRows.nth(2)).toHaveAttribute("aria-current", "true");
+  await expect(page.getByText("2 selected for actions")).toBeVisible();
+  await expect(
+    detail.getByRole("heading", {
+      name: "Big Buck Bunny 1080p surround",
+    }),
+  ).toBeVisible();
+
+  await page.keyboard.press("Control+a");
+  await expect(page.getByText("3 selected for actions")).toBeVisible();
+  await page.keyboard.press("ArrowUp");
+  await expect(torrentRows.nth(1)).toHaveAttribute("aria-current", "true");
+  await expect(page.getByText("3 selected for actions")).toBeVisible();
+  await expect(
+    detail.getByRole("heading", { name: "Arch Linux 2026.08.01 x86_64" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByText("3 selected for actions")).toHaveCount(0);
+  await expect(torrentRows.nth(1)).toHaveAttribute("aria-current", "true");
 });
 
 test("detail tab geometry and counts do not change with selection", async ({ page }) => {
@@ -837,12 +873,23 @@ test("full file catalog stays virtualized across wide compact and phone layouts"
     "File priority changes are unavailable in demo scenarios.",
   );
   await page.keyboard.press("Escape");
-  await files.getByRole("row").nth(2).click({ modifiers: ["Shift"] });
+  await files.getByRole("row").nth(1).focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(files.getByRole("row").nth(2)).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  await page.keyboard.press("Shift+ArrowDown");
   await expect(files).toHaveAttribute("aria-multiselectable", "true");
-  await expect(page.getByText("2 selected")).toBeVisible();
-  await page
-    .getByRole("button", { name: "Done selecting rows in Torrent files" })
-    .click();
+  await expect(page.getByText("2 selected for actions")).toBeVisible();
+  await expect(files.getByRole("row").nth(3)).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  await page.keyboard.press("Control+a");
+  await expect(page.getByText("4,095 selected for actions")).toBeVisible();
+  expect(await files.getByRole("row").count()).toBeLessThanOrEqual(100);
+  await page.keyboard.press("Escape");
   await expect(
     files.getByRole("checkbox", { name: "Select asset-001.mkv" }),
   ).not.toBeChecked();

@@ -29,14 +29,14 @@ interface PendingAdd {
 
 export function TorrentActions() {
   const torrents = useInspectionStore((state) => state.torrents);
-  const selectedIds = useInspectionStore(
-    (state) => state.presentation.selectedTorrentIds,
+  const batchSelectedIds = useInspectionStore(
+    (state) => state.presentation.batchSelectedTorrentIds,
   );
-  const selectedId = useInspectionStore(
-    (state) => state.presentation.selectedTorrentId,
+  const activeTorrentId = useInspectionStore(
+    (state) => state.presentation.activeTorrentId,
   );
-  const selectionMode = useInspectionStore(
-    (state) => state.presentation.torrentSelectionMode,
+  const batchSelectionMode = useInspectionStore(
+    (state) => state.presentation.torrentBatchSelectionMode,
   );
   const demo = useInspectionStore((state) => state.demo);
   const storage = useInspectionStore((state) => state.storage);
@@ -52,44 +52,44 @@ export function TorrentActions() {
   const addInputRef = useRef<HTMLInputElement>(null);
   const removeButtonRef = useRef<HTMLButtonElement>(null);
   const statusId = useId();
-  const selectedRows = useMemo(
+  const targetRows = useMemo(
     () => {
-      const targetIds = selectionMode
-        ? selectedIds
-        : selectedId === null
+      const targetIds = batchSelectionMode
+        ? batchSelectedIds
+        : activeTorrentId === null
           ? []
-          : [selectedId];
+          : [activeTorrentId];
       return targetIds
         .map((id) => torrents[id])
         .filter((row): row is TorrentRow => row !== undefined);
     },
-    [selectedId, selectedIds, selectionMode, torrents],
+    [activeTorrentId, batchSelectedIds, batchSelectionMode, torrents],
   );
   const canStart =
-    selectedRows.length > 0 &&
-    selectedRows.every(
+    targetRows.length > 0 &&
+    targetRows.every(
       (row) =>
         row.removalState === null &&
         row.status !== "downloading" &&
         row.status !== "metadata",
     );
   const canPause =
-    selectedRows.length > 0 &&
-    selectedRows.every(
+    targetRows.length > 0 &&
+    targetRows.every(
       (row) =>
         row.removalState === null &&
         row.status !== "paused" &&
         row.status !== "complete",
     );
   const archiveState =
-    selectedRows.length > 0 &&
-    selectedRows.every(
+    targetRows.length > 0 &&
+    targetRows.every(
       (row) => row.archived !== null && row.removalState === null,
     ) &&
-    selectedRows.every((row) => row.archived === selectedRows[0]?.archived)
-      ? selectedRows[0]?.archived
+    targetRows.every((row) => row.archived === targetRows[0]?.archived)
+      ? targetRows[0]?.archived
       : undefined;
-  const removeCandidate = selectedRows.length === 1 ? selectedRows[0] : undefined;
+  const removeCandidate = targetRows.length === 1 ? targetRows[0] : undefined;
   const canRemove =
     removeCandidate !== undefined &&
     (removeCandidate.removalState === null ||
@@ -297,14 +297,14 @@ export function TorrentActions() {
         <button
           type="button"
           disabled={!canStart}
-          onClick={() => void sendBatch("resume", selectedRows)}
+          onClick={() => void sendBatch("resume", targetRows)}
         >
           <Icon name="play" /> Start
         </button>
         <button
           type="button"
           disabled={!canPause}
-          onClick={() => void sendBatch("pause", selectedRows)}
+          onClick={() => void sendBatch("pause", targetRows)}
         >
           <Icon name="pause" /> Pause
         </button>
@@ -318,7 +318,7 @@ export function TorrentActions() {
           type="button"
           disabled={archiveState === undefined}
           title={
-            archiveState === undefined && selectedRows.length > 1
+            archiveState === undefined && targetRows.length > 1
               ? "Select torrents with the same archive state"
               : undefined
           }
@@ -327,7 +327,7 @@ export function TorrentActions() {
               ? undefined
               : void sendBatch(
                   archiveState ? "unarchive" : "archive",
-                  selectedRows,
+                  targetRows,
                 )
           }
         >
@@ -339,7 +339,7 @@ export function TorrentActions() {
           type="button"
           disabled={!canRemove}
           title={
-            selectedRows.length > 1
+            targetRows.length > 1
               ? "Remove one torrent at a time"
               : undefined
           }

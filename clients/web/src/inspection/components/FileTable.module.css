@@ -45,7 +45,9 @@
   color: var(--warning-strong);
 }
 
-.filePanel :global([role="row"][data-selected="true"]) .priority[data-selection="skipped"] {
+.filePanel :global([role="row"][data-active="true"]) .priority[data-selection="skipped"],
+.filePanel :global([role="row"][data-batch-selected="true"])
+  .priority[data-selection="skipped"] {
   color: var(--text-primary);
   font-weight: 650;
 }

@@ -140,11 +140,11 @@ const COLUMNS: readonly VirtualColumn<FileRow>[] = [
 ];
 
 export function FileTable({ torrentId }: { readonly torrentId: string }) {
-  const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedFileIds, setSelectedFileIds] = useState<ReadonlySet<string>>(
-    new Set(),
-  );
+  const [activeFileId, setActiveFileId] = useState<string | null>(null);
+  const [batchSelectionMode, setBatchSelectionMode] = useState(false);
+  const [batchSelectedFileIds, setBatchSelectedFileIds] = useState<
+    ReadonlySet<string>
+  >(new Set());
   const [priorityPending, setPriorityPending] = useState(false);
   const [priorityStatus, setPriorityStatus] = useState("");
   const execute = useInspectionCommand();
@@ -173,41 +173,41 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
   );
 
   useEffect(() => {
-    setSelectedFileId(null);
-    setSelectionMode(false);
-    setSelectedFileIds(new Set());
+    setActiveFileId(null);
+    setBatchSelectionMode(false);
+    setBatchSelectedFileIds(new Set());
     setPriorityPending(false);
     setPriorityStatus("");
   }, [torrentId]);
 
   useEffect(() => {
-    setSelectedFileId((current) =>
+    setActiveFileId((current) =>
       current !== null && availableIds.has(current) ? current : null,
     );
-    setSelectedFileIds((current) => {
+    setBatchSelectedFileIds((current) => {
       const next = new Set([...current].filter((id) => availableIds.has(id)));
       return setsEqual(current, next) ? current : next;
     });
   }, [availableIds]);
 
-  const enterSelection = (row?: FileRow) => {
-    const seed = row?.id ?? selectedFileId;
-    setSelectionMode(true);
-    setSelectedFileIds(
+  const enterBatchSelection = (row?: FileRow) => {
+    const seed = row?.id ?? activeFileId;
+    setBatchSelectionMode(true);
+    setBatchSelectedFileIds(
       seed !== null && seed !== undefined && availableIds.has(seed)
         ? new Set([seed])
         : new Set(),
     );
   };
 
-  const exitSelection = () => {
-    setSelectionMode(false);
-    setSelectedFileIds(new Set());
+  const exitBatchSelection = () => {
+    setBatchSelectionMode(false);
+    setBatchSelectedFileIds(new Set());
   };
 
-  const toggleSelection = (row: FileRow) => {
-    setSelectionMode(true);
-    setSelectedFileIds((current) => {
+  const toggleBatchSelection = (row: FileRow) => {
+    setBatchSelectionMode(true);
+    setBatchSelectedFileIds((current) => {
       const next = new Set(current);
       if (next.has(row.id)) next.delete(row.id);
       else next.add(row.id);
@@ -215,21 +215,21 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
     });
   };
 
-  const targetCount = selectionMode
-    ? selectedFileIds.size
-    : selectedFileId === null
+  const targetCount = batchSelectionMode
+    ? batchSelectedFileIds.size
+    : activeFileId === null
       ? 0
       : 1;
   const targetRows = useMemo(
     () =>
       rows
         .filter((row) =>
-          selectionMode
-            ? selectedFileIds.has(row.id)
-            : row.id === selectedFileId,
+          batchSelectionMode
+            ? batchSelectedFileIds.has(row.id)
+            : row.id === activeFileId,
         )
         .sort((left, right) => left.index - right.index),
-    [rows, selectedFileId, selectedFileIds, selectionMode],
+    [activeFileId, batchSelectedFileIds, batchSelectionMode, rows],
   );
 
   const setPriority = async (priority: "normal" | "skip") => {
@@ -284,31 +284,31 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
         getRowId={(row) => row.id}
         columns={COLUMNS}
         interfaceSize={interfaceSize}
-        selectedId={selectedFileId}
-        selection={{
-          active: selectionMode,
-          selectedIds: selectedFileIds,
+        activeRowId={activeFileId}
+        batchSelection={{
+          active: batchSelectionMode,
+          batchSelectedIds: batchSelectedFileIds,
           getRowLabel: (row) => row.name,
-          onEnter: enterSelection,
-          onExit: exitSelection,
-          onToggle: toggleSelection,
-          onReplace: (rangeRows) => {
-            setSelectionMode(true);
-            setSelectedFileIds(new Set(rangeRows.map((row) => row.id)));
+          onEnterBatch: enterBatchSelection,
+          onExitBatch: exitBatchSelection,
+          onToggleBatch: toggleBatchSelection,
+          onReplaceBatch: (rangeRows) => {
+            setBatchSelectionMode(true);
+            setBatchSelectedFileIds(new Set(rangeRows.map((row) => row.id)));
           },
-          onSetAll: (visibleRows, selected) => {
-            setSelectionMode(true);
-            setSelectedFileIds(
+          onSetAllBatch: (visibleRows, selected) => {
+            setBatchSelectionMode(true);
+            setBatchSelectedFileIds(
               selected
                 ? new Set(visibleRows.map((row) => row.id))
                 : new Set(),
             );
           },
         }}
-        onSelect={(row) => setSelectedFileId(row.id)}
-        onClear={() => {
-          if (selectionMode) exitSelection();
-          else setSelectedFileId(null);
+        onActivate={(row) => setActiveFileId(row.id)}
+        onClearActive={() => {
+          if (batchSelectionMode) exitBatchSelection();
+          else setActiveFileId(null);
         }}
         emptyMessage={fileEmptyMessage(materialization, fileSet?.state)}
         initialSort={{ columnId: "index", direction: "asc" }}

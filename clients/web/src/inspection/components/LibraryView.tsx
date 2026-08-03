@@ -34,13 +34,13 @@ export function LibraryView() {
   const category = useInspectionStore(
     (state) => state.presentation.libraryCategory,
   );
-  const selectedId = useInspectionStore(
-    (state) => state.presentation.selectedTorrentId,
+  const activeTorrentId = useInspectionStore(
+    (state) => state.presentation.activeTorrentId,
   );
   const interfaceSize = useInspectionStore(
     (state) => state.presentation.interfaceSize,
   );
-  const focusTorrent = useInspectionStore((state) => state.focusTorrent);
+  const setActiveTorrent = useInspectionStore((state) => state.setActiveTorrent);
   const openTorrentInWorkbench = useInspectionStore(
     (state) => state.openTorrentInWorkbench,
   );
@@ -72,7 +72,7 @@ export function LibraryView() {
       ),
     [allRows, category, newestAddedAtMs],
   );
-  const selected = rows.find((row) => row.id === selectedId);
+  const active = rows.find((row) => row.id === activeTorrentId);
 
   return (
     <section className={styles.library} aria-labelledby="library-heading">
@@ -88,11 +88,11 @@ export function LibraryView() {
         </div>
         <button
           type="button"
-          disabled={selected === undefined}
+          disabled={active === undefined}
           onClick={() =>
-            selected === undefined
+            active === undefined
               ? undefined
-              : openTorrentInWorkbench(selected.id)
+              : openTorrentInWorkbench(active.id)
           }
         >
           <Icon name="workbench" /> Open in Workbench
@@ -105,9 +105,9 @@ export function LibraryView() {
       ) : (
         <VirtualLibraryGrid
           rows={rows}
-          selectedId={selectedId}
+          activeId={activeTorrentId}
           interfaceSize={interfaceSize}
-          onSelect={focusTorrent}
+          onActivate={setActiveTorrent}
         />
       )}
     </section>
@@ -116,14 +116,14 @@ export function LibraryView() {
 
 function VirtualLibraryGrid({
   rows,
-  selectedId,
+  activeId,
   interfaceSize,
-  onSelect,
+  onActivate,
 }: {
   readonly rows: readonly TorrentRow[];
-  readonly selectedId: string | null;
+  readonly activeId: string | null;
   readonly interfaceSize: InterfaceSize;
-  readonly onSelect: (torrentId: string) => void;
+  readonly onActivate: (torrentId: string) => void;
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -205,13 +205,13 @@ function VirtualLibraryGrid({
                       role="listitem"
                       aria-posinset={position + 1}
                       aria-setsize={rows.length}
-                      data-selected={row.id === selectedId}
+                      data-active={row.id === activeId}
                     >
                       <button
                         type="button"
-                        aria-label={`Select ${row.name} in Library`}
-                        aria-pressed={row.id === selectedId}
-                        onClick={() => onSelect(row.id)}
+                        aria-label={`Activate ${row.name} in Library`}
+                        aria-pressed={row.id === activeId}
+                        onClick={() => onActivate(row.id)}
                       >
                         <span
                           className={styles.art}

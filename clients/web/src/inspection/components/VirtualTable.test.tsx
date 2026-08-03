@@ -44,6 +44,10 @@ beforeAll(() => {
     unobserve() {}
     disconnect() {}
   };
+  globalThis.requestAnimationFrame = (callback) => {
+    callback(0);
+    return 1;
+  };
   Object.defineProperty(globalThis, "localStorage", {
     configurable: true,
     value: {
@@ -226,33 +230,35 @@ describe("VirtualTable", () => {
           columns={COLUMNS}
           interfaceSize="standard"
           emptyMessage="empty"
-          selectedId={currentId}
-          onSelect={(row) => setCurrentId(row.id)}
-          onClear={() => setCurrentId(null)}
-          selection={{
+          activeRowId={currentId}
+          onActivate={(row) => setCurrentId(row.id)}
+          onClearActive={() => setCurrentId(null)}
+          batchSelection={{
             active,
-            selectedIds,
+            batchSelectedIds: selectedIds,
             getRowLabel: (row) => row.id,
-            onEnter: (row) => {
+            onEnterBatch: (row) => {
               setActive(true);
               setSelectedIds(new Set(row === undefined ? [] : [row.id]));
             },
-            onExit: () => {
+            onExitBatch: () => {
               setActive(false);
               setSelectedIds(new Set());
             },
-            onToggle: (row) =>
+            onToggleBatch: (row) => {
+              setActive(true);
               setSelectedIds((current) => {
                 const next = new Set(current);
                 if (next.has(row.id)) next.delete(row.id);
                 else next.add(row.id);
                 return next;
-              }),
-            onReplace: (rangeRows) => {
+              });
+            },
+            onReplaceBatch: (rangeRows) => {
               setActive(true);
               setSelectedIds(new Set(rangeRows.map((row) => row.id)));
             },
-            onSetAll: (selectedRows, selected) => {
+            onSetAllBatch: (selectedRows, selected) => {
               setActive(true);
               setSelectedIds(
                 selected
@@ -295,7 +301,7 @@ describe("VirtualTable", () => {
     });
     expect(screen.getByRole("checkbox", { name: "Select one" })).not.toBeChecked();
     fireEvent.click(screen.getByRole("checkbox", { name: "Select all rows" }));
-    expect(screen.getByText("2 selected")).toBeVisible();
+    expect(screen.getByText("2 selected for actions")).toBeVisible();
 
     fireEvent.click(
       screen.getByRole("button", {
@@ -316,7 +322,9 @@ describe("VirtualTable", () => {
     const firstInSelection = screen.getByRole("row", { name: /Select one/ });
     fireEvent.focus(firstInSelection);
     fireEvent.keyDown(grid, { key: "Enter" });
-    expect(screen.getByRole("checkbox", { name: "Deselect one" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Select one" })).not.toBeChecked();
+    expect(firstInSelection).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("checkbox", { name: "Deselect two" })).toBeChecked();
     fireEvent.click(grid);
     expect(screen.getByRole("checkbox", { name: "Select one" })).not.toBeChecked();
   });
@@ -327,6 +335,7 @@ describe("VirtualTable", () => {
         (id, index) => ({ id, value: String(index + 1) }),
       );
       const [active, setActive] = useState(false);
+      const [activeRowId, setActiveRowId] = useState<string | null>("two");
       const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
         new Set(),
       );
@@ -338,21 +347,22 @@ describe("VirtualTable", () => {
           getRowId={(row) => row.id}
           columns={COLUMNS}
           interfaceSize="standard"
-          selectedId="two"
+          activeRowId={activeRowId}
+          onActivate={(row) => setActiveRowId(row.id)}
           emptyMessage="empty"
-          selection={{
+          batchSelection={{
             active,
-            selectedIds,
+            batchSelectedIds: selectedIds,
             getRowLabel: (row) => row.id,
-            onEnter: (row) => {
+            onEnterBatch: (row) => {
               setActive(true);
               setSelectedIds(new Set(row === undefined ? [] : [row.id]));
             },
-            onExit: () => {
+            onExitBatch: () => {
               setActive(false);
               setSelectedIds(new Set());
             },
-            onToggle: (row) => {
+            onToggleBatch: (row) => {
               setActive(true);
               setSelectedIds((current) => {
                 const next = new Set(current);
@@ -361,11 +371,11 @@ describe("VirtualTable", () => {
                 return next;
               });
             },
-            onReplace: (rangeRows) => {
+            onReplaceBatch: (rangeRows) => {
               setActive(true);
               setSelectedIds(new Set(rangeRows.map((row) => row.id)));
             },
-            onSetAll: (rangeRows, selected) => {
+            onSetAllBatch: (rangeRows, selected) => {
               setActive(true);
               setSelectedIds(
                 selected ? new Set(rangeRows.map((row) => row.id)) : new Set(),
@@ -379,6 +389,10 @@ describe("VirtualTable", () => {
     render(<RangeTable />);
     fireEvent.click(screen.getByRole("row", { name: /4/ }), { shiftKey: true });
     expect(checkedRowNames()).toEqual(["two", "three", "four"]);
+    expect(screen.getByRole("row", { name: /4/ })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
     fireEvent.click(screen.getByRole("row", { name: /3/ }), { shiftKey: true });
     expect(checkedRowNames()).toEqual(["two", "three"]);
 
@@ -395,8 +409,155 @@ describe("VirtualTable", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Value" }));
     fireEvent.click(screen.getByRole("button", { name: "Value" }));
+    fireEvent.click(screen.getByRole("row", { name: /2/ }));
     fireEvent.click(screen.getByRole("row", { name: /4/ }), { shiftKey: true });
     expect(checkedRowNames()).toEqual(["four", "three", "two"]);
+  });
+
+  it("moves the active row with focus and extends keyboard batch ranges", () => {
+    function KeyboardTable() {
+      const rows = ["one", "two", "three", "four", "five"].map(
+        (id, index) => ({ id, value: String(index + 1) }),
+      );
+      const [activeRowId, setActiveRowId] = useState<string | null>("two");
+      const [batchActive, setBatchActive] = useState(false);
+      const [batchSelectedIds, setBatchSelectedIds] = useState<
+        ReadonlySet<string>
+      >(new Set());
+      return (
+        <VirtualTable
+          tableId="keyboard-range-test"
+          label="Keyboard rows"
+          rows={rows}
+          getRowId={(row) => row.id}
+          columns={COLUMNS}
+          interfaceSize="standard"
+          activeRowId={activeRowId}
+          onActivate={(row) => setActiveRowId(row.id)}
+          emptyMessage="empty"
+          batchSelection={{
+            active: batchActive,
+            batchSelectedIds,
+            getRowLabel: (row) => row.id,
+            onEnterBatch: (row) => {
+              setBatchActive(true);
+              setBatchSelectedIds(new Set(row === undefined ? [] : [row.id]));
+            },
+            onExitBatch: () => {
+              setBatchActive(false);
+              setBatchSelectedIds(new Set());
+            },
+            onToggleBatch: (row) => {
+              setBatchActive(true);
+              setBatchSelectedIds((current) => {
+                const next = new Set(current);
+                if (next.has(row.id)) next.delete(row.id);
+                else next.add(row.id);
+                return next;
+              });
+            },
+            onReplaceBatch: (rangeRows) => {
+              setBatchActive(true);
+              setBatchSelectedIds(new Set(rangeRows.map((row) => row.id)));
+            },
+            onSetAllBatch: vi.fn(),
+          }}
+        />
+      );
+    }
+
+    render(<KeyboardTable />);
+    const grid = screen.getByRole("grid", { name: "Keyboard rows" });
+    const active = () =>
+      screen.getAllByRole("row").find((row) => row.getAttribute("aria-current") === "true");
+    screen.getByRole("row", { name: /2/ }).focus();
+
+    fireEvent.keyDown(grid, { key: "ArrowDown" });
+    expect(active()).toHaveAttribute("data-row-id", "three");
+    expect(active()).toHaveFocus();
+    expect(checkedRowNames()).toEqual([]);
+
+    fireEvent.keyDown(grid, { key: "ArrowDown", shiftKey: true });
+    expect(active()).toHaveAttribute("data-row-id", "four");
+    expect(checkedRowNames()).toEqual(["three", "four"]);
+    fireEvent.keyDown(grid, { key: "ArrowDown", shiftKey: true });
+    expect(checkedRowNames()).toEqual(["three", "four", "five"]);
+    fireEvent.keyDown(grid, { key: "ArrowUp", shiftKey: true });
+    expect(checkedRowNames()).toEqual(["three", "four"]);
+    fireEvent.keyDown(grid, { key: "Home", shiftKey: true });
+    expect(active()).toHaveAttribute("data-row-id", "one");
+    expect(checkedRowNames()).toEqual(["one", "two", "three"]);
+
+    fireEvent.keyDown(grid, { key: "a", metaKey: true });
+    expect(screen.getByText("5 selected for actions")).toBeVisible();
+    fireEvent.keyDown(grid, { key: "ArrowDown" });
+    expect(active()).toHaveAttribute("data-row-id", "two");
+    expect(screen.getByText("5 selected for actions")).toBeVisible();
+    fireEvent.keyDown(grid, { key: "Enter" });
+    expect(screen.getByText("5 selected for actions")).toBeVisible();
+    fireEvent.keyDown(grid, { key: "Escape" });
+    expect(active()).toHaveAttribute("data-row-id", "two");
+    expect(checkedRowNames()).toEqual([]);
+
+    const nestedCheckbox = screen.getByRole("checkbox", { name: "Select one" });
+    nestedCheckbox.focus();
+    fireEvent.keyDown(nestedCheckbox, { key: "a", ctrlKey: true });
+    expect(active()).toHaveAttribute("data-row-id", "two");
+    expect(screen.getByRole("row", { name: /2/ })).toHaveAttribute(
+      "tabindex",
+      "0",
+    );
+    expect(
+      screen.queryByText("5 selected for actions"),
+    ).not.toBeInTheDocument();
+
+    fireEvent.keyDown(grid, { key: "a", ctrlKey: true });
+    expect(screen.getByText("5 selected for actions")).toBeVisible();
+  });
+
+  it("selects offscreen logical rows and discloses hidden batch targets", () => {
+    function LargeTable() {
+      const rows = Array.from({ length: 200 }, (_, index) => ({
+        id: `row-${index}`,
+        value: String(index),
+      }));
+      const [batchSelectedIds, setBatchSelectedIds] = useState<
+        ReadonlySet<string>
+      >(new Set(["outside-current-view"]));
+      return (
+        <VirtualTable
+          tableId="logical-select-all-test"
+          label="Logical rows"
+          rows={rows}
+          getRowId={(row) => row.id}
+          columns={COLUMNS}
+          interfaceSize="standard"
+          activeRowId="row-0"
+          onActivate={vi.fn()}
+          emptyMessage="empty"
+          batchSelection={{
+            active: true,
+            batchSelectedIds,
+            getRowLabel: (row) => row.id,
+            onEnterBatch: vi.fn(),
+            onExitBatch: vi.fn(),
+            onToggleBatch: vi.fn(),
+            onReplaceBatch: (rangeRows) =>
+              setBatchSelectedIds(new Set(rangeRows.map((row) => row.id))),
+            onSetAllBatch: vi.fn(),
+          }}
+        />
+      );
+    }
+
+    render(<LargeTable />);
+    const grid = screen.getByRole("grid", { name: "Logical rows" });
+    expect(screen.getByText("1 selected for actions (1 outside this view)")).toBeVisible();
+    expect(grid.querySelectorAll('[role="row"]').length).toBeLessThan(100);
+    grid.querySelector<HTMLElement>('[data-row-id="row-0"]')?.focus();
+    fireEvent.keyDown(grid, { key: "a", ctrlKey: true });
+    expect(screen.getByText("200 selected for actions")).toBeVisible();
+    expect(grid.querySelectorAll('[role="row"]').length).toBeLessThan(100);
   });
 
   it("falls back to the clicked row when the range anchor disappears", () => {
@@ -430,27 +591,27 @@ describe("VirtualTable", () => {
             columns={COLUMNS}
             interfaceSize="standard"
             emptyMessage="empty"
-            selection={{
+            batchSelection={{
               active,
-              selectedIds,
+              batchSelectedIds: selectedIds,
               getRowLabel: (row) => row.id,
-              onEnter: (row) => {
+              onEnterBatch: (row) => {
                 setActive(true);
                 setSelectedIds(new Set(row === undefined ? [] : [row.id]));
               },
-              onExit: () => {
+              onExitBatch: () => {
                 setActive(false);
                 setSelectedIds(new Set());
               },
-              onToggle: (row) => {
+              onToggleBatch: (row) => {
                 setActive(true);
                 setSelectedIds(new Set([row.id]));
               },
-              onReplace: (rangeRows) => {
+              onReplaceBatch: (rangeRows) => {
                 setActive(true);
                 setSelectedIds(new Set(rangeRows.map((row) => row.id)));
               },
-              onSetAll: vi.fn(),
+              onSetAllBatch: vi.fn(),
             }}
           />
         </>
@@ -476,15 +637,15 @@ describe("VirtualTable", () => {
         columns={COLUMNS}
         interfaceSize="standard"
         emptyMessage="empty"
-        selection={{
+        batchSelection={{
           active: false,
-          selectedIds: new Set(),
+          batchSelectedIds: new Set(),
           getRowLabel: (row) => row.id,
-          onEnter: enter,
-          onExit: vi.fn(),
-          onToggle: vi.fn(),
-          onReplace: vi.fn(),
-          onSetAll: vi.fn(),
+          onEnterBatch: enter,
+          onExitBatch: vi.fn(),
+          onToggleBatch: vi.fn(),
+          onReplaceBatch: vi.fn(),
+          onSetAllBatch: vi.fn(),
         }}
       />,
     );

@@ -93,30 +93,32 @@ export function TransferTable() {
   const category = useInspectionStore(
     (state) => state.presentation.transfersCategory,
   );
-  const selectedIds = useInspectionStore(
-    (state) => state.presentation.selectedTorrentIds,
+  const batchSelectedIds = useInspectionStore(
+    (state) => state.presentation.batchSelectedTorrentIds,
   );
-  const selectedId = useInspectionStore(
-    (state) => state.presentation.selectedTorrentId,
+  const activeTorrentId = useInspectionStore(
+    (state) => state.presentation.activeTorrentId,
   );
-  const selectionMode = useInspectionStore(
-    (state) => state.presentation.torrentSelectionMode,
+  const batchSelectionMode = useInspectionStore(
+    (state) => state.presentation.torrentBatchSelectionMode,
   );
-  const focusTorrent = useInspectionStore((state) => state.focusTorrent);
-  const clearTorrentFocus = useInspectionStore(
-    (state) => state.clearTorrentFocus,
+  const setActiveTorrent = useInspectionStore(
+    (state) => state.setActiveTorrent,
   );
-  const enterTorrentSelection = useInspectionStore(
-    (state) => state.enterTorrentSelection,
+  const clearActiveTorrent = useInspectionStore(
+    (state) => state.clearActiveTorrent,
   );
-  const exitTorrentSelection = useInspectionStore(
-    (state) => state.exitTorrentSelection,
+  const enterTorrentBatchSelection = useInspectionStore(
+    (state) => state.enterTorrentBatchSelection,
   );
-  const toggleTorrentSelection = useInspectionStore(
-    (state) => state.toggleTorrentSelection,
+  const exitTorrentBatchSelection = useInspectionStore(
+    (state) => state.exitTorrentBatchSelection,
   );
-  const replaceTorrentSelection = useInspectionStore(
-    (state) => state.replaceTorrentSelection,
+  const toggleTorrentBatchSelection = useInspectionStore(
+    (state) => state.toggleTorrentBatchSelection,
+  );
+  const replaceTorrentBatchSelection = useInspectionStore(
+    (state) => state.replaceTorrentBatchSelection,
   );
   const demo = useInspectionStore((state) => state.demo);
   const materialization = useInspectionStore(
@@ -133,7 +135,10 @@ export function TransferTable() {
         .filter((row) => torrentMatchesCategory(row, category)),
     [category, order, torrents],
   );
-  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const batchSelectedIdSet = useMemo(
+    () => new Set(batchSelectedIds),
+    [batchSelectedIds],
+  );
 
   return (
     <VirtualTable
@@ -143,27 +148,27 @@ export function TransferTable() {
       getRowId={(row) => row.id}
       columns={COLUMNS}
       interfaceSize={interfaceSize}
-      selectedId={selectedId}
-      selection={{
-        active: selectionMode,
-        selectedIds: selectedIdSet,
+      activeRowId={activeTorrentId}
+      batchSelection={{
+        active: batchSelectionMode,
+        batchSelectedIds: batchSelectedIdSet,
         getRowLabel: (row) => row.name,
-        onEnter: (row) => enterTorrentSelection(row?.id),
-        onExit: exitTorrentSelection,
-        onToggle: (row) => toggleTorrentSelection(row.id),
-        onReplace: (rangeRows) =>
-          replaceTorrentSelection(rangeRows.map((row) => row.id)),
-        onSetAll: (visibleRows, selected) => {
+        onEnterBatch: (row) => enterTorrentBatchSelection(row?.id),
+        onExitBatch: exitTorrentBatchSelection,
+        onToggleBatch: (row) => toggleTorrentBatchSelection(row.id),
+        onReplaceBatch: (rangeRows) =>
+          replaceTorrentBatchSelection(rangeRows.map((row) => row.id)),
+        onSetAllBatch: (visibleRows, selected) => {
           const visibleIds = new Set(visibleRows.map((row) => row.id));
-          replaceTorrentSelection(
+          replaceTorrentBatchSelection(
             selected
-              ? [...selectedIds, ...visibleIds]
-              : selectedIds.filter((id) => !visibleIds.has(id)),
+              ? [...batchSelectedIds, ...visibleIds]
+              : batchSelectedIds.filter((id) => !visibleIds.has(id)),
           );
         },
       }}
-      onSelect={(row) => focusTorrent(row.id)}
-      onClear={clearTorrentFocus}
+      onActivate={(row) => setActiveTorrent(row.id)}
+      onClearActive={clearActiveTorrent}
       emptyMessage={
         materialization.status !== "ready"
           ? materializationMessage(materialization)

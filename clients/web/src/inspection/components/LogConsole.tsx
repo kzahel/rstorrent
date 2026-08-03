@@ -27,8 +27,8 @@ export function LogConsole() {
   const logs = useInspectionStore((state) => state.logs);
   const loss = useInspectionStore((state) => state.logLoss);
   const torrents = useInspectionStore((state) => state.torrents);
-  const selectedTorrentId = useInspectionStore(
-    (state) => state.presentation.selectedTorrentId,
+  const activeTorrentId = useInspectionStore(
+    (state) => state.presentation.activeTorrentId,
   );
   const materialization = useInspectionStore((state) => state.viewStatus.logs);
   const presentation = useInspectionStore((state) => state.presentation);
@@ -60,8 +60,8 @@ export function LogConsole() {
         categoryPrefix: presentation.logCategoryPrefix,
         search: presentation.logSearch,
         displayTorrentId:
-          presentation.logDisplayScope === "selected"
-            ? selectedTorrentId
+          presentation.logDisplayScope === "active"
+            ? activeTorrentId
             : null,
         clearThroughSequence: presentation.logClearThroughSequence,
         torrents,
@@ -73,7 +73,7 @@ export function LogConsole() {
       presentation.logSearch,
       presentation.logDisplayScope,
       presentation.logClearThroughSequence,
-      selectedTorrentId,
+      activeTorrentId,
       torrents,
     ],
   );
@@ -166,9 +166,9 @@ export function LogConsole() {
             {captureTorrentId === null ? null : (
               <option value={captureTorrentId}>{pinnedCaptureName}</option>
             )}
-            {selectedTorrentId === null || selectedTorrentId === captureTorrentId ? null : (
-              <option value={selectedTorrentId}>
-                Selected · {torrents[selectedTorrentId]?.name ?? selectedTorrentId.slice(0, 8)}
+            {activeTorrentId === null || activeTorrentId === captureTorrentId ? null : (
+              <option value={activeTorrentId}>
+                Active · {torrents[activeTorrentId]?.name ?? activeTorrentId.slice(0, 8)}
               </option>
             )}
           </select>
@@ -223,12 +223,12 @@ export function LogConsole() {
             aria-label="Displayed torrent scope"
             value={presentation.logDisplayScope}
             onChange={(event) =>
-              setDisplayScope(event.currentTarget.value as "all" | "selected")
+              setDisplayScope(event.currentTarget.value as "all" | "active")
             }
           >
             <option value="all">All torrents</option>
-            <option value="selected" disabled={selectedTorrentId === null}>
-              Selected + session
+            <option value="active" disabled={activeTorrentId === null}>
+              Active + session
             </option>
           </select>
         </label>

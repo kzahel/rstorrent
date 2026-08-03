@@ -275,11 +275,16 @@
   background: var(--surface-hover);
 }
 
-.row[data-selected="true"] {
-  background: var(--selection);
+.row[data-batch-selected="true"] {
+  background: color-mix(
+    in srgb,
+    var(--selection) 58%,
+    var(--surface-primary)
+  );
 }
 
-.row[data-current="true"] {
+.row[data-active="true"] {
+  background: var(--selection);
   box-shadow: inset 3px 0 var(--accent);
 }
 

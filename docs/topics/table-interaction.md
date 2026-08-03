@@ -2,12 +2,12 @@
 
 Topic: `table-interaction`
 
-Status: Product interaction direction accepted on 2026-08-03. The current
-shared web table implements current-row navigation and checked batch selection,
-but keyboard row focus can still move without changing the active row,
-Shift+Arrow range selection and Command/Control+A are absent, and existing
-state names use `selected` for more than one concept. No implementation
-tactical has yet applied the direction recorded here.
+Status: Implemented in the shared web presentation on 2026-08-03 by
+[`068`](../tactical/068-active-and-batch-table-interaction.md). Transfers,
+Workbench torrents, Files, and singular peer activation now use the active-row
+model; actionable torrent and Files tables retain separate checked batch
+targets. Keyboard row navigation, detail activation, Shift ranges, and scoped
+Command/Control+A operate over the complete logical table.
 
 ## Purpose And Scope
 
@@ -151,14 +151,15 @@ sorting and live row updates when those rows remain available. If the active
 row disappears from the underlying collection, it becomes empty rather than
 silently moving to an unrelated row. Disappearing batch rows are pruned.
 
-Transfers and Workbench currently share torrent batch state across
-destinations. The exact policy for already batch-selected torrents hidden by a
-later filter remains to be settled in the implementation tactical. That
-tactical must either prune hidden targets or expose their count and scope; it
-must not let an apparently local batch command silently affect undisclosed
-hidden rows. Command/Control+A itself selects the complete current filtered
-table, including offscreen virtual rows, and never means only the visible DOM
-window.
+Transfers and Workbench share torrent batch state across destinations. Batch
+targets hidden by a later filter or the other destination remain selected, and
+the batch status explicitly reports how many are outside the current view.
+Individual toggles and the header checkbox preserve those hidden targets while
+changing membership in the current filtered table. A Shift range or
+Command/Control+A is an exact replacement with the current logical range or
+filtered table, so it cannot retain undisclosed targets from an older view.
+Command/Control+A includes offscreen virtual rows and never means only the
+visible DOM window.
 
 Changing sort or filter invalidates a transient range anchor when its row is no
 longer in the logical table. The next Shift operation falls back to the active
@@ -210,42 +211,26 @@ broader file-detail owner provides evidence for lifting that state.
 
 Tacticals [`058`](../tactical/058-contextual-table-selection.md) and
 [`059`](../tactical/059-actionable-table-range-selection.md) established the
-current active-versus-batch separation, visible actionable-table checkbox
-column, sorted Shift-click ranges, touch long press, Space, Escape, and
-virtualized bounds.
+active-versus-batch separation, visible actionable-table checkbox column,
+sorted Shift-click ranges, touch long press, Space, Escape, and virtualized
+bounds. Tactical
+[`068`](../tactical/068-active-and-batch-table-interaction.md) completed the
+contract recorded here:
 
-The current implementation still diverges from this accepted direction:
+- `VirtualTable` now exposes explicit active-row and batch-selection inputs,
+  synchronizes row focus with activation, and gives the two states distinct
+  visual and accessibility treatments.
+- Arrow, Home, End, Shift ranges, Space, Enter, Escape, Meta+A, and Control+A
+  have component coverage over sorted and virtualized logical rows.
+- Torrent presentation state, torrent commands, detail projections, Files,
+  Library, Logs, and the singular peer cursor use active terminology where
+  they identify the current row.
+- Application and browser scenarios cover immediate arrow-driven torrent
+  detail, active-versus-batch independence, hidden target disclosure,
+  cross-destination continuity, and a 4,095-row actionable Files table without
+  expanding the bounded DOM.
 
-- Arrow, Home, and End update a table-local focus index but not the singular
-  active row or its detail.
-- Shift+Arrow and Shift+Home/End range selection are absent.
-- Command/Control+A is absent even though the header checkbox can select all.
-- Enter toggles batch membership while batch selection is active instead of
-  preserving ordinary active/detail semantics.
-- Row activation toggles batch membership while selection mode is active.
-- State and accessibility code use overlapping `selected` terminology for the
-  active row and batch set.
-- Hidden batch targets across filter changes do not yet have an accepted
-  prune-or-disclose policy.
-
-These are presentation gaps, not application-view or engine limitations.
-
-## Recommended Next Work
-
-Open one bounded presentation tactical that:
-
-1. updates `VirtualTable` to synchronize row focus, active state, scrolling,
-   and detail activation;
-2. adds Shift+Arrow, Shift+Home/End, and scoped Command/Control+A over the full
-   sorted/filtered row model;
-3. keeps row-body activation stable during batch selection and makes Enter
-   activate rather than check;
-4. adopts unambiguous active and batch-selection names in shared table,
-   torrent presentation, and Files-local state;
-5. settles hidden filtered batch targets without weakening Transfers/
-   Workbench continuity silently; and
-6. validates torrent and Files behavior through pure component, application,
-   keyboard-driven browser, accessibility, and large virtual-table scenarios.
-
-No Rust, generated contract, persistence, transport, engine, public-swarm,
-Android, or physical-device work is required for that slice.
+There is no known implementation gap in this interaction contract. A future
+file preview, new row command, or active-row detail on another read-only table
+should reuse this model and add evidence at that surface rather than introduce
+a third selection state.
