@@ -854,7 +854,7 @@ npm run generate
 npm run typecheck
 npm test
 npm run build
-npm run e2e
+npm run test:e2e
 ```
 
 Also run `git diff --check`, the targeted gateway lifecycle tests and the
@@ -883,30 +883,30 @@ transport evidence.
 
 The implementation landed in independently green slices:
 
-- `8b1c41a` defines the transport-independent typed call/result contract and
+- `ad63755` defines the transport-independent typed call/result contract and
   `AcknowledgedViewStream`, then moves Tauri's Channel pump onto that exact
   acknowledgement owner without changing its external adapter.
-- `ef57485` adds `/api/v1/connect`, exact Origin and first-frame bearer
+- `52f5954` adds `/api/v1/connect`, exact Origin and first-frame bearer
   authentication, bounded calls and identifiers, generation-safe connection
   and attachment takeover, two worst-case data reservations, fair control/data
   writing, heartbeat and joined cancellation.
-- `222c868` adds the runtime-validating TypeScript adapter and selects it for
+- `41e5341` adds the runtime-validating TypeScript adapter and selects it for
   ordinary live browsing. One socket owns every call and stream; pending
   commands fail without replay; `transport=http` is the only diagnostic
   override and `poll_ms` is rejected elsewhere.
-- `863020e` migrates reusable interop helpers, deletes `/control`, its legacy
+- `3515dfd` migrates reusable interop helpers, deletes `/control`, its legacy
   Rust/TypeScript/schema frames, the direct-DOM client graph and superseded
   tests, and makes the named modern demo the no-mode root. A replacement test
   retains the ordinary router `404` for `/control`.
-- `0ba2926` exposes aggregate nonsecret connection metrics by bounded frame
+- `a8ebdfe` exposes aggregate nonsecret connection metrics by bounded frame
   family and records the final snapshot at gateway shutdown. The 4,096-file
   test produces a 1,426,924-byte response while the adjacent command completes
   in 11,835 microseconds and the declared high waters remain exact.
-- `68e5a46` moves the controlled libtorrent browser transfer onto the default
+- `9005233` moves the controlled libtorrent browser transfer onto the default
   connection. Its production page performs one application upgrade and zero
   semantic HTTP requests while dispatching magnet intake and consuming
   Transfers, Files and Peers through completion.
-- `a14dfc8` adds the reusable paired browser adapter smoke. The retained 1 GiB,
+- `811e907` adds the reusable paired browser adapter smoke. The retained 1 GiB,
   1 MiB-piece Apple M4 Pro run measures HTTP at 305.9 MiB/s with 38 semantic
   requests and WebSocket at 363.8 MiB/s with one upgrade, zero semantic HTTP,
   24 batches/acks and the same exact payload SHA-1. The 1.189 ratio is evidence,
