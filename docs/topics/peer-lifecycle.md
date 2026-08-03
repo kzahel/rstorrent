@@ -30,6 +30,9 @@ policy, and proves that observation through the live headless Peers surface.
 Tactical `046` closes the wrapper-level cancellation race that could drop a
 metadata or content supervisor before it joined those owners and published
 the final empty connection observation.
+Tactical `056` derives a bounded display-only client/version hint from the
+handshake peer ID without making that spoofable fingerprint an identity or
+policy input.
 Full parole selection, persistent integrity reputation, measured
 picker policy, incoming connections, and persistent peer records remain later
 work.
@@ -101,6 +104,14 @@ The protocol peer ID learned during the handshake is peer identity evidence,
 not the primary key for a discovered endpoint. Multiple endpoints may later
 report the same peer ID, and endpoint duplicate policy remains distinct from
 identity grouping.
+
+The same 20-byte value may contain a conventional client fingerprint. The
+runtime-independent protocol parser recognizes bounded BEP 20 and selected
+mature-client formats, and the application projection exposes the resulting
+client/version hint. This derived label is peer-controlled, may be spoofed,
+and never changes duplicate detection, trust, scheduling, integrity, bans, or
+connection lifecycle. Unknown bytes remain unlabeled instead of becoming an
+arbitrary printable fallback.
 
 ## Accepted Direction
 

@@ -22,7 +22,7 @@ engine state is not presented as false.
 This topic owns:
 
 - the semantic peer-flag catalog exposed by Rust application views;
-- the provisional compact glyph and user-facing explanation for each semantic
+- the provisional compact glyph and short user-facing label for each semantic
   flag;
 - the ownership split between engine facts, application projection, and
   client presentation;
@@ -140,7 +140,7 @@ or endgame state from rates, logs, client names, or timing.
 Rust does **not** own the compact character, ordering, color, spacing, tooltip,
 or localization. The application contract carries a typed semantic enum, not
 an opaque `"EI"` string. The web client owns one data-driven definition table
-that maps those enum values to glyphs and explanations. The visible glyphs may
+that maps those enum values to glyphs and labels. The visible glyphs may
 therefore evolve toward another client convention without changing engine
 state or the wire meaning.
 
@@ -193,8 +193,8 @@ be confused with choke state.
 ## Presentation Contract
 
 The common cell renders glyphs as one compact sequence in canonical catalog
-order. It has one accessible label containing the full present meanings, so a
-screen reader does not announce an unexplained sequence of letters. Empty
+order. It has one accessible label containing the names of every present flag,
+so a screen reader does not announce an unexplained sequence of letters. Empty
 means no currently present/known flag and renders an em dash; it never means
 all mature states were observed false.
 
@@ -206,9 +206,10 @@ Activating it by mouse, keyboard, or touch opens a nonmodal legend grouped as:
 3. negotiated capability; and
 4. exceptional scheduler/integrity state.
 
-The legend explains case sensitivity, the absence of an incoming/uTP marker,
-and the difference between unavailable state and a known false state. The
-button does not sort the column. Escape and outside activation dismiss the
+The legend is deliberately terse: it contains only its title, compact section
+labels, and case-sensitive glyph/name pairs. It omits introductory copy and
+per-flag descriptions; this topic remains the detailed semantics reference.
+The button does not sort the column. Escape and outside activation dismiss the
 popover while preserving predictable focus. A hover-only `title` tooltip is
 not the primary interaction.
 
@@ -247,7 +248,7 @@ Adding a new semantic state requires:
 2. reference and protocol review where relevant;
 3. unavailable/false/true semantics in the application projection;
 4. deterministic owner and generated-contract tests;
-5. a user-facing explanation and accessible cell meaning; and
+5. a short user-facing label and accessible cell meaning; and
 6. explicit compatibility handling for the closed enum.
 
 Do not infer a new flag from a diagnostic message, rate heuristic, UI timer,
@@ -272,9 +273,11 @@ semantic values.
 The Flags cell, sort key, full accessible label, and four-section legend all
 come from `clients/web/src/inspection/peerFlags.ts`. A distinct 24 px header
 help button opens keyboard-scrollable content, never sorts the column, and
-dismisses with Escape or outside activation. Standard Light at 1,024 px and
-Compact Dark at 920 px passed viewport-bound and serious/critical axe checks.
-The full Rust workspace, generated drift, TypeScript, unit/component,
+dismisses with Escape or outside activation. The 2026-08-03 presentation
+refinement reduced the legend to a 260 px compact glyph/name table with caption
+type, single-line rows, low-profile section labels, and no explanatory prose.
+Standard Light and Compact Dark passed viewport-bound and serious/critical axe
+checks. The full Rust workspace, generated drift, TypeScript, unit/component,
 production build, and headless browser suites passed; exact commands and
 counts remain in Tactical `051`.
 

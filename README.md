@@ -1,161 +1,105 @@
 # RSTorrent
 
-RSTorrent is the working name for a new, first-party BitTorrent client built
-around a Rust engine. It is independently implemented rather than translated
-from JSTorrent, but its likely long-term destination is to become the next
-generation of the JSTorrent product rather than a permanently separate brand.
+RSTorrent is a functional alpha BitTorrent client built around a first-party
+Rust engine. It is not released, has no users, and is not yet feature-complete.
 
-The project is in its engine bring-up stage. Its completed vertical thread
-parses bounded v1 single- and multi-file torrents, acquires metadata from
-magnet peers, discovers peers through scheduled multi-tracker UDP announces,
-and downloads selected files through a bounded 16 KiB block pipeline. UDP
-trackers have per-record failure backoff, fallback, success promotion,
-reannounce intervals, one loss-recovery retransmit, and short-lived connection
-tokens. Desktop and Android explicitly permit ordinary routed tracker and peer
-destinations while diagnostic tools and controlled harnesses remain
-loopback-only. Cross-file pieces combine wanted staging files, compact
-skipped-file part slots, and synthetic padding during streamed verification.
-Controlled large-piece, selective-file, tracker, and libtorrent fixtures
-provide reproducible interoperability evidence; this is not yet a generally
-useful torrent client.
+The current product can perform real v1 downloads from magnet intake through
+verified publication, with tracker and DHT discovery, multiple peers, durable
+session state, selective multi-file storage, and first-party desktop and
+Android clients. Exact support claims and their evidence live in the
+[feature-completeness scoreboard](docs/topics/capability-readiness.md) and
+[protocol support matrix](docs/topics/protocol-support.md).
 
-## Motivation
+## Current Status
 
-JSTorrent began as a Chrome App and adapted repeatedly as the platform changed:
-Chrome extension, native messaging host, IO daemon, Android companion, native
-mobile embedding, and Tauri desktop app. Each adaptation solved a real problem,
-but the combined product now carries several runtimes, process boundaries,
-bridges, and conformance surfaces.
+- **Functional, not feature-complete.** Ordinary supported downloads work, but
+  important capabilities and product behavior remain unfinished. The
+  [capability readiness record](docs/topics/capability-readiness.md) is the
+  authoritative checklist and work queue.
+- **No public release.** There are no supported installers, upgrade promises,
+  or production users yet.
+- **Platforms are at different readiness levels.** Desktop/web is the leading
+  product and inspection surface. Android is functional with native engine and
+  durable storage integration but still has product gaps. ChromeOS deployment
+  and extension integration remain planned rather than released. See
+  [client and platform readiness](docs/topics/client-surfaces.md).
 
-RSTorrent starts from the product constraints that exist now:
+## What RSTorrent Is
 
-- the torrent engine, networking, hashing, persistence, and scheduling should
-  be first-party Rust;
-- the engine should normally run in the same process as its client;
-- platform code should expose operating-system capabilities rather than proxy
-  ordinary torrent sockets through another runtime;
-- Android and ChromeOS should be treated as a first-class product surface;
-- desktop should provide the fast development and validation surface and become
-  a first-class client of the same engine; and
-- the project should be enjoyable to evolve experimentally without inheriting
-  JSTorrent feature parity as its starting obligation.
-
-It is also a deliberately well-bounded environment for ambitious automated
-implementation and review experiments. BitTorrent is a domain the maintainer
-already understands, so generated work can be evaluated against protocol
-specifications, mature implementations, deterministic fixtures, and known
-product behavior instead of by appearance alone.
-
-## Initial Direction
-
-The intended center of gravity is a reusable Rust engine with a small
-application-facing command, snapshot, and event API. Platform clients are
-authored in this repository and call that API directly:
+RSTorrent has one reusable Rust engine behind a typed application service:
 
 ```text
-Android client ─┐
-Desktop client ─┼──> application service ──> Rust torrent engine
+Desktop client ─┐
+Android client ─┼──> application service ──> Rust torrent engine
 CLI and tests ──┘
 ```
 
-An Android client may still need Kotlin for activities, Compose, foreground
-services, notifications, permissions, and Storage Access Framework operations.
-That is platform integration, not a second torrent engine. Hot-path peer data
-and file data should not bounce through a Kotlin socket proxy or serialized
-daemon protocol.
+The engine runs in-process in first-party clients and owns peer networking,
+discovery, protocol state, hashing, scheduling, persistence, and hot-path file
+I/O. Platform code owns operating-system integration such as windows,
+activities, lifecycle, notifications, permissions, and Android document
+access. RSTorrent is an independently implemented engine, not a wrapper around
+libtorrent, librqbit, or a separate torrent daemon.
 
-Candidate desktop and Android UI technologies remain decisions for later
-tacticals. Tauri and Jetpack Compose are useful starting references, but they
-are not yet selected contracts.
+The desktop product uses a shared React interface hosted by Tauri and provides
+Library, Transfers, and detailed Workbench views. Android uses a
+platform-appropriate Compose interface over the same engine and application
+semantics; presentation parity is not required.
+
+## Intended Product And Deployment
+
+`RSTorrent` is the incubation and implementation name. The provisional plan is
+to graduate this work into the next generation of **JSTorrent**: replace the
+current engine and related internals while retaining the JSTorrent product
+name and providing a deliberate transition for existing installations.
+
+Desktop, Android, and ChromeOS are intended to use the same first-party Rust
+engine. A future JSTorrent browser extension may attach as a control and
+presentation surface, while networking, hashing, scheduling, persistence, and
+payload I/O remain in the native engine. The rollout, backend choices,
+coexistence, and user-state import direction are recorded in the
+[product deployment and migration plan](docs/topics/product-surfaces-and-migration.md)
+and [long-term product vision](docs/vision.md).
+
+## Unreleased Development Policy
+
+RSTorrent is unreleased and currently has no users. Until the first release,
+RSTorrent-owned application protocols, APIs, database schemas, persisted-state
+formats, and other internal contracts may change incompatibly without
+migrations or compatibility shims. Development profiles and state may be
+discarded and recreated; do not preserve provisional contracts solely for
+hypothetical users.
+
+Once a release creates real installations and persisted user state, this
+policy ends. Changes must then account for supported upgrade paths, including
+database and state migrations, protocol and API versioning, coexistence or
+rollback where appropriate, and safe handling of older installations. This
+pre-release freedom does not relax RSTorrent's interoperability obligations to
+external BitTorrent peers and protocols.
 
 ## Engineering Character
 
-The engine should remain understandable as it becomes capable: explicit state
-ownership, deterministic protocol and scheduling logic, bounded handling of
-untrusted input, supervised task lifecycles, structured diagnostics, and
-support claims backed by executable evidence.
+Keep the Rust engine understandable: prefer explicit state ownership, plain
+structs and enums, deterministic protocol logic, bounded handling of untrusted
+input, supervised task lifecycles, structured diagnostics, and support claims
+backed by executable evidence. Introduce abstraction when it solves a concrete
+ownership, dependency, testing, reuse, or measured performance problem.
 
-Prefer plain structs, enums, functions, and coherent modules until a trait,
-generic abstraction, or additional layer solves a concrete ownership,
-dependency, testing, or performance problem. See
-[Engine engineering principles](docs/engineering-principles.md) for the
-accepted defaults and north-star invariants.
-
-## Initial Non-Goals
-
-- Reproduce JSTorrent feature or UI parity before establishing a small,
-  reliable product.
-- Build a Chrome extension, native-messaging host, Android companion server, or
-  browser-to-daemon socket proxy during initial bring-up.
-- Adopt an existing torrent engine as the runtime implementation.
-- Support every platform in the first bring-up.
-- Preserve JSTorrent's internal APIs, persistence format, or process topology.
-
-## References
-
-RSTorrent owns its implementation, but it does not need to rediscover the
-problem without evidence:
-
-- [JSTorrent](https://github.com/kzahel/jstorrent) is the product-behavior,
-  test-harness, Android/ChromeOS, and historical design reference. On the
-  maintainer's machines it is normally available at `~/code/jstorrent`.
-- [libtorrent](https://libtorrent.org/) is the primary interoperability oracle
-  and a mature reference for protocol behavior.
-- [rqbit](https://github.com/ikatson/rqbit) is a native Rust BitTorrent client.
-  Its `librqbit` crate is a reusable Rust torrent engine, not a C++ wrapper or a
-  REST-only service. RSTorrent will study and test against it where useful, but
-  will not use it as the product engine.
-- [BitTorrent Enhancement Proposals](https://www.bittorrent.org/beps/bep_0000.html)
-  are the normative starting point for supported protocol behavior.
-
-See [docs/references.md](docs/references.md) for the reference-use and
-provenance policy.
+See the [engine engineering principles](docs/engineering-principles.md) for
+the durable Rust and architecture guidance. See [Development](DEVELOPMENT.md)
+for toolchain setup, build, test, and launch instructions.
 
 ## Documentation
 
-- [Long-term product vision](docs/vision.md) describes how the native engine may
-  graduate into a new generation of JSTorrent.
-- [Engine engineering principles](docs/engineering-principles.md) records the
-  simplicity, ownership, integrity, observability, and evidence standards that
-  guide implementation.
-- [Product and engine direction](docs/topics/product-direction.md) records the
-  durable decisions, open questions, and bring-up sequence.
-- [Product surfaces and JSTorrent migration](docs/topics/product-surfaces-and-migration.md)
-  records the desktop and ChromeOS backend/presentation choices, launch and
-  handoff requirements, backend isolation, and manual-import direction.
-- [Desktop inspection surface](docs/topics/desktop-inspection-surface.md)
-  records the accepted JSTorrent-derived desktop/web direction, Android
-  presentation split, and the remaining inspection-design questions.
-- [Application interface direction](docs/topics/application-interface-direction.md)
-  records the accepted Library, Transfers, and Workbench destinations, media
-  boundaries, contextual sidebars, and preserved traditional advanced UI.
-- [Application view API](docs/topics/application-view-api.md) records leased
-  view sets, typed snapshot/diff recovery, polling and streaming delivery,
-  generated TypeScript/schema, and provisional remote routes.
-- [Web UI design](docs/topics/web-ui-design.md) records the fresh React and CSS
-  Modules frontend, Zustand store, responsive information hierarchy,
-  accessibility baseline, and virtualized rendering direction.
-- [Capability readiness](docs/topics/capability-readiness.md) is the current
-  engine and product scoreboard and owns the prioritized work queue.
-- [Download correctness](docs/topics/download-correctness.md) tracks completion,
-  integrity, recovery, and liveness scenarios.
-- [Protocol support](docs/topics/protocol-support.md) records exact BEP support,
-  limitations, and evidence.
-- [DHT discovery](docs/topics/dht-discovery.md) defines the first major engine
-  feature campaign, including privacy, resource, and warm-restart boundaries.
-- [Performance and live evidence](docs/topics/performance-and-live-evidence.md)
-  defines the headless libtorrent comparator and public-smoke evidence policy.
-- [Maximum-throughput storage architecture](docs/topics/storage-throughput-architecture.md)
-  defines the proposed positional write, independent hash, part-file,
-  checkpoint, and session-scheduling direction for removing the measured
-  serialized storage bottleneck.
-- [Oracle-driven engine campaign](docs/topics/oracle-driven-engine-campaign.md)
-  is the compaction-safe source-first runbook and current execution checkpoint.
-- [Topics](docs/topics/README.md) hold living truth for continuing concerns.
-- [Tacticals](docs/tactical/README.md) hold numbered, bounded implementation
-  plans and their execution records.
-- [Development](DEVELOPMENT.md) is the maintainer entry point once
-  implementation begins.
+- [Feature completeness and current queue](docs/topics/capability-readiness.md)
+- [Client and platform readiness](docs/topics/client-surfaces.md)
+- [Exact protocol support](docs/topics/protocol-support.md)
+- [Deployment and JSTorrent migration](docs/topics/product-surfaces-and-migration.md)
+- [Product vision](docs/vision.md)
+- [Project history and original motivation](docs/project-history.md)
+- [Reference implementations and provenance](docs/references.md)
+- [Living topics](docs/topics/README.md) and
+  [bounded implementation tacticals](docs/tactical/README.md)
 
 ## License
 

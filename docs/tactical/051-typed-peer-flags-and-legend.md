@@ -52,7 +52,7 @@ semantic values for later engine features.
 - Regenerate TypeScript, JSON Schema, and deterministic trace fixtures and
   retain additive v1 compatibility.
 - Replace the frontend string with typed flags and one exhaustive definition
-  table for glyphs, order, group, short label, and explanation.
+  table for glyphs, order, group, and short label.
 - Normalize every demo scenario to the typed vocabulary.
 - Extend the generic table header with optional accessible help content and use
   it for a grouped Peer flags legend.
@@ -288,8 +288,8 @@ Implemented:
   populated Rust list wins over contradictory legacy facts.
 - React and every deterministic demo now carry semantic flags rather than raw
   strings. One exhaustive definition table owns canonical glyph order, labels,
-  groups, explanations, sort formatting, and cell accessibility. The former
-  live `EIC` meanings and separate demo strings no longer exist.
+  groups, sort formatting, and cell accessibility. The former live `EIC`
+  meanings and separate demo strings no longer exist.
 - `VirtualTable` accepts optional header help. The separate question-mark
   button opens one viewport-bounded, scrollable, nonmodal dialog, focuses that
   keyboard-scrollable content, leaves sorting untouched, restores the trigger
@@ -299,6 +299,13 @@ Implemented:
   legible contrast, a 24 px help target, bounded popover geometry, and usable
   scrolling. Axe found no serious or critical findings in either theme. The
   captures were inspected and removed with the temporary evidence directory.
+- A 2026-08-03 presentation refinement removed the introductory and per-flag
+  prose, reduced the popover to 260 px, changed its body to caption type, and
+  condensed every section to low-profile headings plus single-line glyph/name
+  rows. The semantic vocabulary, cell accessibility, and interaction contract
+  did not change. Standard Light and Compact Dark captures showed every entry
+  in a panel no wider than 260 px and no taller than 460 px; both were inspected
+  and removed.
 
 Validation completed:
 
@@ -313,6 +320,16 @@ Validation completed:
 - targeted Light/Standard and Dark/Compact legend browser checks, including
   canonical cells, all 16 entries, sort independence, Escape/outside
   dismissal, focus, viewport bounds, and axe analysis
+
+The 2026-08-03 compact-legend refinement additionally passed:
+
+- `npm run typecheck`
+- `npm test` (106 passed, 2 skipped)
+- `npm run build`
+- targeted `npm run test:e2e -- --grep "peer flags expose"` (1 passed),
+  covering absent prose, all 16 glyph/name pairs, the 260 by 460 px bounds,
+  Standard Light, Compact Dark, focus/dismissal, and serious/critical axe
+  analysis
 
 Deliberate gaps remain those in `peer-flag-vocabulary`: the reserved advanced
 states do not appear until their engine owners exist; ordinary incoming and

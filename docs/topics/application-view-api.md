@@ -30,6 +30,11 @@ Tactical `051` adds an optional, defaulted, closed `PeerFlagView` set to active
 peer rows. Rust computes semantic connection state while clients retain
 presentation-only glyph ownership; old v1 producers that omit the field remain
 accepted through a bounded typed-fact fallback.
+Tactical `056` completes the existing nullable active-peer `client_name`
+projection from the handshake peer ID. The Rust protocol utility owns bounded
+fingerprint parsing, the application view owns capability state, and clients
+continue to render the generated field without a competing parser or a
+contract-version change.
 
 ## Purpose And Scope
 
@@ -617,6 +622,14 @@ snubbed, seed, upload-only, hole-punch, optimistic-unchoke, and connection
 endgame values are reserved vocabulary rather than fabricated observations.
 The additive field defaults empty and is omitted when empty, preserving the
 accepted v1 compatibility shape.
+
+Tactical `056` makes the previously reserved `client_name` field operational.
+Once a handshake peer ID is known, the application projection identifies
+registered BEP 20 Azureus, Shadow, Mainline, and a bounded set of precisely
+specified legacy fingerprints. A recognized value is `available`; missing or
+unrecognized evidence is `unavailable`, not `unsupported`. The peer-controlled
+fingerprint is a display hint only and cannot affect peer identity, trust, or
+scheduling. The existing nullable field and consumer shape do not change.
 
 `InspectionApplication` now accepts semantic desired views. The live adapter
 maps them to Rust specifications while responsive navigation can retain only a

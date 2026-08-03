@@ -36,7 +36,12 @@ adds Auto, Light, and Dark to the shared Appearance settings, safely migrates
 the size-only preference, and applies persisted theme before React content.
 Tactical `051` replaces ambiguous peer flag strings with typed Rust semantics,
 one exhaustive React glyph/label table, full cell accessibility, and a
-separate sortable-header help control containing the complete legend.
+separate sortable-header help control containing a compact sectioned
+glyph/name legend without explanatory prose.
+Tactical `056` completes the existing Peers Client column: the Rust
+application projection supplies a bounded client/version label derived from
+the handshake peer ID, while React retains only nullable display, title, and
+sorting behavior and shows an em dash for unknown evidence.
 Tactical `055` implements the accepted product information architecture:
 responsive Library, Transfers, and Workbench destinations; contextual
 sidebars; shared bounded multi-selection; a clean transfer queue; a truthful
