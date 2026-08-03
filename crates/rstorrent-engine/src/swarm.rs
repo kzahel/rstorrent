@@ -2663,38 +2663,32 @@ mod tests {
         let incomplete_pieces = state
             .pieces
             .iter()
-            .filter_map(|(&piece, piece_state)| {
-                piece_state
-                    .blocks
-                    .iter()
-                    .any(|block| {
-                        !matches!(
-                            state.blocks.get(block).map(|block| block.phase),
-                            Some(BlockPhase::Verified)
-                        )
-                    })
-                    .then(|| usize::try_from(piece).expect("piece index"))
+            .filter(|(_, piece_state)| {
+                piece_state.blocks.iter().any(|block| {
+                    !matches!(
+                        state.blocks.get(block).map(|block| block.phase),
+                        Some(BlockPhase::Verified)
+                    )
+                })
             })
+            .map(|(&piece, _)| usize::try_from(piece).expect("piece index"))
             .collect::<BTreeSet<_>>();
         let active_pieces = state
             .pieces
             .iter()
-            .filter_map(|(&piece, piece_state)| {
-                piece_state
-                    .blocks
-                    .iter()
-                    .any(|block| {
-                        state.blocks.get(block).is_some_and(|block| {
-                            matches!(
-                                block.phase,
-                                BlockPhase::Requested
-                                    | BlockPhase::Writing { .. }
-                                    | BlockPhase::Received { .. }
-                            )
-                        })
+            .filter(|(_, piece_state)| {
+                piece_state.blocks.iter().any(|block| {
+                    state.blocks.get(block).is_some_and(|block| {
+                        matches!(
+                            block.phase,
+                            BlockPhase::Requested
+                                | BlockPhase::Writing { .. }
+                                | BlockPhase::Received { .. }
+                        )
                     })
-                    .then(|| usize::try_from(piece).expect("piece index"))
+                })
             })
+            .map(|(&piece, _)| usize::try_from(piece).expect("piece index"))
             .collect::<BTreeSet<_>>();
         assert_eq!(state.incomplete_pieces, incomplete_pieces);
         assert_eq!(state.active_pieces, active_pieces);

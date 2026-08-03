@@ -13463,12 +13463,14 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             .events
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let snapshots = events.iter().filter_map(|event| match event {
+        let mut snapshots = events.iter().filter_map(|event| match event {
             DownloadActivityEvent::StorageState(snapshot) => Some(snapshot.as_ref()),
             _ => None,
         });
         assert_eq!(snapshots.clone().count(), 2);
-        let latest = snapshots.last().expect("forced latest storage snapshot");
+        let latest = snapshots
+            .next_back()
+            .expect("forced latest storage snapshot");
         assert_eq!(latest.received_bytes_total, 16);
         assert_eq!(latest.stored_bytes_total, 16);
         assert_eq!(latest.pieces.len(), 1);

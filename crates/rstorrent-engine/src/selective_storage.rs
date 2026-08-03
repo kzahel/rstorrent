@@ -901,7 +901,7 @@ impl SelectiveStorage {
             .await?;
             return Ok((storage, ResumedStorage::Created));
         }
-        if verified.iter().all(|piece| !piece) && output_exists {
+        if verified.iter().all(|piece| !piece) && output_exists && !part_exists {
             return Err(SelectiveStorageError::ExistingOutput(output_root));
         }
         if output_exists == staging_exists {
