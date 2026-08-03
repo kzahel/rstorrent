@@ -302,6 +302,9 @@ that scope and its cleanup or compatibility rules explicitly.
 - [`059-actionable-table-range-selection.md`](059-actionable-table-range-selection.md):
   complete; keeps checkbox columns visible on actionable tables and adds
   sorted Shift-range selection across torrent and Files surfaces.
+- [`060-multiplexed-application-websocket.md`](060-multiplexed-application-websocket.md):
+  proposed; makes one bounded multiplexed WebSocket the default live-browser
+  application connection while retaining explicit HTTP long-poll fallback.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
