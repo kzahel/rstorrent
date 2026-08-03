@@ -208,7 +208,7 @@ describe("VirtualTable", () => {
     expect(second()).toHaveStyle({ transform: "translateY(42px)" });
   });
 
-  it("shows checks only in explicit selection mode", () => {
+  it("keeps actionable checks visible while batch mode stays explicit", () => {
     function SelectableTable() {
       const rows = [
         { id: "one", value: "1" },
@@ -248,10 +248,18 @@ describe("VirtualTable", () => {
                 else next.add(row.id);
                 return next;
               }),
-            onSetAll: (selectedRows, selected) =>
+            onReplace: (rangeRows) => {
+              setActive(true);
+              setSelectedIds(new Set(rangeRows.map((row) => row.id)));
+            },
+            onSetAll: (selectedRows, selected) => {
+              setActive(true);
               setSelectedIds(
-                selected ? new Set(selectedRows.map((row) => row.id)) : new Set(),
-              ),
+                selected
+                  ? new Set(selectedRows.map((row) => row.id))
+                  : new Set(),
+              );
+            },
           }}
         />
       );
@@ -259,22 +267,25 @@ describe("VirtualTable", () => {
 
     render(<SelectableTable />);
     const grid = screen.getByRole("grid", { name: "Selectable rows" });
-    expect(grid).not.toHaveAttribute("aria-multiselectable");
-    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(grid).toHaveAttribute("aria-multiselectable", "true");
+    expect(screen.getByRole("checkbox", { name: "Select one" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Select two" })).not.toBeChecked();
     expect(screen.getByRole("row", { name: /1/ })).toHaveAttribute(
       "aria-current",
       "true",
     );
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Select rows in Selectable rows" }),
+    expect(screen.getByRole("row", { name: /1/ })).toHaveAttribute(
+      "aria-selected",
+      "false",
     );
-    expect(grid).toHaveAttribute("aria-multiselectable", "true");
-    const selectAll = screen.getByRole("checkbox", { name: "Select all rows" });
-    expect(selectAll).toHaveProperty("indeterminate", true);
+
     fireEvent.click(
       screen.getByRole("checkbox", { name: "Select two" }).parentElement!,
     );
+    expect(screen.getByRole("checkbox", { name: "Deselect two" })).toBeChecked();
+    const selectAll = screen.getByRole("checkbox", { name: "Select all rows" });
+    expect(selectAll).toHaveProperty("indeterminate", true);
+    fireEvent.click(selectAll);
     expect(screen.getByRole("checkbox", { name: "Deselect all rows" })).toBeChecked();
 
     const firstRow = screen.getByRole("row", { name: /Deselect one/ });
@@ -291,13 +302,13 @@ describe("VirtualTable", () => {
         name: "Done selecting rows in Selectable rows",
       }),
     );
-    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select one" })).not.toBeChecked();
     const currentRow = screen.getByRole("row", { name: /1/ });
     currentRow.focus();
     fireEvent.keyDown(grid, { key: " " });
     expect(screen.getByRole("checkbox", { name: "Deselect one" })).toBeChecked();
     fireEvent.keyDown(grid, { key: "Escape" });
-    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select one" })).not.toBeChecked();
 
     const secondRow = screen.getByRole("row", { name: /2/ });
     fireEvent.click(secondRow, { ctrlKey: true });
@@ -307,7 +318,150 @@ describe("VirtualTable", () => {
     fireEvent.keyDown(grid, { key: "Enter" });
     expect(screen.getByRole("checkbox", { name: "Deselect one" })).toBeChecked();
     fireEvent.click(grid);
-    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select one" })).not.toBeChecked();
+  });
+
+  it("replaces forward and reverse Shift ranges in sorted row order", () => {
+    function RangeTable() {
+      const rows = ["one", "two", "three", "four", "five"].map(
+        (id, index) => ({ id, value: String(index + 1) }),
+      );
+      const [active, setActive] = useState(false);
+      const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
+        new Set(),
+      );
+      return (
+        <VirtualTable
+          tableId="range-test"
+          label="Range rows"
+          rows={rows}
+          getRowId={(row) => row.id}
+          columns={COLUMNS}
+          interfaceSize="standard"
+          selectedId="two"
+          emptyMessage="empty"
+          selection={{
+            active,
+            selectedIds,
+            getRowLabel: (row) => row.id,
+            onEnter: (row) => {
+              setActive(true);
+              setSelectedIds(new Set(row === undefined ? [] : [row.id]));
+            },
+            onExit: () => {
+              setActive(false);
+              setSelectedIds(new Set());
+            },
+            onToggle: (row) => {
+              setActive(true);
+              setSelectedIds((current) => {
+                const next = new Set(current);
+                if (next.has(row.id)) next.delete(row.id);
+                else next.add(row.id);
+                return next;
+              });
+            },
+            onReplace: (rangeRows) => {
+              setActive(true);
+              setSelectedIds(new Set(rangeRows.map((row) => row.id)));
+            },
+            onSetAll: (rangeRows, selected) => {
+              setActive(true);
+              setSelectedIds(
+                selected ? new Set(rangeRows.map((row) => row.id)) : new Set(),
+              );
+            },
+          }}
+        />
+      );
+    }
+
+    render(<RangeTable />);
+    fireEvent.click(screen.getByRole("row", { name: /4/ }), { shiftKey: true });
+    expect(checkedRowNames()).toEqual(["two", "three", "four"]);
+    fireEvent.click(screen.getByRole("row", { name: /3/ }), { shiftKey: true });
+    expect(checkedRowNames()).toEqual(["two", "three"]);
+
+    fireEvent.click(screen.getByRole("row", { name: /5/ }));
+    fireEvent.click(screen.getByRole("row", { name: /3/ }), { shiftKey: true });
+    expect(checkedRowNames()).toEqual(["three", "four", "five"]);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Deselect four" }), {
+      shiftKey: true,
+    });
+    expect(checkedRowNames()).toEqual(["four", "five"]);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Done selecting rows in Range rows" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Value" }));
+    fireEvent.click(screen.getByRole("button", { name: "Value" }));
+    fireEvent.click(screen.getByRole("row", { name: /4/ }), { shiftKey: true });
+    expect(checkedRowNames()).toEqual(["four", "three", "two"]);
+  });
+
+  it("falls back to the clicked row when the range anchor disappears", () => {
+    function FilteredRangeTable() {
+      const [rows, setRows] = useState([
+        { id: "one", value: "1" },
+        { id: "two", value: "2" },
+        { id: "three", value: "3" },
+      ]);
+      const [active, setActive] = useState(false);
+      const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
+        new Set(),
+      );
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() =>
+              setRows((current) =>
+                current.filter((row) => row.id !== "two"),
+              )
+            }
+          >
+            Hide anchor
+          </button>
+          <VirtualTable
+            tableId="missing-anchor-test"
+            label="Filtered rows"
+            rows={rows}
+            getRowId={(row) => row.id}
+            columns={COLUMNS}
+            interfaceSize="standard"
+            emptyMessage="empty"
+            selection={{
+              active,
+              selectedIds,
+              getRowLabel: (row) => row.id,
+              onEnter: (row) => {
+                setActive(true);
+                setSelectedIds(new Set(row === undefined ? [] : [row.id]));
+              },
+              onExit: () => {
+                setActive(false);
+                setSelectedIds(new Set());
+              },
+              onToggle: (row) => {
+                setActive(true);
+                setSelectedIds(new Set([row.id]));
+              },
+              onReplace: (rangeRows) => {
+                setActive(true);
+                setSelectedIds(new Set(rangeRows.map((row) => row.id)));
+              },
+              onSetAll: vi.fn(),
+            }}
+          />
+        </>
+      );
+    }
+
+    render(<FilteredRangeTable />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select two" }));
+    fireEvent.click(screen.getByRole("button", { name: "Hide anchor" }));
+    fireEvent.click(screen.getByRole("row", { name: /3/ }), { shiftKey: true });
+    expect(checkedRowNames()).toEqual(["three"]);
   });
 
   it("enters selection on a stationary touch hold and cancels on movement", () => {
@@ -329,6 +483,7 @@ describe("VirtualTable", () => {
           onEnter: enter,
           onExit: vi.fn(),
           onToggle: vi.fn(),
+          onReplace: vi.fn(),
           onSetAll: vi.fn(),
         }}
       />,
@@ -362,4 +517,11 @@ function rowIds(container: HTMLElement): string[] {
   return [...container.querySelectorAll<HTMLElement>("[data-row-id]")].map(
     (element) => element.dataset.rowId ?? "",
   );
+}
+
+function checkedRowNames(): string[] {
+  return screen
+    .getAllByRole("checkbox")
+    .filter((checkbox) => checkbox.getAttribute("aria-label")?.startsWith("Deselect "))
+    .map((checkbox) => checkbox.getAttribute("aria-label")!.slice("Deselect ".length));
 }

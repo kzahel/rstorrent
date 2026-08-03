@@ -60,6 +60,7 @@ export interface VirtualTableSelection<Row> {
   readonly onEnter: (row?: Row) => void;
   readonly onExit: () => void;
   readonly onToggle: (row: Row) => void;
+  readonly onReplace: (rows: readonly Row[]) => void;
   readonly onSetAll: (rows: readonly Row[], selected: boolean) => void;
 }
 
@@ -132,6 +133,7 @@ export function VirtualTable<Row>({
     readonly timer: ReturnType<typeof globalThis.setTimeout>;
   } | null>(null);
   const suppressClickRowRef = useRef<string | null>(null);
+  const selectionAnchorIdRef = useRef<string | null>(null);
 
   useEffect(
     () => () => {
@@ -145,6 +147,10 @@ export function VirtualTable<Row>({
     if (selection?.active !== true || longPressRef.current === null) return;
     globalThis.clearTimeout(longPressRef.current.timer);
     longPressRef.current = null;
+  }, [selection?.active]);
+
+  useEffect(() => {
+    if (selection?.active !== true) selectionAnchorIdRef.current = null;
   }, [selection?.active]);
 
   useEffect(() => {
@@ -248,9 +254,10 @@ export function VirtualTable<Row>({
   const lastIndex = Math.min(sortedRows.length, firstIndex + visibleCount);
   const renderedRows = sortedRows.slice(firstIndex, lastIndex);
   const selectionActive = selection?.active === true;
-  const selectionColumnWidth = selectionActive ? 44 : 0;
+  const selectionAvailable = selection !== undefined;
+  const selectionColumnWidth = selectionAvailable ? 44 : 0;
   const gridTemplateColumns = [
-    ...(selectionActive ? [`${selectionColumnWidth}px`] : []),
+    ...(selectionAvailable ? [`${selectionColumnWidth}px`] : []),
     ...visibleColumns.map((column) => `${column.width}px`),
   ].join(" ");
   const minimumWidth =
@@ -298,6 +305,7 @@ export function VirtualTable<Row>({
       if (press?.pointerId !== pointerId || press.rowId !== rowId) return;
       longPressRef.current = null;
       suppressClickRowRef.current = rowId;
+      selectionAnchorIdRef.current = rowId;
       selection.onEnter(row);
     }, 500);
     longPressRef.current = {
@@ -330,13 +338,57 @@ export function VirtualTable<Row>({
       suppressClickRowRef.current = null;
       if (suppressedRow === rowId) return;
     }
-    if (selection !== undefined && (event.metaKey || event.ctrlKey)) {
-      if (selection.active) selection.onToggle(row);
-      else selection.onEnter(row);
+    if (selection !== undefined && event.shiftKey) {
+      replaceSelectionRange(row, rowId);
       return;
     }
-    if (selection?.active === true) selection.onToggle(row);
+    if (selection !== undefined && (event.metaKey || event.ctrlKey)) {
+      if (selection.active) toggleRowSelection(row, rowId);
+      else enterRowSelection(row, rowId);
+      return;
+    }
+    if (selection?.active === true) toggleRowSelection(row, rowId);
     else onSelect?.(row);
+  };
+
+  const enterRowSelection = (row: Row, rowId: string) => {
+    selectionAnchorIdRef.current = rowId;
+    selection?.onEnter(row);
+  };
+
+  const toggleRowSelection = (row: Row, rowId: string) => {
+    selectionAnchorIdRef.current = rowId;
+    selection?.onToggle(row);
+  };
+
+  const replaceSelectionRange = (row: Row, rowId: string) => {
+    if (selection === undefined) return;
+    let anchorId = selectionAnchorIdRef.current;
+    let anchorIndex =
+      anchorId === null
+        ? -1
+        : sortedRows.findIndex((candidate) => getRowId(candidate) === anchorId);
+    if (anchorIndex < 0 && selectedId !== null) {
+      const currentIndex = sortedRows.findIndex(
+        (candidate) => getRowId(candidate) === selectedId,
+      );
+      if (currentIndex >= 0) {
+        anchorIndex = currentIndex;
+        anchorId = selectedId;
+      }
+    }
+    const clickedIndex = sortedRows.findIndex(
+      (candidate) => getRowId(candidate) === rowId,
+    );
+    if (clickedIndex < 0) return;
+    if (anchorIndex < 0) {
+      anchorIndex = clickedIndex;
+      anchorId = rowId;
+    }
+    selectionAnchorIdRef.current = anchorId;
+    const start = Math.min(anchorIndex, clickedIndex);
+    const end = Math.max(anchorIndex, clickedIndex);
+    selection.onReplace(sortedRows.slice(start, end + 1));
   };
 
   const activateBackground = () => {
@@ -454,7 +506,7 @@ export function VirtualTable<Row>({
       ? undefined
       : visibleColumns.find((column) => column.id === headerHelp.columnId);
   const selectedVisibleCount =
-    !selectionActive || selection === undefined
+    selection === undefined
       ? 0
       : sortedRows.filter((row) =>
           selection.selectedIds.has(getRowId(row)),
@@ -518,11 +570,15 @@ export function VirtualTable<Row>({
             type="button"
             aria-label={`Select rows in ${label}`}
             disabled={sortedRows.length === 0}
-            onClick={() =>
-              selection.onEnter(
-                sortedRows.find((row) => getRowId(row) === selectedId),
-              )
-            }
+            onClick={() => {
+              const row = sortedRows.find(
+                (candidate) => getRowId(candidate) === selectedId,
+              );
+              if (row !== undefined) {
+                selectionAnchorIdRef.current = getRowId(row);
+              }
+              selection.onEnter(row);
+            }}
           >
             Select
           </button>
@@ -614,8 +670,8 @@ export function VirtualTable<Row>({
         role="grid"
         aria-label={label}
         aria-rowcount={sortedRows.length + 1}
-        aria-colcount={visibleColumns.length + (selectionActive ? 1 : 0)}
-        aria-multiselectable={selectionActive ? true : undefined}
+        aria-colcount={visibleColumns.length + (selectionAvailable ? 1 : 0)}
+        aria-multiselectable={selectionAvailable ? true : undefined}
         onScroll={handleScroll}
         onClick={(event) => {
           if (event.target === event.currentTarget) activateBackground();
@@ -648,16 +704,19 @@ export function VirtualTable<Row>({
             const row = sortedRows[focusIndex];
             if (row !== undefined) {
               event.preventDefault();
-              if (selection?.active === true) selection.onToggle(row);
-              else onSelect?.(row);
+              if (selection?.active === true) {
+                toggleRowSelection(row, getRowId(row));
+              } else onSelect?.(row);
             }
           } else if (event.key === " ") {
             const row = sortedRows[focusIndex];
             if (row === undefined) return;
             if (selection !== undefined) {
               event.preventDefault();
-              if (selection.active) selection.onToggle(row);
-              else selection.onEnter(row);
+              const rowId = getRowId(row);
+              if (event.shiftKey) replaceSelectionRange(row, rowId);
+              else if (selection.active) toggleRowSelection(row, rowId);
+              else enterRowSelection(row, rowId);
             } else if (onSelect !== undefined) {
               event.preventDefault();
               onSelect(row);
@@ -667,7 +726,7 @@ export function VirtualTable<Row>({
         data-testid="virtual-table"
       >
       <div className={styles.header} role="row" style={gridStyle}>
-        {!selectionActive || selection === undefined ? null : (
+        {selection === undefined ? null : (
           <div
             className={styles.selectionHeaderCell}
             role="columnheader"
@@ -675,6 +734,8 @@ export function VirtualTable<Row>({
             onClick={(event) => {
               event.stopPropagation();
               if (event.target === event.currentTarget) {
+                selectionAnchorIdRef.current =
+                  sortedRows.length === 0 ? null : getRowId(sortedRows[0]!);
                 selection.onSetAll(sortedRows, !allVisibleSelected);
               }
             }}
@@ -685,9 +746,11 @@ export function VirtualTable<Row>({
               label={
                 allVisibleSelected ? "Deselect all rows" : "Select all rows"
               }
-              onChange={() =>
-                selection.onSetAll(sortedRows, !allVisibleSelected)
-              }
+              onChange={() => {
+                selectionAnchorIdRef.current =
+                  sortedRows.length === 0 ? null : getRowId(sortedRows[0]!);
+                selection.onSetAll(sortedRows, !allVisibleSelected);
+              }}
             />
           </div>
         )}
@@ -774,22 +837,22 @@ export function VirtualTable<Row>({
           {renderedRows.map((row, offset) => {
             const index = firstIndex + offset;
             const rowId = getRowId(row);
-            const selected =
-              selectionActive && selection !== undefined
-                ? selection.selectedIds.has(rowId)
-                : rowId === selectedId;
+            const checked = selection?.selectedIds.has(rowId) ?? false;
+            const highlighted = selectionActive
+              ? checked
+              : rowId === selectedId;
             return (
               <div
                 key={rowId}
                 className={styles.row}
                 role="row"
                 aria-rowindex={index + 2}
-                aria-selected={selected}
+                aria-selected={selectionAvailable ? checked : highlighted}
                 aria-current={rowId === selectedId ? "true" : undefined}
                 tabIndex={index === focusIndex ? 0 : -1}
                 data-row-index={index}
                 data-row-id={rowId}
-                data-selected={selected}
+                data-selected={highlighted}
                 data-current={rowId === selectedId}
                 style={{
                   ...gridStyle,
@@ -811,22 +874,24 @@ export function VirtualTable<Row>({
                   activateRow(event, row, rowId);
                 }}
               >
-                {!selectionActive || selection === undefined ? null : (
+                {selection === undefined ? null : (
                   <div
                     className={styles.selectionCell}
                     role="gridcell"
                     onClick={(event) => {
                       event.stopPropagation();
                       if (event.target === event.currentTarget) {
-                        selection.onToggle(row);
+                        if (event.shiftKey) replaceSelectionRange(row, rowId);
+                        else toggleRowSelection(row, rowId);
                       }
                     }}
                   >
                     <SelectionCheckbox
-                      checked={selected}
+                      checked={checked}
                       indeterminate={false}
-                      label={`${selected ? "Deselect" : "Select"} ${selection.getRowLabel(row)}`}
-                      onChange={() => selection.onToggle(row)}
+                      label={`${checked ? "Deselect" : "Select"} ${selection.getRowLabel(row)}`}
+                      onChange={() => toggleRowSelection(row, rowId)}
+                      onShiftChange={() => replaceSelectionRange(row, rowId)}
                     />
                   </div>
                 )}
@@ -883,11 +948,13 @@ function SelectionCheckbox({
   indeterminate,
   label,
   onChange,
+  onShiftChange,
 }: {
   readonly checked: boolean;
   readonly indeterminate: boolean;
   readonly label: string;
   readonly onChange: () => void;
+  readonly onShiftChange?: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -904,7 +971,15 @@ function SelectionCheckbox({
       aria-label={label}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
-      onChange={onChange}
+      onChange={(event) => {
+        if (
+          event.nativeEvent instanceof MouseEvent &&
+          event.nativeEvent.shiftKey &&
+          onShiftChange !== undefined
+        ) {
+          onShiftChange();
+        } else onChange();
+      }}
     />
   );
 }

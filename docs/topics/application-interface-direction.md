@@ -175,6 +175,13 @@ exit it. Normal row activation and empty-space clearing remain unambiguous
 single-selection behavior, and the existing command policies choose either the
 current row or checked set from the active mode.
 
+Tactical `059` supersedes only the checkbox-visibility part of that refinement.
+Transfers, Workbench torrents, and Files now keep their checkbox column visible
+because they expose row actions; the checked batch remains empty and distinct
+from the highlighted current row until a checkbox or another entry path starts
+selection mode. Shift-click adds familiar inclusive range selection in the
+current sorted and filtered order without changing command policy.
+
 ## Adaptive And Platform Direction
 
 Wide desktop space uses the top bar for labeled primary navigation and leaves

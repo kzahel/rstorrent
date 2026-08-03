@@ -200,6 +200,7 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
   };
 
   const toggleSelection = (row: FileRow) => {
+    setSelectionMode(true);
     setSelectedFileIds((current) => {
       const next = new Set(current);
       if (next.has(row.id)) next.delete(row.id);
@@ -242,12 +243,18 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
           onEnter: enterSelection,
           onExit: exitSelection,
           onToggle: toggleSelection,
-          onSetAll: (visibleRows, selected) =>
+          onReplace: (rangeRows) => {
+            setSelectionMode(true);
+            setSelectedFileIds(new Set(rangeRows.map((row) => row.id)));
+          },
+          onSetAll: (visibleRows, selected) => {
+            setSelectionMode(true);
             setSelectedFileIds(
               selected
                 ? new Set(visibleRows.map((row) => row.id))
                 : new Set(),
-            ),
+            );
+          },
         }}
         onSelect={(row) => setSelectedFileId(row.id)}
         onClear={() => {

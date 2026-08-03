@@ -299,6 +299,9 @@ that scope and its cleanup or compatibility rules explicitly.
 - [`058-contextual-table-selection.md`](058-contextual-table-selection.md):
   complete; replaces persistent torrent checkboxes with an explicit selection
   mode and applies the same UI-only interaction plus deferred actions to Files.
+- [`059-actionable-table-range-selection.md`](059-actionable-table-range-selection.md):
+  complete; keeps checkbox columns visible on actionable tables and adds
+  sorted Shift-range selection across torrent and Files surfaces.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

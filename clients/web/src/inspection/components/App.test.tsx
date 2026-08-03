@@ -270,7 +270,10 @@ describe("inspection application", () => {
     expect(files).toHaveAttribute("aria-rowcount", "4096");
     expect(within(files).getAllByRole("row").length).toBeLessThanOrEqual(100);
     expect(screen.getByText("1 padding hidden")).toBeVisible();
-    expect(within(files).queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(within(files).getAllByRole("checkbox").length).toBeGreaterThan(1);
+    expect(
+      within(files).getByRole("checkbox", { name: "Select asset-001.mkv" }),
+    ).not.toBeChecked();
     const firstFile = within(files).getAllByRole("row")[1]!;
     await user.click(firstFile);
     await user.click(
@@ -284,15 +287,13 @@ describe("inspection application", () => {
     expect(fileActions).toHaveTextContent("File actions are not available yet.");
     await user.keyboard("{Escape}");
 
-    await user.click(
-      screen.getByRole("button", { name: "Select rows in Torrent files" }),
-    );
+    fireEvent.click(within(files).getAllByRole("row")[2]!, { shiftKey: true });
     expect(files).toHaveAttribute("aria-multiselectable", "true");
-    expect(within(files).getAllByRole("checkbox").length).toBeGreaterThan(1);
-    await user.click(within(files).getAllByRole("row")[2]!);
     expect(screen.getByText("2 selected")).toBeVisible();
     fireEvent.keyDown(files, { key: "Escape" });
-    expect(within(files).queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(
+      within(files).getByRole("checkbox", { name: "Select asset-001.mkv" }),
+    ).not.toBeChecked();
 
     await user.click(screen.getAllByRole("button", { name: "Columns" }).at(-1)!);
     await user.click(screen.getByRole("checkbox", { name: "Storage Path" }));
@@ -465,13 +466,12 @@ describe("inspection application", () => {
   it("shares multi-selection between Transfers and Workbench", async () => {
     const user = userEvent.setup();
     renderScenario("healthy-download", 42_000);
-    expect(screen.queryByRole("checkbox", { name: /Sintel/ })).not.toBeInTheDocument();
-    await user.click(
-      screen.getByRole("button", { name: "Select rows in Transfer queue" }),
-    );
-    await user.click(
+    expect(
       screen.getByRole("checkbox", { name: "Select Sintel 4K open movie" }),
-    );
+    ).not.toBeChecked();
+    fireEvent.click(screen.getByRole("row", { name: /Sintel 4K open movie/ }), {
+      shiftKey: true,
+    });
     expect(screen.getByText("2 selected")).toBeVisible();
     expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
 

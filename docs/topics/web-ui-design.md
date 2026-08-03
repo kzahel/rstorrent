@@ -53,6 +53,9 @@ Tactical `058` replaces persistent torrent checkboxes with a discoverable
 selection mode, separates the current torrent from batch command targets, and
 applies the same interaction locally to Files. Files now exposes disabled
 Download and Skip actions without claiming runtime mutation support.
+Tactical `059` restores a permanently reserved checkbox column specifically on
+actionable tables and adds sorted Shift-range selection without recoupling the
+current row and batch command set.
 
 ## Purpose
 
@@ -174,12 +177,15 @@ click, or a fine pointer. Context menus may complement visible or otherwise
 discoverable actions but cannot be their only access path. Density may adapt
 without removing information or making controls too small to operate.
 
-Table multi-selection is an explicit mode rather than permanent checkbox
-chrome. A visible Select control and keyboard Space make the mode discoverable;
-Command/Control-click and a bounded touch/pen long press are accelerators. Only
-the mode shows checkboxes and select-all, row activation then toggles checks,
-and Done or Escape clears the batch set. Outside the mode, row activation owns
-one current item, commands target that item, and empty table space can clear it.
+Actionable tables reserve a visible checkbox column so batch behavior is
+discoverable and entering selection mode never shifts data columns. Checkbox,
+select-all, visible Select, and keyboard Space can enter the mode;
+Command/Control-click and a bounded touch/pen long press are accelerators.
+Shift-click selects an inclusive range from the latest anchor in current
+sorted/filtered order and can grow or shrink that range. In the mode, row
+activation toggles checks and Done or Escape clears the batch set. Outside it,
+row activation owns one current item, commands target that item, and empty
+table space can clear it. Read-only inspection tables do not gain checkboxes.
 
 Torrent-detail tab selection is a paint-only state change. Labels retain the
 same font metrics, the underline is out of layout flow, and bounded count
@@ -451,6 +457,13 @@ a phone-sized long press, disabled Files actions, wide/compact/phone Files
 layouts, and empty serious/critical axe findings. The 4,096-row scenario still
 renders fewer than 100 table rows; one sampled run retained 665 DOM elements,
 52,586,655 bytes of JavaScript heap, and a 41 ms scenario update.
+
+Tactical `059` adds component evidence for permanently stable selection-column
+geometry, inactive checkbox entry, forward and reverse Shift ranges, range
+shrinking, checkbox Shift-click, sorted-order resolution, and mode exit. The
+application and browser suites exercise the same range behavior in Transfers,
+Workbench continuity, and the 4,096-row Files surface while retaining bounded
+virtual rendering and empty serious/critical axe findings.
 
 The deterministic 4,096-row scenario hides one padding row and rendered 690
 DOM elements with 66,468,705 bytes of sampled JavaScript heap. A complete

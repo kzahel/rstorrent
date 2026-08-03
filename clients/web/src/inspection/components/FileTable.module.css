@@ -37,7 +37,7 @@
   color: var(--warning-strong);
 }
 
-.filePanel :global([role="row"][aria-selected="true"]) .priority[data-selection="skipped"] {
+.filePanel :global([role="row"][data-selected="true"]) .priority[data-selection="skipped"] {
   color: var(--text-primary);
   font-weight: 650;
 }

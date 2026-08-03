@@ -19,13 +19,15 @@ test("primary destinations preserve shared source state", async ({ page }) => {
     "4",
   );
   await capture(page, "rstorrent-transfers-wide.png");
-  await expect(page.getByRole("checkbox", { name: /Sintel/ })).toHaveCount(0);
-  await page
-    .getByRole("button", { name: "Select rows in Transfer queue" })
-    .click();
-  await page
-    .getByRole("checkbox", { name: "Select Sintel 4K open movie" })
-    .check();
+  const sintelCheck = page.getByRole("checkbox", {
+    name: "Select Sintel 4K open movie",
+  });
+  await expect(sintelCheck).not.toBeChecked();
+  const transferRow = page.getByRole("row").filter({ hasText: "Sintel" });
+  const normalColumns = await transferRow.getAttribute("style");
+  await transferRow.click({ modifiers: ["Shift"] });
+  await expect(page.getByText("2 selected")).toBeVisible();
+  await expect(transferRow).toHaveAttribute("style", normalColumns ?? "");
   await primary.getByRole("button", { name: "Workbench" }).click();
   await expect(
     page.getByRole("checkbox", {
@@ -82,7 +84,9 @@ test("phone destinations and contextual filters remain reachable", async ({ page
       name: "Done selecting rows in Transfer queue",
     })
     .click();
-  await expect(page.getByRole("checkbox", { name: /Sintel/ })).toHaveCount(0);
+  await expect(
+    page.getByRole("checkbox", { name: "Select Sintel 4K open movie" }),
+  ).not.toBeChecked();
   const primary = page.getByRole("navigation", { name: "Primary" });
   await primary.getByRole("button", { name: "Library" }).click();
   await expect(page.getByRole("list", { name: "Torrent-backed content" })).toBeVisible();
@@ -763,7 +767,7 @@ test("full file catalog stays virtualized across wide compact and phone layouts"
   await expect(files).toHaveAttribute("aria-rowcount", "4096");
   await expect(page.getByText("1 padding hidden")).toBeVisible();
   expect(await files.getByRole("row").count()).toBeLessThanOrEqual(100);
-  await expect(files.getByRole("checkbox")).toHaveCount(0);
+  await expect(files.getByRole("checkbox").first()).toBeVisible();
   await files.getByRole("row").nth(1).click();
   await page.getByRole("button", { name: "More file actions" }).click();
   const fileActions = page.getByRole("menu", { name: "File actions" });
@@ -775,16 +779,15 @@ test("full file catalog stays virtualized across wide compact and phone layouts"
   ).toBeDisabled();
   await expect(fileActions).toContainText("File actions are not available yet");
   await page.keyboard.press("Escape");
-  await page
-    .getByRole("button", { name: "Select rows in Torrent files" })
-    .click();
+  await files.getByRole("row").nth(2).click({ modifiers: ["Shift"] });
   await expect(files).toHaveAttribute("aria-multiselectable", "true");
-  await files.getByRole("row").nth(2).click();
   await expect(page.getByText("2 selected")).toBeVisible();
   await page
     .getByRole("button", { name: "Done selecting rows in Torrent files" })
     .click();
-  await expect(files.getByRole("checkbox")).toHaveCount(0);
+  await expect(
+    files.getByRole("checkbox", { name: "Select asset-001.mkv" }),
+  ).not.toBeChecked();
 
   const columns = page.getByRole("button", { name: "Columns" }).last();
   await columns.click();

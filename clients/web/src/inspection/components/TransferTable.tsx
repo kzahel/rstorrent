@@ -151,6 +151,8 @@ export function TransferTable() {
         onEnter: (row) => enterTorrentSelection(row?.id),
         onExit: exitTorrentSelection,
         onToggle: (row) => toggleTorrentSelection(row.id),
+        onReplace: (rangeRows) =>
+          replaceTorrentSelection(rangeRows.map((row) => row.id)),
         onSetAll: (visibleRows, selected) => {
           const visibleIds = new Set(visibleRows.map((row) => row.id));
           replaceTorrentSelection(
