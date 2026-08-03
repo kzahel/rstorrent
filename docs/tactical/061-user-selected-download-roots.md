@@ -1,12 +1,15 @@
 # Tactical 061: User-Selected Download Roots
 
-Status: Implemented for the macOS code paths on 2026-08-03. Store,
-application, transport, and shared-UI evidence passes. The native chooser was
-launched through Computer Use, but its transient macOS system panel was not
-addressable by the available automation; one manual validation pass covering
-choose, cancel, and restart in both interactive products still closes the
-macOS stopping condition. Linux, Windows, and Android parity remain bounded
-follow-up slices.
+Status: Implemented for the macOS code paths and the initial native Linux
+adapter on 2026-08-03. Store, application, transport, shared-UI, and Linux
+WebUI evidence passes. Linux desktop choose/cancel, first-default, exact
+torrent binding, restart persistence, and unavailable-root behavior pass
+through the Tauri command boundary, but the current production web bundle
+renders blank in WebKitGTK before the shared live application starts. A
+rendered Linux Tauri UX pass therefore remains open. The transient macOS
+system panel also still requires its manual choose/cancel/restart pass.
+Windows, Android multi-root parity, and broader Linux picker availability
+remain bounded follow-up slices.
 
 Topics: `download-roots`, `application-control`, `client-persistence`,
 `web-ui-design`, `product-surfaces-and-migration`,
@@ -20,9 +23,10 @@ React add path then submitted that root and all files without presenting
 storage choice. That useful bring-up behavior was not an acceptable product
 destination.
 
-Implement the first JSTorrent-like root-selection slice on macOS. A fresh
-interactive profile has no payload root. The first torrent add opens a shared
-add-options dialog, requires a folder chosen through the local platform
+Implement the first JSTorrent-like root-selection slice on macOS, followed by
+the native Linux adapter without changing the accepted shared behavior. A
+fresh interactive profile has no payload root. The first torrent add opens a
+shared add-options dialog, requires a folder chosen through the local platform
 adapter, registers that folder under an opaque durable root ID, makes the
 first root the default, and starts the torrent only after confirmation. Later
 adds show the current default by default and permit a per-torrent alternate
@@ -36,7 +40,9 @@ restart, support add/default/repair/bounded removal in Settings, preserve the
 selected root on each torrent, and no longer create an implicit app-data
 payload root. Deterministic store, application, gateway, Tauri-adapter, React,
 and headless-browser evidence plus one Computer Use native-picker smoke must
-pass. Linux and Windows native picker/build evidence remain explicitly open.
+pass. Linux uses the same stopping condition; its WebUI path passes, while the
+rendered Tauri UX check is blocked by the WebKitGTK bootstrap failure recorded
+below. Windows native picker/build evidence remains explicitly open.
 
 ## Accepted Scenario Subset
 
@@ -145,7 +151,7 @@ by the existing engine tacticals.
 shared React add/settings UI
   | established root IDs only
   +-- Tauri local-folder operation --------\
-  +-- loopback WebUI local-folder endpoint -+--> native macOS picker
+  +-- loopback WebUI local-folder endpoint -+--> native desktop picker
                                              |    cancel => no mutation
                                              v
                                      platform adapter validates path
@@ -168,8 +174,9 @@ application service
   dialog, then return the selected path directly to an in-process
   installation method.
 - The picker child process is the only new background operation. Cancellation
-  is the normal OS-dialog Cancel result. The macOS process is kill-on-drop so
-  an abandoned request does not intentionally leave an ownerless picker.
+  is the normal OS-dialog Cancel result. macOS, Zenity, and KDialog processes
+  are kill-on-drop so an abandoned request does not intentionally leave an
+  ownerless picker.
 - Existing torrent metadata/content owners remain unchanged. A root cannot be
   removed while referenced, and repair of an active torrent's root is rejected
   until that torrent is inactive so an already-running task cannot retain a
@@ -237,13 +244,18 @@ Gate: Rust view-set and TypeScript reducer/validation tests prove initial
 snapshot, reactive root/default/preference patches, patch coalescing, reset,
 and unknown-input rejection.
 
-### 3 — install trusted macOS picker adapters
+### 3 — install trusted desktop picker adapters
 
 Remove the Tauri implicit root. Add a Tauri local-folder command and an exact
 loopback/Origin-authenticated gateway endpoint. On macOS, invoke the system
 folder chooser starting at the most recent usable root or Home. The browser
 never transmits a path. `RSTORRENT_STORAGE_ROOT` becomes an optional explicit
 developer/headless injection; ordinary `scripts/webui` omits it.
+
+The Linux follow-up stays behind this boundary and launches Zenity, falling
+back to KDialog only when Zenity is absent. It adds no GUI or portal library
+dependency. If neither helper is installed, the operation reports that no
+picker is available and performs no root or torrent mutation.
 
 Gate: adapter tests prove cancellation, start-directory selection, explicit
 injection, endpoint authentication, and path-free portable commands. Both
@@ -273,6 +285,14 @@ Gate: capture the actual commands, profile isolation, UI observations, and any
 permission behavior below. Remove temporary downloads and captures before
 completion.
 
+### 6 — prove the initial Linux product paths
+
+Use isolated profiles and temporary selected folders through both
+`./scripts/webui` and `./scripts/desktop`. Exercise a real helper selection and
+cancel, first-root defaulting, exact per-torrent binding, restart persistence,
+and conservative unavailable-root projection after moving the selected
+folder. Record missing-helper and alternate-helper coverage honestly.
+
 ## Validation Matrix
 
 | Layer | Required evidence |
@@ -283,7 +303,7 @@ completion.
 | React | Add-options default-on, first-add requirement, cancellation/input retention, alternate root, Don't show again, settings actions, unavailable state, wide and phone accessibility. |
 | macOS native | Tauri and WebUI system chooser selection/cancel, Home/recent start behavior where observable, chosen path registration, restart persistence, and no implicit app-data payload directory. |
 | Baseline | `cargo fmt --all -- --check`; `cargo clippy --workspace -- -D warnings`; `cargo test --workspace`; web typecheck/tests/E2E in proportion to changed surfaces. |
-| Future Linux | Native portal/dialog selection, Wayland UI automation, build dependencies, unavailable/permission behavior. Not required for completion here. |
+| Linux native | Zenity choose/cancel through WebUI and Tauri, first default, restart, exact binding, unavailable path, and no mutation on cancel. KDialog and no-helper UX remain explicit gaps. |
 | Future Windows | Native folder selection in an interactive session, WinApp automation, Windows path/restart behavior, ARM64 VM and preferably native x64 build evidence. Not required for completion here. |
 | Future Android | Existing SAF root/restart regressions and later multi-root presentation alignment. No device action in this tactical. |
 
@@ -304,7 +324,8 @@ handled normally; this work never edits TCC storage.
 - free-space monitoring, hot-plug watchers, or a root polling task;
 - browser File System Access API storage;
 - a remote/relay ability to open a backend machine's picker;
-- full Linux, Windows, or Android parity in this session; and
+- a packaged Linux picker fallback or proactive picker-capability UI;
+- full Windows or Android parity in this session; and
 - implementing YepAnywhere federated session jump or cross-host delegation.
 
 The recommended immediate follow-up is a user-visible publication-layout
@@ -337,9 +358,12 @@ contradicts `download-roots.md`.
 - `457df14` adds the shared location-only add dialog and root-management
   Settings experience, including first-root selection, per-add overrides,
   **Don't show again**, repair, default, and removal actions.
-- The final checkpoint makes native picker execution asynchronous and
-  kill-on-drop, records the evidence below, and preserves honest non-macOS
-  unsupported behavior.
+- `91173fc` makes native picker execution asynchronous and kill-on-drop,
+  records the macOS evidence below, and preserves honest non-macOS unsupported
+  behavior.
+- `7df9c28` adds the native Linux Zenity/KDialog adapter, explicit unavailable
+  error, bounded exit/output handling, and Linux result-classification tests
+  without adding a GUI dependency.
 
 ### Automated evidence
 
@@ -387,12 +411,124 @@ XPC path timed out. The chooser therefore could not be selected or cancelled
 through automation. The isolated test browser tab was closed, the server was
 stopped, and its temporary profile and destination were moved to Trash.
 
-Still required before changing this tactical to completed:
+### Linux implementation evidence
+
+The Linux slice was implemented and exercised on Ubuntu 24.04.4 LTS x86_64,
+kernel 7.0.0-28, GNOME Shell 46 in a Wayland session, Zenity 4.0.1, WebKitGTK
+2.52.3, and Rust 1.97.0. KDialog was not installed on this host.
+
+The platform adapter launches `zenity --file-selection --directory` and uses a
+nonexistent child of the suggested root so Zenity opens at that directory
+without initially selecting its parent. Exit 0 returns the bounded UTF-8 path,
+exit 1 is cancellation, and other exits return bounded stderr. If Zenity
+cannot be launched because it is absent, the adapter tries
+`kdialog --getexistingdirectory`; absence of both helpers returns
+`PickerError::Unavailable`. Both children are asynchronous and kill-on-drop.
+The Tauri and gateway boundaries, opaque generated root IDs, and path-free
+portable `add_magnet` command are unchanged.
+
+This deliberately adds no GUI dependency. The then-current sibling JSTorrent
+checkout at `0cad4dacf540f5be42ee53c4f1e1da27aa1b3685` uses `rfd` 0.15.4 in
+`desktop/host/src/folder_picker.rs` and `tauri-plugin-dialog` 2.7.2 in the
+Tauri application; its lockfile consequently carries `ashpd`, `zbus`, and a
+second `rfd` 0.16.0. RSTorrent's existing process-owned platform boundary can
+cover both first-party Linux products with installed desktop helpers, so that
+meaningful dependency was not introduced without a maintainer decision.
+
+An isolated `./scripts/webui --no-open` run used port 4181,
+`RSTORRENT_NETWORK_POLICY=offline`, and profile
+`/tmp/rstorrent-linux-roots.8PXw7I/webui-data`. A headful Chrome session and
+AT-SPI drove the actual Zenity panel and observed:
+
+- native cancel returned to the first-add dialog with the original magnet
+  retained, confirmation still disabled, and no root or torrent created;
+- choosing `/home/kgraehl/rstorrent-linux-web-first.kyXR2z` installed
+  `root_4c1965e08e38281dd8b750aef952ef06`, made it the first default, and bound
+  magnet `100102030405060708090a0b0c0d0e0f10111213` to that exact opaque ID;
+- Settings added nested `alternate-root` as
+  `root_c13376880df494a4e8d53aacd46cf02b` without changing the default, and the
+  next add preselected the first root before an explicit alternate selection
+  bound magnet `200102030405060708090a0b0c0d0e0f10111213` to the second ID;
+- after stopping the script, moving the alternate directory, and restarting
+  the same profile, the first root remained the default and the alternate
+  appeared as **Unavailable — repair required**; canceling Repair reported
+  **Folder selection canceled** and retained the unavailable record; and
+- a read-only SQLite check before and after restart matched both root IDs,
+  locators, the default, and the two distinct torrent bindings exactly.
+
+Two isolated `./scripts/desktop` profiles were launched by `tauri-driver`
+2.0.6 with isolated `XDG_DATA_HOME`, `XDG_CONFIG_HOME`, and `XDG_CACHE_HOME`.
+AT-SPI drove the real Zenity process. The first profile's Tauri
+`choose_download_root` call returned `null` on native cancel, and SQLite still
+contained zero roots and zero torrents. For the choose/restart profile, Home
+was temporarily set to the test-owned destination so the initial starting
+directory and immediate OK result were deterministic; Cargo and Rustup kept
+their normal explicit homes. The native call installed
+`root_f2a32788740bb6d02e5f123d1c5b409d` for
+`/home/kgraehl/rstorrent-linux-desktop-first.2yZzcG`, made it the default, and
+the Tauri `application_dispatch` command bound magnet
+`300102030405060708090a0b0c0d0e0f10111213` to that exact ID. After the folder
+was moved and the same `./scripts/desktop` profile restarted, a Tauri snapshot
+retained the root/default and torrent binding while projecting the root as
+`unavailable` and the torrent as `needs_repair`. Read-only SQLite checks agreed
+with both snapshots.
+
+A separate gateway run with `PATH` restricted to an empty test directory
+returned HTTP 500 with
+`download folder picker requires Zenity or KDialog on this Linux desktop` and
+left root and torrent counts at zero. A scripted fake KDialog executable, with
+Zenity absent, exercised the fallback launch and installed its selected test
+directory. This proves fallback dispatch and the no-helper failure contract;
+it is not native KDialog UI evidence.
+
+### Linux baseline and remaining gaps
+
+The final Linux tree passed:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace -- -D warnings`;
+- `cargo test --workspace`;
+- under Node 20.20.2 and npm 10.8.2,
+  `npm run typecheck --prefix clients/web`,
+  `npm test --prefix clients/web` (20 files and 115 tests passed, 2 files and
+  2 tests skipped), and `npm run build --prefix clients/web` with the existing
+  chunk-size warning; and
+- `npm run test:e2e --prefix clients/web` (15 passed and 4 controlled-live
+  tests skipped).
+
+Node 25.2.0 is also installed on the evidence host, but the web unit baseline
+fails in shared test cleanup because Node's global `localStorage` getter throws
+without `--localstorage-file`; 19 non-App files pass while all 21 App tests
+fail at that getter. The repository does not currently pin a Node major. The
+passing baseline therefore used the installed Node 20.20.2 runtime rather than
+changing product code for an unrelated test-runner/toolchain issue.
+
+The current production bundle did not render the live React application in
+the Linux Tauri WebView. WebDriver saw an empty `#app`; calling the exported
+Tauri bootstrap reported `TypeError: undefined is not an object (evaluating
+'Dl.open')`. The Tauri bridge itself returned `application_view_hello`, the
+same bundle rendered its demo application when explicitly started, and none
+of the Linux picker changes touch the web bundle. Command, picker, database,
+restart, and unavailable-root evidence above is valid, but a rendered
+`./scripts/desktop` choose/cancel UX claim remains open until that WebKitGTK
+bootstrap problem is fixed and the UI pass is repeated.
+
+The other Linux gaps are a real KDialog choose/cancel run, a session with
+neither helper installed through the rendered UI, and a decision about
+packaging a fallback picker or proactively advertising picker availability.
+The current UI learns absence only after a choose attempt and displays the
+returned actionable error; it never accepts an ambient path or creates an
+implicit fallback root.
+
+Still required before changing this tactical to completed across its recorded
+desktop scopes:
 
 1. manually choose and cancel the macOS system panel once through both a fresh
    Tauri profile and a fresh `scripts/webui` profile;
 2. restart each profile and observe the same selected root/default and exact
-   torrent binding; and
-3. execute the future native Linux and Windows picker/build slices in
-   interactive sessions. Those platform slices do not block the scoped macOS
-   implementation, but they remain prerequisites for a cross-platform claim.
+   torrent binding;
+3. fix or otherwise resolve the Linux WebKitGTK live-bootstrap failure and
+   repeat the rendered Tauri flow; and
+4. execute the future native Windows picker/build slice in an interactive
+   session. The Windows slice does not block the implemented macOS/Linux code,
+   but remains a prerequisite for a cross-platform claim.

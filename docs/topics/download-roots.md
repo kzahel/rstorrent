@@ -3,18 +3,21 @@
 Topic: `download-roots`
 
 Status: Product behavior accepted in maintainer discussion on 2026-08-03 and
-implemented for the macOS code paths in
+implemented for the macOS code paths and initial native Linux adapter in
 [`061-user-selected-download-roots.md`](../tactical/061-user-selected-download-roots.md).
 Fresh desktop and manual-WebUI profiles no longer install an implicit
 app-data-backed payload root. The shared add flow requires a chosen folder,
 retains a torrent-specific opaque root ID, and provides durable default,
 preference, add, repair, and bounded removal controls. Store, adapter, React,
-and headless-browser evidence passes; a manual macOS chooser/restart smoke is
-still required because Computer Use cannot attach to the transient system
-folder panel. Linux and Windows native pickers remain unimplemented, and
-Android already proves one user-selected persisted SAF root but not general
-multi-root management. Staged magnet metadata and file selection remain
-explicitly deferred to a later slice.
+and headless-browser evidence passes. Linux Zenity WebUI evidence covers
+choose/cancel, first default, exact per-torrent roots, restart, repair cancel,
+and unavailable paths; the same command/persistence behaviors pass through
+Tauri, but its current WebKitGTK production bundle fails before rendering the
+live React surface. A manual macOS chooser/restart smoke also remains required
+because Computer Use cannot attach to the transient system folder panel.
+Windows remains unimplemented, and Android already proves one user-selected
+persisted SAF root but not general multi-root management. Staged magnet
+metadata and file selection remain explicitly deferred to a later slice.
 
 ## Scope
 
@@ -249,7 +252,16 @@ path may be sufficient for the initial unsandboxed desktop build, but the root
 model must permit a future platform-specific persistent capability without
 changing portable commands or torrent records.
 
-Windows and Linux use their native folder picker and path capability while
+The initial Linux adapter invokes Zenity, then KDialog when Zenity is absent,
+behind the same `rstorrent-platform` operation used by Tauri and the local
+WebUI gateway. It does not add a GUI toolkit, portal, or dialog dependency. If
+neither helper exists, the operation returns an actionable unavailable error
+and performs no root or torrent mutation. The shared UI currently learns that
+capability only when a choose attempt fails. A packaged fallback or proactive
+capability advertisement remains follow-up work; it must not turn into a path
+field in React or an implicit app-data root.
+
+Windows should use its native folder picker and path capability while
 preserving the same first-root, default, repair, and per-torrent binding
 semantics.
 
@@ -343,11 +355,14 @@ source, fixture, or asset is imported by this topic.
 
 ## Recommended Next Work
 
-Close the remaining manual macOS chooser/restart evidence in Tactical 061,
-then implement and validate the native Linux and Windows picker adapters in
-interactive sessions. Keep their first-root, stable-ID, default, repair, and
-per-torrent semantics identical while allowing native capability handling to
-differ.
+Close the remaining manual macOS chooser/restart evidence in Tactical 061 and
+resolve the Linux WebKitGTK live-bootstrap failure before claiming rendered
+Tauri parity. Then decide whether Linux packages must provide a picker,
+whether the shared UI should advertise picker availability proactively, or
+whether a same-boundary fallback is warranted; native KDialog evidence is
+still missing. Implement and validate the Windows picker separately. Keep
+first-root, stable-ID, default, repair, and per-torrent semantics identical
+while allowing native capability handling to differ.
 
 The next product slice should address user-visible publication layout because
 selected roots still contain the existing hash-named bring-up layout. Do not
