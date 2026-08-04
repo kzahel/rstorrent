@@ -5,10 +5,17 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.rstorrent.session.uniffi.ActivePiece
 import org.rstorrent.session.uniffi.ActivePieceStageView
+import org.rstorrent.session.uniffi.CatalogPageRequest
+import org.rstorrent.session.uniffi.CatalogPageView
+import org.rstorrent.session.uniffi.Command
 import org.rstorrent.session.uniffi.DiagnosticCategory
 import org.rstorrent.session.uniffi.DiagnosticEvent
 import org.rstorrent.session.uniffi.DiagnosticRetention
 import org.rstorrent.session.uniffi.DiagnosticSeverity
+import org.rstorrent.session.uniffi.DeliveryPolicy
+import org.rstorrent.session.uniffi.FileCatalogState
+import org.rstorrent.session.uniffi.FileIndexRange
+import org.rstorrent.session.uniffi.FilePriority
 import org.rstorrent.session.uniffi.IndexRange
 import org.rstorrent.session.uniffi.ProgressAssessment
 import org.rstorrent.session.uniffi.ProgressDisposition
@@ -16,14 +23,50 @@ import org.rstorrent.session.uniffi.ProgressPhase
 import org.rstorrent.session.uniffi.ProgressReason
 import org.rstorrent.session.uniffi.StorageState
 import org.rstorrent.session.uniffi.StorageSettingsSnapshot
+import org.rstorrent.session.uniffi.SubscriptionSpec
 import org.rstorrent.session.uniffi.TorrentState
 import org.rstorrent.session.uniffi.TorrentView
 import org.rstorrent.session.uniffi.ViewPatch
+import org.rstorrent.session.uniffi.ViewProjection
+import org.rstorrent.session.uniffi.ViewSelector
 import org.rstorrent.session.uniffi.ViewSnapshot
 import org.rstorrent.session.uniffi.ViewUpdate
 import org.rstorrent.session.uniffi.ViewUpdatePayload
 
 class ProductStateReducerTest {
+    @Test
+    fun highCardinalityCatalogUsesRangesAndPagesInTheKotlinContract() {
+        val fileCount = 374_998U
+        val command =
+            Command.SetFilePriorityRanges(
+                TORRENT_ID,
+                listOf(FileIndexRange(0U, fileCount)),
+                FilePriority.NORMAL,
+            )
+        val subscription =
+            SubscriptionSpec(
+                ViewSelector.Torrent(TORRENT_ID),
+                ViewProjection.FILES,
+                DeliveryPolicy(0U, 256U * 1024U),
+                null,
+                CatalogPageRequest(fileCount - 1_024U, 1_024U),
+            )
+        val snapshot =
+            ViewSnapshot.Files(
+                TORRENT_ID,
+                FileCatalogState.AVAILABLE,
+                null,
+                CatalogPageView(fileCount - 1_024U, 1_024U, fileCount, null),
+                emptyList(),
+            )
+
+        assertEquals(1, command.ranges.size)
+        assertEquals(fileCount, command.ranges.single().endExclusive)
+        assertEquals(1_024U, subscription.catalogPage?.limit)
+        assertEquals(fileCount, snapshot.page.total)
+        assertEquals(emptyList<Any>(), snapshot.files)
+    }
+
     @Test
     fun safRemovalUsesOnlyTheThreeNativeManagedArtifactRoles() {
         assertEquals(

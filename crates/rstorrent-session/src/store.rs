@@ -2894,7 +2894,7 @@ fn add_torrent_bytes(
                     metainfo.info_hash.as_slice(),
                     i64::from(tracker.tier),
                     i64::from(tracker.position),
-                    tracker.url.as_ref(),
+                    tracker.url.as_str(),
                     transport,
                 ],
             )

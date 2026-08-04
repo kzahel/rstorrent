@@ -121,6 +121,7 @@ class ProductEngineService : Service() {
                             ViewProjection.SUMMARY,
                             DeliveryPolicy(250U, 256U * 1024U),
                             null,
+                            null,
                         ),
                     )
                 listJob = consume(requireNotNull(listSubscription), driveSaf = true)
@@ -236,6 +237,7 @@ class ProductEngineService : Service() {
                             ViewProjection.PIECE_ACTIVITY,
                             DeliveryPolicy(0U, 256U * 1024U),
                             null,
+                            null,
                         ),
                     )
                 if (selectedTorrent != torrentId) {
@@ -288,6 +290,7 @@ class ProductEngineService : Service() {
                                 diagnosticSeverity,
                                 diagnosticCategories,
                             ),
+                            null,
                         ),
                     )
                 diagnosticSubscription = subscription
