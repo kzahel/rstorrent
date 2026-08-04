@@ -1,12 +1,27 @@
 # Tactical 079: Engine Driver Source Shape
 
-Status: Planned from maintainer direction on 2026-08-04. Implementation has
-not started. This tactical is a behavior-preserving architecture slice and
-does not change the authoritative capability queue unless the maintainer
+Status: In progress from maintainer direction on 2026-08-04. The clean
+baseline and first test-layout gate are complete; production-owner extraction
+has not started. This tactical is a behavior-preserving architecture slice
+and does not change the authoritative capability queue unless the maintainer
 explicitly schedules it.
 
 Topics: `product-direction`, `download-correctness`, `peer-lifecycle`,
 `storage-throughput-architecture`
+
+## Execution Record
+
+The reconciled baseline had 16,605 lines in `driver.rs`: 8,803 lines through
+the production facade and 7,801 lines in its inline test module including the
+module wrapper. `cargo test -p rstorrent-engine --lib -- --list` reported 196
+tests and zero benchmarks; the focused baseline passed 193 tests with the
+three public-network probes ignored.
+
+The first mechanical gate moved the existing test body unchanged to
+`driver/tests/mod.rs`. The facade is now 8,805 lines including the two-line
+private test-module declaration, and the moved body is 7,799 lines. Formatting
+and all 196 focused engine library tests retain the same result. Categorizing
+that body by owner remains part of the test-layout gate.
 
 ## Decision And Motivation
 
