@@ -116,7 +116,7 @@ pub enum MetainfoTrackerTransport {
 pub struct MetainfoTracker {
     pub tier: u32,
     pub position: u32,
-    pub url: std::sync::Arc<str>,
+    pub url: String,
     pub transport: MetainfoTrackerTransport,
 }
 

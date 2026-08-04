@@ -72,12 +72,16 @@ class OneShotUdpTracker:
         response_delay_seconds: float = 0,
         seeders: int = 1,
         leechers: int = 1,
+        expected_left: int = UNKNOWN_MAGNET_LEFT,
+        expected_peer_id: bytes | None = DIAGNOSTIC_PEER_ID,
     ) -> None:
         self.info_hash = bytes.fromhex(info_hash)
         self.peer_port = peer_port
         self.response_delay_seconds = response_delay_seconds
         self.seeders = seeders
         self.leechers = leechers
+        self.expected_left = expected_left
+        self.expected_peer_id = expected_peer_id
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.socket.bind(("127.0.0.1", 0))
         self.socket.settimeout(10)
@@ -170,10 +174,17 @@ class OneShotUdpTracker:
                 raise ScenarioFailure("UDP announce transaction was not renewed")
             if info_hash != self.info_hash:
                 raise ScenarioFailure("UDP announce has the wrong info hash")
-            if peer_id != DIAGNOSTIC_PEER_ID:
+            if self.expected_peer_id is None:
+                valid_peer_id = peer_id.startswith(b"-RS0001-")
+            else:
+                valid_peer_id = peer_id == self.expected_peer_id
+            if not valid_peer_id:
                 raise ScenarioFailure("UDP announce has the wrong peer ID")
-            if (downloaded, left, uploaded) != (0, UNKNOWN_MAGNET_LEFT, 0):
-                raise ScenarioFailure("UDP announce has unexpected transfer counters")
+            if (downloaded, left, uploaded) != (0, self.expected_left, 0):
+                raise ScenarioFailure(
+                    "UDP announce has unexpected transfer counters "
+                    f"{(downloaded, left, uploaded)}, expected {(0, self.expected_left, 0)}"
+                )
             if event != STARTED_EVENT or announced_ip != 0:
                 raise ScenarioFailure("UDP announce has the wrong event or IP field")
             if key == 0 or num_want != NUM_WANT or listen_port != ANNOUNCED_PORT:

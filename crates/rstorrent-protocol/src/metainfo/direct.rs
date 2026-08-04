@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::ops::Range;
-use std::sync::Arc;
 
 use sha1::{Digest, Sha1};
 
@@ -84,7 +83,7 @@ fn parse_tracker_tiers(
     parser: &mut Parser<'_>,
     depth: usize,
     trackers: &mut Vec<MetainfoTracker>,
-    identities: &mut HashSet<Arc<str>>,
+    identities: &mut HashSet<String>,
 ) -> Result<(), MetainfoError> {
     if parser.peek()? != b'l' {
         parser.skip_value(depth)?;
@@ -134,7 +133,7 @@ fn parse_tracker_tiers(
     Ok(())
 }
 
-fn normalize_tracker_url(bytes: &[u8]) -> Option<(Arc<str>, MetainfoTrackerTransport)> {
+fn normalize_tracker_url(bytes: &[u8]) -> Option<(String, MetainfoTrackerTransport)> {
     let value = std::str::from_utf8(bytes).ok()?;
     if value.is_empty()
         || !value.is_ascii()
@@ -187,7 +186,7 @@ fn normalize_tracker_url(bytes: &[u8]) -> Option<(Arc<str>, MetainfoTrackerTrans
             .map(|character| character.to_ascii_lowercase()),
     );
     normalized.push_str(&remainder[authority_end..]);
-    Some((Arc::from(normalized), transport))
+    Some((normalized, transport))
 }
 
 pub(super) fn parse_info(bytes: &[u8], limits: MetainfoLimits) -> Result<Metainfo, MetainfoError> {

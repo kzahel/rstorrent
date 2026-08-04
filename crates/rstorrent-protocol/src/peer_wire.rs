@@ -1,11 +1,14 @@
 use std::error::Error;
 use std::fmt;
 
+use crate::metainfo::MAX_METAINFO_PIECES;
+
 pub const HANDSHAKE_LENGTH: usize = 68;
 pub const MAX_REQUEST_BLOCK_LENGTH: u32 = 16 * 1024;
 pub const MAX_CORE_FRAME_LENGTH: usize = 9 + MAX_REQUEST_BLOCK_LENGTH as usize;
 pub const MAX_EXTENSION_PAYLOAD_LENGTH: usize = 17 * 1024;
-pub const MAX_FRAME_LENGTH: usize = 2 + MAX_EXTENSION_PAYLOAD_LENGTH;
+pub const MAX_BITFIELD_PAYLOAD_LENGTH: usize = MAX_METAINFO_PIECES.div_ceil(8);
+pub const MAX_FRAME_LENGTH: usize = 1 + MAX_BITFIELD_PAYLOAD_LENGTH;
 pub const MAX_DECODER_INPUT_LENGTH: usize = 64 * 1024;
 pub const EXTENSION_PROTOCOL_RESERVED_INDEX: usize = 5;
 pub const EXTENSION_PROTOCOL_RESERVED_BIT: u8 = 0x10;
@@ -308,10 +311,10 @@ pub fn encode_message(message: &PeerMessage) -> Result<Vec<u8>, FrameError> {
             payload.extend_from_slice(extension_payload);
         }
     }
-    let maximum = if matches!(message, PeerMessage::Extended { .. }) {
-        MAX_FRAME_LENGTH
-    } else {
-        MAX_CORE_FRAME_LENGTH
+    let maximum = match message {
+        PeerMessage::Extended { .. } => 2 + MAX_EXTENSION_PAYLOAD_LENGTH,
+        PeerMessage::Bitfield(_) => 1 + MAX_BITFIELD_PAYLOAD_LENGTH,
+        _ => MAX_CORE_FRAME_LENGTH,
     };
     if payload.len() > maximum {
         return Err(FrameError::FrameLengthTooLarge {
@@ -329,11 +332,13 @@ pub fn encode_message(message: &PeerMessage) -> Result<Vec<u8>, FrameError> {
 fn decode_frame(mut frame: Vec<u8>) -> Result<PeerMessage, FrameError> {
     let id = frame[4];
     let length = frame.len() - 4;
-    if id != 20 && length > MAX_CORE_FRAME_LENGTH {
-        return Err(FrameError::FrameLengthTooLarge {
-            length,
-            maximum: MAX_CORE_FRAME_LENGTH,
-        });
+    let maximum = match id {
+        5 => 1 + MAX_BITFIELD_PAYLOAD_LENGTH,
+        20 => 2 + MAX_EXTENSION_PAYLOAD_LENGTH,
+        _ => MAX_CORE_FRAME_LENGTH,
+    };
+    if length > maximum {
+        return Err(FrameError::FrameLengthTooLarge { length, maximum });
     }
     match id {
         0 => exact_length(id, length, 1).map(|()| PeerMessage::Choke),
@@ -424,9 +429,9 @@ fn validate_request_length(length: u32) -> Result<(), FrameError> {
 mod tests {
     use super::{
         BlockRequest, EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX,
-        FrameDecoder, FrameError, HandshakeError, MAX_EXTENSION_PAYLOAD_LENGTH, MAX_FRAME_LENGTH,
-        PeerMessage, decode_handshake, encode_handshake, encode_handshake_with_reserved,
-        encode_message,
+        FrameDecoder, FrameError, HandshakeError, MAX_BITFIELD_PAYLOAD_LENGTH,
+        MAX_EXTENSION_PAYLOAD_LENGTH, MAX_FRAME_LENGTH, PeerMessage, decode_handshake,
+        encode_handshake, encode_handshake_with_reserved, encode_message,
     };
 
     #[test]
@@ -621,5 +626,24 @@ mod tests {
             decoder.push(&[0, 0, 0, 1, 20]),
             Err(FrameError::InvalidMessageLength { id: 20, length: 1 })
         );
+    }
+
+    #[test]
+    fn maximum_geometry_bitfield_is_admitted_without_raising_other_frames() {
+        let message = PeerMessage::Bitfield(vec![0xff; MAX_BITFIELD_PAYLOAD_LENGTH]);
+        let frame = encode_message(&message).expect("maximum bitfield");
+        let mut decoder = FrameDecoder::new();
+        let mut decoded = Vec::new();
+        for chunk in frame.chunks(super::MAX_DECODER_INPUT_LENGTH) {
+            decoded.extend(decoder.push(chunk).expect("bounded bitfield fragment"));
+        }
+        assert_eq!(decoded, [message]);
+        assert!(matches!(
+            encode_message(&PeerMessage::Bitfield(vec![
+                0;
+                MAX_BITFIELD_PAYLOAD_LENGTH + 1
+            ])),
+            Err(FrameError::FrameLengthTooLarge { .. })
+        ));
     }
 }

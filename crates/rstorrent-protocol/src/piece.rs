@@ -686,12 +686,15 @@ mod tests {
     }
 
     #[test]
-    fn accepts_256_mib_piece_without_resident_payload() {
+    fn accepts_libtorrent_maximum_piece_without_resident_payload() {
         let download =
             OnePieceDownload::new(0, MAX_PIECE_LENGTH, expected_hash(), MIN_PAYLOAD_ALLOWANCE)
                 .expect("accepted maximum piece");
 
-        assert_eq!(download.block_count(), 16_384);
+        assert_eq!(
+            download.block_count(),
+            (MAX_PIECE_LENGTH as usize).div_ceil(MAX_REQUEST_BLOCK_LENGTH as usize)
+        );
         assert_eq!(download.payload_budget().reserved, 0);
         assert_eq!(download.payload_budget().high_water, 0);
     }
