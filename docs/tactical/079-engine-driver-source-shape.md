@@ -2,9 +2,10 @@
 
 Status: In progress from maintainer direction on 2026-08-04. The clean
 baseline, test-layout gate, and download-control extraction are complete; the
-storage-owner extraction remains. This tactical is a behavior-preserving
-architecture slice and does not change the authoritative capability queue
-unless the maintainer explicitly schedules it.
+storage-owner extraction is also complete and closing validation remains.
+This tactical is a behavior-preserving architecture slice and does not change
+the authoritative capability queue unless the maintainer explicitly
+schedules it.
 
 Topics: `product-direction`, `download-correctness`, `peer-lifecycle`,
 `storage-throughput-architecture`
@@ -35,6 +36,15 @@ access to the control's cancellation field became private control methods;
 task and token ownership did not change. `cargo check -p rstorrent-engine
 --tests`, the focused 196-test engine suite, and warning-denying focused
 Clippy pass.
+
+The storage-owner gate moved 1,433 lines of bounded commands, independent
+write/hash jobs, checkpoint admission and execution, completions,
+backpressure, cancellation, and joins to `driver/storage_pipeline.rs`. The
+facade is 4,995 lines at this gate. Its former direct reach into the pipeline's
+checkpoint field became one private `enqueue_checkpoint` operation; the same
+checkpoint task, channels, permits, and callback remain owned and awaited in
+the same order. Focused check, all 196 engine library tests, and
+warning-denying focused Clippy pass.
 
 ## Decision And Motivation
 
