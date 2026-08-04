@@ -107,6 +107,16 @@ explicit/durable/source input and local metadata upload, 2,097,152 pieces,
 536,854,528-byte pieces, and measured calibration where parser, catalog, path,
 view, or platform representations are not apples-to-apples.
 
+Tactical
+[`082`](../tactical/082-bounded-multi-peer-upload-ownership.md) is complete.
+Incoming and outgoing sockets share one descriptor-aware session budget; eight
+fixed upload slots, one optimistic grant, exact request/read/writer bounds, and
+physical peer/torrent/session payload accounting now enforce multi-peer
+seeding. Two RSTorrent and two libtorrent 2.0.13 clients overlapped against one
+seed, independently verified 67,109,595 bytes each, and produced the exact
+268,438,380-byte physical upload total. This explicitly directed completion
+does not change the `Now` product-surface decision.
+
 ## Current Queue
 
 ### Now
@@ -119,17 +129,18 @@ evidence justifies chunking.
 ### Next
 
 - Continue the source-first engine queue after the bounded picker decision;
-  multi-peer upload ownership remains the next recorded engine slice.
+  the readiness topic will select the next engine slice from completed
+  evidence rather than treating Tactical `082` as pending.
 
 ### Later
 
-Complete IPv6 DHT operation, multi-peer upload and seeding policy, listener
-settings and advertisement, LAN/public binding, PEX, local service discovery,
-uTP, NAT traversal, v2 and hybrid torrents, playback-oriented file priorities,
-dynamic VPN and metered-network controls, and production remote access remain
-important. After core parity, common-denominator versus full-reference deltas
-and the protocol evidence matrix choose BEP breadth; visible novelty alone
-does not.
+Complete IPv6 DHT operation, persisted listener/upload settings, finite
+bandwidth and seeding goals, listener advertisement, LAN/public binding, PEX,
+local service discovery, uTP, NAT traversal, v2 and hybrid torrents,
+playback-oriented file priorities, dynamic VPN and metered-network controls,
+and production remote access remain important. After core parity,
+common-denominator versus full-reference deltas and the protocol evidence
+matrix choose BEP breadth; visible novelty alone does not.
 
 ## Capability Scoreboard
 
@@ -140,7 +151,7 @@ does not.
 | Bounded bencode and v1 info dictionaries | Implemented | deterministic, runtime, interop | Generic, 30-MiB peer BEP 9, and 64-MiB explicit/durable/local-upload profiles independently bound bytes, decoded items, depth, collections, files, pieces, paths, and trackers. Product v1 `.torrent` ingestion passes; v2 and hybrid info dictionaries are rejected. | [`protocol-support`](protocol-support.md) |
 | Product add from a v1 magnet | Implemented | deterministic, runtime, interop, web, AVD, physical | Only a v1 `btih` identity and supported magnet fields survive canonicalization. | [`client-persistence`](client-persistence.md) |
 | BEP 9 metadata download | Implemented | deterministic, runtime, interop, live | One bounded torrent owner assembles blocks across up to eight workers, accepts an authoritative piece-zero size up to 30 MiB, and recovers from expiry, rejection, and hash failure. Pinned libtorrent transfers the exact 31,457,280-byte maximum profile in 1,920 blocks. | [`peer-lifecycle`](peer-lifecycle.md) |
-| Bounded metadata upload | Implemented | deterministic, runtime, interop | The diagnostic server remains metadata-only; the application listener serves every requested 16-KiB block of valid local metadata up to the 64-MiB profile and verified payload on one socket. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
+| Bounded metadata upload | Implemented | deterministic, runtime, interop | The diagnostic server remains metadata-only; the application listener shares immutable registration-owned metadata across bounded incoming peers and serves every requested 16-KiB block of valid local metadata up to the 64-MiB profile. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
 | Product add from a `.torrent` file | Implemented | deterministic, runtime, interop, web, Tauri | One atomic 64-MiB byte operation preserves exact source, operational info and tracker tiers across restart through HTTP, WebSocket, and raw Tauri IPC. The shared Add UI has no file picker yet. | [`application-control`](application-control.md) |
 | v2 and hybrid identity, metadata, and hashing | Absent | deterministic rejection | BEP 52 requires a separate integrity and storage design. | [`protocol-support`](protocol-support.md) |
 
@@ -165,9 +176,9 @@ does not.
 | Registry-backed Swarm inspection | Implemented | deterministic, runtime, interop, web | The bounded volatile registry, exact state counts, source merging, retry eligibility, and terminal cleanup are visible; durable history and peer-ID duplicate resolution remain absent. | [`peer-lifecycle`](peer-lifecycle.md), [`application-view-api`](application-view-api.md) |
 | Deterministic dial selection and guarded attempts | Implemented | deterministic, runtime | Selection is intentionally basic; peer-ID duplicate resolution and measured scoring are absent. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Pre-content peer failover | Implemented | deterministic, runtime, interop, live | Bounded parallel metadata peers share one block owner; two tracker cohorts, 10/10 fresh-DHT owner runs, and 12/12 cross-catalog pairs pass. | [`peer-lifecycle`](peer-lifecycle.md) |
-| Multiple simultaneous live peers | Implemented | deterministic, runtime, interop, live | Thirty established and thirty half-open attempts are separate torrent-local defaults with exact saturation and cancellation evidence; no session-wide connection budget exists. | [`peer-lifecycle`](peer-lifecycle.md) |
+| Multiple simultaneous live peers | Implemented | deterministic, runtime, interop, live | Thirty established and thirty half-open attempts remain separate outbound torrent-local defaults beneath one shared session budget whose ordinary default is 200 after descriptor clamping and whose incoming-only slack is ten. Exact saturation, cancellation, mixed-direction release, and simultaneous incoming evidence pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Transfer request ownership and failover | Implemented | deterministic, runtime, interop, live | Ordinary blocks have one generation; strict endgame adds bounded duplicate attempts, first-response cancellation, and harmless losing payload. | [`download-correctness`](download-correctness.md) |
-| Incoming peer connections | Implemented | deterministic, runtime, interop | One joined IPv4 loopback listener has eight pending handshake slots, 1,024 generation-fenced torrent registrations, and one established peer. Incoming peers are not yet integrated into ordinary Swarm/Peers views; non-loopback binding, persisted settings, advertisement, NAT mapping, and multi-peer policy are absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
+| Incoming peer connections | Implemented | deterministic, runtime, interop | One joined IPv4 loopback listener has a five-entry backlog, eight pending handshake slots, 1,024 generation-fenced registrations, and bounded multi-peer established ownership under the shared effective-200-plus-ten-slack budget. Two RSTorrent and two libtorrent clients overlap successfully. Incoming peers are not yet integrated into ordinary Swarm/Peers views; non-loopback binding, persisted settings, advertisement, and NAT mapping are absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
 | Peer reputation and integrity attribution | Partial | deterministic, runtime, live | Exact connection generations receive bounded asymmetric trust; a sole corrupt source is banned and ambiguous sources are only suspected, while full parole selection and persistence are absent. | [`download-correctness`](download-correctness.md) |
 
 ### Content Transfer And Completion
@@ -182,7 +193,7 @@ does not.
 | Endgame | Implemented | deterministic, runtime, live | Strict duplicates, core cancels, late-loss safety, exact accounting, and public verified publication pass; throughput parity remains open. | [`download-correctness`](download-correctness.md) |
 | Hash-failure recovery | Implemented | deterministic, runtime, interop, live | A failed v1 generation resets the whole piece with bounded contributors; v2 block-level recovery and full parole selection are absent. | [`download-correctness`](download-correctness.md) |
 | Reliable completion on ordinary swarms | Partial | deterministic, runtime, interop, live | Multi-peer liveness, endgame, corrupt-generation retry, and bounded storage completion pass, but completion latency is not yet comparable and public corruption was not induced. | [`download-correctness`](download-correctness.md) |
-| Payload upload and seeding | Implemented | deterministic, runtime, interop | One interested peer receives an exact verified/readable bitfield and bounded 16 KiB requests from complete published path storage across task completion and restart. Upload slots, useful accounting/rates, bandwidth and goal policy, platform storage, and more than one peer are absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`protocol-support`](protocol-support.md) |
+| Payload upload and seeding | Implemented | deterministic, runtime, interop | Completed published path storage serves exact verified/readable bitfields and bounded 16-KiB requests to multiple peers under eight session slots with one optimistic grant, 2,000 descriptors per peer, ten reads, the shared 40-handle pool, and a 528,396-byte/64-descriptor writer bound. Exact peer/torrent/session physical counters and rates pass simultaneous two-RSTorrent/two-libtorrent evidence. Finite bandwidth, ratio/time goals, incomplete-torrent upload, platform-storage evidence, public reachability, and persisted settings remain absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`protocol-support`](protocol-support.md) |
 
 ### Integrity, Storage, And Resume
 

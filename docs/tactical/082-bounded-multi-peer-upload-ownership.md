@@ -1,9 +1,9 @@
 # Tactical 082: Bounded Multi-Peer Upload Ownership
 
-Status: In progress on 2026-08-04 after explicit maintainer authorization.
-Tactical [`081`](081-v1-torrent-byte-intake.md) remains the authoritative
-readiness-queue `Now` item; this explicitly directed slice is executing
-without changing that broader queue position.
+Status: Completed on 2026-08-04 after explicit maintainer authorization. This
+explicitly directed slice did not change the broader readiness queue or
+authorize the separate product-surface work in Tactical
+[`083`](083-shared-torrent-file-picker.md).
 
 Topics: `incoming-reachability-and-seeding`, `peer-lifecycle`,
 `protocol-support`, `capability-readiness`
@@ -643,6 +643,65 @@ without expanding into durable peer history.
    tactical, the owning topics, readiness matrix, and protocol claims with
    only the evidence that passed. Record persisted settings as the next
    boundary without adding placeholders.
+
+## Implementation And Evidence
+
+All eight gates completed. The implementation keeps task-free admission,
+scheduler, request, and accounting policy in focused engine modules while
+`ApplicationService` owns one shared peer budget and the incoming runtime owns
+the joined coordinator, peer readers/writers, and storage reads. Incoming and
+outgoing sockets now consume the same configured 200-connection,
+descriptor-clamped budget; incoming intake retains eight handshake tasks, a
+five-entry listen backlog, and ten connections of slack. Internal
+`ApplicationConfig` values expose the enforcing peer, scheduler, read, and
+timeout policies for tests and later settings work without adding persistence,
+generated contracts, or UI.
+
+Deterministic and scripted tests prove the adopted default table and boundary
+transitions: normal/slack admission and release, 0/1/7/8/9/20-peer scheduling,
+one optimistic grant inside eight total slots, immediate vacancy fill,
+15/30-second rotation, the strict 20-piece/60-second seed quota, exact
+1,999/2,000/2,001 request admission, ten read permits, and the 40-handle shared
+storage pool. A one-handle cross-file case proves that one logical upload read
+does not deadlock by retaining multiple file leases. Injected time validates
+the 120-second activity, 60-second keepalive, 60-second no-request, 600-second
+near-cap inactivity, and 60-second write-progress boundaries.
+
+The incoming writer is independently joined from its reader and enforces 64
+queued descriptors plus 528,396 bytes of read/serialized charge per peer.
+Request and registration generations suppress stale reads and frames before
+their first byte after cancel, choke, lost interest, replacement, or teardown;
+once a frame starts, it finishes or closes the connection. Partial-write tests
+prove that peer, torrent, and session counters advance only for piece-payload
+bytes successfully written, with protocol and BEP 9 metadata remaining
+separate. Exact scoped totals and nonoverlapping one-second rates are available
+from bounded engine snapshots, and the session Speed catalog now advertises
+the existing `payload_uploaded` metric only as available.
+
+The controlled loopback harness held two RSTorrent and two libtorrent 2.0.13
+leechers active against one RSTorrent seed before releasing the throttled
+libtorrent clients. All four independently hash-verified a 67,109,595-byte,
+4,097-piece fixture. The seed recorded four established peers at high water,
+500 queued request descriptors, 8,192,000 queued logical bytes, four active
+reads, 65,536 read bytes, bounded writer charge, and exactly 268,438,380
+physical piece-payload bytes: four complete copies and no requested/read/queued
+inflation. A restarted RSTorrent seed independently served another exact
+67,109,595-byte copy. Separate libtorrent and restarted-RSTorrent runs verified
+an 8,401,233-byte multi-file fixture whose requests cross file boundaries and
+include a short final piece.
+
+The final gate passed `cargo fmt --all -- --check`,
+`cargo clippy --workspace -- -D warnings`, `cargo test --workspace`, Python
+syntax validation for the controlled harness, the full controlled
+`incoming_seeding.py` run, and `git diff --check`.
+
+The implementation deliberately retains the prior 30-established/30-pending
+outbound torrent working sets, the eight-task incoming handshake cap, the
+60-second writer no-progress fence, stable generation tie breaks, and no
+loopback exemption. Persisted or live-mutated settings, finite bandwidth,
+ratio/time goals, incomplete-torrent upload, ordinary Swarm/Peers projection,
+port advertisement, non-loopback binding, and gateway mapping remain outside
+this completed slice.
 
 ## Validation Matrix
 

@@ -389,6 +389,12 @@ that scope and its cleanup or compatibility rules explicitly.
   v1 outer-metainfo and tracker-tier persistence, and carries one semantic
   byte-intake operation through WebSocket, HTTP automation, and raw Tauri IPC
   without adding visible picker UX or chunking.
+- [`082-bounded-multi-peer-upload-ownership.md`](082-bounded-multi-peer-upload-ownership.md):
+  completed; replaces the one-peer upload proof with shared connection
+  budgets, eight fair seed upload slots, adaptive bounded reads/writes, and
+  exact physical payload accounting. Simultaneous two-RSTorrent/two-libtorrent
+  clients independently verified four complete copies while all declared
+  limits and joined cleanup held.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

@@ -2,17 +2,13 @@
 
 Topic: `incoming-reachability-and-seeding`
 
-Status: Tactical
-[`078`](../tactical/078-local-single-peer-tcp-seeding.md) completes the first
-campaign slice: one application-owned IPv4 loopback listener routes bounded
-incoming handshakes and seeds verified metadata and payload from eligible
-completed path-backed torrents across application restart. Tactical
-[`082`](../tactical/082-bounded-multi-peer-upload-ownership.md) drafts the next
-multi-peer upload/accounting slice from pinned libtorrent defaults but is not
-yet implemented. It is now in progress by explicit maintainer direction
-without being promoted ahead of the readiness queue. Persisted settings,
-actual-port advertisement, non-loopback binding, and NAT mapping remain future
-slices.
+Status: Tacticals
+[`078`](../tactical/078-local-single-peer-tcp-seeding.md) and
+[`082`](../tactical/082-bounded-multi-peer-upload-ownership.md) complete local
+incoming TCP seeding through a bounded multi-peer upload owner with exact
+physical-payload accounting. Persisted settings, actual-port advertisement,
+non-loopback binding, and NAT mapping remain future slices. This explicitly
+directed completion did not change the broader readiness queue.
 
 ## Purpose And Scope
 
@@ -37,21 +33,34 @@ their own protocol, ownership, security, and evidence requirements.
 ## Current Truth
 
 RSTorrent can download real v1 torrents through outgoing TCP and can now seed
-one controlled incoming peer through the application service:
+multiple controlled incoming peers through the application service:
 
 - immutable bootstrap is `Disabled`, `AutomaticLoopback`, or a nonzero
   `FixedLoopback` port; successful bind exposes the actual `127.0.0.1` port
   and fixed bind failure is typed;
-- one joined session listener bounds eight pre-handshake tasks, routes exact
-  v1 info hashes through up to 1,024 generation-fenced registrations, and
-  admits one established incoming TCP peer;
+- one joined session listener uses a five-entry backlog, bounds eight
+  pre-handshake tasks, routes exact v1 info hashes through up to 1,024
+  generation-fenced registrations, and admits peers under one session budget
+  shared with outgoing connecting and established sockets;
+- the ordinary connection default is 200 after descriptor-aware clamping,
+  accepted incoming sockets have exactly ten connections of slack, and all
+  loopback sockets consume those limits;
 - eligible complete, published, desired-running path-backed torrents register
   at completion and application open, and unregister before lifecycle or
   storage-authority changes;
-- one peer receives an exact readable/verified bitfield, BEP 9 metadata, and
-  bounded 16 KiB payload reads with 32-request/512-KiB queue ceilings;
-- pure, storage, socket, application-restart, and controlled libtorrent and
-  RSTorrent evidence passes for single-file and cross-file content;
+- every peer starts choked; one session coordinator grants at most eight
+  upload slots, including one automatically derived optimistic slot, using
+  pinned libtorrent's fixed-slot, 15/30-second, and complete-seed round-robin
+  defaults;
+- each unchoked peer may retain exactly 2,000 validated request descriptors;
+  ten shared reads, the existing 40-handle storage pool, a 528,396-byte writer
+  charge, and 64 writer descriptors independently bound work and memory;
+- peer, torrent, and session accounting records only physical piece payload
+  successfully written, and bounded snapshots expose exact totals and rates;
+- pure, storage, socket, lifecycle, application-restart, and simultaneous
+  two-RSTorrent/two-libtorrent evidence passes for single-file and cross-file
+  content, with all four clients independently verifying 67,109,595 bytes and
+  the seed recording the exact 268,438,380 uploaded payload bytes;
 - the listener has internal Rust bootstrap and observation only; it is not in
   persistent settings, generated application contracts, or product UI;
 - UDP tracker announces still carry provisional port `6881`, which is not
@@ -68,9 +77,9 @@ self-connection rejection is local to an application rather than the
 RSTorrent client fingerprint.
 
 [`capability-readiness.md`](capability-readiness.md) remains authoritative for
-priority and the `Now`/`Next` queue. Completing this bounded slice does not
-promote its prospective multi-peer, settings, advertisement, or mapping work
-ahead of the currently recorded work.
+priority and the `Now`/`Next` queue. Completing these bounded slices does not
+promote settings, advertisement, or mapping work ahead of the currently
+recorded work.
 
 ## Desired End State
 
@@ -271,7 +280,7 @@ cancellation, lifecycle fences, and joined shutdown.
 NAT mapping, public discovery, settings UI, uTP, incoming encryption,
 multi-peer choking strategy, and ratio/time goals remain out of scope.
 
-### 2. [Bounded multi-peer upload ownership and accounting](../tactical/082-bounded-multi-peer-upload-ownership.md) — in progress
+### 2. [Bounded multi-peer upload ownership and accounting](../tactical/082-bounded-multi-peer-upload-ownership.md) — complete
 
 Grow from one useful incoming peer to a coherent bounded upload owner:
 
@@ -283,11 +292,12 @@ Grow from one useful incoming peer to a coherent bounded upload owner:
 - prevent slow readers and storage latency from starving unrelated work; and
 - retain prompt pause, completion-policy, removal, and shutdown joins.
 
-Controlled simultaneous RSTorrent and libtorrent leechers should prove
-fair progress, exact content, declared high-water marks, and cleanup. The
-source-first draft adopts libtorrent's eight fixed slots, automatically
-derived optimistic slot, 15/30-second cadence, and complete-seed round-robin
-20-piece policy now because those choices shape ownership and accounting.
+Controlled simultaneous RSTorrent and libtorrent evidence now proves exact
+content, declared high-water marks, and cleanup. Two clients of each kind
+overlapped against one seed and independently verified the 67,109,595-byte
+fixture; exact physical upload was four copies, or 268,438,380 bytes. Scripted
+ten-peer evidence proves the eight-slot ceiling, one optimistic slot, fair
+rotation, slow-writer isolation, cancellation fencing, and joined cleanup.
 Downloading-torrent tit-for-tat and public performance tuning remain later.
 
 ### 3. Persisted listener, upload, and seeding settings
@@ -429,17 +439,15 @@ high-water marks, terminal owner counts, and what the evidence does not prove.
 
 ## Open Decisions
 
-After Tactical `078`, the campaign direction does not yet settle:
+After Tactical `082`, the campaign direction does not yet settle:
 
 - default listener policy and fixed-port posture per product platform;
 - whether automatic port fallback is ever allowed after a fixed bind fails;
-- multi-peer pending, incoming, total-connection, upload-slot, request, read,
-  and response-byte limits beyond the implemented 8/1/1/32/1 first slice;
 - whether the temporary rule that a desired-running complete torrent seeds
   automatically should become a distinct durable seeding intent;
-- how pause, archive, selection changes, force recheck, relocation, and
-  removal interact with active uploads;
-- which upload scheduling policy is sufficient before mature choking parity;
+- whether listener, connection, upload-slot, timeout, bandwidth, and seeding
+  settings apply live or on service restart, and how invalid persisted values
+  recover;
 - when ratio and elapsed-time goals become product settings;
 - how to choose among multiple interfaces or successful external mappings;
 - how VPN, metered networks, Android background lifecycle, and local-network
@@ -449,24 +457,18 @@ After Tactical `078`, the campaign direction does not yet settle:
 - when incoming MSE/PE, IPv6 firewall pinholes, LSD, PEX, or BEP 55 become
   independently justified tacticals.
 
-The first implementation tactical should resolve only the choices that shape
-local single-peer TCP seeding, while leaving extensible state for already
-known external-port, multi-interface, and completed-torrent lifecycle cases.
+The next settings tactical should reuse the enforcing owners and adopted
+defaults rather than expose placeholders, while leaving external-port and
+multi-interface policy for their focused slices.
 
 ## Campaign Checkpoint And Next Action
 
-Tactical [`078`](../tactical/078-local-single-peer-tcp-seeding.md) is complete
-with all six gates and their exact execution record. It establishes local
-single-peer TCP listening and payload seeding only; it is not LAN/public
-reachability, listener advertisement, or NAT evidence.
-
 Tactical
-[`082`](../tactical/082-bounded-multi-peer-upload-ownership.md) now records the
-next campaign boundary: coordinated incoming/total budgets, eight fair upload
-slots, exact physical-payload counters and rates, slow-reader isolation, and
-controlled simultaneous RSTorrent/libtorrent leechers. Its limits and tuning
-default to pinned libtorrent 2.0.13 wherever the semantics match, with explicit
-RSTorrent deviations. It is executing by explicit maintainer direction
-without changing the broader readiness queue. Persisted settings follow the
-enforcing multi-peer owner; truthful tracker/DHT port use and gateway mapping
-remain later independent slices.
+[`082`](../tactical/082-bounded-multi-peer-upload-ownership.md) is complete with
+coordinated incoming/total budgets, eight fair upload slots, exact physical-
+payload counters and rates, slow-reader isolation, and controlled simultaneous
+RSTorrent/libtorrent evidence. Its limits and tuning default to pinned
+libtorrent 2.0.13 wherever the semantics match, with explicit RSTorrent
+deviations. Persisted settings are the next boundary in this vertical story;
+truthful tracker/DHT port use and gateway mapping remain later independent
+slices.
