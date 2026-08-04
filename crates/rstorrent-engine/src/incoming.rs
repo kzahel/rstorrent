@@ -1,5 +1,6 @@
 //! One loopback listener with generation-fenced torrent routing.
 
+mod peer_io;
 mod upload_runtime;
 
 use std::collections::{BTreeMap, VecDeque};
@@ -38,14 +39,23 @@ use crate::seed_content::SeedContent;
 use crate::upload::{UploadAction, UploadCloseReason, UploadPeerState, UploadRead};
 use crate::upload_scheduler::{UploadGrant, UploadSchedulerConfig, UploadSchedulerSnapshot};
 
+use self::peer_io::IncomingPeerIo;
 use self::upload_runtime::UploadCoordinator;
 
 pub const MAX_SEED_REGISTRATIONS: usize = 1024;
 pub const MAX_INCOMING_PENDING: usize = 8;
 pub const DEFAULT_UPLOAD_READ_JOBS: usize = 10;
+pub const MAX_CONFIGURED_UPLOAD_READ_JOBS: usize = 1_024;
 pub const MAX_DEFERRED_METADATA_REQUESTS: usize = 1_024;
 pub const METADATA_SEND_BUFFER_WATERMARK: usize = 160 * 1_024;
 pub const DEFAULT_INCOMING_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+pub const DEFAULT_INCOMING_PEER_ACTIVITY_TIMEOUT: Duration = Duration::from_secs(120);
+pub const DEFAULT_INCOMING_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(60);
+pub const DEFAULT_INCOMING_NO_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+pub const DEFAULT_INCOMING_INACTIVITY_TIMEOUT: Duration = Duration::from_secs(600);
+pub const MAX_INCOMING_WRITER_BYTES: usize = peer_io::MAX_INCOMING_WRITER_BYTES;
+pub const INCOMING_WRITER_NO_PROGRESS_TIMEOUT: Duration =
+    peer_io::INCOMING_WRITER_NO_PROGRESS_TIMEOUT;
 const MAX_RECENT_REJECTIONS: usize = 32;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -60,23 +70,31 @@ pub enum IncomingTcpBootstrap {
 pub struct IncomingPeerServiceConfig {
     pub bootstrap: IncomingTcpBootstrap,
     pub handshake_timeout: Duration,
-    pub peer_io_timeout: Duration,
+    pub peer_activity_timeout: Duration,
+    pub keepalive_interval: Duration,
+    pub no_request_timeout: Duration,
+    pub inactivity_timeout: Duration,
     pub peer_id: [u8; 20],
     pub byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
     pub peer_budget: PeerBudget,
     pub upload_scheduler: UploadSchedulerConfig,
+    pub upload_read_jobs: usize,
 }
 
 impl IncomingPeerServiceConfig {
-    pub fn new(bootstrap: IncomingTcpBootstrap, peer_io_timeout: Duration) -> Self {
+    pub fn new(bootstrap: IncomingTcpBootstrap) -> Self {
         Self {
             bootstrap,
             handshake_timeout: DEFAULT_INCOMING_HANDSHAKE_TIMEOUT,
-            peer_io_timeout,
+            peer_activity_timeout: DEFAULT_INCOMING_PEER_ACTIVITY_TIMEOUT,
+            keepalive_interval: DEFAULT_INCOMING_KEEPALIVE_INTERVAL,
+            no_request_timeout: DEFAULT_INCOMING_NO_REQUEST_TIMEOUT,
+            inactivity_timeout: DEFAULT_INCOMING_INACTIVITY_TIMEOUT,
             peer_id: DEFAULT_PEER_ID,
             byte_metric_sink: None,
             peer_budget: PeerBudget::system_default(),
             upload_scheduler: UploadSchedulerConfig::default(),
+            upload_read_jobs: DEFAULT_UPLOAD_READ_JOBS,
         }
     }
 
@@ -140,6 +158,9 @@ pub enum IncomingRejectionReason {
     StaleRegistration,
     SelfConnection,
     ConnectionLimit,
+    ActivityTimeout,
+    NoRequestTimeout,
+    InactivityTimeout,
     Protocol,
     Storage,
     Accept,
@@ -163,6 +184,7 @@ pub struct IncomingPeerServiceSnapshot {
     pub established_high_water: usize,
     pub peer_budget: PeerBudgetSnapshot,
     pub upload_scheduler: UploadSchedulerSnapshot,
+    pub upload_read_limit: usize,
     pub reads: usize,
     pub read_bytes: usize,
     pub queued_requests_high_water: usize,
@@ -207,8 +229,12 @@ struct Shared {
     peer_budget: PeerBudget,
     upload_coordinator: UploadCoordinator,
     upload_reads: Arc<Semaphore>,
+    upload_read_limit: usize,
     observations: Mutex<ObservationState>,
-    peer_io_timeout: Duration,
+    peer_activity_timeout: Duration,
+    keepalive_interval: Duration,
+    no_request_timeout: Duration,
+    inactivity_timeout: Duration,
     peer_id: [u8; 20],
     byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
 }
@@ -295,6 +321,21 @@ impl RegistrationRuntime {
                 }
                 PeerTermination::Protocol => shared.reject(
                     IncomingRejectionReason::Protocol,
+                    Some(remote),
+                    Some(registration.data.info_hash),
+                ),
+                PeerTermination::ActivityTimeout => shared.reject(
+                    IncomingRejectionReason::ActivityTimeout,
+                    Some(remote),
+                    Some(registration.data.info_hash),
+                ),
+                PeerTermination::NoRequestTimeout => shared.reject(
+                    IncomingRejectionReason::NoRequestTimeout,
+                    Some(remote),
+                    Some(registration.data.info_hash),
+                ),
+                PeerTermination::InactivityTimeout => shared.reject(
+                    IncomingRejectionReason::InactivityTimeout,
                     Some(remote),
                     Some(registration.data.info_hash),
                 ),
@@ -409,8 +450,18 @@ impl IncomingPeerService {
     pub async fn bind(
         config: IncomingPeerServiceConfig,
     ) -> Result<Option<Self>, IncomingPeerError> {
-        if config.handshake_timeout.is_zero() || config.peer_io_timeout.is_zero() {
+        if config.handshake_timeout.is_zero()
+            || config.peer_activity_timeout.is_zero()
+            || config.keepalive_interval.is_zero()
+            || config.no_request_timeout.is_zero()
+            || config.inactivity_timeout.is_zero()
+        {
             return Err(IncomingPeerError::InvalidTimeout);
+        }
+        if !(1..=MAX_CONFIGURED_UPLOAD_READ_JOBS).contains(&config.upload_read_jobs) {
+            return Err(IncomingPeerError::InvalidUploadReadJobs {
+                maximum: MAX_CONFIGURED_UPLOAD_READ_JOBS,
+            });
         }
         let upload_coordinator = UploadCoordinator::new(config.upload_scheduler)
             .map_err(IncomingPeerError::InvalidScheduler)?;
@@ -449,9 +500,13 @@ impl IncomingPeerService {
             next_generation: AtomicU64::new(1),
             peer_budget: config.peer_budget,
             upload_coordinator,
-            upload_reads: Arc::new(Semaphore::new(DEFAULT_UPLOAD_READ_JOBS)),
+            upload_reads: Arc::new(Semaphore::new(config.upload_read_jobs)),
+            upload_read_limit: config.upload_read_jobs,
             observations: Mutex::new(ObservationState::default()),
-            peer_io_timeout: config.peer_io_timeout,
+            peer_activity_timeout: config.peer_activity_timeout,
+            keepalive_interval: config.keepalive_interval,
+            no_request_timeout: config.no_request_timeout,
+            inactivity_timeout: config.inactivity_timeout,
             peer_id: config.peer_id,
             byte_metric_sink: config.byte_metric_sink,
         });
@@ -570,6 +625,7 @@ impl Shared {
             established_high_water: observations.established_high_water,
             peer_budget: self.peer_budget.snapshot(),
             upload_scheduler: self.upload_coordinator.snapshot(),
+            upload_read_limit: self.upload_read_limit,
             reads: observations.reads,
             read_bytes: observations.read_bytes,
             queued_requests_high_water: observations.queued_requests_high_water,
@@ -867,6 +923,9 @@ async fn run_handshake(
 enum PeerTermination {
     Closed,
     Cancelled,
+    ActivityTimeout,
+    NoRequestTimeout,
+    InactivityTimeout,
     Protocol,
     Storage,
 }
@@ -922,9 +981,9 @@ async fn run_incoming_peer(
     upload_peer: crate::upload_scheduler::UploadPeerId,
     mut grants: tokio::sync::watch::Receiver<UploadGrant>,
 ) -> PeerTermination {
-    let mut io = PeerIo::new(
+    let mut io = IncomingPeerIo::new(
         stream,
-        shared.peer_io_timeout,
+        shared.peer_activity_timeout,
         shared.byte_metric_sink.clone(),
     );
     let termination = run_incoming_peer_loop(
@@ -945,11 +1004,15 @@ async fn run_incoming_peer(
             .upload_coordinator
             .update_payload(upload_peer, payload);
     }
-    termination
+    match (termination, io.shutdown().await) {
+        (PeerTermination::Cancelled, _) => PeerTermination::Cancelled,
+        (termination, Ok(())) => termination,
+        (_, Err(_)) => PeerTermination::Closed,
+    }
 }
 
 async fn run_incoming_peer_loop(
-    io: &mut PeerIo,
+    io: &mut IncomingPeerIo,
     supports_extensions: bool,
     registration: Arc<SeedRegistration>,
     cancellation: CancellationToken,
@@ -991,6 +1054,17 @@ async fn run_incoming_peer_loop(
     let mut read: Option<ActiveRead> = None;
     let mut accounted_payload = io.uploaded_payload_bytes();
     let mut send_target = UploadSendTarget::new(accounted_payload);
+    let maintenance_cadence = Duration::from_secs(1)
+        .min(shared.peer_activity_timeout)
+        .min(shared.keepalive_interval)
+        .min(shared.no_request_timeout)
+        .min(shared.inactivity_timeout);
+    let mut maintenance = tokio::time::interval(maintenance_cadence);
+    maintenance.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut last_peer_activity = Instant::now();
+    let mut last_meaningful_activity = last_peer_activity;
+    let mut last_request_or_unchoke = last_peer_activity;
+    let mut last_keepalive = last_peer_activity;
     loop {
         send_target.observe(io.uploaded_payload_bytes());
         let ready = io.send_buffer_size() < send_target.target;
@@ -1019,6 +1093,7 @@ async fn run_incoming_peer_loop(
         let event = tokio::select! {
             biased;
             _ = cancellation.cancelled() => PeerEvent::Cancelled,
+            _ = maintenance.tick() => PeerEvent::Maintenance,
             changed = grants.changed() => PeerEvent::Grant(changed.map(|()| *grants.borrow_and_update())),
             joined = async {
                 let (_, task) = read.as_mut().expect("read branch is guarded");
@@ -1033,6 +1108,39 @@ async fn run_incoming_peer_loop(
                 join_read(read.take()).await;
                 return PeerTermination::Cancelled;
             }
+            PeerEvent::Maintenance => {
+                let now = Instant::now();
+                if now.saturating_duration_since(last_peer_activity) >= shared.peer_activity_timeout
+                {
+                    join_read(read.take()).await;
+                    return PeerTermination::ActivityTimeout;
+                }
+                let snapshot = upload.snapshot();
+                if snapshot.interested
+                    && !snapshot.choking
+                    && snapshot.queued_requests == 0
+                    && read.is_none()
+                    && io.send_buffer_size() == 0
+                    && now.saturating_duration_since(last_request_or_unchoke)
+                        >= shared.no_request_timeout
+                {
+                    return PeerTermination::NoRequestTimeout;
+                }
+                let budget = shared.peer_budget.snapshot();
+                if budget.total >= budget.effective_limit
+                    && now.saturating_duration_since(last_meaningful_activity)
+                        >= shared.inactivity_timeout
+                {
+                    join_read(read.take()).await;
+                    return PeerTermination::InactivityTimeout;
+                }
+                if now.saturating_duration_since(last_keepalive) >= shared.keepalive_interval {
+                    last_keepalive = now;
+                    vec![UploadAction::Send(PeerMessage::KeepAlive)]
+                } else {
+                    Vec::new()
+                }
+            }
             PeerEvent::Read(joined) => {
                 let (pending, _) = read.take().expect("completed read is present");
                 let result = match joined {
@@ -1041,7 +1149,13 @@ async fn run_incoming_peer_loop(
                 };
                 upload.on_read_complete(pending, result)
             }
-            PeerEvent::Grant(Ok(grant)) => upload.set_granted(grant != UploadGrant::Choked),
+            PeerEvent::Grant(Ok(grant)) => {
+                if grant != UploadGrant::Choked {
+                    last_request_or_unchoke = Instant::now();
+                    last_meaningful_activity = last_request_or_unchoke;
+                }
+                upload.set_granted(grant != UploadGrant::Choked)
+            }
             PeerEvent::Grant(Err(_)) => {
                 join_read(read.take()).await;
                 return PeerTermination::Cancelled;
@@ -1056,6 +1170,19 @@ async fn run_incoming_peer_loop(
                 return PeerTermination::Closed;
             }
             PeerEvent::Message(Ok(Some(message))) => {
+                last_peer_activity = Instant::now();
+                if matches!(
+                    message,
+                    PeerMessage::Interested
+                        | PeerMessage::NotInterested
+                        | PeerMessage::Request(_)
+                        | PeerMessage::Cancel(_)
+                ) {
+                    last_meaningful_activity = last_peer_activity;
+                }
+                if matches!(message, PeerMessage::Request(_)) {
+                    last_request_or_unchoke = last_peer_activity;
+                }
                 match handle_metadata_message(
                     io,
                     &mut metadata,
@@ -1086,6 +1213,7 @@ async fn run_incoming_peer_loop(
         let payload_delta = payload.saturating_sub(accounted_payload);
         if payload_delta != 0 {
             accounted_payload = payload;
+            last_meaningful_activity = Instant::now();
             shared
                 .upload_coordinator
                 .update_payload(upload_peer, payload);
@@ -1103,13 +1231,13 @@ async fn run_incoming_peer_loop(
             .max(deferred_metadata.len());
         observations.metadata_send_buffer_high_water = observations
             .metadata_send_buffer_high_water
-            .max(io.send_buffer_size());
+            .max(io.send_buffer_high_water());
     }
 }
 
 async fn apply_upload_actions(
     actions: Vec<UploadAction>,
-    io: &mut PeerIo,
+    io: &mut IncomingPeerIo,
     read: &mut Option<ActiveRead>,
     registration: &Arc<SeedRegistration>,
     shared: &Arc<Shared>,
@@ -1160,13 +1288,39 @@ async fn apply_upload_actions(
 
 enum PeerEvent {
     Cancelled,
+    Maintenance,
     Read(Result<Result<Vec<u8>, ()>, tokio::task::JoinError>),
     Grant(Result<UploadGrant, tokio::sync::watch::error::RecvError>),
     Message(Result<Option<PeerMessage>, crate::peer_io::PeerIoError>),
 }
 
-fn handle_metadata_message(
-    io: &mut PeerIo,
+trait MetadataSendBuffer {
+    fn queue_metadata_message(&mut self, message: &PeerMessage) -> Result<(), ()>;
+    fn metadata_send_buffer_size(&self) -> usize;
+}
+
+impl MetadataSendBuffer for PeerIo {
+    fn queue_metadata_message(&mut self, message: &PeerMessage) -> Result<(), ()> {
+        self.queue_message(message).map_err(|_| ())
+    }
+
+    fn metadata_send_buffer_size(&self) -> usize {
+        self.send_buffer_size()
+    }
+}
+
+impl MetadataSendBuffer for IncomingPeerIo {
+    fn queue_metadata_message(&mut self, message: &PeerMessage) -> Result<(), ()> {
+        self.queue_message(message).map_err(|_| ())
+    }
+
+    fn metadata_send_buffer_size(&self) -> usize {
+        self.send_buffer_size()
+    }
+}
+
+fn handle_metadata_message<I: MetadataSendBuffer>(
+    io: &mut I,
     upload: &mut MetadataUpload,
     remote_metadata_id: &mut Option<u8>,
     deferred: &mut VecDeque<i64>,
@@ -1195,16 +1349,17 @@ fn handle_metadata_message(
                 MetadataMessage::Data { .. } | MetadataMessage::Reject { .. } => return Err(()),
             };
             let remote_id = remote_metadata_id.ok_or(())?;
-            if !upload.can_serve(piece) || io.send_buffer_size() < METADATA_SEND_BUFFER_WATERMARK {
+            if !upload.can_serve(piece)
+                || io.metadata_send_buffer_size() < METADATA_SEND_BUFFER_WATERMARK
+            {
                 queue_metadata_response(io, upload, remote_id, piece)?;
             } else if deferred.len() < MAX_DEFERRED_METADATA_REQUESTS {
                 deferred.push_back(piece);
             } else {
-                io.queue_message(&PeerMessage::Extended {
+                io.queue_metadata_message(&PeerMessage::Extended {
                     id: remote_id,
                     payload: encode_metadata_reject(piece),
-                })
-                .map_err(|_| ())?;
+                })?;
             }
         }
         PeerMessage::Extended { .. } => {}
@@ -1213,8 +1368,8 @@ fn handle_metadata_message(
     Ok(())
 }
 
-fn drain_metadata_requests(
-    io: &mut PeerIo,
+fn drain_metadata_requests<I: MetadataSendBuffer>(
+    io: &mut I,
     upload: &mut MetadataUpload,
     remote_metadata_id: Option<u8>,
     deferred: &mut VecDeque<i64>,
@@ -1222,7 +1377,7 @@ fn drain_metadata_requests(
     let Some(remote_metadata_id) = remote_metadata_id else {
         return Ok(());
     };
-    while io.send_buffer_size() < METADATA_SEND_BUFFER_WATERMARK {
+    while io.metadata_send_buffer_size() < METADATA_SEND_BUFFER_WATERMARK {
         let Some(piece) = deferred.pop_front() else {
             break;
         };
@@ -1231,8 +1386,8 @@ fn drain_metadata_requests(
     Ok(())
 }
 
-fn queue_metadata_response(
-    io: &mut PeerIo,
+fn queue_metadata_response<I: MetadataSendBuffer>(
+    io: &mut I,
     upload: &mut MetadataUpload,
     remote_metadata_id: u8,
     piece: i64,
@@ -1245,11 +1400,10 @@ fn queue_metadata_response(
         } => encode_metadata_data(piece, total_size, &block).map_err(|_| ())?,
         MetadataUploadAction::Reject { piece } => encode_metadata_reject(piece),
     };
-    io.queue_message(&PeerMessage::Extended {
+    io.queue_metadata_message(&PeerMessage::Extended {
         id: remote_metadata_id,
         payload,
     })
-    .map_err(|_| ())
 }
 
 async fn join_read(read: Option<ActiveRead>) {
@@ -1263,6 +1417,9 @@ pub enum IncomingPeerError {
     InvalidFixedPort,
     InvalidTimeout,
     InvalidScheduler(&'static str),
+    InvalidUploadReadJobs {
+        maximum: usize,
+    },
     Closed,
     RegistrationLimit {
         maximum: usize,
@@ -1286,6 +1443,12 @@ impl fmt::Display for IncomingPeerError {
             Self::InvalidTimeout => formatter.write_str("incoming peer timeouts must be nonzero"),
             Self::InvalidScheduler(reason) => {
                 write!(formatter, "invalid upload scheduler: {reason}")
+            }
+            Self::InvalidUploadReadJobs { maximum } => {
+                write!(
+                    formatter,
+                    "upload read jobs must be between 1 and {maximum}"
+                )
             }
             Self::Closed => formatter.write_str("incoming peer service is closed"),
             Self::RegistrationLimit { maximum } => {
@@ -1393,11 +1556,15 @@ mod tests {
         IncomingPeerServiceConfig {
             bootstrap,
             handshake_timeout: Duration::from_millis(250),
-            peer_io_timeout: Duration::from_secs(2),
+            peer_activity_timeout: Duration::from_secs(2),
+            keepalive_interval: Duration::from_secs(1),
+            no_request_timeout: Duration::from_secs(1),
+            inactivity_timeout: Duration::from_secs(2),
             peer_id: DEFAULT_PEER_ID,
             byte_metric_sink: None,
             peer_budget: PeerBudget::system_default(),
             upload_scheduler: UploadSchedulerConfig::default(),
+            upload_read_jobs: super::DEFAULT_UPLOAD_READ_JOBS,
         }
     }
 
@@ -1525,6 +1692,17 @@ mod tests {
                 .supports_extensions()
         );
         (stream, FrameDecoder::new(), VecDeque::new())
+    }
+
+    async fn observe_close(stream: &mut TcpStream) {
+        match timeout(Duration::from_secs(1), stream.read(&mut [0; 1]))
+            .await
+            .expect("peer close deadline")
+        {
+            Ok(0) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset => {}
+            result => panic!("unexpected peer close result {result:?}"),
+        }
     }
 
     #[tokio::test]
@@ -1745,6 +1923,139 @@ mod tests {
         assert_eq!(terminal.upload_scheduler.peers, 0);
         assert_eq!(terminal.payload_bytes_sent, 8 * 4);
         assert!(terminal.read_high_water <= super::DEFAULT_UPLOAD_READ_JOBS);
+        tokio::fs::remove_dir_all(root).await.expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn keepalive_activity_no_request_and_near_limit_timeouts_are_distinct() {
+        let (root, _, seed) = registration("peer-timeouts").await;
+        let info_hash = seed.info_hash();
+        let mut service_config = config(IncomingTcpBootstrap::AutomaticLoopback);
+        service_config.peer_activity_timeout = Duration::from_millis(500);
+        service_config.keepalive_interval = Duration::from_millis(20);
+        service_config.no_request_timeout = Duration::from_millis(500);
+        service_config.inactivity_timeout = Duration::from_millis(500);
+        let service = IncomingPeerService::bind(service_config)
+            .await
+            .expect("bind keepalive service")
+            .expect("enabled keepalive service");
+        let handle = service.handle();
+        let token = handle.register(seed).await.expect("register seed");
+        let mut peer = connect(service.listen_address(), info_hash, [31; 20]).await;
+        assert!(matches!(
+            next_message(&mut peer.0, &mut peer.1, &mut peer.2).await,
+            PeerMessage::Bitfield(_)
+        ));
+        assert!(matches!(
+            next_message(&mut peer.0, &mut peer.1, &mut peer.2).await,
+            PeerMessage::Extended { id: 0, .. }
+        ));
+        assert_eq!(
+            next_message(&mut peer.0, &mut peer.1, &mut peer.2).await,
+            PeerMessage::KeepAlive
+        );
+        assert!(handle.unregister(token).await.expect("unregister seed"));
+        service
+            .shutdown()
+            .await
+            .expect("shutdown keepalive service");
+        tokio::fs::remove_dir_all(root).await.expect("remove root");
+
+        let (root, _, seed) = registration("activity-timeout").await;
+        let info_hash = seed.info_hash();
+        let mut service_config = config(IncomingTcpBootstrap::AutomaticLoopback);
+        service_config.peer_activity_timeout = Duration::from_millis(30);
+        service_config.keepalive_interval = Duration::from_secs(5);
+        service_config.no_request_timeout = Duration::from_secs(5);
+        service_config.inactivity_timeout = Duration::from_secs(5);
+        let service = IncomingPeerService::bind(service_config)
+            .await
+            .expect("bind activity service")
+            .expect("enabled activity service");
+        let handle = service.handle();
+        handle.register(seed).await.expect("register seed");
+        let mut peer = connect(service.listen_address(), info_hash, [32; 20]).await;
+        let _ = next_message(&mut peer.0, &mut peer.1, &mut peer.2).await;
+        let _ = next_message(&mut peer.0, &mut peer.1, &mut peer.2).await;
+        observe_close(&mut peer.0).await;
+        assert_eq!(
+            handle
+                .snapshot()
+                .rejection_counts
+                .get(&IncomingRejectionReason::ActivityTimeout),
+            Some(&1)
+        );
+        service.shutdown().await.expect("shutdown activity service");
+        tokio::fs::remove_dir_all(root).await.expect("remove root");
+
+        let (root, _, seed) = registration("no-request-timeout").await;
+        let info_hash = seed.info_hash();
+        let mut service_config = config(IncomingTcpBootstrap::AutomaticLoopback);
+        service_config.peer_activity_timeout = Duration::from_secs(5);
+        service_config.keepalive_interval = Duration::from_secs(5);
+        service_config.no_request_timeout = Duration::from_millis(30);
+        service_config.inactivity_timeout = Duration::from_secs(5);
+        let service = IncomingPeerService::bind(service_config)
+            .await
+            .expect("bind no-request service")
+            .expect("enabled no-request service");
+        let handle = service.handle();
+        handle.register(seed).await.expect("register seed");
+        let mut peer = connect(service.listen_address(), info_hash, [33; 20]).await;
+        let _ = next_message(&mut peer.0, &mut peer.1, &mut peer.2).await;
+        let _ = next_message(&mut peer.0, &mut peer.1, &mut peer.2).await;
+        send(&mut peer.0, &PeerMessage::Interested).await;
+        assert_eq!(
+            next_message(&mut peer.0, &mut peer.1, &mut peer.2).await,
+            PeerMessage::Unchoke
+        );
+        observe_close(&mut peer.0).await;
+        assert_eq!(
+            handle
+                .snapshot()
+                .rejection_counts
+                .get(&IncomingRejectionReason::NoRequestTimeout),
+            Some(&1)
+        );
+        service
+            .shutdown()
+            .await
+            .expect("shutdown no-request service");
+        tokio::fs::remove_dir_all(root).await.expect("remove root");
+
+        let (root, _, seed) = registration("inactivity-timeout").await;
+        let info_hash = seed.info_hash();
+        let mut service_config = config(IncomingTcpBootstrap::AutomaticLoopback);
+        service_config.peer_activity_timeout = Duration::from_secs(5);
+        service_config.keepalive_interval = Duration::from_secs(5);
+        service_config.no_request_timeout = Duration::from_secs(5);
+        service_config.inactivity_timeout = Duration::from_millis(30);
+        service_config.peer_budget = PeerBudget::new(PeerBudgetConfig {
+            configured_limit: 1,
+            incoming_slack: 0,
+            max_open_files: 10_000,
+        });
+        let service = IncomingPeerService::bind(service_config)
+            .await
+            .expect("bind inactivity service")
+            .expect("enabled inactivity service");
+        let handle = service.handle();
+        handle.register(seed).await.expect("register seed");
+        let mut peer = connect(service.listen_address(), info_hash, [34; 20]).await;
+        let _ = next_message(&mut peer.0, &mut peer.1, &mut peer.2).await;
+        let _ = next_message(&mut peer.0, &mut peer.1, &mut peer.2).await;
+        observe_close(&mut peer.0).await;
+        assert_eq!(
+            handle
+                .snapshot()
+                .rejection_counts
+                .get(&IncomingRejectionReason::InactivityTimeout),
+            Some(&1)
+        );
+        service
+            .shutdown()
+            .await
+            .expect("shutdown inactivity service");
         tokio::fs::remove_dir_all(root).await.expect("remove root");
     }
 

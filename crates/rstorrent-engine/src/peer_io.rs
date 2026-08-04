@@ -28,7 +28,6 @@ pub(crate) struct PeerIo {
     queued_frames: VecDeque<QueuedFrame>,
     pub(crate) io_timeout: Duration,
     pub(crate) byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
-    uploaded_payload_bytes: u64,
 }
 
 #[derive(Debug)]
@@ -52,7 +51,6 @@ impl PeerIo {
             queued_frames: VecDeque::new(),
             io_timeout,
             byte_metric_sink,
-            uploaded_payload_bytes: 0,
         }
     }
 
@@ -167,10 +165,6 @@ impl PeerIo {
             .sum()
     }
 
-    pub(crate) const fn uploaded_payload_bytes(&self) -> u64 {
-        self.uploaded_payload_bytes
-    }
-
     fn flush_queued_frames(&mut self) -> Result<(), PeerIoError> {
         while let Some(frame) = self.queued_frames.front_mut() {
             let start = frame.written;
@@ -194,7 +188,7 @@ impl PeerIo {
                         });
                     }
                 };
-            let payload_written = record_sent_range(
+            let _ = record_sent_range(
                 self.byte_metric_sink.as_ref(),
                 frame_length,
                 payload_length,
@@ -202,11 +196,6 @@ impl PeerIo {
                 start,
                 written,
             );
-            if payload_metric == Some(ByteMetric::PayloadUploaded) {
-                self.uploaded_payload_bytes = self
-                    .uploaded_payload_bytes
-                    .saturating_add(payload_written.try_into().unwrap_or(u64::MAX));
-            }
             if frame.written != frame.bytes.len() {
                 return Ok(());
             }
@@ -234,11 +223,6 @@ impl PeerIo {
             payload_length,
             payload_metric,
         );
-        if payload_metric == Some(ByteMetric::PayloadUploaded) {
-            self.uploaded_payload_bytes = self
-                .uploaded_payload_bytes
-                .saturating_add(payload_length.try_into().unwrap_or(u64::MAX));
-        }
         Ok(())
     }
 
@@ -263,7 +247,7 @@ impl PeerIo {
     }
 }
 
-fn message_payload_metric(message: &PeerMessage) -> (usize, Option<ByteMetric>) {
+pub(crate) fn message_payload_metric(message: &PeerMessage) -> (usize, Option<ByteMetric>) {
     match message {
         PeerMessage::Piece { block, .. } => (block.len(), Some(ByteMetric::PayloadUploaded)),
         PeerMessage::Extended { payload, .. } => {
@@ -290,7 +274,7 @@ fn record_sent_frame(
     }
 }
 
-fn record_sent_range(
+pub(crate) fn record_sent_range(
     sink: Option<&Arc<dyn ByteMetricSink>>,
     frame_length: usize,
     payload_length: usize,
@@ -374,5 +358,73 @@ pub(crate) fn record_bytes(
         && bytes != 0
     {
         sink.record(metric, bytes.try_into().unwrap_or(u64::MAX));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::sync::{Arc, Mutex};
+
+    use super::record_sent_range;
+    use crate::metrics::{ByteMetric, ByteMetricSink};
+
+    #[derive(Debug, Default)]
+    struct RecordingSink {
+        bytes: Mutex<BTreeMap<ByteMetric, u64>>,
+    }
+
+    impl ByteMetricSink for RecordingSink {
+        fn record(&self, metric: ByteMetric, bytes: u64) {
+            *self
+                .bytes
+                .lock()
+                .expect("recording sink")
+                .entry(metric)
+                .or_default() += bytes;
+        }
+    }
+
+    #[test]
+    fn partial_writes_account_protocol_and_payload_at_the_exact_boundary() {
+        let sink = Arc::new(RecordingSink::default());
+        let metric_sink: Arc<dyn ByteMetricSink> = sink.clone();
+        assert_eq!(
+            record_sent_range(
+                Some(&metric_sink),
+                20,
+                8,
+                Some(ByteMetric::PayloadUploaded),
+                0,
+                10,
+            ),
+            0
+        );
+        assert_eq!(
+            record_sent_range(
+                Some(&metric_sink),
+                20,
+                8,
+                Some(ByteMetric::PayloadUploaded),
+                10,
+                5,
+            ),
+            3
+        );
+        assert_eq!(
+            record_sent_range(
+                Some(&metric_sink),
+                20,
+                8,
+                Some(ByteMetric::PayloadUploaded),
+                15,
+                5,
+            ),
+            5
+        );
+        let bytes = sink.bytes.lock().expect("recorded bytes");
+        assert_eq!(bytes[&ByteMetric::PeerWireSent], 20);
+        assert_eq!(bytes[&ByteMetric::PeerProtocolSent], 12);
+        assert_eq!(bytes[&ByteMetric::PayloadUploaded], 8);
     }
 }

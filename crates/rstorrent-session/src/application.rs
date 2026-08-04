@@ -8,16 +8,20 @@ use std::time::Duration;
 
 use rstorrent_engine::dht::{DhtConfig, DhtError, DhtService};
 use rstorrent_engine::{
-    DEFAULT_PEER_ID, DEFAULT_STORAGE_FILE_LIMIT, DescriptorFile, DescriptorStorage,
-    DescriptorStoragePlan, DiskCheckpointStage, DownloadActivityEvent, DownloadActivitySink,
-    DownloadCheckpointSink, DownloadControl, DownloadError, DownloadResourceLimits,
-    IncomingPeerError, IncomingPeerService, IncomingPeerServiceConfig, IncomingPeerServiceSnapshot,
-    IncomingTcpBootstrap, NetworkConfig, PathPublicationStage, PeerBudget, PlatformStorageClient,
+    DEFAULT_INCOMING_HANDSHAKE_TIMEOUT, DEFAULT_INCOMING_INACTIVITY_TIMEOUT,
+    DEFAULT_INCOMING_KEEPALIVE_INTERVAL, DEFAULT_INCOMING_NO_REQUEST_TIMEOUT,
+    DEFAULT_INCOMING_PEER_ACTIVITY_TIMEOUT, DEFAULT_PEER_ID, DEFAULT_STORAGE_FILE_LIMIT,
+    DEFAULT_UPLOAD_READ_JOBS, DescriptorFile, DescriptorStorage, DescriptorStoragePlan,
+    DiskCheckpointStage, DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink,
+    DownloadControl, DownloadError, DownloadResourceLimits, IncomingPeerError, IncomingPeerService,
+    IncomingPeerServiceConfig, IncomingPeerServiceSnapshot, IncomingTcpBootstrap, NetworkConfig,
+    PathPublicationStage, PeerBudget, PeerBudgetConfig, PlatformStorageClient,
     PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash, PublicationShape,
     ResumableMagnetDownloadConfig, ResumeArtifactState, ResumedStorage, StorageFilePool,
-    StorageFilePoolSnapshot, TrackerSource, UdpTrackerConfig, download_magnet_metadata_with_dht,
-    plan_descriptor_storage, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
-    torrent_storage_paths, verify_prepared_descriptors, verify_prepared_platform_files,
+    StorageFilePoolSnapshot, TrackerSource, UdpTrackerConfig, UploadSchedulerConfig,
+    download_magnet_metadata_with_dht, plan_descriptor_storage,
+    resume_magnet_to_descriptors_with_control, resume_magnet_with_control, torrent_storage_paths,
+    verify_prepared_descriptors, verify_prepared_platform_files,
 };
 use rstorrent_protocol::magnet::UdpTrackerUrl;
 use rstorrent_protocol::metainfo::{
@@ -106,6 +110,14 @@ pub struct ApplicationConfig {
     pub download_resource_limits: DownloadResourceLimits,
     pub dht: DhtConfig,
     pub incoming_tcp: IncomingTcpBootstrap,
+    pub peer_budget: PeerBudgetConfig,
+    pub upload_scheduler: UploadSchedulerConfig,
+    pub upload_read_jobs: usize,
+    pub incoming_handshake_timeout: Duration,
+    pub incoming_peer_activity_timeout: Duration,
+    pub incoming_keepalive_interval: Duration,
+    pub incoming_no_request_timeout: Duration,
+    pub incoming_inactivity_timeout: Duration,
     pub view_set_lease: Duration,
     pub view_set_reaper_interval: Duration,
     #[doc(hidden)]
@@ -195,6 +207,14 @@ impl ApplicationConfig {
             download_resource_limits: DownloadResourceLimits::DESKTOP,
             dht,
             incoming_tcp: IncomingTcpBootstrap::Disabled,
+            peer_budget: PeerBudgetConfig::system_default(),
+            upload_scheduler: UploadSchedulerConfig::default(),
+            upload_read_jobs: DEFAULT_UPLOAD_READ_JOBS,
+            incoming_handshake_timeout: DEFAULT_INCOMING_HANDSHAKE_TIMEOUT,
+            incoming_peer_activity_timeout: DEFAULT_INCOMING_PEER_ACTIVITY_TIMEOUT,
+            incoming_keepalive_interval: DEFAULT_INCOMING_KEEPALIVE_INTERVAL,
+            incoming_no_request_timeout: DEFAULT_INCOMING_NO_REQUEST_TIMEOUT,
+            incoming_inactivity_timeout: DEFAULT_INCOMING_INACTIVITY_TIMEOUT,
             view_set_lease: Duration::from_millis(crate::views::VIEW_SET_LEASE_MILLIS),
             view_set_reaper_interval: Duration::from_millis(VIEW_SET_REAPER_INTERVAL_MILLIS),
             storage_write_delay_for_testing: Duration::ZERO,
@@ -348,10 +368,16 @@ impl ApplicationService {
         let storage_file_pool =
             StorageFilePool::new(DEFAULT_STORAGE_FILE_LIMIT, config.platform_storage_client)
                 .map_err(|error| ApplicationError::Configuration(error.to_owned()))?;
-        let peer_budget = PeerBudget::system_default();
-        let mut incoming_config =
-            IncomingPeerServiceConfig::new(config.incoming_tcp, network.peer_io_timeout)
-                .with_peer_budget(peer_budget.clone());
+        let peer_budget = PeerBudget::new(config.peer_budget);
+        let mut incoming_config = IncomingPeerServiceConfig::new(config.incoming_tcp)
+            .with_peer_budget(peer_budget.clone());
+        incoming_config.upload_scheduler = config.upload_scheduler;
+        incoming_config.upload_read_jobs = config.upload_read_jobs;
+        incoming_config.handshake_timeout = config.incoming_handshake_timeout;
+        incoming_config.peer_activity_timeout = config.incoming_peer_activity_timeout;
+        incoming_config.keepalive_interval = config.incoming_keepalive_interval;
+        incoming_config.no_request_timeout = config.incoming_no_request_timeout;
+        incoming_config.inactivity_timeout = config.incoming_inactivity_timeout;
         incoming_config.peer_id = network.peer_id;
         incoming_config.byte_metric_sink = Some(speed_recorder.clone());
         let mut incoming_service = IncomingPeerService::bind(incoming_config).await?;

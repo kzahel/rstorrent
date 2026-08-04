@@ -38,11 +38,15 @@ pub use driver::{
     resume_magnet, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
 };
 pub use incoming::{
-    DEFAULT_INCOMING_HANDSHAKE_TIMEOUT, DEFAULT_UPLOAD_READ_JOBS, IncomingPeerError,
-    IncomingPeerHandle, IncomingPeerService, IncomingPeerServiceConfig,
-    IncomingPeerServiceSnapshot, IncomingRejection, IncomingRejectionReason, IncomingTcpBootstrap,
-    MAX_DEFERRED_METADATA_REQUESTS, MAX_INCOMING_PENDING, MAX_SEED_REGISTRATIONS,
-    METADATA_SEND_BUFFER_WATERMARK, SeedRegistration, SeedRegistrationToken,
+    DEFAULT_INCOMING_HANDSHAKE_TIMEOUT, DEFAULT_INCOMING_INACTIVITY_TIMEOUT,
+    DEFAULT_INCOMING_KEEPALIVE_INTERVAL, DEFAULT_INCOMING_NO_REQUEST_TIMEOUT,
+    DEFAULT_INCOMING_PEER_ACTIVITY_TIMEOUT, DEFAULT_UPLOAD_READ_JOBS,
+    INCOMING_WRITER_NO_PROGRESS_TIMEOUT, IncomingPeerError, IncomingPeerHandle,
+    IncomingPeerService, IncomingPeerServiceConfig, IncomingPeerServiceSnapshot, IncomingRejection,
+    IncomingRejectionReason, IncomingTcpBootstrap, MAX_CONFIGURED_UPLOAD_READ_JOBS,
+    MAX_DEFERRED_METADATA_REQUESTS, MAX_INCOMING_PENDING, MAX_INCOMING_WRITER_BYTES,
+    MAX_SEED_REGISTRATIONS, METADATA_SEND_BUFFER_WATERMARK, SeedRegistration,
+    SeedRegistrationToken,
 };
 pub use metadata_seed::{
     MetadataSeedConfig, MetadataSeedError, MetadataSeedReport, MetadataSeedServer,
