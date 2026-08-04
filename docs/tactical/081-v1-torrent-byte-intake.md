@@ -1,6 +1,8 @@
 # Tactical 081: V1 Torrent Byte Intake
 
-Status: Planned and authorized from maintainer direction on 2026-08-04.
+Status: In progress. Gate 1 completed on 2026-08-04; production implementation
+has not yet crossed Gate 2. Authorized from maintainer direction on
+2026-08-04.
 Amended on 2026-08-04 to make pinned libtorrent `v2.0.13` the compatibility
 lead for large v1 metadata, geometry, and source intake, while requiring
 measured comparison where its compact representations do not map directly to
@@ -335,14 +337,16 @@ The desired limits are:
 | Explicit outer decode depth | 100 |
 | Pieces | 2,097,152 |
 | Piece length | 536,854,528 bytes |
-| Decoded work | calibrated equivalents of libtorrent's 2,500,000 peer and 3,000,000 explicit lexical tokens |
-| Files and collection entries | calibrated against matched 30-MiB peer and 64-MiB explicit decode-work cases; no inherited 4,096 ceiling |
-| Path components and total path bytes | calibrated safe projection; no inherited 32-component/4,096-byte source rejection |
-| Valid unique metainfo trackers and tracker URL bytes | bounded by outer bytes/decode work and calibrated runtime memory; no inherited 32/2,048 truncation |
+| Decoded work | exactly 2,500,000 lexical tokens for peer input and 3,000,000 for explicit/durable input, including closing delimiters |
+| Files and collection entries | at most 312,498 minimal files for peer input and 374,998 for explicit/durable input; otherwise only the applicable byte/token bound (2,499,987/2,999,984 entries in the matched flat-list fixtures) |
+| Source paths | no separate component or byte cap below the applicable byte/token profile |
+| Safe operational paths | 240 UTF-8 bytes per component and 4,096 UTF-8 bytes for the relative path after deterministic projection/collision suffixing |
+| Valid unique metainfo trackers | at most 999,994 one-entry tiers under the explicit lexical-token profile; otherwise the outer byte/token bound |
+| Tracker URL bytes | the remaining outer byte budget; 67,108,766 bytes in the matched one-`announce` 64-MiB fixture |
 | File selection | all accepted non-padding files through compact all/none/range or paged operations; no enumerated 4,096 ceiling |
-| File/tracker view snapshot | bounded page within the existing 16-MiB snapshot ceiling, with total count and stable cursor/range |
+| File/tracker catalog page | 1,024 rows; rendered path or credential-redacted tracker identity at most 4,096 bytes per row, with exact tracker bytes retained outside the view |
 | Concurrent buffered imports per application host | 1 |
-| Ephemeral main database | provisional 256 MiB; calibrated to retain one maximum source plus exact info and catalog overhead |
+| Ephemeral main database | 256 MiB; the Gate 1 maximum-source/raw-info/file/selection model occupied 181,968,896 bytes and a second maximum pair exhausted the same live page cap atomically |
 
 The explicit, BEP 9, and durable metainfo profiles no longer reuse Tactical
 `074`'s depth, decoded-item, collection, file, piece, or path values. Generic
@@ -887,6 +891,56 @@ libtorrent-derived numeric limits and amend this tactical with final
 decoded-work, file, path-projection, tracker, URL, page, 64-MiB attachment,
 and ephemeral page-budget values. No later gate may preserve an old cap that
 this audit identifies or rely on a provisional non-apples-to-apples value.
+
+Gate result (2026-08-04): complete. The independently authored adapters in
+`rstorrent-metainfo-compare` and
+`scripts/libtorrent-metainfo-profile/` ran byte-identical generated fixtures
+against RSTorrent and pinned libtorrent `v2.0.13`. The retained generic
+RSTorrent tree is not a safe implementation of the adopted work envelope, so
+Gate 2 must use direct/streaming semantic projection and exact lexical-token
+accounting for metainfo while leaving unrelated generic bencode profiles
+unchanged.
+
+Representative subprocess evidence, measured after each process had read its
+input, was:
+
+| Fixture | Boundary/result | RSTorrent current parser | Pinned libtorrent |
+| --- | --- | ---: | ---: |
+| 64-MiB ignored outer string | accepted, 15 tokens | 9 us / 606 B allocator peak | 194,425 us / 134,512,640 B incremental peak RSS |
+| Explicit flat list | 3,000,000 tokens accepted; 3,000,001 reference-rejected | 29,845 us / 201,327,198 B; currently admits over-boundary input | 9,282 us / 57,901,056 B |
+| Peer flat list | 2,500,000 tokens accepted; 2,500,001 reference-rejected | 32,771 us / 201,327,198 B; currently admits over-boundary input | 12,894 us / 53,870,592 B |
+| Explicit minimal files | 374,998 files / 2,999,998 tokens accepted; next file rejected | 67,835 us / 237,178,862 B; currently admits next file | 88,625 us / 85,016,576 B |
+| Peer minimal files | 312,498 files / 2,499,995 tokens accepted; next file rejected | 60,610 us / 203,241,106 B; currently admits next file | 51,537 us / 66,371,584 B |
+| One-entry tracker tiers | 999,994 / 2,999,998 tokens accepted; next tier rejected | 40,827 us / 242,331,102 B, but current parser discards the catalog | 633,911 us / 282,181,632 B |
+| Piece hashes | 2,097,152 accepted; next rejected | 36,372 us / 41,943,626 B | 27,226 us / 42,237,952 B |
+| Piece length | 536,854,528 accepted; next rejected by reference | current fixed cap rejects the accepted value | 32 us / 229,376 B |
+| Long path | 100 components of 255 bytes accepted | 37 us / 35,120 B | 266 us / 442,368 B; display path shortened to 24,104 bytes |
+| Invalid UTF-8 path byte | accepted and sanitized by reference | current parser rejects it | 28 us / 212,992 B |
+| Maximum single tracker URL | 67,108,766 URL bytes in a 64-MiB outer source accepted | current parser ignores it | 49,857 us / 268,779,520 B |
+
+The depth comparison also exposed an accounting difference: with the same
+outer dictionary and ignored nested list, libtorrent's depth-100 profile
+accepted 98 nested lists and rejected 99, while RSTorrent accepted 99 and
+rejected 100. Gate 2 must match the reference boundary rather than merely
+copying the configured integer.
+
+The safe operational-path numbers are intentionally portable rather than a
+copy of libtorrent's platform-conditional display projection. A 240-byte
+component leaves space for deterministic collision suffixes below common
+255-byte filesystem/provider limits. A 4,096-byte relative path matches the
+existing platform adapter boundary. Deeper or longer source paths are
+collapsed with stable hash-derived components, not rejected. Exact bytes stay
+in `raw_info`.
+
+File and tracker pages use 1,024 rows. Bounded 4,096-byte rendered identities
+keep a worst-shaped page well below the existing 16-MiB snapshot limit while
+the source and normalized store retain the exact URL. A SQLite model with two
+64-MiB BLOBs, the maximum explicit file catalog, maximum alternating
+selection ranges, production page size, and a 256-MiB live page cap occupied
+44,426 pages (181,968,896 bytes) and 143 MiB peak RSS. A second pair of
+64-MiB BLOBs produced `SQLITE_FULL`, rolled back, and left the first row set
+intact. Gate 6 must repeat this measurement against the actual migrated
+schema; 256 MiB is now the accepted default rather than a provisional value.
 
 ### Gate 2: Parser profiles and large BEP 9
 
