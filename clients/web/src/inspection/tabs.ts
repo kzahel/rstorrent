@@ -15,7 +15,7 @@ export const DETAIL_TABS: readonly {
   { id: "disk", label: "Disk", scope: "session", view: "disk" },
   { id: "logs", label: "Logs", scope: "session", view: "logs" },
   { id: "speed", label: "Speed", scope: "session", view: "speed" },
-  { id: "dht", label: "DHT", scope: "session", view: null },
+  { id: "dht", label: "DHT", scope: "session", view: "dht" },
 ];
 
 export function desiredDetailForTab(

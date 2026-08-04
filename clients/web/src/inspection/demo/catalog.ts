@@ -15,7 +15,7 @@ import type {
   TrackerRow,
   TrackerSet,
 } from "../model";
-import type { SpeedHistoryView } from "../../api";
+import type { DhtInspectionView, SpeedHistoryView } from "../../api";
 import { emptyDiskSet } from "../state";
 
 const BASE_TIME_MS = Date.UTC(2026, 7, 1, 8, 0, 0);
@@ -165,6 +165,13 @@ export const DEMO_SCENARIOS: readonly DemoScenarioSummary[] = [
     autoplay: true,
   },
   {
+    id: "dht-observatory",
+    title: "DHT observatory",
+    description: "Routing depth, freshness, replacements, and lookup convergence.",
+    durationMs: 70_000,
+    autoplay: true,
+  },
+  {
     id: "empty-library",
     title: "Empty library",
     description: "A clean first-run library with no active torrents.",
@@ -234,6 +241,7 @@ export function buildScenarioSnapshot(
     trackersByTorrent,
     piecesByTorrent,
     disk,
+    dht: buildDhtInspection(elapsed, scenarioId),
     speed: buildSpeedHistory(elapsed, scenarioId),
     logs: content.logs.slice(-2_048),
     logLoss: {
@@ -252,11 +260,120 @@ export function buildScenarioSnapshot(
       trackers: { status: "ready" },
       pieces: { status: "ready" },
       disk: { status: "ready" },
+      dht: scenarioId === "dht-observatory" && elapsed >= 60_000 && elapsed < 65_000
+        ? { status: "stale", reason: "Demo observation delivery paused" }
+        : { status: "ready" },
       speed: scenarioId === "speed-stale"
         ? { status: "stale", reason: "Demo delivery paused" }
         : { status: "ready" },
       logs: { status: "ready" },
     },
+  };
+}
+
+function buildDhtInspection(
+  elapsedMs: number,
+  scenarioId: DemoScenarioId,
+): DhtInspectionView {
+  const isObservatory = scenarioId === "dht-observatory";
+  const offline = isObservatory && elapsedMs < 2_500;
+  const bootstrap = isObservatory && elapsedMs >= 2_500 && elapsedMs < 7_000;
+  const sparse = isObservatory && elapsedMs >= 7_000 && elapsedMs < 12_000;
+  const inactive = isObservatory && elapsedMs >= 65_000;
+  const deepOutlier = isObservatory && elapsedMs >= 45_000 && !inactive;
+  const lookupActive = isObservatory && elapsedMs >= 15_000 && elapsedMs < 40_000;
+  const malformed = isObservatory && elapsedMs >= 35_000 ? 3 : 0;
+  const rateLimited = isObservatory && elapsedMs >= 40_000 ? 17 : 0;
+  const buckets = Array.from({ length: 160 }, (_, bucketIndex) => ({
+    bucket_index: bucketIndex,
+    good_nodes: 0,
+    questionable_nodes: 0,
+    replacement_candidates: 0,
+    oldest_live_response_age_millis: null as string | null,
+  }));
+  if (!offline && !bootstrap && !inactive) {
+    for (let depth = 0; depth <= 24; depth += 1) {
+      if (sparse && ![0, 8, 17, 24].includes(depth)) continue;
+      const bucket = buckets[159 - depth]!;
+      const live = sparse ? (depth === 24 ? 2 : 4) : depth < 24 ? 7 : 3;
+      const questionable = depth === 16 ? 2 : 0;
+      bucket.good_nodes = live - questionable;
+      bucket.questionable_nodes = questionable;
+      bucket.replacement_candidates = depth % 5 === 0 ? 2 : depth % 3 === 0 ? 1 : 0;
+      const ageSeconds = depth >= 20
+        ? 720 + (depth - 20) * 38
+        : depth === 16
+          ? 925
+          : 35 + depth * 19;
+      bucket.oldest_live_response_age_millis = String(ageSeconds * 1_000);
+    }
+    if (deepOutlier) {
+      const outlier = buckets[120]!;
+      outlier.good_nodes = 1;
+      outlier.replacement_candidates = 1;
+      outlier.oldest_live_response_age_millis = "44000";
+    }
+  }
+  const routingNodes = buckets.reduce(
+    (total, bucket) => total + bucket.good_nodes + bucket.questionable_nodes,
+    0,
+  );
+  const occupied = buckets.filter(
+    (bucket) => bucket.good_nodes + bucket.questionable_nodes > 0,
+  );
+  const deepest = occupied.length === 0
+    ? null
+    : Math.max(...occupied.map((bucket) => 159 - bucket.bucket_index));
+  const lookupAge = Math.max(0, elapsedMs - 15_000);
+  const convergence = lookupAge < 7_000 ? 8 : lookupAge < 15_000 ? 17 : 24;
+  const lastImprovementAt = lookupAge < 7_000 ? 1_500 : lookupAge < 15_000 ? 7_000 : 15_000;
+  const lookups = lookupActive
+    ? [
+        {
+          lookup_id: "41",
+          target_id: "6f8d9fa18b1c2d3e4f5061728394a5b6c7d8e9f0",
+          age_millis: String(lookupAge),
+          deadline_in_millis: String(Math.max(0, 30_000 - lookupAge)),
+          unqueried_candidates: lookupAge < 10_000 ? 18 : 7,
+          in_flight_candidates: 3,
+          responded_candidates: lookupAge < 7_000 ? 11 : lookupAge < 15_000 ? 26 : 44,
+          failed_candidates: lookupAge < 7_000 ? 1 : 5,
+          discovered_peers: lookupAge < 15_000 ? 0 : 12,
+          closest_responded_prefix_bits: convergence,
+          last_convergence_improvement_age_millis: String(
+            Math.max(0, lookupAge - lastImprovementAt),
+          ),
+        },
+      ]
+    : [];
+  return {
+    lifecycle: inactive
+      ? "inactive"
+      : offline
+        ? "offline"
+      : bootstrap
+        ? "bootstrap_empty"
+        : "participating",
+    network_policy: offline ? "offline" : "loopback_only",
+    local_node_id: "4a8c1284e76d095b3f2101ccd09a7e5b621de340",
+    captured_millis: String(1_700_000_000_000 + elapsedMs),
+    routing_nodes_v4: routingNodes,
+    occupied_buckets_v4: occupied.length,
+    deepest_shared_prefix_bits_v4: deepest,
+    active_transactions: lookupActive ? 3 : 0,
+    active_lookups: lookups.length,
+    queries_sent: String(Math.floor(elapsedMs / 700) + (bootstrap ? 0 : 31)),
+    responses_received: String(Math.floor(elapsedMs / 1_050) + (bootstrap ? 0 : 24)),
+    queries_received: String(Math.floor(elapsedMs / 1_800)),
+    malformed_received: String(malformed),
+    rate_limited: String(rateLimited),
+    discovered_peers: lookupActive && lookupAge >= 15_000 ? "12" : "0",
+    bootstrap_attempts: bootstrap ? "1" : "2",
+    routing_refreshes: elapsedMs >= 30_000 ? "1" : "0",
+    datagram_bytes_sent: String(Math.floor(elapsedMs * 1.7)),
+    datagram_bytes_received: String(Math.floor(elapsedMs * 2.4) + malformed * 11),
+    buckets_v4: buckets,
+    lookups,
   };
 }
 
@@ -433,6 +550,7 @@ function buildScenarioContent(
     case "speed-unavailable-upload":
     case "speed-stale":
     case "speed-reset":
+    case "dht-observatory":
       return healthyDownload(elapsedMs);
     case "empty-library":
       return { torrents: [], peers: {}, logs: [] };

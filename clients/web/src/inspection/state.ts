@@ -34,6 +34,11 @@ import {
   loadSpeedPreferences,
   saveSpeedPreferences,
 } from "./speed-preferences";
+import {
+  loadDhtVisualizationMode,
+  saveDhtVisualizationMode,
+  type DhtVisualizationMode,
+} from "./dht-preferences";
 import type { SpeedMetric, SpeedRange } from "../api";
 
 export interface PresentationState {
@@ -67,6 +72,7 @@ export interface PresentationState {
   readonly logFollowing: boolean;
   readonly speedRange: SpeedRange;
   readonly speedMetrics: readonly SpeedMetric[];
+  readonly dhtVisualizationMode: DhtVisualizationMode;
 }
 
 export interface InspectionState extends InspectionSnapshot {
@@ -110,6 +116,7 @@ export interface InspectionActions {
   readonly setLogFollowing: (following: boolean) => void;
   readonly setSpeedRange: (range: SpeedRange) => void;
   readonly toggleSpeedMetric: (metric: SpeedMetric) => void;
+  readonly setDhtVisualizationMode: (mode: DhtVisualizationMode) => void;
 }
 
 export type InspectionStore = InspectionState & InspectionActions;
@@ -138,6 +145,7 @@ const EMPTY_SNAPSHOT: InspectionSnapshot = {
   trackersByTorrent: {},
   piecesByTorrent: {},
   disk: emptyDiskSet(),
+  dht: null,
   speed: null,
   logs: [],
   logLoss: {
@@ -156,6 +164,7 @@ const EMPTY_SNAPSHOT: InspectionSnapshot = {
     trackers: { status: "not_requested" },
     pieces: { status: "not_requested" },
     disk: { status: "not_requested" },
+    dht: { status: "not_requested" },
     speed: { status: "not_requested" },
     logs: { status: "not_requested" },
   },
@@ -189,6 +198,7 @@ const DEFAULT_PRESENTATION: PresentationState = {
   logFollowing: true,
   speedRange: "seconds30",
   speedMetrics: ["payload_received", "staged_write", "payload_verified"],
+  dhtVisualizationMode: "normalized",
 };
 
 export function createInspectionStore(
@@ -206,12 +216,17 @@ export function createInspectionStore(
     appearanceStorage === undefined
       ? loadSpeedPreferences()
       : loadSpeedPreferences(appearanceStorage);
+  const dhtVisualizationMode =
+    appearanceStorage === undefined
+      ? loadDhtVisualizationMode()
+      : loadDhtVisualizationMode(appearanceStorage);
   const initialPresentation = {
     ...DEFAULT_PRESENTATION,
     ...navigation,
     ...appearance,
     speedRange: speedPreferences.range,
     speedMetrics: speedPreferences.metrics,
+    dhtVisualizationMode,
   };
   const persistAppearance = (preferences: {
     readonly interfaceSize: InterfaceSize;
@@ -425,6 +440,16 @@ export function createInspectionStore(
         else saveSpeedPreferences(speed, appearanceStorage);
         return { presentation: { ...state.presentation, speedMetrics } };
       });
+    },
+    setDhtVisualizationMode: (dhtVisualizationMode) => {
+      if (appearanceStorage === undefined) {
+        saveDhtVisualizationMode(dhtVisualizationMode);
+      } else {
+        saveDhtVisualizationMode(dhtVisualizationMode, appearanceStorage);
+      }
+      set((state) => ({
+        presentation: { ...state.presentation, dhtVisualizationMode },
+      }));
     },
     setDetailPanePercent: (percent) => {
       set((state) => ({

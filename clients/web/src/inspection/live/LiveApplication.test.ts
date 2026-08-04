@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type {
   ApiHello,
+  DhtInspectionView,
   OpenViewSetRequest,
   OpenViewSetResponse,
   PeerView,
@@ -39,6 +40,7 @@ class FakeLiveClient implements ApplicationViewClient {
         "torrent_swarm",
         "torrent_files",
         "torrent_trackers",
+        "session_dht",
         "diagnostics",
       ],
       limits: {
@@ -130,6 +132,33 @@ class FakeLiveClient implements ApplicationViewClient {
 }
 
 describe("LiveApplication", () => {
+  it("materializes the session DHT view without a selected torrent", async () => {
+    const client = new FakeLiveClient();
+    const application = await LiveApplication.open(client, {
+      initialViews: {
+        library: false,
+        torrentId: null,
+        detail: "dht",
+        logCapture: null,
+        speed: null,
+      },
+    });
+    const snapshots: InspectionSnapshot[] = [];
+    application.subscribe((update) => {
+      if (update.type === "snapshot") snapshots.push(update.snapshot);
+    });
+
+    expect(client.opens[0]?.views).toContainEqual({
+      type: "session_dht",
+      view_id: "session-dht",
+      delivery: { min_interval_millis: 500 },
+    });
+    expect(snapshots.at(-1)?.dht?.lifecycle).toBe("participating");
+    expect(snapshots.at(-1)?.dht?.buckets_v4).toHaveLength(160);
+    expect(snapshots.at(-1)?.viewStatus.dht).toEqual({ status: "ready" });
+    await application.close();
+  });
+
   it("maps semantic magnet intake to the bounded application command", async () => {
     const client = new FakeLiveClient();
     const application = await LiveApplication.open(client);
@@ -631,6 +660,12 @@ function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
           pieces: [],
         },
       };
+    case "session_dht":
+      return {
+        type: "snapshot",
+        view_id: view.view_id,
+        snapshot: { type: "session_dht", inspection: dhtInspection() },
+      };
     case "session_speed":
       return {
         type: "snapshot",
@@ -656,6 +691,38 @@ function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
     case "piece_activity":
       throw new Error("piece view is not used by live inspection");
   }
+}
+
+function dhtInspection(): DhtInspectionView {
+  return {
+    lifecycle: "participating",
+    network_policy: "loopback_only",
+    local_node_id: TORRENT_ID,
+    captured_millis: "1300",
+    routing_nodes_v4: 0,
+    occupied_buckets_v4: 0,
+    deepest_shared_prefix_bits_v4: null,
+    active_transactions: 0,
+    active_lookups: 0,
+    queries_sent: "0",
+    responses_received: "0",
+    queries_received: "0",
+    malformed_received: "0",
+    rate_limited: "0",
+    discovered_peers: "0",
+    bootstrap_attempts: "1",
+    routing_refreshes: "0",
+    datagram_bytes_sent: "0",
+    datagram_bytes_received: "0",
+    buckets_v4: Array.from({ length: 160 }, (_, bucket_index) => ({
+      bucket_index,
+      good_nodes: 0,
+      questionable_nodes: 0,
+      replacement_candidates: 0,
+      oldest_live_response_age_millis: null,
+    })),
+    lookups: [],
+  };
 }
 
 function speedHistory() {

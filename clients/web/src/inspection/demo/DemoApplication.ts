@@ -356,6 +356,7 @@ function materializeDemoViews(
     trackersByTorrent,
     piecesByTorrent,
     disk: desired.detail === "disk" ? source.disk : emptyDiskSet(),
+    dht: desired.detail === "dht" ? source.dht : null,
     speed:
       desired.detail === "speed"
         ? materializeDemoSpeed(source.speed, desired.speed)
@@ -404,6 +405,10 @@ function materializeDemoViews(
       disk:
         desired.detail === "disk"
           ? { status: "ready" }
+          : { status: "not_requested" },
+      dht:
+        desired.detail === "dht"
+          ? source.viewStatus.dht
           : { status: "not_requested" },
       speed:
         desired.detail === "speed"

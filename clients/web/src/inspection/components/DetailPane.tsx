@@ -16,6 +16,7 @@ import { DiskPanel } from "./DiskPanel";
 import { PieceMapPanel } from "./PieceMapPanel";
 import { LogConsole } from "./LogConsole";
 import { SpeedPanel } from "./SpeedPanel";
+import { DhtPanel } from "./DhtPanel";
 import styles from "./DetailPane.module.css";
 
 export function DetailPane() {
@@ -131,7 +132,7 @@ export function DetailPane() {
         role="tabpanel"
         aria-labelledby={`tab-${activeTab}`}
       >
-        {torrent === undefined && activeTab !== "logs" && activeTab !== "disk" && activeTab !== "speed" ? (
+        {torrent === undefined && activeTab !== "logs" && activeTab !== "disk" && activeTab !== "speed" && activeTab !== "dht" ? (
           <EmptyDetail />
         ) : activeTab === "peers" && currentTorrentId !== null ? (
           <PeerTable torrentId={currentTorrentId} />
@@ -147,6 +148,8 @@ export function DetailPane() {
           <DiskPanel />
         ) : activeTab === "speed" ? (
           <SpeedPanel />
+        ) : activeTab === "dht" ? (
+          <DhtPanel />
         ) : activeTab === "general" && torrent !== undefined ? (
           <GeneralDetail torrent={torrent} />
         ) : activeTab === "logs" ? (

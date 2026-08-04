@@ -2031,6 +2031,21 @@ mod tests {
             .send_to(b"x", service_address)
             .await
             .expect("send malformed datagram");
+        let mut received_bytes = 1_u64;
+        for transaction in 0..=MAX_QUERIES_PER_SOURCE_MINUTE {
+            let ping = encode_query(
+                &[u8::try_from(transaction).expect("bounded transaction")],
+                NodeId([4; 20]),
+                &Query::Ping,
+                true,
+            )
+            .expect("encode ping");
+            received_bytes = received_bytes.saturating_add(ping.len() as u64);
+            malformed
+                .send_to(&ping, service_address)
+                .await
+                .expect("send rate-limit probe");
+        }
 
         let active = tokio::time::timeout(Duration::from_secs(2), async {
             loop {
@@ -2038,6 +2053,7 @@ mod tests {
                 let observation = observations.borrow_and_update().clone();
                 if !observation.lookups.is_empty()
                     && observation.stats.malformed_received == 1
+                    && observation.stats.rate_limited == 1
                     && observation.stats.datagram_bytes_sent > 0
                 {
                     break observation;
@@ -2047,7 +2063,11 @@ mod tests {
         .await
         .expect("active observation timeout");
         assert_eq!(active.lifecycle, DhtLifecycle::BootstrapEmpty);
-        assert_eq!(active.stats.datagram_bytes_received, 1);
+        assert_eq!(active.stats.datagram_bytes_received, received_bytes);
+        assert_eq!(
+            active.stats.queries_received,
+            u64::from(MAX_QUERIES_PER_SOURCE_MINUTE) + 1
+        );
         assert_eq!(active.lookups.len(), 1);
         assert!(active.stats.active_transactions <= MAX_ACTIVE_TRANSACTIONS as u32);
 

@@ -53,6 +53,7 @@ const FILES_VIEW_ID = "torrent-files";
 const TRACKERS_VIEW_ID = "torrent-trackers";
 const PIECES_VIEW_ID = "torrent-pieces";
 const DISK_VIEW_ID = "session-disk";
+const DHT_VIEW_ID = "session-dht";
 const SPEED_VIEW_ID = "session-speed";
 const LOGS_VIEW_ID = "logs";
 
@@ -377,6 +378,7 @@ export class LiveApplication implements InspectionApplication {
         ),
         pieces: staleIfMaterialized(this.snapshot.viewStatus.pieces, error),
         disk: staleIfMaterialized(this.snapshot.viewStatus.disk, error),
+        dht: staleIfMaterialized(this.snapshot.viewStatus.dht, error),
         logs: staleIfMaterialized(this.snapshot.viewStatus.logs, error),
         speed: staleIfMaterialized(this.snapshot.viewStatus.speed, error),
       },
@@ -473,6 +475,13 @@ export class LiveApplication implements InspectionApplication {
         delivery: { min_interval_millis: 100 },
       });
     }
+    if (views.detail === "dht" && capabilities.has("session_dht")) {
+      specs.push({
+        type: "session_dht",
+        view_id: DHT_VIEW_ID,
+        delivery: { min_interval_millis: 500 },
+      });
+    }
     if (views.detail === "speed" && capabilities.has("session_speed")) {
       const range = views.speed?.range ?? "seconds30";
       specs.push({
@@ -550,6 +559,7 @@ function mapViewState(
   const trackers = projection(state, TRACKERS_VIEW_ID, "trackers");
   const pieces = projection(state, PIECES_VIEW_ID, "piece_activity");
   const disk = projection(state, DISK_VIEW_ID, "session_disk");
+  const dht = projection(state, DHT_VIEW_ID, "session_dht");
   const speed = projection(state, SPEED_VIEW_ID, "session_speed");
   const diagnostics = projection(state, LOGS_VIEW_ID, "diagnostics");
   const torrentRows = new Map<string, TorrentRow>();
@@ -611,7 +621,7 @@ function mapViewState(
         ? rows.reduce((total, row) => total + row.downloadRate, 0)
         : safeNumber(speedDownloadRate),
       uploadRate: null,
-      dhtNodes: null,
+      dhtNodes: dht?.inspection.routing_nodes_v4 ?? null,
       knownPeers: null,
     },
     demo: null,
@@ -624,6 +634,7 @@ function mapViewState(
     trackersByTorrent,
     piecesByTorrent,
     disk: disk === null ? emptyDiskSet() : mapDisk(disk),
+    dht: dht?.inspection ?? null,
     speed: speed?.history ?? null,
     logs,
     logLoss: {
@@ -685,6 +696,12 @@ function mapViewState(
         capabilities.has("session_disk"),
         disk !== null,
         "Disk inspection is unavailable",
+      ),
+      dht: materialization(
+        desired.detail === "dht",
+        capabilities.has("session_dht"),
+        dht !== null,
+        "DHT inspection is unavailable",
       ),
       speed: materialization(
         desired.detail === "speed",
@@ -751,6 +768,7 @@ function transitionSnapshot(
     trackersByTorrent: {},
     piecesByTorrent: {},
     disk: current.disk,
+    dht: current.dht,
     speed: current.speed,
     logs: [],
     logLoss: {
@@ -791,6 +809,11 @@ function transitionSnapshot(
         desired.detail === "disk",
         capabilities.has("session_disk"),
         current.viewStatus.disk,
+      ),
+      dht: transitionStatus(
+        desired.detail === "dht",
+        capabilities.has("session_dht"),
+        current.viewStatus.dht,
       ),
       speed: transitionStatus(
         desired.detail === "speed",
@@ -1300,6 +1323,7 @@ function emptyLiveSnapshot(
     trackersByTorrent: {},
     piecesByTorrent: {},
     disk: emptyDiskSet(),
+    dht: null,
     speed: null,
     logs: [],
     logLoss: {
@@ -1325,6 +1349,7 @@ function emptyLiveSnapshot(
           ? { status: "loading" }
           : { status: "not_requested" },
       disk: desired.detail === "disk" ? { status: "loading" } : { status: "not_requested" },
+      dht: desired.detail === "dht" ? { status: "loading" } : { status: "not_requested" },
       speed:
         desired.detail === "speed"
           ? { status: "loading" }

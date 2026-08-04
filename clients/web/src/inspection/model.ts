@@ -1,6 +1,7 @@
 import type {
   DiagnosticField,
   DiagnosticSubject,
+  DhtInspectionView,
   PeerDisconnectReason,
   PeerFlagView,
   PeerSourceView,
@@ -97,6 +98,7 @@ export interface InspectionViewStatus {
   readonly trackers: ViewMaterialization;
   readonly pieces: ViewMaterialization;
   readonly disk: ViewMaterialization;
+  readonly dht: ViewMaterialization;
   readonly speed: ViewMaterialization;
   readonly logs: ViewMaterialization;
 }
@@ -112,6 +114,7 @@ export interface DesiredInspectionViews {
     | "files"
     | "pieces"
     | "disk"
+    | "dht"
     | "speed"
     | "logs"
     | null;
@@ -423,6 +426,7 @@ export interface InspectionSnapshot {
   readonly trackersByTorrent: Readonly<Record<string, TrackerSet>>;
   readonly piecesByTorrent: Readonly<Record<string, PieceMapSet>>;
   readonly disk: DiskSet;
+  readonly dht: DhtInspectionView | null;
   readonly speed: SpeedHistoryView | null;
   readonly logs: readonly LogRow[];
   readonly logLoss: LogLoss;
@@ -533,6 +537,7 @@ export type DemoScenarioId =
   | "speed-unavailable-upload"
   | "speed-stale"
   | "speed-reset"
+  | "dht-observatory"
   | "empty-library";
 
 export interface DemoScenarioSummary {

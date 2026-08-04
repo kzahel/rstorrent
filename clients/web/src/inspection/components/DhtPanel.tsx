@@ -1,0 +1,574 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import type { DhtBucketView, DhtInspectionView } from "../../api";
+import { useInspectionStore } from "../context";
+import { formatDecimalBytes, formatTime } from "../format";
+import type { DhtVisualizationMode } from "../dht-preferences";
+import styles from "./DhtPanel.module.css";
+
+const K = 8;
+const QUESTIONABLE_AGE_MILLIS = 15 * 60 * 1_000;
+
+export function DhtPanel() {
+  const inspection = useInspectionStore((state) => state.dht);
+  const status = useInspectionStore((state) => state.viewStatus.dht);
+  const mode = useInspectionStore(
+    (state) => state.presentation.dhtVisualizationMode,
+  );
+  const setMode = useInspectionStore((state) => state.setDhtVisualizationMode);
+
+  if (status.status === "unsupported" || status.status === "unavailable") {
+    return <div className={styles.message}>{status.reason}</div>;
+  }
+  if (inspection === null) {
+    return <div className={styles.message}>Preparing DHT observation…</div>;
+  }
+
+  return (
+    <div className={styles.panel} aria-label="Session DHT observatory">
+      <header className={styles.header}>
+        <div>
+          <p className={styles.eyebrow}>Session · Mainline IPv4</p>
+          <h2>DHT observatory</h2>
+          <p className={styles.subtitle}>
+            Routing-space coverage, node freshness, and live lookup convergence.
+          </p>
+        </div>
+        <div className={styles.modeControl} aria-label="Routing visualization">
+          <span>Encoding</span>
+          <div>
+            <button
+              type="button"
+              aria-pressed={mode === "normalized"}
+              onClick={() => setMode("normalized")}
+            >
+              Depth · normalized
+            </button>
+            <button
+              type="button"
+              aria-pressed={mode === "literal"}
+              onClick={() => setMode("literal")}
+            >
+              Buckets · literal
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <StatusFacts inspection={inspection} stale={status.status === "stale"} />
+      <RoutingDistribution inspection={inspection} mode={mode} />
+      <OperationalFacts inspection={inspection} />
+      <LookupTable inspection={inspection} />
+      <ExactBucketTable inspection={inspection} />
+    </div>
+  );
+}
+
+function StatusFacts({
+  inspection,
+  stale,
+}: {
+  readonly inspection: DhtInspectionView;
+  readonly stale: boolean;
+}) {
+  const questionable = sum(inspection.buckets_v4, (bucket) => bucket.questionable_nodes);
+  const aging = inspection.buckets_v4.filter((bucket) => {
+    const age = decimalNumber(bucket.oldest_live_response_age_millis);
+    return bucket.questionable_nodes === 0 && age >= 12 * 60 * 1_000;
+  }).length;
+  return (
+    <div className={styles.statusFacts} aria-label="DHT status facts">
+      <Fact
+        label="Participant"
+        value={lifecycleLabel(inspection.lifecycle)}
+        detail={`${policyLabel(inspection.network_policy)}${stale ? " · stale" : ""}`}
+        tone={inspection.lifecycle === "participating" ? "good" : "neutral"}
+      />
+      <Fact
+        label="Routing nodes"
+        value={inspection.routing_nodes_v4.toLocaleString()}
+        detail={`${inspection.occupied_buckets_v4} occupied bands`}
+      />
+      <Fact
+        label="Deepest prefix"
+        value={inspection.deepest_shared_prefix_bits_v4 === null
+          ? "—"
+          : `${inspection.deepest_shared_prefix_bits_v4} bits`}
+        detail="Shared with local ID"
+      />
+      <Fact
+        label="Freshness"
+        value={questionable === 0 ? "Current" : `${questionable} questionable`}
+        detail={`${aging} aging band${aging === 1 ? "" : "s"}`}
+        tone={questionable > 0 || aging > 0 ? "warning" : "good"}
+      />
+      <Fact
+        label="Live work"
+        value={`${inspection.active_lookups} lookup${inspection.active_lookups === 1 ? "" : "s"}`}
+        detail={`${inspection.active_transactions} transactions`}
+      />
+    </div>
+  );
+}
+
+function Fact({
+  label,
+  value,
+  detail,
+  tone = "neutral",
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly detail: string;
+  readonly tone?: "neutral" | "good" | "warning";
+}) {
+  return (
+    <div className={styles.fact} data-tone={tone}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </div>
+  );
+}
+
+function RoutingDistribution({
+  inspection,
+  mode,
+}: {
+  readonly inspection: DhtInspectionView;
+  readonly mode: DhtVisualizationMode;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(800);
+  const tail = useMemo(() => summarizeTail(inspection.buckets_v4), [inspection]);
+  const description = mode === "normalized"
+    ? `Normalized shared-prefix depth zero through 31, followed by a 128-band tail. ${tail.live} live nodes occupy the tail.`
+    : "Literal engine bucket indices zero through 159. Equal pixel widths represent engine slots, not equal keyspace volumes.";
+
+  useEffect(() => {
+    const element = wrapRef.current;
+    if (element === null) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry !== undefined) setWidth(Math.max(320, entry.contentRect.width));
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas === null) return;
+    drawRouting(canvas, inspection, mode, width);
+  }, [inspection, mode, width]);
+
+  return (
+    <section className={styles.routing} aria-labelledby="dht-routing-title">
+      <div className={styles.sectionHeading}>
+        <div>
+          <h3 id="dht-routing-title">Routing-space distribution</h3>
+          <p>
+            Live nodes rise above the baseline; replacements mirror below it.
+          </p>
+        </div>
+        <div className={styles.capture}>
+          Captured {formatTime(decimalNumber(inspection.captured_millis))} UTC
+        </div>
+      </div>
+      <div ref={wrapRef} className={styles.canvasWrap} data-mode={mode}>
+        <canvas
+          ref={canvasRef}
+          className={styles.canvas}
+          height={300}
+          aria-label={description}
+          role="img"
+        />
+      </div>
+      <div className={styles.legend} aria-label="Routing chart legend">
+        <span data-kind="good">Good live</span>
+        <span data-kind="questionable">Questionable live</span>
+        <span data-kind="replacement">Replacements</span>
+        <span data-kind="freshness">Oldest response age · 0–15 min</span>
+      </div>
+      <p className={styles.encodingNote}>
+        {mode === "normalized"
+          ? "Depth = 159 − bucket index. Moving right adds one shared bit and halves the XOR-distance band."
+          : "All 160 engine slots are shown in exact index order. Equal widths describe storage slots, not equal keyspace volumes."}
+      </p>
+    </section>
+  );
+}
+
+function drawRouting(
+  canvas: HTMLCanvasElement,
+  inspection: DhtInspectionView,
+  mode: DhtVisualizationMode,
+  cssWidth: number,
+) {
+  const context = canvas.getContext("2d");
+  if (context === null) return;
+  const height = 300;
+  const ratio = Math.min(3, globalThis.devicePixelRatio || 1);
+  canvas.width = Math.round(cssWidth * ratio);
+  canvas.height = Math.round(height * ratio);
+  canvas.style.width = `${cssWidth}px`;
+  canvas.style.height = `${height}px`;
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  context.clearRect(0, 0, cssWidth, height);
+  const tokens = getComputedStyle(canvas);
+  const colors = {
+    text: tokens.getPropertyValue("--text-muted").trim() || "#718096",
+    grid: tokens.getPropertyValue("--border-soft").trim() || "#334155",
+    good: "#35b982",
+    questionable: "#e49a3a",
+    replacement: "#718096",
+    fresh: "#3aa884",
+    aging: "#e49a3a",
+    surface: tokens.getPropertyValue("--surface-secondary").trim() || "#111827",
+  };
+  const left = 42;
+  const right = 16;
+  const top = 24;
+  const baseline = 142;
+  const liveHeight = 92;
+  const replacementHeight = 48;
+  const railY = baseline + replacementHeight + 16;
+  const bottomLabelY = 274;
+
+  context.font = "10px system-ui, sans-serif";
+  context.textBaseline = "middle";
+  context.strokeStyle = colors.grid;
+  context.fillStyle = colors.text;
+  context.lineWidth = 1;
+  for (const tick of [0, 4, 8]) {
+    const y = baseline - (tick / K) * liveHeight;
+    context.beginPath();
+    context.moveTo(left, y + 0.5);
+    context.lineTo(cssWidth - right, y + 0.5);
+    context.stroke();
+    context.fillText(String(tick), 14, y);
+  }
+  context.beginPath();
+  context.moveTo(left, baseline + 0.5);
+  context.lineTo(cssWidth - right, baseline + 0.5);
+  context.stroke();
+  context.fillText("live", 9, top + 4);
+  context.fillText("repl.", 9, baseline + replacementHeight / 2);
+
+  if (mode === "normalized") {
+    const tailWidth = Math.min(168, Math.max(114, cssWidth * 0.2));
+    const gap = 14;
+    const plotRight = cssWidth - right - tailWidth - gap;
+    const columnWidth = (plotRight - left) / 32;
+    for (let depth = 0; depth < 32; depth += 1) {
+      const bucket = inspection.buckets_v4[159 - depth]!;
+      drawBucket(context, bucket, left + depth * columnWidth, columnWidth, {
+        baseline,
+        liveHeight,
+        replacementHeight,
+        railY,
+        colors,
+      });
+      if (depth % 4 === 0 || depth === 31) {
+        context.fillStyle = colors.text;
+        context.textAlign = "center";
+        context.fillText(String(depth), left + (depth + 0.5) * columnWidth, bottomLabelY);
+      }
+    }
+    context.textAlign = "left";
+    context.fillStyle = colors.text;
+    context.fillText("shared prefix depth", left, 292);
+    drawTail(
+      context,
+      summarizeTail(inspection.buckets_v4),
+      plotRight + gap,
+      tailWidth,
+      baseline,
+      colors,
+    );
+  } else {
+    const columnWidth = (cssWidth - left - right) / 160;
+    for (let index = 0; index < 160; index += 1) {
+      drawBucket(context, inspection.buckets_v4[index]!, left + index * columnWidth, columnWidth, {
+        baseline,
+        liveHeight,
+        replacementHeight,
+        railY,
+        colors,
+      });
+    }
+    for (const index of [0, 40, 80, 120, 159]) {
+      context.fillStyle = colors.text;
+      context.textAlign = "center";
+      context.fillText(String(index), left + (index + 0.5) * columnWidth, bottomLabelY);
+    }
+    context.textAlign = "left";
+    context.fillText("engine bucket index · closest → farthest", left, 292);
+  }
+}
+
+interface DrawPalette {
+  readonly text: string;
+  readonly grid: string;
+  readonly good: string;
+  readonly questionable: string;
+  readonly replacement: string;
+  readonly fresh: string;
+  readonly aging: string;
+  readonly surface: string;
+}
+
+function drawBucket(
+  context: CanvasRenderingContext2D,
+  bucket: DhtBucketView,
+  x: number,
+  width: number,
+  geometry: {
+    readonly baseline: number;
+    readonly liveHeight: number;
+    readonly replacementHeight: number;
+    readonly railY: number;
+    readonly colors: DrawPalette;
+  },
+) {
+  const barWidth = Math.max(1, width - Math.min(3, width * 0.18));
+  const offset = (width - barWidth) / 2;
+  const goodHeight = (bucket.good_nodes / K) * geometry.liveHeight;
+  const questionableHeight = (bucket.questionable_nodes / K) * geometry.liveHeight;
+  context.fillStyle = geometry.colors.good;
+  context.fillRect(x + offset, geometry.baseline - goodHeight, barWidth, goodHeight);
+  context.fillStyle = geometry.colors.questionable;
+  context.fillRect(
+    x + offset,
+    geometry.baseline - goodHeight - questionableHeight,
+    barWidth,
+    questionableHeight,
+  );
+  if (questionableHeight > 2 && barWidth > 2) {
+    context.strokeStyle = geometry.colors.surface;
+    context.lineWidth = 1;
+    for (let y = geometry.baseline - goodHeight - questionableHeight + 2; y < geometry.baseline - goodHeight; y += 4) {
+      context.beginPath();
+      context.moveTo(x + offset, y);
+      context.lineTo(x + offset + barWidth, y + Math.min(3, questionableHeight));
+      context.stroke();
+    }
+  }
+  const replacementHeight = (bucket.replacement_candidates / K) * geometry.replacementHeight;
+  context.fillStyle = geometry.colors.replacement;
+  context.globalAlpha = 0.68;
+  context.fillRect(x + offset, geometry.baseline + 2, barWidth, replacementHeight);
+  context.globalAlpha = 1;
+  if (bucket.oldest_live_response_age_millis !== null) {
+    const age = Math.min(
+      QUESTIONABLE_AGE_MILLIS,
+      decimalNumber(bucket.oldest_live_response_age_millis),
+    );
+    context.fillStyle = age >= 12 * 60 * 1_000
+      ? geometry.colors.aging
+      : geometry.colors.fresh;
+    context.globalAlpha = 0.35 + 0.65 * age / QUESTIONABLE_AGE_MILLIS;
+    context.fillRect(x + offset, geometry.railY, barWidth, 5);
+    context.globalAlpha = 1;
+  }
+}
+
+function drawTail(
+  context: CanvasRenderingContext2D,
+  tail: TailSummary,
+  x: number,
+  width: number,
+  baseline: number,
+  colors: DrawPalette,
+) {
+  context.fillStyle = colors.surface;
+  context.globalAlpha = 0.75;
+  context.fillRect(x, 37, width, 197);
+  context.globalAlpha = 1;
+  context.strokeStyle = colors.grid;
+  context.strokeRect(x + 0.5, 37.5, width - 1, 196);
+  context.textAlign = "left";
+  context.fillStyle = colors.text;
+  context.font = "600 10px system-ui, sans-serif";
+  context.fillText("DEPTHS 32–159", x + 11, 55);
+  context.font = "600 18px system-ui, sans-serif";
+  context.fillStyle = tail.live > 0 ? colors.good : colors.text;
+  context.fillText(`${tail.live} live`, x + 11, 88);
+  context.font = "10px system-ui, sans-serif";
+  context.fillStyle = colors.text;
+  context.fillText("128 deeper bands", x + 11, 109);
+  context.fillText(`${tail.replacements} replacements`, x + 11, baseline + 28);
+  context.fillText(`max occupancy ${tail.maximum}`, x + 11, baseline + 48);
+  context.fillText(
+    tail.deepest === null ? "no occupied outlier" : `deepest ${tail.deepest} bits`,
+    x + 11,
+    baseline + 68,
+  );
+}
+
+interface TailSummary {
+  readonly live: number;
+  readonly replacements: number;
+  readonly maximum: number;
+  readonly deepest: number | null;
+}
+
+function summarizeTail(buckets: readonly DhtBucketView[]): TailSummary {
+  let live = 0;
+  let replacements = 0;
+  let maximum = 0;
+  let deepest: number | null = null;
+  for (const bucket of buckets.slice(0, 128)) {
+    const occupancy = bucket.good_nodes + bucket.questionable_nodes;
+    live += occupancy;
+    replacements += bucket.replacement_candidates;
+    maximum = Math.max(maximum, occupancy);
+    if (occupancy > 0) deepest = Math.max(deepest ?? 0, 159 - bucket.bucket_index);
+  }
+  return { live, replacements, maximum, deepest };
+}
+
+function OperationalFacts({ inspection }: { readonly inspection: DhtInspectionView }) {
+  return (
+    <section className={styles.operations} aria-labelledby="dht-operations-title">
+      <h3 id="dht-operations-title">Cumulative session activity</h3>
+      <dl>
+        <Metric label="Queries sent" value={inspection.queries_sent} />
+        <Metric label="Responses received" value={inspection.responses_received} />
+        <Metric label="Queries received" value={inspection.queries_received} />
+        <Metric
+          label="Datagram traffic"
+          value={`${formatDecimalBytes(inspection.datagram_bytes_received)} in · ${formatDecimalBytes(inspection.datagram_bytes_sent)} out`}
+        />
+        <Metric label="Peers discovered" value={inspection.discovered_peers} />
+        <Metric label="Malformed" value={inspection.malformed_received} />
+        <Metric label="Rate limited" value={inspection.rate_limited} />
+        <Metric label="Bootstrap attempts" value={inspection.bootstrap_attempts} />
+        <Metric label="Routing refreshes" value={inspection.routing_refreshes} />
+      </dl>
+      <p>Traffic is complete UDP datagram bytes at the socket boundary, not payload throughput.</p>
+    </section>
+  );
+}
+
+function Metric({ label, value }: { readonly label: string; readonly value: string }) {
+  return <div><dt>{label}</dt><dd>{value}</dd></div>;
+}
+
+function LookupTable({ inspection }: { readonly inspection: DhtInspectionView }) {
+  return (
+    <section className={styles.lookups} aria-labelledby="dht-lookups-title">
+      <div className={styles.sectionHeading}>
+        <div>
+          <h3 id="dht-lookups-title">Active lookups</h3>
+          <p>Closest progress includes responded candidates with known node IDs only.</p>
+        </div>
+        <span>{inspection.lookups.length} of 16</span>
+      </div>
+      {inspection.lookups.length === 0 ? (
+        <div className={styles.quiet}>No lookup is active.</div>
+      ) : (
+        <div className={styles.tableWrap}>
+          <table>
+            <thead><tr>
+              <th>Target</th><th>Convergence</th><th>Candidates</th><th>Elapsed / left</th><th>Peers</th>
+            </tr></thead>
+            <tbody>
+              {inspection.lookups.map((lookup) => (
+                <tr key={lookup.lookup_id}>
+                  <td><code title={lookup.target_id}>{abbreviateId(lookup.target_id)}</code><small>lookup {lookup.lookup_id}</small></td>
+                  <td><strong>{lookup.closest_responded_prefix_bits === null ? "No response" : `${lookup.closest_responded_prefix_bits} shared bits`}</strong><small>{lookup.last_convergence_improvement_age_millis === null ? "No improvement yet" : `${formatDuration(lookup.last_convergence_improvement_age_millis)} since improvement`}</small></td>
+                  <td><CandidateBar lookup={lookup} /></td>
+                  <td><strong>{formatDuration(lookup.age_millis)}</strong><small>{formatDuration(lookup.deadline_in_millis)} left</small></td>
+                  <td><strong>{lookup.discovered_peers}</strong></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CandidateBar({
+  lookup,
+}: {
+  readonly lookup: DhtInspectionView["lookups"][number];
+}) {
+  const parts = [
+    ["unqueried", lookup.unqueried_candidates, "Unqueried"],
+    ["flight", lookup.in_flight_candidates, "In flight"],
+    ["responded", lookup.responded_candidates, "Responded"],
+    ["failed", lookup.failed_candidates, "Failed"],
+  ] as const;
+  const total = parts.reduce((sum, [, count]) => sum + count, 0);
+  return (
+    <div className={styles.candidates} aria-label={parts.map(([, count, label]) => `${label} ${count}`).join(", ")}>
+      <div aria-hidden="true">
+        {parts.map(([kind, count]) => count === 0 ? null : (
+          <i key={kind} data-kind={kind} style={{ flexGrow: count / Math.max(1, total) }} />
+        ))}
+      </div>
+      <small>{parts.map(([, count]) => count).join(" / ")}</small>
+    </div>
+  );
+}
+
+function ExactBucketTable({ inspection }: { readonly inspection: DhtInspectionView }) {
+  return (
+    <table className={styles.srOnly}>
+      <caption>Exact DHT routing bucket observations</caption>
+      <thead><tr><th>Shared prefix depth</th><th>Bucket index</th><th>Good</th><th>Questionable</th><th>Replacements</th><th>Oldest response age</th></tr></thead>
+      <tbody>{inspection.buckets_v4.map((bucket) => (
+        <tr key={bucket.bucket_index}>
+          <td>{159 - bucket.bucket_index}</td><td>{bucket.bucket_index}</td><td>{bucket.good_nodes}</td><td>{bucket.questionable_nodes}</td><td>{bucket.replacement_candidates}</td><td>{bucket.oldest_live_response_age_millis === null ? "Empty" : formatDuration(bucket.oldest_live_response_age_millis)}</td>
+        </tr>
+      ))}</tbody>
+    </table>
+  );
+}
+
+function sum(
+  buckets: readonly DhtBucketView[],
+  read: (bucket: DhtBucketView) => number,
+): number {
+  return buckets.reduce((total, bucket) => total + read(bucket), 0);
+}
+
+function decimalNumber(value: string | null): number {
+  if (value === null) return 0;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatDuration(value: string): string {
+  const millis = decimalNumber(value);
+  if (millis < 1_000) return `${Math.round(millis)} ms`;
+  const seconds = Math.round(millis / 1_000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return remainder === 0 ? `${minutes}m` : `${minutes}m ${remainder}s`;
+}
+
+function lifecycleLabel(lifecycle: DhtInspectionView["lifecycle"]): string {
+  switch (lifecycle) {
+    case "offline": return "Offline";
+    case "bootstrap_empty": return "Bootstrapping";
+    case "participating": return "Participating";
+    case "inactive": return "Inactive";
+  }
+}
+
+function policyLabel(policy: DhtInspectionView["network_policy"]): string {
+  switch (policy) {
+    case "offline": return "Network disabled";
+    case "loopback_only": return "Loopback only";
+    case "online": return "Online policy";
+  }
+}
+
+function abbreviateId(id: string): string {
+  return `${id.slice(0, 8)}…${id.slice(-6)}`;
+}

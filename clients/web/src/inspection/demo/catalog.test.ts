@@ -45,6 +45,58 @@ describe("piece map demos", () => {
   });
 });
 
+describe("DHT observatory demo", () => {
+  it("retains every shape-changing lifecycle and routing state", () => {
+    const offline = dhtAt(0);
+    expect(offline.dht).toMatchObject({
+      lifecycle: "offline",
+      network_policy: "offline",
+      routing_nodes_v4: 0,
+    });
+    expect(dhtAt(4_000).dht?.lifecycle).toBe("bootstrap_empty");
+    expect(dhtAt(8_000).dht).toMatchObject({
+      lifecycle: "participating",
+      routing_nodes_v4: 14,
+      occupied_buckets_v4: 4,
+      deepest_shared_prefix_bits_v4: 24,
+    });
+
+    const active = dhtAt(30_000).dht;
+    expect(active).toMatchObject({
+      routing_nodes_v4: 171,
+      occupied_buckets_v4: 25,
+      deepest_shared_prefix_bits_v4: 24,
+      active_lookups: 1,
+    });
+    expect(active?.buckets_v4).toHaveLength(160);
+    expect(active?.buckets_v4.map((bucket) => bucket.bucket_index)).toEqual(
+      Array.from({ length: 160 }, (_, index) => index),
+    );
+    expect(active?.lookups[0]).toMatchObject({
+      closest_responded_prefix_bits: 24,
+      responded_candidates: 44,
+    });
+
+    expect(dhtAt(42_000).dht).toMatchObject({
+      malformed_received: "3",
+      rate_limited: "17",
+      active_lookups: 0,
+    });
+    expect(dhtAt(50_000).dht).toMatchObject({
+      routing_nodes_v4: 172,
+      occupied_buckets_v4: 26,
+      deepest_shared_prefix_bits_v4: 39,
+    });
+    expect(dhtAt(62_000).viewStatus.dht.status).toBe("stale");
+    expect(dhtAt(68_000).dht).toMatchObject({
+      lifecycle: "inactive",
+      routing_nodes_v4: 0,
+      active_transactions: 0,
+      active_lookups: 0,
+    });
+  });
+});
+
 function fileSetAt(elapsedMs: number): FileSet {
   const snapshot = buildScenarioSnapshot("file-progress", elapsedMs, false, 1);
   const torrentId = snapshot.torrentOrder[0];
@@ -71,4 +123,8 @@ function pieceMapAt(
   const pieces = snapshot.piecesByTorrent[torrentId];
   if (pieces === undefined) throw new Error("piece demo map is missing");
   return pieces;
+}
+
+function dhtAt(elapsedMs: number) {
+  return buildScenarioSnapshot("dht-observatory", elapsedMs, false, 1);
 }
