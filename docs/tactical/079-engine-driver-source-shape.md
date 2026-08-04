@@ -1,10 +1,10 @@
 # Tactical 079: Engine Driver Source Shape
 
 Status: In progress from maintainer direction on 2026-08-04. The clean
-baseline and first test-layout gate are complete; production-owner extraction
-has not started. This tactical is a behavior-preserving architecture slice
-and does not change the authoritative capability queue unless the maintainer
-explicitly schedules it.
+baseline, test-layout gate, and download-control extraction are complete; the
+storage-owner extraction remains. This tactical is a behavior-preserving
+architecture slice and does not change the authoritative capability queue
+unless the maintainer explicitly schedules it.
 
 Topics: `product-direction`, `download-correctness`, `peer-lifecycle`,
 `storage-throughput-architecture`
@@ -26,6 +26,15 @@ facade is 8,805 lines including the private test-module declaration, and the
 categorized test tree is 7,766 lines after formatting. All 196 focused engine
 library tests retain the same result; only their private module qualification
 changed.
+
+The control-owner gate moved 2,490 lines of cancellation, accounting,
+diagnostic snapshots, activity sinks, platform-storage installation, and
+bounded test instrumentation to `driver/control.rs`. The facade is 6,381
+lines at this gate and retains the same root public re-exports. Direct facade
+access to the control's cancellation field became private control methods;
+task and token ownership did not change. `cargo check -p rstorrent-engine
+--tests`, the focused 196-test engine suite, and warning-denying focused
+Clippy pass.
 
 ## Decision And Motivation
 
