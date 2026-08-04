@@ -117,11 +117,19 @@ impl IncomingSeeding {
             unreachable!("platform roots are rejected by eligibility")
         };
         storage_file_pool.invalidate_storage(&resume.torrent_id);
-        let content =
-            match SeedContent::open_published(root, &metainfo, have.pieces(), &skipped).await {
-                Ok(content) => content,
-                Err(error) => return Ok(SeedReconcileOutcome::Unavailable(error.to_string())),
-            };
+        let content = match SeedContent::open_published_with_pool(
+            root,
+            &metainfo,
+            have.pieces(),
+            &skipped,
+            storage_file_pool.clone(),
+            &resume.torrent_id,
+        )
+        .await
+        {
+            Ok(content) => content,
+            Err(error) => return Ok(SeedReconcileOutcome::Unavailable(error.to_string())),
+        };
         let registration = match SeedRegistration::new(raw_info.clone(), content) {
             Ok(registration) => registration,
             Err(error) => return Ok(SeedReconcileOutcome::Unavailable(error.to_string())),
