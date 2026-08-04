@@ -1,8 +1,9 @@
 # Tactical 080: Session View Subsystem Boundaries
 
-Status: Planned from maintainer direction on 2026-08-04. Implementation has
-not started. This tactical authorizes a later behavior-preserving source-shape
-refactor only; this planning commit changes no Rust or generated contract.
+Status: Completed on 2026-08-04. The behavior-preserving source-shape
+refactor, categorized private tests, full consumer validation, and execution
+record are complete. No Rust API, generated contract, resource policy, lock,
+queue, or task ownership changed.
 
 Topics: `code-organization-and-refactoring`, `application-view-api`,
 `application-connection-architecture`, `client-view-delivery-policy`
@@ -311,10 +312,115 @@ private implementation publicly.
 - A hard file-size gate, one-file-per-type layout, public-swarm evidence,
   visible client launch, emulator, or physical-device run.
 
+## Completed Implementation
+
+The implementation landed in independently green commits:
+
+- `22544d3` moved the 33 focused tests out of the two production owners;
+- `0c149ea` consolidated the leased view-set implementation under the private
+  view subsystem;
+- `50b76b0` extracted the contract, projection model, deterministic diff and
+  range logic, and the two delivery accumulators while removing the concrete
+  hub/view-set dependency cycle;
+- `15b39f9` made `views.rs` a deliberate facade, gave coordination one
+  `hub.rs` owner, and categorized the focused tests; and
+- `beb8d2f` corrected the controlled gateway harnesses to wait for semantic
+  publication and verify the accepted metainfo-root path rather than the
+  retired hash-named staging path.
+
+The final source layout is:
+
+```text
+rstorrent-session/src/
+  views.rs                         45-line private facade
+  views/
+    contract.rs                 1,314 lines: portable DTOs and limits
+    model.rs                    1,136 lines: projection state and mapping
+    diff.rs                       749 lines: snapshot diffs and coalescing
+    ranges.rs                     110 lines: canonical range operations
+    hub.rs                      1,706 lines: mutable coordination/registries
+    subscription.rs              279 lines: legacy bounded accumulator
+    view_set.rs                  680 lines: leased bounded accumulator
+    tests/
+      mod.rs                       6 lines: categorized test root
+      projection.rs              614 lines
+      ranges.rs                   16 lines
+      subscription.rs            335 lines
+      support.rs                 188 lines
+      view_set.rs                806 lines
+```
+
+The eight production/facade files contain 6,019 physical lines and the six
+private test files contain 1,965 physical lines, for 7,984 total. The baseline
+was 5,868 production plus 1,954 test lines, or 7,822 total. The modest physical
+increase is explicit module documentation, imports, visibility seams, and test
+roots; line reduction was not an objective. The important result is that the
+former 5,613- and 2,209-line mixed owners no longer exist.
+
+All 18 legacy focused tests now live under projection, range, or subscription
+families. All 15 leased-view tests retain their leaf names under the
+`view_set` owner. `cargo test -p rstorrent-session --lib -- --list` still
+reports exactly 119 tests and zero benchmarks.
+
+The final dependency direction is:
+
+```text
+views facade
+  |-> portable contract
+  |-> pure ranges
+  |-> projection model -> contract + ranges + engine/session observations
+  |-> diff             -> contract + model + ranges
+  |-> subscription     -> contract + diff coalescing
+  |-> view_set         -> contract + diff coalescing + spec validation
+  `-> hub              -> every inward owner above
+```
+
+`hub.rs` is the only owner of `HubState`, every `ViewHub` method, the public
+`ViewSubscription` and `ViewSet` handles, registry mutation, reset snapshot
+reconstruction, speed-interest wakeups, and the cancellable lease-reaper task.
+`subscription.rs` and `view_set.rs` own their mutex-protected queue and
+continuity state but import neither `HubState` nor `ViewHub`. `diff.rs` and
+`ranges.rs` own no shared state or task. `contract.rs` contains no mutex,
+notification, task handle, runtime owner, or transport/platform dependency.
+
+The public `ViewSet` handle deliberately remains with the hub coordinator.
+That preserves reset-from-current-state without adding a trait, callback,
+actor, or lower-layer hub dependency. No empty `contract` test category was
+created: generated-byte gates and existing validation cases already exercise
+that seam, while the categorized test files reflect actual fixture families.
+
+## Validation Evidence
+
+- `cargo test -p rstorrent-session --lib -- --list` reports 119 tests and zero
+  benchmarks; `cargo test -p rstorrent-session --lib` passes all 119.
+- `npm run generate --prefix clients/web` reproduces the four baseline
+  artifacts byte-for-byte at the recorded SHA-256 values, and
+  `git diff --exit-code -- clients/web/src/api/generated
+  clients/web/src/fixtures` is clean.
+- `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`,
+  `cargo test --workspace`, and `git diff --check` pass.
+- `npm run typecheck --prefix clients/web`, `npm test --prefix clients/web`,
+  and `npm run build --prefix clients/web` pass.
+- The raw cross-target Cargo command found the installed Rust target but not
+  the NDK compiler shim. The repository's established
+  `cargo ndk -t x86_64 -t arm64-v8a -P 28 check -p rstorrent-android --lib`
+  command then passed both `x86_64-linux-android` and
+  `aarch64-linux-android` with the installed NDK.
+- `gateway_view_set_surface.py` passes against pinned libtorrent `2.0.13.0`
+  with eight batches, exact 40,000 requested/received/stored bytes, exact
+  payload SHA-1, explicit view-set close, joined gateway shutdown, and clean
+  temporary cleanup.
+- `gateway_application_connection_surface.py` passes against the same pinned
+  libtorrent with eight semantic updates, exact payload SHA-1, one accepted
+  connection, seven acknowledged view batches, zero stream errors, joined
+  shutdown, and clean temporary cleanup.
+
+No public swarm, visible client, browser window, Tauri window, emulator, or
+physical device was used.
+
 ## Implementation Sequence And Intermediate Gates
 
-Implementation is deliberately deferred until separately requested. When it
-starts, use these independently green gates:
+The implementation followed these independently green gates:
 
 1. **Baseline and dependency gate.** Reconcile the starting commit, record
    exact counts, exports, hashes, test names, feature derives, lock order, and

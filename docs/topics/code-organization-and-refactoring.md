@@ -1,10 +1,9 @@
 # Code Organization And Refactoring
 
 Status: Living guidance and repository snapshot, refreshed on 2026-08-04
-after Tacticals [`079`](../tactical/079-engine-driver-source-shape.md) and
-[`075`](../tactical/075-ephemeral-application-state.md). Focused Tactical
-[`080`](../tactical/080-session-view-subsystem-boundaries.md) is planned but
-implementation has not started.
+after completed Tacticals
+[`079`](../tactical/079-engine-driver-source-shape.md) and
+[`080`](../tactical/080-session-view-subsystem-boundaries.md).
 
 Topic: `code-organization-and-refactoring`
 
@@ -52,6 +51,15 @@ through the existing `SessionStore` and speed-history owners without adding a
 generic persistence layer. That result supports keeping concrete owners while
 extracting only demonstrated internal seams.
 
+Tactical `080` completed the session-view refactor. A 45-line private facade
+now preserves every crate-root contract while child modules separately own
+portable values, projection mapping, deterministic diffs and ranges, the
+legacy accumulator, the leased accumulator, and hub coordination. The prior
+two-way concrete dependency is gone: only `hub.rs` knows `HubState`, and
+neither delivery accumulator imports or extends `ViewHub`. Do not continue
+splitting the 1,706-line hub merely because it remains the largest child; it
+now has one coherent coordinator/registry owner and focused lower seams.
+
 Planned Tactical [`078`](../tactical/078-local-single-peer-tcp-seeding.md)
 already specifies the next feature-driven module boundaries: direction-neutral
 peer I/O, incoming admission, runtime-independent upload state, immutable seed
@@ -95,7 +103,7 @@ public facade becomes deliberate. Shorter files alone are not the outcome.
 
 ## Snapshot Method
 
-The following snapshot uses the tree at `db4a092` on 2026-08-04. Production
+The following snapshot uses the tree at `beb8d2f` on 2026-08-04. Production
 and test counts are approximate physical lines. For Rust files with one
 trailing `#[cfg(test)]` module, the marker separates the two; child test files
 are counted separately. Touches are path appearances across the most recent
@@ -107,7 +115,7 @@ extractions inflate churn, especially for the driver.
 | Engine driver facade plus `control` and `storage_pipeline` | 4,995 + 3,923 | 7,766 child tests | 78 on the facade | Recently improved. Monitor orchestration pressure; do not immediately continue splitting it. |
 | `SelectiveStorage` | 3,616 | 1,860 | 23 | Strongest engine-side structural candidate; one valid owner contains several separable planning and platform concerns. |
 | `SwarmState` | about 2,550 | about 1,109 | 17 | Large but still one deterministic transition owner. Extract only independently changing policy or bookkeeping. |
-| Session `views` plus `view_sets` | 4,468 + 1,400 | 1,145 + 809 | 30 + 17 | Strongest standalone refactor candidate because the two modules know each other's private implementation. |
+| Session view subsystem | 6,019 across facade and seven child owners | 1,965 across six child files | Structural move completed | Recently improved by Tactical `080`: one-way dependencies, one hub owner, two independent accumulators, deliberate facade. Monitor feature pressure; do not continue splitting by size. |
 | `ApplicationService` | 3,225 | 2,728 | 50 | Legitimate service owner with several subordinate sinks, cleanup paths, and projections. Feature-driven extraction is preferable. |
 | `SessionStore` | 3,330 | 1,669 | 21 | Legitimate SQLite owner combining connection policy, schema, migrations, domain reads, and mutations. |
 | Gateway `lib.rs` | 944 | 1,473 | 18 | Production boundary is still manageable; inline integration fixtures dominate physical size. |
@@ -115,29 +123,26 @@ extractions inflate churn, especially for the driver.
 | Web semantic validation | 1,701 | 624 in its test file | 22 | Several contract domains share one hand-authored validation module. |
 | Web `VirtualTable` | 1,250 | 598 in its test file | 10 | React rendering, persisted configuration, sorting, selection, resizing, and virtualization meet in one component. |
 
-The snapshot is a map, not a ranked size queue. For example, the session view
-subsystem ranks above several larger files because it has an observable
-dependency-direction problem, while `SwarmState` remains locally testable and
-owns one tightly coupled deterministic state machine.
+The snapshot is a map, not a ranked size queue. The completed session-view
+move is retained as a recent reference point, while `SwarmState` remains
+locally testable and owns one tightly coupled deterministic state machine
+despite its size.
 
-## Most Likely Focused Opportunities
+## Recently Resolved Boundary
 
-### 1. Session View And View-Set Boundaries
+### Session View And View-Set Boundaries
 
-This is the best current standalone refactor and is now bounded by planned
-Tactical [`080`](../tactical/080-session-view-subsystem-boundaries.md).
+Tactical [`080`](../tactical/080-session-view-subsystem-boundaries.md) is
+complete. It resolved the concrete bidirectional implementation knowledge,
+not just the original file sizes.
 
-`views.rs` contains public contract values, projection models, hub state,
-subscription queues, activity mapping, snapshot and patch construction, and
-range-diff algorithms. `view_sets.rs` contains the public leased view-set
-contract and delivery owner, but imports private `HubState` and patch helpers;
-in the other direction, `views.rs` stores `ViewSetInner`, imports
-`ViewSetUpdate`, and reads view-set constants. `view_sets.rs` also implements
-methods directly on `ViewHub`. This is concrete two-way implementation
-knowledge, not merely a large file.
+Before the tactical, `views.rs` and `view_sets.rs` imported each other's
+private concrete state and the leased owner implemented methods on a sibling
+`ViewHub`. Afterward, the 45-line facade preserves public paths, `hub.rs` owns
+all coordination, and the lower delivery modules receive snapshots and
+patches without reading hub maps.
 
-A focused tactical should preserve generated contracts and public re-exports
-while separating approximately:
+The retained subsystem now separates:
 
 - serializable view contract values;
 - hub and projection models;
@@ -146,11 +151,15 @@ while separating approximately:
 - snapshot/patch and collection-diff construction; and
 - pure range algorithms.
 
-The exact filenames should follow the ownership map discovered during the
-tactical. The acceptance criterion is one-way internal dependencies and
-unchanged contract/evidence, not matching this sketch.
+The 33 focused cases and 119 session tests remain, generated artifacts are
+byte-identical, Android consumers compile for both established targets, and
+both controlled gateway delivery paths pass. Revisit this boundary only when
+a new projection, delivery policy, or measured coordinator problem reveals a
+specific seam.
 
-### 2. Selective Storage Internals
+## Most Likely Focused Opportunities
+
+### 1. Selective Storage Internals
 
 `SelectiveStorage` correctly remains the authority for selection routes,
 part-file state, verified state, and publication transitions. Its file also
@@ -174,7 +183,7 @@ refresh this snapshot and decide whether the remaining write-side separation
 still merits its own tactical. A pre-`078` refactor is justified only if it is
 needed to expose that read contract safely.
 
-### 3. Application Service And Session Store Internals
+### 2. Application Service And Session Store Internals
 
 Keep `ApplicationService` as the lifecycle owner and `SessionStore` as the
 transaction and SQLite-connection owner. Do not replace them with service,
@@ -192,7 +201,7 @@ retention or schema work will test the store boundary. If independent churn
 continues after those features, use one focused tactical per owner rather than
 combining application and persistence into an umbrella rewrite.
 
-### 4. Web Contract Mapping And Reusable Algorithms
+### 3. Web Contract Mapping And Reusable Algorithms
 
 The web opportunities are related by product churn but should not be bundled
 automatically:
@@ -210,7 +219,7 @@ overlay concern separately, so it is not included in this refactor list.
 Choose among the remaining seams based on the next web feature's pressure; do
 not adopt a data-grid or validation framework merely to reduce file length.
 
-### 5. Android Product Graduation
+### 4. Android Product Graduation
 
 The Android application still lives under
 `experiments/android-engine-bootstrap` and retains both the current
@@ -248,8 +257,8 @@ first seeding slice deliberately excludes Android product work.
 
 There should not be one umbrella refactor tactical.
 
-- Planned Tactical `080` is the selected dedicated structural improvement;
-  implementation remains paused until separately requested.
+- Tactical `080` is complete; do not immediately continue splitting the view
+  hub or its contracts.
 - If the next work is the already planned seeding capability, implement
   Tactical `078` directly; its owner map already includes the bounded
   extractions the feature needs.
@@ -280,6 +289,12 @@ lifecycle, or navigation problem remains.
 
 ## History
 
+- **2026-08-04:** Completed Tactical `080`. The session-view facade now points
+  inward to explicit contract, model, diff, range, hub, subscription, and
+  view-set owners; 33 focused tests are categorized, all generated bytes are
+  stable, and the full Rust, web, Android, and controlled-loopback matrix is
+  green. Selective storage becomes the leading standalone candidate, best
+  reassessed after Tactical `078` establishes immutable seeding reads.
 - **2026-08-04:** Selected the session view/view-set boundary and created
   Tactical `080` with byte-stable generated-contract, one-way dependency,
   owner/task/lock, test-layout, and adapter-regression gates. No implementation
