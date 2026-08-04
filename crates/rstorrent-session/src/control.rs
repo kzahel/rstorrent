@@ -54,6 +54,9 @@ pub enum Command {
     Resume {
         torrent_id: String,
     },
+    ForceRecheck {
+        torrent_id: String,
+    },
     Archive {
         torrent_id: String,
     },
@@ -77,6 +80,7 @@ impl Command {
                 | Self::RemoveStorageRoot { .. }
                 | Self::Pause { .. }
                 | Self::Resume { .. }
+                | Self::ForceRecheck { .. }
                 | Self::SetFilePriority { .. }
                 | Self::Archive { .. }
                 | Self::RestoreArchive { .. }
@@ -460,6 +464,7 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
         }
         Command::Pause { torrent_id }
         | Command::Resume { torrent_id }
+        | Command::ForceRecheck { torrent_id }
         | Command::Archive { torrent_id }
         | Command::RestoreArchive { torrent_id }
         | Command::RemoveTorrent { torrent_id, .. } => {

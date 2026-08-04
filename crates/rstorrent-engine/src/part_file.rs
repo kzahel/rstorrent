@@ -385,7 +385,7 @@ impl PartFile {
         expected: PartFileIdentity,
     ) -> Result<Self, PartFileError> {
         let file = reference
-            .open(StorageFileAccess::ReadWriteExisting)
+            .open(StorageFileAccess::ReadExisting)
             .await
             .map(StorageFileLease::from)
             .map_err(|error| PartFileError::Io {
@@ -400,7 +400,7 @@ impl PartFile {
         path: Option<PathBuf>,
         expected: PartFileIdentity,
     ) -> Result<Option<Self>, PartFileError> {
-        let file = match reference.open(StorageFileAccess::ReadWriteExisting).await {
+        let file = match reference.open(StorageFileAccess::ReadExisting).await {
             Ok(file) => StorageFileLease::from(file),
             Err(StorageFilePoolError::Io { source, .. })
                 if source.kind() == io::ErrorKind::NotFound =>

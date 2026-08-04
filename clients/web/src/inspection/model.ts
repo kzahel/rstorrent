@@ -503,6 +503,7 @@ export type InspectionCommand =
   | { readonly type: "remove_download_root"; readonly rootId: string }
   | { readonly type: "pause"; readonly torrentId: string }
   | { readonly type: "resume"; readonly torrentId: string }
+  | { readonly type: "force_recheck"; readonly torrentId: string }
   | { readonly type: "archive"; readonly torrentId: string }
   | { readonly type: "unarchive"; readonly torrentId: string }
   | {

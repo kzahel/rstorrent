@@ -921,6 +921,69 @@ impl SessionStore {
         Ok(revision)
     }
 
+    pub fn begin_recheck(&mut self, torrent_id: &str) -> Result<u64, StoreError> {
+        let info_hash = decode_info_hash(torrent_id)
+            .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
+        let transaction = self.connection.transaction()?;
+        let revision = increment_revision(&transaction)?;
+        let revision_sql = sql_revision(revision)?;
+        let updated = transaction.execute(
+            "UPDATE torrents
+             SET state = ?2, error = NULL, updated_revision = ?3
+             WHERE info_hash = ?1 AND raw_info IS NOT NULL
+                   AND have_state IS NOT NULL",
+            params![
+                info_hash.as_slice(),
+                TorrentState::Checking.as_str(),
+                revision_sql,
+            ],
+        )?;
+        if updated != 1 {
+            return Err(StoreError::DurableState(
+                "recheck requires verified metadata and have state".to_owned(),
+            ));
+        }
+        transaction.commit()?;
+        Ok(revision)
+    }
+
+    pub fn complete_recheck(
+        &mut self,
+        torrent_id: &str,
+        have: &HaveState,
+    ) -> Result<u64, StoreError> {
+        let info_hash = decode_info_hash(torrent_id)
+            .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
+        if have.info_hash() != info_hash {
+            return Err(StoreError::DurableState(
+                "replacement have state has the wrong identity".to_owned(),
+            ));
+        }
+        let transaction = self.connection.transaction()?;
+        let (piece_count, _) = read_have_columns(&transaction, &info_hash)?;
+        if have.pieces().len() != piece_count {
+            return Err(StoreError::DurableState(
+                "replacement have state has the wrong piece count".to_owned(),
+            ));
+        }
+        let revision = increment_revision(&transaction)?;
+        let revision_sql = sql_revision(revision)?;
+        transaction.execute(
+            "UPDATE torrents
+             SET have_state = ?2,
+                 state = CASE
+                    WHEN desired_state = 'paused' THEN 'paused'
+                    ELSE 'downloading'
+                 END,
+                 error = NULL,
+                 updated_revision = ?3
+             WHERE info_hash = ?1",
+            params![info_hash.as_slice(), have.encode(), revision_sql],
+        )?;
+        transaction.commit()?;
+        Ok(revision)
+    }
+
     pub fn mark_complete(&mut self, torrent_id: &str) -> Result<u64, StoreError> {
         self.update_status(
             torrent_id,
@@ -946,11 +1009,6 @@ impl SessionStore {
                  managed_artifacts = CASE
                     WHEN ?2 = 'published' THEN 'published'
                     ELSE 'staging'
-                 END,
-                 state = CASE
-                    WHEN desired_state = 'paused' THEN 'paused'
-                    WHEN ?2 = 'published' THEN 'checking'
-                    ELSE 'downloading'
                  END,
                  updated_revision = ?3
              WHERE info_hash = ?1",
@@ -1928,6 +1986,9 @@ fn apply_mutation(
         Command::Resume { torrent_id } => {
             set_desired_state(transaction, torrent_id, true, current_revision)
         }
+        Command::ForceRecheck { torrent_id } => {
+            force_recheck(transaction, torrent_id, current_revision)
+        }
         Command::Archive { torrent_id } => {
             set_archived(transaction, torrent_id, true, current_revision)
         }
@@ -1954,6 +2015,87 @@ fn apply_mutation(
             message,
         )),
     }
+}
+
+fn force_recheck(
+    transaction: &Transaction<'_>,
+    torrent_id: &str,
+    current_revision: u64,
+) -> Result<u64, (ErrorCode, String)> {
+    let info_hash = decode_info_hash(torrent_id).ok_or_else(|| {
+        (
+            ErrorCode::InvalidRequest,
+            "invalid torrent identity".to_owned(),
+        )
+    })?;
+    let row = transaction
+        .query_row(
+            "SELECT raw_info IS NOT NULL, storage_state, managed_artifacts,
+                    EXISTS(SELECT 1 FROM removal_jobs r
+                           WHERE r.info_hash = torrents.info_hash)
+             FROM torrents WHERE info_hash = ?1",
+            [info_hash.as_slice()],
+            |row| {
+                Ok((
+                    row.get::<_, bool>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, bool>(3)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                ErrorCode::UnknownTorrent,
+                format!(
+                    "torrent {} is not in the profile",
+                    torrent_id.to_ascii_lowercase()
+                ),
+            )
+        })?;
+    if row.3 {
+        return Err((
+            ErrorCode::InvalidTorrentState,
+            "torrent removal is already in progress".to_owned(),
+        ));
+    }
+    let storage_state = StorageState::parse(&row.1)
+        .ok_or_else(|| internal_message("database contains an invalid storage state"))?;
+    let managed_artifacts = ManagedArtifactState::parse(&row.2)
+        .ok_or_else(|| internal_message("database contains invalid artifact ownership"))?;
+    if !row.0
+        || !matches!(
+            storage_state,
+            StorageState::Staging | StorageState::Published
+        )
+        || !matches!(
+            managed_artifacts,
+            ManagedArtifactState::Staging | ManagedArtifactState::Published
+        )
+    {
+        return Err((
+            ErrorCode::InvalidTorrentState,
+            "force recheck requires verified managed staging or published content".to_owned(),
+        ));
+    }
+    let revision = next_revision(transaction, current_revision)?;
+    let revision_sql =
+        i64::try_from(revision).map_err(|_| internal_message("profile revision overflow"))?;
+    transaction
+        .execute(
+            "UPDATE torrents
+             SET state = ?2, error = NULL, updated_revision = ?3
+             WHERE info_hash = ?1",
+            params![
+                info_hash.as_slice(),
+                TorrentState::Checking.as_str(),
+                revision_sql,
+            ],
+        )
+        .map_err(internal_error)?;
+    Ok(revision)
 }
 
 fn set_default_storage_root(
@@ -2592,6 +2734,14 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
                 0
             }
         };
+        let verified_piece_count = if matches!(
+            state,
+            TorrentState::Checking | TorrentState::AwaitingStorage
+        ) {
+            0
+        } else {
+            verified_piece_count
+        };
         torrents.push(TorrentSnapshot {
             torrent_id,
             storage_root: row.1,
@@ -2805,6 +2955,7 @@ mod tests {
         ConfiguredStorageRoot, ManagedArtifactState, PreparedFileRecord, SCHEMA_VERSION,
         SessionStore, StoreError,
     };
+    use crate::have::HaveState;
     use crate::{
         CONTROL_VERSION, Command, ErrorCode, FilePriority, RemovalDataPolicy, RemovalState,
         RequestEnvelope, ResponseOutcome, StorageState, TorrentState,
@@ -3782,6 +3933,102 @@ mod tests {
     }
 
     #[test]
+    fn force_recheck_is_deduplicated_and_replaces_have_with_state() {
+        let root = test_root("force-recheck");
+        let mut store = SessionStore::open(&root, "default", &[configured_root(&root)])
+            .expect("open session store");
+        let mut raw_info = b"d6:lengthi12e4:name7:recheck12:piece lengthi4e6:pieces60:".to_vec();
+        raw_info.extend_from_slice(&[b'a'; 20]);
+        raw_info.extend_from_slice(&[b'b'; 20]);
+        raw_info.extend_from_slice(&[b'c'; 20]);
+        raw_info.push(b'e');
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = crate::control::encode_info_hash(info_hash);
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-force-recheck".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: true,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add source");
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record metadata");
+        store
+            .mark_storage_prepared(&torrent_id, StorageState::Staging)
+            .expect("record managed staging");
+        store.record_piece(&torrent_id, 0).expect("record old have");
+
+        let request = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "force-recheck".to_owned(),
+            expected_revision: None,
+            command: Command::ForceRecheck {
+                torrent_id: torrent_id.clone(),
+            },
+        };
+        let response = store.handle_durable(&request).expect("request recheck");
+        let checking = store.load_resume(&torrent_id).expect("load checking state");
+        assert_eq!(checking.state, TorrentState::Checking);
+        assert_eq!(
+            checking.have.expect("old have remains input").pieces(),
+            &[true, false, false]
+        );
+        assert_eq!(
+            store.snapshot().expect("checking snapshot").torrents[0].verified_piece_count,
+            0,
+            "old have is input only while checking"
+        );
+        let revision = store.revision().expect("checking revision");
+        assert_eq!(
+            store.handle_durable(&request).expect("replay recheck"),
+            response
+        );
+        assert_eq!(store.revision().expect("revision after replay"), revision);
+
+        let replacement =
+            HaveState::from_pieces(info_hash, vec![false, true, true]).expect("replacement have");
+        store
+            .complete_recheck(&torrent_id, &replacement)
+            .expect("complete running recheck");
+        let completed = store.load_resume(&torrent_id).expect("load replacement");
+        assert_eq!(completed.state, TorrentState::Downloading);
+        assert_eq!(
+            completed.have.expect("replacement have").pieces(),
+            &[false, true, true]
+        );
+
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "pause-before-recheck".to_owned(),
+                expected_revision: None,
+                command: Command::Pause {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .expect("pause torrent");
+        store
+            .begin_recheck(&torrent_id)
+            .expect("begin paused recheck");
+        store
+            .complete_recheck(&torrent_id, &replacement)
+            .expect("complete paused recheck");
+        assert_eq!(
+            store.load_resume(&torrent_id).expect("paused result").state,
+            TorrentState::Paused
+        );
+        drop(store);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
     fn prepared_publication_is_durable_and_explicitly_confirmed() {
         let root = test_root("prepared-publication");
         let configured = ConfiguredStorageRoot::platform("downloads");
@@ -3883,8 +4130,8 @@ mod tests {
     fn path_publication_intent_is_durable_before_confirmation() {
         let root = test_root("path-publication-intent");
         let configured = configured_root(&root);
-        let mut store =
-            SessionStore::open(&root, "default", &[configured.clone()]).expect("open store");
+        let mut store = SessionStore::open(&root, "default", std::slice::from_ref(&configured))
+            .expect("open store");
         let raw_info =
             b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
         let info_hash: [u8; 20] = Sha1::digest(raw_info).into();

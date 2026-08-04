@@ -57,10 +57,10 @@ use crate::peer_socket::{
 };
 use crate::selective_storage::{
     CheckpointHandles, DescriptorStorage, PlatformStorageSpec, PreparedFileHash, PublicationShape,
-    ResumedStorage, SelectiveHashPlan, SelectiveStorage, SelectiveStorageError, SelectiveWriteJob,
-    VERIFICATION_CHUNK_LENGTH, remove_selective_part_if_present,
-    remove_selective_staging_if_present, torrent_storage_paths_for_output_with_shape,
-    validate_publication_name,
+    ResumeArtifactState, ResumedStorage, SelectiveHashPlan, SelectiveStorage,
+    SelectiveStorageError, SelectiveWriteJob, VERIFICATION_CHUNK_LENGTH,
+    remove_selective_part_if_present, remove_selective_staging_if_present,
+    torrent_storage_paths_for_output_with_shape, validate_publication_name,
 };
 use crate::storage_file_pool::StorageFilePool;
 use crate::swarm::{
@@ -206,18 +206,22 @@ pub struct ResumableMagnetDownloadConfig {
     pub skip_files: Vec<usize>,
     pub verified_info: Option<Vec<u8>>,
     pub verified_pieces: Vec<bool>,
+    pub artifact_state: ResumeArtifactState,
+    pub download_missing: bool,
     pub dht: Option<DhtHandle>,
 }
 
 pub trait DownloadCheckpointSink: Send + Sync {
     fn metadata_verified(&self, raw_info: &[u8]) -> Result<(), String>;
     fn storage_prepared(&self, storage: ResumedStorage) -> Result<(), String>;
+    fn recheck_started(&self) -> Result<(), String>;
     fn have_rechecked(&self, verified_pieces: &[bool]) -> Result<(), String>;
     fn pieces_durable(&self, piece_indices: &[usize]) -> Result<(), String>;
     fn piece_durable(&self, piece_index: usize) -> Result<(), String> {
         self.pieces_durable(&[piece_index])
     }
     fn descriptor_prepared(&self, files: &[PreparedFileHash]) -> Result<(), String>;
+    fn publication_prepared(&self) -> Result<(), String>;
     fn published(&self) -> Result<(), String>;
 }
 
@@ -5175,6 +5179,8 @@ struct ResumeContext {
     verified_pieces: Vec<bool>,
     checkpoints: Arc<dyn DownloadCheckpointSink>,
     initialize_descriptors: bool,
+    artifact_state: ResumeArtifactState,
+    download_missing: bool,
 }
 
 async fn run_resumable_magnet_download(
@@ -5188,6 +5194,8 @@ async fn run_resumable_magnet_download(
     let resume = ResumeContext {
         verified_pieces: config.verified_pieces,
         checkpoints: checkpoints.clone(),
+        artifact_state: config.artifact_state,
+        download_missing: config.download_missing,
         initialize_descriptors: descriptors
             .as_ref()
             .is_some_and(|(_, initialize)| *initialize),
@@ -7132,7 +7140,7 @@ impl<'a> ContentSwarmDownload<'a> {
                             length,
                         });
                         self.contributor_attempts.insert(connection, source_attempt);
-                        let offset = single_file_offset(self.layout, index, begin)?;
+                        let offset = torrent_payload_offset(self.layout, index, begin)?;
                         let generation = self
                             .state
                             .piece_generation(index)
@@ -7410,7 +7418,7 @@ async fn record_failed_piece_contributors(
     Ok(())
 }
 
-fn single_file_offset(
+fn torrent_payload_offset(
     layout: &TorrentLayout,
     piece: u32,
     begin: u32,
@@ -8082,6 +8090,162 @@ async fn download_content_swarm<'a>(
     }
 }
 
+struct FullRecheckResult {
+    verified: Vec<bool>,
+    recovered: Vec<u32>,
+}
+
+async fn inventory_recheck_sources(
+    storage: &mut SelectiveStorage,
+    layout: &TorrentLayout,
+    piece_indices: &[u32],
+    control: &DownloadControl,
+) -> Result<Vec<(u32, u32, bool)>, DownloadError> {
+    let mut inventory = Vec::with_capacity(piece_indices.len());
+    for &piece_index in piece_indices {
+        if control.is_cancelled() {
+            return Err(DownloadError::Cancelled);
+        }
+        let piece_length = layout
+            .piece_length_at(piece_index)
+            .map_err(DownloadError::Layout)?;
+        let available = storage
+            .has_piece_sources(piece_index)
+            .await
+            .map_err(DownloadError::SelectiveStorage)?;
+        inventory.push((piece_index, piece_length, available));
+    }
+    Ok(inventory)
+}
+
+async fn full_recheck_managed_storage(
+    storage: &mut SelectiveStorage,
+    metainfo: &Metainfo,
+    layout: &TorrentLayout,
+    inventory: &[(u32, u32, bool)],
+    previous: &[bool],
+    control: &DownloadControl,
+) -> Result<FullRecheckResult, DownloadError> {
+    let mut verified = vec![false; layout.piece_count()];
+    for piece_index in 0..layout.piece_count() {
+        storage
+            .set_verified(piece_index, false)
+            .map_err(DownloadError::SelectiveStorage)?;
+    }
+
+    let mut candidates = VecDeque::new();
+    for &(piece_index, piece_length, available) in inventory {
+        if available {
+            candidates.push_back((piece_index, piece_length));
+        } else {
+            control.disk_piece_hashing(piece_index, piece_length);
+            control.disk_piece_failed(
+                piece_index,
+                piece_length,
+                "recheck source is missing or short",
+            );
+        }
+    }
+
+    let hash_concurrency = control.storage_execution_limits().1;
+    let mut running = JoinSet::new();
+    let mut recovered = Vec::new();
+    let mut cancelled = false;
+    let mut first_error = None;
+
+    loop {
+        cancelled |= control.is_cancelled();
+        while !cancelled && first_error.is_none() && running.len() < hash_concurrency {
+            let Some((piece_index, piece_length)) = candidates.pop_front() else {
+                break;
+            };
+            control.disk_piece_hashing(piece_index, piece_length);
+            control.emit(DownloadActivityEvent::PieceHashing { piece_index });
+            let operation = match storage.prepare_hash(piece_index) {
+                Ok(operation) => operation,
+                Err(error) if error.is_missing_or_short_source() => {
+                    control.disk_piece_failed(piece_index, piece_length, &error.to_string());
+                    continue;
+                }
+                Err(error) => {
+                    control.disk_piece_failed(piece_index, piece_length, &error.to_string());
+                    first_error = Some(DownloadError::SelectiveStorage(error));
+                    break;
+                }
+            };
+            let started_at = Instant::now();
+            control.storage_command_started(StorageCommandKind::Hash, started_at, started_at);
+            let job_control = control.clone();
+            running.spawn(async move {
+                job_control.wait_before_storage_hash().await;
+                (
+                    piece_index,
+                    piece_length,
+                    started_at,
+                    operation.execute().await,
+                )
+            });
+        }
+
+        let Some(result) = running.join_next().await else {
+            break;
+        };
+        match result {
+            Ok((piece_index, piece_length, started_at, result)) => {
+                control.storage_command_completed(
+                    StorageCommandKind::Hash,
+                    started_at,
+                    Instant::now(),
+                );
+                let piece_index_usize = match usize::try_from(piece_index) {
+                    Ok(piece_index) => piece_index,
+                    Err(_) => {
+                        first_error
+                            .get_or_insert(DownloadError::Layout(LayoutError::ArithmeticOverflow));
+                        continue;
+                    }
+                };
+                let matches = match result {
+                    Ok(actual) => actual == metainfo.piece_hashes[piece_index_usize],
+                    Err(error) if error.is_missing_or_short_source() => false,
+                    Err(error) => {
+                        control.disk_piece_failed(piece_index, piece_length, &error.to_string());
+                        first_error.get_or_insert(DownloadError::SelectiveStorage(error));
+                        continue;
+                    }
+                };
+                if !matches {
+                    control.disk_piece_failed(piece_index, piece_length, "recheck hash mismatch");
+                    continue;
+                }
+                verified[piece_index_usize] = true;
+                if let Err(error) = storage.set_verified(piece_index_usize, true) {
+                    first_error.get_or_insert(DownloadError::SelectiveStorage(error));
+                    continue;
+                }
+                if !previous[piece_index_usize] {
+                    recovered.push(piece_index);
+                }
+                control.disk_piece_hash_verified(piece_index, piece_length, false);
+            }
+            Err(error) => {
+                first_error.get_or_insert_with(|| DownloadError::StorageTask(error.to_string()));
+            }
+        }
+    }
+
+    if let Some(error) = first_error {
+        return Err(error);
+    }
+    if cancelled {
+        return Err(DownloadError::Cancelled);
+    }
+    Ok(FullRecheckResult {
+        verified,
+        recovered,
+    })
+}
+
 async fn run_selective_download(
     config: ContentDownloadConfig,
     metainfo: Metainfo,
@@ -8197,23 +8361,25 @@ async fn run_selective_download(
                 .map_err(DownloadError::SelectiveStorage)?;
                 let (storage, resumed) = match control.storage_file_pool() {
                     Some(pool) => {
-                        SelectiveStorage::resume_with_paths_and_pool(
+                        SelectiveStorage::resume_with_paths_and_pool_expected(
                             paths,
                             &metainfo,
                             layout.clone(),
                             selection,
                             verified_pieces.clone(),
                             pool,
+                            Some(resume.artifact_state),
                         )
                         .await
                     }
                     None => {
-                        SelectiveStorage::resume_with_paths(
+                        SelectiveStorage::resume_with_paths_expected(
                             paths,
                             &metainfo,
                             layout.clone(),
                             selection,
                             verified_pieces.clone(),
+                            resume.artifact_state,
                         )
                         .await
                     }
@@ -8298,53 +8464,51 @@ async fn run_selective_download(
     drop(storage_creation);
 
     if let (Some(resume), Some(resumed)) = (&resume, resumed_storage) {
+        let piece_indices = plans
+            .iter()
+            .map(|(piece_index, _)| *piece_index)
+            .collect::<Vec<_>>();
+        let inventory = if resumed == ResumedStorage::Created {
+            Vec::new()
+        } else {
+            inventory_recheck_sources(&mut storage, &layout, &piece_indices, &control).await?
+        };
+        resume
+            .checkpoints
+            .recheck_started()
+            .map_err(DownloadError::Checkpoint)?;
         let previous = verified_pieces.clone();
-        match resumed {
-            ResumedStorage::Created => {
-                verified_pieces.fill(false);
-                for piece_index in 0..layout.piece_count() {
-                    storage
-                        .set_verified(piece_index, false)
-                        .map_err(DownloadError::SelectiveStorage)?;
-                }
+        let checked = if resumed == ResumedStorage::Created {
+            FullRecheckResult {
+                verified: vec![false; layout.piece_count()],
+                recovered: Vec::new(),
             }
-            ResumedStorage::Staging | ResumedStorage::Published => {
-                for (piece_index, verified) in verified_pieces.iter_mut().enumerate() {
-                    if !*verified {
-                        continue;
-                    }
-                    let piece_index_u32 = u32::try_from(piece_index)
-                        .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
-                    if !storage
-                        .has_piece_sources(piece_index_u32)
-                        .await
-                        .map_err(DownloadError::SelectiveStorage)?
-                    {
-                        *verified = false;
-                        storage
-                            .set_verified(piece_index, false)
-                            .map_err(DownloadError::SelectiveStorage)?;
-                        continue;
-                    }
-                    let actual = storage
-                        .hash_piece(piece_index_u32)
-                        .await
-                        .map_err(DownloadError::SelectiveStorage)?;
-                    if actual != metainfo.piece_hashes[piece_index] {
-                        *verified = false;
-                        storage
-                            .set_verified(piece_index, false)
-                            .map_err(DownloadError::SelectiveStorage)?;
-                    }
-                }
-            }
+        } else {
+            full_recheck_managed_storage(
+                &mut storage,
+                &metainfo,
+                &layout,
+                &inventory,
+                &previous,
+                &control,
+            )
+            .await?
+        };
+        verified_pieces = checked.verified;
+        storage
+            .reconcile_after_recheck()
+            .await
+            .map_err(DownloadError::SelectiveStorage)?;
+        if resumed == ResumedStorage::Staging {
+            storage
+                .sync_pieces(&checked.recovered)
+                .await
+                .map_err(DownloadError::SelectiveStorage)?;
         }
-        if verified_pieces != previous {
-            resume
-                .checkpoints
-                .have_rechecked(&verified_pieces)
-                .map_err(DownloadError::Checkpoint)?;
-        }
+        resume
+            .checkpoints
+            .have_rechecked(&verified_pieces)
+            .map_err(DownloadError::Checkpoint)?;
     }
 
     plans.retain(|(piece_index, _)| {
@@ -8357,6 +8521,38 @@ async fn run_selective_download(
     let skipped_file_bytes = storage.skipped_bytes();
     let padding_bytes = storage.padding_bytes();
     let part_path = storage.part_path().map(Path::to_path_buf);
+    if resume
+        .as_ref()
+        .is_some_and(|resume| !resume.download_missing)
+        && !plans.is_empty()
+    {
+        return Ok(DownloadReport {
+            info_hash: metainfo.info_hash,
+            piece_hash: metainfo.piece_hashes[last_wanted_piece],
+            bytes_written: 0,
+            block_count: 0,
+            payload_limit: config.max_buffered_payload_bytes,
+            payload_high_water: control.snapshot().payload_high_water,
+            outstanding_request_limit: config.swarm_config.max_outstanding_request_bytes,
+            outstanding_request_high_water: 0,
+            active_piece_limit: config.swarm_config.max_active_piece_bytes,
+            verification_buffer: VERIFICATION_CHUNK_LENGTH,
+            piece_count: layout.piece_count(),
+            verified_piece_count: verified_pieces.iter().filter(|verified| **verified).count(),
+            skipped_piece_count,
+            selected_file_bytes,
+            skipped_file_bytes,
+            padding_bytes,
+            selected_written_bytes: 0,
+            part_written_bytes: 0,
+            materialized_bytes: 0,
+            part_slots_before_materialization: storage.part_slots(),
+            part_slots_after_materialization: storage.part_slots(),
+            part_reopened: storage.has_part_file(),
+            part_path,
+            prepared_files: Vec::new(),
+        });
+    }
     let (
         total_blocks,
         total_bytes,
@@ -8396,14 +8592,10 @@ async fn run_selective_download(
         result
     };
 
+    let completed_existing_publication = storage.is_published();
     if descriptor_backed {
         storage
             .prepare_descriptors()
-            .await
-            .map_err(DownloadError::SelectiveStorage)?;
-    } else if platform_backed {
-        storage
-            .prepare_platform()
             .await
             .map_err(DownloadError::SelectiveStorage)?;
     } else if storage.is_published() {
@@ -8411,14 +8603,28 @@ async fn run_selective_download(
             .finish_published()
             .await
             .map_err(DownloadError::SelectiveStorage)?;
+    } else if platform_backed {
+        storage
+            .prepare_platform()
+            .await
+            .map_err(DownloadError::SelectiveStorage)?;
     } else {
         storage
-            .publish()
+            .prepare_path_publication()
+            .await
+            .map_err(DownloadError::SelectiveStorage)?;
+        if let Some(resume) = &resume {
+            resume
+                .checkpoints
+                .publication_prepared()
+                .map_err(DownloadError::Checkpoint)?;
+        }
+        storage
+            .commit_path_publication()
             .await
             .map_err(DownloadError::SelectiveStorage)?;
     }
-    if !descriptor_backed
-        && !platform_backed
+    if ((!descriptor_backed && !platform_backed) || completed_existing_publication)
         && let Some(resume) = &resume
     {
         resume
@@ -8441,7 +8647,9 @@ async fn run_selective_download(
             .bytes;
     }
     let part_slots_after_materialization = storage.part_slots();
-    let prepared_files = if descriptor_backed || platform_backed {
+    let requires_provider_publication =
+        descriptor_backed || (platform_backed && !completed_existing_publication);
+    let prepared_files = if requires_provider_publication {
         storage
             .finalize_descriptor_hashes()
             .await
@@ -8449,9 +8657,7 @@ async fn run_selective_download(
     } else {
         Vec::new()
     };
-    if (descriptor_backed || platform_backed)
-        && let Some(resume) = &resume
-    {
+    if requires_provider_publication && let Some(resume) = &resume {
         resume
             .checkpoints
             .descriptor_prepared(&prepared_files)
@@ -8590,7 +8796,7 @@ mod tests {
     use rstorrent_protocol::storage_layout::{FileSelection, LayoutError, TorrentLayout};
     use rstorrent_protocol::udp_tracker::AnnounceEvent;
     use sha1::{Digest, Sha1};
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream, UdpSocket};
     use tokio::sync::{Barrier, Notify, Semaphore, mpsc};
     use tokio::time::{sleep, timeout};
@@ -8605,15 +8811,17 @@ mod tests {
         DownloadError, DownloadResourceLimits, MAX_DIAGNOSTIC_ERROR_LENGTH, MAX_METADATA_PEERS,
         MAX_RECENT_METADATA_ATTEMPTS, MagnetDownloadConfig, MetadataAcquisitionPhase,
         MetadataPeerStage, PeerConnection, PreparedContentWrite, QueuedContentStorageCommand,
-        SwarmConfig, TorrentPeerCoordinator, TrackerManager, UdpTrackerAnnounce,
-        UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache, announce_udp_tracker_address,
-        atomic_saturating_add, atomic_saturating_increment, coalesce_content_writes,
-        collect_content_write_batch, content_dial_slot_available, content_storage_job_limit,
-        download_magnet, download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
+        ResumableMagnetDownloadConfig, ResumeArtifactState, SwarmConfig, TorrentPeerCoordinator,
+        TrackerManager, UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming,
+        UdpTrackerTokenCache, announce_udp_tracker_address, atomic_saturating_add,
+        atomic_saturating_increment, coalesce_content_writes, collect_content_write_batch,
+        content_dial_slot_available, content_storage_job_limit, download_magnet,
+        download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
         download_magnet_with_control, download_verified_piece,
         download_verified_piece_with_control, execute_content_storage_verification,
-        execute_content_storage_writes, next_peer_message, retrying_dht_lookup,
-        run_content_download, run_magnet_download_with_peers, send_message,
+        execute_content_storage_writes, next_peer_message, resume_magnet,
+        resume_magnet_with_control, retrying_dht_lookup, run_content_download,
+        run_magnet_download_with_peers, send_message,
     };
     use crate::checkpoint::{CheckpointBatch, CheckpointIntent, DurabilityTarget};
     use crate::dht::{BootstrapNode, DhtConfig, DhtService};
@@ -8626,6 +8834,7 @@ mod tests {
     use crate::selective_storage::{
         CheckpointFileReference, CheckpointHandles, SelectiveStorage, SelectiveStorageError,
         selective_part_path, selective_staging_path, selective_staging_path as staging_path,
+        torrent_storage_paths_for_metainfo,
     };
     use crate::storage_file_pool::StorageFileLease;
     use crate::swarm::{
@@ -8639,6 +8848,7 @@ mod tests {
     #[derive(Default)]
     struct RecordingCheckpointSink {
         batches: Mutex<Vec<Vec<usize>>>,
+        rechecks: Mutex<Vec<Vec<bool>>>,
         failure: Mutex<Option<String>>,
     }
 
@@ -8646,12 +8856,20 @@ mod tests {
         fn failing(detail: &str) -> Self {
             Self {
                 batches: Mutex::new(Vec::new()),
+                rechecks: Mutex::new(Vec::new()),
                 failure: Mutex::new(Some(detail.to_owned())),
             }
         }
 
         fn batches(&self) -> Vec<Vec<usize>> {
             self.batches
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone()
+        }
+
+        fn rechecks(&self) -> Vec<Vec<bool>> {
+            self.rechecks
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .clone()
@@ -8667,7 +8885,15 @@ mod tests {
             Ok(())
         }
 
-        fn have_rechecked(&self, _verified_pieces: &[bool]) -> Result<(), String> {
+        fn recheck_started(&self) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn have_rechecked(&self, verified_pieces: &[bool]) -> Result<(), String> {
+            self.rechecks
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(verified_pieces.to_vec());
             Ok(())
         }
 
@@ -8687,8 +8913,71 @@ mod tests {
             Ok(())
         }
 
+        fn publication_prepared(&self) -> Result<(), String> {
+            Ok(())
+        }
+
         fn published(&self) -> Result<(), String> {
             Ok(())
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    enum PublicationFailurePoint {
+        AfterIntent,
+        AfterRename,
+    }
+
+    struct PublicationFailureSink {
+        point: PublicationFailurePoint,
+        rechecked: Mutex<Vec<bool>>,
+    }
+
+    impl super::DownloadCheckpointSink for PublicationFailureSink {
+        fn metadata_verified(&self, _raw_info: &[u8]) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn storage_prepared(&self, _storage: super::ResumedStorage) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn recheck_started(&self) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn have_rechecked(&self, verified_pieces: &[bool]) -> Result<(), String> {
+            *self
+                .rechecked
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = verified_pieces.to_vec();
+            Ok(())
+        }
+
+        fn pieces_durable(&self, _piece_indices: &[usize]) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn descriptor_prepared(&self, _files: &[super::PreparedFileHash]) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn publication_prepared(&self) -> Result<(), String> {
+            match self.point {
+                PublicationFailurePoint::AfterIntent => {
+                    Err("injected death after publication intent".to_owned())
+                }
+                PublicationFailurePoint::AfterRename => Ok(()),
+            }
+        }
+
+        fn published(&self) -> Result<(), String> {
+            match self.point {
+                PublicationFailurePoint::AfterIntent => Ok(()),
+                PublicationFailurePoint::AfterRename => {
+                    Err("injected death after publication rename".to_owned())
+                }
+            }
         }
     }
 
@@ -9691,6 +9980,18 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         available: Vec<bool>,
         io_timeout: Duration,
     ) {
+        serve_content_peer_recording(listener, info_hash, pieces, available, io_timeout, None)
+            .await;
+    }
+
+    async fn serve_content_peer_recording(
+        listener: TcpListener,
+        info_hash: [u8; 20],
+        pieces: Arc<Vec<Vec<u8>>>,
+        available: Vec<bool>,
+        io_timeout: Duration,
+        requested_pieces: Option<mpsc::UnboundedSender<u32>>,
+    ) {
         let (mut stream, _) = listener.accept().await.expect("accept content peer");
         let mut handshake = [0; HANDSHAKE_LENGTH];
         stream
@@ -9719,6 +10020,11 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             match next_peer_message(&mut peer).await {
                 Ok(PeerMessage::Interested) => {}
                 Ok(PeerMessage::Request(request)) => {
+                    if let Some(requested_pieces) = &requested_pieces {
+                        requested_pieces
+                            .send(request.index)
+                            .expect("record requested piece");
+                    }
                     let piece = request.index as usize;
                     assert!(available[piece], "request sent to unavailable peer");
                     let begin = request.begin as usize;
@@ -10341,6 +10647,498 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             .expect("multi-piece peer joined")
             .expect("multi-piece peer task");
         let _ = tokio::fs::remove_file(output).await;
+    }
+
+    #[tokio::test]
+    async fn one_entry_multi_file_uses_same_pipeline_and_publishes_a_tree() {
+        let payload = (0..(2 * MIN_PAYLOAD_ALLOWANCE + 509))
+            .map(|index| ((index * 41 + index / 29) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let info = one_entry_multi_file_info(&payload, MIN_PAYLOAD_ALLOWANCE);
+        let metainfo = Metainfo::from_info_bytes(&info).expect("one-entry multi-file metainfo");
+        let pieces = payload
+            .chunks(MIN_PAYLOAD_ALLOWANCE)
+            .map(<[u8]>::to_vec)
+            .collect::<Vec<_>>();
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind one-entry peer");
+        let address = listener.local_addr().expect("one-entry peer address");
+        let peer_task = tokio::spawn(serve_content_peer(
+            listener,
+            metainfo.info_hash,
+            Arc::new(pieces),
+            vec![true; metainfo.piece_count()],
+        ));
+        let output = test_path("one-entry-multi");
+        let mut peers = TorrentPeerCoordinator::from_endpoint(
+            address,
+            PeerSource::Manual,
+            loopback_network(Duration::from_secs(2)),
+        )
+        .expect("peer session");
+
+        let report = run_content_download(
+            ContentDownloadConfig {
+                output_path: output.clone(),
+                max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                swarm_config: SwarmConfig::for_request_limit(2 * MIN_PAYLOAD_ALLOWANCE),
+                skip_files: Vec::new(),
+                materialize_files: Vec::new(),
+            },
+            metainfo,
+            DownloadControl::new(),
+            None,
+            &mut peers,
+            None,
+        )
+        .await
+        .expect("one-entry multi-file completion");
+
+        assert_eq!(report.bytes_written, payload.len());
+        assert!(output.is_dir());
+        assert_eq!(
+            tokio::fs::read(output.join("payload.bin"))
+                .await
+                .expect("read one-entry publication"),
+            payload
+        );
+        timeout(Duration::from_secs(1), peer_task)
+            .await
+            .expect("one-entry peer joined")
+            .expect("one-entry peer task");
+        tokio::fs::remove_dir_all(output)
+            .await
+            .expect("remove one-entry publication");
+    }
+
+    #[tokio::test]
+    async fn full_recheck_recovers_synced_single_file_with_empty_have() {
+        let payload = (0..(3 * MIN_PAYLOAD_ALLOWANCE + 731))
+            .map(|index| ((index * 43 + index / 17) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let raw_info = single_file_info_with_piece_length(&payload, 2 * MIN_PAYLOAD_ALLOWANCE);
+        let metainfo = Metainfo::from_info_bytes(&raw_info).expect("recheck single-file metainfo");
+        let root = test_path("full-recheck-empty-have");
+        tokio::fs::create_dir(&root)
+            .await
+            .expect("create storage root");
+        let paths =
+            torrent_storage_paths_for_metainfo(&root, &metainfo).expect("plan managed storage");
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[]).expect("all files wanted");
+        let mut storage = SelectiveStorage::create_with_paths(
+            paths.clone(),
+            &metainfo,
+            layout.clone(),
+            selection.clone(),
+        )
+        .await
+        .expect("create managed staging storage");
+        for piece_index in 0..layout.piece_count() {
+            let piece_index_u32 = u32::try_from(piece_index).expect("bounded piece index");
+            let piece_offset = piece_index * metainfo.piece_length as usize;
+            for request in layout
+                .request_ranges(piece_index_u32, &selection)
+                .expect("piece request ranges")
+            {
+                let begin = request.begin as usize;
+                storage
+                    .write_block(
+                        piece_index_u32,
+                        request.begin,
+                        payload
+                            [piece_offset + begin..piece_offset + begin + request.length as usize]
+                            .to_vec(),
+                    )
+                    .await
+                    .expect("write uncheckpointed piece bytes");
+            }
+            storage
+                .sync_piece(piece_index_u32)
+                .await
+                .expect("sync before simulated process death");
+            assert_eq!(
+                storage
+                    .hash_piece(piece_index_u32)
+                    .await
+                    .expect("hash staged fixture"),
+                metainfo.piece_hashes[piece_index]
+            );
+        }
+        drop(storage);
+        assert!(paths.staging.exists());
+        assert!(!paths.output.exists());
+
+        let unused_peer = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind unused recheck peer");
+        let peer_address = unused_peer.local_addr().expect("unused peer address");
+        let checkpoints = Arc::new(RecordingCheckpointSink::default());
+        let result = resume_magnet(
+            ResumableMagnetDownloadConfig {
+                magnet: format!(
+                    "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
+                    hex(&metainfo.info_hash)
+                ),
+                storage_root: root.clone(),
+                network: loopback_network(Duration::from_secs(1)),
+                resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
+                skip_files: Vec::new(),
+                verified_info: Some(raw_info),
+                verified_pieces: vec![false; layout.piece_count()],
+                artifact_state: ResumeArtifactState::Staging,
+                download_missing: true,
+                dht: None,
+            },
+            checkpoints.clone(),
+        )
+        .await;
+        assert!(
+            result.is_ok(),
+            "recover synced pieces without redownload: {result:?}; rechecks: {:?}",
+            checkpoints.rechecks()
+        );
+        let report = result.expect("successful result checked above");
+
+        assert_eq!(report.verified_piece_count, layout.piece_count());
+        assert_eq!(report.bytes_written, 0);
+        assert_eq!(
+            checkpoints.rechecks(),
+            vec![vec![true; layout.piece_count()]]
+        );
+        assert_eq!(
+            tokio::fs::read(&paths.output)
+                .await
+                .expect("published recovered payload"),
+            payload
+        );
+        assert!(!paths.staging.exists());
+        tokio::fs::remove_dir_all(root)
+            .await
+            .expect("remove recheck fixture");
+    }
+
+    #[tokio::test]
+    async fn full_recheck_clears_stale_have_and_redownloads_only_corrupt_piece() {
+        let payload = (0..(2 * MIN_PAYLOAD_ALLOWANCE))
+            .map(|index| ((index * 29 + index / 11) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let raw_info = single_file_info_with_piece_length(&payload, MIN_PAYLOAD_ALLOWANCE);
+        let metainfo = Metainfo::from_info_bytes(&raw_info).expect("stale-have metainfo");
+        let pieces = Arc::new(
+            payload
+                .chunks(MIN_PAYLOAD_ALLOWANCE)
+                .map(<[u8]>::to_vec)
+                .collect::<Vec<_>>(),
+        );
+        let root = test_path("full-recheck-stale-have");
+        tokio::fs::create_dir(&root)
+            .await
+            .expect("create storage root");
+        let paths =
+            torrent_storage_paths_for_metainfo(&root, &metainfo).expect("plan managed storage");
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[]).expect("all files wanted");
+        let mut storage = SelectiveStorage::create_with_paths(
+            paths.clone(),
+            &metainfo,
+            layout.clone(),
+            selection.clone(),
+        )
+        .await
+        .expect("create staged payload");
+        for piece_index in 0..layout.piece_count() {
+            let piece_index_u32 = u32::try_from(piece_index).expect("bounded piece index");
+            storage
+                .write_block(piece_index_u32, 0, pieces[piece_index].clone())
+                .await
+                .expect("write staged piece");
+            storage
+                .sync_piece(piece_index_u32)
+                .await
+                .expect("sync staged piece");
+        }
+        drop(storage);
+
+        let mut staged = tokio::fs::OpenOptions::new()
+            .write(true)
+            .open(&paths.staging)
+            .await
+            .expect("open staged file for corruption");
+        staged
+            .seek(std::io::SeekFrom::Start(MIN_PAYLOAD_ALLOWANCE as u64))
+            .await
+            .expect("seek corrupt piece");
+        staged
+            .write_all(&[pieces[1][0] ^ 0xff])
+            .await
+            .expect("corrupt staged piece");
+        staged.sync_all().await.expect("sync corruption");
+        drop(staged);
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind repair peer");
+        let peer_address = listener.local_addr().expect("repair peer address");
+        let (requested_sender, mut requested_receiver) = mpsc::unbounded_channel();
+        let peer_task = tokio::spawn(serve_content_peer_recording(
+            listener,
+            metainfo.info_hash,
+            pieces,
+            vec![true; layout.piece_count()],
+            Duration::from_secs(2),
+            Some(requested_sender),
+        ));
+        let checkpoints = Arc::new(RecordingCheckpointSink::default());
+        let report = resume_magnet(
+            ResumableMagnetDownloadConfig {
+                magnet: format!(
+                    "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
+                    hex(&metainfo.info_hash)
+                ),
+                storage_root: root.clone(),
+                network: loopback_network(Duration::from_secs(2)),
+                resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
+                skip_files: Vec::new(),
+                verified_info: Some(raw_info),
+                verified_pieces: vec![true; layout.piece_count()],
+                artifact_state: ResumeArtifactState::Staging,
+                download_missing: true,
+                dht: None,
+            },
+            checkpoints.clone(),
+        )
+        .await
+        .expect("repair corrupt staged piece");
+        timeout(Duration::from_secs(1), peer_task)
+            .await
+            .expect("repair peer joined")
+            .expect("repair peer task");
+        let requested =
+            std::iter::from_fn(|| requested_receiver.try_recv().ok()).collect::<Vec<_>>();
+
+        assert_eq!(checkpoints.rechecks(), vec![vec![true, false]]);
+        assert!(!requested.is_empty());
+        assert!(requested.iter().all(|piece_index| *piece_index == 1));
+        assert_eq!(report.bytes_written, MIN_PAYLOAD_ALLOWANCE);
+        assert_eq!(report.verified_piece_count, 2);
+        assert_eq!(
+            tokio::fs::read(&paths.output)
+                .await
+                .expect("read repaired publication"),
+            payload
+        );
+        tokio::fs::remove_dir_all(root)
+            .await
+            .expect("remove stale-have fixture");
+    }
+
+    #[tokio::test]
+    async fn cancelling_full_recheck_stops_admission_and_joins_bounded_hashes() {
+        let payload = (0..(8 * MIN_PAYLOAD_ALLOWANCE))
+            .map(|index| ((index * 37 + index / 19) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let raw_info = single_file_info_with_piece_length(&payload, MIN_PAYLOAD_ALLOWANCE);
+        let metainfo = Metainfo::from_info_bytes(&raw_info).expect("cancel recheck metainfo");
+        let root = test_path("full-recheck-cancel");
+        tokio::fs::create_dir(&root)
+            .await
+            .expect("create storage root");
+        let paths =
+            torrent_storage_paths_for_metainfo(&root, &metainfo).expect("plan managed storage");
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[]).expect("all files wanted");
+        let mut storage = SelectiveStorage::create_with_paths(
+            paths.clone(),
+            &metainfo,
+            layout.clone(),
+            selection,
+        )
+        .await
+        .expect("create staged payload");
+        for piece_index in 0..layout.piece_count() {
+            let piece_index_u32 = u32::try_from(piece_index).expect("bounded piece index");
+            let offset = piece_index * MIN_PAYLOAD_ALLOWANCE;
+            storage
+                .write_block(
+                    piece_index_u32,
+                    0,
+                    payload[offset..offset + MIN_PAYLOAD_ALLOWANCE].to_vec(),
+                )
+                .await
+                .expect("write staged piece");
+            storage
+                .sync_piece(piece_index_u32)
+                .await
+                .expect("sync staged piece");
+        }
+        drop(storage);
+
+        let control = DownloadControl::new();
+        control
+            .set_storage_execution_limits_for_testing(1, 2)
+            .expect("set bounded recheck concurrency");
+        control.set_storage_hash_delay(Duration::from_millis(200));
+        let task_control = control.clone();
+        let checkpoints = Arc::new(RecordingCheckpointSink::default());
+        let unused_peer = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind unused cancellation peer");
+        let peer_address = unused_peer
+            .local_addr()
+            .expect("unused cancellation peer address");
+        let task = tokio::spawn(resume_magnet_with_control(
+            ResumableMagnetDownloadConfig {
+                magnet: format!(
+                    "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
+                    hex(&metainfo.info_hash)
+                ),
+                storage_root: root.clone(),
+                network: loopback_network(Duration::from_secs(1)),
+                resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
+                skip_files: Vec::new(),
+                verified_info: Some(raw_info),
+                verified_pieces: vec![false; layout.piece_count()],
+                artifact_state: ResumeArtifactState::Staging,
+                download_missing: true,
+                dht: None,
+            },
+            checkpoints,
+            task_control,
+        ));
+        timeout(Duration::from_secs(1), async {
+            loop {
+                if control.snapshot().storage_hash_operations_active == 2 {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("two recheck hashes did not become active");
+        control.cancel();
+        assert!(matches!(
+            timeout(Duration::from_secs(2), task)
+                .await
+                .expect("cancelled recheck timed out")
+                .expect("join cancelled recheck"),
+            Err(DownloadError::Cancelled)
+        ));
+        let progress = control.snapshot();
+        assert_eq!(progress.storage_hash_operations_started, 2);
+        assert_eq!(progress.storage_hash_operations_completed, 2);
+        assert_eq!(progress.storage_hash_operations_active, 0);
+        assert_eq!(progress.storage_hash_operations_active_high_water, 2);
+        assert!(paths.staging.exists());
+        assert!(!paths.output.exists());
+        tokio::fs::remove_dir_all(root)
+            .await
+            .expect("remove cancellation fixture");
+    }
+
+    #[tokio::test]
+    async fn publishing_intent_recovers_both_sides_of_atomic_rename() {
+        let payload = (0..(2 * MIN_PAYLOAD_ALLOWANCE + 317))
+            .map(|index| ((index * 23 + index / 5) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let raw_info = single_file_info_with_piece_length(&payload, MIN_PAYLOAD_ALLOWANCE);
+        let metainfo = Metainfo::from_info_bytes(&raw_info).expect("publication fault metainfo");
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+
+        for (label, point) in [
+            ("after-intent", PublicationFailurePoint::AfterIntent),
+            ("after-rename", PublicationFailurePoint::AfterRename),
+        ] {
+            let root = test_path(label);
+            tokio::fs::create_dir(&root)
+                .await
+                .expect("create publication fault root");
+            let paths = torrent_storage_paths_for_metainfo(&root, &metainfo)
+                .expect("plan publication fault storage");
+            stage_single_file_payload(&paths, &metainfo, &payload).await;
+            let unused_peer = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind unused publication peer");
+            let peer_address = unused_peer
+                .local_addr()
+                .expect("unused publication peer address");
+            let failpoints = Arc::new(PublicationFailureSink {
+                point,
+                rechecked: Mutex::new(Vec::new()),
+            });
+            let failed = resume_magnet(
+                ResumableMagnetDownloadConfig {
+                    magnet: format!(
+                        "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
+                        hex(&metainfo.info_hash)
+                    ),
+                    storage_root: root.clone(),
+                    network: loopback_network(Duration::from_secs(1)),
+                    resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
+                    skip_files: Vec::new(),
+                    verified_info: Some(raw_info.clone()),
+                    verified_pieces: vec![false; layout.piece_count()],
+                    artifact_state: ResumeArtifactState::Staging,
+                    download_missing: true,
+                    dht: None,
+                },
+                failpoints.clone(),
+            )
+            .await;
+            let rechecked = failpoints
+                .rechecked
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone();
+            assert!(
+                matches!(failed, Err(DownloadError::Checkpoint(_))),
+                "unexpected publication failpoint result: {failed:?}; rechecked={rechecked:?}"
+            );
+            match point {
+                PublicationFailurePoint::AfterIntent => {
+                    assert!(paths.staging.exists());
+                    assert!(!paths.output.exists());
+                }
+                PublicationFailurePoint::AfterRename => {
+                    assert!(!paths.staging.exists());
+                    assert!(paths.output.exists());
+                }
+            }
+
+            let recovered = resume_magnet(
+                ResumableMagnetDownloadConfig {
+                    magnet: format!(
+                        "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
+                        hex(&metainfo.info_hash)
+                    ),
+                    storage_root: root.clone(),
+                    network: loopback_network(Duration::from_secs(1)),
+                    resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
+                    skip_files: Vec::new(),
+                    verified_info: Some(raw_info.clone()),
+                    verified_pieces: vec![false; layout.piece_count()],
+                    artifact_state: ResumeArtifactState::Publishing,
+                    download_missing: true,
+                    dht: None,
+                },
+                Arc::new(RecordingCheckpointSink::default()),
+            )
+            .await
+            .expect("reconcile publication side after injected death");
+            assert_eq!(recovered.bytes_written, 0);
+            assert_eq!(recovered.verified_piece_count, layout.piece_count());
+            assert_eq!(
+                tokio::fs::read(&paths.output)
+                    .await
+                    .expect("read recovered publication"),
+                payload
+            );
+            assert!(!paths.staging.exists());
+            tokio::fs::remove_dir_all(root)
+                .await
+                .expect("remove publication fault root");
+        }
     }
 
     #[tokio::test]
@@ -12305,6 +13103,71 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         info.extend_from_slice(&piece_hashes);
         info.push(b'e');
         info
+    }
+
+    fn one_entry_multi_file_info(payload: &[u8], piece_length: usize) -> Vec<u8> {
+        let piece_hashes = payload
+            .chunks(piece_length)
+            .flat_map(|piece| Sha1::digest(piece).to_vec())
+            .collect::<Vec<_>>();
+        let mut info = format!(
+            "d5:filesld6:lengthi{}e4:pathl11:payload.bineee4:name5:multi12:piece lengthi{}e6:pieces{}:",
+            payload.len(),
+            piece_length,
+            piece_hashes.len()
+        )
+        .into_bytes();
+        info.extend_from_slice(&piece_hashes);
+        info.push(b'e');
+        info
+    }
+
+    async fn stage_single_file_payload(
+        paths: &crate::selective_storage::TorrentStoragePaths,
+        metainfo: &Metainfo,
+        payload: &[u8],
+    ) {
+        let layout = TorrentLayout::from_metainfo(metainfo);
+        let selection = FileSelection::new(&layout, &[]).expect("all files wanted");
+        let mut storage = SelectiveStorage::create_with_paths(
+            paths.clone(),
+            metainfo,
+            layout.clone(),
+            selection.clone(),
+        )
+        .await
+        .expect("create staged single-file payload");
+        for piece_index in 0..layout.piece_count() {
+            let piece_index_u32 = u32::try_from(piece_index).expect("bounded piece index");
+            let piece_offset = piece_index * layout.piece_length() as usize;
+            for request in layout
+                .request_ranges(piece_index_u32, &selection)
+                .expect("piece request ranges")
+            {
+                let begin = request.begin as usize;
+                storage
+                    .write_block(
+                        piece_index_u32,
+                        request.begin,
+                        payload
+                            [piece_offset + begin..piece_offset + begin + request.length as usize]
+                            .to_vec(),
+                    )
+                    .await
+                    .expect("write staged single-file range");
+            }
+            storage
+                .sync_piece(piece_index_u32)
+                .await
+                .expect("sync staged single-file piece");
+            assert_eq!(
+                storage
+                    .hash_piece(piece_index_u32)
+                    .await
+                    .expect("hash staged single-file piece"),
+                metainfo.piece_hashes[piece_index]
+            );
+        }
     }
 
     fn private_single_file_info(payload: &[u8]) -> Vec<u8> {

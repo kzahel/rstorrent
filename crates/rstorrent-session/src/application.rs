@@ -12,8 +12,8 @@ use rstorrent_engine::{
     DiskCheckpointStage, DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink,
     DownloadControl, DownloadError, DownloadResourceLimits, NetworkConfig, PlatformStorageClient,
     PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash, PublicationShape,
-    ResumableMagnetDownloadConfig, ResumedStorage, StorageFilePool, StorageFilePoolSnapshot,
-    download_magnet_metadata_with_dht, plan_descriptor_storage,
+    ResumableMagnetDownloadConfig, ResumeArtifactState, ResumedStorage, StorageFilePool,
+    StorageFilePoolSnapshot, download_magnet_metadata_with_dht, plan_descriptor_storage,
     resume_magnet_to_descriptors_with_control, resume_magnet_with_control, torrent_storage_paths,
     verify_prepared_descriptors, verify_prepared_platform_files,
 };
@@ -341,6 +341,7 @@ impl ApplicationService {
                         .map(|magnet| encode_info_hash(magnet.info_hash))
                 }
                 Command::Resume { torrent_id } => Some(torrent_id.to_ascii_lowercase()),
+                Command::ForceRecheck { torrent_id } => Some(torrent_id.to_ascii_lowercase()),
                 Command::SetFilePriority { torrent_id, .. } => {
                     Some(torrent_id.to_ascii_lowercase())
                 }
@@ -358,10 +359,16 @@ impl ApplicationService {
                 ));
             }
         }
+        let revision_before = self.store_mut()?.revision()?;
         let response = self.store_mut()?.handle_durable(&request)?;
         if !matches!(response.outcome, ResponseOutcome::Success { .. }) {
             return Ok(response);
         }
+        let durable_mutation_applied = response.revision.parse::<u64>().map_err(|_| {
+            ApplicationError::Configuration(
+                "durable response contains an invalid revision".to_owned(),
+            )
+        })? > revision_before;
         self.refresh_views()?;
 
         match command {
@@ -402,6 +409,23 @@ impl ApplicationService {
                     &[],
                 )?;
                 self.pause(&torrent_id).await?;
+            }
+            Command::ForceRecheck { torrent_id } => {
+                if !durable_mutation_applied {
+                    return Ok(response);
+                }
+                let torrent_id = torrent_id.to_ascii_lowercase();
+                self.pause(&torrent_id).await?;
+                self.refresh_views()?;
+                self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    category::INTEGRITY_HASH,
+                    "force_recheck_requested",
+                    Some(&torrent_id),
+                    "Managed content force recheck requested",
+                    &[],
+                )?;
+                self.start_recheck_if_possible(&torrent_id).await?;
             }
             Command::SetFilePriority { torrent_id, .. } => {
                 let torrent_id = torrent_id.to_ascii_lowercase();
@@ -724,6 +748,7 @@ impl ApplicationService {
                 "torrent does not use a platform storage root".to_owned(),
             ));
         }
+        let artifact_state = resume_artifact_state(&resume)?;
         let raw_info = resume.raw_info.ok_or_else(|| {
             ApplicationError::Configuration("torrent metadata is not available".to_owned())
         })?;
@@ -748,6 +773,8 @@ impl ApplicationService {
             skip_files,
             verified_info: Some(raw_info),
             verified_pieces,
+            artifact_state,
+            download_missing: true,
             dht: self.dht.as_ref().map(DhtService::handle),
         };
         let checkpoints: Arc<dyn DownloadCheckpointSink> = Arc::new(StoreCheckpointSink {
@@ -867,6 +894,7 @@ impl ApplicationService {
                 publication_shape: PublicationShape::from_metainfo(&metainfo),
                 publication_name: metainfo.name.clone(),
                 namespace_generation: 1,
+                managed: true,
                 published: true,
             },
             &metainfo,
@@ -1267,6 +1295,21 @@ impl ApplicationService {
     }
 
     async fn start_if_possible(&mut self, torrent_id: &str) -> Result<(), ApplicationError> {
+        self.start_if_possible_with_mode(torrent_id, false).await
+    }
+
+    async fn start_recheck_if_possible(
+        &mut self,
+        torrent_id: &str,
+    ) -> Result<(), ApplicationError> {
+        self.start_if_possible_with_mode(torrent_id, true).await
+    }
+
+    async fn start_if_possible_with_mode(
+        &mut self,
+        torrent_id: &str,
+        force_recheck: bool,
+    ) -> Result<(), ApplicationError> {
         self.reap_finished().await?;
         if let Some(active) = &self.active {
             if active.torrent_id == torrent_id {
@@ -1282,11 +1325,10 @@ impl ApplicationService {
                 return Ok(());
             }
         };
-        if matches!(
-            resume.state,
-            TorrentState::NeedsRepair | TorrentState::Complete
-        ) || (resume.raw_info.is_some()
-            && (!resume.desired_running || resume.state == TorrentState::Paused))
+        if resume.state == TorrentState::NeedsRepair
+            || (!force_recheck
+                && resume.raw_info.is_some()
+                && (!resume.desired_running || resume.state == TorrentState::Paused))
         {
             return Ok(());
         }
@@ -1372,6 +1414,7 @@ impl ApplicationService {
                         publication_shape: PublicationShape::from_metainfo(&metainfo),
                         publication_name: metainfo.name,
                         namespace_generation: 0,
+                        managed: false,
                         published: false,
                     });
                     resume_magnet_with_control(
@@ -1383,6 +1426,8 @@ impl ApplicationService {
                             skip_files,
                             verified_info: Some(raw_info),
                             verified_pieces: Vec::new(),
+                            artifact_state: ResumeArtifactState::None,
+                            download_missing: true,
                             dht,
                         },
                         checkpoints,
@@ -1469,6 +1514,7 @@ impl ApplicationService {
             .have
             .as_ref()
             .map_or_else(Vec::new, |have| have.pieces().to_vec());
+        let artifact_state = resume_artifact_state(&resume)?;
         let config = ResumableMagnetDownloadConfig {
             magnet: resume.magnet,
             storage_root: root_path,
@@ -1477,6 +1523,8 @@ impl ApplicationService {
             skip_files,
             verified_info: resume.raw_info,
             verified_pieces,
+            artifact_state,
+            download_missing: resume.desired_running,
             dht: self.dht.as_ref().map(DhtService::handle),
         };
         let checkpoints: Arc<dyn DownloadCheckpointSink> = Arc::new(StoreCheckpointSink {
@@ -1499,8 +1547,9 @@ impl ApplicationService {
                 storage_id: torrent_id.to_owned(),
                 publication_shape: PublicationShape::from_metainfo(&metainfo),
                 publication_name: metainfo.name,
-                namespace_generation: 0,
-                published: false,
+                namespace_generation: u64::from(resume.storage_state == StorageState::Published),
+                managed: resume.storage_state != StorageState::None,
+                published: resume.storage_state == StorageState::Published,
             });
         }
         let task_control = control.clone();
@@ -1987,6 +2036,26 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
             .map_err(|error| error.to_string())
     }
 
+    fn recheck_started(&self) -> Result<(), String> {
+        self.store().and_then(|mut store| {
+            store
+                .begin_recheck(&self.torrent_id)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        })?;
+        self.refresh()?;
+        self.views
+            .record_diagnostic(
+                DiagnosticSeverity::Info,
+                category::INTEGRITY_HASH,
+                "recheck_started",
+                Some(&self.torrent_id),
+                "Managed content recheck started",
+                &[],
+            )
+            .map_err(|error| error.to_string())
+    }
+
     fn have_rechecked(&self, verified_pieces: &[bool]) -> Result<(), String> {
         let resume = self.store().and_then(|store| {
             store
@@ -2000,7 +2069,7 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
             .map_err(|error| error.to_string())?;
         self.store().and_then(|mut store| {
             store
-                .replace_have(&self.torrent_id, &replacement)
+                .complete_recheck(&self.torrent_id, &replacement)
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         })?;
@@ -2068,6 +2137,26 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
                 "publication_prepared",
                 Some(&self.torrent_id),
                 "Payload files prepared for publication",
+                &[],
+            )
+            .map_err(|error| error.to_string())
+    }
+
+    fn publication_prepared(&self) -> Result<(), String> {
+        self.store().and_then(|mut store| {
+            store
+                .mark_publication_prepared(&self.torrent_id)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        })?;
+        self.refresh()?;
+        self.views
+            .record_diagnostic(
+                DiagnosticSeverity::Info,
+                category::STORAGE_IO,
+                "path_publication_prepared",
+                Some(&self.torrent_id),
+                "Path publication intent became durable",
                 &[],
             )
             .map_err(|error| error.to_string())
@@ -2813,6 +2902,23 @@ fn require_publication_name(
     }
 }
 
+fn resume_artifact_state(resume: &ResumeRecord) -> Result<ResumeArtifactState, ApplicationError> {
+    match (resume.storage_state, resume.managed_artifacts) {
+        (StorageState::None, ManagedArtifactState::None) => Ok(ResumeArtifactState::None),
+        (StorageState::Staging, ManagedArtifactState::Staging) => Ok(ResumeArtifactState::Staging),
+        (
+            StorageState::Prepared,
+            ManagedArtifactState::Staging | ManagedArtifactState::Published,
+        ) => Ok(ResumeArtifactState::Publishing),
+        (StorageState::Published, ManagedArtifactState::Published) => {
+            Ok(ResumeArtifactState::Published)
+        }
+        _ => Err(ApplicationError::Configuration(
+            "stored payload ownership and storage state are inconsistent".to_owned(),
+        )),
+    }
+}
+
 #[derive(Debug)]
 pub enum ApplicationError {
     Store(StoreError),
@@ -2990,6 +3096,25 @@ mod tests {
         let mut info = b"d5:filesld6:lengthi4e4:pathl5:a.bineed6:lengthi4e4:pathl5:b.bineee4:name5:multi12:piece lengthi4e6:pieces40:".to_vec();
         info.extend_from_slice(&[b'a'; 20]);
         info.extend_from_slice(&[b'b'; 20]);
+        info.push(b'e');
+        info
+    }
+
+    fn single_file_info(name: &str, payload: &[u8], piece_length: usize) -> Vec<u8> {
+        let hashes = payload
+            .chunks(piece_length)
+            .flat_map(|piece| Sha1::digest(piece).to_vec())
+            .collect::<Vec<_>>();
+        let mut info = format!(
+            "d6:lengthi{}e4:name{}:{}12:piece lengthi{}e6:pieces{}:",
+            payload.len(),
+            name.len(),
+            name,
+            piece_length,
+            hashes.len()
+        )
+        .into_bytes();
+        info.extend_from_slice(&hashes);
         info.push(b'e');
         info
     }
@@ -3349,6 +3474,224 @@ mod tests {
             serde_json::to_string(&patch)
                 .expect("serialize patch")
                 .contains(torrent_id)
+        );
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    async fn wait_for_torrent_state(
+        service: &mut ApplicationService,
+        torrent_id: &str,
+        expected: TorrentState,
+        label: &str,
+    ) {
+        for sequence in 0..200 {
+            let response = service
+                .dispatch(RequestEnvelope {
+                    version: CONTROL_VERSION,
+                    request_id: format!("{label}-snapshot-{sequence}"),
+                    expected_revision: None,
+                    command: Command::Snapshot,
+                })
+                .await
+                .expect("poll torrent state");
+            let ResponseOutcome::Success { snapshot } = response.outcome else {
+                panic!("state poll must succeed");
+            };
+            let torrent = snapshot
+                .torrents
+                .iter()
+                .find(|torrent| torrent.torrent_id == torrent_id)
+                .expect("polled torrent");
+            if torrent.state == expected {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!("torrent {torrent_id} did not reach {expected:?}");
+    }
+
+    #[tokio::test]
+    async fn complete_startup_and_force_recheck_rebuild_have_without_network() {
+        let root = test_root("complete-force-recheck");
+        let configuration = config(&root);
+        let payload = (0..32_768)
+            .map(|offset| ((offset * 31 + offset / 13) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let raw_info = single_file_info("complete.bin", &payload, 16_384);
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let mut store = SessionStore::open(
+            &configuration.profile_root,
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open setup store");
+        store
+            .handle_durable(&add_request("add-complete-recheck", &torrent_id))
+            .expect("add complete torrent");
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record complete metadata");
+        store
+            .record_pieces(&torrent_id, &[0, 1])
+            .expect("record old complete have");
+        store
+            .mark_storage_prepared(&torrent_id, StorageState::Published)
+            .expect("record published ownership");
+        store.mark_complete(&torrent_id).expect("mark complete");
+        drop(store);
+        let output = root.join("payload/complete.bin");
+        fs::create_dir_all(output.parent().expect("payload parent")).expect("create payload root");
+        fs::write(&output, &payload).expect("write complete publication");
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open complete application");
+        wait_for_torrent_state(
+            &mut service,
+            &torrent_id,
+            TorrentState::Complete,
+            "startup-recheck",
+        )
+        .await;
+        assert_eq!(
+            service
+                .store_mut()
+                .expect("store")
+                .load_resume(&torrent_id)
+                .expect("startup result")
+                .have
+                .expect("startup have")
+                .pieces(),
+            &[true, true]
+        );
+
+        let force = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "force-complete-recheck".to_owned(),
+            expected_revision: None,
+            command: Command::ForceRecheck {
+                torrent_id: torrent_id.clone(),
+            },
+        };
+        service
+            .dispatch(force.clone())
+            .await
+            .expect("force recheck");
+        wait_for_torrent_state(
+            &mut service,
+            &torrent_id,
+            TorrentState::Complete,
+            "forced-recheck",
+        )
+        .await;
+        let revision = service
+            .store_mut()
+            .expect("store")
+            .revision()
+            .expect("completed revision");
+        service.dispatch(force).await.expect("replay force recheck");
+        assert_eq!(
+            service
+                .store_mut()
+                .expect("store")
+                .revision()
+                .expect("replayed revision"),
+            revision,
+            "replaying one request must not start another generation"
+        );
+        assert_eq!(fs::read(&output).expect("read rechecked output"), payload);
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn paused_force_recheck_clears_corruption_without_starting_repair() {
+        let root = test_root("paused-force-recheck");
+        let configuration = config(&root);
+        let payload = (0..32_768)
+            .map(|offset| ((offset * 17 + offset / 7) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let raw_info = single_file_info("paused.bin", &payload, 16_384);
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let mut store = SessionStore::open(
+            &configuration.profile_root,
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open setup store");
+        store
+            .handle_durable(&add_request("add-paused-recheck", &torrent_id))
+            .expect("add paused torrent");
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record paused metadata");
+        store
+            .record_pieces(&torrent_id, &[0, 1])
+            .expect("record stale complete have");
+        store
+            .mark_storage_prepared(&torrent_id, StorageState::Published)
+            .expect("record published ownership");
+        store.mark_complete(&torrent_id).expect("mark complete");
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "pause-before-force".to_owned(),
+                expected_revision: None,
+                command: Command::Pause {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .expect("persist paused intent");
+        drop(store);
+        let output = root.join("payload/paused.bin");
+        fs::create_dir_all(output.parent().expect("payload parent")).expect("create payload root");
+        let mut corrupt = payload.clone();
+        corrupt[16_384] ^= 0xff;
+        fs::write(&output, &corrupt).expect("write corrupt publication");
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open paused application");
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "force-paused-recheck".to_owned(),
+                expected_revision: None,
+                command: Command::ForceRecheck {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .await
+            .expect("force paused recheck");
+        wait_for_torrent_state(
+            &mut service,
+            &torrent_id,
+            TorrentState::Paused,
+            "paused-recheck",
+        )
+        .await;
+        assert_eq!(
+            service
+                .store_mut()
+                .expect("store")
+                .load_resume(&torrent_id)
+                .expect("paused result")
+                .have
+                .expect("paused have")
+                .pieces(),
+            &[true, false]
+        );
+        assert_eq!(
+            fs::read(&output).expect("read unrepaired publication"),
+            corrupt,
+            "paused intent must not admit repair writes"
         );
 
         service.shutdown().await.expect("shutdown");

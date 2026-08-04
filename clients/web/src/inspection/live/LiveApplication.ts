@@ -184,6 +184,7 @@ export class LiveApplication implements InspectionApplication {
       command.type !== "remove_download_root" &&
       command.type !== "pause" &&
       command.type !== "resume" &&
+      command.type !== "force_recheck" &&
       command.type !== "archive" &&
       command.type !== "unarchive" &&
       command.type !== "remove"
@@ -271,6 +272,8 @@ export class LiveApplication implements InspectionApplication {
                   ? "Torrent paused"
                   : command.type === "resume"
                     ? "Torrent resumed"
+                    : command.type === "force_recheck"
+                      ? "Torrent recheck started"
                     : command.type === "archive"
                       ? "Torrent archived"
                       : command.type === "unarchive"

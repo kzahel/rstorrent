@@ -947,6 +947,22 @@
               "type": "string"
             },
             "type": {
+              "const": "force_recheck",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
               "const": "archive",
               "type": "string"
             }

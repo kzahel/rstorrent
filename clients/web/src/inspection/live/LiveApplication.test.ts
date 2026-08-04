@@ -205,6 +205,20 @@ describe("LiveApplication", () => {
     await application.close();
   });
 
+  it("maps force recheck to the durable application command", async () => {
+    const client = new FakeLiveClient();
+    const application = await LiveApplication.open(client);
+
+    await expect(
+      application.dispatch({ type: "force_recheck", torrentId: TORRENT_ID }),
+    ).resolves.toEqual({ accepted: true, message: "Torrent recheck started" });
+    expect(client.requests[0]?.command).toEqual({
+      type: "force_recheck",
+      torrent_id: TORRENT_ID,
+    });
+    await application.close();
+  });
+
   it("uses a unique bounded request namespace for each application instance", async () => {
     const firstClient = new FakeLiveClient();
     const secondClient = new FakeLiveClient();

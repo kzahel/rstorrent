@@ -158,6 +158,8 @@ export class DemoApplication implements InspectionApplication {
         return rejected("Live magnet add is unavailable in demo scenarios");
       case "set_file_priority":
         return rejected("File priority changes are unavailable in demo scenarios");
+      case "force_recheck":
+        return rejected("Force recheck is unavailable in demo scenarios");
       case "choose_download_root":
       case "set_default_download_root":
       case "set_show_add_options":
