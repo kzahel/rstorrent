@@ -344,6 +344,10 @@ that scope and its cleanup or compatibility rules explicitly.
 - [`071-copy-magnet-link.md`](071-copy-magnet-link.md): complete; adds a
   singleton-selection More action that copies a canonical v1 magnet from the
   projected info hash with truthful clipboard feedback and accessible focus.
+- [`072-derived-media-catalog.md`](072-derived-media-catalog.md): draft; adds a
+  pure deterministic video/episode classifier, one rebuildable application
+  catalog, a separately leased media projection, and a read-only virtualized
+  Workbench Media tab without thumbnails or playback.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
