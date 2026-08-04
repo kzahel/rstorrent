@@ -1,4 +1,5 @@
 use super::*;
+use crate::PeerBudget;
 
 #[tokio::test]
 async fn multi_piece_single_file_uses_torrent_offsets_and_publishes() {
@@ -198,6 +199,7 @@ async fn full_recheck_recovers_synced_single_file_with_empty_have() {
             ),
             storage_root: root.clone(),
             network: loopback_network(Duration::from_secs(1)),
+            peer_budget: PeerBudget::system_default(),
             resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
             verified_info: Some(raw_info),
@@ -314,6 +316,7 @@ async fn full_recheck_clears_stale_have_and_redownloads_only_corrupt_piece() {
             ),
             storage_root: root.clone(),
             network: loopback_network(Duration::from_secs(2)),
+            peer_budget: PeerBudget::system_default(),
             resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
             verified_info: Some(raw_info),
@@ -406,6 +409,7 @@ async fn cancelling_full_recheck_stops_admission_and_joins_bounded_hashes() {
             ),
             storage_root: root.clone(),
             network: loopback_network(Duration::from_secs(1)),
+            peer_budget: PeerBudget::system_default(),
             resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
             verified_info: Some(raw_info),
@@ -486,6 +490,7 @@ async fn publishing_intent_recovers_both_sides_of_atomic_rename() {
                 ),
                 storage_root: root.clone(),
                 network: loopback_network(Duration::from_secs(1)),
+                peer_budget: PeerBudget::system_default(),
                 resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
                 skip_files: Vec::new(),
                 verified_info: Some(raw_info.clone()),
@@ -526,6 +531,7 @@ async fn publishing_intent_recovers_both_sides_of_atomic_rename() {
                 ),
                 storage_root: root.clone(),
                 network: loopback_network(Duration::from_secs(1)),
+                peer_budget: PeerBudget::system_default(),
                 resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
                 skip_files: Vec::new(),
                 verified_info: Some(raw_info.clone()),

@@ -20,21 +20,23 @@ use rstorrent_protocol::peer_wire::{
 };
 use sha1::{Digest, Sha1};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, Semaphore};
+use tokio::net::{TcpListener, TcpSocket, TcpStream};
+use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{Instant, timeout_at};
 use tokio_util::sync::CancellationToken;
 
 use crate::metrics::{ByteMetric, ByteMetricSink};
 use crate::network::DEFAULT_PEER_ID;
+use crate::peer_budget::{
+    DEFAULT_LISTEN_BACKLOG, PeerBudget, PeerBudgetDirection, PeerBudgetPermit, PeerBudgetSnapshot,
+};
 use crate::peer_io::{PeerIo, record_bytes};
 use crate::seed_content::SeedContent;
 use crate::upload::{UploadAction, UploadCloseReason, UploadPeerState, UploadRead};
 
 pub const MAX_SEED_REGISTRATIONS: usize = 1024;
 pub const MAX_INCOMING_PENDING: usize = 8;
-pub const MAX_INCOMING_ESTABLISHED: usize = 1;
 pub const MAX_DEFERRED_METADATA_REQUESTS: usize = 1_024;
 pub const METADATA_SEND_BUFFER_WATERMARK: usize = 160 * 1_024;
 pub const DEFAULT_INCOMING_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -55,6 +57,7 @@ pub struct IncomingPeerServiceConfig {
     pub peer_io_timeout: Duration,
     pub peer_id: [u8; 20],
     pub byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
+    pub peer_budget: PeerBudget,
 }
 
 impl IncomingPeerServiceConfig {
@@ -65,7 +68,13 @@ impl IncomingPeerServiceConfig {
             peer_io_timeout,
             peer_id: DEFAULT_PEER_ID,
             byte_metric_sink: None,
+            peer_budget: PeerBudget::system_default(),
         }
+    }
+
+    pub fn with_peer_budget(mut self, peer_budget: PeerBudget) -> Self {
+        self.peer_budget = peer_budget;
+        self
     }
 }
 
@@ -118,7 +127,7 @@ pub enum IncomingRejectionReason {
     UnknownTorrent,
     StaleRegistration,
     SelfConnection,
-    EstablishedLimit,
+    ConnectionLimit,
     Protocol,
     Storage,
     Accept,
@@ -140,6 +149,7 @@ pub struct IncomingPeerServiceSnapshot {
     pub pending_high_water: usize,
     pub established: usize,
     pub established_high_water: usize,
+    pub peer_budget: PeerBudgetSnapshot,
     pub reads: usize,
     pub read_bytes: usize,
     pub queued_requests_high_water: usize,
@@ -181,7 +191,7 @@ struct Shared {
     mutations: AsyncMutex<()>,
     accepting_registrations: AtomicBool,
     next_generation: AtomicU64,
-    established: Arc<Semaphore>,
+    peer_budget: PeerBudget,
     observations: Mutex<ObservationState>,
     peer_io_timeout: Duration,
     peer_id: [u8; 20],
@@ -215,7 +225,7 @@ impl RegistrationRuntime {
         stream: TcpStream,
         remote: SocketAddr,
         supports_extensions: bool,
-        permit: OwnedSemaphorePermit,
+        permit: PeerBudgetPermit,
         shared: Arc<Shared>,
     ) -> bool {
         let finished = {
@@ -381,8 +391,13 @@ impl IncomingPeerService {
             }
             IncomingTcpBootstrap::FixedLoopback(port) => port,
         };
-        let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port))
-            .await
+        let socket =
+            TcpSocket::new_v4().map_err(|source| IncomingPeerError::Bind { port, source })?;
+        socket
+            .bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port).into())
+            .map_err(|source| IncomingPeerError::Bind { port, source })?;
+        let listener = socket
+            .listen(DEFAULT_LISTEN_BACKLOG)
             .map_err(|source| IncomingPeerError::Bind { port, source })?;
         let listen_address = listener
             .local_addr()
@@ -397,7 +412,7 @@ impl IncomingPeerService {
             mutations: AsyncMutex::new(()),
             accepting_registrations: AtomicBool::new(true),
             next_generation: AtomicU64::new(1),
-            established: Arc::new(Semaphore::new(MAX_INCOMING_ESTABLISHED)),
+            peer_budget: config.peer_budget,
             observations: Mutex::new(ObservationState::default()),
             peer_io_timeout: config.peer_io_timeout,
             peer_id: config.peer_id,
@@ -505,6 +520,7 @@ impl Shared {
             pending_high_water: observations.pending_high_water,
             established: observations.established,
             established_high_water: observations.established_high_water,
+            peer_budget: self.peer_budget.snapshot(),
             reads: observations.reads,
             read_bytes: observations.read_bytes,
             queued_requests_high_water: observations.queued_requests_high_water,
@@ -614,6 +630,17 @@ async fn run_accept_loop(
                         shared.reject(IncomingRejectionReason::PendingLimit, Some(remote), None);
                         continue;
                     };
+                    let Ok(budget_permit) = shared
+                        .peer_budget
+                        .try_acquire(PeerBudgetDirection::Incoming)
+                    else {
+                        shared.reject(
+                            IncomingRejectionReason::ConnectionLimit,
+                            Some(remote),
+                            None,
+                        );
+                        continue;
+                    };
                     let shared = shared.clone();
                     let cancellation = cancellation.clone();
                     handshakes.spawn(async move {
@@ -624,6 +651,7 @@ async fn run_accept_loop(
                             handshake_timeout,
                             shared,
                             cancellation,
+                            budget_permit,
                         )
                         .await;
                         drop(permit);
@@ -646,6 +674,7 @@ async fn run_handshake(
     timeout: Duration,
     shared: Arc<Shared>,
     cancellation: CancellationToken,
+    mut budget_permit: PeerBudgetPermit,
 ) {
     let deadline = Instant::now() + timeout;
     let mut bytes = [0; HANDSHAKE_LENGTH];
@@ -724,14 +753,6 @@ async fn run_handshake(
         );
         return;
     }
-    let Ok(established) = shared.established.clone().try_acquire_owned() else {
-        shared.reject(
-            IncomingRejectionReason::EstablishedLimit,
-            Some(remote),
-            Some(info_hash),
-        );
-        return;
-    };
     let mut reserved = [0; 8];
     reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
     let response = encode_handshake_with_reserved(info_hash, shared.peer_id, reserved);
@@ -758,12 +779,13 @@ async fn run_handshake(
         ByteMetric::PeerProtocolSent,
         response.len(),
     );
+    budget_permit.mark_established();
     if !registration
         .admit(
             stream,
             remote,
             handshake.supports_extensions(),
-            established,
+            budget_permit,
             shared.clone(),
         )
         .await
@@ -1131,7 +1153,7 @@ mod tests {
         SeedRegistration, drain_metadata_requests, handle_metadata_message,
     };
     use crate::peer_io::PeerIo;
-    use crate::{DEFAULT_PEER_ID, SeedContent};
+    use crate::{DEFAULT_PEER_ID, PeerBudget, PeerBudgetConfig, SeedContent};
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -1184,6 +1206,7 @@ mod tests {
             peer_io_timeout: Duration::from_secs(2),
             peer_id: DEFAULT_PEER_ID,
             byte_metric_sink: None,
+            peer_budget: PeerBudget::system_default(),
         }
     }
 
@@ -1451,11 +1474,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unknown_timeout_self_and_established_saturation_are_bounded() {
+    async fn unknown_timeout_self_and_connection_saturation_are_bounded() {
         let (root, _, registration) = registration("rejections").await;
         let info_hash = registration.info_hash();
         let mut service_config = config(IncomingTcpBootstrap::AutomaticLoopback);
         service_config.handshake_timeout = Duration::from_millis(50);
+        service_config.peer_budget = PeerBudget::new(PeerBudgetConfig {
+            configured_limit: 1,
+            incoming_slack: 0,
+            max_open_files: 10_000,
+        });
         let service = IncomingPeerService::bind(service_config)
             .await
             .expect("bind service")
@@ -1514,7 +1542,11 @@ mod tests {
             ))
             .await
             .expect("send saturated handshake");
-        assert_eq!(second.read(&mut [0; 1]).await.expect("saturated close"), 0);
+        match second.read(&mut [0; 1]).await {
+            Ok(0) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset => {}
+            result => panic!("unexpected saturated close result {result:?}"),
+        }
         drop(first);
 
         timeout(Duration::from_secs(1), async {
@@ -1535,7 +1567,7 @@ mod tests {
                         == Some(&1)
                     && snapshot
                         .rejection_counts
-                        .get(&IncomingRejectionReason::EstablishedLimit)
+                        .get(&IncomingRejectionReason::ConnectionLimit)
                         == Some(&1)
                 {
                     break;
@@ -1548,6 +1580,7 @@ mod tests {
         let snapshot = handle.snapshot();
         assert!(snapshot.pending_high_water <= super::MAX_INCOMING_PENDING);
         assert_eq!(snapshot.established_high_water, 1);
+        assert_eq!(snapshot.peer_budget.total_high_water, 1);
         assert!(snapshot.recent_rejections.len() <= 32);
         service.shutdown().await.expect("shutdown service");
         tokio::fs::remove_dir_all(root).await.expect("remove root");

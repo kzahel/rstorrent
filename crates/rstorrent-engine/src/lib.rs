@@ -41,8 +41,8 @@ pub use incoming::{
     DEFAULT_INCOMING_HANDSHAKE_TIMEOUT, IncomingPeerError, IncomingPeerHandle, IncomingPeerService,
     IncomingPeerServiceConfig, IncomingPeerServiceSnapshot, IncomingRejection,
     IncomingRejectionReason, IncomingTcpBootstrap, MAX_DEFERRED_METADATA_REQUESTS,
-    MAX_INCOMING_ESTABLISHED, MAX_INCOMING_PENDING, MAX_SEED_REGISTRATIONS,
-    METADATA_SEND_BUFFER_WATERMARK, SeedRegistration, SeedRegistrationToken,
+    MAX_INCOMING_PENDING, MAX_SEED_REGISTRATIONS, METADATA_SEND_BUFFER_WATERMARK, SeedRegistration,
+    SeedRegistrationToken,
 };
 pub use metadata_seed::{
     MetadataSeedConfig, MetadataSeedError, MetadataSeedReport, MetadataSeedServer,

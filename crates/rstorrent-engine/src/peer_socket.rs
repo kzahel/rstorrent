@@ -20,6 +20,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::network::NetworkConfig;
 use crate::peer::{DialAttempt, DialAttemptId, PeerFailure};
+use crate::peer_budget::{PeerBudget, PeerBudgetDirection, PeerBudgetPermit, PeerBudgetRejection};
 use crate::peer_io::{NETWORK_READ_LENGTH, PeerIo, PeerIoError, record_bytes};
 use crate::peer_runtime::connection_id;
 use crate::swarm::ConnectionId;
@@ -32,6 +33,7 @@ pub(crate) const PEER_EVENT_QUEUE: usize = 64;
 pub(crate) struct PeerConnection {
     attempt: DialAttempt,
     io: PeerIo,
+    _budget_permit: Option<Box<PeerBudgetPermit>>,
 }
 
 impl PeerConnection {
@@ -52,6 +54,7 @@ impl PeerConnection {
         Self {
             attempt,
             io: PeerIo::new(stream, io_timeout, None),
+            _budget_permit: None,
         }
     }
 }
@@ -96,6 +99,7 @@ pub(crate) async fn connect(
         network,
         None,
         None,
+        None,
     )
     .await
 }
@@ -107,6 +111,7 @@ async fn connect_with_progress(
     network: NetworkConfig,
     progress: Option<&mpsc::Sender<PeerDialProgress>>,
     byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
+    mut budget_permit: Option<PeerBudgetPermit>,
 ) -> Result<(PeerConnection, Handshake), PeerSocketError> {
     let address = attempt.endpoint().address();
     if !network.policy.allows(address) {
@@ -178,10 +183,14 @@ async fn connect_with_progress(
         handshake.len(),
     );
     let handshake = decode_handshake(&handshake, info_hash).map_err(PeerSocketError::Handshake)?;
+    if let Some(permit) = budget_permit.as_mut() {
+        permit.mark_established();
+    }
     Ok((
         PeerConnection {
             attempt,
             io: PeerIo::new(stream, network.peer_io_timeout, byte_metric_sink),
+            _budget_permit: budget_permit.map(Box::new),
         },
         handshake,
     ))
@@ -303,6 +312,7 @@ struct PeerDialProgress {
 
 #[derive(Debug)]
 pub(crate) enum PeerSetError {
+    ConnectionLimit(PeerBudgetRejection),
     DuplicateDial(DialAttemptId),
     DuplicateConnection(ConnectionId),
     UnknownConnection(ConnectionId),
@@ -313,6 +323,7 @@ pub(crate) enum PeerSetError {
 impl fmt::Display for PeerSetError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::ConnectionLimit(error) => error.fmt(formatter),
             Self::DuplicateDial(id) => write!(formatter, "duplicate pending dial {id}"),
             Self::DuplicateConnection(id) => {
                 write!(formatter, "duplicate peer connection {}", id.get())
@@ -329,6 +340,7 @@ impl fmt::Display for PeerSetError {
 impl Error for PeerSetError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
+            Self::ConnectionLimit(error) => Some(error),
             Self::TaskJoin(error) => Some(error),
             _ => None,
         }
@@ -337,6 +349,7 @@ impl Error for PeerSetError {
 
 #[derive(Debug)]
 pub(crate) struct PeerSocketSet {
+    peer_budget: PeerBudget,
     events_tx: mpsc::Sender<PeerTaskEvent>,
     events_rx: mpsc::Receiver<PeerTaskEvent>,
     tasks: BTreeMap<ConnectionId, PeerSocketTask>,
@@ -348,9 +361,14 @@ pub(crate) struct PeerSocketSet {
 
 impl PeerSocketSet {
     pub(crate) fn new() -> Self {
+        Self::with_budget(PeerBudget::system_default())
+    }
+
+    pub(crate) fn with_budget(peer_budget: PeerBudget) -> Self {
         let (events_tx, events_rx) = mpsc::channel(PEER_EVENT_QUEUE);
         let (dial_progress_tx, dial_progress_rx) = mpsc::channel(PEER_EVENT_QUEUE);
         Self {
+            peer_budget,
             events_tx,
             events_rx,
             tasks: BTreeMap::new(),
@@ -399,6 +417,10 @@ impl PeerSocketSet {
         if self.pending_attempts.contains_key(&attempt.id()) {
             return Err(PeerSetError::DuplicateDial(attempt.id()));
         }
+        let budget_permit = self
+            .peer_budget
+            .try_acquire(PeerBudgetDirection::Outgoing)
+            .map_err(PeerSetError::ConnectionLimit)?;
         let cancellation = CancellationToken::new();
         let progress = self.dial_progress_tx.clone();
         self.pending_attempts
@@ -414,6 +436,7 @@ impl PeerSocketSet {
                     network,
                     Some(&progress),
                     byte_metric_sink,
+                    Some(budget_permit),
                 ) => result,
             };
             (attempt, result)
@@ -619,6 +642,7 @@ mod tests {
         DialAttempt, PeerEndpoint, PeerObservation, PeerRegistry, PeerRegistryConfig,
         PeerSelectionContext, PeerSelector, PeerSource,
     };
+    use crate::peer_budget::{PeerBudget, PeerBudgetConfig, PeerBudgetPhase};
 
     fn test_attempt_for(address: std::net::SocketAddr) -> DialAttempt {
         let endpoint = PeerEndpoint::new(address).expect("valid endpoint");
@@ -672,7 +696,12 @@ mod tests {
                 .expect("write handshake");
         });
 
-        let mut sockets = PeerSocketSet::new();
+        let budget = PeerBudget::new(PeerBudgetConfig {
+            configured_limit: 1,
+            incoming_slack: 0,
+            max_open_files: 10_000,
+        });
+        let mut sockets = PeerSocketSet::with_budget(budget.clone());
         sockets
             .begin_dial(
                 attempt,
@@ -686,6 +715,7 @@ mod tests {
                 None,
             )
             .expect("begin dial");
+        assert_eq!(budget.snapshot().outgoing_connecting, 1);
         assert!(matches!(
             timeout(Duration::from_secs(1), sockets.next_event())
                 .await
@@ -709,8 +739,32 @@ mod tests {
             }
             event => panic!("unexpected event {event:?}"),
         };
+        assert_eq!(budget.snapshot().outgoing_connecting, 0);
+        assert_eq!(budget.snapshot().outgoing_established, 1);
+        assert_eq!(
+            connection
+                ._budget_permit
+                .as_ref()
+                .map(|permit| permit.phase()),
+            Some(PeerBudgetPhase::Established)
+        );
+        assert!(matches!(
+            sockets.begin_dial(
+                attempt,
+                info_hash,
+                true,
+                NetworkConfig::new(
+                    NetworkPolicy::LoopbackOnly,
+                    Duration::from_secs(1),
+                    Duration::from_secs(1),
+                ),
+                None,
+            ),
+            Err(super::PeerSetError::ConnectionLimit(_))
+        ));
         sockets.add_connection(connection).expect("own connection");
         assert!(sockets.shutdown().await.expect("shutdown").is_empty());
+        assert_eq!(budget.snapshot().total, 0);
         server.await.expect("server task");
     }
 

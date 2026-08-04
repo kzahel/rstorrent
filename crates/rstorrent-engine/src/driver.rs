@@ -44,6 +44,7 @@ use crate::peer::{
     PeerObservation, PeerRegistry, PeerRegistryConfig, PeerRegistryError, PeerSelectionContext,
     PeerSelector, PeerSource,
 };
+use crate::peer_budget::PeerBudget;
 use crate::peer_runtime::{
     PeerConnectionRole, PeerContentActivity, PeerRequestWindowPhase, PeerRuntime, PeerRuntimeError,
     connection_id,
@@ -178,6 +179,8 @@ pub struct ResumableMagnetDownloadConfig {
     /// the recognizable publication directory beneath this root.
     pub storage_root: PathBuf,
     pub network: NetworkConfig,
+    /// Session-wide connection ownership shared with the incoming listener.
+    pub peer_budget: PeerBudget,
     pub resource_limits: DownloadResourceLimits,
     pub skip_files: Vec<usize>,
     pub verified_info: Option<Vec<u8>>,
@@ -526,7 +529,8 @@ pub async fn download_magnet_metadata_with_control(
     network: NetworkConfig,
     control: DownloadControl,
 ) -> Result<Vec<u8>, DownloadError> {
-    download_magnet_metadata_with_dht(magnet, network, control, None).await
+    download_magnet_metadata_with_dht(magnet, network, control, None, PeerBudget::system_default())
+        .await
 }
 
 pub async fn download_magnet_metadata_with_dht(
@@ -534,12 +538,13 @@ pub async fn download_magnet_metadata_with_dht(
     network: NetworkConfig,
     control: DownloadControl,
     dht: Option<DhtHandle>,
+    peer_budget: PeerBudget,
 ) -> Result<Vec<u8>, DownloadError> {
     validate_network_config(network)?;
     if control.is_cancelled() {
         return Err(DownloadError::Cancelled);
     }
-    let result = run_magnet_metadata(magnet, network, control.clone(), dht).await;
+    let result = run_magnet_metadata(magnet, network, control.clone(), dht, peer_budget).await;
     let result = require_terminal_owner_cleanup(&control, result);
     control.clear_buffered_payload();
     result
@@ -1501,6 +1506,7 @@ struct TorrentPeerCoordinator {
     selector: PeerSelector,
     started_at: Instant,
     network: NetworkConfig,
+    peer_budget: PeerBudget,
     tracker: Option<TrackerManager>,
     dht: Option<DhtHandle>,
     control: DownloadControl,
@@ -1619,6 +1625,14 @@ async fn retrying_dht_lookup(
 
 impl TorrentPeerCoordinator {
     fn new(network: NetworkConfig, control: DownloadControl) -> Result<Self, DownloadError> {
+        Self::new_with_peer_budget(network, control, PeerBudget::system_default())
+    }
+
+    fn new_with_peer_budget(
+        network: NetworkConfig,
+        control: DownloadControl,
+        peer_budget: PeerBudget,
+    ) -> Result<Self, DownloadError> {
         validate_network_config(network)?;
         Ok(Self {
             registry: PeerRegistry::new(PeerRegistryConfig::default())
@@ -1627,6 +1641,7 @@ impl TorrentPeerCoordinator {
             selector: PeerSelector,
             started_at: Instant::now(),
             network,
+            peer_budget,
             tracker: None,
             dht: None,
             control,
@@ -1841,7 +1856,15 @@ impl TorrentPeerCoordinator {
         control: DownloadControl,
         dht: Option<DhtHandle>,
     ) -> Result<Self, DownloadError> {
-        Self::from_magnet_with_trackers(magnet, None, network, control, dht).await
+        Self::from_magnet_with_trackers(
+            magnet,
+            None,
+            network,
+            control,
+            dht,
+            PeerBudget::system_default(),
+        )
+        .await
     }
 
     async fn from_magnet_with_trackers(
@@ -1850,8 +1873,9 @@ impl TorrentPeerCoordinator {
         network: NetworkConfig,
         control: DownloadControl,
         dht: Option<DhtHandle>,
+        peer_budget: PeerBudget,
     ) -> Result<Self, DownloadError> {
-        let mut peers = Self::new(network, control)?;
+        let mut peers = Self::new_with_peer_budget(network, control, peer_budget)?;
         peers.publish_peer_registry(true);
         peers.dht = dht;
         if peers.control.is_cancelled() {
@@ -2114,7 +2138,7 @@ impl TorrentPeerCoordinator {
         info_hash: [u8; 20],
     ) -> Result<(Vec<u8>, Metainfo), DownloadError> {
         debug_assert!(self.connection.is_none());
-        let mut sockets = PeerSocketSet::new();
+        let mut sockets = PeerSocketSet::with_budget(self.peer_budget.clone());
         let mut workers = JoinSet::new();
         let mut worker_cancellations = BTreeMap::new();
         let mut discovery_failed_while_active = false;
@@ -2810,9 +2834,18 @@ async fn run_magnet_metadata(
     network: NetworkConfig,
     control: DownloadControl,
     dht: Option<DhtHandle>,
+    peer_budget: PeerBudget,
 ) -> Result<Vec<u8>, DownloadError> {
     let magnet = Magnet::parse(&magnet).map_err(DownloadError::Magnet)?;
-    let mut peers = TorrentPeerCoordinator::from_magnet(&magnet, network, control, dht).await?;
+    let mut peers = TorrentPeerCoordinator::from_magnet_with_trackers(
+        &magnet,
+        None,
+        network,
+        control,
+        dht,
+        peer_budget,
+    )
+    .await?;
     let result = async {
         let (raw_info, _) = peers.acquire_metadata(magnet.info_hash).await?;
         peers.close_current(None)?;
@@ -2886,6 +2919,7 @@ async fn run_resumable_magnet_download(
             config.network,
             control.clone(),
             content_dht,
+            config.peer_budget.clone(),
         )
         .await?;
         let output_path = if descriptors.is_some() {
@@ -2923,6 +2957,7 @@ async fn run_resumable_magnet_download(
         config.network,
         control.clone(),
         dht,
+        config.peer_budget.clone(),
     )
     .await?;
     let result = async {
@@ -4430,7 +4465,7 @@ async fn download_content_swarm<'a>(
     peers: &mut TorrentPeerCoordinator,
     mut download: ContentSwarmDownload<'a>,
 ) -> Result<ContentSwarmDownload<'a>, DownloadError> {
-    let mut sockets = PeerSocketSet::new();
+    let mut sockets = PeerSocketSet::with_budget(peers.peer_budget.clone());
     let mut discovery = ContentDiscovery::start(peers, download.metainfo.info_hash);
     let result = run_selective_swarm_loop(peers, &mut sockets, &mut discovery, &mut download).await;
     let failure = result.as_ref().err().and_then(content_peer_failure);

@@ -12,7 +12,7 @@ use rstorrent_engine::{
     DescriptorStoragePlan, DiskCheckpointStage, DownloadActivityEvent, DownloadActivitySink,
     DownloadCheckpointSink, DownloadControl, DownloadError, DownloadResourceLimits,
     IncomingPeerError, IncomingPeerService, IncomingPeerServiceConfig, IncomingPeerServiceSnapshot,
-    IncomingTcpBootstrap, NetworkConfig, PathPublicationStage, PlatformStorageClient,
+    IncomingTcpBootstrap, NetworkConfig, PathPublicationStage, PeerBudget, PlatformStorageClient,
     PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash, PublicationShape,
     ResumableMagnetDownloadConfig, ResumeArtifactState, ResumedStorage, StorageFilePool,
     StorageFilePoolSnapshot, TrackerSource, UdpTrackerConfig, download_magnet_metadata_with_dht,
@@ -252,6 +252,7 @@ pub struct ApplicationService {
     publication_delay_for_testing: Duration,
     publication_stage_trace_for_testing: bool,
     storage_file_pool: StorageFilePool,
+    peer_budget: PeerBudget,
     incoming_seeding: Option<IncomingSeeding>,
     incoming_service: Option<IncomingPeerService>,
     active: Option<ActiveDownload>,
@@ -347,8 +348,10 @@ impl ApplicationService {
         let storage_file_pool =
             StorageFilePool::new(DEFAULT_STORAGE_FILE_LIMIT, config.platform_storage_client)
                 .map_err(|error| ApplicationError::Configuration(error.to_owned()))?;
+        let peer_budget = PeerBudget::system_default();
         let mut incoming_config =
-            IncomingPeerServiceConfig::new(config.incoming_tcp, network.peer_io_timeout);
+            IncomingPeerServiceConfig::new(config.incoming_tcp, network.peer_io_timeout)
+                .with_peer_budget(peer_budget.clone());
         incoming_config.peer_id = network.peer_id;
         incoming_config.byte_metric_sink = Some(speed_recorder.clone());
         let mut incoming_service = IncomingPeerService::bind(incoming_config).await?;
@@ -397,6 +400,7 @@ impl ApplicationService {
             publication_delay_for_testing: config.publication_delay_for_testing,
             publication_stage_trace_for_testing: config.publication_stage_trace_for_testing,
             storage_file_pool,
+            peer_budget,
             incoming_seeding,
             incoming_service,
             active: None,
@@ -1079,6 +1083,7 @@ impl ApplicationService {
             magnet: resume.magnet,
             storage_root: PathBuf::new(),
             network: self.network,
+            peer_budget: self.peer_budget.clone(),
             resource_limits: self.download_resource_limits,
             skip_files,
             verified_info: Some(raw_info),
@@ -1751,6 +1756,7 @@ impl ApplicationService {
                 let storage_pool = self.storage_file_pool.clone();
                 let resource_limits = self.download_resource_limits;
                 let network = self.network;
+                let peer_budget = self.peer_budget.clone();
                 let dht = self.dht.as_ref().map(DhtService::handle);
                 let udp_trackers = operational_udp_trackers(&resume.trackers)?;
                 let operation = async move {
@@ -1759,6 +1765,7 @@ impl ApplicationService {
                         network,
                         task_control.clone(),
                         dht.clone(),
+                        peer_budget.clone(),
                     )
                     .await?;
                     checkpoints
@@ -1784,6 +1791,7 @@ impl ApplicationService {
                             magnet,
                             storage_root: PathBuf::new(),
                             network,
+                            peer_budget,
                             resource_limits,
                             skip_files,
                             verified_info: Some(raw_info),
@@ -1847,10 +1855,17 @@ impl ApplicationService {
             let task_control = control.clone();
             let magnet = resume.magnet;
             let network = self.network;
+            let peer_budget = self.peer_budget.clone();
             let dht = self.dht.as_ref().map(DhtService::handle);
             let operation = async move {
-                let raw_info =
-                    download_magnet_metadata_with_dht(magnet, network, task_control, dht).await?;
+                let raw_info = download_magnet_metadata_with_dht(
+                    magnet,
+                    network,
+                    task_control,
+                    dht,
+                    peer_budget,
+                )
+                .await?;
                 checkpoints
                     .metadata_verified(&raw_info)
                     .map_err(DownloadError::Checkpoint)?;
@@ -1883,6 +1898,7 @@ impl ApplicationService {
             magnet: resume.magnet,
             storage_root: root_path,
             network: self.network,
+            peer_budget: self.peer_budget.clone(),
             resource_limits: self.download_resource_limits,
             skip_files,
             verified_info: resume.raw_info,

@@ -1,4 +1,5 @@
 use super::*;
+use crate::PeerBudget;
 
 #[tokio::test]
 async fn explicit_policies_gate_non_loopback_peers_and_offline_dns() {
@@ -227,6 +228,7 @@ async fn live_big_buck_bunny_trackerless_dht_metadata_probe() {
             ),
             task_control,
             Some(dht_handle),
+            PeerBudget::system_default(),
         )
         .await
     });
