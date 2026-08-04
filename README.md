@@ -46,6 +46,12 @@ Library, Transfers, and detailed Workbench views. Android uses a
 platform-appropriate Compose interface over the same engine and application
 semantics; presentation parity is not required.
 
+In project terminology, unqualified **UI** or **web UI** means that shared
+React product interface, whether it is browser-hosted or embedded by Tauri.
+The former direct-DOM proof has been retired. Android presentation is named
+explicitly as the **Android**, **Compose**, or **Android UI**; the Astro
+`website/` is the project website rather than a product client.
+
 ## Intended Product And Deployment
 
 `RSTorrent` is the incubation and implementation name. The provisional plan is

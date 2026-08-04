@@ -83,6 +83,15 @@ semantic application-view, view-set, polling, streaming, codec, and generated
 contract direction lives in
 [`application-view-api.md`](application-view-api.md).
 
+## Terminology
+
+Unqualified **UI** and **web UI** mean this mature shared React product
+application, whether it is hosted in a browser or embedded by Tauri. Tactical
+`060` retired and removed the earlier direct-DOM proof, so it is not a second
+current web UI. The platform-specific Compose presentation is named
+explicitly as the **Android**, **Compose**, or **Android UI**. The Astro
+`website/` tree is the project website, not this product surface.
+
 ## Fresh Frontend
 
 Build a fresh frontend rather than transplanting the current JSTorrent React
@@ -380,8 +389,9 @@ Auto, Light, or Dark; version-1 sizes migrate intact with Auto. Auto follows
 live `prefers-color-scheme` changes in CSS, while explicit choices override the
 system. The validated root attribute is installed before the inspection
 bundle's dynamic React import and synchronized from presentation state after
-live changes. The legacy UI retains its existing Dark-only browser declaration
-and does not interpret the React appearance record.
+live changes. The since-retired direct-DOM UI retained its Dark-only browser
+declaration and did not interpret the React appearance record while both entry
+paths still existed.
 
 Tactical `055` adds a separate versioned navigation preference for the active
 Library, Transfers, or Workbench destination and each destination's local

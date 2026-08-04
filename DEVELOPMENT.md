@@ -173,8 +173,8 @@ so `Ctrl+C` stops it.
 
 ## Launching The Live Web UI
 
-The new React inspection surface can run against a real online application
-service in the normal browser without launching Tauri:
+The shared React product UI can run against a real online application service
+in the normal browser without launching Tauri:
 
 ```bash
 ./scripts/webui
@@ -192,15 +192,14 @@ with `RSTORRENT_WEBUI_DATA_ROOT` or the preview port with
 `RSTORRENT_WEBUI_PORT`. `./scripts/webui --no-open` starts the same servers
 without disturbing the visible browser and is the automation/debug form.
 
-The launcher selects online torrent networking by default. The current live
-React surface supports magnet intake, inspection, pause, and resume. Paste a
-magnet into the toolbar and use Add or Enter; unsupported remote `.torrent`
-URLs are rejected without clearing the input. More > Add test torrent exposes
-the five recorded WebTorrent magnets for quick interactive testing. These are
-variable public swarms, not deterministic success fixtures. Local `.torrent`
-file selection is reserved for a later slice. Switching Tauri to this surface
-and deciding how to migrate or redesign the categorized Logs view remain
-separate work.
+The launcher selects online torrent networking by default. This is the same
+React UI embedded by Tauri, with a browser transport in place of Tauri's
+in-process adapter. Paste a magnet into the toolbar and use Add or Enter;
+unsupported remote `.torrent` URLs are rejected without clearing the input.
+More > Add test torrent exposes the five recorded WebTorrent magnets for quick
+interactive testing. These are variable public swarms, not deterministic
+success fixtures. Local `.torrent` file selection is reserved for a later
+slice. The Android Compose UI remains a separate platform presentation.
 
 ## Exercising The Frontend Headlessly
 

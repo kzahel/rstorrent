@@ -142,14 +142,14 @@ Platform-specific capabilities such as folder selection, tray state, external
 URL opening, or updater presentation use a separate platform-capability
 adapter. They do not enter torrent commands or view patches.
 
-The next presentation is implemented behind an explicit named-demo route as a
-fresh strict-TypeScript React application using component-scoped CSS Modules.
+The shared presentation is a strict-TypeScript React application using
+component-scoped CSS Modules and a permanent named-demo adapter.
 It preserves JSTorrent's information hierarchy without inheriting its source
 architecture and adapts one library/list/detail model from wide desktop to
 phone-sized browser layouts. Stable Rust torrent and peer views are now mapped
-through the new live application adapter. Tactical `060` deletes the older
-direct-DOM gateway surface, makes the modern named demo the no-mode root, and
-moves ordinary live-browser calls and view sets onto one multiplexed
+through the live application adapter. Tactical `060` deleted the older
+direct-DOM gateway surface, made the named demo the no-mode root, and moved
+ordinary live-browser calls and view sets onto one multiplexed
 WebSocket. HTTP remains available only as an explicit loopback diagnostic
 query, while Tauri stays in process. The detailed direction and open choices
 live in
@@ -173,7 +173,7 @@ default. It is a maintainer-facing local bridge, not a change to the accepted
 in-process Tauri product architecture. Tactical `048` makes that same React
 application the Tauri product entry through an in-process adapter. The React
 application currently supports inspection, magnet add, pause, and resume, but
-not `.torrent` file intake or the full legacy command set. React emits a
+not `.torrent` file intake or the full application command set. React emits a
 transport-neutral magnet intent; only the live adapter constructs the
 generated application request.
 Typed and curated magnet intake share that path. A deterministic catalog test

@@ -40,6 +40,11 @@ a living topic records an accepted replacement:
   proxy, or separate IO daemon without an explicit architectural decision.
 - Android/ChromeOS and desktop are the initial product surfaces. An extension,
   iOS client, remote daemon, and additional platforms are not implied work.
+- Unqualified `UI` and `web UI` mean the shared mature React product
+  application in `clients/web`, whether browser-hosted or embedded by Tauri.
+  The retired direct-DOM proof is not a current surface. Refer to the Android
+  Compose UI explicitly as `Android`, `Compose`, or `Android UI`; `website/`
+  is the project website, not the product web UI.
 - A future JSTorrent extension is expected to control and integrate with the
   native engine rather than carry peer or file hot paths. This vision does not
   authorize extension or IPC work in an unrelated tactical.
