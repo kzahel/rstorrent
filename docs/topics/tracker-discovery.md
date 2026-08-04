@@ -178,11 +178,11 @@ metadata 0.11 seconds later. This reference kept libtorrent's ordinary peer
 concurrency while disabling DHT, LSD, PEX, incoming peers, uTP, and NAT
 mapping; it is not yet an alternated paired result.
 
-Port `6881` is a compatibility placeholder, not a reachability claim: no
-incoming peer socket is bound and no NAT mapping is requested. Incoming
-listening, NAT-PMP/UPnP, and seeding are deliberately lower priority than
-correct outbound downloading. DHT therefore continues to omit
-`announce_peer` until the client can accept incoming peer connections.
+Port `6881` is a compatibility placeholder, not a reachability claim. Tactical
+`078` later added one independently configured IPv4 loopback listener, but
+tracker announces do not consume its actual port and no NAT mapping is
+requested. DHT therefore continues to omit `announce_peer` until advertised
+port ownership and reachability policy are implemented.
 
 Tactical `020` then showed that a capable peer can reach Big Buck Bunny's 50%
 milestone in 24--28 seconds, but the clean post-stall screen completed only
@@ -235,19 +235,21 @@ does not parse `.torrent` `announce-list` tiers, support HTTP, HTTPS, WebSocket,
 authentication, proxying, or BEP 41 URL-data, emit completed/stopped events,
 announce real transfer counters or an actually bound listening port, scrape,
 or share a session-wide tracker-operation budget. It reports 16 KiB left
-while magnet metadata is unknown and owns no incoming peer listener. Until
-that later capability exists, scheduled tracker announces explicitly carry
-the conventional port `6881` so trackers that reject port zero can still
-return endpoints for outbound dialing.
+while magnet metadata is unknown and does not consume the application-owned
+loopback listener's actual port. Until truthful listener advertisement exists,
+scheduled tracker announces explicitly carry the conventional port `6881` so
+trackers that reject port zero can still return endpoints for outbound
+dialing. The peer ID now matches the application lifetime's peer-handshake
+identity, but that identity consistency does not make the port reachable.
 
 The DHT owner is a separately owned source using the same peer-observation
 boundary and session network policy. Tactical `017` now lets later tracker and
 DHT observations improve active-transfer reliability. Later tracker work
 should focus on transfer accounting, metainfo tiers, persistence, and
-session-wide resource policy. Incoming listening and NAT traversal are
-separate, lower-priority work. The headless public-torrent comparator adds
-useful live evidence but cannot replace controlled protocol and libtorrent
-tests.
+session-wide resource policy. Multi-peer upload, actual-port advertisement,
+and NAT traversal are separate later work. The headless public-torrent
+comparator adds useful live evidence but cannot replace controlled protocol
+and libtorrent tests.
 
 Tactical `081` is the accepted bounded exception to the first gap: it parses
 and persists up to 32 valid unique `announce-list`/`announce` URLs, preserves

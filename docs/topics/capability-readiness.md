@@ -90,6 +90,15 @@ page exhaustion as a resource limit, and close without creating profile or
 payload artifacts in the metadata-only case. Durable persistence behavior is
 unchanged.
 
+Tactical [`078`](../tactical/078-local-single-peer-tcp-seeding.md) is complete.
+One application-owned IPv4 loopback listener now routes bounded handshakes to
+eligible complete path-backed torrents and serves verified BEP 9 metadata and
+payload to one peer across download-task completion and durable application
+restart. Scripted engine/application evidence and controlled libtorrent and
+RSTorrent single-/multi-file transfers pass. This is not persisted settings,
+multi-peer upload policy, listener advertisement, LAN/public binding, or NAT
+reachability.
+
 Tactical [`081`](../tactical/081-v1-torrent-byte-intake.md) records the
 accepted persistent-source and v1 `.torrent` intake boundary. It is authorized
 but not implemented: exact source and operational metadata remain distinct,
@@ -116,10 +125,10 @@ IPC, and controlled libtorrent evidence without adding visible picker UX.
 
 ### Later
 
-Complete IPv6 DHT operation, incoming peer listening, payload upload and
-seeding, PEX, local service discovery, uTP, NAT
-traversal, v2 and hybrid torrents, playback-oriented file priorities, dynamic
-VPN and metered-network controls, and production remote access remain
+Complete IPv6 DHT operation, multi-peer upload and seeding policy, listener
+settings and advertisement, LAN/public binding, PEX, local service discovery,
+uTP, NAT traversal, v2 and hybrid torrents, playback-oriented file priorities,
+dynamic VPN and metered-network controls, and production remote access remain
 important. After core parity, common-denominator versus full-reference deltas
 and the protocol evidence matrix choose BEP breadth; visible novelty alone
 does not.
@@ -133,7 +142,7 @@ does not.
 | Bounded bencode and v1 info dictionaries | Implemented | deterministic, runtime, interop | Generic, BEP 9, durable, and 16-MiB parser-only explicit-import profiles independently bound bytes, decoded items, depth, collections, files, pieces, and paths. This is not product `.torrent` ingestion; v2 and hybrid info dictionaries are rejected. | [`protocol-support`](protocol-support.md) |
 | Product add from a v1 magnet | Implemented | deterministic, runtime, interop, web, AVD, physical | Only a v1 `btih` identity and supported magnet fields survive canonicalization. | [`client-persistence`](client-persistence.md) |
 | BEP 9 metadata download | Implemented | deterministic, runtime, interop, live | One bounded torrent owner assembles blocks across up to eight workers, paces one-request-at-a-time peers, and recovers from expiry, rejection, and hash failure; tracker parity and catalog breadth pass, while paired DHT latency is blocked by the live reference. | [`peer-lifecycle`](peer-lifecycle.md) |
-| Bounded diagnostic metadata upload | Implemented | deterministic, interop | It is not a general incoming listener or payload seeding service. | [`peer-lifecycle`](peer-lifecycle.md) |
+| Bounded metadata upload | Implemented | deterministic, runtime, interop | The diagnostic server remains metadata-only; the application listener serves verified metadata and payload on one socket to one loopback peer. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
 | Product add from a `.torrent` file | Absent | deterministic parser only | The application command accepts magnets only and does not retain outer announce fields. | [`application-control`](application-control.md) |
 | v2 and hybrid identity, metadata, and hashing | Absent | deterministic rejection | BEP 52 requires a separate integrity and storage design. | [`protocol-support`](protocol-support.md) |
 
@@ -142,7 +151,7 @@ does not.
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
 | Explicit magnet peer hints | Implemented | deterministic, runtime, interop | Hints are bounded and feed the registry, but are not a general discovery mechanism. | [`peer-lifecycle`](peer-lifecycle.md) |
-| Scheduled UDP tracker announces | Implemented | deterministic, runtime, interop, web, AVD, live | UDP connect/announce, fallback, backoff, retransmission, token reuse, reannounce, and bounded startup fan-out work; port 6881 is not actually bound. | [`tracker-discovery`](tracker-discovery.md) |
+| Scheduled UDP tracker announces | Implemented | deterministic, runtime, interop, web, AVD, live | UDP connect/announce, fallback, backoff, retransmission, token reuse, reannounce, and bounded startup fan-out work; provisional port 6881 is not derived from the actual loopback listener. | [`tracker-discovery`](tracker-discovery.md) |
 | Multiple magnet trackers | Partial | deterministic, runtime, interop, live | Up to eight startup operations contribute peers, but magnet trackers form one synthetic tier because magnets contain no BEP 12 tier structure. | [`tracker-discovery`](tracker-discovery.md) |
 | Metainfo tracker tiers | Absent | none | Outer `announce` and `announce-list` are not retained by the product path. | [`tracker-discovery`](tracker-discovery.md) |
 | HTTP and HTTPS trackers | Absent | none | No URL, transport, response, authentication, or redirect owner exists. | [`tracker-discovery`](tracker-discovery.md) |
@@ -160,7 +169,7 @@ does not.
 | Pre-content peer failover | Implemented | deterministic, runtime, interop, live | Bounded parallel metadata peers share one block owner; two tracker cohorts, 10/10 fresh-DHT owner runs, and 12/12 cross-catalog pairs pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Multiple simultaneous live peers | Implemented | deterministic, runtime, interop, live | Thirty established and thirty half-open attempts are separate torrent-local defaults with exact saturation and cancellation evidence; no session-wide connection budget exists. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Transfer request ownership and failover | Implemented | deterministic, runtime, interop, live | Ordinary blocks have one generation; strict endgame adds bounded duplicate attempts, first-response cancellation, and harmless losing payload. | [`download-correctness`](download-correctness.md) |
-| Incoming peer connections | Absent | diagnostic metadata listener only | No bound product listen port, accept budget, torrent routing, NAT mapping, or shutdown policy exists; this is lower priority than correct outbound downloading. | [`peer-lifecycle`](peer-lifecycle.md) |
+| Incoming peer connections | Implemented | deterministic, runtime, interop | One joined IPv4 loopback listener has eight pending handshake slots, 1,024 generation-fenced torrent registrations, and one established peer. Incoming peers are not yet integrated into ordinary Swarm/Peers views; non-loopback binding, persisted settings, advertisement, NAT mapping, and multi-peer policy are absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
 | Peer reputation and integrity attribution | Partial | deterministic, runtime, live | Exact connection generations receive bounded asymmetric trust; a sole corrupt source is banned and ambiguous sources are only suspected, while full parole selection and persistence are absent. | [`download-correctness`](download-correctness.md) |
 
 ### Content Transfer And Completion
@@ -175,7 +184,7 @@ does not.
 | Endgame | Implemented | deterministic, runtime, live | Strict duplicates, core cancels, late-loss safety, exact accounting, and public verified publication pass; throughput parity remains open. | [`download-correctness`](download-correctness.md) |
 | Hash-failure recovery | Implemented | deterministic, runtime, interop, live | A failed v1 generation resets the whole piece with bounded contributors; v2 block-level recovery and full parole selection are absent. | [`download-correctness`](download-correctness.md) |
 | Reliable completion on ordinary swarms | Partial | deterministic, runtime, interop, live | Multi-peer liveness, endgame, corrupt-generation retry, and bounded storage completion pass, but completion latency is not yet comparable and public corruption was not induced. | [`download-correctness`](download-correctness.md) |
-| Payload upload and seeding | Absent | none | Request serving, choking, accounting, listening, and seed lifecycle are unimplemented. | [`protocol-support`](protocol-support.md) |
+| Payload upload and seeding | Implemented | deterministic, runtime, interop | One interested peer receives an exact verified/readable bitfield and bounded 16 KiB requests from complete published path storage across task completion and restart. Upload slots, useful accounting/rates, bandwidth and goal policy, platform storage, and more than one peer are absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`protocol-support`](protocol-support.md) |
 
 ### Integrity, Storage, And Resume
 

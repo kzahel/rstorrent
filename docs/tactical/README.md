@@ -372,9 +372,10 @@ that scope and its cleanup or compatibility rules explicitly.
   portalled, collision-aware, accessible React Aria layer while reserving new
   product context-menu bindings for a later policy decision.
 - [`078-local-single-peer-tcp-seeding.md`](078-local-single-peer-tcp-seeding.md):
-  planned; adds one session-owned loopback TCP listener, generation-fenced
+  complete; adds one session-owned loopback TCP listener, generation-fenced
   torrent routing, verified metadata and payload upload, restartable seeding
-  ownership, and controlled RSTorrent/libtorrent evidence for one peer.
+  ownership, per-application peer identity, and controlled
+  RSTorrent/libtorrent evidence for one peer.
 - [`079-engine-driver-source-shape.md`](079-engine-driver-source-shape.md):
   complete; extracts download-control observation and bounded content-storage
   execution from the engine driver and divides its private test suite by owner

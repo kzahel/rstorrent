@@ -2,11 +2,13 @@
 
 Topic: `incoming-reachability-and-seeding`
 
-Status: campaign shape and suggested implementation order accepted as planning
-direction. Tactical [`078`](../tactical/078-local-single-peer-tcp-seeding.md)
-records the planned first slice but is not yet implemented or promoted into
-the readiness queue. RSTorrent still has no product peer listener,
-payload-upload owner, or NAT mapping.
+Status: Tactical
+[`078`](../tactical/078-local-single-peer-tcp-seeding.md) completes the first
+campaign slice: one application-owned IPv4 loopback listener routes bounded
+incoming handshakes and seeds verified metadata and payload from eligible
+completed path-backed torrents across application restart. Multi-peer upload
+policy, persisted settings, actual-port advertisement, non-loopback binding,
+and NAT mapping remain future slices.
 
 ## Purpose And Scope
 
@@ -29,35 +31,41 @@ their own protocol, ownership, security, and evidence requirements.
 
 ## Current Truth
 
-RSTorrent can download real v1 torrents through outgoing TCP peer
-connections, but it cannot currently accept an ordinary incoming BitTorrent
-peer connection or seed payload content:
+RSTorrent can download real v1 torrents through outgoing TCP and can now seed
+one controlled incoming peer through the application service:
 
-- the product owns no TCP peer listener, bound peer port, accept budget,
-  pre-handshake intake owner, info-hash router, or listener shutdown path;
-- incoming connection values exist in runtime-independent observation types,
-  but incoming intake is test-only;
-- the bounded loopback metadata seed is a diagnostic interoperability tool,
-  not a product listener or general upload owner;
-- payload request serving, upload scheduling, upload accounting, and seeding
-  lifecycle are absent;
-- UDP tracker announces carry provisional port `6881`, but no peer listener
-  is bound there;
+- immutable bootstrap is `Disabled`, `AutomaticLoopback`, or a nonzero
+  `FixedLoopback` port; successful bind exposes the actual `127.0.0.1` port
+  and fixed bind failure is typed;
+- one joined session listener bounds eight pre-handshake tasks, routes exact
+  v1 info hashes through up to 1,024 generation-fenced registrations, and
+  admits one established incoming TCP peer;
+- eligible complete, published, desired-running path-backed torrents register
+  at completion and application open, and unregister before lifecycle or
+  storage-authority changes;
+- one peer receives an exact readable/verified bitfield, BEP 9 metadata, and
+  bounded 16 KiB payload reads with 32-request/512-KiB queue ceilings;
+- pure, storage, socket, application-restart, and controlled libtorrent and
+  RSTorrent evidence passes for single-file and cross-file content;
+- the listener has internal Rust bootstrap and observation only; it is not in
+  persistent settings, generated application contracts, or product UI;
+- UDP tracker announces still carry provisional port `6881`, which is not
+  derived from or guaranteed to match this listener;
 - the IPv4 DHT has a real ephemeral UDP query socket, but RSTorrent does not
   use it as a peer listener or send `announce_peer`; and
 - UPnP IGD, PCP, and NAT-PMP port mapping are absent.
 
-The existing engine provides important prerequisites: bounded peer-wire
-framing, verified-piece authority, selective storage, positional reads,
-durable have state and recheck, metadata upload protocol logic in the
-diagnostic seed, a volatile peer registry, typed connection observations,
-application lifecycle supervision, and controlled libtorrent evidence.
-Those foundations should be reused through their owning boundaries rather
-than copied into a detached seeding server.
+The implementation adds cohesive `peer_io`, `upload`, `seed_content`,
+`incoming`, and session `incoming_seeding` owners instead of extending the
+download driver or detached diagnostic seed. One application-lifetime peer ID
+is shared by outgoing handshakes, tracker announces, and the listener, so
+self-connection rejection is local to an application rather than the
+RSTorrent client fingerprint.
 
 [`capability-readiness.md`](capability-readiness.md) remains authoritative for
-priority and the `Now`/`Next` queue. Creating this topic does not promote the
-campaign ahead of the currently recorded work.
+priority and the `Now`/`Next` queue. Completing this bounded slice does not
+promote its prospective multi-peer, settings, advertisement, or mapping work
+ahead of the currently recorded work.
 
 ## Desired End State
 
@@ -231,10 +239,10 @@ slice begins, its tactical must follow the source-first campaign contract,
 settle its owner/task/cancellation map and resource bounds, and name one
 falsifiable stopping condition.
 
-### 1. [Local single-peer TCP seeding](../tactical/078-local-single-peer-tcp-seeding.md)
+### 1. [Local single-peer TCP seeding](../tactical/078-local-single-peer-tcp-seeding.md) — complete
 
-Establish the smallest real product path from a session-owned TCP listener to
-verified upload:
+Tactical `078` establishes the smallest real product path from a
+session-owned TCP listener to verified upload:
 
 - bind an explicit loopback or controlled local address and report the actual
   port;
@@ -246,11 +254,14 @@ verified upload:
   available pieces and serve bounded verified requests; and
 - join the listener, pending handshakes, upload reads, and peer tasks.
 
-The controlled stopping condition should require a libtorrent leecher to
-verify complete payload from an ordinary RSTorrent listener and an RSTorrent
-leecher to acquire verified metadata and content from an RSTorrent seed. The
-matrix also covers silent sockets, malformed handshakes, unknown hashes,
-invalid and excessive requests, mid-read disconnect, pause, and shutdown.
+The controlled stopping condition passed: libtorrent `2.0.13` verified exact
+payload after dialing the listener with its incoming side disabled, and an
+RSTorrent magnet leecher acquired BEP 9 metadata plus complete content from
+the restarted application seed using only `x.pe`. The fixtures cover ordinary
+single-file data and multi-file reads crossing boundaries with a short final
+piece. Scripted evidence covers silent and malformed handshakes, unknown and
+self hashes/identities, saturation, invalid and excessive requests,
+cancellation, lifecycle fences, and joined shutdown.
 
 NAT mapping, public discovery, settings UI, uTP, incoming encryption,
 multi-peer choking strategy, and ratio/time goals remain out of scope.
@@ -412,14 +423,14 @@ high-water marks, terminal owner counts, and what the evidence does not prove.
 
 ## Open Decisions
 
-The campaign direction does not yet settle:
+After Tactical `078`, the campaign direction does not yet settle:
 
 - default listener policy and fixed-port posture per product platform;
 - whether automatic port fallback is ever allowed after a fixed bind fails;
-- the first conservative pending, incoming, total-connection, upload-slot,
-  request, read, and response-byte limits;
-- whether a completed torrent seeds automatically, retains its prior running
-  intent, or requires a distinct durable seeding intent;
+- multi-peer pending, incoming, total-connection, upload-slot, request, read,
+  and response-byte limits beyond the implemented 8/1/1/32/1 first slice;
+- whether the temporary rule that a desired-running complete torrent seeds
+  automatically should become a distinct durable seeding intent;
 - how pause, archive, selection changes, force recheck, relocation, and
   removal interact with active uploads;
 - which upload scheduling policy is sufficient before mature choking parity;
@@ -438,14 +449,15 @@ known external-port, multi-interface, and completed-torrent lifecycle cases.
 
 ## Campaign Checkpoint And Next Action
 
-Tactical [`078`](../tactical/078-local-single-peer-tcp-seeding.md) now records
-the decision-complete local single-peer TCP seeding plan, source audit,
-shared-listener and per-torrent ownership map, conservative first bounds,
-completed-torrent lifecycle, refactoring boundary, validation matrix, and
-local RSTorrent/libtorrent stopping condition. It does not change the
-authoritative capability queue or claim that implementation has started.
+Tactical [`078`](../tactical/078-local-single-peer-tcp-seeding.md) is complete
+with all six gates and their exact execution record. It establishes local
+single-peer TCP listening and payload seeding only; it is not LAN/public
+reachability, listener advertisement, or NAT evidence.
 
-When the readiness queue explicitly promotes this campaign, the next action
-is Tactical `078`'s pure-state and direction-neutral peer-I/O gate. No product
-listener, upload behavior, setting, advertisement, or mapper exists until its
-implementation and evidence are recorded.
+The next campaign boundary remains bounded multi-peer upload ownership and
+accounting: coordinated incoming/total budgets, multiple fair upload slots,
+exact useful-upload counters and rates, slow-reader isolation, and controlled
+simultaneous RSTorrent/libtorrent leechers. A tactical must be explicitly
+authorized before that work begins. Persisted settings follow the enforcing
+multi-peer owner; truthful tracker/DHT port use and gateway mapping remain
+later independent slices.

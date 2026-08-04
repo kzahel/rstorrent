@@ -33,9 +33,12 @@ the final empty connection observation.
 Tactical `056` derives a bounded display-only client/version hint from the
 handshake peer ID without making that spoofable fingerprint an identity or
 policy input.
-Full parole selection, persistent integrity reputation, measured
-picker policy, incoming connections, and persistent peer records remain later
-work.
+Tactical `078` adds a separate application-owned, generation-fenced loopback
+incoming service for one completed-torrent upload peer, with a joined accept,
+handshake, connection, and read lifecycle. Full parole selection, persistent
+integrity reputation, measured picker policy, integration of incoming peers
+into the ordinary registry/scheduler/view owner, and persistent peer records
+remain later work.
 
 ## Scope
 
@@ -189,9 +192,11 @@ subowners with distinct invariants. `TorrentPeerCoordinator` now coordinates
 their cross-owner membership transitions and owns one shared task-free
 current-connection observation in `peer_runtime`. This removes overlapping
 diagnostic snapshot nouns without folding socket tasks into deterministic
-registry or scheduler state. Incoming listening and uTP execution remain later
-tacticals, but an incoming accepted socket before BitTorrent handshake and a
-future uTP connection fit this same identity and lifecycle shape.
+registry or scheduler state. Tactical `078` now owns one bounded incoming TCP
+runtime beside that outbound swarm owner; it does not yet create registry or
+application peer-view rows. Folding a later multi-peer incoming generation
+into those ordinary owners and adding uTP execution remain separate work, but
+both fit the existing identity and lifecycle vocabulary.
 
 Outgoing observation begins before TCP work, advances through transport and
 BitTorrent handshake, keeps one connection generation through metadata-to-
@@ -206,8 +211,10 @@ outbound lifecycle ordering, handoff, stale generation protection, and exact
 removal. Session pressure covers 30 connecting plus 30 connected rows under
 the default queue bound. A controlled libtorrent transfer then observes the
 same active row through the real React surface and its keyed removal after
-verified completion. This is observation evidence, not incoming or uTP
-runtime support and not a change to dial, picker, or request policy.
+verified completion. That remains observation evidence for the ordinary
+outbound swarm. Tactical `078` supplies actual incoming TCP runtime evidence
+through a separate bounded service, not through the React Peers view, and does
+not change dial, picker, or download-request policy.
 
 Tactical `064` adds the companion retained-state evidence. A tracker and DHT
 observation merge on one stable registry ID, failed dialing moves that row
@@ -400,11 +407,12 @@ The preferred sequence is:
    evidence to tune availability selection, peer retention, connection
    budgets, CPU, memory, and throughput before adding protocol breadth.
 
-Incoming connections, payload upload, PEX, LSD, uTP, NAT traversal, persistent
-peer caches, mature peer-ID duplicate resolution, and dynamic VPN or metered
-policy remain separate tacticals. Incoming listening, NAT-PMP/UPnP, and
-seeding are deliberately lower priority than correct outbound downloading;
-the provisional tracker announce port does not change that ordering.
+Tactical `078` completes one local incoming connection and payload-upload
+slice. Multi-peer upload ownership, ordinary swarm/view integration, PEX,
+LSD, uTP, NAT traversal, persistent peer caches, mature peer-ID duplicate
+resolution, and dynamic VPN or metered policy remain separate tacticals. The
+provisional tracker announce port is still independent of the loopback
+listener and does not establish reachability.
 
 ## Current Evidence And Gaps
 
@@ -580,7 +588,7 @@ blocking boundary, but controlled timing stayed neutral and the public queue
 remained full. Tactical `031` measures queue wait and per-kind service before
 connection policy and attributes about 88% of public wall time to 16 KiB write
 service. The source-first write owner now precedes another lifecycle change.
-Incoming listener ownership and advertised-port updates,
-measured
-performance selection, peer-ID duplicate resolution, full parole selection,
-PEX, and persisted peer caches remain later work.
+Incoming integration with ordinary swarm observation, multi-peer upload,
+advertised-port updates, measured performance selection, peer-ID duplicate
+resolution, full parole selection, PEX, and persisted peer caches remain
+later work.

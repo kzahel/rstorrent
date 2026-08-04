@@ -23,7 +23,10 @@ selection, checkpoint, publication, repair, and removal authority. Tactical
 with an atomic all-wanted managed full recheck. Tactical `075` implements the
 accepted bounded ephemeral application-state mode with private session and
 metrics databases, explicit page maxima, no profile files, and unchanged
-external payload-root semantics. Planned Tactical `081` now records the
+external payload-root semantics. Tactical `078` reuses the existing complete,
+published, desired-running, metadata, have, and storage-root authority to
+restore bounded path-backed seeding without a schema change. Planned Tactical
+`081` now records the
 accepted source boundary: exact original magnet or outer-metainfo input is
 provenance, while hash-authorized `raw_info`, normalized trackers and hints,
 and ordinary resume state remain operational SQLite authority.
@@ -262,6 +265,31 @@ verification and that database commit can create a false negative, but full
 recheck now recovers valid managed bytes without requiring redownload. It must
 not create a false positive that presents unverified content as complete.
 
+### Complete path-backed torrents restore bounded seeding
+
+Tactical `078` adds no seeding schema. While the application service is open,
+the existing desired-running intent temporarily means that a complete,
+published, unarchived path-backed torrent is eligible for one bounded incoming
+upload peer. Application startup reparses and rehash-authorizes stored raw
+info, requires exact have geometry and the recorded publication name, opens a
+conservative readable-content plan, and registers the torrent with the shared
+listener. Completion performs the same reconciliation after the download task
+ends.
+
+Pause, archive, file-selection change, force recheck, removal, and application
+shutdown invalidate and join the exact registration before mutating durable
+or storage authority. Restore, resume, or successful recheck may register a
+new generation after eligibility returns. Platform-capability and descriptor
+roots remain ineligible because this slice has no restartable upload read
+handle contract for them.
+
+The controlled restart proof reopens the same profile in a second process and
+serves verified BEP 9 metadata plus all single- and multi-file payload bytes to
+an RSTorrent magnet leecher. This proves restoration from durable complete
+state, not a detached download-task continuation. Explicit seeding intent,
+goals, counters, listener policy persistence, and upload limits remain later
+schema/setting decisions after multi-peer accounting exists.
+
 ## Logical Architecture
 
 The intended dependency direction is:
@@ -493,6 +521,9 @@ successful mutation unreadable after upgrade.
   required before a later fast-resume path may skip hashing.
 - How completed payload moved outside the application is deliberately
   relocated or rediscovered.
+- Explicit persisted listener, upload-budget, and seeding-goal settings; the
+  implemented single-peer slice uses immutable bootstrap and existing
+  desired-running intent without schema changes.
 - JSTorrent migration is accepted as an explicit user-initiated semantic
   import into one selected backend, not in-place reuse of the legacy database
   or live synchronization between backends. The exact supported source
@@ -572,6 +603,13 @@ Path publication uses durable intent, atomic no-replace rename, containing-
 directory sync, and a final complete transaction. Dynamic provider
 confirmation enters durable `published/checking` and fresh published handles
 must complete that same piece check before completion.
+
+[`../tactical/078-local-single-peer-tcp-seeding.md`](../tactical/078-local-single-peer-tcp-seeding.md)
+registers only exact complete and published path-backed rows, retains seeding
+after download-task completion, restores it after application restart, and
+generation-fences pause, archive, recheck, selection, removal, and shutdown.
+Application and controlled process evidence verifies exact payload across
+restart without adding a schema, platform read path, or detached service.
 
 This evidence does not broaden into a general multi-torrent scheduler, stable
 public wire protocol, UI settings catalog, remote listener,

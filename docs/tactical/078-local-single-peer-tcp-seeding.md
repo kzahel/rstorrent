@@ -1,8 +1,10 @@
 # Tactical 078: Local Single-Peer TCP Seeding
 
-Status: Planned from maintainer direction on 2026-08-04. Implementation has
-not started, and this tactical does not displace Tactical `075` from the
-authoritative `Now` queue.
+Status: Complete on 2026-08-04. Commits `a337225`, `df7432c`, `a1d2845`, and
+`8e2b237` implement the bounded upload state and storage reads, joined
+loopback listener, application lifecycle, per-application peer identity, and
+controlled bidirectional interoperability evidence. Tactical `081` remains
+the authoritative `Now` item after this completed slice.
 
 Topics: `incoming-reachability-and-seeding`, `peer-lifecycle`,
 `client-persistence`, `protocol-support`, `capability-readiness`
@@ -460,6 +462,76 @@ to runtime-independent modules; private engine component tests may remain
 module tests; public end-to-end behavior goes through the application service
 and controlled interop harness. No test-only public network API is introduced
 solely to access internals.
+
+## Implementation And Evidence
+
+The implementation follows the planned ownership and dependency direction:
+
+- `rstorrent-engine::peer_io` now owns direction-neutral framed I/O, absolute
+  message deadlines, decoder queues, and byte metrics; outbound
+  `peer_socket` retains dial and connection-set ownership.
+- `upload` is a task-free request-state machine. It builds exact bitfields,
+  enforces interest/choke and request geometry, holds at most 32 descriptors
+  and 512 KiB of requested bytes, and generation-fences cancel and late-read
+  completion.
+- `seed_content` builds immutable availability by intersecting durable have
+  state with exact readable published path sources. It reads one 16 KiB block
+  and one file lease at a time, crosses files sequentially, synthesizes
+  padding zeroes, and masks skipped, missing, or truncated sources.
+- `incoming` owns the single IPv4 loopback listener, eight pending handshakes,
+  exact 68-byte/10-second intake, 1,024 generation-fenced registrations, one
+  established peer, BEP 9 and payload service on one connection, typed
+  bounded rejection observations, and joined registration/service shutdown.
+- `rstorrent-session::incoming_seeding` owns catalog eligibility and exact
+  registration tokens. `ApplicationService` registers path-backed complete
+  published torrents at open and completion and unregisters before pause,
+  archive, file-selection change, force recheck, removal, or shutdown.
+- one random application-lifetime peer ID is shared by outgoing handshakes,
+  UDP tracker announces, and the incoming listener. This preserves real
+  self-connection rejection without treating every RSTorrent process as the
+  same client.
+
+No schema, generated contract, settings UI, platform-capability upload,
+listener advertisement, non-loopback bind, NAT mapping, or second established
+incoming peer was added. Existing desired-running state remains the temporary
+complete-torrent seeding intent.
+
+Deterministic and scripted evidence includes exact bitfield spare bits,
+request boundary/overflow tables, duplicate and cancel races, read failure,
+single/multi-file and padding layouts, skipped/missing/truncated masking,
+disabled/automatic/fixed bind behavior, fragmented and timed-out handshakes,
+unknown/self/stale routing, exact registry/pending/established saturation,
+metadata followed by payload on one socket, terminal zero pending/peer/read
+counts, and application restart plus pause/archive/recheck/removal fences.
+The path-read component records a one-file-lease high water and returns its
+read and lease counts to zero.
+
+The controlled command
+`uv run --project tests/interop python tests/interop/incoming_seeding.py`
+passed against locked libtorrent `2.0.13` for both independently generated
+fixtures:
+
+| Fixture and leecher | Payload | Pieces | Pending high | Established high | Queued high | Read high | Result |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| single file, libtorrent | 23,000 B | 2 | 1 | 1 | 2 / 23,000 B | 1 / 16,384 B | exact independent SHA-1; current owners zero before joined shutdown |
+| single file, RSTorrent after restart | 23,000 B | 2 | 1 | 1 | 2 / 23,000 B | 1 / 16,384 B | BEP 9 plus 2/2 verified pieces from only `x.pe` |
+| three files, libtorrent | 25,000 B | 2 | 1 | 1 | 2 / 25,000 B | 1 / 16,384 B | first request crossed files; short final piece; exact file SHA-1s |
+| three files, RSTorrent after restart | 25,000 B | 2 | 1 | 1 | 2 / 25,000 B | 1 / 16,384 B | BEP 9 plus 2/2 verified pieces and exact file SHA-1s |
+
+The libtorrent sessions had incoming TCP disabled and explicitly dialed only
+the reported RSTorrent listener, so no reverse RSTorrent dial could satisfy
+the proof. The second application process reused the first process's durable
+profile and re-registered the completed torrent before the RSTorrent magnet
+download. Both directions sent exactly the fixture's selected payload bytes;
+all captured high-water values stayed below the declared ceilings.
+
+Focused validation passed with 208 engine library tests plus binary tests
+(three opt-in public tests ignored), 121 session library tests plus binary
+tests, strict Clippy for both crates and all targets, formatting, and
+`git diff --check`. The final workspace baseline also passed
+`cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, and
+`cargo test --workspace`; only the same three explicitly opt-in public engine
+tests were ignored.
 
 ## Non-Goals
 

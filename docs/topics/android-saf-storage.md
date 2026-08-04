@@ -40,9 +40,9 @@ It complements:
 - [`application-control.md`](application-control.md), which keeps platform
   capabilities and descriptor values out of portable presentation commands.
 
-This topic does not implement seeding, general Android multi-root UI, cloud
-document providers, torrent relocation, a general virtual filesystem, or a
-second Android storage engine.
+This topic does not implement SAF-backed seeding, general Android multi-root
+UI, cloud document providers, torrent relocation, a general virtual
+filesystem, or a second Android storage engine.
 
 ## Current State
 
@@ -382,15 +382,16 @@ bridge; after acquisition, payload I/O remains in Rust.
   but were not each repeated in a dedicated new AVD profile.
 - ChromeOS hardware was reachable and passed its nine-check doctor, but ARCVM
   ADB refused connection, so no new physical dynamic-provider claim is made.
-- Seeding is not implemented. Future upload reads must use this same shared
-  pool rather than adding a separate seeding descriptor cache.
+- Tactical `078` seeds path-backed storage only. Future SAF upload reads must
+  use this same shared pool rather than adding a separate seeding descriptor
+  cache.
 
 ## Recommended Next Work
 
 Do not extend the legacy fixed-manifest proof APIs. The next storage work may
 add the remaining provider-latency/result observability or repeat the dynamic
 repair/removal/live-selection profiles on AVD and hardware when that evidence
-has product value. The larger functional dependency is seeding: it must use
-this pool for upload reads and must not introduce another descriptor cache.
-General root management, cloud/removable provider support, and an exposed
-advanced file-pool setting still require their own product decisions.
+has product value. The larger functional dependency is SAF-backed seeding: it
+must use this pool for upload reads and must not introduce another descriptor
+cache. General root management, cloud/removable provider support, and an
+exposed advanced file-pool setting still require their own product decisions.
