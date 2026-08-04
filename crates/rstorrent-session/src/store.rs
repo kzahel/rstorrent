@@ -4712,6 +4712,11 @@ mod tests {
         let usage = store.page_usage().expect("first import page usage");
         assert!(usage.page_count < usage.maximum_page_count);
         assert!(usage.page_count * usage.page_size > 120 * 1024 * 1024);
+        println!(
+            "maximum ephemeral source page use: {} of {} bytes",
+            usage.page_count * usage.page_size,
+            usage.maximum_page_count * usage.page_size
+        );
         let first_lengths: (i64, i64) = store
             .connection
             .query_row(

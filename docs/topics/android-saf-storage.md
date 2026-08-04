@@ -14,7 +14,7 @@ authorized physical run was attempted, but ChromeOS ARCVM ADB was unavailable.
 Tactical `073` now makes dynamic publication confirmation a durable
 `published`/`checking` handoff; fresh published handles run through the common
 piece checker before `complete` can commit.
-Planned Tactical `081` extends the shared catalog/storage boundary to
+Tactical `081` extends the shared catalog/storage boundary to
 libtorrent-scale v1 metainfo: Android consumes compact selection and paged
 file catalogs, derives the same deterministic safe operational paths, and
 keeps provider requests, documents, and descriptors lazy. It does not add an
@@ -387,6 +387,10 @@ bridge; after acquisition, payload I/O remains in Rust.
   but were not each repeated in a dedicated new AVD profile.
 - ChromeOS hardware was reachable and passed its nine-check doctor, but ARCVM
   ADB refused connection, so no new physical dynamic-provider claim is made.
+- Tactical `081` passes both target-architecture Rust builds, generated UniFFI
+  Kotlin compilation, APK assembly, and JVM tests. Its high-cardinality test
+  represents 374,998 wanted files as one range while consuming one 1,024-row
+  catalog page; no eager descriptor manifest is reconstructed.
 - Tactical `078` seeds path-backed storage only. Future SAF upload reads must
   use this same shared pool rather than adding a separate seeding descriptor
   cache.

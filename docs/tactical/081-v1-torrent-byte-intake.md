@@ -1,13 +1,11 @@
 # Tactical 081: V1 Torrent Byte Intake
 
-Status: In progress. Gate 1 completed on 2026-08-04; production implementation
-has not yet crossed Gate 2. Authorized from maintainer direction on
-2026-08-04.
+Status: Complete on 2026-08-04. All eleven gates and the stopping condition
+are satisfied. Authorized from maintainer direction on 2026-08-04.
 Amended on 2026-08-04 to make pinned libtorrent `v2.0.13` the compatibility
 lead for large v1 metadata, geometry, and source intake, while requiring
 measured comparison where its compact representations do not map directly to
-RSTorrent. Implementation has not started. This planning work changes
-documentation only.
+RSTorrent.
 
 Topics: `client-persistence`, `application-control`,
 `application-connection-architecture`, `application-view-api`,
@@ -55,7 +53,7 @@ payload-adjacent copy, export directory, or second catalog authority.
 
 The BEP 9 transfer profile uses pinned libtorrent's 30-MiB
 `max_metadata_size` default. Explicit caller-owned outer input and durable
-`raw_info` use a separate provisional 64-MiB application bound. Libtorrent's
+`raw_info` use a separate 64-MiB application bound. Libtorrent's
 caller-owned span constructor has no equivalent byte cap, and its adopted
 2,097,152-piece limit alone permits a 40-MiB v1 `pieces` string, so the BEP 9
 ceiling cannot also be the explicit or durable ceiling. Gate 1 must confirm
@@ -153,7 +151,7 @@ The result is an API-level `.torrent` intake capability usable by the bounded
 private browser host, Tauri adapter, and scripted HTTP clients. A visible
 browser/Tauri file picker is deliberately the next presentation slice.
 
-## Existing Baseline And Gap
+## Baseline At Authorization
 
 The current application command union accepts `AddMagnet` but no byte-bearing
 source. The `torrents` table requires `magnet TEXT NOT NULL`, stores optional
@@ -346,7 +344,7 @@ The desired limits are:
 | File selection | all accepted non-padding files through compact all/none/range or paged operations; no enumerated 4,096 ceiling |
 | File/tracker catalog page | 1,024 rows; rendered path or credential-redacted tracker identity at most 4,096 bytes per row, with exact tracker bytes retained outside the view |
 | Concurrent buffered imports per application host | 1 |
-| Ephemeral main database | 256 MiB; the Gate 1 maximum-source/raw-info/file/selection model occupied 181,968,896 bytes and a second maximum pair exhausted the same live page cap atomically |
+| Ephemeral main database | 256 MiB; the implemented maximum-source/raw-info transaction occupies 134,459,392 bytes and a second maximum pair exhausts the same live page cap atomically |
 
 The explicit, BEP 9, and durable metainfo profiles no longer reuse Tactical
 `074`'s depth, decoded-item, collection, file, piece, or path values. Generic
@@ -1028,6 +1026,32 @@ Use an independently controlled UDP tracker and pinned libtorrent seed to
 download exact content from imported outer metainfo. Run the complete matrix,
 record high-water values and intentional reference differences, update topics
 and readiness, and close the tactical only when no required row is missing.
+
+## Execution Record
+
+Gates 2 through 11 completed on 2026-08-04 after the Gate 1 calibration. The
+implemented result is:
+
+| Gate | Landed result and evidence |
+| --- | --- |
+| 2: parser and BEP 9 | Direct semantic metainfo projection matches the adopted token/depth/file/path/piece profiles without retaining a generic tree. Peer metadata accepts 30 MiB, treats handshake sizes above 4 MiB as hints, transfers one assembly buffer, and uploads through a 160-KiB send watermark plus a 1,024-entry occupancy queue. Opt-in tests served all 4,096 blocks of a 64-MiB local object; connection lifetime is not a request cap. |
+| 3: geometry and storage | Piece count is 2,097,152, the have/peer bitfield is 262,144 bytes, and the wire decoder admits that bitfield without raising ordinary frame limits. Piece length is 536,854,528 bytes. Content planning is bounded by 256 pieces and the platform byte window, while one over-budget maximum piece is admitted alone. Payload remains block-written and storage-hashed; part slots use constant-time free-slot ownership and 64-bit offsets. |
+| 4: catalogs and selection | Initial selection supports all, none, and canonical wanted ranges; later priority mutation supports ranges. File and tracker views carry offset/limit/total/next and materialize at most 1,024 rows. Rust, TypeScript, Tauri, UniFFI, and Kotlin contracts agree; the Kotlin test expresses 374,998 files with one range and one page. |
+| 5: outer projection | One runtime-independent parser retains the exact info span, safe deterministic paths, private flag, source digest inputs, BEP 12 tier order/fallback/deduplication, and UDP/HTTP/HTTPS tracker transport. Unsupported outer keys stay provenance-only. |
+| 6: schema and ephemeral | Schema 8 makes magnet optional and adds exact source, tracker, and peer-hint tables. Migration distinguishes canonicalized legacy magnets from new verbatim sources. An actual 64-MiB source plus 67,108,856-byte exact info used 134,459,392 of 268,435,456 ephemeral bytes; a second distinct maximum transaction returned the typed resource limit, rolled back, and left the first source and revision intact. |
+| 7: semantic operation | `AddTorrentBytesRequest` binds request identity, expected revision, root/start/selection intent, source length, and SHA-256 to a raw attachment. One transaction inserts source, exact info, zero have state, trackers, selection, lifecycle, and receipt. Replay, conflict, stale, duplicate, malformed, digest, metadata-only, running, restart, and removal cases pass. |
+| 8: tracker tiers | Full metainfo tiers and source attribution persist and restart. UDP scheduling admits at most eight concurrent operations; HTTP/HTTPS rows remain credential-redacted and visibly unsupported. Generated tests traverse 300 configured trackers across three tiers without truncation. |
+| 9: gateway adapters | HTTP `POST /api/v1/torrents` and the declared WebSocket binary upload both accept exactly 64 MiB while JSON/text stays 64 KiB. Authentication, Origin, owner isolation, replay, one-host admission, timeout, and protocol failures retain their existing bounds. A local exact-maximum run returned queued control in 46 ms and the committed upload result in 439 ms; one-frame buffering remains the deliberate first-pass cost. |
+| 10: Tauri and Android contracts | Desktop requires `InvokeBody::Raw`, rejects JSON bodies, shares the semantic operation and one-upload admission, and opens no listener or path handoff. Android does not add intake UI, but both ABIs, generated Kotlin, paged/range contracts, APK assembly, Rust tests, and JVM tests pass headlessly. |
+| 11: controlled interop | `tests/interop/torrent_byte_intake.py` verifies the exact pinned libtorrent revision `7d7fc38fac61177fa5e02148f791b2f65250b09d` and binding `2.0.13.0`. A 31,457,280-byte info dictionary transferred in exactly 1,920 requests/blocks, exposed 1,572,859 pieces, persisted, and restarted offline in 0.160 seconds. A separate exact 67,108,864-byte HTTP source persisted/restarted. A tracker-bearing imported source completed and SHA-1 verified 40,000 payload bytes, restarted complete offline, and removed its managed data after exactly one connect and one announce. |
+
+The intentional reference differences remain the accepted ones: the
+application owns a 64-MiB caller attachment and exact-source BLOB even though
+libtorrent's borrowed-span constructor has no analogous cap; operational path
+projection is portable and deterministic rather than byte-identical to each
+libtorrent platform; RSTorrent keeps its explicit tier scheduler policy while
+honoring tier grouping and the eight-operation ceiling; and HTTP/HTTPS tracker
+execution, picker UI, chunking, and source export remain deferred.
 
 ## Validation Matrix
 

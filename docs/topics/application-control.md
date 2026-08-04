@@ -34,10 +34,12 @@ storage check without exposing paths, handles, or engine tasks.
 Tactical `075` keeps that semantic contract and its request receipts intact in
 an explicitly selected, private, bounded in-memory application-state mode.
 SQLite `FULL` now has the typed `resource_limit` response classification in
-both persistence modes. Planned Tactical `081` adds one byte-bearing v1
-metainfo operation beside the JSON command union: source length and SHA-256
-join semantic request identity, while WebSocket, HTTP, and Tauri adapters carry
-the bytes without paths or base64.
+both persistence modes. Tactical `081` adds one byte-bearing v1 metainfo
+operation beside the JSON command union: source length and SHA-256 join
+semantic request identity, while WebSocket, HTTP, and Tauri adapters carry the
+bytes without paths or base64. Exact duplicate replay, stale-revision
+rejection, rollback and source-conflict behavior share the existing command
+semantics.
 
 ## Scope
 
@@ -75,14 +77,14 @@ Structured observability remains separate from command responses and product
 state.
 
 A bounded byte attachment may accompany a closed semantic operation when the
-intent itself is binary, as for planned `.torrent` intake. The request still
+intent itself is binary, as for `.torrent` intake. The request still
 owns version, request ID, optional expected revision, established storage-root
 identity, start intent, selection, exact source length, and digest. Durable
 receipt replay compares the digest and normalized options rather than storing
 bytes in JSON. Adapters may frame or carry the attachment differently, but no
 adapter gains alternate mutation, duplicate, revision, or storage policy.
-Tactical `081` provisionally bounds this attachment at 64 MiB, admits one at a
-time per host, and replaces per-file index enumeration with canonical
+Tactical `081` bounds this attachment at 64 MiB, admits one at a time per host,
+and replaces per-file index enumeration with canonical
 all/none/range intent plus later paged mutations so the command envelope stays
 within 64 KiB at the accepted file cardinality.
 
@@ -216,8 +218,9 @@ Tactical `037` routes the new React toolbar's bounded magnet intent through
 that generated `add_magnet` contract. Input convenience checks improve local
 feedback, but the application service remains authoritative for syntax,
 resource bounds, durable duplicate handling, storage policy, and busy state.
-Remote `.torrent` URL fetching and file-byte intake remain absent rather than
-being represented as successful magnet adds.
+Remote `.torrent` URL fetching remains absent rather than being represented as
+a successful magnet add. Tactical `081` adds the separate file-byte operation;
+the shared React presentation has not yet exposed its browser file picker.
 
 Tactical `040` makes archive orthogonal to running intent and gives removal a
 durable generation. The application service first persists paused removal

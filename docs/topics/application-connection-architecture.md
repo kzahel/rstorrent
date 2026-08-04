@@ -16,11 +16,10 @@ host: bounded Basic authentication covers static, health, HTTP, and WebSocket
 routes; the gateway still enforces the exact public HTTPS Origin; and the
 production React build selects the same origin explicitly. This is not the
 future relay, device-authentication, encryption, or stable-public-compatibility
-campaign, which remains unauthorized and unimplemented. Planned Tactical
-`081` extends the same connection with one declared, one-frame binary
-`.torrent` attachment provisionally bounded at 64 MiB while retaining the
-64-KiB text bound; HTTP remains an explicit automation adapter and Tauri uses
-raw in-process IPC.
+campaign, which remains unauthorized and unimplemented. Tactical `081`
+extends the same connection with one declared, one-frame binary `.torrent`
+attachment bounded at 64 MiB while retaining the 64-KiB text bound; HTTP
+remains an explicit automation adapter and Tauri uses raw in-process IPC.
 
 ## Purpose And Scope
 
@@ -136,7 +135,7 @@ Every capable adapter exposes the same operations:
 - close a view set; and
 - close the client connection.
 
-Planned Tactical `081` adds one bounded byte-bearing semantic operation. The
+Tactical `081` adds one bounded byte-bearing semantic operation. The
 ordinary browser declares its metadata in a text frame, waits for admission,
 then sends exactly one correlated binary message up to the calibrated
 64-MiB attachment limit. One buffered import is admitted per application host.
@@ -348,6 +347,29 @@ HTTP retains the current v1 calls and `next_updates(after, wait_ms)` behavior.
 The next pull supplies the applied cursor and therefore acknowledges the prior
 batch. It remains the simplest headless, automation, debugging and
 low-frequency adapter.
+
+Automation may submit exact v1 metainfo bytes with a raw POST. This loopback
+example uses the configured bearer token and exact allowed Origin:
+
+```bash
+curl --fail-with-body \
+  --request POST \
+  --header "Authorization: Bearer $RSTORRENT_TOKEN" \
+  --header "Origin: http://127.0.0.1:5173" \
+  --header "X-RSTorrent-Owner: 00000000000000000000000000000001" \
+  --header "Content-Type: application/x-bittorrent" \
+  --data-binary @example.torrent \
+  "http://127.0.0.1:3030/api/v1/torrents?request_id=add-001&storage_root=downloads&start_content=true&selection=all"
+```
+
+The owner header is exactly 32 lowercase hexadecimal characters. `request_id`
+is the durable retry identity; repeating it with different bytes or normalized
+options is a conflict. `expected_revision` is optional. `selection` is `all`,
+`none`, or `ranges`; range mode also supplies canonical half-open
+`wanted_ranges=0-4,7-9`. The configured private host uses its Basic credential
+and exact HTTPS Origin instead of the loopback bearer example. The endpoint
+returns the ordinary typed response envelope and never fetches a URL or accepts
+a filesystem path.
 
 Long polling is not required to use WebSocket streaming. The first-party web
 UI may select it explicitly on loopback for diagnostics and controlled A/B

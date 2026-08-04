@@ -52,12 +52,13 @@ positional storage, checkpoint, full-recheck, repair, and publication
 pipeline. Restart and force recheck hash every physically readable wanted
 piece, including persisted false bits, before current have state becomes
 authoritative.
-Planned Tactical `081` adopts libtorrent's 2,097,152-piece and
-536,854,528-byte piece-length limits. It must replace eager whole-torrent
-piece/block plans and piece-count scans with compact identity plus bounded
-active windows, and prove block-at-a-time writes and incremental storage
-hashing without a piece-sized resident payload. These are planned scale
-requirements, not current support claims.
+Tactical `081` adopts libtorrent's 2,097,152-piece and 536,854,528-byte
+piece-length limits. Peer availability remains a compact 262,144-byte bitfield,
+and content planning retains bounded active byte/piece windows rather than an
+eager whole-torrent block plan. One maximum piece may enter a window alone but
+cannot admit the following piece over budget. Payload writes remain bounded to
+ordinary blocks and storage hashing is incremental rather than retaining a
+piece-sized payload.
 
 ## Scope
 

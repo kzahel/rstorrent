@@ -78,10 +78,8 @@ evidence.
 
 Tactical [`074`](../tactical/074-context-specific-metainfo-limits.md) is
 complete. Generic bencode, BEP 9, durable metadata, and parser-only explicit
-import now have independent byte and structure profiles; schema 7 admits the
-existing 52,428-piece engine ceiling; deterministic, persistence, resource,
-and controlled bidirectional libtorrent evidence pass. Product `.torrent`
-intake remains absent.
+import gained independent byte and structure profiles; Tactical `081`
+subsequently scales those profiles and adds product byte intake.
 
 Tactical [`075`](../tactical/075-ephemeral-application-state.md) is complete.
 The application can now select private bounded in-memory session and metrics
@@ -99,36 +97,29 @@ RSTorrent single-/multi-file transfers pass. This is not persisted settings,
 multi-peer upload policy, listener advertisement, LAN/public binding, or NAT
 reachability.
 
-Tactical [`081`](../tactical/081-v1-torrent-byte-intake.md) records the
-accepted persistent-source and v1 `.torrent` intake boundary. It is authorized
-but not implemented: exact source and operational metadata remain distinct,
-SQLite retains bounded original source bytes in durable or ephemeral mode,
-metainfo tracker tiers become operational state, and one semantic byte
-operation is adapted to WebSocket, HTTP automation, and raw Tauri IPC. Its
-amended compatibility target follows pinned libtorrent's v1 limits: 30-MiB
-BEP 9 receive, provisional 64-MiB explicit/durable/source input and local
-metadata upload, 2,097,152 pieces, 536,854,528-byte pieces, and measured
-calibration where parser, catalog, path, view, or platform representations are
-not apples-to-apples.
+Tactical [`081`](../tactical/081-v1-torrent-byte-intake.md) is complete. Exact
+source and operational metadata remain distinct; SQLite retains bounded
+original source bytes in durable or ephemeral mode; metainfo tracker tiers are
+operational state; and one semantic byte operation is adapted to WebSocket,
+HTTP automation, and raw Tauri IPC. The implemented compatibility target
+follows pinned libtorrent's v1 limits: 30-MiB BEP 9 receive, 64-MiB
+explicit/durable/source input and local metadata upload, 2,097,152 pieces,
+536,854,528-byte pieces, and measured calibration where parser, catalog, path,
+view, or platform representations are not apples-to-apples.
 
 ## Current Queue
 
 ### Now
 
-**Execute Tactical
-[`081`](../tactical/081-v1-torrent-byte-intake.md).** Implement bounded v1
-outer-metainfo parsing and persistence, truthful source fidelity, the
-libtorrent-aligned large-v1 parser/geometry limits and scalable downstream
-owners, full paged metainfo tracker/file catalogs, one atomic semantic byte
-operation, one-frame 64-MiB browser WebSocket intake, raw HTTP automation, raw
-Tauri IPC, and controlled libtorrent evidence without adding visible picker
-UX.
+**Discuss and authorize the shared `.torrent` picker slice.** The implemented
+byte operation is ready for a browser `File`/`ArrayBuffer` and Tauri Add flow.
+The tactical should keep the existing 64-MiB one-frame path unless measured UI
+evidence justifies chunking.
 
 ### Next
 
-- Add the shared browser/Tauri `.torrent` file picker and Add flow after
-  Tactical `081` records one-frame latency and memory evidence; decide whether
-  chunking is then justified rather than assuming it in the first byte path.
+- Continue the source-first engine queue after the bounded picker decision;
+  multi-peer upload ownership remains the next recorded engine slice.
 
 ### Later
 
@@ -146,11 +137,11 @@ does not.
 
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
-| Bounded bencode and v1 info dictionaries | Implemented | deterministic, runtime, interop | Generic, BEP 9, durable, and 16-MiB parser-only explicit-import profiles independently bound bytes, decoded items, depth, collections, files, pieces, and paths. This is not product `.torrent` ingestion; v2 and hybrid info dictionaries are rejected. | [`protocol-support`](protocol-support.md) |
+| Bounded bencode and v1 info dictionaries | Implemented | deterministic, runtime, interop | Generic, 30-MiB peer BEP 9, and 64-MiB explicit/durable/local-upload profiles independently bound bytes, decoded items, depth, collections, files, pieces, paths, and trackers. Product v1 `.torrent` ingestion passes; v2 and hybrid info dictionaries are rejected. | [`protocol-support`](protocol-support.md) |
 | Product add from a v1 magnet | Implemented | deterministic, runtime, interop, web, AVD, physical | Only a v1 `btih` identity and supported magnet fields survive canonicalization. | [`client-persistence`](client-persistence.md) |
-| BEP 9 metadata download | Implemented | deterministic, runtime, interop, live | One bounded torrent owner assembles blocks across up to eight workers, paces one-request-at-a-time peers, and recovers from expiry, rejection, and hash failure; tracker parity and catalog breadth pass, while paired DHT latency is blocked by the live reference. | [`peer-lifecycle`](peer-lifecycle.md) |
-| Bounded metadata upload | Implemented | deterministic, runtime, interop | The diagnostic server remains metadata-only; the application listener serves verified metadata and payload on one socket to one loopback peer. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
-| Product add from a `.torrent` file | Absent | deterministic parser only | The application command accepts magnets only and does not retain outer announce fields. | [`application-control`](application-control.md) |
+| BEP 9 metadata download | Implemented | deterministic, runtime, interop, live | One bounded torrent owner assembles blocks across up to eight workers, accepts an authoritative piece-zero size up to 30 MiB, and recovers from expiry, rejection, and hash failure. Pinned libtorrent transfers the exact 31,457,280-byte maximum profile in 1,920 blocks. | [`peer-lifecycle`](peer-lifecycle.md) |
+| Bounded metadata upload | Implemented | deterministic, runtime, interop | The diagnostic server remains metadata-only; the application listener serves every requested 16-KiB block of valid local metadata up to the 64-MiB profile and verified payload on one socket. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
+| Product add from a `.torrent` file | Implemented | deterministic, runtime, interop, web, Tauri | One atomic 64-MiB byte operation preserves exact source, operational info and tracker tiers across restart through HTTP, WebSocket, and raw Tauri IPC. The shared Add UI has no file picker yet. | [`application-control`](application-control.md) |
 | v2 and hybrid identity, metadata, and hashing | Absent | deterministic rejection | BEP 52 requires a separate integrity and storage design. | [`protocol-support`](protocol-support.md) |
 
 ### Discovery
@@ -160,8 +151,8 @@ does not.
 | Explicit magnet peer hints | Implemented | deterministic, runtime, interop | Hints are bounded and feed the registry, but are not a general discovery mechanism. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Scheduled UDP tracker announces | Implemented | deterministic, runtime, interop, web, AVD, live | UDP connect/announce, fallback, backoff, retransmission, token reuse, reannounce, and bounded startup fan-out work; provisional port 6881 is not derived from the actual loopback listener. | [`tracker-discovery`](tracker-discovery.md) |
 | Multiple magnet trackers | Partial | deterministic, runtime, interop, live | Up to eight startup operations contribute peers, but magnet trackers form one synthetic tier because magnets contain no BEP 12 tier structure. | [`tracker-discovery`](tracker-discovery.md) |
-| Metainfo tracker tiers | Absent | none | Outer `announce` and `announce-list` are not retained by the product path. | [`tracker-discovery`](tracker-discovery.md) |
-| HTTP and HTTPS trackers | Absent | none | No URL, transport, response, authentication, or redirect owner exists. | [`tracker-discovery`](tracker-discovery.md) |
+| Metainfo tracker tiers | Implemented | deterministic, runtime, interop, web | Outer `announce-list`/`announce`, tier and source survive restart; UDP rows are scheduled under the eight-operation ceiling and the controlled imported tracker completes content. | [`tracker-discovery`](tracker-discovery.md) |
+| HTTP and HTTPS trackers | Absent | deterministic retention only | Configured rows survive and are visible with redacted credentials and unsupported transport state, but no request, response, authentication, redirect, or proxy owner exists. | [`tracker-discovery`](tracker-discovery.md) |
 | DHT | Partial | deterministic, runtime, interop, live | A bounded IPv4 participant supports lookup, incoming queries, private gating, revalidated warm restart, and repeated public metadata acquisition. IPv6 UDP operation and self-announcement are absent. | [`dht-discovery`](dht-discovery.md) |
 | Peer exchange | Absent | none | BEP 11 depends on a larger live-peer set, extension dispatch, and hostile-source bounds. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Local service discovery | Absent | none | Interface, multicast, and local-network policy are unimplemented. | [`protocol-support`](protocol-support.md) |
@@ -210,10 +201,10 @@ does not.
 
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
-| Durable semantic application control | Implemented | deterministic, runtime, web, AVD, physical | Archive, fenced keep/delete removal, metadata-only add, and joined live file selection are implemented; stable public compatibility and general multi-torrent scheduling remain absent. | [`application-control`](application-control.md) |
-| Ephemeral application state | Implemented | deterministic, runtime | Private bounded session and metrics SQLite stores preserve receipts, metadata, settings, views, DHT and speed state for one joined service lifetime, then disappear without profile files; payload storage remains an external capability and has no RAM backend. | [`client-persistence`](client-persistence.md), [`application-control`](application-control.md) |
-| Leased application view sets and delivery clients | Implemented | deterministic, runtime, interop, web, Tauri | Named summary, piece, structured diagnostic, active-peer, registry-backed Swarm, complete-file, tracker-lifecycle, global Disk, range-selected session Speed, and latest-value session DHT views have bounded replay/reset, independent lease expiry, fresh-snapshot recovery, diagnostic HTTP polling, acknowledged browser WebSocket streaming, and acknowledged in-process Tauri streaming. The retained observer matrices still expose Summary reset storms and trace/all-view serialization pressure; stable public compatibility remains unimplemented. | [`application-view-api`](application-view-api.md), [`application-connection-architecture`](application-connection-architecture.md) |
-| Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive surface now has Library, Transfers, and Workbench destinations, truthful bounded torrent-backed cards, shared multi-selection, magnet add and canonical copy, metadata-only add, live Normal/Skip file actions, archives, guarded removal, live peer/swarm/file/tracker inspection, global Disk pressure, bounded Canvas Pieces, a smooth exact session Speed history, and the exact routing-space DHT observatory; a real media catalog/playback and `.torrent` file intake remain incomplete. | [`client-surfaces`](client-surfaces.md), [`application-interface-direction`](application-interface-direction.md) |
+| Durable semantic application control | Implemented | deterministic, runtime, interop, web, Tauri, AVD, physical | Archive, fenced keep/delete removal, metadata-only add, atomic v1 torrent-byte add, and joined live file selection are implemented; stable public compatibility and general multi-torrent scheduling remain absent. | [`application-control`](application-control.md) |
+| Ephemeral application state | Implemented | deterministic, runtime | Private bounded session and metrics SQLite stores preserve receipts, exact source, metadata, settings, views, DHT and speed state for one joined service lifetime, then disappear without profile files. One maximum source plus info fits the 256-MiB session cap and a second maximum import rolls back with a typed resource limit; payload storage remains external. | [`client-persistence`](client-persistence.md), [`application-control`](application-control.md) |
+| Leased application view sets and delivery clients | Implemented | deterministic, runtime, interop, web, Tauri | Named summary, piece, structured diagnostic, active-peer, registry-backed Swarm, paged file and tracker, global Disk, range-selected session Speed, and latest-value session DHT views have bounded replay/reset, independent lease expiry, fresh-snapshot recovery, diagnostic HTTP polling, acknowledged browser WebSocket streaming, and acknowledged in-process Tauri streaming. The retained observer matrices still expose Summary reset storms and trace/all-view serialization pressure; stable public compatibility remains unimplemented. | [`application-view-api`](application-view-api.md), [`application-connection-architecture`](application-connection-architecture.md) |
+| Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive surface now has Library, Transfers, and Workbench destinations, truthful bounded torrent-backed cards, shared multi-selection, magnet add and canonical copy, metadata-only add, live Normal/Skip file actions, archives, guarded removal, live peer/swarm/file/tracker inspection, global Disk pressure, bounded Canvas Pieces, a smooth exact session Speed history, and the exact routing-space DHT observatory. Its adapters can add `.torrent` bytes, but the visible picker and a real media catalog/playback remain incomplete. | [`client-surfaces`](client-surfaces.md), [`application-interface-direction`](application-interface-direction.md) |
 | Authenticated private web host | Implemented | deterministic, runtime, web, live | One explicitly configured maintainer host serves the production React bundle and multiplexed application WebSocket behind bounded Basic authentication and exact HTTPS Origin checks. Exact-push isolated build, candidate smoke, supervised restart, authenticated private-listener/public verification, and rollback-on-failure pass; this is not a relay, account, pairing, encryption, or stable public compatibility claim. | [`application-connection-architecture`](application-connection-architecture.md), [`client-surfaces`](client-surfaces.md) |
 | Android Compose foreground client | Partial | runtime, AVD, physical | General settings, connectivity policy, and complete torrent controls remain incomplete. | [`client-surfaces`](client-surfaces.md) |
 | Derived progress and bounded diagnostics | Implemented | deterministic, runtime, interop, web, AVD | Structured hierarchical records, typed context, capture interest, explicit source/delivery/local loss, and the global ordered console are complete; scheduler and per-peer facts must grow with their corresponding owners. | [`application-control`](application-control.md) |

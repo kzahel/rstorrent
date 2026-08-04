@@ -51,12 +51,12 @@ polling and Tauri Channel delivery. Shared generated Rust/TypeScript/Kotlin
 semantic artifacts continue to compile, but Android presentation intentionally
 does not mirror this dense desktop diagnostic surface.
 
-Planned Tactical `081` adds adapter-level v1 `.torrent` byte intake through
+Tactical `081` adds adapter-level v1 `.torrent` byte intake through
 the ordinary browser WebSocket and raw in-process Tauri IPC, plus HTTP
-automation, without adding a visible file picker. The provisional raw
+automation, without adding a visible file picker. The raw
 attachment maximum is 64 MiB while text/JSON remains 64 KiB; file and tracker
 inspection move to bounded pages so larger accepted catalogs do not inflate
-one view snapshot. The subsequent presentation slice will let the shared Add
+one view snapshot. A subsequent presentation slice can let the shared Add
 flow select a browser `File`, read its `ArrayBuffer`, and call that
 transport-neutral client operation.
 
@@ -190,8 +190,10 @@ default. It is a maintainer-facing local bridge, not a change to the accepted
 in-process Tauri product architecture. Tactical `048` makes that same React
 application the Tauri product entry through an in-process adapter. The React
 application currently supports inspection, magnet add, pause, and resume, but
-not `.torrent` file intake or the full application command set. React emits a
-transport-neutral magnet intent; only the live adapter constructs the
+not visible `.torrent` file selection or the full application command set. Its
+HTTP, WebSocket, and Tauri clients implement the generated transport-neutral
+byte-intake operation; the Add presentation has not yet called it. React emits
+a transport-neutral magnet intent; only the live adapter constructs the
 generated application request.
 Typed and curated magnet intake share that path. A deterministic catalog test
 keeps the UI shortcuts identical to `tests/live/torrents.json`; public swarm

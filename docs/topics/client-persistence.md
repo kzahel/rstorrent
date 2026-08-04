@@ -25,11 +25,11 @@ accepted bounded ephemeral application-state mode with private session and
 metrics databases, explicit page maxima, no profile files, and unchanged
 external payload-root semantics. Tactical `078` reuses the existing complete,
 published, desired-running, metadata, have, and storage-root authority to
-restore bounded path-backed seeding without a schema change. Planned Tactical
-`081` now records the
-accepted source boundary: exact original magnet or outer-metainfo input is
-provenance, while hash-authorized `raw_info`, normalized trackers and hints,
-and ordinary resume state remain operational SQLite authority.
+restore bounded path-backed seeding without a schema change. Tactical `081`
+advances the store to schema version `8` and implements the accepted source
+boundary: exact original magnet or outer-metainfo input is provenance, while
+hash-authorized `raw_info`, normalized trackers and hints, and ordinary resume
+state remain operational SQLite authority.
 
 ## Scope
 
@@ -147,8 +147,8 @@ Failure to open, migrate, or write a durable profile must never silently fall
 back to ephemeral state. The two modes are an application configuration choice,
 not a corruption-recovery heuristic or a second persistence format.
 
-The implemented initial bounds are 128 MiB of session main-database page
-space and 32 MiB of metrics main-database page space, computed from and
+The implemented bounds are 256 MiB of session main-database page space and
+32 MiB of metrics main-database page space, computed from and
 verified against each connection's actual page size. SQLite `FULL` is a typed
 application `resource_limit`; the current session transaction rolls back,
 while background metrics persistence degrades with one bounded diagnostic and
@@ -159,15 +159,17 @@ filesystem journal.
 Payload roots remain separate capabilities. Ephemeral application state does
 not claim that a started download writes no payload, staging, or part data; a
 fully memory-backed content store requires its own engine and resource design.
-The accepted Tactical `081` boundary retains a future exact original source in
-the same private in-memory session database, never in a temporary or payload
-file, so it disappears with the rest of the ephemeral catalog. Tactical
+Tactical `081` retains an exact original source in the same private in-memory
+session database, never in a temporary or payload file, so it disappears with
+the rest of the ephemeral catalog. Tactical
 [`075`](../tactical/075-ephemeral-application-state.md) records the implemented
 page/RSS measurements, controlled loopback lifecycle, and no-file evidence;
-Tactical `081` provisionally raises the main-database budget to 256 MiB and
-must measure that one 64-MiB source plus retained exact info and catalog
-overhead fits, while preserving the independent 32-MiB metrics budget and
-atomic typed exhaustion.
+Tactical `081` raises the main-database budget to 256 MiB. An ignored maximum
+profile proves one exact 64-MiB outer source plus its nearly 64-MiB retained
+info dictionary uses 134,459,392 of 268,435,456 bytes; a second distinct
+maximum import returns the typed resource limit, rolls back atomically, and
+leaves the first torrent, revision, and store usable. The independent 32-MiB
+metrics budget is unchanged.
 
 ### Verified metadata is durable
 
@@ -192,16 +194,16 @@ independently retained as source input.
 Separate per-torrent metadata files are not a second authority. They may
 eventually exist as explicit exports or reconstructible caches.
 
-Schema version `7` keeps `raw_info` at one MiB while admitting the existing
-52,428-piece parser/engine ceiling and its 6,588-byte encoded have state. These
-limits are session-owned numeric capabilities rather than consequences of a
+Schema version `8` admits exact durable `raw_info` up to 64 MiB, 2,097,152
+pieces, and the corresponding compact have state. These limits are
+session-owned numeric capabilities rather than consequences of a generic
 bencode byte constant. Excess raw-info bytes, piece count, or encoded have
 state fails as a typed internal resource limit before a write transaction;
 restart reparses exact stored bytes under the durable metainfo profile.
 
 ### Accepted original-source and explicit-import boundary
 
-Planned Tactical `081` advances the schema so a torrent no longer requires a
+Tactical `081` advances the schema so a torrent no longer requires a
 magnet source. Operational state retains exact `raw_info`, normalized tracker
 tiers and peer hints, and current resume intent. A separate one-source record
 retains either the bounded verbatim submitted magnet or the bounded complete
@@ -217,8 +219,8 @@ backup/removal boundary; ephemeral mode gets the same semantics in memory
 without a path. A later explicit export may use those exact bytes, while a
 source-less export remains synthesized and must be labeled accordingly.
 
-Planned Tactical `081` raises explicit `.torrent`, original-source, and
-durable `raw_info` bounds to a provisional 64 MiB while independently raising
+Tactical `081` raises explicit `.torrent`, original-source, and durable
+`raw_info` bounds to 64 MiB while independently raising
 peer-controlled BEP 9 metadata to libtorrent's 30-MiB default. The larger
 durable profile is required because the adopted 2,097,152-piece limit alone
 permits a 40-MiB v1 piece-hash string. The tactical also raises have-state and

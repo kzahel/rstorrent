@@ -7,11 +7,10 @@ scheduled UDP tracker lifecycle. Tactical `021` added bounded concurrent
 startup operations and classified the remaining live failure at content-peer
 admission rather than tracker intake. Tactical `043` makes the deterministic
 schedule's retained lifecycle the authoritative inspectable state and proves
-it through the live browser surface. Other transports and metainfo tracker
-tiers remain unimplemented. Planned Tactical `081` owns the first persisted
-BEP 12 metainfo tiers and source attribution while retaining HTTP/HTTPS
-trackers as truthfully unsupported configuration rather than implementing
-those transports.
+it through the live browser surface. Tactical `081` adds persisted BEP 12
+metainfo tiers and source attribution. UDP rows enter the existing runtime;
+HTTP/HTTPS trackers remain truthfully visible unsupported configuration rather
+than implemented transports.
 
 ## Scope
 
@@ -231,10 +230,10 @@ count or that any returned endpoint is reachable.
 ## Current Limits And Next Work
 
 The manager has volatile state and an eight-operation per-torrent ceiling. It
-does not parse `.torrent` `announce-list` tiers, support HTTP, HTTPS, WebSocket,
-authentication, proxying, or BEP 41 URL-data, emit completed/stopped events,
-announce real transfer counters or an actually bound listening port, scrape,
-or share a session-wide tracker-operation budget. It reports 16 KiB left
+does not support HTTP, HTTPS, WebSocket, authentication, proxying, or BEP 41
+URL-data, emit completed/stopped events, announce real transfer counters or an
+actually bound listening port, scrape, or share a session-wide tracker-
+operation budget. It reports 16 KiB left
 while magnet metadata is unknown and does not consume the application-owned
 loopback listener's actual port. Until truthful listener advertisement exists,
 scheduled tracker announces explicitly carry the conventional port `6881` so
@@ -245,17 +244,24 @@ identity, but that identity consistency does not make the port reachable.
 The DHT owner is a separately owned source using the same peer-observation
 boundary and session network policy. Tactical `017` now lets later tracker and
 DHT observations improve active-transfer reliability. Later tracker work
-should focus on transfer accounting, metainfo tiers, persistence, and
-session-wide resource policy. Multi-peer upload, actual-port advertisement,
+should focus on transfer accounting, HTTP/HTTPS operation, and session-wide
+resource policy. Multi-peer upload, actual-port advertisement,
 and NAT traversal are separate later work. The headless public-torrent
 comparator adds useful live evidence but cannot replace controlled protocol
 and libtorrent tests.
 
-Tactical `081` is the accepted bounded exception to the first gap: it parses
-and persists every valid unique `announce-list`/`announce` URL admitted by its
+Tactical `081` parses and persists every valid unique
+`announce-list`/`announce` URL admitted by its
 outer byte and calibrated decode-work profiles, preserves compact tier
 grouping and metainfo source, feeds only UDP rows into the existing manager,
 and projects retained HTTP/HTTPS rows through a bounded paged view as
 unsupported. The full catalog no longer has a 32-record ceiling, while the
 existing limit of eight concurrently active UDP operations remains. It does
 not implement other tracker wire protocols or broaden tracker authentication.
+
+The controlled byte-intake proof uploads an exact 26,765-byte metainfo source
+whose 40,000-byte payload spans three pieces, observes the expected UDP
+connect and announce requests, completes and verifies the payload, restarts
+offline from persisted operational metadata, and removes managed data. Pure
+tests additionally retain 300 configured trackers across three tiers while
+admitting no more than eight UDP operations at once.

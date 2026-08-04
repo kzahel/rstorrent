@@ -40,13 +40,13 @@ Tactical `057` adds a retained producer-throughput matrix over the exact
 production view combinations. It changes no semantic API, but makes observer
 cost, serialized update volume, queue high water and reset recovery explicit
 hardware-profile evidence.
-Planned Tactical `081` extends tracker rows with truthful metainfo source and
+Tactical `081` extends tracker rows with truthful metainfo source and
 HTTP/HTTPS configured-but-unsupported state while keeping credential-bearing
-URL components out of the projection. It also replaces the current complete
+URL components out of the projection. It also replaces the former complete
 4,096-file and 32-tracker snapshot assumptions with bounded pages carrying a
-total count and stable cursor/range, so accepted libtorrent-scale catalogs do
-not require one rendered snapshot or whole-catalog patch. The existing 16-MiB
-snapshot ceiling becomes a page bound. It does not make the view or
+total count and stable offset, so accepted libtorrent-scale catalogs do not
+require one rendered snapshot or whole-catalog patch. The existing 16-MiB
+snapshot ceiling is a page bound. It does not make the view or
 diagnostics the tracker configuration authority.
 
 ## Purpose And Scope
@@ -736,10 +736,12 @@ small patches remain governed by the 512 KiB steady-state ceiling. Gateway and
 browser readers enforce the same 16 MiB maximum; an oversized response fails
 explicitly rather than truncating.
 
-That is the implemented whole-catalog contract, not the post-Tactical-081
-cardinality policy. Tactical `081` must preserve these bounds per page while
-adding total-count, stable traversal, reset, and page-scoped patch semantics;
-clients may not infer total accepted file or tracker count from page length.
+Tactical `081` replaces that whole-catalog contract with offset pages of at
+most 1,024 rows. Every snapshot carries the requested offset and limit, the
+full total count, and an optional next offset. Steady patches include only
+rows in the requested page; changing pages is an ordinary view-spec update
+that yields a coherent snapshot. Clients do not infer total accepted file or
+tracker count from page length.
 
 Responsive interest requests Files only while that tab is visible and evicts
 the materialization after the ordered view removal. A phone detail does not
@@ -755,6 +757,12 @@ identity, source and transport, active/inactive lifecycle, current and next
 action, attempt and failure counts, accepted response statistics and interval,
 monotonic outcome ages and deadline, and bounded failure context. It does not
 derive state from diagnostics or retain a second tracker state machine.
+
+Tactical `081` makes this a paged projection and adds metainfo versus magnet
+source, original tier, and configured transport/capability state. UDP rows may
+be active; retained HTTP and HTTPS rows remain visible as unsupported and
+credentials are redacted. The full retained tracker catalog is not constrained
+by the manager's independent eight-operation UDP concurrency ceiling.
 
 Same-catalog durable updates preserve live tracker state. Restart reconstructs
 configured inactive rows from the magnet without pretending volatile response
@@ -828,6 +836,11 @@ replacement, removal, reset, and lease-recovery coverage. Its controlled
 tracker-only browser run observed `announcing` before a delayed response, then
 one accepted peer, 37 seeds, 11 leeches, and a 30-minute reannounce deadline
 while the same run completed and verified the seeded payload.
+
+Tactical `081` adds deterministic 1,024-row file and tracker page traversal,
+page-scoped patches, total/next-offset validation in Rust and TypeScript, and
+generated Kotlin/UniFFI high-cardinality coverage. A 374,998-file Android
+fixture is represented by one compact wanted range and one 1,024-row page.
 
 Tactical `046` proves Peers removal on pause rather than only completion or
 synthetic replacement. A deterministic application run begins from verified
