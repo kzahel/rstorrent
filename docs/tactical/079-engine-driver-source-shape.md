@@ -17,11 +17,15 @@ module wrapper. `cargo test -p rstorrent-engine --lib -- --list` reported 196
 tests and zero benchmarks; the focused baseline passed 193 tests with the
 three public-network probes ignored.
 
-The first mechanical gate moved the existing test body unchanged to
-`driver/tests/mod.rs`. The facade is now 8,805 lines including the two-line
-private test-module declaration, and the moved body is 7,799 lines. Formatting
-and all 196 focused engine library tests retain the same result. Categorizing
-that body by owner remains part of the test-layout gate.
+The test-layout gate first moved the existing test body unchanged to
+`driver/tests/mod.rs`, then divided its 80 driver scenarios among `control`,
+`storage_pipeline`, `content`, `discovery_metadata`, and
+`recheck_publication` child modules. Shared private fixtures remain in the
+2,200-line parent test module so production visibility did not widen. The
+facade is 8,805 lines including the private test-module declaration, and the
+categorized test tree is 7,766 lines after formatting. All 196 focused engine
+library tests retain the same result; only their private module qualification
+changed.
 
 ## Decision And Motivation
 
