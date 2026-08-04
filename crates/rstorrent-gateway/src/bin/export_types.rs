@@ -8,8 +8,8 @@ use rstorrent_gateway::{
     ChooseDownloadRootRequest, ChooseDownloadRootResponse,
 };
 use rstorrent_session::{
-    ActivePiece, ActivePieceStageView, ApiEncoding, ApiHello, ApiLimits, ApiVersion,
-    ApplicationCall, ApplicationCallResult, CapabilityStatus, Command, DeliveryMode,
+    ActivePiece, ActivePieceStageView, AddTorrentBytesRequest, ApiEncoding, ApiHello, ApiLimits,
+    ApiVersion, ApplicationCall, ApplicationCallResult, CapabilityStatus, Command, DeliveryMode,
     DeliveryPolicy, DhtBucketView, DhtInspectionView, DhtLifecycleView, DhtLookupView,
     DhtNetworkPolicyView, DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
     DiagnosticProfile, DiagnosticRetention, DiagnosticSeverity, DiagnosticSubject, DiagnosticValue,
@@ -72,6 +72,7 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<RemovalState>(&mut declarations)?;
     append::<ErrorCode>(&mut declarations)?;
     append::<ErrorResponse>(&mut declarations)?;
+    append::<AddTorrentBytesRequest>(&mut declarations)?;
     append::<RequestEnvelope>(&mut declarations)?;
     append::<ResponseOutcome>(&mut declarations)?;
     append::<ResponseEnvelope>(&mut declarations)?;
@@ -189,6 +190,7 @@ fn write_schema(output: &Path) -> Result<(), Box<dyn Error>> {
     add_schema::<ChooseDownloadRootRequest>(&mut definitions, "ChooseDownloadRootRequest")?;
     add_schema::<ChooseDownloadRootResponse>(&mut definitions, "ChooseDownloadRootResponse")?;
     add_schema::<ApiHello>(&mut definitions, "ApiHello")?;
+    add_schema::<AddTorrentBytesRequest>(&mut definitions, "AddTorrentBytesRequest")?;
     add_schema::<RequestEnvelope>(&mut definitions, "RequestEnvelope")?;
     add_schema::<ResponseEnvelope>(&mut definitions, "ResponseEnvelope")?;
     add_schema::<OpenViewSetRequest>(&mut definitions, "OpenViewSetRequest")?;

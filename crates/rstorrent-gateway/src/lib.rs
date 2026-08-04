@@ -17,6 +17,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use axum::body::Bytes;
 use axum::extract::Request;
 use axum::extract::rejection::{JsonRejection, QueryRejection};
 use axum::extract::{Path, Query, State};
@@ -29,11 +30,13 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use rstorrent_platform::{DownloadDirectoryPicker, NativeDownloadDirectoryPicker, PickerError};
 use rstorrent_session::{
-    ApplicationService, OpenViewSetRequest, RequestEnvelope, StorageRootSnapshot,
-    UpdateViewSetRequest, ViewSetError, ViewSetOwner, application_error_response,
+    AddTorrentBytesRequest, ApplicationService, CONTROL_VERSION, OpenViewSetRequest,
+    RequestEnvelope, StorageRootSnapshot, UpdateViewSetRequest, ViewSetError, ViewSetOwner,
+    application_error_response,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, Semaphore};
 use tokio_util::sync::CancellationToken;
@@ -42,6 +45,7 @@ use tower_http::services::ServeDir;
 use ts_rs::TS;
 
 pub const MAX_INCOMING_MESSAGE_BYTES: usize = 64 * 1024;
+pub const MAX_TORRENT_SOURCE_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_HTTP_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_CONNECTIONS: usize = 8;
 pub const MAX_TOKEN_BYTES: usize = 128;
@@ -301,6 +305,7 @@ struct GatewayState {
     allowed_origin: Arc<str>,
     service: Arc<Mutex<ApplicationService>>,
     connections: Arc<Semaphore>,
+    torrent_uploads: Arc<Semaphore>,
     http_owner_namespace: u64,
     connection_registry: application_websocket::ApplicationConnectionRegistry,
     connection_metrics: ApplicationConnectionMetrics,
@@ -391,6 +396,7 @@ async fn bind_with_picker_and_assets(
         allowed_origin: Arc::from(config.allowed_origin),
         service,
         connections: Arc::new(Semaphore::new(config.max_connections)),
+        torrent_uploads: Arc::new(Semaphore::new(1)),
         http_owner_namespace: NEXT_HTTP_OWNER.fetch_add(1, Ordering::Relaxed),
         connection_registry: application_websocket::ApplicationConnectionRegistry::new(),
         connection_metrics: ApplicationConnectionMetrics::default(),
@@ -443,6 +449,14 @@ impl GatewayServer {
                 header::CONTENT_TYPE,
                 HeaderName::from_static("x-rstorrent-owner"),
             ]);
+        let torrent_upload = post(api_torrent_upload)
+            .layer(axum::extract::DefaultBodyLimit::max(
+                MAX_TORRENT_SOURCE_BYTES,
+            ))
+            .layer(middleware::from_fn_with_state(
+                self.state.clone(),
+                admit_torrent_upload,
+            ));
         let mut router = Router::new()
             .route(
                 "/api/v1/connect",
@@ -450,6 +464,7 @@ impl GatewayServer {
             )
             .route("/api/v1/hello", get(api_hello))
             .route("/api/v1/commands", post(api_command))
+            .route("/api/v1/torrents", torrent_upload)
             .route("/api/v1/platform/download-root", post(choose_download_root))
             .route("/api/v1/view-sets", post(open_view_set))
             .route(
@@ -509,6 +524,34 @@ async fn require_basic_auth(
     } else {
         basic_auth_rejection()
     }
+}
+
+async fn admit_torrent_upload(
+    State(state): State<GatewayState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    if let Err(error) = authenticate_http(&state, request.headers()) {
+        return error.into_response();
+    }
+    if request
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        != Some("application/x-bittorrent")
+    {
+        return invalid_request("torrent upload content type must be application/x-bittorrent");
+    }
+    let Ok(permit) = state.torrent_uploads.clone().try_acquire_owned() else {
+        return api_error(
+            StatusCode::TOO_MANY_REQUESTS,
+            ApiErrorCode::ResourceLimit,
+            "another torrent upload is already in progress",
+        );
+    };
+    let response = next.run(request).await;
+    drop(permit);
+    response
 }
 
 fn basic_auth_rejection() -> Response {
@@ -585,6 +628,22 @@ struct UpdatesQuery {
     wait_ms: u32,
 }
 
+#[derive(Debug, Deserialize)]
+struct TorrentUploadQuery {
+    request_id: String,
+    storage_root: String,
+    #[serde(default)]
+    expected_revision: Option<String>,
+    #[serde(default = "default_true")]
+    start_content: bool,
+    #[serde(default)]
+    skip_files: Option<String>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
 async fn api_hello(State(state): State<GatewayState>, headers: HeaderMap) -> Response {
     if let Err(error) = authenticate_http(&state, &headers) {
         return error.into_response();
@@ -617,6 +676,80 @@ async fn api_command(
         }
     };
     json_response(StatusCode::OK, &response)
+}
+
+async fn api_torrent_upload(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    query: Result<Query<TorrentUploadQuery>, QueryRejection>,
+    body: Result<Bytes, axum::extract::rejection::BytesRejection>,
+) -> Response {
+    if let Err(error) = authenticate_http(&state, &headers) {
+        return error.into_response();
+    }
+    let Query(query) = match query {
+        Ok(query) => query,
+        Err(error) => return invalid_request(error.body_text()),
+    };
+    let body = match body {
+        Ok(body) => body,
+        Err(error) => return invalid_request(error.body_text()),
+    };
+    let skip_files = match parse_upload_file_indices(query.skip_files.as_deref()) {
+        Ok(skip_files) => skip_files,
+        Err(message) => return invalid_request(message),
+    };
+    let request = AddTorrentBytesRequest {
+        version: CONTROL_VERSION,
+        request_id: query.request_id,
+        expected_revision: query.expected_revision,
+        storage_root: query.storage_root,
+        start_content: query.start_content,
+        skip_files,
+        source_length: body.len() as u32,
+        source_sha256: encode_sha256(&Sha256::digest(&body)),
+    };
+    let request_id = request.request_id.clone();
+    let mut service = state.service.lock().await;
+    let response = match service.add_torrent_bytes(request, body.into()).await {
+        Ok(response) => response,
+        Err(error) => {
+            application_error_response(request_id, service.revision().unwrap_or(0), &error)
+        }
+    };
+    json_response(StatusCode::OK, &response)
+}
+
+fn parse_upload_file_indices(value: Option<&str>) -> Result<Vec<u32>, String> {
+    let Some(value) = value else {
+        return Ok(Vec::new());
+    };
+    if value.is_empty() {
+        return Ok(Vec::new());
+    }
+    value
+        .split(',')
+        .map(|part| {
+            if part.is_empty()
+                || (part.len() > 1 && part.starts_with('0'))
+                || !part.bytes().all(|byte| byte.is_ascii_digit())
+            {
+                return Err("skip_files must be canonical comma-separated integers".to_owned());
+            }
+            part.parse::<u32>()
+                .map_err(|_| "skip_files index exceeds unsigned 32-bit range".to_owned())
+        })
+        .collect()
+}
+
+fn encode_sha256(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        output.push(char::from(HEX[(byte >> 4) as usize]));
+        output.push(char::from(HEX[(byte & 0x0f) as usize]));
+    }
+    output
 }
 
 async fn choose_download_root(
@@ -954,12 +1087,14 @@ mod tests {
     use futures_util::{SinkExt, StreamExt};
     use rstorrent_platform::DownloadDirectoryPicker;
     use rstorrent_session::{
-        ApplicationCall, ApplicationCallResult, ApplicationConfig, ApplicationService, Command,
-        ConfiguredStorageRoot, NetworkConfig, NetworkPolicy, OpenViewSetOptions,
-        OpenViewSetRequest, OpenViewSetResponse, RequestEnvelope, SessionStore, UpdateBatch,
-        UpdateViewSetRequest, ViewDeliveryPolicy, ViewSetUpdate, ViewSnapshot, ViewSpec,
+        AddTorrentBytesRequest, ApplicationCall, ApplicationCallResult, ApplicationConfig,
+        ApplicationService, Command, ConfiguredStorageRoot, NetworkConfig, NetworkPolicy,
+        OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, RequestEnvelope,
+        ResponseOutcome, SessionStore, UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy,
+        ViewSetUpdate, ViewSnapshot, ViewSpec,
     };
     use sha1::{Digest, Sha1};
+    use sha2::Sha256;
     use tokio::sync::Mutex;
     use tokio_tungstenite::connect_async;
     use tokio_tungstenite::tungstenite::Message;
@@ -1157,6 +1292,77 @@ mod tests {
         .expect("HTTP request task")
     }
 
+    async fn raw_torrent_request(
+        address: SocketAddr,
+        path: &str,
+        token: &str,
+        origin: &str,
+        content_type: &str,
+        body: Vec<u8>,
+    ) -> (u16, Vec<u8>) {
+        let path = path.to_owned();
+        let token = token.to_owned();
+        let origin = origin.to_owned();
+        let content_type = content_type.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let headers = format!(
+                "POST {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\nContent-Length: {}\r\nContent-Type: {content_type}\r\nAuthorization: Bearer {token}\r\nOrigin: {origin}\r\nX-RSTorrent-Owner: 00000000000000000000000000000001\r\n\r\n",
+                body.len()
+            );
+            let mut stream = TcpStream::connect(address).expect("connect torrent HTTP route");
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .expect("set torrent HTTP timeout");
+            stream.write_all(headers.as_bytes()).expect("write headers");
+            stream.write_all(&body).expect("write torrent body");
+            let mut response = Vec::new();
+            if let Err(error) = stream.read_to_end(&mut response) {
+                assert_eq!(
+                    error.kind(),
+                    std::io::ErrorKind::ConnectionReset,
+                    "read torrent HTTP response"
+                );
+                assert!(!response.is_empty(), "server reset without a response");
+            }
+            let split = response
+                .windows(4)
+                .position(|window| window == b"\r\n\r\n")
+                .expect("HTTP header terminator");
+            let headers = std::str::from_utf8(&response[..split]).expect("response headers");
+            let status = headers
+                .lines()
+                .next()
+                .and_then(|line| line.split_whitespace().nth(1))
+                .and_then(|status| status.parse().ok())
+                .expect("response status");
+            (status, response[(split + 4)..].to_vec())
+        })
+        .await
+        .expect("torrent HTTP task")
+    }
+
+    fn torrent_source(ignored_bytes: usize) -> Vec<u8> {
+        let mut source = format!("d7:comment{ignored_bytes}:").into_bytes();
+        source.resize(source.len() + ignored_bytes, b'x');
+        source.extend_from_slice(
+            b"4:infod6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaaee",
+        );
+        source
+    }
+
+    fn torrent_upload_request(request_id: &str, source: &[u8]) -> AddTorrentBytesRequest {
+        AddTorrentBytesRequest {
+            version: rstorrent_session::CONTROL_VERSION,
+            request_id: request_id.to_owned(),
+            expected_revision: None,
+            storage_root: "downloads".to_owned(),
+            start_content: false,
+            skip_files: Vec::new(),
+            source_length: source.len() as u32,
+            source_sha256: super::encode_sha256(&Sha256::digest(source)),
+        }
+    }
+
     #[test]
     fn credential_comparison_includes_length_and_content() {
         assert!(constant_time_equal(b"token", b"token"));
@@ -1175,6 +1381,157 @@ mod tests {
         assert!(GatewayAuthentication::basic("", "doorstop").is_err());
         assert!(GatewayAuthentication::basic("bad:name", "doorstop").is_err());
         assert!(GatewayAuthentication::basic("preview", "").is_err());
+    }
+
+    #[tokio::test]
+    async fn raw_http_torrent_upload_uses_route_only_binary_limit() {
+        let root = test_root("http-torrent-upload");
+        let service = test_service(&root).await;
+        let origin = "http://127.0.0.1:5173";
+        let server = bind(
+            GatewayConfig {
+                bind: "127.0.0.1:0".parse().expect("address"),
+                authentication: GatewayAuthentication::Bearer {
+                    token: "correct-token".to_owned(),
+                },
+                allowed_origin: origin.to_owned(),
+                max_connections: 2,
+            },
+            service.clone(),
+        )
+        .await
+        .expect("bind");
+        let address = server.local_addr();
+        let shutdown = CancellationToken::new();
+        let task = tokio::spawn(server.serve(shutdown.clone()));
+        let source = torrent_source(96 * 1024);
+        let path =
+            "/api/v1/torrents?request_id=http-upload&storage_root=downloads&start_content=false";
+
+        let (status, body) = raw_torrent_request(
+            address,
+            path,
+            "correct-token",
+            origin,
+            "application/x-bittorrent",
+            source.clone(),
+        )
+        .await;
+        assert_eq!(status, 200);
+        let accepted: rstorrent_session::ResponseEnvelope =
+            serde_json::from_slice(&body).expect("torrent response");
+        assert!(matches!(accepted.outcome, ResponseOutcome::Success { .. }));
+        assert_eq!(accepted.revision, "1");
+
+        let (status, _) = raw_torrent_request(
+            address,
+            path,
+            "correct-token",
+            origin,
+            "application/octet-stream",
+            source,
+        )
+        .await;
+        assert_eq!(status, 400);
+        let snapshot = service
+            .lock()
+            .await
+            .storage_snapshot()
+            .expect("storage snapshot");
+        assert_eq!(snapshot.roots.len(), 1);
+        assert_eq!(service.lock().await.revision().expect("revision"), 1);
+
+        shutdown.cancel();
+        task.await
+            .expect("server join")
+            .expect("server termination");
+        service.lock().await.shutdown().await.expect("shutdown");
+        drop(service);
+        std::fs::remove_dir_all(root).expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn websocket_torrent_upload_requires_ready_and_correlates_result() {
+        let root = test_root("websocket-torrent-upload");
+        let service = test_service(&root).await;
+        let origin = "http://127.0.0.1:5173";
+        let server = bind(
+            GatewayConfig {
+                bind: "127.0.0.1:0".parse().expect("address"),
+                authentication: GatewayAuthentication::Bearer {
+                    token: "correct-token".to_owned(),
+                },
+                allowed_origin: origin.to_owned(),
+                max_connections: 2,
+            },
+            service.clone(),
+        )
+        .await
+        .expect("bind");
+        let address = server.local_addr();
+        let shutdown = CancellationToken::new();
+        let task = tokio::spawn(server.serve(shutdown.clone()));
+        let mut request = format!("ws://{address}/api/v1/connect")
+            .into_client_request()
+            .expect("request");
+        request
+            .headers_mut()
+            .insert("Origin", origin.parse().expect("origin"));
+        let (mut socket, _) = connect_async(request).await.expect("connect");
+        send_application_message(
+            &mut socket,
+            &ApplicationClientFrame::Connect {
+                api_version: rstorrent_session::API_VERSION,
+                encoding: rstorrent_session::ApiEncoding::Json,
+                client_instance_id: "00000000000000000000000000000001".to_owned(),
+                token: Some("correct-token".to_owned()),
+            },
+        )
+        .await;
+        assert!(matches!(
+            read_application_message(&mut socket).await,
+            ApplicationServerFrame::Connected { .. }
+        ));
+        let source = torrent_source(96 * 1024);
+        send_application_message(
+            &mut socket,
+            &ApplicationClientFrame::BeginTorrentUpload {
+                call_id: "upload-call".to_owned(),
+                upload_id: "upload-body".to_owned(),
+                request: torrent_upload_request("ws-upload", &source),
+            },
+        )
+        .await;
+        assert_eq!(
+            read_application_message(&mut socket).await,
+            ApplicationServerFrame::TorrentUploadReady {
+                call_id: "upload-call".to_owned(),
+                upload_id: "upload-body".to_owned(),
+            }
+        );
+        socket
+            .send(Message::Binary(source.into()))
+            .await
+            .expect("send torrent bytes");
+        let ApplicationServerFrame::Result {
+            call_id,
+            result: ApplicationCallResult::CommandResponse { response },
+        } = read_application_message(&mut socket).await
+        else {
+            panic!("expected correlated torrent result");
+        };
+        assert_eq!(call_id, "upload-call");
+        assert!(matches!(response.outcome, ResponseOutcome::Success { .. }));
+        assert_eq!(response.revision, "1");
+        socket.close(None).await.expect("close socket");
+
+        shutdown.cancel();
+        task.await
+            .expect("server join")
+            .expect("server termination");
+        service.lock().await.shutdown().await.expect("shutdown");
+        drop(service);
+        std::fs::remove_dir_all(root).expect("remove root");
     }
 
     #[tokio::test]

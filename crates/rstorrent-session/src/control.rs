@@ -500,7 +500,7 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
     Ok(())
 }
 
-pub(crate) fn validate_add_torrent_bytes_request(
+pub fn validate_add_torrent_bytes_request(
     request: &AddTorrentBytesRequest,
 ) -> Result<(), (ErrorCode, String)> {
     if request.version != CONTROL_VERSION {

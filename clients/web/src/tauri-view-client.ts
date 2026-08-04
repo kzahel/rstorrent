@@ -1,6 +1,12 @@
-import { Channel, invoke } from "@tauri-apps/api/core";
+import {
+  Channel,
+  invoke,
+  type InvokeArgs,
+  type InvokeOptions,
+} from "@tauri-apps/api/core";
 
 import type {
+  AddTorrentBytesRequest,
   ApiHello,
   ChooseDownloadRootRequest,
   OpenViewSetRequest,
@@ -15,6 +21,7 @@ import {
   ApplicationViewError,
   type ApplicationUpdateStream,
   type ApplicationViewClient,
+  validateTorrentByteUpload,
 } from "./api/client";
 import {
   ContractError,
@@ -33,7 +40,11 @@ interface TauriChannel<T> {
 }
 
 export interface TauriViewBridge {
-  invoke<T>(command: string, arguments_?: Record<string, unknown>): Promise<T>;
+  invoke<T>(
+    command: string,
+    arguments_?: InvokeArgs,
+    options?: InvokeOptions,
+  ): Promise<T>;
   createChannel<T>(): TauriChannel<T>;
 }
 
@@ -46,8 +57,8 @@ type QueuedStreamItem =
   | { readonly type: "error"; readonly error: Error };
 
 const defaultBridge: TauriViewBridge = {
-  invoke: <T>(command: string, arguments_?: Record<string, unknown>) =>
-    invoke<T>(command, arguments_),
+  invoke: <T>(command: string, arguments_?: InvokeArgs, options?: InvokeOptions) =>
+    invoke<T>(command, arguments_, options),
   createChannel: <T>() => new Channel<T>(),
 };
 
@@ -72,6 +83,34 @@ export class TauriApplicationViewClient implements ApplicationViewClient {
       await this.invoke<unknown>("application_dispatch", { request }),
       decodeResponseEnvelope,
       "Tauri command response",
+    );
+  }
+
+  public async addTorrentBytes(
+    request: AddTorrentBytesRequest,
+    source: ArrayBuffer,
+  ): Promise<ResponseEnvelope> {
+    this.ensureOpen();
+    validateTorrentByteUpload(request, source);
+    const headers: Record<string, string> = {
+      "x-rstorrent-request-id": request.request_id,
+      "x-rstorrent-storage-root": request.storage_root,
+      "x-rstorrent-start-content": String(request.start_content),
+    };
+    if (request.expected_revision != null) {
+      headers["x-rstorrent-expected-revision"] = request.expected_revision;
+    }
+    if (request.skip_files.length > 0) {
+      headers["x-rstorrent-skip-files"] = request.skip_files.join(",");
+    }
+    return decodeStructured(
+      await this.invoke<unknown>(
+        "application_add_torrent_bytes",
+        source,
+        { headers },
+      ),
+      decodeResponseEnvelope,
+      "Tauri torrent intake response",
     );
   }
 
@@ -157,10 +196,11 @@ export class TauriApplicationViewClient implements ApplicationViewClient {
 
   private async invoke<T>(
     command: string,
-    arguments_?: Record<string, unknown>,
+    arguments_?: InvokeArgs,
+    options?: InvokeOptions,
   ): Promise<T> {
     try {
-      return await this.bridge.invoke<T>(command, arguments_);
+      return await this.bridge.invoke<T>(command, arguments_, options);
     } catch (error) {
       throw normalizeTauriError(error);
     }

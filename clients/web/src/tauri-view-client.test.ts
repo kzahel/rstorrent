@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { InvokeArgs, InvokeOptions } from "@tauri-apps/api/core";
 
 import type {
   ApiHello,
@@ -31,20 +32,27 @@ class FakeChannel<T> {
 class FakeBridge implements TauriViewBridge {
   public readonly calls: Array<{
     command: string;
-    arguments_: Record<string, unknown> | undefined;
+    arguments_: InvokeArgs | undefined;
+    options?: InvokeOptions;
   }> = [];
   public channel: FakeChannel<unknown> | undefined;
   public handler: (
     command: string,
-    arguments_: Record<string, unknown> | undefined,
+    arguments_: InvokeArgs | undefined,
+    options?: InvokeOptions,
   ) => unknown | Promise<unknown> = () => undefined;
 
   public async invoke<T>(
     command: string,
-    arguments_?: Record<string, unknown>,
+    arguments_?: InvokeArgs,
+    options?: InvokeOptions,
   ): Promise<T> {
-    this.calls.push({ command, arguments_ });
-    return (await this.handler(command, arguments_)) as T;
+    this.calls.push({
+      command,
+      arguments_,
+      ...(options === undefined ? {} : { options }),
+    });
+    return (await this.handler(command, arguments_, options)) as T;
   }
 
   public createChannel<T>(): { onmessage: (message: T) => void } {
@@ -55,6 +63,61 @@ class FakeBridge implements TauriViewBridge {
 }
 
 describe("Tauri leased view-set adapter", () => {
+  it("passes torrent bytes as a raw IPC body with metadata headers", async () => {
+    const bridge = new FakeBridge();
+    const source = new Uint8Array([100, 52, 58, 105, 110, 102, 111, 100, 101]).buffer;
+    bridge.handler = (command) => {
+      if (command !== "application_add_torrent_bytes") {
+        throw new Error(`unexpected command ${command}`);
+      }
+      return {
+        version: 1,
+        request_id: "upload-request",
+        revision: "1",
+        status: "success",
+        snapshot: {
+          profile_id: "test",
+          revision: "1",
+          storage: { roots: [], show_add_options: true },
+          torrents: [],
+        },
+      };
+    };
+    const client = new TauriApplicationViewClient(bridge);
+
+    await expect(
+      client.addTorrentBytes(
+        {
+          version: 1,
+          request_id: "upload-request",
+          expected_revision: "0",
+          storage_root: "root-a",
+          start_content: false,
+          skip_files: [2, 5],
+          source_length: source.byteLength,
+          source_sha256: "0".repeat(64),
+        },
+        source,
+      ),
+    ).resolves.toMatchObject({ request_id: "upload-request" });
+    expect(bridge.calls).toEqual([
+      {
+        command: "application_add_torrent_bytes",
+        arguments_: source,
+        options: {
+          headers: {
+            "x-rstorrent-request-id": "upload-request",
+            "x-rstorrent-storage-root": "root-a",
+            "x-rstorrent-start-content": "false",
+            "x-rstorrent-expected-revision": "0",
+            "x-rstorrent-skip-files": "2,5",
+          },
+        },
+      },
+    ]);
+    await client.close();
+  });
+
   it("invokes the native folder picker with only an optional repair ID", async () => {
     const bridge = new FakeBridge();
     bridge.handler = (command) => {
@@ -110,7 +173,9 @@ describe("Tauri leased view-set adapter", () => {
         return "tauri-stream-1";
       }
       if (command === "application_view_stream_ack") {
-        const cursor = String(arguments_?.cursor);
+        const cursor = String(
+          (arguments_ as Record<string, unknown> | undefined)?.cursor,
+        );
         acknowledgements.push(cursor);
         bridge.channel?.emit({ type: "batch", batch: batch("2", "3") });
         return undefined;

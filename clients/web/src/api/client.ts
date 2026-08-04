@@ -1,4 +1,5 @@
 import type {
+  AddTorrentBytesRequest,
   ApiHello,
   ChooseDownloadRootRequest,
   StorageRootSnapshot,
@@ -25,6 +26,11 @@ export interface ApplicationViewClient {
   hello(signal?: AbortSignal): Promise<ApiHello>;
   dispatch(
     request: RequestEnvelope,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope>;
+  addTorrentBytes?(
+    request: AddTorrentBytesRequest,
+    source: ArrayBuffer,
     signal?: AbortSignal,
   ): Promise<ResponseEnvelope>;
   chooseDownloadRoot(
@@ -123,6 +129,34 @@ export class HttpApplicationClient implements ApplicationViewClient {
       decodeResponseEnvelope,
       signal,
     );
+  }
+
+  public async addTorrentBytes(
+    request: AddTorrentBytesRequest,
+    source: ArrayBuffer,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope> {
+    validateTorrentByteUpload(request, source);
+    const query = new URLSearchParams({
+      request_id: request.request_id,
+      storage_root: request.storage_root,
+      start_content: String(request.start_content),
+    });
+    if (request.expected_revision != null) {
+      query.set("expected_revision", request.expected_revision);
+    }
+    if (request.skip_files.length > 0) {
+      query.set("skip_files", request.skip_files.join(","));
+    }
+    const response = await this.sendRaw(
+      "POST",
+      `/api/v1/torrents?${query}`,
+      source,
+      signal,
+    );
+    const encoded = await boundedResponseText(response);
+    if (!response.ok) throw decodeHttpError(response.status, encoded);
+    return this.codec.decodeResponse(encoded, decodeResponseEnvelope);
   }
 
   public async chooseDownloadRoot(
@@ -249,6 +283,54 @@ export class HttpApplicationClient implements ApplicationViewClient {
       ...(encoded === undefined ? {} : { body: encoded }),
       ...(signal === undefined ? {} : { signal }),
     });
+  }
+
+  private sendRaw(
+    method: string,
+    path: string,
+    body: ArrayBuffer,
+    signal: AbortSignal | undefined,
+  ): Promise<Response> {
+    if (this.closed) return Promise.reject(new Error("gateway client is closed"));
+    return this.fetchImplementation(new URL(path, this.baseUrl), {
+      method,
+      headers: {
+        Accept: "application/json",
+        Origin: this.origin,
+        "X-RSTorrent-Owner": this.ownerId,
+        "Content-Type": "application/x-bittorrent",
+        ...(this.token === null
+          ? {}
+          : { Authorization: `Bearer ${this.token}` }),
+      },
+      body,
+      ...(signal === undefined ? {} : { signal }),
+    });
+  }
+}
+
+export function validateTorrentByteUpload(
+  request: AddTorrentBytesRequest,
+  source: ArrayBuffer,
+): void {
+  const maximumSourceBytes = 64 * 1024 * 1024;
+  if (source.byteLength === 0 || source.byteLength > maximumSourceBytes) {
+    throw new ApplicationViewError(
+      "resource_limit",
+      "torrent source must contain 1..=67108864 bytes",
+    );
+  }
+  if (request.source_length !== source.byteLength) {
+    throw new ApplicationViewError(
+      "invalid_call",
+      "torrent source length does not match the request",
+    );
+  }
+  if (!/^[0-9a-f]{64}$/.test(request.source_sha256)) {
+    throw new ApplicationViewError(
+      "invalid_call",
+      "torrent source SHA-256 must be lowercase hexadecimal",
+    );
   }
 }
 

@@ -13,6 +13,8 @@ export type ErrorCode = "invalid_version" | "invalid_request" | "request_conflic
 
 export type ErrorResponse = { code: ErrorCode, message: string, };
 
+export type AddTorrentBytesRequest = { version: number, request_id: string, expected_revision?: string | null, storage_root: string, start_content: boolean, skip_files: Array<number>, source_length: number, source_sha256: string, };
+
 export type RequestEnvelope = { version: number, request_id: string, expected_revision?: string | null, command: Command, };
 
 export type ResponseOutcome = { "status": "success", snapshot: ServiceSnapshot, } | { "status": "error", error: ErrorResponse, };
@@ -215,9 +217,9 @@ export type ApplicationConnectionErrorCode = "authentication_failed" | "invalid_
 
 export type ApplicationConnectionError = { code: ApplicationConnectionErrorCode, message: string, };
 
-export type ApplicationConnectionLimits = { max_attachments: number, max_pending_calls: number, max_client_message_bytes: number, max_application_payload_bytes: number, heartbeat_idle_millis: number, heartbeat_timeout_millis: number, };
+export type ApplicationConnectionLimits = { max_attachments: number, max_pending_calls: number, max_client_message_bytes: number, max_application_payload_bytes: number, max_torrent_source_bytes: number, heartbeat_idle_millis: number, heartbeat_timeout_millis: number, };
 
-export type ApplicationClientFrame = { "type": "connect", api_version: number, encoding: ApiEncoding, client_instance_id: string, token?: string | null, } | { "type": "call", call_id: string, operation: ApplicationCall, } | { "type": "attach", call_id: string, stream_id: string, view_set_id: string, after: string, } | { "type": "ack", stream_id: string, cursor: string, } | { "type": "detach", call_id: string, stream_id: string, };
+export type ApplicationClientFrame = { "type": "connect", api_version: number, encoding: ApiEncoding, client_instance_id: string, token?: string | null, } | { "type": "call", call_id: string, operation: ApplicationCall, } | { "type": "begin_torrent_upload", call_id: string, upload_id: string, request: AddTorrentBytesRequest, } | { "type": "attach", call_id: string, stream_id: string, view_set_id: string, after: string, } | { "type": "ack", stream_id: string, cursor: string, } | { "type": "detach", call_id: string, stream_id: string, };
 
-export type ApplicationServerFrame = { "type": "connected", api_version: number, encoding: ApiEncoding, hello: ApiHello, connection_limits: ApplicationConnectionLimits, } | { "type": "result", call_id: string, result: ApplicationCallResult, } | { "type": "call_error", call_id: string, error: ApplicationConnectionError, } | { "type": "attached", call_id: string, stream_id: string, view_set_id: string, } | { "type": "view_batch", stream_id: string, batch: UpdateBatch, } | { "type": "stream_error", stream_id: string, error: ApplicationConnectionError, } | { "type": "detached", call_id: string, stream_id: string, } | { "type": "connection_error", error: ApplicationConnectionError, };
+export type ApplicationServerFrame = { "type": "connected", api_version: number, encoding: ApiEncoding, hello: ApiHello, connection_limits: ApplicationConnectionLimits, } | { "type": "result", call_id: string, result: ApplicationCallResult, } | { "type": "call_error", call_id: string, error: ApplicationConnectionError, } | { "type": "torrent_upload_ready", call_id: string, upload_id: string, } | { "type": "attached", call_id: string, stream_id: string, view_set_id: string, } | { "type": "view_batch", stream_id: string, batch: UpdateBatch, } | { "type": "stream_error", stream_id: string, error: ApplicationConnectionError, } | { "type": "detached", call_id: string, stream_id: string, } | { "type": "connection_error", error: ApplicationConnectionError, };
 

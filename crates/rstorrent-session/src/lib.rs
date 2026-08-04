@@ -30,7 +30,7 @@ pub use control::{
     AddTorrentBytesRequest, CONTROL_VERSION, Command, ErrorCode, ErrorResponse, FilePriority,
     RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope, ResponseOutcome,
     ServiceSnapshot, StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot,
-    StorageState, TorrentSnapshot, TorrentState,
+    StorageState, TorrentSnapshot, TorrentState, validate_add_torrent_bytes_request,
 };
 pub use diagnostics::{
     DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter, DiagnosticProfile,

@@ -77,6 +77,57 @@
       ],
       "type": "string"
     },
+    "AddTorrentBytesRequest": {
+      "properties": {
+        "expected_revision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "skip_files": {
+          "default": [],
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "source_length": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source_sha256": {
+          "type": "string"
+        },
+        "start_content": {
+          "default": true,
+          "type": "boolean"
+        },
+        "storage_root": {
+          "type": "string"
+        },
+        "version": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "request_id",
+        "storage_root",
+        "source_length",
+        "source_sha256"
+      ],
+      "type": "object"
+    },
     "ApiEncoding": {
       "enum": [
         "json",
@@ -431,6 +482,30 @@
         },
         {
           "properties": {
+            "call_id": {
+              "type": "string"
+            },
+            "request": {
+              "$ref": "#/$defs/AddTorrentBytesRequest"
+            },
+            "type": {
+              "const": "begin_torrent_upload",
+              "type": "string"
+            },
+            "upload_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "call_id",
+            "upload_id",
+            "request"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "after": {
               "type": "string"
             },
@@ -564,6 +639,11 @@
           "maximum": 65535,
           "minimum": 0,
           "type": "integer"
+        },
+        "max_torrent_source_bytes": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "required": [
@@ -571,6 +651,7 @@
         "max_pending_calls",
         "max_client_message_bytes",
         "max_application_payload_bytes",
+        "max_torrent_source_bytes",
         "heartbeat_idle_millis",
         "heartbeat_timeout_millis"
       ],
@@ -646,6 +727,26 @@
             "type",
             "call_id",
             "error"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "call_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "torrent_upload_ready",
+              "type": "string"
+            },
+            "upload_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "call_id",
+            "upload_id"
           ],
           "type": "object"
         },

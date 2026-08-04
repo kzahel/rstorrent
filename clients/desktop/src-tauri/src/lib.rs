@@ -7,15 +7,16 @@ use std::time::Duration;
 
 use rstorrent_platform::{DownloadDirectoryPicker, NativeDownloadDirectoryPicker, PickerError};
 use rstorrent_session::{
-    ApplicationConfig, ApplicationService, NetworkConfig, NetworkPolicy, RequestEnvelope,
-    ResponseEnvelope, StorageRootSnapshot, SubscriptionSpec, ViewSubscription, ViewUpdate,
-    application_error_response,
+    AddTorrentBytesRequest, ApplicationConfig, ApplicationService, CONTROL_VERSION, NetworkConfig,
+    NetworkPolicy, RequestEnvelope, ResponseEnvelope, StorageRootSnapshot, SubscriptionSpec,
+    ViewSubscription, ViewUpdate, application_error_response,
 };
+use sha2::{Digest, Sha256};
 #[cfg(target_os = "macos")]
 use tauri::WebviewWindowBuilder;
-use tauri::ipc::Channel;
+use tauri::ipc::{Channel, InvokeBody, Request as IpcRequest};
 use tauri::{AppHandle, Manager, RunEvent, State, WebviewWindow, WindowEvent};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Semaphore};
 use tokio_util::sync::CancellationToken;
 
 mod view_delivery;
@@ -29,11 +30,19 @@ use view_delivery::{
 const MAIN_WINDOW_LABEL: &str = "main";
 const PEER_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const PEER_IO_TIMEOUT: Duration = Duration::from_secs(60);
+const MAX_TORRENT_SOURCE_BYTES: usize = 64 * 1024 * 1024;
+
+const HEADER_REQUEST_ID: &str = "x-rstorrent-request-id";
+const HEADER_EXPECTED_REVISION: &str = "x-rstorrent-expected-revision";
+const HEADER_STORAGE_ROOT: &str = "x-rstorrent-storage-root";
+const HEADER_START_CONTENT: &str = "x-rstorrent-start-content";
+const HEADER_SKIP_FILES: &str = "x-rstorrent-skip-files";
 
 struct DesktopState {
     service: Arc<Mutex<ApplicationService>>,
     subscriptions: Arc<Mutex<BTreeMap<(String, String), DesktopSubscription>>>,
     view_resources: Arc<DesktopViewResources>,
+    torrent_uploads: Arc<Semaphore>,
     window_generation: AtomicU64,
     allow_exit: AtomicBool,
 }
@@ -58,6 +67,124 @@ async fn application_dispatch(
             application_error_response(request_id, service.revision().unwrap_or(0), &error)
         }
     })
+}
+
+#[tauri::command]
+async fn application_add_torrent_bytes(
+    state: State<'_, DesktopState>,
+    ipc: IpcRequest<'_>,
+) -> Result<ResponseEnvelope, String> {
+    let (request, source) = decode_torrent_ipc(ipc.body(), ipc.headers())?;
+    let request_id = request.request_id.clone();
+    let permit = state
+        .torrent_uploads
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| "another torrent upload is already in progress".to_owned())?;
+    let mut service = state.service.lock().await;
+    let response = match service.add_torrent_bytes(request, source).await {
+        Ok(response) => response,
+        Err(error) => {
+            application_error_response(request_id, service.revision().unwrap_or_default(), &error)
+        }
+    };
+    drop(permit);
+    Ok(response)
+}
+
+fn decode_torrent_ipc(
+    body: &InvokeBody,
+    headers: &tauri::http::HeaderMap,
+) -> Result<(AddTorrentBytesRequest, Vec<u8>), String> {
+    let source = match body {
+        InvokeBody::Raw(source) => source.clone(),
+        InvokeBody::Json(_) => {
+            return Err("torrent intake requires a raw IPC body".to_owned());
+        }
+    };
+    if source.is_empty() || source.len() > MAX_TORRENT_SOURCE_BYTES {
+        return Err(format!(
+            "torrent source length must be 1..={MAX_TORRENT_SOURCE_BYTES} bytes"
+        ));
+    }
+    let request_id = required_ipc_header(headers, HEADER_REQUEST_ID)?;
+    let storage_root = required_ipc_header(headers, HEADER_STORAGE_ROOT)?;
+    let expected_revision = optional_ipc_header(headers, HEADER_EXPECTED_REVISION)?;
+    let start_content = match optional_ipc_header(headers, HEADER_START_CONTENT)?.as_deref() {
+        None | Some("true") => true,
+        Some("false") => false,
+        Some(_) => return Err("x-rstorrent-start-content must be true or false".to_owned()),
+    };
+    let skip_files =
+        parse_ipc_file_indices(optional_ipc_header(headers, HEADER_SKIP_FILES)?.as_deref())?;
+    let digest = Sha256::digest(&source);
+    let request = AddTorrentBytesRequest {
+        version: CONTROL_VERSION,
+        request_id,
+        expected_revision,
+        storage_root,
+        start_content,
+        skip_files,
+        source_length: source.len() as u32,
+        source_sha256: encode_sha256(&digest),
+    };
+    Ok((request, source))
+}
+
+fn required_ipc_header(
+    headers: &tauri::http::HeaderMap,
+    name: &'static str,
+) -> Result<String, String> {
+    optional_ipc_header(headers, name)?
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| format!("missing {name} header"))
+}
+
+fn optional_ipc_header(
+    headers: &tauri::http::HeaderMap,
+    name: &'static str,
+) -> Result<Option<String>, String> {
+    headers
+        .get(name)
+        .map(|value| {
+            value
+                .to_str()
+                .map(str::to_owned)
+                .map_err(|_| format!("{name} header is not valid text"))
+        })
+        .transpose()
+}
+
+fn parse_ipc_file_indices(value: Option<&str>) -> Result<Vec<u32>, String> {
+    let Some(value) = value else {
+        return Ok(Vec::new());
+    };
+    if value.is_empty() {
+        return Ok(Vec::new());
+    }
+    value
+        .split(',')
+        .map(|part| {
+            if part.is_empty()
+                || (part.len() > 1 && part.starts_with('0'))
+                || !part.bytes().all(|byte| byte.is_ascii_digit())
+            {
+                return Err("x-rstorrent-skip-files must contain canonical integers".to_owned());
+            }
+            part.parse::<u32>()
+                .map_err(|_| "x-rstorrent-skip-files index exceeds u32".to_owned())
+        })
+        .collect()
+}
+
+fn encode_sha256(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        output.push(char::from(HEX[(byte >> 4) as usize]));
+        output.push(char::from(HEX[(byte & 0x0f) as usize]));
+    }
+    output
 }
 
 #[tauri::command]
@@ -319,6 +446,7 @@ pub fn run() {
                 service: Arc::new(Mutex::new(service)),
                 subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
                 view_resources: Arc::new(DesktopViewResources::new()),
+                torrent_uploads: Arc::new(Semaphore::new(1)),
                 window_generation: AtomicU64::new(1),
                 allow_exit: AtomicBool::new(false),
             };
@@ -334,6 +462,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             application_dispatch,
+            application_add_torrent_bytes,
             choose_download_root,
             application_view_hello,
             application_view_open,
@@ -380,8 +509,12 @@ fn desktop_application_config(app_data: &std::path::Path) -> ApplicationConfig {
 #[cfg(test)]
 mod tests {
     use rstorrent_session::DownloadResourceLimits;
+    use tauri::ipc::InvokeBody;
 
-    use super::{NetworkPolicy, desktop_application_config};
+    use super::{
+        HEADER_REQUEST_ID, HEADER_START_CONTENT, HEADER_STORAGE_ROOT, NetworkPolicy,
+        decode_torrent_ipc, desktop_application_config,
+    };
 
     #[test]
     fn desktop_product_explicitly_uses_online_networking() {
@@ -391,6 +524,31 @@ mod tests {
         assert_eq!(
             config.download_resource_limits,
             DownloadResourceLimits::DESKTOP
+        );
+    }
+
+    #[test]
+    fn torrent_ipc_requires_raw_bytes_and_decodes_bounded_headers() {
+        let source =
+            b"d4:infod6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaaee"
+                .to_vec();
+        let mut headers = tauri::http::HeaderMap::new();
+        headers.insert(HEADER_REQUEST_ID, "desktop-upload".parse().expect("header"));
+        headers.insert(HEADER_STORAGE_ROOT, "downloads".parse().expect("header"));
+        headers.insert(HEADER_START_CONTENT, "false".parse().expect("header"));
+
+        let (request, decoded) =
+            decode_torrent_ipc(&InvokeBody::Raw(source.clone()), &headers).expect("decode raw IPC");
+        assert_eq!(decoded, source);
+        assert_eq!(request.request_id, "desktop-upload");
+        assert_eq!(request.storage_root, "downloads");
+        assert!(!request.start_content);
+        assert_eq!(request.source_length as usize, decoded.len());
+        assert_eq!(request.source_sha256.len(), 64);
+        assert!(
+            decode_torrent_ipc(&InvokeBody::Json(serde_json::json!([1, 2, 3])), &headers)
+                .expect_err("reject JSON IPC")
+                .contains("raw IPC body")
         );
     }
 }

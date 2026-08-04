@@ -170,6 +170,12 @@ export function decodeApplicationServerFrame(
         MAX_U32,
       );
       boundedInteger(
+        value.connection_limits.max_torrent_source_bytes,
+        "maximum torrent source bytes",
+        1,
+        MAX_U32,
+      );
+      boundedInteger(
         value.connection_limits.heartbeat_idle_millis,
         "heartbeat idle",
         1,
@@ -199,6 +205,10 @@ export function decodeApplicationServerFrame(
     case "call_error":
       connectionIdentifier(value.call_id, "call ID");
       validateApplicationConnectionError(value.error);
+      break;
+    case "torrent_upload_ready":
+      connectionIdentifier(value.call_id, "call ID");
+      connectionIdentifier(value.upload_id, "upload ID");
       break;
     case "attached":
       connectionIdentifier(value.call_id, "call ID");

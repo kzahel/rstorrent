@@ -1,4 +1,5 @@
 import type {
+  AddTorrentBytesRequest,
   ApiHello,
   ApplicationCall,
   ApplicationCallResult,
@@ -18,6 +19,7 @@ import {
   HttpApplicationClient,
   type ApplicationUpdateStream,
   type ApplicationViewClient,
+  validateTorrentByteUpload,
 } from "./api/client";
 import { ContractError, decodeApplicationServerFrame } from "./validation";
 
@@ -36,7 +38,7 @@ export interface ApplicationWebSocket {
   onmessage: ((event: MessageEvent<unknown>) => void) | null;
   onerror: ((event: Event) => void) | null;
   onclose: ((event: CloseEvent) => void) | null;
-  send(data: string): void;
+  send(data: string | ArrayBuffer): void;
   close(code?: number, reason?: string): void;
 }
 
@@ -48,6 +50,11 @@ interface PendingCorrelation {
   readonly resolve: (frame: ApplicationServerFrame) => void;
   readonly reject: (error: Error) => void;
   readonly removeAbort: () => void;
+  readonly upload?: {
+    readonly uploadId: string;
+    readonly source: ArrayBuffer;
+    sent: boolean;
+  };
 }
 
 type QueuedStreamItem =
@@ -71,6 +78,7 @@ export class WebSocketApplicationViewClient
   private reconnectAttempt = 0;
   private reconnectNotBefore = 0;
   private nextCallId = 1;
+  private nextUploadId = 1;
   private nextStreamId = 1;
 
   public constructor(
@@ -125,6 +133,63 @@ export class WebSocketApplicationViewClient
       throw new ContractError("dispatch returned the wrong result type");
     }
     return result.response;
+  }
+
+  public async addTorrentBytes(
+    request: AddTorrentBytesRequest,
+    source: ArrayBuffer,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope> {
+    this.ensureOpen();
+    validateTorrentByteUpload(request, source);
+    await this.ensureConnected(signal);
+    if (this.pending.size >= MAX_PENDING_CALLS) {
+      throw new ApplicationViewError(
+        "resource_limit",
+        "application connection pending call limit reached",
+      );
+    }
+    const callId = this.allocateCallId();
+    const uploadId = `upload-${this.nextUploadId++}`;
+    const response = await new Promise<ApplicationServerFrame>((resolve, reject) => {
+      const abort = () => {
+        const pending = this.pending.get(callId);
+        this.pending.delete(callId);
+        pending?.removeAbort();
+        reject(new Error("torrent upload was aborted"));
+        if (pending !== undefined) {
+          this.socket?.close(1000, "torrent upload aborted");
+        }
+      };
+      if (signal?.aborted) {
+        abort();
+        return;
+      }
+      signal?.addEventListener("abort", abort, { once: true });
+      this.pending.set(callId, {
+        resolve,
+        reject,
+        removeAbort: () => signal?.removeEventListener("abort", abort),
+        upload: { uploadId, source, sent: false },
+      });
+      try {
+        this.send({
+          type: "begin_torrent_upload",
+          call_id: callId,
+          upload_id: uploadId,
+          request,
+        });
+      } catch (error) {
+        const pending = this.pending.get(callId);
+        this.pending.delete(callId);
+        pending?.removeAbort();
+        reject(asError(error));
+      }
+    });
+    if (response.type !== "result" || response.result.type !== "command_response") {
+      throw new ContractError("torrent upload returned the wrong result type");
+    }
+    return response.result.response;
   }
 
   public async chooseDownloadRoot(
@@ -429,7 +494,17 @@ export class WebSocketApplicationViewClient
 
   private route(frame: ApplicationServerFrame): void {
     switch (frame.type) {
-      case "result":
+      case "result": {
+        const pending = this.pending.get(frame.call_id);
+        if (pending?.upload !== undefined && !pending.upload.sent) {
+          this.protocolFailure(
+            new ContractError("torrent upload completed before binary transfer"),
+          );
+          return;
+        }
+        this.resolveCorrelation(frame.call_id, frame);
+        break;
+      }
       case "attached":
       case "detached":
         this.resolveCorrelation(frame.call_id, frame);
@@ -437,6 +512,26 @@ export class WebSocketApplicationViewClient
       case "call_error":
         this.rejectCorrelation(frame.call_id, connectionError(frame.error));
         break;
+      case "torrent_upload_ready": {
+        const pending = this.pending.get(frame.call_id);
+        if (
+          pending?.upload === undefined ||
+          pending.upload.uploadId !== frame.upload_id ||
+          pending.upload.sent
+        ) {
+          this.protocolFailure(
+            new ContractError("torrent upload readiness has no matching call"),
+          );
+          return;
+        }
+        pending.upload.sent = true;
+        try {
+          this.sendBytes(pending.upload.source);
+        } catch (error) {
+          this.rejectCorrelation(frame.call_id, asError(error));
+        }
+        break;
+      }
       case "view_batch": {
         const stream = this.streams.get(frame.stream_id);
         if (stream === undefined) {
@@ -523,6 +618,17 @@ export class WebSocketApplicationViewClient
       );
     }
     socket.send(encoded);
+  }
+
+  private sendBytes(source: ArrayBuffer): void {
+    const socket = this.socket;
+    if (!this.connected || socket === undefined || socket.readyState !== SOCKET_OPEN) {
+      throw new ApplicationViewError(
+        "connection_closed",
+        "application WebSocket is not open",
+      );
+    }
+    socket.send(source);
   }
 
   private allocateCallId(): string {

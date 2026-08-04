@@ -32,11 +32,16 @@ class FakeWebSocket implements ApplicationWebSocket {
   public onerror: ((event: Event) => void) | null = null;
   public onclose: ((event: CloseEvent) => void) | null = null;
   public readonly sent: ApplicationClientFrame[] = [];
+  public readonly binarySent: ArrayBuffer[] = [];
 
   public constructor(
     public readonly url: string,
     private readonly respond: (
       frame: ApplicationClientFrame,
+      socket: FakeWebSocket,
+    ) => void,
+    private readonly respondBinary?: (
+      source: ArrayBuffer,
       socket: FakeWebSocket,
     ) => void,
   ) {}
@@ -46,7 +51,12 @@ class FakeWebSocket implements ApplicationWebSocket {
     this.onopen?.({} as Event);
   }
 
-  public send(data: string): void {
+  public send(data: string | ArrayBuffer): void {
+    if (data instanceof ArrayBuffer) {
+      this.binarySent.push(data);
+      this.respondBinary?.(data, this);
+      return;
+    }
     const frame = JSON.parse(data) as ApplicationClientFrame;
     this.sent.push(frame);
     this.respond(frame, this);
@@ -375,6 +385,69 @@ describe("multiplexed application WebSocket adapter", () => {
     ).toBe(false);
     await client.close();
   });
+
+  it("sends torrent bytes only after the server admits the upload", async () => {
+    let uploadCallId = "";
+    const source = new Uint8Array([100, 52, 58, 105, 110, 102, 111, 100, 101]).buffer;
+    const socket = new FakeWebSocket(
+      "ws://gateway.test/api/v1/connect",
+      (frame, active) => {
+        queueMicrotask(() => {
+          if (frame.type === "connect") {
+            active.server(connected());
+          } else if (frame.type === "begin_torrent_upload") {
+            uploadCallId = frame.call_id;
+            active.server({
+              type: "torrent_upload_ready",
+              call_id: frame.call_id,
+              upload_id: frame.upload_id,
+            });
+          }
+        });
+      },
+      (_bytes, active) => {
+        queueMicrotask(() => {
+          active.server({
+            type: "result",
+            call_id: uploadCallId,
+            result: {
+              type: "command_response",
+              response: commandResponse("upload-request"),
+            },
+          });
+        });
+      },
+    );
+    const client = new WebSocketApplicationViewClient(
+      "http://gateway.test",
+      null,
+      () => socket,
+      clientInstanceId,
+    );
+
+    const upload = client.addTorrentBytes(
+      {
+        version: 1,
+        request_id: "upload-request",
+        expected_revision: null,
+        storage_root: "root-a",
+        start_content: true,
+        skip_files: [],
+        source_length: source.byteLength,
+        source_sha256: "0".repeat(64),
+      },
+      source,
+    );
+    socket.open();
+
+    await expect(upload).resolves.toMatchObject({ request_id: "upload-request" });
+    expect(socket.binarySent).toEqual([source]);
+    expect(socket.sent.map((frame) => frame.type)).toEqual([
+      "connect",
+      "begin_torrent_upload",
+    ]);
+    await client.close();
+  });
 });
 
 function connected(): ApplicationServerFrame {
@@ -388,6 +461,7 @@ function connected(): ApplicationServerFrame {
       max_pending_calls: 16,
       max_client_message_bytes: 65_536,
       max_application_payload_bytes: 16_777_216,
+      max_torrent_source_bytes: 67_108_864,
       heartbeat_idle_millis: 15_000,
       heartbeat_timeout_millis: 10_000,
     },

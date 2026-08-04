@@ -9,9 +9,10 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use futures_util::{SinkExt, StreamExt};
 use rstorrent_session::{
-    API_VERSION, AcknowledgedViewStream, AcknowledgedViewStreamError, ApiEncoding, ApiHello,
-    ApplicationCall, ApplicationCallError, ApplicationCallResult, ApplicationService, DeliveryMode,
-    UpdateBatch, ViewSetError, ViewSetOwner,
+    API_VERSION, AcknowledgedViewStream, AcknowledgedViewStreamError, AddTorrentBytesRequest,
+    ApiEncoding, ApiHello, ApplicationCall, ApplicationCallError, ApplicationCallResult,
+    ApplicationService, DeliveryMode, UpdateBatch, ViewSetError, ViewSetOwner,
+    application_error_response, validate_add_torrent_bytes_request,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -22,7 +23,7 @@ use ts_rs::TS;
 
 use super::{
     GatewayAuthentication, GatewayState, MAX_INCOMING_MESSAGE_BYTES, MAX_TOKEN_BYTES,
-    constant_time_equal, valid_view_set_id,
+    MAX_TORRENT_SOURCE_BYTES, constant_time_equal, valid_view_set_id,
 };
 
 pub const MAX_APPLICATION_PAYLOAD_BYTES: usize = 16 * 1024 * 1024;
@@ -38,14 +39,23 @@ pub const HANDSHAKE_TIMEOUT_MILLIS: u64 = 5_000;
 pub const HEARTBEAT_IDLE_MILLIS: u64 = 15_000;
 pub const HEARTBEAT_TIMEOUT_MILLIS: u64 = 10_000;
 pub const MAX_INVALID_MESSAGES: u8 = 3;
+pub const TORRENT_UPLOAD_TIMEOUT_MILLIS: u64 = 120_000;
 
 const VIEW_STREAM_WAIT_MILLIS: u32 = 20_000;
 const DATA_RESERVATIONS: usize = 2;
-const CLIENT_FRAME_FAMILIES: [&str; 5] = ["connect", "call", "attach", "ack", "detach"];
-const SERVER_FRAME_FAMILIES: [&str; 8] = [
+const CLIENT_FRAME_FAMILIES: [&str; 6] = [
+    "connect",
+    "call",
+    "begin_torrent_upload",
+    "attach",
+    "ack",
+    "detach",
+];
+const SERVER_FRAME_FAMILIES: [&str; 9] = [
     "connected",
     "result",
     "call_error",
+    "torrent_upload_ready",
     "attached",
     "view_batch",
     "stream_error",
@@ -108,8 +118,8 @@ struct ApplicationConnectionMetricAtoms {
     handshake_micros_max: AtomicU64,
     pending_calls_high_water: AtomicUsize,
     attachments_high_water: AtomicUsize,
-    client_frames: [FrameMetricAtoms; 5],
-    server_frames: [FrameMetricAtoms; 8],
+    client_frames: [FrameMetricAtoms; 6],
+    server_frames: [FrameMetricAtoms; 9],
     view_batches: AtomicU64,
     empty_view_batches: AtomicU64,
     acknowledgements: AtomicU64,
@@ -246,9 +256,10 @@ impl ApplicationConnectionMetrics {
         let index = match frame {
             ApplicationClientFrame::Connect { .. } => 0,
             ApplicationClientFrame::Call { .. } => 1,
-            ApplicationClientFrame::Attach { .. } => 2,
-            ApplicationClientFrame::Ack { .. } => 3,
-            ApplicationClientFrame::Detach { .. } => 4,
+            ApplicationClientFrame::BeginTorrentUpload { .. } => 2,
+            ApplicationClientFrame::Attach { .. } => 3,
+            ApplicationClientFrame::Ack { .. } => 4,
+            ApplicationClientFrame::Detach { .. } => 5,
         };
         record_frame(&self.inner.client_frames[index], bytes);
         if matches!(frame, ApplicationClientFrame::Ack { .. }) {
@@ -261,7 +272,8 @@ impl ApplicationConnectionMetrics {
             ApplicationServerFrame::Connected { .. } => 0,
             ApplicationServerFrame::Result { .. } => 1,
             ApplicationServerFrame::CallError { .. } => 2,
-            ApplicationServerFrame::Attached { .. } => 3,
+            ApplicationServerFrame::TorrentUploadReady { .. } => 3,
+            ApplicationServerFrame::Attached { .. } => 4,
             ApplicationServerFrame::ViewBatch { batch, .. } => {
                 self.inner.view_batches.fetch_add(1, Ordering::Relaxed);
                 if batch.updates.is_empty() {
@@ -269,14 +281,14 @@ impl ApplicationConnectionMetrics {
                         .empty_view_batches
                         .fetch_add(1, Ordering::Relaxed);
                 }
-                4
+                5
             }
             ApplicationServerFrame::StreamError { .. } => {
                 self.inner.stream_errors.fetch_add(1, Ordering::Relaxed);
-                5
+                6
             }
-            ApplicationServerFrame::Detached { .. } => 6,
-            ApplicationServerFrame::ConnectionError { .. } => 7,
+            ApplicationServerFrame::Detached { .. } => 7,
+            ApplicationServerFrame::ConnectionError { .. } => 8,
         };
         record_frame(&self.inner.server_frames[index], bytes);
         observe_high_water(&self.inner.outbound_message_bytes_high_water, bytes);
@@ -337,6 +349,7 @@ pub struct ApplicationConnectionLimits {
     pub max_pending_calls: u16,
     pub max_client_message_bytes: u32,
     pub max_application_payload_bytes: u32,
+    pub max_torrent_source_bytes: u32,
     pub heartbeat_idle_millis: u32,
     pub heartbeat_timeout_millis: u32,
 }
@@ -348,6 +361,7 @@ impl Default for ApplicationConnectionLimits {
             max_pending_calls: MAX_PENDING_CALLS as u16,
             max_client_message_bytes: MAX_INCOMING_MESSAGE_BYTES as u32,
             max_application_payload_bytes: MAX_APPLICATION_PAYLOAD_BYTES as u32,
+            max_torrent_source_bytes: MAX_TORRENT_SOURCE_BYTES as u32,
             heartbeat_idle_millis: HEARTBEAT_IDLE_MILLIS as u32,
             heartbeat_timeout_millis: HEARTBEAT_TIMEOUT_MILLIS as u32,
         }
@@ -367,6 +381,11 @@ pub enum ApplicationClientFrame {
     Call {
         call_id: String,
         operation: ApplicationCall,
+    },
+    BeginTorrentUpload {
+        call_id: String,
+        upload_id: String,
+        request: AddTorrentBytesRequest,
     },
     Attach {
         call_id: String,
@@ -400,6 +419,10 @@ pub enum ApplicationServerFrame {
     CallError {
         call_id: String,
         error: ApplicationConnectionError,
+    },
+    TorrentUploadReady {
+        call_id: String,
+        upload_id: String,
     },
     Attached {
         call_id: String,
@@ -600,8 +623,8 @@ pub(crate) async fn upgrade_application_connection(
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
     websocket
-        .max_message_size(MAX_INCOMING_MESSAGE_BYTES)
-        .max_frame_size(MAX_INCOMING_MESSAGE_BYTES)
+        .max_message_size(MAX_TORRENT_SOURCE_BYTES)
+        .max_frame_size(MAX_TORRENT_SOURCE_BYTES)
         .on_upgrade(move |socket| serve_application_connection(socket, state, permit))
         .into_response()
 }
@@ -627,6 +650,13 @@ struct ConnectionAttachment {
 struct PumpStopped {
     stream_id: String,
     generation: u64,
+}
+
+struct PendingTorrentUpload {
+    call_id: String,
+    request: AddTorrentBytesRequest,
+    admitted_at: Instant,
+    _permit: OwnedSemaphorePermit,
 }
 
 async fn serve_application_connection(
@@ -759,6 +789,7 @@ async fn serve_application_connection(
     let reservations = Arc::new(Semaphore::new(DATA_RESERVATIONS));
     let pending_ids = Arc::new(StdMutex::new(BTreeSet::<String>::new()));
     let mut calls = JoinSet::new();
+    let mut uploads = JoinSet::new();
     let mut attachments = BTreeMap::<String, ConnectionAttachment>::new();
     let (pump_stopped, mut stopped_pumps) =
         mpsc::channel::<PumpStopped>(MAX_ATTACHMENTS_PER_CONNECTION);
@@ -767,6 +798,7 @@ async fn serve_application_connection(
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut last_client_activity = Instant::now();
     let mut outstanding_ping: Option<(Vec<u8>, Instant)> = None;
+    let mut pending_upload: Option<PendingTorrentUpload> = None;
     let mut service_shutdown = false;
 
     loop {
@@ -778,6 +810,19 @@ async fn serve_application_connection(
             }
             () = connection_cancel.cancelled() => break,
             _ = heartbeat.tick() => {
+                if pending_upload.as_ref().is_some_and(|upload| {
+                    upload.admitted_at.elapsed()
+                        >= Duration::from_millis(TORRENT_UPLOAD_TIMEOUT_MILLIS)
+                }) && let Some(expired) = pending_upload.take()
+                {
+                    remove_pending(&pending_ids, &expired.call_id);
+                    send_call_error(
+                        &control,
+                        expired.call_id,
+                        ApplicationConnectionErrorCode::InvalidCall,
+                        "torrent upload body timed out",
+                    ).await;
+                }
                 if let Some((_, sent)) = &outstanding_ping {
                     if sent.elapsed() >= Duration::from_millis(HEARTBEAT_TIMEOUT_MILLIS) {
                         state
@@ -815,6 +860,11 @@ async fn serve_application_connection(
                 }
             }
             joined = calls.join_next(), if !calls.is_empty() => {
+                if joined.is_some_and(|result| result.is_err()) {
+                    break;
+                }
+            }
+            joined = uploads.join_next(), if !uploads.is_empty() => {
                 if joined.is_some_and(|result| result.is_err()) {
                     break;
                 }
@@ -892,6 +942,100 @@ async fn serve_application_connection(
                             }
                             continue;
                         }
+                        if let ApplicationClientFrame::BeginTorrentUpload {
+                            call_id,
+                            upload_id,
+                            request,
+                        } = frame
+                        {
+                            if !valid_identifier(&call_id)
+                                || !valid_identifier(&upload_id)
+                                || validate_add_torrent_bytes_request(&request).is_err()
+                            {
+                                send_call_error(
+                                    &control,
+                                    call_id,
+                                    ApplicationConnectionErrorCode::InvalidCall,
+                                    "torrent upload declaration is invalid",
+                                ).await;
+                                continue;
+                            }
+                            if pending_upload.is_some() {
+                                send_call_error(
+                                    &control,
+                                    call_id,
+                                    ApplicationConnectionErrorCode::ResourceLimit,
+                                    "connection already has a pending torrent upload",
+                                ).await;
+                                continue;
+                            }
+                            let root_available = state
+                                .service
+                                .lock()
+                                .await
+                                .storage_snapshot()
+                                .ok()
+                                .is_some_and(|snapshot| {
+                                    snapshot.roots.iter().any(|root| {
+                                        root.root_id == request.storage_root
+                                            && root.availability
+                                                == rstorrent_session::StorageRootAvailability::Available
+                                    })
+                                });
+                            if !root_available {
+                                send_call_error(
+                                    &control,
+                                    call_id,
+                                    ApplicationConnectionErrorCode::InvalidCall,
+                                    "torrent upload storage root is unavailable",
+                                ).await;
+                                continue;
+                            }
+                            if !insert_pending(&pending_ids, &call_id) {
+                                send_call_error(
+                                    &control,
+                                    call_id,
+                                    ApplicationConnectionErrorCode::ResourceLimit,
+                                    "call ID is pending or the pending call limit was reached",
+                                ).await;
+                                continue;
+                            }
+                            let permit = match state.torrent_uploads.clone().try_acquire_owned() {
+                                Ok(permit) => permit,
+                                Err(_) => {
+                                    remove_pending(&pending_ids, &call_id);
+                                    send_call_error(
+                                        &control,
+                                        call_id,
+                                        ApplicationConnectionErrorCode::ResourceLimit,
+                                        "another torrent upload is already in progress",
+                                    ).await;
+                                    continue;
+                                }
+                            };
+                            if send_control(
+                                &control,
+                                ApplicationServerFrame::TorrentUploadReady {
+                                    call_id: call_id.clone(),
+                                    upload_id: upload_id.clone(),
+                                },
+                                None,
+                            ).await.is_err()
+                            {
+                                remove_pending(&pending_ids, &call_id);
+                                break;
+                            }
+                            pending_upload = Some(PendingTorrentUpload {
+                                call_id,
+                                request,
+                                admitted_at: Instant::now(),
+                                _permit: permit,
+                            });
+                            state
+                                .connection_metrics
+                                .observe_pending(pending_len(&pending_ids));
+                            continue;
+                        }
                         handle_client_frame(
                             frame,
                             &state,
@@ -906,6 +1050,77 @@ async fn serve_application_connection(
                             &pump_stopped,
                             &connection_cancel,
                         ).await;
+                    }
+                    Message::Binary(bytes) if bytes.len() <= MAX_TORRENT_SOURCE_BYTES => {
+                        let Some(upload) = pending_upload.take() else {
+                            fatal_connection(
+                                &control,
+                                ApplicationConnectionErrorCode::InvalidMessage,
+                                "binary data requires one ready torrent upload",
+                                1002,
+                            ).await;
+                            break;
+                        };
+                        if bytes.len() != upload.request.source_length as usize {
+                            remove_pending(&pending_ids, &upload.call_id);
+                            send_call_error(
+                                &control,
+                                upload.call_id,
+                                ApplicationConnectionErrorCode::InvalidCall,
+                                "torrent upload body length does not match its declaration",
+                            ).await;
+                            continue;
+                        }
+                        let source: Vec<u8> = bytes.into();
+                        let service = state.service.clone();
+                        let control = control.clone();
+                        let reservations = reservations.clone();
+                        let pending_ids = pending_ids.clone();
+                        let metrics = state.connection_metrics.clone();
+                        uploads.spawn(async move {
+                            let PendingTorrentUpload {
+                                call_id,
+                                request,
+                                _permit: permit,
+                                ..
+                            } = upload;
+                            let request_id = request.request_id.clone();
+                            let reservation_started = Instant::now();
+                            let reservation = reservations.acquire_owned().await.ok();
+                            metrics.reservation_wait(reservation_started.elapsed());
+                            let mut application = service.lock().await;
+                            let response = match application
+                                .add_torrent_bytes(request, source)
+                                .await
+                            {
+                                Ok(response) => response,
+                                Err(error) => application_error_response(
+                                    request_id,
+                                    application.revision().unwrap_or_default(),
+                                    &error,
+                                ),
+                            };
+                            let result = ApplicationCallResult::CommandResponse {
+                                response: Box::new(response),
+                            };
+                            let frame = if semantic_size(&result).is_some() {
+                                ApplicationServerFrame::Result {
+                                    call_id: call_id.clone(),
+                                    result,
+                                }
+                            } else {
+                                ApplicationServerFrame::CallError {
+                                    call_id: call_id.clone(),
+                                    error: ApplicationConnectionError::new(
+                                        ApplicationConnectionErrorCode::ResponseTooLarge,
+                                        "application call result exceeds its configured bound",
+                                    ),
+                                }
+                            };
+                            let _ = send_control(&control, frame, reservation).await;
+                            remove_pending(&pending_ids, &call_id);
+                            drop(permit);
+                        });
                     }
                     Message::Text(_) | Message::Binary(_) => {
                         fatal_connection(
@@ -927,6 +1142,7 @@ async fn serve_application_connection(
     }
     calls.abort_all();
     while calls.join_next().await.is_some() {}
+    while uploads.join_next().await.is_some() {}
     state
         .connection_registry
         .release_connection(&owner_key, connection_generation)
@@ -1231,7 +1447,10 @@ async fn handle_client_frame(
             )
             .await;
         }
-        ApplicationClientFrame::Connect { .. } => unreachable!("connect handled before routing"),
+        ApplicationClientFrame::Connect { .. }
+        | ApplicationClientFrame::BeginTorrentUpload { .. } => {
+            unreachable!("connection setup and torrent upload begin are handled before routing")
+        }
     }
 }
 
