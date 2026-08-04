@@ -183,9 +183,8 @@ architecture is accepted. Tactical `035` now implements the first live torrent
 and active-peer field set, Peers-versus-Swarm membership, and local endpoint
 privacy posture. Tactical
 [`064`](../tactical/064-registry-backed-swarm-inspection.md) now projects the
-retained peer registry as the bounded, live Swarm detail. The remaining
-accepted detail direction is bounded by planned Tactical
-[`065`](../tactical/065-dht-observatory.md): DHT leads with a static shared-
+retained peer registry as the bounded, live Swarm detail. Completed Tactical
+[`065`](../tactical/065-dht-observatory.md) gives DHT a static shared-
 prefix-depth distribution, routing freshness, and lookup convergence rather
 than a raw node table or required chart interaction; a presentation-only mode
 can expose the literal 160-slot engine array for teaching and screenshot
@@ -242,10 +241,10 @@ and optional live re-sorting behavior. The phone detail keeps the URL and
 status useful while fully hiding the inactive library pane.
 
 The surface is therefore useful for live peer, retained-swarm, file, tracker,
-piece, global disk, and structured diagnostic observation. A controlled
+piece, global disk, DHT, and structured diagnostic observation. A controlled
 libtorrent transfer proved real tracker context and merged tracker-plus-magnet
 Swarm provenance through the same console and shared pull/stream reducer
 without launching a visible client. The session-scoped Speed view is
-implemented by Tactical `066`; the DHT view remains accepted as planned
-Tactical `065`, and the existing oracle campaign remains the source for the
-next engine-correctness slice.
+implemented by Tactical `066`, the DHT observatory is implemented by Tactical
+`065`, and the existing oracle campaign remains the source for the next
+engine-correctness slice.

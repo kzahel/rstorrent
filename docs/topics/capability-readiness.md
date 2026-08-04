@@ -82,17 +82,17 @@ evidence.
 
 **Choose the next authorized bounded slice.** Tacticals
 [`064`](../tactical/064-registry-backed-swarm-inspection.md) and
-[`066`](../tactical/066-smooth-session-speed-history.md) are complete: the
-bounded peer registry reaches a live Swarm detail and exact session byte
-history reaches the smooth Speed surface. Planned Tactical
-[`065`](../tactical/065-dht-observatory.md) remains the strongest accepted next
-candidate but is inactive until authorized.
+[`066`](../tactical/066-smooth-session-speed-history.md) are complete, and
+Tactical [`065`](../tactical/065-dht-observatory.md) now completes the accepted
+Swarm, Speed, and DHT detail-tab sequence. The bounded peer registry reaches a
+live Swarm detail, exact session byte history reaches the smooth Speed surface,
+and endpoint-free actor observations reach the DHT observatory.
 
 ### Next
 
-1. **Complete the remaining accepted detail tab.** Planned Tactical
-   [`065`](../tactical/065-dht-observatory.md) adds the routing-space DHT
-   observatory. Speed was implemented first under direct authorization.
+No protocol or product slice is implicitly authorized by completion of the
+detail-tab sequence. Select the next bounded tactical from current product and
+engine evidence.
 
 ### Later
 
@@ -175,8 +175,8 @@ does not.
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
 | Durable semantic application control | Implemented | deterministic, runtime, web, AVD, physical | Archive, fenced keep/delete removal, metadata-only add, and joined live file selection are implemented; stable public compatibility and general multi-torrent scheduling remain absent. | [`application-control`](application-control.md) |
-| Leased application view sets and delivery clients | Implemented | deterministic, runtime, interop, web, Tauri | Named summary, piece, structured diagnostic, active-peer, registry-backed Swarm, complete-file, tracker-lifecycle, global Disk, and range-selected session Speed views have bounded replay/reset, independent lease expiry, fresh-snapshot recovery, diagnostic HTTP polling, acknowledged browser WebSocket streaming, and acknowledged in-process Tauri streaming. The retained observer matrices still expose Summary reset storms and trace/all-view serialization pressure; stable public compatibility remains unimplemented. | [`application-view-api`](application-view-api.md), [`application-connection-architecture`](application-connection-architecture.md) |
-| Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive surface now has Library, Transfers, and Workbench destinations, truthful bounded torrent-backed cards, shared multi-selection, magnet add and canonical copy, metadata-only add, live Normal/Skip file actions, archives, guarded removal, live peer/swarm/file/tracker inspection, global Disk pressure, bounded Canvas Pieces, and a smooth exact session Speed history; a real media catalog/playback, `.torrent` file intake, and the planned DHT observatory remain incomplete. | [`client-surfaces`](client-surfaces.md), [`application-interface-direction`](application-interface-direction.md) |
+| Leased application view sets and delivery clients | Implemented | deterministic, runtime, interop, web, Tauri | Named summary, piece, structured diagnostic, active-peer, registry-backed Swarm, complete-file, tracker-lifecycle, global Disk, range-selected session Speed, and latest-value session DHT views have bounded replay/reset, independent lease expiry, fresh-snapshot recovery, diagnostic HTTP polling, acknowledged browser WebSocket streaming, and acknowledged in-process Tauri streaming. The retained observer matrices still expose Summary reset storms and trace/all-view serialization pressure; stable public compatibility remains unimplemented. | [`application-view-api`](application-view-api.md), [`application-connection-architecture`](application-connection-architecture.md) |
+| Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive surface now has Library, Transfers, and Workbench destinations, truthful bounded torrent-backed cards, shared multi-selection, magnet add and canonical copy, metadata-only add, live Normal/Skip file actions, archives, guarded removal, live peer/swarm/file/tracker inspection, global Disk pressure, bounded Canvas Pieces, a smooth exact session Speed history, and the exact routing-space DHT observatory; a real media catalog/playback and `.torrent` file intake remain incomplete. | [`client-surfaces`](client-surfaces.md), [`application-interface-direction`](application-interface-direction.md) |
 | Android Compose foreground client | Partial | runtime, AVD, physical | General settings, connectivity policy, and complete torrent controls remain incomplete. | [`client-surfaces`](client-surfaces.md) |
 | Derived progress and bounded diagnostics | Implemented | deterministic, runtime, interop, web, AVD | Structured hierarchical records, typed context, capture interest, explicit source/delivery/local loss, and the global ordered console are complete; scheduler and per-peer facts must grow with their corresponding owners. | [`application-control`](application-control.md) |
 | Offline, loopback-only, and online egress policy | Implemented | deterministic, runtime, web, AVD | Policy is fixed for one service lifetime; Android VPN and metered-network controls are absent. | [`application-control`](application-control.md) |

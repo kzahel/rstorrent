@@ -584,8 +584,9 @@ Tactical `043`. Tactical
 [`064`](../tactical/064-registry-backed-swarm-inspection.md) implements
 `torrent_swarm`, and Tactical
 [`066`](../tactical/066-smooth-session-speed-history.md) implements
-`session_speed`; `session_dht` remains planned by Tactical
-[`065`](../tactical/065-dht-observatory.md). Swarm is keyed registry state with
+`session_speed`; Tactical
+[`065`](../tactical/065-dht-observatory.md) implements `session_dht`. Swarm is
+keyed registry state with
 active, inactive, and torrent-missing catalogs; DHT is one bounded latest
 session observation containing exact 160-bucket occupancy/freshness and at
 most 16 lookup-convergence summaries; Speed is a range-selected bounded session
@@ -864,12 +865,15 @@ interactive machine.
 5. Tactical `060` implements one multiplexed WebSocket as the ordinary browser
    application connection while retaining HTTP only as an explicit loopback
    diagnostic comparison. This step is complete.
-6. Measure update volume, decode/reduce cost, rendering, and memory before
+6. Tactical `065` adds the bounded latest-value DHT view, exact generated
+   contract validation, coherent replacement reduction, and joined terminal
+   forwarding. This step is complete.
+7. Measure update volume, decode/reduce cost, rendering, and memory before
    selecting binary encoding or finer-grained row patches.
 
-Tacticals `033`, `034`, `035`, `048`, and `060` completed the first five steps.
-The next view should follow observed inspection value. Binary encoding remains
-a measurement-driven change rather than a prerequisite.
+Tacticals `033`, `034`, `035`, `048`, `060`, and `065` completed the first six
+steps. Further views should follow observed inspection value. Binary encoding
+remains a measurement-driven change rather than a prerequisite.
 
 ## References And Deliberate Differences
 

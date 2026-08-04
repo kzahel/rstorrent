@@ -135,12 +135,12 @@ settings, and other session or product concerns use an identifiable right-side
 global group. The accepted storage and piece split lives in
 [`disk-and-piece-inspection`](disk-and-piece-inspection.md).
 
-The remaining detail-tab direction is also accepted. Tactical
+The accepted detail-tab sequence is complete. Tactical
 [`064`](../tactical/064-registry-backed-swarm-inspection.md) now makes Swarm a
 bounded, virtualized table over retained registry records while Peers remains
 active connections. One central tab vocabulary owns torrent/session scope,
 and the `swarm-lifecycle` plus 1,000-row fixtures cover state legibility,
-responsive layout, accessibility, and bounded rendering. Tactical
+responsive layout, accessibility, and bounded rendering. Completed Tactical
 [`065`](../tactical/065-dht-observatory.md) makes DHT a
 session observatory led by a static shared-prefix-depth distribution with
 mirrored replacement occupancy, freshness, a truthful deeper-band summary, and
@@ -148,7 +148,10 @@ bounded lookup-convergence rows. An optional presentation toggle shows the
 literal 160-slot engine array using the same observation, making the normalized
 encoding teachable and screenshots diagnostic without introducing chart
 inspection as required interaction. No force graph, globe, or raw node table
-enters the first slice.
+enters the slice. Its permanent fixture and browser evidence cover lifecycle,
+sparse and ordinary occupancy, active convergence, malformed and rate-limited
+traffic, a nonzero deeper tail, stale delivery, terminal state, both encodings,
+narrow layout, and light/dark accessibility.
 Completed Tactical [`066`](../tactical/066-smooth-session-speed-history.md)
 makes Speed a session-owned range-selected history rendered by local high-DPI
 Canvas code.

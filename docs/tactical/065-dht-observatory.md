@@ -1,8 +1,8 @@
 # Tactical 065: DHT Observatory
 
-Status: Active; direction accepted and visualization revised on 2026-08-03.
-Pinned-source reinspection completed on 2026-08-04; implementation is in
-progress.
+Status: Completed on 2026-08-04. Direction and visualization were accepted on
+2026-08-03; pinned-source reinspection, implementation, and evidence completed
+on 2026-08-04.
 
 Topics: `dht-discovery`, `application-view-api`, `web-ui-design`,
 `desktop-inspection-surface`, `capability-readiness`
@@ -554,6 +554,63 @@ they must land with the common path.
 
 Record exact commands and outcomes in this tactical on completion. Updating the
 view does not promote the DHT row in `protocol-support.md`.
+
+## Completion Evidence
+
+The slice landed in three logical commits:
+
+- `1acd568` added the pure exact routing inspection and bounded actor
+  observations, including lookup convergence, socket-boundary byte counters,
+  latest-value publication, and forced terminal state;
+- `80e8edd` added the joined application forwarder, singleton `session_dht`
+  view, generated TypeScript/schema/UniFFI shapes, strict browser validation,
+  and replacement reducer; and
+- `b480a62` connected the live and demo clients and replaced the scaffold with
+  the static Canvas distribution, persisted normalized/literal presentation
+  mode, status and traffic facts, convergence rows, exact accessible table,
+  and responsive light/dark coverage.
+
+Deterministic and controlled evidence completed on 2026-08-04:
+
+- the final workspace baseline passed `cargo fmt --all -- --check`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and
+  `cargo test --workspace --no-fail-fast`;
+- `cargo test -p rstorrent-protocol dht --lib`: 7 passed;
+- `cargo test -p rstorrent-engine dht --lib`: 16 passed and the two explicitly
+  public live probes remained ignored. The observation test drove malformed
+  and 31 same-source valid datagrams, observed exact received bytes, one
+  rate-limited query, bounded live work, latest-value delivery, and terminal
+  cleanup;
+- `cargo test -p rstorrent-session dht --lib`: 5 passed, including exact DTO
+  projection, singleton replacement coalescing, warm restart, and the joined
+  terminal application view;
+- warning-denied Clippy passed for protocol, engine, session, and gateway;
+  `cargo check -p rstorrent-session --features uniffi` and
+  `cargo check -p rstorrent-android` passed;
+- `npm run typecheck` passed; `npm test` passed 140 tests with two intentional
+  skips; and `npm run build` passed the production build and CSP check;
+- `playwright test tests/dht-observatory.spec.ts` passed two Chrome cases. It
+  proved the 171-node, 25-band ordinary fixture, active convergence, literal
+  equivalence and labeling, a depth-39 tail outlier, narrow layout, persisted
+  mode, and serious/critical axe checks in light and scoped dark themes;
+- the permanent `dht-observatory` scenario covers offline, bootstrap-empty,
+  sparse, participating, active lookup, malformed, rate-limited, deep-tail,
+  stale, and terminal inactive states while retaining all 160 engine slots;
+  and
+- `uv run --project tests/interop --locked python
+  tests/interop/dht_magnet.py` passed against libtorrent 2.0.13 on loopback:
+  one `find_node`, one `get_peers`, three independent incoming-query probes,
+  two metadata blocks, all three payload pieces and 40,000 bytes verified, and
+  cleanup completed in 0.675 seconds.
+
+Visual inspection at 1440 by 900 confirmed that the normalized presentation
+uses the available width for depths `0..=31` and explicitly reports the
+128-band tail, while literal mode draws the same 160 buckets in index order and
+truthfully compresses ordinary occupancy into the far edge. Both retain the
+fixed `K = 8` scale, mirrored replacement geometry, freshness rail, capture
+and lifecycle labels, and no continuous animation. No visible desktop client,
+public-swarm traffic, DHT control, endpoint exposure, or protocol-support
+promotion was used by this slice.
 
 ## Escalation Contract
 

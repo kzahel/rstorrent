@@ -5,7 +5,8 @@ Topic: `dht-discovery`
 Status: Partial and product-integrated. Tactical 016 delivered the bounded
 session-owned IPv4 Mainline DHT participant, controlled libtorrent completion,
 incoming-query participation, private-torrent gating, and revalidated warm
-restart. IPv6 socket operation and self-announcement remain absent.
+restart. Tactical 065 added its bounded endpoint-free product observatory.
+IPv6 socket operation and self-announcement remain absent.
 
 ## Why DHT Was Front-Loaded
 
@@ -74,6 +75,15 @@ only discovery source and LSD, PEX, incoming peers, uTP, and NAT mapping were
 disabled, but libtorrent retained its ordinary peer and metadata concurrency.
 The result is a mature-reference baseline rather than an alternated paired
 comparison, and it exposes a large downstream traversal/selection gap.
+
+Tactical `065` now projects the actor's latest immutable observation through
+one application-owned joined forwarder. The view contains exact socket byte
+and rejection counters, all 160 fixed IPv4 routing buckets, oldest-response
+freshness, separately bounded replacements, and at most 16 active lookup
+summaries whose convergence considers responded candidates with known IDs.
+The product presents shared-prefix depths `0..=31` plus an explicit deeper
+tail by default and can teach the transformation with the literal 160-slot
+engine order. Neither presentation changes DHT work or exposes endpoints.
 
 ## Scope And Protocol Baseline
 
@@ -245,7 +255,7 @@ The completed DHT foundation does not imply:
 These deferrals do not permit a disposable lookup client, an unbounded routing
 table, or a runtime that cannot be stopped and resumed cleanly.
 
-Planned Tactical [`065`](../tactical/065-dht-observatory.md) adds a read-only
+Completed Tactical [`065`](../tactical/065-dht-observatory.md) adds a read-only
 product inspection surface without changing these protocol deferrals. It
 projects bounded aggregate counters, all 160 IPv4 XOR-distance bucket
 occupancies with oldest-response age, and at most 16 active lookup summaries

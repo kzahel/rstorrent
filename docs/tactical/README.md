@@ -321,9 +321,9 @@ that scope and its cleanup or compatibility rules explicitly.
 - [`064-registry-backed-swarm-inspection.md`](064-registry-backed-swarm-inspection.md):
   planned; turns the bounded peer registry into the torrent-scoped Swarm view
   while preserving Peers as active connection generations.
-- [`065-dht-observatory.md`](065-dht-observatory.md): planned; adds a
-  session-scoped DHT observatory centered on truthful 160-bucket XOR-distance
-  occupancy and bounded active lookup summaries rather than a raw node table.
+- [`065-dht-observatory.md`](065-dht-observatory.md): complete; adds the
+  session-scoped DHT observatory with exact 160-bucket occupancy and freshness,
+  bounded lookup convergence, and normalized/literal diagnostic encodings.
 - [`066-smooth-session-speed-history.md`](066-smooth-session-speed-history.md):
   complete; retains bounded exact session byte history in live and durable
   tiers and renders a smooth hand-rolled high-DPI Canvas chart without a
