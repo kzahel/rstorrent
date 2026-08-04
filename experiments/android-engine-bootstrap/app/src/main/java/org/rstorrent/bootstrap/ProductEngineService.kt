@@ -16,6 +16,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import java.io.File
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -61,6 +62,7 @@ class ProductEngineService : Service() {
 
     private val binder = LocalBinder()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val requestPrefix = UUID.randomUUID().toString()
     private val requestIds = AtomicLong(1)
     private val stopped = AtomicBoolean(false)
     private val clientReady = CompletableDeferred<Unit>()
@@ -304,7 +306,7 @@ class ProductEngineService : Service() {
                     client.dispatch(
                         RequestEnvelope(
                             1U.toUShort(),
-                            "android-${requestIds.getAndIncrement()}",
+                            "android-$requestPrefix-${requestIds.getAndIncrement()}",
                             null,
                             command,
                         ),

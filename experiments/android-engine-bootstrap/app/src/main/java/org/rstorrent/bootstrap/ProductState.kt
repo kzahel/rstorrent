@@ -117,6 +117,8 @@ internal object ProductStateReducer {
             is ViewSnapshot.Peers -> state
             is ViewSnapshot.Swarm -> state
             is ViewSnapshot.SessionDisk -> state
+            is ViewSnapshot.SessionDht -> state
+            is ViewSnapshot.SessionSpeed -> state
             is ViewSnapshot.Files -> state
             is ViewSnapshot.Trackers -> state
             is ViewSnapshot.Diagnostics ->
@@ -176,6 +178,8 @@ internal object ProductStateReducer {
             is ViewPatch.Peers -> state
             is ViewPatch.Swarm -> state
             is ViewPatch.SessionDisk -> state
+            is ViewPatch.SessionDht -> state
+            is ViewPatch.SessionSpeed -> state
             is ViewPatch.Files -> state
             is ViewPatch.Trackers -> state
             is ViewPatch.Diagnostics -> {

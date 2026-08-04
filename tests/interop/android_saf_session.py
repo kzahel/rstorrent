@@ -33,6 +33,7 @@ from android_reactive_surface import (
     verify_activity_independence,
 )
 from first_verified_piece import ScenarioFailure, add_seed, create_session, wait_for_listener
+from headless_avd import OwnedHeadlessAvd, default_adb, default_emulator
 from magnet_metadata import create_fixture, magnet_uri
 
 
@@ -48,14 +49,13 @@ RELEASE_GRANT_EXTRA = "product_release_saf_grant"
 
 def parse_arguments() -> argparse.Namespace:
     repository = Path(__file__).resolve().parents[2]
-    default_sdk = Path.home() / "Android" / "Sdk"
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--serial", required=True, help="explicit authorized ADB serial")
-    parser.add_argument(
-        "--adb",
-        type=Path,
-        default=default_sdk / "platform-tools" / "adb",
-    )
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument("--serial", help="explicit authorized ADB serial")
+    target.add_argument("--avd", help="AVD name for a harness-owned emulator")
+    parser.add_argument("--headless", action="store_true")
+    parser.add_argument("--adb", type=Path, default=default_adb())
+    parser.add_argument("--emulator", type=Path, default=default_emulator())
     parser.add_argument(
         "--apk",
         type=Path,
@@ -342,8 +342,10 @@ def force_stop_and_resume(adb: Adb) -> tuple[int, str]:
                         )
         if (
             crash_restarted
-            and "saf_storage_open" in restart_trace
             and "saf_publication_confirmed" in restart_trace
+            and "state=CHECKING storage=PUBLISHED" in restart_trace
+            and "diagnostic=recheck_started" in restart_trace
+            and "diagnostic=have_rechecked" in restart_trace
             and "state=COMPLETE" in restart_trace
             and restart_trace.count("saf_publication_begin") >= 2
         ):
@@ -461,7 +463,7 @@ def run(arguments: argparse.Namespace) -> None:
             f"view_updates={before.count('view_update') + after.count('view_update')} "
             f"activity_recreation=ok activity_background=ok pause_resume=ok "
             f"grant_loss=fail_closed rename_crash=recovered "
-            f"publication=fresh_descriptor_verified payload_sha1={fixture.payload_hash} "
+            f"publication=fresh_piece_rechecked payload_sha1={fixture.payload_hash} "
             "foreground_stop=joined cleanup=ok"
         )
     finally:
@@ -487,11 +489,35 @@ def main() -> int:
     arguments = parse_arguments()
     print(f"libtorrent_binding_version={lt.__version__}")
     print(f"libtorrent_native_version={lt.version}")
+    owned_avd: OwnedHeadlessAvd | None = None
+    avd_work: Path | None = None
     try:
+        if arguments.avd is not None:
+            if not arguments.headless:
+                raise ScenarioFailure("--avd requires --headless")
+            avd_work = Path(tempfile.mkdtemp(prefix="rstorrent-headless-avd-"))
+            owned_avd = OwnedHeadlessAvd.start(
+                arguments.avd,
+                arguments.adb.resolve(),
+                arguments.emulator.resolve(),
+                avd_work,
+            )
+            arguments.serial = owned_avd.serial
+            print(
+                f"android_target=headless-avd name={owned_avd.name} "
+                f"serial={owned_avd.serial}"
+            )
+        elif arguments.headless:
+            raise ScenarioFailure("--headless is only valid with --avd")
         run(arguments)
     except (ScenarioFailure, OSError, subprocess.SubprocessError, ValueError) as error:
         print(error, file=sys.stderr)
         return 1
+    finally:
+        if owned_avd is not None:
+            owned_avd.close()
+        if avd_work is not None:
+            shutil.rmtree(avd_work, ignore_errors=True)
     return 0
 
 

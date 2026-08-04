@@ -918,9 +918,10 @@ impl ApplicationService {
         )
         .await
         .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-        self.store_mut()?
-            .confirm_prepared_publication(&torrent_id)?;
+        self.store_mut()?.begin_published_recheck(&torrent_id)?;
+        self.storage_file_pool.invalidate_storage(&torrent_id);
         self.refresh_views()?;
+        self.start_recheck_if_possible(&torrent_id).await?;
         Ok(())
     }
 
@@ -1192,8 +1193,13 @@ impl ApplicationService {
             .map(|torrent| torrent.torrent_id)
             .collect::<Vec<_>>();
         for torrent_id in torrent_ids {
-            let should_start = match self.load_resume_conservative(&torrent_id) {
-                Ok(resume) => resume.desired_running || resume.raw_info.is_none(),
+            let (should_start, force_recheck) = match self.load_resume_conservative(&torrent_id) {
+                Ok(resume) => (
+                    resume.desired_running
+                        || resume.raw_info.is_none()
+                        || resume.state == TorrentState::Checking,
+                    resume.raw_info.is_some() && resume.state == TorrentState::Checking,
+                ),
                 Err(error) => {
                     self.store_mut()?
                         .mark_needs_repair(&torrent_id, &error.to_string())?;
@@ -1201,7 +1207,11 @@ impl ApplicationService {
                 }
             };
             if should_start {
-                self.start_if_possible(&torrent_id).await?;
+                if force_recheck {
+                    self.start_recheck_if_possible(&torrent_id).await?;
+                } else {
+                    self.start_if_possible(&torrent_id).await?;
+                }
                 break;
             }
         }
@@ -3715,6 +3725,79 @@ mod tests {
             "replaying one request must not start another generation"
         );
         assert_eq!(fs::read(&output).expect("read rechecked output"), payload);
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn startup_restarts_interrupted_check_even_with_paused_intent() {
+        let root = test_root("paused-interrupted-recheck");
+        let configuration = config(&root);
+        let payload = (0..32_768)
+            .map(|offset| ((offset * 23 + offset / 11) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let raw_info = single_file_info("paused-check.bin", &payload, 16_384);
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let mut store = SessionStore::open(
+            &configuration.profile_root,
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open setup store");
+        store
+            .handle_durable(&add_request("add-paused-check", &torrent_id))
+            .expect("add torrent");
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record metadata");
+        store
+            .record_pieces(&torrent_id, &[0, 1])
+            .expect("record old have");
+        store
+            .mark_storage_prepared(&torrent_id, StorageState::Published)
+            .expect("record published ownership");
+        store.mark_complete(&torrent_id).expect("mark complete");
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "pause-interrupted-check".to_owned(),
+                expected_revision: None,
+                command: Command::Pause {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .expect("persist paused intent");
+        store
+            .begin_recheck(&torrent_id)
+            .expect("begin interrupted check");
+        drop(store);
+        let output = root.join("payload/paused-check.bin");
+        fs::create_dir_all(output.parent().expect("payload parent")).expect("create payload root");
+        fs::write(&output, &payload).expect("write published payload");
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("restart application");
+        wait_for_torrent_state(
+            &mut service,
+            &torrent_id,
+            TorrentState::Complete,
+            "paused-interrupted-check",
+        )
+        .await;
+        let resume = service
+            .store_mut()
+            .expect("store")
+            .load_resume(&torrent_id)
+            .expect("completed resume");
+        assert!(!resume.desired_running);
+        assert_eq!(
+            resume.have.expect("replacement have").pieces(),
+            &[true, true]
+        );
 
         service.shutdown().await.expect("shutdown");
         drop(service);

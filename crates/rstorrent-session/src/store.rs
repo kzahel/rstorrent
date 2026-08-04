@@ -1295,6 +1295,79 @@ impl SessionStore {
         Ok(revision)
     }
 
+    pub fn begin_published_recheck(&mut self, torrent_id: &str) -> Result<u64, StoreError> {
+        let info_hash = decode_info_hash(torrent_id)
+            .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
+        let transaction = self.connection.transaction()?;
+        let (state, storage_state, updated_revision) = transaction
+            .query_row(
+                "SELECT state, storage_state, updated_revision
+                 FROM torrents WHERE info_hash = ?1",
+                [info_hash.as_slice()],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                },
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_owned()))?;
+        let state = TorrentState::parse(&state)
+            .ok_or_else(|| StoreError::DurableState("invalid torrent state".to_owned()))?;
+        let storage_state = StorageState::parse(&storage_state)
+            .ok_or_else(|| StoreError::DurableState("invalid storage state".to_owned()))?;
+        if storage_state == StorageState::Published
+            && matches!(
+                state,
+                TorrentState::Checking
+                    | TorrentState::Downloading
+                    | TorrentState::Paused
+                    | TorrentState::Complete
+            )
+        {
+            return u64::try_from(updated_revision)
+                .map_err(|_| StoreError::DurableState("torrent revision is invalid".to_owned()));
+        }
+        if state != TorrentState::AwaitingPublication || storage_state != StorageState::Prepared {
+            return Err(StoreError::DurableState(
+                "torrent is not awaiting a prepared publication".to_owned(),
+            ));
+        }
+        let manifest_count: i64 = transaction.query_row(
+            "SELECT count(*) FROM prepared_files WHERE info_hash = ?1",
+            [info_hash.as_slice()],
+            |row| row.get(0),
+        )?;
+        if manifest_count == 0 {
+            return Err(StoreError::DurableState(
+                "prepared publication manifest is empty".to_owned(),
+            ));
+        }
+        let revision = increment_revision(&transaction)?;
+        let revision_sql = sql_revision(revision)?;
+        transaction.execute(
+            "UPDATE torrents
+             SET state = ?2, storage_state = ?3,
+                 managed_artifacts = 'published', error = NULL,
+                 updated_revision = ?4
+             WHERE info_hash = ?1",
+            params![
+                info_hash.as_slice(),
+                TorrentState::Checking.as_str(),
+                StorageState::Published.as_str(),
+                revision_sql,
+            ],
+        )?;
+        transaction.execute(
+            "DELETE FROM prepared_files WHERE info_hash = ?1",
+            [info_hash.as_slice()],
+        )?;
+        transaction.commit()?;
+        Ok(revision)
+    }
+
     pub fn reset_have_from_metadata(&mut self, torrent_id: &str) -> Result<HaveState, StoreError> {
         let info_hash = decode_info_hash(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
@@ -4130,6 +4203,68 @@ mod tests {
             confirmed_revision
         );
         drop(reopened);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn prepared_platform_publication_enters_published_recheck_before_complete() {
+        let root = test_root("prepared-publication-recheck");
+        let configured = ConfiguredStorageRoot::platform("downloads");
+        let mut store =
+            SessionStore::open(&root, "default", &[configured]).expect("open session store");
+        let raw_info =
+            b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
+        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
+        let torrent_id = crate::control::encode_info_hash(info_hash);
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-platform-recheck".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: true,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add source");
+        store
+            .record_metadata(&torrent_id, raw_info)
+            .expect("record metadata");
+        store
+            .record_prepared_files(
+                &torrent_id,
+                &[PreparedFileHash {
+                    file_index: 0,
+                    length: 4,
+                    sha1: [9; 20],
+                }],
+            )
+            .expect("record prepared manifest");
+
+        let revision = store
+            .begin_published_recheck(&torrent_id)
+            .expect("begin published recheck");
+        let resume = store.load_resume(&torrent_id).expect("load recheck");
+        assert_eq!(resume.state, TorrentState::Checking);
+        assert_eq!(resume.storage_state, StorageState::Published);
+        assert_eq!(resume.managed_artifacts, ManagedArtifactState::Published);
+        assert!(
+            store
+                .load_prepared_files(&torrent_id)
+                .expect("manifest cleared")
+                .is_empty()
+        );
+        assert_eq!(
+            store
+                .begin_published_recheck(&torrent_id)
+                .expect("repeat published recheck"),
+            revision
+        );
+        assert_eq!(store.revision().expect("current revision"), revision);
+
+        drop(store);
         fs::remove_dir_all(root).expect("remove test profile");
     }
 
