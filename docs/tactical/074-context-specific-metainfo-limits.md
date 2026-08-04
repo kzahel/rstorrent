@@ -1,7 +1,7 @@
 # Tactical 074: Context-Specific Metainfo Limits
 
-Status: Planned from maintainer direction on 2026-08-04. Implementation has
-not started.
+Status: Complete on 2026-08-04 in `e14ff86`. The parser, production callers,
+durable schema, resource evidence, and controlled interoperability gates pass.
 
 Topics: `protocol-support`, `peer-lifecycle`, `client-persistence`,
 `capability-readiness`
@@ -296,3 +296,94 @@ policy.
 The next boundary remains the maintainer discussion of `.torrent` intake,
 transport framing/chunking, original-source storage, session/resume metadata,
 and the present magnet/BEP 9 source-retention model.
+
+## Implementation And Evidence
+
+### Landed limits and ownership
+
+- Generic bencode retains the one-MiB input, 512-KiB string, depth-32, and
+  4,096-entry defaults and now independently caps the retained tree at
+  1,000,000 decoded items. The root, values, and dictionary keys use the
+  counting rule above in complete, prefix, strict, and permissive modes.
+- `MetainfoLimits` names outer bytes, exact info bytes, string bytes, decoded
+  items, depth, collection entries, files, pieces, and all three path bounds.
+  BEP 9 and durable profiles retain one-MiB exact-info policy; the parser-only
+  explicit-import profile permits 16 MiB. Every production parse call names
+  its BEP 9 or durable context.
+- The parser, engine availability state, and durable have codec each own a
+  named numeric 52,428-piece limit; none derives piece count from a byte
+  constant. DHT and extension-message bencode call sites also name decoded-
+  item bounds without changing their byte behavior.
+- Schema version 7 changes only `piece_count <= 52428` and
+  `length(have_state) <= 6588`; `raw_info` remains at one MiB. Migration
+  recreates `torrents` and all three referencing tables in one transaction
+  with deferred foreign keys, preserving selection, prepared-file, and
+  removal rows.
+- Oversized durable raw info, piece count, and encoded have state produce
+  `StoreError::ResourceLimit` before a write transaction. The generated
+  application contract is unchanged. Reparse of stored bytes selects the
+  durable profile explicitly.
+
+No `.torrent` command, transport, source-retention choice, application error
+code, or larger BEP 9 capability was added.
+
+### Deterministic and persistence evidence
+
+Pure tests cover exact and maximum-plus-one input, string, decoded-item,
+depth, collection, file, piece, and path limits; both dictionary modes and
+prefix parsing; an independently generated info dictionary above one MiB;
+and exact info-span SHA-1 identity under the explicit profile. The existing
+10-GiB / 256-KiB geometry remains accepted at 40,960 pieces.
+
+Session tests persist and reload that 40,960-piece geometry, accept and
+round-trip the 52,428-piece/6,588-byte have-codec boundary, reject 52,429,
+exercise typed byte/piece/have excess with an unchanged revision, prove the
+fresh schema's exact checks, and migrate a schema-6 catalog while preserving
+torrent, file-selection, prepared-file, and removal rows.
+
+### Resource profile
+
+On the arm64 Apple M4 Pro maintainer machine, this release command:
+
+```bash
+source ~/.profile
+cargo run --release -p rstorrent-engine \
+  --bin rstorrent-metainfo-profile
+```
+
+recorded:
+
+| Fixture | Input bytes | Info bytes | Decoded items | Wall time | Transient parser high water |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Size-heavy | 16,777,216 | 71 | 13 | 20 us | 606 bytes |
+| Structure-heavy | 2,998,844 | 71 | 999,681 | 20,217 us | 47,985,246 bytes |
+
+The allocator measurement subtracts all live allocation present after the
+caller-owned fixture is built, so the input buffer is excluded. Both fixtures
+hash the independently built 71-byte info dictionary to
+`29a1a44920a1e2be8c20f57309ec614f176e814f`; the structure fixture reaches
+its item count through 244 exact-4,096-entry lists rather than one ignored
+string. Both remain below the 128-MiB transient ceiling.
+
+### Runtime, interoperability, and workspace gates
+
+The full protocol, engine, and session suites pass. Engine coverage includes
+oversized BEP 9 handshake/data rejection before complete assembly allocation,
+hash-generation recovery, cancellation, and bounded metadata upload. One
+fresh controlled loopback run against pinned libtorrent `2.0.13.0` passed in
+both directions with the established 26,686-byte/two-block, 121-file fixture:
+RSTorrent acquired all metadata and content, libtorrent requested both exact
+blocks from RSTorrent, and cleanup succeeded. Public discovery, visible UI,
+emulator, and device runs were neither required nor performed.
+
+Final validation used:
+
+```bash
+source ~/.profile
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+git diff --check
+uv run --project tests/interop \
+  python tests/interop/magnet_metadata.py --runs 1
+```

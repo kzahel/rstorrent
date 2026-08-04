@@ -352,6 +352,11 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; removes the single-file storage fork, gives every v1 torrent one
   durable resume/publication path, and adds bounded full managed-storage and
   force recheck with controlled libtorrent fault evidence.
+- [`074-context-specific-metainfo-limits.md`](074-context-specific-metainfo-limits.md):
+  complete; separates generic bencode, BEP 9, durable-session, structural,
+  and explicit-import parser limits, raises only the schema-owned durable
+  piece/have checks, and records bounded allocation and unchanged controlled
+  interoperability without adding `.torrent` product intake.
 - [`076-authenticated-private-web-host.md`](076-authenticated-private-web-host.md):
   complete; adds bounded Basic-auth static, health, and application hosting,
   explicit same-origin production bootstrap, joined terminate handling, and

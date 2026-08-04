@@ -8,6 +8,14 @@ UDP tracker announces, and an IPv4 Mainline DHT foundation. It does not claim
 complete BEP 3 or BEP 5 support, general swarm reliability, seeding, HTTP
 trackers, uTP, or v2 support.
 
+Tactical [`074`](../tactical/074-context-specific-metainfo-limits.md) replaces
+the former global one-MiB relationship with named generic-bencode, BEP 9,
+durable, and 16-MiB parser-only explicit-import profiles. All retain depth,
+collection, decoded-item, file, piece, and path bounds; the 52,428-piece limit
+is numeric rather than byte-derived. Controlled libtorrent exchange remains
+green in both directions at the unchanged one-MiB BEP 9 maximum. This adds no
+product `.torrent` intake or broader protocol claim.
+
 ## Purpose And Claim Policy
 
 This topic maps product behavior to normative BitTorrent Enhancement Proposals

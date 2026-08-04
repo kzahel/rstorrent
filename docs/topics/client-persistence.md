@@ -145,6 +145,13 @@ independently retained as source input.
 Separate per-torrent metadata files are not a second authority. They may
 eventually exist as explicit exports or reconstructible caches.
 
+Schema version `7` keeps `raw_info` at one MiB while admitting the existing
+52,428-piece parser/engine ceiling and its 6,588-byte encoded have state. These
+limits are session-owned numeric capabilities rather than consequences of a
+bencode byte constant. Excess raw-info bytes, piece count, or encoded have
+state fails as a typed internal resource limit before a write transaction;
+restart reparses exact stored bytes under the durable metainfo profile.
+
 ### Verified-piece state is essential resume state
 
 Persist the verified-piece bitfield as a bounded, explicitly versioned BLOB.

@@ -76,6 +76,13 @@ uses pinned libtorrent source and tests to choose coherent owner-level changes,
 then validates them through deterministic, controlled, and paired public
 evidence.
 
+Tactical [`074`](../tactical/074-context-specific-metainfo-limits.md) is
+complete. Generic bencode, BEP 9, durable metadata, and parser-only explicit
+import now have independent byte and structure profiles; schema 7 admits the
+existing 52,428-piece engine ceiling; deterministic, persistence, resource,
+and controlled bidirectional libtorrent evidence pass. Product `.torrent`
+intake remains absent.
+
 ## Current Queue
 
 ### Now
@@ -110,7 +117,7 @@ does not.
 
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
-| Bounded bencode and v1 info dictionaries | Implemented | deterministic, interop | This is not complete outer `.torrent` ingestion; v2 and hybrid info dictionaries are rejected. | [`product-direction`](product-direction.md) |
+| Bounded bencode and v1 info dictionaries | Implemented | deterministic, runtime, interop | Generic, BEP 9, durable, and 16-MiB parser-only explicit-import profiles independently bound bytes, decoded items, depth, collections, files, pieces, and paths. This is not product `.torrent` ingestion; v2 and hybrid info dictionaries are rejected. | [`protocol-support`](protocol-support.md) |
 | Product add from a v1 magnet | Implemented | deterministic, runtime, interop, web, AVD, physical | Only a v1 `btih` identity and supported magnet fields survive canonicalization. | [`client-persistence`](client-persistence.md) |
 | BEP 9 metadata download | Implemented | deterministic, runtime, interop, live | One bounded torrent owner assembles blocks across up to eight workers, paces one-request-at-a-time peers, and recovers from expiry, rejection, and hash failure; tracker parity and catalog breadth pass, while paired DHT latency is blocked by the live reference. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Bounded diagnostic metadata upload | Implemented | deterministic, interop | It is not a general incoming listener or payload seeding service. | [`peer-lifecycle`](peer-lifecycle.md) |
