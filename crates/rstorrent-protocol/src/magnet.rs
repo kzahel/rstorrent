@@ -27,6 +27,27 @@ pub struct UdpTrackerUrl {
     pub port: u16,
 }
 
+impl UdpTrackerUrl {
+    /// Parse only the UDP authority needed by the runtime from an already
+    /// bounded metainfo tracker URL. Unlike magnet intake, the outer source
+    /// byte/work profile owns URL length and passkey-bearing paths are valid.
+    pub fn from_metainfo_url(value: &str) -> Option<Self> {
+        if !value.is_ascii() || value.contains(['#', '@']) {
+            return None;
+        }
+        let (scheme, remainder) = value.split_once("://")?;
+        if !scheme.eq_ignore_ascii_case("udp") || remainder.is_empty() {
+            return None;
+        }
+        let authority_end = remainder.find(['/', '?']).unwrap_or(remainder.len());
+        let endpoint = parse_peer_hint(&remainder[..authority_end])?;
+        Some(Self {
+            host: endpoint.host,
+            port: endpoint.port,
+        })
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MagnetError {
     TooLong { length: usize, maximum: usize },

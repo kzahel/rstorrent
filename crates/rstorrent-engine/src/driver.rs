@@ -15,7 +15,7 @@ use rstorrent_protocol::metadata::{
     parse_extension_handshake, parse_metadata_message,
 };
 use rstorrent_protocol::metainfo::{
-    BEP9_METAINFO_LIMITS, DURABLE_METAINFO_LIMITS, Metainfo, MetainfoError,
+    BEP9_METAINFO_LIMITS, DURABLE_METAINFO_LIMITS, MAX_METAINFO_PIECES, Metainfo, MetainfoError,
 };
 use rstorrent_protocol::peer_wire::{FrameError, Handshake, HandshakeError, PeerMessage};
 use rstorrent_protocol::piece::{PieceError, VerifiedPiece};
@@ -86,7 +86,8 @@ const DHT_SUCCESS_REQUERY_DELAY: Duration = Duration::from_secs(60);
 const CONTENT_SWARM_MAINTENANCE_INTERVAL: Duration = Duration::from_millis(100);
 const MAX_METADATA_PEERS: usize = 8;
 const METADATA_SCHEDULER_TICK: Duration = Duration::from_millis(100);
-const MAX_ENGINE_PIECES: usize = 52_428;
+const MAX_ENGINE_PIECES: usize = MAX_METAINFO_PIECES;
+const MAX_PLANNED_CONTENT_PIECES: usize = 256;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DownloadResourceLimits {
@@ -740,7 +741,7 @@ fn preserves_existing_artifact(error: &DownloadError) -> bool {
 struct PremetadataPeerState {
     choking: bool,
     bitfield: Option<Vec<u8>>,
-    haves: BTreeSet<u32>,
+    haves: Vec<u8>,
 }
 
 impl PremetadataPeerState {
@@ -748,7 +749,7 @@ impl PremetadataPeerState {
         Self {
             choking: true,
             bitfield: None,
-            haves: BTreeSet::new(),
+            haves: Vec::new(),
         }
     }
 
@@ -758,12 +759,19 @@ impl PremetadataPeerState {
             PeerMessage::Choke => self.choking = true,
             PeerMessage::Unchoke => self.choking = false,
             PeerMessage::Have(index) => {
-                if !self.haves.contains(&index) && self.haves.len() == MAX_ENGINE_PIECES {
+                let index = usize::try_from(index).map_err(|_| {
+                    DownloadError::InvalidPremetadataState("HAVE index does not fit usize")
+                })?;
+                if index >= MAX_ENGINE_PIECES {
                     return Err(DownloadError::InvalidPremetadataState(
-                        "too many distinct HAVE indices",
+                        "HAVE index exceeds the supported piece-count bound",
                     ));
                 }
-                self.haves.insert(index);
+                let byte = index / 8;
+                if self.haves.len() <= byte {
+                    self.haves.resize(byte + 1, 0);
+                }
+                self.haves[byte] |= 1 << (7 - index % 8);
             }
             PeerMessage::Bitfield(bitfield) => {
                 if bitfield.len() > MAX_ENGINE_PIECES.div_ceil(8) {
@@ -793,8 +801,10 @@ impl PremetadataPeerState {
     ) -> Result<VecDeque<PeerMessage>, DownloadError> {
         let piece_count = metainfo.piece_count();
         let mut messages = VecDeque::new();
-        if let Some(bitfield) = self.bitfield {
-            let expected_length = piece_count.div_ceil(8);
+        let expected_length = piece_count.div_ceil(8);
+        let had_availability = self.bitfield.is_some() || !self.haves.is_empty();
+        let mut bitfield = self.bitfield.unwrap_or_else(|| vec![0; expected_length]);
+        if had_availability {
             if bitfield.len() != expected_length {
                 return Err(DownloadError::InvalidPremetadataState(
                     "bitfield length does not match verified metadata",
@@ -809,15 +819,26 @@ impl PremetadataPeerState {
                     ));
                 }
             }
-            messages.push_back(PeerMessage::Bitfield(bitfield));
-        }
-        for index in self.haves {
-            if index as usize >= piece_count {
+            if self.haves.len() > expected_length
+                && self.haves[expected_length..].iter().any(|byte| *byte != 0)
+            {
                 return Err(DownloadError::InvalidPremetadataState(
                     "HAVE index is outside verified metadata",
                 ));
             }
-            messages.push_back(PeerMessage::Have(index));
+            for (target, haves) in bitfield.iter_mut().zip(self.haves) {
+                *target |= haves;
+            }
+            let remainder = piece_count % 8;
+            if remainder != 0 {
+                let unused_mask = (1_u8 << (8 - remainder)) - 1;
+                if bitfield.last().is_some_and(|byte| byte & unused_mask != 0) {
+                    return Err(DownloadError::InvalidPremetadataState(
+                        "availability sets unused trailing bits",
+                    ));
+                }
+            }
+            messages.push_back(PeerMessage::Bitfield(bitfield));
         }
         if !self.choking {
             messages.push_back(PeerMessage::Unchoke);
@@ -3193,6 +3214,8 @@ struct ContentSwarmDownload<'a> {
     part_written_bytes: usize,
     last_piece: Option<VerifiedPiece>,
     contributor_attempts: BTreeMap<ConnectionId, DialAttempt>,
+    remaining_pieces: std::vec::IntoIter<u32>,
+    selection: FileSelection,
 }
 
 struct ContentDownloadContext<'a> {
@@ -3200,6 +3223,38 @@ struct ContentDownloadContext<'a> {
     layout: &'a TorrentLayout,
     resume: Option<&'a ResumeContext>,
     control: &'a DownloadControl,
+}
+
+fn build_content_plan_window(
+    layout: &TorrentLayout,
+    selection: &FileSelection,
+    pieces: &mut std::vec::IntoIter<u32>,
+    maximum_pieces: usize,
+) -> Result<(Vec<PiecePlan>, usize, usize), DownloadError> {
+    let mut plans = Vec::with_capacity(maximum_pieces);
+    let mut total_blocks = 0_usize;
+    let mut total_bytes = 0_usize;
+    for piece in pieces.take(maximum_pieces) {
+        let ranges = layout
+            .request_ranges(piece, selection)
+            .map_err(DownloadError::Layout)?;
+        let block_count = ranges.len();
+        let bytes = ranges.iter().try_fold(0_usize, |total, range| {
+            total.checked_add(range.length as usize)
+        });
+        total_blocks = total_blocks
+            .checked_add(block_count)
+            .ok_or(DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+        total_bytes = total_bytes
+            .checked_add(bytes.ok_or(DownloadError::Layout(LayoutError::ArithmeticOverflow))?)
+            .ok_or(DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+        let ranges = ranges
+            .into_iter()
+            .map(|range| (range.begin, range.length))
+            .collect::<Vec<_>>();
+        plans.push(PiecePlan::new(piece, &ranges).map_err(DownloadError::Swarm)?);
+    }
+    Ok((plans, total_blocks, total_bytes))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3214,7 +3269,8 @@ impl<'a> ContentSwarmDownload<'a> {
     async fn new(
         config: SwarmConfig,
         max_buffered_payload_bytes: usize,
-        plans: Vec<(u32, Vec<rstorrent_protocol::storage_layout::RequestRange>)>,
+        wanted_pieces: Vec<u32>,
+        selection: FileSelection,
         storage: ContentStorage,
         context: ContentDownloadContext<'a>,
     ) -> Result<Self, DownloadError> {
@@ -3224,21 +3280,13 @@ impl<'a> ContentSwarmDownload<'a> {
             resume,
             control,
         } = context;
-        let mut total_blocks = 0;
-        let mut total_bytes = 0;
-        let mut swarm_plans = Vec::with_capacity(plans.len());
-        for (piece, ranges) in plans {
-            total_blocks += ranges.len();
-            total_bytes += ranges
-                .iter()
-                .map(|range| range.length as usize)
-                .sum::<usize>();
-            let ranges = ranges
-                .into_iter()
-                .map(|range| (range.begin, range.length))
-                .collect::<Vec<_>>();
-            swarm_plans.push(PiecePlan::new(piece, &ranges).map_err(DownloadError::Swarm)?);
-        }
+        let mut remaining_pieces = wanted_pieces.into_iter();
+        let (swarm_plans, total_blocks, total_bytes) = build_content_plan_window(
+            layout,
+            &selection,
+            &mut remaining_pieces,
+            MAX_PLANNED_CONTENT_PIECES,
+        )?;
         let state = SwarmState::new(config, layout.piece_count(), swarm_plans)
             .map_err(DownloadError::Swarm)?;
         let checkpoints = resume.map(|resume| resume.checkpoints.clone());
@@ -3264,11 +3312,34 @@ impl<'a> ContentSwarmDownload<'a> {
             part_written_bytes: 0,
             last_piece: None,
             contributor_attempts: BTreeMap::new(),
+            remaining_pieces,
+            selection,
         })
     }
 
     fn is_complete(&self) -> bool {
-        self.state.is_complete()
+        self.remaining_pieces.len() == 0 && self.state.is_complete()
+    }
+
+    fn advance_plan_window(&mut self, verified_piece: u32) -> Result<(), DownloadError> {
+        self.state
+            .retire_verified_piece(verified_piece)
+            .map_err(DownloadError::Swarm)?;
+        let capacity = MAX_PLANNED_CONTENT_PIECES.saturating_sub(self.state.planned_piece_count());
+        if capacity == 0 {
+            return Ok(());
+        }
+        let (plans, blocks, bytes) = build_content_plan_window(
+            self.layout,
+            &self.selection,
+            &mut self.remaining_pieces,
+            capacity,
+        )?;
+        self.total_blocks = self.total_blocks.saturating_add(blocks);
+        self.total_bytes = self.total_bytes.saturating_add(bytes);
+        self.state
+            .append_piece_plans(plans)
+            .map_err(DownloadError::Swarm)
     }
 
     async fn handle_message(
@@ -3542,6 +3613,7 @@ impl<'a> ContentSwarmDownload<'a> {
                         .record_bytes(ByteMetric::PayloadVerified, length as usize);
                     self.control
                         .emit(DownloadActivityEvent::PieceVerified { piece_index: piece });
+                    self.advance_plan_window(piece)?;
                     ContentMessageDisposition::PieceVerified(contributors)
                 }
             }
@@ -4483,7 +4555,7 @@ async fn run_selective_download(
         }
     }
 
-    let mut plans = Vec::new();
+    let mut wanted_pieces = Vec::new();
     let mut skipped_piece_count = 0;
     for piece_index in 0..layout.piece_count() {
         let piece_index_u32 = u32::try_from(piece_index)
@@ -4494,23 +4566,23 @@ async fn run_selective_download(
         if ranges.is_empty() {
             skipped_piece_count += 1;
         } else {
-            plans.push((piece_index_u32, ranges));
+            wanted_pieces.push(piece_index_u32);
         }
     }
-    if plans.is_empty() {
+    if wanted_pieces.is_empty() {
         return Err(DownloadError::Metainfo(MetainfoError::Unsupported(
             "selection with no wanted pieces",
         )));
     }
     let last_wanted_piece = usize::try_from(
-        plans
+        *wanted_pieces
             .last()
-            .expect("at least one wanted piece was planned")
-            .0,
+            .expect("at least one wanted piece was planned"),
     )
     .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
 
     let descriptor_backed = descriptors.is_some();
+    let plan_selection = selection.clone();
     let platform_storage = control.platform_storage();
     let platform_backed = platform_storage.is_some();
     if descriptor_backed && platform_backed {
@@ -4676,14 +4748,10 @@ async fn run_selective_download(
     drop(storage_creation);
 
     if let (Some(resume), Some(resumed)) = (&resume, resumed_storage) {
-        let piece_indices = plans
-            .iter()
-            .map(|(piece_index, _)| *piece_index)
-            .collect::<Vec<_>>();
         let inventory = if resumed == ResumedStorage::Created {
             Vec::new()
         } else {
-            inventory_recheck_sources(&mut storage, &layout, &piece_indices, &control).await?
+            inventory_recheck_sources(&mut storage, &layout, &wanted_pieces, &control).await?
         };
         resume
             .checkpoints
@@ -4723,7 +4791,7 @@ async fn run_selective_download(
             .map_err(DownloadError::Checkpoint)?;
     }
 
-    plans.retain(|(piece_index, _)| {
+    wanted_pieces.retain(|piece_index| {
         usize::try_from(*piece_index)
             .ok()
             .and_then(|piece_index| verified_pieces.get(piece_index))
@@ -4736,7 +4804,7 @@ async fn run_selective_download(
     if resume
         .as_ref()
         .is_some_and(|resume| !resume.download_missing)
-        && !plans.is_empty()
+        && !wanted_pieces.is_empty()
     {
         return Ok(DownloadReport {
             info_hash: metainfo.info_hash,
@@ -4771,13 +4839,14 @@ async fn run_selective_download(
         selected_written_bytes,
         part_written_bytes,
         outstanding_request_high_water,
-    ) = if plans.is_empty() {
+    ) = if wanted_pieces.is_empty() {
         (0, 0, 0, 0, 0)
     } else {
         let download = ContentSwarmDownload::new(
             config.swarm_config,
             config.max_buffered_payload_bytes,
-            plans,
+            wanted_pieces,
+            plan_selection,
             ContentStorage(Box::new(storage)),
             ContentDownloadContext {
                 metainfo: &metainfo,

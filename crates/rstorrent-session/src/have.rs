@@ -1,10 +1,12 @@
 use std::error::Error;
 use std::fmt;
 
+use rstorrent_protocol::metainfo::MAX_METAINFO_PIECES;
+
 const HAVE_MAGIC: &[u8; 8] = b"RSTHAVE\0";
 const HAVE_VERSION: u16 = 1;
 const HAVE_HEADER_LENGTH: usize = 8 + 2 + 20 + 4;
-pub const MAX_DURABLE_PIECES: usize = 52_428;
+pub const MAX_DURABLE_PIECES: usize = MAX_METAINFO_PIECES;
 pub const MAX_DURABLE_HAVE_STATE_BYTES: usize = HAVE_HEADER_LENGTH + MAX_DURABLE_PIECES.div_ceil(8);
 
 #[derive(Clone, Debug, Eq, PartialEq)]

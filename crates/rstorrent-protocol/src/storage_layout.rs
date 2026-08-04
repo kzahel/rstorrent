@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fmt;
+use std::ops::RangeInclusive;
 
 use crate::metainfo::{Metainfo, MetainfoFile};
 use crate::peer_wire::MAX_REQUEST_BLOCK_LENGTH;
@@ -412,12 +413,23 @@ impl TorrentLayout {
     }
 
     pub fn file_pieces(&self, index: usize) -> Result<Vec<u32>, LayoutError> {
+        Ok(self
+            .file_piece_range(index)?
+            .into_iter()
+            .flatten()
+            .collect())
+    }
+
+    pub fn file_piece_range(
+        &self,
+        index: usize,
+    ) -> Result<Option<RangeInclusive<u32>>, LayoutError> {
         let file = self.files.get(index).ok_or(LayoutError::InvalidFileIndex {
             index,
             file_count: self.files.len(),
         })?;
         if file.length == 0 {
-            return Ok(Vec::new());
+            return Ok(None);
         }
         let first = file.offset / u64::from(self.piece_length);
         let final_byte = file
@@ -425,9 +437,9 @@ impl TorrentLayout {
             .checked_add(file.length - 1)
             .ok_or(LayoutError::ArithmeticOverflow)?;
         let last = final_byte / u64::from(self.piece_length);
-        (first..=last)
-            .map(|piece| u32::try_from(piece).map_err(|_| LayoutError::ArithmeticOverflow))
-            .collect()
+        let first = u32::try_from(first).map_err(|_| LayoutError::ArithmeticOverflow)?;
+        let last = u32::try_from(last).map_err(|_| LayoutError::ArithmeticOverflow)?;
+        Ok(Some(first..=last))
     }
 
     pub fn piece_has_skipped_file(

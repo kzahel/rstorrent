@@ -1,22 +1,22 @@
 use std::error::Error;
 use std::fmt;
 
-use sha1::{Digest, Sha1};
+use crate::bencode::ParseError;
 
-use crate::bencode::{
-    DictionaryEntry, Limits, MAX_BENCODE_DECODED_ITEMS, MAX_BENCODE_INPUT_LENGTH, Node, ParseError,
-    Value, parse_with_limits,
-};
+mod direct;
 
-pub const MAX_PIECE_LENGTH: u32 = 256 * 1024 * 1024;
-pub const MAX_METAINFO_FILES: usize = 4096;
-pub const MAX_METAINFO_PIECES: usize = 52_428;
-pub const MAX_METAINFO_PATH_COMPONENTS: usize = 32;
-pub const MAX_METAINFO_PATH_COMPONENT_LENGTH: usize = 255;
+pub const MAX_PIECE_LENGTH: u32 = 536_854_528;
+pub const MAX_METAINFO_FILES: usize = 374_998;
+pub const MAX_PEER_METAINFO_FILES: usize = 312_498;
+pub const MAX_METAINFO_PIECES: usize = 2_097_152;
+pub const MAX_METAINFO_PATH_COMPONENTS: usize = 3_000_000;
+pub const MAX_METAINFO_PATH_COMPONENT_LENGTH: usize = 240;
 pub const MAX_METAINFO_PATH_LENGTH: usize = 4096;
 
-const MAX_PIECE_HASH_STRING_LENGTH: usize = MAX_METAINFO_PIECES * 20;
-const MAX_EXPLICIT_METAINFO_LENGTH: usize = 16 * 1024 * 1024;
+pub const MAX_PEER_METAINFO_LENGTH: usize = 30 * 1024 * 1024;
+pub const MAX_EXPLICIT_METAINFO_LENGTH: usize = 64 * 1024 * 1024;
+pub const MAX_PEER_METAINFO_TOKENS: usize = 2_500_000;
+pub const MAX_EXPLICIT_METAINFO_TOKENS: usize = 3_000_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MetainfoLimits {
@@ -33,36 +33,51 @@ pub struct MetainfoLimits {
     pub max_path_bytes: usize,
 }
 
-const fn metainfo_limits(max_bytes: usize) -> MetainfoLimits {
+const fn metainfo_limits(
+    max_bytes: usize,
+    max_decoded_items: usize,
+    max_depth: usize,
+    max_files: usize,
+) -> MetainfoLimits {
     MetainfoLimits {
         max_outer_bytes: max_bytes,
         max_info_bytes: max_bytes,
-        max_string_bytes: if max_bytes > MAX_PIECE_HASH_STRING_LENGTH {
-            max_bytes
-        } else {
-            MAX_PIECE_HASH_STRING_LENGTH
-        },
-        max_decoded_items: MAX_BENCODE_DECODED_ITEMS,
-        max_depth: 32,
-        max_collection_entries: 4096,
-        max_files: MAX_METAINFO_FILES,
+        max_string_bytes: max_bytes,
+        max_decoded_items,
+        max_depth,
+        max_collection_entries: max_decoded_items,
+        max_files,
         max_pieces: MAX_METAINFO_PIECES,
-        max_path_components: MAX_METAINFO_PATH_COMPONENTS,
-        max_path_component_bytes: MAX_METAINFO_PATH_COMPONENT_LENGTH,
-        max_path_bytes: MAX_METAINFO_PATH_LENGTH,
+        max_path_components: max_decoded_items,
+        max_path_component_bytes: max_bytes,
+        max_path_bytes: max_bytes,
     }
 }
 
 /// The current peer-metadata parsing policy. BEP 9 supplies only `info`, so
 /// `max_outer_bytes` is a defensive value rather than a transport contract.
-pub const BEP9_METAINFO_LIMITS: MetainfoLimits = metainfo_limits(MAX_BENCODE_INPUT_LENGTH);
+pub const BEP9_METAINFO_LIMITS: MetainfoLimits = metainfo_limits(
+    MAX_PEER_METAINFO_LENGTH,
+    MAX_PEER_METAINFO_TOKENS,
+    200,
+    MAX_PEER_METAINFO_FILES,
+);
 
 /// The parser policy for persisted `raw_info` bytes.
-pub const DURABLE_METAINFO_LIMITS: MetainfoLimits = metainfo_limits(MAX_BENCODE_INPUT_LENGTH);
+pub const DURABLE_METAINFO_LIMITS: MetainfoLimits = metainfo_limits(
+    MAX_EXPLICIT_METAINFO_LENGTH,
+    MAX_EXPLICIT_METAINFO_TOKENS,
+    200,
+    MAX_METAINFO_FILES,
+);
 
 /// Parser-only headroom for a future explicit local or authenticated import.
-pub const EXPLICIT_IMPORT_METAINFO_LIMITS: MetainfoLimits =
-    metainfo_limits(MAX_EXPLICIT_METAINFO_LENGTH);
+pub const EXPLICIT_IMPORT_METAINFO_LIMITS: MetainfoLimits = metainfo_limits(
+    MAX_EXPLICIT_METAINFO_LENGTH,
+    MAX_EXPLICIT_METAINFO_TOKENS,
+    100,
+    MAX_METAINFO_FILES,
+);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MetainfoMode {
@@ -88,6 +103,28 @@ pub struct Metainfo {
     pub private: bool,
     pub mode: MetainfoMode,
     pub files: Vec<MetainfoFile>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MetainfoTrackerTransport {
+    Udp,
+    Http,
+    Https,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MetainfoTracker {
+    pub tier: u32,
+    pub position: u32,
+    pub url: std::sync::Arc<str>,
+    pub transport: MetainfoTrackerTransport,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MetainfoProjection {
+    pub metainfo: Metainfo,
+    pub info_span: std::ops::Range<usize>,
+    pub trackers: Vec<MetainfoTracker>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -179,153 +216,38 @@ impl From<ParseError> for MetainfoError {
 }
 
 impl Metainfo {
+    pub fn project_bytes_with_limits(
+        bytes: &[u8],
+        limits: MetainfoLimits,
+    ) -> Result<MetainfoProjection, MetainfoError> {
+        let parsed = direct::parse_outer(bytes, limits)?;
+        Ok(MetainfoProjection {
+            metainfo: parsed.metainfo,
+            info_span: parsed.info_span,
+            trackers: parsed.trackers,
+        })
+    }
+
     pub fn from_bytes_with_limits(
         bytes: &[u8],
         limits: MetainfoLimits,
     ) -> Result<Self, MetainfoError> {
-        let root = parse_metainfo(bytes, limits.max_outer_bytes, limits)?;
-        let root_entries = dictionary(&root).ok_or(MetainfoError::RootIsNotDictionary)?;
-        let info_node = field(root_entries, b"info").ok_or(MetainfoError::MissingField("info"))?;
-        enforce_info_length(info_node.span.len(), limits)?;
-        Self::from_info_node(bytes, info_node, limits)
+        Ok(Self::project_bytes_with_limits(bytes, limits)?.metainfo)
     }
 
     pub fn from_info_bytes_with_limits(
         bytes: &[u8],
         limits: MetainfoLimits,
     ) -> Result<Self, MetainfoError> {
-        enforce_info_length(bytes.len(), limits)?;
-        let info_node = parse_metainfo(bytes, limits.max_info_bytes, limits)?;
-        Self::from_info_node(bytes, &info_node, limits)
+        direct::parse_info(bytes, limits)
     }
 
     pub fn info_bytes_with_limits(
         bytes: &[u8],
         limits: MetainfoLimits,
     ) -> Result<&[u8], MetainfoError> {
-        let root = parse_metainfo(bytes, limits.max_outer_bytes, limits)?;
-        let root_entries = dictionary(&root).ok_or(MetainfoError::RootIsNotDictionary)?;
-        let info_node = field(root_entries, b"info").ok_or(MetainfoError::MissingField("info"))?;
-        enforce_info_length(info_node.span.len(), limits)?;
-        Ok(&bytes[info_node.span.clone()])
-    }
-
-    fn from_info_node(
-        bytes: &[u8],
-        info_node: &Node<'_>,
-        limits: MetainfoLimits,
-    ) -> Result<Self, MetainfoError> {
-        let info_entries =
-            dictionary(info_node).ok_or(MetainfoError::InvalidField("info dictionary"))?;
-
-        if field(info_entries, b"meta version").is_some() {
-            return Err(MetainfoError::Unsupported("v2 or hybrid info dictionary"));
-        }
-
-        let private = match field(info_entries, b"private").map(|node| &node.value) {
-            None | Some(Value::Integer(0)) => false,
-            Some(Value::Integer(1)) => true,
-            Some(_) => return Err(MetainfoError::InvalidField("info.private")),
-        };
-
-        let piece_length = positive_integer(info_entries, b"piece length", "info.piece length")?;
-        let piece_length = u32::try_from(piece_length)
-            .map_err(|_| MetainfoError::InvalidField("info.piece length"))?;
-        if piece_length > MAX_PIECE_LENGTH {
-            return Err(MetainfoError::InvalidField("info.piece length"));
-        }
-
-        let name = safe_component(
-            bytes_field(info_entries, b"name", "info.name")?,
-            None,
-            limits,
-        )?;
-        let length = field(info_entries, b"length");
-        let files = field(info_entries, b"files");
-        let (mode, files, total_length) = match (length, files) {
-            (Some(length), None) => {
-                let length = node_nonnegative_integer(length, "info.length")?;
-                if length == 0 {
-                    return Err(MetainfoError::InvalidField("info.length"));
-                }
-                (
-                    MetainfoMode::SingleFile,
-                    vec![MetainfoFile {
-                        path: vec![name.clone()],
-                        length,
-                        offset: 0,
-                        padding: false,
-                    }],
-                    length,
-                )
-            }
-            (None, Some(files)) => parse_multi_files(files, limits)?,
-            (Some(_), Some(_)) => {
-                return Err(MetainfoError::InvalidField(
-                    "info must contain exactly one of length or files",
-                ));
-            }
-            (None, None) => {
-                return Err(MetainfoError::MissingField("info.length or info.files"));
-            }
-        };
-
-        if total_length == 0 {
-            return Err(MetainfoError::InvalidField("info total length"));
-        }
-
-        let expected_piece_count_u64 = total_length.div_ceil(u64::from(piece_length));
-        let expected_piece_count = usize::try_from(expected_piece_count_u64).map_err(|_| {
-            MetainfoError::TooManyPieces {
-                actual: usize::MAX,
-                maximum: limits.max_pieces,
-            }
-        })?;
-        if expected_piece_count > limits.max_pieces {
-            return Err(MetainfoError::TooManyPieces {
-                actual: expected_piece_count,
-                maximum: limits.max_pieces,
-            });
-        }
-
-        let pieces = bytes_field(info_entries, b"pieces", "info.pieces")?;
-        if pieces.len() % 20 != 0 {
-            return Err(MetainfoError::InvalidField(
-                "info.pieces hash string length",
-            ));
-        }
-        let actual_piece_count = pieces.len() / 20;
-        if actual_piece_count > limits.max_pieces {
-            return Err(MetainfoError::TooManyPieces {
-                actual: actual_piece_count,
-                maximum: limits.max_pieces,
-            });
-        }
-        if actual_piece_count != expected_piece_count {
-            return Err(MetainfoError::PieceCountMismatch {
-                expected: expected_piece_count,
-                actual: actual_piece_count,
-            });
-        }
-        let piece_hashes = pieces
-            .chunks_exact(20)
-            .map(|hash| {
-                hash.try_into()
-                    .expect("piece hash chunk is exactly 20 bytes")
-            })
-            .collect();
-
-        let info_hash = Sha1::digest(&bytes[info_node.span.clone()]).into();
-        Ok(Self {
-            info_hash,
-            piece_hashes,
-            piece_length,
-            total_length,
-            name,
-            private,
-            mode,
-            files,
-        })
+        let parsed = direct::parse_outer(bytes, limits)?;
+        Ok(&bytes[parsed.info_span])
     }
 
     pub fn piece_count(&self) -> usize {
@@ -343,255 +265,13 @@ impl Metainfo {
     }
 }
 
-fn enforce_info_length(length: usize, limits: MetainfoLimits) -> Result<(), MetainfoError> {
-    if length > limits.max_info_bytes {
-        return Err(MetainfoError::InfoTooLarge {
-            length,
-            maximum: limits.max_info_bytes,
-        });
-    }
-    Ok(())
-}
-
-fn parse_metainfo(
-    bytes: &[u8],
-    max_input_length: usize,
-    limits: MetainfoLimits,
-) -> Result<Node<'_>, ParseError> {
-    parse_with_limits(
-        bytes,
-        Limits {
-            max_input_length,
-            max_string_length: limits.max_string_bytes,
-            max_decoded_items: limits.max_decoded_items,
-            max_depth: limits.max_depth,
-            max_collection_entries: limits.max_collection_entries,
-        },
-    )
-}
-
-fn parse_multi_files(
-    node: &Node<'_>,
-    limits: MetainfoLimits,
-) -> Result<(MetainfoMode, Vec<MetainfoFile>, u64), MetainfoError> {
-    let Value::List(entries) = &node.value else {
-        return Err(MetainfoError::InvalidField("info.files"));
-    };
-    if entries.is_empty() {
-        return Err(MetainfoError::InvalidField("info.files"));
-    }
-    if entries.len() > limits.max_files {
-        return Err(MetainfoError::TooManyFiles {
-            actual: entries.len(),
-            maximum: limits.max_files,
-        });
-    }
-
-    let mut files = Vec::with_capacity(entries.len());
-    let mut offset = 0_u64;
-    for (index, entry) in entries.iter().enumerate() {
-        let fields = dictionary(entry).ok_or(MetainfoError::InvalidField("info.files entry"))?;
-        let attributes =
-            optional_bytes_field(fields, b"attr", "info.files.attr")?.unwrap_or_default();
-        if attributes.contains(&b'l') {
-            return Err(MetainfoError::Unsupported("BEP 47 symlink file"));
-        }
-        let padding = attributes.contains(&b'p');
-        let length_node =
-            field(fields, b"length").ok_or(MetainfoError::MissingField("info.files.length"))?;
-        let length = node_nonnegative_integer(length_node, "info.files.length")?;
-        let path = match field(fields, b"path") {
-            Some(path) => parse_path(path, index, limits)?,
-            None if padding => Vec::new(),
-            None => return Err(MetainfoError::MissingField("info.files.path")),
-        };
-        if path.is_empty() && !padding {
-            return Err(MetainfoError::UnsafePath {
-                file: Some(index),
-                reason: "path has no components",
-            });
-        }
-
-        files.push(MetainfoFile {
-            path,
-            length,
-            offset,
-            padding,
-        });
-        offset = offset
-            .checked_add(length)
-            .ok_or(MetainfoError::TotalLengthOverflow)?;
-    }
-    validate_path_collisions(&files)?;
-    Ok((MetainfoMode::MultiFile, files, offset))
-}
-
-fn parse_path(
-    node: &Node<'_>,
-    file: usize,
-    limits: MetainfoLimits,
-) -> Result<Vec<String>, MetainfoError> {
-    let Value::List(components) = &node.value else {
-        return Err(MetainfoError::InvalidField("info.files.path"));
-    };
-    if components.is_empty() {
-        return Err(MetainfoError::UnsafePath {
-            file: Some(file),
-            reason: "path has no components",
-        });
-    }
-    if components.len() > limits.max_path_components {
-        return Err(MetainfoError::UnsafePath {
-            file: Some(file),
-            reason: "path has too many components",
-        });
-    }
-
-    let mut path = Vec::with_capacity(components.len());
-    let mut encoded_length = 0_usize;
-    for component in components {
-        let Value::Bytes(bytes) = component.value else {
-            return Err(MetainfoError::InvalidField("info.files.path component"));
-        };
-        let component = safe_component(bytes, Some(file), limits)?;
-        encoded_length = encoded_length
-            .checked_add(component.len() + usize::from(!path.is_empty()))
-            .ok_or(MetainfoError::UnsafePath {
-                file: Some(file),
-                reason: "path length overflows",
-            })?;
-        if encoded_length > limits.max_path_bytes {
-            return Err(MetainfoError::UnsafePath {
-                file: Some(file),
-                reason: "path is too long",
-            });
-        }
-        path.push(component);
-    }
-    Ok(path)
-}
-
-fn safe_component(
-    bytes: &[u8],
-    file: Option<usize>,
-    limits: MetainfoLimits,
-) -> Result<String, MetainfoError> {
-    let component = std::str::from_utf8(bytes).map_err(|_| MetainfoError::UnsafePath {
-        file,
-        reason: "component is not UTF-8",
-    })?;
-    let unsafe_reason = if component.is_empty() {
-        Some("component is empty")
-    } else if component.len() > limits.max_path_component_bytes {
-        Some("component is too long")
-    } else if matches!(component, "." | "..") {
-        Some("component is dot or dot-dot")
-    } else if component
-        .bytes()
-        .any(|byte| matches!(byte, 0 | b'/' | b'\\' | b':'))
-    {
-        Some("component contains a reserved separator or prefix character")
-    } else {
-        None
-    };
-    if let Some(reason) = unsafe_reason {
-        return Err(MetainfoError::UnsafePath { file, reason });
-    }
-    Ok(component.to_owned())
-}
-
-fn validate_path_collisions(files: &[MetainfoFile]) -> Result<(), MetainfoError> {
-    let mut paths: Vec<_> = files
-        .iter()
-        .enumerate()
-        .filter(|(_, file)| !file.path.is_empty())
-        .map(|(index, file)| (index, &file.path))
-        .collect();
-    paths.sort_by(|left, right| left.1.cmp(right.1));
-    for pair in paths.windows(2) {
-        let (first_index, first) = pair[0];
-        let (second_index, second) = pair[1];
-        if second.starts_with(first) {
-            return Err(MetainfoError::PathCollision {
-                first: first_index,
-                second: second_index,
-            });
-        }
-    }
-    Ok(())
-}
-
-fn dictionary<'node, 'input>(
-    node: &'node Node<'input>,
-) -> Option<&'node [DictionaryEntry<'input>]> {
-    match &node.value {
-        Value::Dictionary(entries) => Some(entries),
-        _ => None,
-    }
-}
-
-fn field<'node, 'input>(
-    entries: &'node [DictionaryEntry<'input>],
-    key: &[u8],
-) -> Option<&'node Node<'input>> {
-    entries
-        .binary_search_by_key(&key, |entry| entry.key)
-        .ok()
-        .map(|index| &entries[index].value)
-}
-
-fn positive_integer(
-    entries: &[DictionaryEntry<'_>],
-    key: &[u8],
-    field_name: &'static str,
-) -> Result<u64, MetainfoError> {
-    let node = field(entries, key).ok_or(MetainfoError::MissingField(field_name))?;
-    let value = node_nonnegative_integer(node, field_name)?;
-    if value == 0 {
-        return Err(MetainfoError::InvalidField(field_name));
-    }
-    Ok(value)
-}
-
-fn node_nonnegative_integer(
-    node: &Node<'_>,
-    field_name: &'static str,
-) -> Result<u64, MetainfoError> {
-    let Value::Integer(value) = node.value else {
-        return Err(MetainfoError::InvalidField(field_name));
-    };
-    u64::try_from(value).map_err(|_| MetainfoError::InvalidField(field_name))
-}
-
-fn bytes_field<'input>(
-    entries: &[DictionaryEntry<'input>],
-    key: &[u8],
-    field_name: &'static str,
-) -> Result<&'input [u8], MetainfoError> {
-    optional_bytes_field(entries, key, field_name)?.ok_or(MetainfoError::MissingField(field_name))
-}
-
-fn optional_bytes_field<'input>(
-    entries: &[DictionaryEntry<'input>],
-    key: &[u8],
-    field_name: &'static str,
-) -> Result<Option<&'input [u8]>, MetainfoError> {
-    let Some(node) = field(entries, key) else {
-        return Ok(None);
-    };
-    match node.value {
-        Value::Bytes(bytes) => Ok(Some(bytes)),
-        _ => Err(MetainfoError::InvalidField(field_name)),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use sha1::{Digest, Sha1};
 
     use super::{
         BEP9_METAINFO_LIMITS, EXPLICIT_IMPORT_METAINFO_LIMITS, MAX_PIECE_LENGTH, Metainfo,
-        MetainfoError, MetainfoMode,
+        MetainfoError, MetainfoMode, MetainfoTrackerTransport,
     };
 
     fn parse(bytes: &[u8]) -> Result<Metainfo, MetainfoError> {
@@ -636,6 +316,30 @@ mod tests {
         bytes
     }
 
+    fn tracker_metainfo(announce: Option<&str>, tiers: &[&[&str]]) -> Vec<u8> {
+        let outer = single_metainfo(1, 1, &[[1; 20]]);
+        let info = &outer[b"d4:info".len()..outer.len() - 1];
+        let mut bytes = b"d".to_vec();
+        if let Some(announce) = announce {
+            bytes.extend_from_slice(format!("8:announce{}:{announce}", announce.len()).as_bytes());
+        }
+        if !tiers.is_empty() {
+            bytes.extend_from_slice(b"13:announce-listl");
+            for tier in tiers {
+                bytes.push(b'l');
+                for tracker in *tier {
+                    bytes.extend_from_slice(format!("{}:{tracker}", tracker.len()).as_bytes());
+                }
+                bytes.push(b'e');
+            }
+            bytes.push(b'e');
+        }
+        bytes.extend_from_slice(b"4:info");
+        bytes.extend_from_slice(info);
+        bytes.push(b'e');
+        bytes
+    }
+
     #[test]
     fn parses_single_file_and_hashes_exact_info_span() {
         let mut bytes =
@@ -663,6 +367,62 @@ mod tests {
         assert_eq!(
             parse_info(raw_info).expect("parse raw info dictionary"),
             metainfo
+        );
+    }
+
+    #[test]
+    fn projects_full_tracker_tiers_and_uses_announce_only_as_fallback() {
+        let source = tracker_metainfo(
+            Some("udp://fallback.example:80/announce"),
+            &[
+                &["not-a-tracker"],
+                &[
+                    "UDP://Tracker.Example:80/passkey",
+                    "http://tracker.example/announce?key=secret",
+                ],
+                &[
+                    "udp://tracker.example:80/passkey",
+                    "https://secure.example/announce",
+                ],
+            ],
+        );
+        let projection =
+            Metainfo::project_bytes_with_limits(&source, EXPLICIT_IMPORT_METAINFO_LIMITS)
+                .expect("valid tracker catalog");
+
+        assert_eq!(projection.trackers.len(), 3);
+        assert_eq!(projection.trackers[0].tier, 0);
+        assert_eq!(projection.trackers[0].position, 0);
+        assert_eq!(
+            &*projection.trackers[0].url,
+            "udp://tracker.example:80/passkey"
+        );
+        assert_eq!(
+            projection.trackers[0].transport,
+            MetainfoTrackerTransport::Udp
+        );
+        assert_eq!(projection.trackers[1].tier, 0);
+        assert_eq!(
+            projection.trackers[1].transport,
+            MetainfoTrackerTransport::Http
+        );
+        assert_eq!(projection.trackers[2].tier, 1);
+        assert_eq!(
+            projection.trackers[2].transport,
+            MetainfoTrackerTransport::Https
+        );
+
+        let fallback = tracker_metainfo(
+            Some("udp://fallback.example:80/passkey"),
+            &[&["ws://unsupported.example/announce"]],
+        );
+        let fallback =
+            Metainfo::project_bytes_with_limits(&fallback, EXPLICIT_IMPORT_METAINFO_LIMITS)
+                .expect("fallback announce");
+        assert_eq!(fallback.trackers.len(), 1);
+        assert_eq!(
+            &*fallback.trackers[0].url,
+            "udp://fallback.example:80/passkey"
         );
     }
 
@@ -742,26 +502,25 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unsafe_colliding_and_symlink_paths() {
+    fn projects_unsafe_and_colliding_paths_but_rejects_symlinks() {
         for path in ["l0:e", "l1:.e", "l2:..e", "l3:a/be", "l3:a\\be", "l2:C:e"] {
             let file = format!("d6:lengthi1e4:path{path}e");
-            assert!(matches!(
-                parse(&multi_metainfo(file.as_bytes(), &[[1; 20]], 4)),
-                Err(MetainfoError::UnsafePath { .. })
-            ));
+            let parsed = parse(&multi_metainfo(file.as_bytes(), &[[1; 20]], 4))
+                .expect("unsafe source component is projected");
+            assert!(!parsed.files[0].path[0].is_empty());
+            assert!(parsed.files[0].path[0].len() <= 240);
+            assert!(!parsed.files[0].path[0].contains(['/', '\\', ':']));
         }
 
         let duplicate = concat!("d6:lengthi1e4:pathl1:aee", "d6:lengthi1e4:pathl1:aee");
-        assert!(matches!(
-            parse(&multi_metainfo(duplicate.as_bytes(), &[[1; 20]], 4)),
-            Err(MetainfoError::PathCollision { .. })
-        ));
+        let duplicate = parse(&multi_metainfo(duplicate.as_bytes(), &[[1; 20]], 4))
+            .expect("duplicate source paths receive stable suffixes");
+        assert_ne!(duplicate.files[0].path, duplicate.files[1].path);
 
         let prefix = concat!("d6:lengthi1e4:pathl1:aee", "d6:lengthi1e4:pathl1:a1:bee");
-        assert!(matches!(
-            parse(&multi_metainfo(prefix.as_bytes(), &[[1; 20]], 4)),
-            Err(MetainfoError::PathCollision { .. })
-        ));
+        let prefix = parse(&multi_metainfo(prefix.as_bytes(), &[[1; 20]], 4))
+            .expect("file/directory source conflict receives a stable suffix");
+        assert!(!prefix.files[1].path.starts_with(&prefix.files[0].path));
 
         let symlink = b"d4:attr1:l6:lengthi0e4:pathl1:aee";
         assert_eq!(
@@ -797,7 +556,7 @@ mod tests {
     }
 
     #[test]
-    fn accepts_256_mib_piece_bound_and_rejects_larger_value() {
+    fn accepts_libtorrent_piece_bound_and_rejects_larger_value() {
         let accepted = parse(&single_metainfo(
             u64::from(MAX_PIECE_LENGTH),
             MAX_PIECE_LENGTH,
@@ -829,7 +588,7 @@ mod tests {
 
     #[test]
     fn explicit_profile_accepts_info_larger_than_peer_metadata() {
-        let unknown_length = 1024 * 1024;
+        let unknown_length = super::MAX_PEER_METAINFO_LENGTH;
         let mut info = format!("d1:a{unknown_length}:").into_bytes();
         info.resize(info.len() + unknown_length, b'x');
         info.extend_from_slice(
@@ -866,7 +625,7 @@ mod tests {
                 maximum
             })) if length == minimal.len() && maximum == minimal.len() - 1
         ));
-        assert_eq!(outer_limit, 1024 * 1024);
+        assert_eq!(outer_limit, 30 * 1024 * 1024);
 
         let limits = super::MetainfoLimits {
             max_info_bytes: minimal_info.len() - 1,

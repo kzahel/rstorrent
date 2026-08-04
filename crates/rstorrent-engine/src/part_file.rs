@@ -179,6 +179,8 @@ pub struct PartFile {
     header_length: u64,
     slots: Vec<Option<u32>>,
     mapping_generations: Vec<u64>,
+    free_slots: Vec<u32>,
+    next_slot: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -354,6 +356,8 @@ impl PartFile {
             header_length,
             slots: vec![None; identity.piece_count],
             mapping_generations: vec![0; identity.piece_count],
+            free_slots: Vec::new(),
+            next_slot: 0,
         })
     }
 
@@ -532,6 +536,19 @@ impl PartFile {
             slots.push(Some(slot));
         }
 
+        let payload_length = file_length
+            .checked_sub(expected_header_length)
+            .ok_or(PartFileError::OffsetOverflow)?;
+        let allocated_slots_u64 = payload_length.div_ceil(u64::from(expected.piece_length));
+        let allocated_slots =
+            u32::try_from(allocated_slots_u64).map_err(|_| PartFileError::OffsetOverflow)?;
+        if allocated_slots as usize > expected.piece_count {
+            return Err(PartFileError::OffsetOverflow);
+        }
+        let free_slots = (0..allocated_slots)
+            .filter(|slot| !used_slots.contains(slot))
+            .collect();
+
         Ok(Self {
             source,
             path,
@@ -539,6 +556,8 @@ impl PartFile {
             header_length: expected_header_length,
             slots,
             mapping_generations: vec![0; expected.piece_count],
+            free_slots,
+            next_slot: allocated_slots,
         })
     }
 
@@ -630,12 +649,13 @@ impl PartFile {
 
     pub async fn release_piece(&mut self, piece_index: usize) -> Result<bool, PartFileError> {
         self.validate_piece_index(piece_index)?;
-        if self.slots[piece_index].is_none() {
+        let Some(slot) = self.slots[piece_index] else {
             return Ok(false);
-        }
+        };
         self.write_slot_entry(piece_index, None).await?;
         self.sync_payload().await?;
         self.slots[piece_index] = None;
+        self.free_slots.push(slot);
         self.bump_mapping_generation(piece_index);
         Ok(true)
     }
@@ -713,15 +733,20 @@ impl PartFile {
             return Ok(slot);
         }
 
-        let mut used_slots = vec![false; self.identity.piece_count];
-        for slot in self.slots.iter().flatten() {
-            used_slots[*slot as usize] = true;
-        }
-        let slot = used_slots
-            .iter()
-            .position(|used| !used)
-            .ok_or(PartFileError::OffsetOverflow)?;
-        let slot = u32::try_from(slot).map_err(|_| PartFileError::OffsetOverflow)?;
+        let slot = match self.free_slots.pop() {
+            Some(slot) => slot,
+            None => {
+                if self.next_slot as usize >= self.identity.piece_count {
+                    return Err(PartFileError::OffsetOverflow);
+                }
+                let slot = self.next_slot;
+                self.next_slot = self
+                    .next_slot
+                    .checked_add(1)
+                    .ok_or(PartFileError::OffsetOverflow)?;
+                slot
+            }
+        };
         let slot_end = self.payload_offset(slot, self.identity.piece_length, 0)?;
         let file = self
             .source

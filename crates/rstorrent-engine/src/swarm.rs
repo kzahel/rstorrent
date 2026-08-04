@@ -784,61 +784,12 @@ impl SwarmState {
                 "at least one wanted piece plan is required",
             ));
         }
-        let mut pieces = BTreeMap::new();
-        let mut blocks = BTreeMap::new();
-        let mut incomplete_pieces = BTreeSet::new();
-        for plan in plans {
-            if usize::try_from(plan.index).map_or(true, |index| index >= piece_count) {
-                return Err(SwarmError::PieceOutOfRange {
-                    piece: plan.index,
-                    piece_count,
-                });
-            }
-            if pieces.contains_key(&plan.index) {
-                return Err(SwarmError::DuplicatePiecePlan(plan.index));
-            }
-            let working_set_bytes = plan.blocks.iter().try_fold(0_usize, |total, block| {
-                total
-                    .checked_add(block.length as usize)
-                    .ok_or(SwarmError::ArithmeticOverflow("piece working-set bytes"))
-            })?;
-            for block in &plan.blocks {
-                if blocks
-                    .insert(
-                        *block,
-                        BlockState {
-                            phase: BlockPhase::Missing,
-                            attempts: VecDeque::new(),
-                        },
-                    )
-                    .is_some()
-                {
-                    return Err(SwarmError::DuplicateBlock(*block));
-                }
-            }
-            pieces.insert(
-                plan.index,
-                PieceState {
-                    storage: PieceStorageJoin::new(plan.blocks.len()),
-                    missing_blocks: plan.blocks.len(),
-                    active_blocks: 0,
-                    first_missing_block: 0,
-                    blocks: plan.blocks,
-                    working_set_bytes,
-                },
-            );
-            incomplete_pieces.insert(
-                usize::try_from(plan.index)
-                    .map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?,
-            );
-        }
-        let missing_blocks = blocks.len();
-        Ok(Self {
+        let mut state = Self {
             config,
             piece_count,
-            pieces,
-            blocks,
-            incomplete_pieces,
+            pieces: BTreeMap::new(),
+            blocks: BTreeMap::new(),
+            incomplete_pieces: BTreeSet::new(),
             active_pieces: BTreeSet::new(),
             requestable_active_pieces: BTreeSet::new(),
             active_piece_bytes: 0,
@@ -847,7 +798,7 @@ impl SwarmState {
             connections: BTreeMap::new(),
             pending_dials: BTreeSet::new(),
             next_attempt_id: 1,
-            missing_blocks,
+            missing_blocks: 0,
             requested_blocks: 0,
             writing_blocks: 0,
             received_blocks: 0,
@@ -861,7 +812,90 @@ impl SwarmState {
             piece_hash_failures: 0,
             failed_piece_bytes: 0,
             last_hash_failure_contributors: 0,
-        })
+        };
+        state.append_piece_plans(plans)?;
+        Ok(state)
+    }
+
+    pub fn append_piece_plans(&mut self, plans: Vec<PiecePlan>) -> Result<(), SwarmError> {
+        for plan in plans {
+            if usize::try_from(plan.index).map_or(true, |index| index >= self.piece_count) {
+                return Err(SwarmError::PieceOutOfRange {
+                    piece: plan.index,
+                    piece_count: self.piece_count,
+                });
+            }
+            if self.pieces.contains_key(&plan.index) {
+                return Err(SwarmError::DuplicatePiecePlan(plan.index));
+            }
+            let working_set_bytes = plan.blocks.iter().try_fold(0_usize, |total, block| {
+                total
+                    .checked_add(block.length as usize)
+                    .ok_or(SwarmError::ArithmeticOverflow("piece working-set bytes"))
+            })?;
+            for block in &plan.blocks {
+                if self
+                    .blocks
+                    .insert(
+                        *block,
+                        BlockState {
+                            phase: BlockPhase::Missing,
+                            attempts: VecDeque::new(),
+                        },
+                    )
+                    .is_some()
+                {
+                    return Err(SwarmError::DuplicateBlock(*block));
+                }
+            }
+            let block_count = plan.blocks.len();
+            self.pieces.insert(
+                plan.index,
+                PieceState {
+                    storage: PieceStorageJoin::new(plan.blocks.len()),
+                    missing_blocks: plan.blocks.len(),
+                    active_blocks: 0,
+                    first_missing_block: 0,
+                    blocks: plan.blocks,
+                    working_set_bytes,
+                },
+            );
+            self.incomplete_pieces.insert(
+                usize::try_from(plan.index)
+                    .map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?,
+            );
+            self.missing_blocks = self
+                .missing_blocks
+                .checked_add(block_count)
+                .ok_or(SwarmError::ArithmeticOverflow("missing block count"))?;
+        }
+        Ok(())
+    }
+
+    pub fn retire_verified_piece(&mut self, piece: u32) -> Result<(), SwarmError> {
+        let index =
+            usize::try_from(piece).map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
+        if self.incomplete_pieces.contains(&index) || self.active_pieces.contains(&index) {
+            return Err(SwarmError::InvalidTransition(
+                "piece cannot retire before verification completes",
+            ));
+        }
+        let state = self
+            .pieces
+            .remove(&piece)
+            .ok_or(SwarmError::UnknownPiece(piece))?;
+        for block in state.blocks {
+            let block_state = self
+                .blocks
+                .remove(&block)
+                .ok_or(SwarmError::UnknownBlock(block))?;
+            if block_state.phase != BlockPhase::Verified {
+                return Err(SwarmError::InvalidTransition(
+                    "retired piece contains an unverified block",
+                ));
+            }
+        }
+        Ok(())
     }
 
     pub const fn config(&self) -> SwarmConfig {
@@ -869,7 +903,11 @@ impl SwarmState {
     }
 
     pub fn is_complete(&self) -> bool {
-        self.verified_blocks == self.blocks.len()
+        self.incomplete_pieces.is_empty()
+    }
+
+    pub fn planned_piece_count(&self) -> usize {
+        self.pieces.len()
     }
 
     pub const fn outstanding_request_bytes(&self) -> usize {

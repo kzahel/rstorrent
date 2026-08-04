@@ -11,10 +11,13 @@ use crate::peer_wire::MAX_EXTENSION_PAYLOAD_LENGTH;
 
 pub const UT_METADATA_LOCAL_ID: u8 = 1;
 pub const METADATA_BLOCK_LENGTH: usize = 16 * 1024;
-pub const MAX_METADATA_LENGTH: usize = 1024 * 1024;
+pub const MAX_METADATA_LENGTH: usize = 30 * 1024 * 1024;
+pub const MAX_LOCAL_METADATA_LENGTH: usize = 64 * 1024 * 1024;
+pub const MAX_TRUSTED_METADATA_HANDSHAKE_LENGTH: usize = 4 * 1024 * 1024;
 pub const MAX_METADATA_BLOCKS: usize = MAX_METADATA_LENGTH / METADATA_BLOCK_LENGTH;
 pub const MAX_METADATA_REQUESTS_IN_FLIGHT: usize = 2;
-pub const MAX_METADATA_UPLOAD_REQUESTS: usize = 256;
+pub const MAX_DEFERRED_METADATA_UPLOAD_REQUESTS: usize = 1024;
+pub const METADATA_SEND_BUFFER_DEFERRAL_BYTES: usize = 160 * 1024;
 pub const MAX_METADATA_MESSAGE_DECODED_ITEMS: usize = 1024;
 pub const MAX_TORRENT_METADATA_PEERS: usize = 32;
 pub const METADATA_REQUEST_RAMP_MILLIS: u64 = 1_000;
@@ -210,7 +213,7 @@ pub fn parse_extension_handshake(payload: &[u8]) -> Result<ExtensionHandshake, M
     };
     let metadata_size = match field(entries, b"metadata_size") {
         None => None,
-        Some(node) => Some(validate_size(integer(node, "handshake.metadata_size")?)?),
+        Some(node) => trusted_handshake_size(integer(node, "handshake.metadata_size")?)?,
     };
     Ok(ExtensionHandshake {
         metadata_extension,
@@ -233,9 +236,9 @@ pub fn encode_extension_handshake_with_id(
         ));
     }
     if let Some(size) = metadata_size {
-        validate_size(i64::try_from(size).map_err(|_| MetadataError::InvalidSize {
+        validate_local_size(i64::try_from(size).map_err(|_| MetadataError::InvalidSize {
             size: i64::MAX,
-            maximum: MAX_METADATA_LENGTH,
+            maximum: MAX_LOCAL_METADATA_LENGTH,
         })?)?;
     }
     let mut encoded = b"d1:md11:ut_metadatai".to_vec();
@@ -300,13 +303,12 @@ pub fn encode_metadata_data(
     total_size: usize,
     block: &[u8],
 ) -> Result<Vec<u8>, MetadataError> {
-    let total_size =
-        validate_size(
-            i64::try_from(total_size).map_err(|_| MetadataError::InvalidSize {
-                size: i64::MAX,
-                maximum: MAX_METADATA_LENGTH,
-            })?,
-        )?;
+    let total_size = validate_local_size(i64::try_from(total_size).map_err(|_| {
+        MetadataError::InvalidSize {
+            size: i64::MAX,
+            maximum: MAX_LOCAL_METADATA_LENGTH,
+        }
+    })?)?;
     let expected = metadata_block_length(total_size, piece)?;
     if block.len() != expected {
         return Err(MetadataError::InvalidBlockLength {
@@ -343,7 +345,8 @@ pub enum MetadataDownloadAction {
 pub struct MetadataDownload {
     expected_info_hash: [u8; 20],
     size: Option<usize>,
-    blocks: Vec<Option<Vec<u8>>>,
+    bytes: Vec<u8>,
+    received: Vec<bool>,
     pending: BTreeSet<u32>,
     started: bool,
     complete: bool,
@@ -354,7 +357,8 @@ impl MetadataDownload {
         Self {
             expected_info_hash,
             size: None,
-            blocks: Vec::new(),
+            bytes: Vec::new(),
+            received: Vec::new(),
             pending: BTreeSet::new(),
             started: false,
             complete: false,
@@ -370,7 +374,7 @@ impl MetadataDownload {
         }
         self.started = true;
         if let Some(size) = advertised_size {
-            self.accept_size(size)?;
+            self.accept_size_hint(size)?;
         }
         self.schedule_requests()
     }
@@ -382,7 +386,7 @@ impl MetadataDownload {
         if self.complete {
             return Err(MetadataError::AlreadyComplete);
         }
-        self.accept_size(size)?;
+        self.accept_size_hint(size)?;
         if self.started {
             self.schedule_requests()
         } else {
@@ -428,11 +432,11 @@ impl MetadataDownload {
     }
 
     pub fn allocated_blocks(&self) -> usize {
-        self.blocks.len()
+        self.received.len()
     }
 
     pub fn received_blocks(&self) -> usize {
-        self.blocks.iter().filter(|block| block.is_some()).count()
+        self.received.iter().filter(|received| **received).count()
     }
 
     fn on_data(
@@ -442,25 +446,17 @@ impl MetadataDownload {
         block: &[u8],
     ) -> Result<Vec<MetadataDownloadAction>, MetadataError> {
         let piece = valid_piece_number(piece)?;
+        if self.size.is_none() && piece != 0 {
+            return Err(MetadataError::UnsolicitedPiece {
+                piece: i64::from(piece),
+            });
+        }
         if let Some(size) = self.size
             && size != total_size
         {
             return Err(MetadataError::SizeChanged {
                 expected: size,
                 actual: total_size,
-            });
-        }
-
-        if let Some(existing) = self.blocks.get(piece as usize).and_then(Option::as_deref) {
-            return if existing == block {
-                Ok(Vec::new())
-            } else {
-                Err(MetadataError::ConflictingDuplicate { piece })
-            };
-        }
-        if !self.pending.contains(&piece) {
-            return Err(MetadataError::UnsolicitedPiece {
-                piece: i64::from(piece),
             });
         }
 
@@ -473,21 +469,31 @@ impl MetadataDownload {
                 expected,
             });
         }
-        self.pending.remove(&piece);
-        self.blocks[piece as usize] = Some(block.to_vec());
+        let index = piece as usize;
+        let begin = index * METADATA_BLOCK_LENGTH;
+        let end = begin + expected;
+        if self.received[index] {
+            return if self.bytes[begin..end] == *block {
+                Ok(Vec::new())
+            } else {
+                Err(MetadataError::ConflictingDuplicate { piece })
+            };
+        }
+        if !self.pending.remove(&piece) {
+            return Err(MetadataError::UnsolicitedPiece {
+                piece: i64::from(piece),
+            });
+        }
+        self.bytes[begin..end].copy_from_slice(block);
+        self.received[index] = true;
 
-        if self.blocks.iter().all(Option::is_some) {
-            let mut bytes = Vec::with_capacity(total_size);
-            for block in &self.blocks {
-                bytes.extend_from_slice(block.as_deref().expect("all blocks are present"));
-            }
-            if bytes.len() != total_size
-                || <[u8; 20]>::from(Sha1::digest(&bytes)) != self.expected_info_hash
-            {
+        if self.received.iter().all(|received| *received) {
+            if <[u8; 20]>::from(Sha1::digest(&self.bytes)) != self.expected_info_hash {
                 return Err(MetadataError::HashMismatch);
             }
             self.complete = true;
             self.pending.clear();
+            let bytes = std::mem::take(&mut self.bytes);
             return Ok(vec![MetadataDownloadAction::Complete(bytes)]);
         }
         self.schedule_requests()
@@ -508,8 +514,16 @@ impl MetadataDownload {
             return Ok(());
         }
         self.size = Some(size);
-        self.blocks = vec![None; metadata_block_count(size)];
+        self.bytes = vec![0; size];
+        self.received = vec![false; metadata_block_count(size)];
         Ok(())
+    }
+
+    fn accept_size_hint(&mut self, size: usize) -> Result<(), MetadataError> {
+        if size > MAX_TRUSTED_METADATA_HANDSHAKE_LENGTH {
+            return Ok(());
+        }
+        self.accept_size(size)
     }
 
     fn schedule_requests(&mut self) -> Result<Vec<MetadataDownloadAction>, MetadataError> {
@@ -521,13 +535,13 @@ impl MetadataDownload {
             }
             return Ok(actions);
         }
-        for piece in 0..self.blocks.len() {
+        for piece in 0..self.received.len() {
             if self.pending.len() == MAX_METADATA_REQUESTS_IN_FLIGHT {
                 break;
             }
             let piece = u32::try_from(piece)
                 .map_err(|_| MetadataError::InvalidPiece { piece: i64::MAX })?;
-            if self.blocks[piece as usize].is_none() && self.pending.insert(piece) {
+            if !self.received[piece as usize] && self.pending.insert(piece) {
                 actions.push(MetadataDownloadAction::Request(piece));
             }
         }
@@ -545,7 +559,7 @@ pub enum TorrentMetadataEvent {
 
 #[derive(Debug, Default)]
 struct TorrentMetadataBlock {
-    bytes: Option<Vec<u8>>,
+    received: bool,
     source: Option<u64>,
     assignments: BTreeMap<u64, MetadataInstant>,
     requested_by: BTreeSet<u64>,
@@ -563,6 +577,7 @@ struct TorrentMetadataPeer {
 pub struct TorrentMetadataDownload {
     expected_info_hash: [u8; 20],
     size: Option<usize>,
+    bytes: Vec<u8>,
     blocks: Vec<TorrentMetadataBlock>,
     peers: BTreeMap<u64, TorrentMetadataPeer>,
     complete: bool,
@@ -574,6 +589,7 @@ impl TorrentMetadataDownload {
         Self {
             expected_info_hash,
             size: None,
+            bytes: Vec::new(),
             blocks: vec![TorrentMetadataBlock::default()],
             peers: BTreeMap::new(),
             complete: false,
@@ -595,14 +611,14 @@ impl TorrentMetadataDownload {
             self.peers.insert(peer, TorrentMetadataPeer::default());
         }
         if let Some(size) = advertised_size {
-            self.accept_size(size)?;
+            self.accept_size_hint(size)?;
         }
         Ok(())
     }
 
     pub fn accept_peer_size(&mut self, peer: u64, size: usize) -> Result<(), MetadataError> {
         self.peer(peer)?;
-        self.accept_size(size)
+        self.accept_size_hint(size)
     }
 
     pub fn requests_for_peer(
@@ -640,7 +656,7 @@ impl TorrentMetadataDownload {
                 .iter()
                 .enumerate()
                 .filter(|(_, block)| {
-                    if block.bytes.is_some() || !block.assignments.is_empty() {
+                    if block.received || !block.assignments.is_empty() {
                         return false;
                     }
                     if !block.requested_by.contains(&peer) {
@@ -704,14 +720,16 @@ impl TorrentMetadataDownload {
                 piece: i64::from(piece),
             });
         }
-        if let Some(existing) = state.bytes.as_deref() {
-            return if existing == block {
+        let expected = metadata_block_length(total_size, piece)?;
+        let begin = index * METADATA_BLOCK_LENGTH;
+        let end = begin + expected;
+        if state.received {
+            return if self.bytes[begin..end] == *block {
                 Ok(TorrentMetadataEvent::Duplicate { piece })
             } else {
                 Err(MetadataError::ConflictingDuplicate { piece })
             };
         }
-        let expected = metadata_block_length(total_size, piece)?;
         if block.len() != expected {
             return Err(MetadataError::InvalidBlockLength {
                 piece,
@@ -722,29 +740,16 @@ impl TorrentMetadataDownload {
 
         self.release_piece(piece);
         let state = &mut self.blocks[index];
-        state.bytes = Some(block.to_vec());
+        self.bytes[begin..end].copy_from_slice(block);
+        state.received = true;
         state.source = Some(peer);
-        if self
-            .blocks
-            .iter()
-            .any(|candidate| candidate.bytes.is_none())
-        {
+        if self.blocks.iter().any(|candidate| !candidate.received) {
             return Ok(TorrentMetadataEvent::BlockAccepted { piece });
         }
 
-        let mut bytes = Vec::with_capacity(total_size);
-        for candidate in &self.blocks {
-            bytes.extend_from_slice(
-                candidate
-                    .bytes
-                    .as_deref()
-                    .expect("all torrent metadata blocks are present"),
-            );
-        }
-        if bytes.len() == total_size
-            && <[u8; 20]>::from(Sha1::digest(&bytes)) == self.expected_info_hash
-        {
+        if <[u8; 20]>::from(Sha1::digest(&self.bytes)) == self.expected_info_hash {
             self.complete = true;
+            let bytes = std::mem::take(&mut self.bytes);
             return Ok(TorrentMetadataEvent::Complete(bytes));
         }
 
@@ -825,10 +830,7 @@ impl TorrentMetadataDownload {
     }
 
     pub fn received_blocks(&self) -> usize {
-        self.blocks
-            .iter()
-            .filter(|block| block.bytes.is_some())
-            .count()
+        self.blocks.iter().filter(|block| block.received).count()
     }
 
     pub fn pending_requests(&self) -> usize {
@@ -870,6 +872,7 @@ impl TorrentMetadataDownload {
         }
         let count = metadata_block_count(size);
         let first = std::mem::take(&mut self.blocks[0]);
+        self.bytes = vec![0; size];
         self.blocks = (0..count)
             .map(|index| {
                 if index == 0 {
@@ -886,6 +889,13 @@ impl TorrentMetadataDownload {
             .collect();
         self.size = Some(size);
         Ok(())
+    }
+
+    fn accept_size_hint(&mut self, size: usize) -> Result<(), MetadataError> {
+        if size > MAX_TRUSTED_METADATA_HANDSHAKE_LENGTH {
+            return Ok(());
+        }
+        self.accept_size(size)
     }
 
     fn expire_assignments(&mut self, now: MetadataInstant) {
@@ -957,13 +967,12 @@ pub struct MetadataUpload {
 
 impl MetadataUpload {
     pub fn new(bytes: Vec<u8>) -> Result<Self, MetadataError> {
-        let size =
-            validate_size(
-                i64::try_from(bytes.len()).map_err(|_| MetadataError::InvalidSize {
-                    size: i64::MAX,
-                    maximum: MAX_METADATA_LENGTH,
-                })?,
-            )?;
+        let size = validate_local_size(i64::try_from(bytes.len()).map_err(|_| {
+            MetadataError::InvalidSize {
+                size: i64::MAX,
+                maximum: MAX_LOCAL_METADATA_LENGTH,
+            }
+        })?)?;
         Ok(Self {
             bytes,
             served: vec![false; metadata_block_count(size)],
@@ -972,12 +981,7 @@ impl MetadataUpload {
     }
 
     pub fn on_request(&mut self, piece: i64) -> Result<MetadataUploadAction, MetadataError> {
-        self.request_count += 1;
-        if self.request_count > MAX_METADATA_UPLOAD_REQUESTS {
-            return Err(MetadataError::UploadRequestLimit {
-                maximum: MAX_METADATA_UPLOAD_REQUESTS,
-            });
-        }
+        self.request_count = self.request_count.saturating_add(1);
         let Ok(piece_index) = usize::try_from(piece) else {
             return Ok(MetadataUploadAction::Reject { piece });
         };
@@ -1042,6 +1046,31 @@ fn validate_size(size: i64) -> Result<usize, MetadataError> {
     }
 }
 
+fn validate_local_size(size: i64) -> Result<usize, MetadataError> {
+    let converted = usize::try_from(size).ok();
+    match converted {
+        Some(size @ 1..=MAX_LOCAL_METADATA_LENGTH) => Ok(size),
+        _ => Err(MetadataError::InvalidSize {
+            size,
+            maximum: MAX_LOCAL_METADATA_LENGTH,
+        }),
+    }
+}
+
+fn trusted_handshake_size(size: i64) -> Result<Option<usize>, MetadataError> {
+    let size = usize::try_from(size).map_err(|_| MetadataError::InvalidSize {
+        size,
+        maximum: MAX_TRUSTED_METADATA_HANDSHAKE_LENGTH,
+    })?;
+    if size == 0 {
+        return Err(MetadataError::InvalidSize {
+            size: 0,
+            maximum: MAX_TRUSTED_METADATA_HANDSHAKE_LENGTH,
+        });
+    }
+    Ok((size <= MAX_TRUSTED_METADATA_HANDSHAKE_LENGTH).then_some(size))
+}
+
 fn valid_piece_number(piece: i64) -> Result<u32, MetadataError> {
     u32::try_from(piece).map_err(|_| MetadataError::InvalidPiece { piece })
 }
@@ -1091,15 +1120,15 @@ mod tests {
     use sha1::{Digest, Sha1};
 
     use super::{
-        ExtensionHandshake, MAX_METADATA_LENGTH, MAX_METADATA_REQUESTS_IN_FLIGHT,
-        MAX_METADATA_UPLOAD_REQUESTS, MAX_TORRENT_METADATA_PEERS,
-        METADATA_ASSIGNMENT_TIMEOUT_MILLIS, METADATA_BLOCK_LENGTH, METADATA_REJECT_COOLDOWN_MILLIS,
-        METADATA_REQUEST_RAMP_MILLIS, MetadataDownload, MetadataDownloadAction, MetadataError,
-        MetadataExtensionUpdate, MetadataInstant, MetadataMessage, MetadataUpload,
-        MetadataUploadAction, TorrentMetadataDownload, TorrentMetadataEvent,
-        encode_extension_handshake, encode_extension_handshake_with_id, encode_metadata_data,
-        encode_metadata_reject, encode_metadata_request, parse_extension_handshake,
-        parse_metadata_message,
+        ExtensionHandshake, MAX_LOCAL_METADATA_LENGTH, MAX_METADATA_LENGTH,
+        MAX_METADATA_REQUESTS_IN_FLIGHT, MAX_TORRENT_METADATA_PEERS,
+        MAX_TRUSTED_METADATA_HANDSHAKE_LENGTH, METADATA_ASSIGNMENT_TIMEOUT_MILLIS,
+        METADATA_BLOCK_LENGTH, METADATA_REJECT_COOLDOWN_MILLIS, METADATA_REQUEST_RAMP_MILLIS,
+        MetadataDownload, MetadataDownloadAction, MetadataError, MetadataExtensionUpdate,
+        MetadataInstant, MetadataMessage, MetadataUpload, MetadataUploadAction,
+        TorrentMetadataDownload, TorrentMetadataEvent, encode_extension_handshake,
+        encode_extension_handshake_with_id, encode_metadata_data, encode_metadata_reject,
+        encode_metadata_request, parse_extension_handshake, parse_metadata_message,
     };
 
     const fn instant(millis: u64) -> MetadataInstant {
@@ -1156,10 +1185,22 @@ mod tests {
             b"d1:md11:ut_metadatai256eee".as_slice(),
             b"d13:metadata_sizei0ee".as_slice(),
             b"d13:metadata_sizei-1ee".as_slice(),
-            format!("d13:metadata_sizei{}ee", MAX_METADATA_LENGTH + 1).as_bytes(),
         ] {
             assert!(parse_extension_handshake(payload).is_err());
         }
+
+        let oversized_hint =
+            encode_extension_handshake(Some(MAX_TRUSTED_METADATA_HANDSHAKE_LENGTH + 1));
+        assert_eq!(
+            parse_extension_handshake(&oversized_hint)
+                .expect("a large positive hint is not a protocol error")
+                .metadata_size,
+            None
+        );
+        encode_extension_handshake(Some(MAX_LOCAL_METADATA_LENGTH));
+        assert!(
+            encode_extension_handshake_with_id(1, Some(MAX_LOCAL_METADATA_LENGTH + 1)).is_err()
+        );
     }
 
     #[test]
@@ -1667,7 +1708,7 @@ mod tests {
     }
 
     #[test]
-    fn upload_serves_exact_blocks_rejects_indices_and_bounds_repeats() {
+    fn upload_serves_exact_blocks_and_has_no_lifetime_request_cap() {
         let bytes = vec![8; METADATA_BLOCK_LENGTH + 3];
         let mut upload = MetadataUpload::new(bytes.clone()).expect("bounded metadata");
 
@@ -1695,14 +1736,11 @@ mod tests {
         assert!(upload.is_complete());
 
         let mut flooded = MetadataUpload::new(vec![1]).expect("one block");
-        for _ in 0..MAX_METADATA_UPLOAD_REQUESTS {
-            flooded.on_request(0).expect("bounded repeated request");
+        for _ in 0..=4096 {
+            flooded
+                .on_request(0)
+                .expect("retries are not a lifetime queue cap");
         }
-        assert_eq!(
-            flooded.on_request(0),
-            Err(MetadataError::UploadRequestLimit {
-                maximum: MAX_METADATA_UPLOAD_REQUESTS
-            })
-        );
+        assert_eq!(flooded.request_count(), 4097);
     }
 }

@@ -2597,7 +2597,12 @@ impl SelectiveStorage {
         let pending_promotions = std::mem::take(&mut self.pending_promotions);
         for file_index in pending_promotions {
             let mut recoverable = false;
-            for piece_index in self.layout.file_pieces(file_index)? {
+            for piece_index in self
+                .layout
+                .file_piece_range(file_index)?
+                .into_iter()
+                .flatten()
+            {
                 let piece_index = usize::try_from(piece_index)
                     .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
                 if self.verified.get(piece_index).copied().unwrap_or(false)
@@ -2634,7 +2639,12 @@ impl SelectiveStorage {
         if self.selection.is_wanted(file_index) {
             return Err(SelectiveStorageError::AlreadyWanted { file_index });
         }
-        for piece_index in self.layout.file_pieces(file_index)? {
+        for piece_index in self
+            .layout
+            .file_piece_range(file_index)?
+            .into_iter()
+            .flatten()
+        {
             let piece_index_usize = usize::try_from(piece_index)
                 .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
             if !self.verified[piece_index_usize] {
@@ -2797,7 +2807,12 @@ impl SelectiveStorage {
 
         let slots_before = self.part_slots();
         self.selection.set_wanted(&self.layout, file_index, true)?;
-        for piece_index in self.layout.file_pieces(file_index)? {
+        for piece_index in self
+            .layout
+            .file_piece_range(file_index)?
+            .into_iter()
+            .flatten()
+        {
             if !self.piece_requires_part_file(piece_index)?
                 && let Some(part_file) = self.part_file.as_mut()
             {
