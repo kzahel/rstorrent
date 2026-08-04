@@ -1453,9 +1453,7 @@ fn classify_failure(error: &DownloadError) -> FailureKind {
         | DownloadError::MetadataExtensionDisabled
         | DownloadError::InvalidPremetadataState(_)
         | DownloadError::Piece(_) => FailureKind::Protocol,
-        DownloadError::Storage(_)
-        | DownloadError::SelectiveStorage(_)
-        | DownloadError::Io { .. } => FailureKind::Storage,
+        DownloadError::SelectiveStorage(_) | DownloadError::Io { .. } => FailureKind::Storage,
         DownloadError::CleanupAfterFailure { .. } | DownloadError::PeerCleanup { .. } => {
             FailureKind::Cleanup
         }
