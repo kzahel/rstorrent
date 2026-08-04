@@ -366,6 +366,10 @@ that scope and its cleanup or compatibility rules explicitly.
   planned; replaces component-local menu and popover mechanics with one
   portalled, collision-aware, accessible React Aria layer while reserving new
   product context-menu bindings for a later policy decision.
+- [`078-local-single-peer-tcp-seeding.md`](078-local-single-peer-tcp-seeding.md):
+  planned; adds one session-owned loopback TCP listener, generation-fenced
+  torrent routing, verified metadata and payload upload, restartable seeding
+  ownership, and controlled RSTorrent/libtorrent evidence for one peer.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

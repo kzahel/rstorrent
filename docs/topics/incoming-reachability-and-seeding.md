@@ -3,8 +3,10 @@
 Topic: `incoming-reachability-and-seeding`
 
 Status: campaign shape and suggested implementation order accepted as planning
-direction. RSTorrent still has no product peer listener, payload-upload owner,
-or NAT mapping, and no implementation tactical has been created or scheduled.
+direction. Tactical [`078`](../tactical/078-local-single-peer-tcp-seeding.md)
+records the planned first slice but is not yet implemented or promoted into
+the readiness queue. RSTorrent still has no product peer listener,
+payload-upload owner, or NAT mapping.
 
 ## Purpose And Scope
 
@@ -229,7 +231,7 @@ slice begins, its tactical must follow the source-first campaign contract,
 settle its owner/task/cancellation map and resource bounds, and name one
 falsifiable stopping condition.
 
-### 1. Local single-peer TCP seeding
+### 1. [Local single-peer TCP seeding](../tactical/078-local-single-peer-tcp-seeding.md)
 
 Establish the smallest real product path from a session-owned TCP listener to
 verified upload:
@@ -436,13 +438,14 @@ known external-port, multi-interface, and completed-torrent lifecycle cases.
 
 ## Campaign Checkpoint And Next Action
 
-No implementation tactical exists. No product listener, upload behavior,
-setting, advertisement, or mapper is authorized by this topic alone, and the
-current capability queue is unchanged.
+Tactical [`078`](../tactical/078-local-single-peer-tcp-seeding.md) now records
+the decision-complete local single-peer TCP seeding plan, source audit,
+shared-listener and per-torrent ownership map, conservative first bounds,
+completed-torrent lifecycle, refactoring boundary, validation matrix, and
+local RSTorrent/libtorrent stopping condition. It does not change the
+authoritative capability queue or claim that implementation has started.
 
-When the campaign is explicitly promoted, the next action is to author the
-decision-complete local single-peer TCP seeding tactical. It must perform the
-required specification and pinned-source audit, define the shared-listener
-and per-torrent upload owner/task/cancellation map, select conservative
-resource bounds, state the completed-torrent lifecycle, and make the local
-RSTorrent/libtorrent interoperability matrix its stopping condition.
+When the readiness queue explicitly promotes this campaign, the next action
+is Tactical `078`'s pure-state and direction-neutral peer-I/O gate. No product
+listener, upload behavior, setting, advertisement, or mapper exists until its
+implementation and evidence are recorded.
