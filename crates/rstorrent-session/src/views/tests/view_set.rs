@@ -2,10 +2,10 @@ use super::super::*;
 use super::*;
 use crate::diagnostics::category;
 use crate::{
-    DiagnosticCategory, DiagnosticEvent, DiagnosticRetention, DiagnosticSeverity, FileCatalogState,
-    FileSelectionView, FileView, ProgressAction, ProgressAssessment, ProgressDisposition,
-    ProgressPhase, ProgressReason, ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState,
-    TorrentView,
+    DiagnosticCategory, DiagnosticEvent, DiagnosticFilter, DiagnosticRetention, DiagnosticSeverity,
+    FileCatalogState, FileSelectionView, FileView, ProgressAction, ProgressAssessment,
+    ProgressDisposition, ProgressPhase, ProgressReason, ServiceSnapshot, StorageState,
+    TorrentSnapshot, TorrentState, TorrentView,
 };
 use rstorrent_engine::peer::{PeerSource, PeerSources};
 use rstorrent_engine::swarm::ConnectionId;

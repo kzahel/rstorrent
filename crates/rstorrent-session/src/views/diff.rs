@@ -9,12 +9,13 @@ use crate::control::StorageSettingsSnapshot;
 use crate::diagnostics::{
     MAX_DIAGNOSTIC_PATCH_BYTES, MAX_DIAGNOSTIC_PATCH_EVENTS, patch_encoded_len,
 };
+use crate::file_views::FileView;
+use crate::tracker_views::TrackerView;
 
 use super::ranges::{difference, insert_interval, remove_interval};
 use super::{
-    ActivePiece, DiskSessionView, FileView, IndexRange, PeerView, SubscriptionSpec, SwarmModel,
-    TorrentModel, TorrentView, TrackerView, ViewPatch, ViewProjection, ViewSelector, ViewUpdate,
-    ViewUpdatePayload,
+    ActivePiece, DiskSessionView, IndexRange, PeerView, SubscriptionSpec, SwarmModel, TorrentModel,
+    TorrentView, ViewPatch, ViewProjection, ViewSelector, ViewUpdate, ViewUpdatePayload,
 };
 
 pub(super) fn patch_for(
