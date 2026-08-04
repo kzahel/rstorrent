@@ -1855,6 +1855,30 @@ mod tests {
     }
 
     #[test]
+    fn torrent_upload_declaration_tolerates_the_retired_digest_field() {
+        let frame: ApplicationClientFrame = serde_json::from_value(serde_json::json!({
+            "type": "begin_torrent_upload",
+            "call_id": "call-1",
+            "upload_id": "upload-1",
+            "request": {
+                "version": 1,
+                "request_id": "request-1",
+                "storage_root": "downloads",
+                "start_content": true,
+                "selection": { "type": "all" },
+                "source_length": 128,
+                "source_sha256": "00".repeat(32),
+            },
+        }))
+        .expect("legacy upload declaration");
+        assert!(matches!(
+            frame,
+            ApplicationClientFrame::BeginTorrentUpload { request, .. }
+                if request.source_length == 128
+        ));
+    }
+
+    #[test]
     fn pending_correlations_reject_duplicates_and_the_seventeenth_id() {
         let pending = std::sync::Mutex::new(BTreeSet::new());
         for index in 0..MAX_PENDING_CALLS {

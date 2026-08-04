@@ -337,12 +337,6 @@ export function validateTorrentByteUpload(
       "torrent source length does not match the request",
     );
   }
-  if (!/^[0-9a-f]{64}$/.test(request.source_sha256)) {
-    throw new ApplicationViewError(
-      "invalid_call",
-      "torrent source SHA-256 must be lowercase hexadecimal",
-    );
-  }
 }
 
 function generateOwnerId(): string {

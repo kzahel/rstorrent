@@ -17,7 +17,7 @@ export type FileIndexRange = { start: number, end_exclusive: number, };
 
 export type FileSelectionIntent = { "type": "all" } | { "type": "none" } | { "type": "wanted_ranges", ranges: Array<FileIndexRange>, };
 
-export type AddTorrentBytesRequest = { version: number, request_id: string, expected_revision?: string | null, storage_root: string, start_content: boolean, selection: FileSelectionIntent, source_length: number, source_sha256: string, };
+export type AddTorrentBytesRequest = { version: number, request_id: string, expected_revision?: string | null, storage_root: string, start_content: boolean, selection: FileSelectionIntent, source_length: number, };
 
 export type RequestEnvelope = { version: number, request_id: string, expected_revision?: string | null, command: Command, };
 

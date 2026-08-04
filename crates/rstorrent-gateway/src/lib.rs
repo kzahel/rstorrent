@@ -36,7 +36,6 @@ use rstorrent_session::{
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, Semaphore};
 use tokio_util::sync::CancellationToken;
@@ -709,7 +708,6 @@ async fn api_torrent_upload(
         start_content: query.start_content,
         selection,
         source_length: body.len() as u32,
-        source_sha256: encode_sha256(&Sha256::digest(&body)),
     };
     let request_id = request.request_id.clone();
     let mut service = state.service.lock().await;
@@ -765,16 +763,6 @@ fn parse_canonical_u32(value: &str, label: &str) -> Result<u32, String> {
     value
         .parse()
         .map_err(|_| format!("{label} exceeds unsigned 32-bit range"))
-}
-
-fn encode_sha256(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut output = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        output.push(char::from(HEX[(byte >> 4) as usize]));
-        output.push(char::from(HEX[(byte & 0x0f) as usize]));
-    }
-    output
 }
 
 async fn choose_download_root(
@@ -1119,7 +1107,6 @@ mod tests {
         ViewDeliveryPolicy, ViewSetUpdate, ViewSnapshot, ViewSpec,
     };
     use sha1::{Digest, Sha1};
-    use sha2::Sha256;
     use tokio::sync::Mutex;
     use tokio_tungstenite::connect_async;
     use tokio_tungstenite::tungstenite::Message;
@@ -1396,7 +1383,6 @@ mod tests {
             start_content: false,
             selection: FileSelectionIntent::All,
             source_length: source.len() as u32,
-            source_sha256: super::encode_sha256(&Sha256::digest(source)),
         }
     }
 

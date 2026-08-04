@@ -101,7 +101,6 @@ describe("Tauri leased view-set adapter", () => {
             ],
           },
           source_length: source.byteLength,
-          source_sha256: "0".repeat(64),
         },
         source,
       ),

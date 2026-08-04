@@ -3707,7 +3707,6 @@ mod tests {
     };
     use rusqlite::Connection;
     use sha1::{Digest, Sha1};
-    use sha2::Sha256;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, UdpSocket};
 
@@ -3797,10 +3796,6 @@ mod tests {
         source: &[u8],
         start_content: bool,
     ) -> AddTorrentBytesRequest {
-        let source_sha256 = Sha256::digest(source)
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
         AddTorrentBytesRequest {
             version: CONTROL_VERSION,
             request_id: request_id.to_owned(),
@@ -3809,7 +3804,6 @@ mod tests {
             start_content,
             selection: crate::FileSelectionIntent::All,
             source_length: source.len() as u32,
-            source_sha256,
         }
     }
 

@@ -99,9 +99,6 @@
           "minimum": 0,
           "type": "integer"
         },
-        "source_sha256": {
-          "type": "string"
-        },
         "start_content": {
           "default": true,
           "type": "boolean"
@@ -120,8 +117,7 @@
         "version",
         "request_id",
         "storage_root",
-        "source_length",
-        "source_sha256"
+        "source_length"
       ],
       "type": "object"
     },

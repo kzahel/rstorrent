@@ -12,7 +12,6 @@ use rstorrent_session::{
     StorageRootSnapshot, SubscriptionSpec, ViewSubscription, ViewUpdate,
     application_error_response,
 };
-use sha2::{Digest, Sha256};
 #[cfg(target_os = "macos")]
 use tauri::WebviewWindowBuilder;
 use tauri::ipc::{Channel, InvokeBody, Request as IpcRequest};
@@ -121,7 +120,6 @@ fn decode_torrent_ipc(
         optional_ipc_header(headers, HEADER_SELECTION)?.as_deref(),
         optional_ipc_header(headers, HEADER_WANTED_RANGES)?.as_deref(),
     )?;
-    let digest = Sha256::digest(&source);
     let request = AddTorrentBytesRequest {
         version: CONTROL_VERSION,
         request_id,
@@ -130,7 +128,6 @@ fn decode_torrent_ipc(
         start_content,
         selection,
         source_length: source.len() as u32,
-        source_sha256: encode_sha256(&digest),
     };
     Ok((request, source))
 }
@@ -202,16 +199,6 @@ fn parse_ipc_u32(value: &str) -> Result<u32, String> {
     value
         .parse()
         .map_err(|_| "x-rstorrent-wanted-ranges index exceeds u32".to_owned())
-}
-
-fn encode_sha256(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut output = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        output.push(char::from(HEX[(byte >> 4) as usize]));
-        output.push(char::from(HEX[(byte & 0x0f) as usize]));
-    }
-    output
 }
 
 #[tauri::command]
@@ -571,7 +558,6 @@ mod tests {
         assert_eq!(request.storage_root, "downloads");
         assert!(!request.start_content);
         assert_eq!(request.source_length as usize, decoded.len());
-        assert_eq!(request.source_sha256.len(), 64);
         assert!(
             decode_torrent_ipc(&InvokeBody::Json(serde_json::json!([1, 2, 3])), &headers)
                 .expect_err("reject JSON IPC")

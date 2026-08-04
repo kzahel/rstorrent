@@ -265,12 +265,6 @@ pub(crate) fn prepare_torrent_bytes(
         ));
     }
     let source_digest: [u8; 32] = Sha256::digest(&source).into();
-    if encode_digest(&source_digest) != request.source_sha256 {
-        return Err((
-            ErrorCode::InvalidRequest,
-            "torrent source SHA-256 does not match the attached bytes".to_owned(),
-        ));
-    }
     let projection = Metainfo::project_bytes_with_limits(&source, EXPLICIT_IMPORT_METAINFO_LIMITS)
         .map_err(metainfo_intake_error)?;
     let skip_files = project_file_selection(&request.selection, &projection.metainfo.files)?;
@@ -798,10 +792,7 @@ impl SessionStore {
         request: &AddTorrentBytesRequest,
         prepared: &PreparedTorrentBytes,
     ) -> Result<ResponseEnvelope, StoreError> {
-        let request_json = serde_json::to_string(&serde_json::json!({
-            "operation": "add_torrent_bytes",
-            "request": request,
-        }))?;
+        let request_json = torrent_bytes_receipt_json(request, &prepared.source_digest)?;
         if let Some(response) =
             replay_or_conflict(&self.connection, &request.request_id, &request_json)?
         {
@@ -1774,6 +1765,24 @@ impl SessionStore {
         transaction.commit()?;
         Ok(revision)
     }
+}
+
+fn torrent_bytes_receipt_json(
+    request: &AddTorrentBytesRequest,
+    source_digest: &[u8; 32],
+) -> Result<String, serde_json::Error> {
+    let mut request_value = serde_json::to_value(request)?;
+    request_value
+        .as_object_mut()
+        .expect("torrent byte request serializes as an object")
+        .insert(
+            "source_sha256".to_owned(),
+            serde_json::Value::String(encode_digest(source_digest)),
+        );
+    serde_json::to_string(&serde_json::json!({
+        "operation": "add_torrent_bytes",
+        "request": request_value,
+    }))
 }
 
 #[derive(Debug)]
@@ -4268,6 +4277,28 @@ mod tests {
             .expect("accept source bytes");
         assert!(matches!(accepted.outcome, ResponseOutcome::Success { .. }));
         assert_eq!(accepted.revision, "1");
+        let stored_receipt: String = store
+            .connection
+            .query_row(
+                "SELECT request_json FROM request_receipts WHERE request_id = ?1",
+                [&request.request_id],
+                |row| row.get(0),
+            )
+            .expect("inspect byte-intake receipt");
+        let legacy_receipt = serde_json::to_string(&serde_json::json!({
+            "operation": "add_torrent_bytes",
+            "request": {
+                "version": request.version,
+                "request_id": request.request_id,
+                "storage_root": request.storage_root,
+                "start_content": request.start_content,
+                "selection": request.selection,
+                "source_length": request.source_length,
+                "source_sha256": super::encode_digest(&Sha256::digest(&source)),
+            },
+        }))
+        .expect("encode legacy receipt shape");
+        assert_eq!(stored_receipt, legacy_receipt);
         assert_eq!(
             store
                 .handle_torrent_bytes(&request, source.clone())
@@ -4329,7 +4360,7 @@ mod tests {
     }
 
     #[test]
-    fn torrent_bytes_reject_mismatch_conflict_duplicate_and_stale_without_mutation() {
+    fn torrent_bytes_reject_length_conflict_duplicate_and_stale_without_mutation() {
         let root = test_root("torrent-bytes-errors");
         let configured = configured_root(&root);
         let source = torrent_source();
@@ -4337,10 +4368,10 @@ mod tests {
             SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
 
         let mut mismatch = torrent_bytes_request("mismatch", &source);
-        mismatch.source_sha256 = "00".repeat(32);
+        mismatch.source_length += 1;
         let rejected = store
             .handle_torrent_bytes(&mismatch, source.clone())
-            .expect("reject digest mismatch");
+            .expect("reject length mismatch");
         assert!(matches!(
             rejected.outcome,
             ResponseOutcome::Error {
@@ -4370,6 +4401,24 @@ mod tests {
             .expect("request conflict");
         assert!(matches!(
             conflicted.outcome,
+            ResponseOutcome::Error {
+                error: crate::ErrorResponse {
+                    code: ErrorCode::RequestConflict,
+                    ..
+                }
+            }
+        ));
+        let mut changed_source = source.clone();
+        let comment = changed_source
+            .windows(b"preserve me exact".len())
+            .position(|window| window == b"preserve me exact")
+            .expect("fixture comment");
+        changed_source[comment] = b'P';
+        let source_conflicted = store
+            .handle_torrent_bytes(&request, changed_source)
+            .expect("source bytes conflict");
+        assert!(matches!(
+            source_conflicted.outcome,
             ResponseOutcome::Error {
                 error: crate::ErrorResponse {
                     code: ErrorCode::RequestConflict,
@@ -4462,7 +4511,6 @@ mod tests {
             start_content: false,
             selection: crate::FileSelectionIntent::All,
             source_length: source.len() as u32,
-            source_sha256: super::encode_digest(&Sha256::digest(source)),
         }
     }
 

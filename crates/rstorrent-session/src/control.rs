@@ -54,7 +54,6 @@ pub struct AddTorrentBytesRequest {
     #[serde(default)]
     pub selection: FileSelectionIntent,
     pub source_length: u32,
-    pub source_sha256: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -604,17 +603,6 @@ fn validate_torrent_source_declaration(
                 "torrent source length must be 1..={} bytes",
                 rstorrent_protocol::metainfo::MAX_EXPLICIT_METAINFO_LENGTH
             ),
-        ));
-    }
-    if request.source_sha256.len() != 64
-        || !request
-            .source_sha256
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
-    {
-        return Err((
-            ErrorCode::InvalidRequest,
-            "torrent source SHA-256 must be 64 lowercase hexadecimal characters".to_owned(),
         ));
     }
     Ok(())
