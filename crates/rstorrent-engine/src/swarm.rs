@@ -382,12 +382,61 @@ pub enum ConnectionRemoval {
 
 #[derive(Debug)]
 struct ConnectionState {
-    availability: Vec<bool>,
+    availability: PieceAvailability,
     choking: bool,
     connected_at: Duration,
     last_useful_at: Option<Duration>,
     active_request_count: usize,
     request_window: RequestWindow,
+}
+
+#[derive(Debug)]
+struct PieceAvailability {
+    bytes: Vec<u8>,
+    piece_count: usize,
+}
+
+impl PieceAvailability {
+    fn empty(piece_count: usize) -> Self {
+        Self {
+            bytes: vec![0; piece_count.div_ceil(8)],
+            piece_count,
+        }
+    }
+
+    fn from_flags(flags: Vec<bool>) -> Self {
+        let mut availability = Self::empty(flags.len());
+        for (piece, available) in flags.into_iter().enumerate() {
+            if available {
+                availability.set(piece);
+            }
+        }
+        availability
+    }
+
+    fn from_bytes(bytes: Vec<u8>, piece_count: usize) -> Option<Self> {
+        if bytes.len() != piece_count.div_ceil(8) {
+            return None;
+        }
+        let remainder = piece_count % 8;
+        if remainder != 0 {
+            let unused_mask = (1_u8 << (8 - remainder)) - 1;
+            if bytes.last().is_some_and(|byte| byte & unused_mask != 0) {
+                return None;
+            }
+        }
+        Some(Self { bytes, piece_count })
+    }
+
+    fn contains(&self, piece: usize) -> bool {
+        debug_assert!(piece < self.piece_count);
+        self.bytes[piece / 8] & (1 << (7 - piece % 8)) != 0
+    }
+
+    fn set(&mut self, piece: usize) {
+        debug_assert!(piece < self.piece_count);
+        self.bytes[piece / 8] |= 1 << (7 - piece % 8);
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -910,6 +959,13 @@ impl SwarmState {
         self.pieces.len()
     }
 
+    pub fn planned_piece_bytes(&self) -> usize {
+        self.pieces
+            .values()
+            .map(|piece| piece.working_set_bytes)
+            .sum()
+    }
+
     pub const fn outstanding_request_bytes(&self) -> usize {
         self.outstanding_request_bytes
     }
@@ -946,7 +1002,7 @@ impl SwarmState {
         self.connections.insert(
             id,
             ConnectionState {
-                availability: vec![false; self.piece_count],
+                availability: PieceAvailability::empty(self.piece_count),
                 choking: true,
                 connected_at: now,
                 last_useful_at: None,
@@ -998,6 +1054,22 @@ impl SwarmState {
                 expected: self.piece_count,
             });
         }
+        self.connection_mut(id)?.availability = PieceAvailability::from_flags(availability);
+        Ok(())
+    }
+
+    pub fn set_compact_bitfield(
+        &mut self,
+        id: ConnectionId,
+        availability: Vec<u8>,
+    ) -> Result<(), SwarmError> {
+        let actual = availability.len().saturating_mul(8);
+        let availability = PieceAvailability::from_bytes(availability, self.piece_count).ok_or(
+            SwarmError::InvalidAvailability {
+                actual,
+                expected: self.piece_count,
+            },
+        )?;
         self.connection_mut(id)?.availability = availability;
         Ok(())
     }
@@ -1009,7 +1081,7 @@ impl SwarmState {
         if index >= piece_count {
             return Err(SwarmError::PieceOutOfRange { piece, piece_count });
         }
-        self.connection_mut(id)?.availability[index] = true;
+        self.connection_mut(id)?.availability.set(index);
         Ok(())
     }
 
@@ -1702,7 +1774,7 @@ impl SwarmState {
             .filter_map(|(id, connection)| {
                 let has_wanted = wanted_pieces
                     .iter()
-                    .any(|piece| connection.availability[*piece]);
+                    .any(|piece| connection.availability.contains(*piece));
                 let priority = if !has_wanted {
                     0_u8
                 } else if connection.choking {
@@ -1879,7 +1951,7 @@ impl SwarmState {
                     wanted_piece_count: self
                         .incomplete_pieces
                         .iter()
-                        .filter(|piece| connection.availability[**piece])
+                        .filter(|piece| connection.availability.contains(**piece))
                         .count(),
                     pending_requests,
                     target_requests: connection.request_window.target,
@@ -1913,7 +1985,7 @@ impl SwarmState {
             .filter(|(id, connection)| {
                 let has_wanted = wanted_pieces
                     .iter()
-                    .any(|piece| connection.availability[*piece]);
+                    .any(|piece| connection.availability.contains(*piece));
                 !has_wanted || connection.choking || self.connection_request_count(**id) == 0
             })
             .filter_map(|(_, connection)| {
@@ -1961,7 +2033,7 @@ impl SwarmState {
             return Ok(None);
         }
         for piece in &self.requestable_active_pieces {
-            if connection.availability[*piece]
+            if connection.availability.contains(*piece)
                 && let Some(block) = self.first_missing_block(*piece as u32)
             {
                 return Ok(Some(block));
@@ -1970,7 +2042,7 @@ impl SwarmState {
         for &index in &self.incomplete_pieces {
             let piece =
                 u32::try_from(index).map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
-            if self.active_pieces.contains(&index) || !connection.availability[index] {
+            if self.active_pieces.contains(&index) || !connection.availability.contains(index) {
                 continue;
             }
             if !self.can_activate_piece(index) {
@@ -2004,8 +2076,8 @@ impl SwarmState {
                 && !block_state.attempts.iter().any(|attempt| {
                     attempt.disposition.is_active() && attempt.connection == connection
                 })
-                && connection_state.availability[piece])
-                .then_some(*block)
+                && connection_state.availability.contains(piece))
+            .then_some(*block)
         }))
     }
 
@@ -2411,11 +2483,11 @@ impl SwarmState {
             return false;
         };
         wanted_pieces.iter().any(|piece| {
-            current.availability[*piece]
+            current.availability.contains(*piece)
                 && self
                     .connections
                     .iter()
-                    .filter(|(id, state)| **id != connection && state.availability[*piece])
+                    .filter(|(id, state)| **id != connection && state.availability.contains(*piece))
                     .count()
                     == 0
         })
@@ -2431,7 +2503,7 @@ impl SwarmState {
         let mut useful = self.connections.values().filter(|connection| {
             self.incomplete_pieces
                 .iter()
-                .any(|piece| connection.availability[*piece])
+                .any(|piece| connection.availability.contains(*piece))
         });
         let useful_count = useful.clone().count();
         if useful_count == 0 {
@@ -3674,6 +3746,36 @@ mod tests {
                 .iter()
                 .all(|assignment| assignment.block.piece == 0)
         );
+    }
+
+    #[test]
+    fn maximum_peer_availability_is_retained_as_a_compact_bitfield() {
+        let piece_count = rstorrent_protocol::metainfo::MAX_METAINFO_PIECES;
+        let mut state = SwarmState::new(
+            SwarmConfig::for_request_limit(BLOCK as usize),
+            piece_count,
+            vec![plan(0, 1)],
+        )
+        .expect("maximum geometry swarm");
+        state
+            .add_connection(connection(1), Duration::ZERO)
+            .expect("maximum geometry peer");
+        let mut bitfield = vec![0; piece_count.div_ceil(8)];
+        bitfield[0] = 0x80;
+        let last_byte = bitfield.len() - 1;
+        bitfield[last_byte] = 0x01;
+        state
+            .set_compact_bitfield(connection(1), bitfield)
+            .expect("compact maximum bitfield");
+
+        let availability = &state
+            .connections
+            .get(&connection(1))
+            .expect("retained peer")
+            .availability;
+        assert_eq!(availability.bytes.len(), 262_144);
+        assert!(availability.contains(0));
+        assert!(availability.contains(piece_count - 1));
     }
 
     #[test]

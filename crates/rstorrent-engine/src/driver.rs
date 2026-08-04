@@ -3285,6 +3285,7 @@ struct ContentSwarmDownload<'a> {
     contributor_attempts: BTreeMap<ConnectionId, DialAttempt>,
     remaining_pieces: std::vec::IntoIter<u32>,
     selection: FileSelection,
+    maximum_planned_bytes: usize,
 }
 
 struct ContentDownloadContext<'a> {
@@ -3299,24 +3300,36 @@ fn build_content_plan_window(
     selection: &FileSelection,
     pieces: &mut std::vec::IntoIter<u32>,
     maximum_pieces: usize,
+    maximum_bytes: usize,
+    permit_first_over_limit: bool,
 ) -> Result<(Vec<PiecePlan>, usize, usize), DownloadError> {
     let mut plans = Vec::with_capacity(maximum_pieces);
     let mut total_blocks = 0_usize;
     let mut total_bytes = 0_usize;
-    for piece in pieces.take(maximum_pieces) {
+    while plans.len() < maximum_pieces {
+        let Some(&piece) = pieces.as_slice().first() else {
+            break;
+        };
         let ranges = layout
             .request_ranges(piece, selection)
             .map_err(DownloadError::Layout)?;
         let block_count = ranges.len();
-        let bytes = ranges.iter().try_fold(0_usize, |total, range| {
+        let piece_bytes = ranges.iter().try_fold(0_usize, |total, range| {
             total.checked_add(range.length as usize)
         });
+        let piece_bytes =
+            piece_bytes.ok_or(DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+        let next_total_bytes = total_bytes
+            .checked_add(piece_bytes)
+            .ok_or(DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+        if next_total_bytes > maximum_bytes && (!plans.is_empty() || !permit_first_over_limit) {
+            break;
+        }
+        pieces.next();
         total_blocks = total_blocks
             .checked_add(block_count)
             .ok_or(DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
-        total_bytes = total_bytes
-            .checked_add(bytes.ok_or(DownloadError::Layout(LayoutError::ArithmeticOverflow))?)
-            .ok_or(DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+        total_bytes = next_total_bytes;
         let ranges = ranges
             .into_iter()
             .map(|range| (range.begin, range.length))
@@ -3349,12 +3362,15 @@ impl<'a> ContentSwarmDownload<'a> {
             resume,
             control,
         } = context;
+        let maximum_planned_bytes = config.max_active_piece_bytes;
         let mut remaining_pieces = wanted_pieces.into_iter();
         let (swarm_plans, total_blocks, total_bytes) = build_content_plan_window(
             layout,
             &selection,
             &mut remaining_pieces,
             MAX_PLANNED_CONTENT_PIECES,
+            maximum_planned_bytes,
+            true,
         )?;
         let state = SwarmState::new(config, layout.piece_count(), swarm_plans)
             .map_err(DownloadError::Swarm)?;
@@ -3383,6 +3399,7 @@ impl<'a> ContentSwarmDownload<'a> {
             contributor_attempts: BTreeMap::new(),
             remaining_pieces,
             selection,
+            maximum_planned_bytes,
         })
     }
 
@@ -3398,11 +3415,15 @@ impl<'a> ContentSwarmDownload<'a> {
         if capacity == 0 {
             return Ok(());
         }
+        let planned_bytes = self.state.planned_piece_bytes();
+        let available_bytes = self.maximum_planned_bytes.saturating_sub(planned_bytes);
         let (plans, blocks, bytes) = build_content_plan_window(
             self.layout,
             &self.selection,
             &mut self.remaining_pieces,
             capacity,
+            available_bytes,
+            planned_bytes == 0,
         )?;
         self.total_blocks = self.total_blocks.saturating_add(blocks);
         self.total_bytes = self.total_bytes.saturating_add(bytes);
@@ -3436,12 +3457,12 @@ impl<'a> ContentSwarmDownload<'a> {
             }
             PeerMessage::Bitfield(bitfield) => {
                 let Some(availability) =
-                    decode_validated_availability(&bitfield, self.layout.piece_count())
+                    validated_compact_availability(bitfield, self.layout.piece_count())
                 else {
                     return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
                 };
                 self.state
-                    .set_bitfield(connection, availability)
+                    .set_compact_bitfield(connection, availability)
                     .map_err(DownloadError::Swarm)?;
             }
             PeerMessage::Piece {
@@ -3782,7 +3803,7 @@ fn torrent_payload_offset(
         .ok_or(DownloadError::Layout(LayoutError::ArithmeticOverflow))
 }
 
-fn decode_validated_availability(bitfield: &[u8], piece_count: usize) -> Option<Vec<bool>> {
+fn validated_compact_availability(bitfield: Vec<u8>, piece_count: usize) -> Option<Vec<u8>> {
     if bitfield.len() != piece_count.div_ceil(8) {
         return None;
     }
@@ -3793,9 +3814,7 @@ fn decode_validated_availability(bitfield: &[u8], piece_count: usize) -> Option<
             return None;
         }
     }
-    let mut availability = vec![false; piece_count];
-    decode_availability(bitfield, &mut availability);
-    Some(availability)
+    Some(bitfield)
 }
 
 fn pending_dial_id(attempt: DialAttempt) -> PendingDialId {
@@ -5079,12 +5098,6 @@ async fn next_peer_message(peer: &mut PeerConnection) -> Result<PeerMessage, Dow
     peer_socket::next_message(peer)
         .await
         .map_err(download_peer_socket_error)
-}
-
-fn decode_availability(bitfield: &[u8], availability: &mut [bool]) {
-    for (index, available) in availability.iter_mut().enumerate() {
-        *available = bitfield[index / 8] & (1 << (7 - index % 8)) != 0;
-    }
 }
 
 async fn read_bounded_metainfo(path: &Path) -> Result<Vec<u8>, DownloadError> {

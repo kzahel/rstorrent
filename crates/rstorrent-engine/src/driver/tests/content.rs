@@ -1,6 +1,36 @@
 use super::*;
 
 #[test]
+fn maximum_piece_is_the_only_member_of_an_over_budget_plan_window() {
+    let piece_length = rstorrent_protocol::metainfo::MAX_PIECE_LENGTH;
+    let total_length = 3_u64 * u64::from(piece_length);
+    let mut raw_info =
+        format!("d6:lengthi{total_length}e4:name3:max12:piece lengthi{piece_length}e6:pieces60:")
+            .into_bytes();
+    raw_info.extend_from_slice(&[0; 60]);
+    raw_info.push(b'e');
+    let metainfo = Metainfo::from_info_bytes(&raw_info).expect("maximum-piece metainfo");
+    let layout = TorrentLayout::from_metainfo(&metainfo);
+    let selection = FileSelection::new(&layout, &[]).expect("wanted selection");
+    let mut pieces = vec![0, 1, 2].into_iter();
+
+    let (plans, blocks, bytes) = build_content_plan_window(
+        &layout,
+        &selection,
+        &mut pieces,
+        256,
+        128 * 1024 * 1024,
+        true,
+    )
+    .expect("bounded plan window");
+
+    assert_eq!(plans.len(), 1);
+    assert_eq!(blocks, (piece_length as usize).div_ceil(16 * 1024));
+    assert_eq!(bytes, piece_length as usize);
+    assert_eq!(pieces.as_slice(), [1, 2]);
+}
+
+#[test]
 fn half_open_dials_do_not_consume_established_connection_slots() {
     let mut config = SwarmConfig::for_request_limit(MIN_PAYLOAD_ALLOWANCE);
     config.max_established_connections = 2;

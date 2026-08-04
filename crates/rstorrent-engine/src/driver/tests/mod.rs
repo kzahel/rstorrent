@@ -43,12 +43,13 @@ use super::{
     ResumableMagnetDownloadConfig, ResumeArtifactState, SwarmConfig, TorrentPeerCoordinator,
     TrackerManager, UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache,
     announce_udp_tracker_address, atomic_saturating_add, atomic_saturating_increment,
-    coalesce_content_writes, collect_content_write_batch, content_dial_slot_available,
-    content_storage_job_limit, download_magnet, download_magnet_metadata_with_control,
-    download_magnet_metadata_with_dht, download_magnet_with_control, download_verified_piece,
-    download_verified_piece_with_control, execute_content_storage_verification,
-    execute_content_storage_writes, next_peer_message, resume_magnet, resume_magnet_with_control,
-    retrying_dht_lookup, run_content_download, run_magnet_download_with_peers, send_message,
+    build_content_plan_window, coalesce_content_writes, collect_content_write_batch,
+    content_dial_slot_available, content_storage_job_limit, download_magnet,
+    download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
+    download_magnet_with_control, download_verified_piece, download_verified_piece_with_control,
+    execute_content_storage_verification, execute_content_storage_writes, next_peer_message,
+    resume_magnet, resume_magnet_with_control, retrying_dht_lookup, run_content_download,
+    run_magnet_download_with_peers, send_message,
 };
 
 trait TestMetainfoParse: Sized {
