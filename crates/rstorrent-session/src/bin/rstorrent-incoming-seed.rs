@@ -112,14 +112,53 @@ async fn run() -> Result<(), SeedHarnessError> {
             source,
         })?;
 
-    let mut shutdown = String::new();
-    BufReader::new(tokio::io::stdin())
-        .read_line(&mut shutdown)
-        .await
-        .map_err(|source| SeedHarnessError::Io {
-            operation: "read shutdown request",
-            source,
-        })?;
+    let mut command = String::new();
+    let mut stdin = BufReader::new(tokio::io::stdin());
+    loop {
+        command.clear();
+        let read = stdin
+            .read_line(&mut command)
+            .await
+            .map_err(|source| SeedHarnessError::Io {
+                operation: "read seed harness command",
+                source,
+            })?;
+        if read == 0 || command.trim().is_empty() || command.trim() == "stop" {
+            break;
+        }
+        if command.trim() != "snapshot" {
+            return Err(SeedHarnessError::Arguments(format!(
+                "unknown seed harness command {}",
+                command.trim()
+            )));
+        }
+        let snapshot = service
+            .incoming_peer_snapshot()
+            .expect("enabled incoming service remains owned before shutdown");
+        let snapshot_json = serde_json::json!({
+            "event": "snapshot",
+            "pending": snapshot.pending,
+            "established": snapshot.established,
+            "pending_high_water": snapshot.pending_high_water,
+            "established_high_water": snapshot.established_high_water,
+            "connection_high_water": snapshot.peer_budget.total_high_water,
+            "upload_slots_high_water": snapshot.upload_slots_high_water,
+        });
+        stdout
+            .write_all(format!("{snapshot_json}\n").as_bytes())
+            .await
+            .map_err(|source| SeedHarnessError::Io {
+                operation: "write live seed observation",
+                source,
+            })?;
+        stdout
+            .flush()
+            .await
+            .map_err(|source| SeedHarnessError::Io {
+                operation: "flush live seed observation",
+                source,
+            })?;
+    }
     let final_snapshot = service
         .incoming_peer_snapshot()
         .expect("enabled incoming service remains owned before shutdown");

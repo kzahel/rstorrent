@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use rstorrent_protocol::peer_wire::{FrameDecoder, PeerMessage, encode_message};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{mpsc, watch};
@@ -21,7 +21,32 @@ use crate::peer_io::{
 
 pub(super) const MAX_INCOMING_WRITER_BYTES: usize = 528_396;
 pub(super) const INCOMING_WRITER_NO_PROGRESS_TIMEOUT: Duration = Duration::from_secs(60);
-const WRITER_FRAME_QUEUE: usize = 2_048;
+const WRITER_FRAME_QUEUE: usize = 64;
+
+#[derive(Debug)]
+pub(super) struct FrameValidity {
+    cancellation: CancellationToken,
+}
+
+impl FrameValidity {
+    pub(super) fn new() -> Self {
+        Self {
+            cancellation: CancellationToken::new(),
+        }
+    }
+
+    pub(super) fn cancel(&self) {
+        self.cancellation.cancel();
+    }
+
+    pub(super) fn is_cancelled(&self) -> bool {
+        self.cancellation.is_cancelled()
+    }
+
+    async fn cancelled(&self) {
+        self.cancellation.cancelled().await;
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct WriterSnapshot {
@@ -92,6 +117,7 @@ struct WriterFrame {
     bytes: Vec<u8>,
     payload_length: usize,
     payload_metric: Option<ByteMetric>,
+    validity: Option<Arc<FrameValidity>>,
 }
 
 #[derive(Debug)]
@@ -126,7 +152,11 @@ impl IncomingWriter {
         }
     }
 
-    fn queue(&mut self, message: &PeerMessage) -> Result<(), PeerIoError> {
+    fn queue(
+        &mut self,
+        message: &PeerMessage,
+        validity: Option<Arc<FrameValidity>>,
+    ) -> Result<(), PeerIoError> {
         let bytes = encode_message(message).map_err(PeerIoError::Frame)?;
         let (payload_length, payload_metric) = message_payload_metric(message);
         {
@@ -138,6 +168,7 @@ impl IncomingWriter {
             bytes,
             payload_length,
             payload_metric,
+            validity,
         };
         let result = self
             .commands
@@ -245,7 +276,15 @@ impl IncomingPeerIo {
     }
 
     pub fn queue_message(&mut self, message: &PeerMessage) -> Result<(), PeerIoError> {
-        self.writer.queue(message)
+        self.writer.queue(message, None)
+    }
+
+    pub fn queue_generation_fenced_message(
+        &mut self,
+        message: &PeerMessage,
+        validity: Arc<FrameValidity>,
+    ) -> Result<(), PeerIoError> {
+        self.writer.queue(message, Some(validity))
     }
 
     pub fn send_buffer_size(&self) -> usize {
@@ -361,6 +400,7 @@ async fn run_writer(
                 &changes,
                 &cancellation,
                 byte_metric_sink.as_ref(),
+                INCOMING_WRITER_NO_PROGRESS_TIMEOUT,
             )
             .await?;
         }
@@ -375,34 +415,64 @@ async fn run_writer(
     result
 }
 
-async fn write_frame(
-    write: &mut OwnedWriteHalf,
+async fn write_frame<W: AsyncWrite + Unpin>(
+    write: &mut W,
     frame: WriterFrame,
     state: &Arc<Mutex<WriterState>>,
     changes: &watch::Sender<WriterSnapshot>,
     cancellation: &CancellationToken,
     byte_metric_sink: Option<&Arc<dyn ByteMetricSink>>,
+    no_progress_timeout: Duration,
 ) -> Result<(), PeerIoError> {
-    let deadline = Instant::now() + INCOMING_WRITER_NO_PROGRESS_TIMEOUT;
+    if frame
+        .validity
+        .as_ref()
+        .is_some_and(|validity| validity.is_cancelled())
+    {
+        discard_frame(state, changes, frame.bytes.len());
+        return Ok(());
+    }
+    let mut deadline = Instant::now() + no_progress_timeout;
     let mut offset = 0;
     while offset < frame.bytes.len() {
-        let written = tokio::select! {
-            biased;
-            _ = cancellation.cancelled() => return Ok(()),
-            result = timeout_at(deadline, write.write(&frame.bytes[offset..])) => {
-                result.map_err(|_| PeerIoError::TimedOut {
-                    operation: "message write",
-                    timeout: INCOMING_WRITER_NO_PROGRESS_TIMEOUT,
-                })?
+        let result = if offset == 0 {
+            if let Some(validity) = frame.validity.as_ref() {
+                tokio::select! {
+                    biased;
+                    _ = cancellation.cancelled() => return Ok(()),
+                    _ = validity.cancelled() => {
+                        discard_frame(state, changes, frame.bytes.len());
+                        return Ok(());
+                    }
+                    result = timeout_at(deadline, write.write(&frame.bytes)) => result,
+                }
+            } else {
+                tokio::select! {
+                    biased;
+                    _ = cancellation.cancelled() => return Ok(()),
+                    result = timeout_at(deadline, write.write(&frame.bytes)) => result,
+                }
             }
-        }
-        .map_err(|source| PeerIoError::Io {
-            operation: "send peer message",
-            source,
-        })?;
+        } else {
+            tokio::select! {
+                biased;
+                _ = cancellation.cancelled() => return Ok(()),
+                result = timeout_at(deadline, write.write(&frame.bytes[offset..])) => result,
+            }
+        };
+        let written = result
+            .map_err(|_| PeerIoError::TimedOut {
+                operation: "message write",
+                timeout: no_progress_timeout,
+            })?
+            .map_err(|source| PeerIoError::Io {
+                operation: "send peer message",
+                source,
+            })?;
         if written == 0 {
             return Err(PeerIoError::Closed);
         }
+        deadline = Instant::now() + no_progress_timeout;
         let uploaded = record_sent_range(
             byte_metric_sink,
             frame.bytes.len(),
@@ -429,6 +499,19 @@ async fn write_frame(
     Ok(())
 }
 
+fn discard_frame(
+    state: &Arc<Mutex<WriterState>>,
+    changes: &watch::Sender<WriterSnapshot>,
+    remaining: usize,
+) {
+    let snapshot = {
+        let mut state = state_guard(state);
+        state.release_frame(remaining);
+        state.snapshot
+    };
+    changes.send_replace(snapshot);
+}
+
 fn state_guard(state: &Arc<Mutex<WriterState>>) -> MutexGuard<'_, WriterState> {
     state
         .lock()
@@ -437,10 +520,20 @@ fn state_guard(state: &Arc<Mutex<WriterState>>) -> MutexGuard<'_, WriterState> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_INCOMING_WRITER_BYTES, WriterState};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use rstorrent_protocol::peer_wire::PeerMessage;
+    use tokio::io::AsyncReadExt;
+    use tokio::net::{TcpListener, TcpStream};
+
+    use super::{
+        FrameValidity, IncomingPeerIo, MAX_INCOMING_WRITER_BYTES, WRITER_FRAME_QUEUE, WriterState,
+    };
 
     #[test]
     fn writer_charge_is_exact_and_recoverable() {
+        assert_eq!(WRITER_FRAME_QUEUE, 64);
         let mut state = WriterState::new();
         state
             .reserve(MAX_INCOMING_WRITER_BYTES)
@@ -450,5 +543,41 @@ mod tests {
         state.release_written(MAX_INCOMING_WRITER_BYTES, 16_384);
         assert_eq!(state.snapshot.queued_bytes, 0);
         assert_eq!(state.snapshot.uploaded_payload_bytes, 16_384);
+    }
+
+    #[tokio::test]
+    async fn invalidated_piece_is_discarded_before_its_first_byte() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind pair");
+        let mut client = TcpStream::connect(listener.local_addr().expect("pair address"))
+            .await
+            .expect("connect pair");
+        let (server, _) = listener.accept().await.expect("accept pair");
+        let mut io = IncomingPeerIo::new(server, Duration::from_secs(1), None);
+        io.queue_generation_fenced_message(
+            &PeerMessage::Piece {
+                index: 0,
+                begin: 0,
+                block: vec![7; 16],
+            },
+            {
+                let validity = Arc::new(FrameValidity::new());
+                validity.cancel();
+                validity
+            },
+        )
+        .expect("queue invalid piece");
+        io.send_message(&PeerMessage::KeepAlive)
+            .await
+            .expect("flush through keepalive");
+
+        let mut keepalive = [1_u8; 4];
+        client
+            .read_exact(&mut keepalive)
+            .await
+            .expect("read first surviving frame");
+        assert_eq!(keepalive, [0; 4]);
+        assert_eq!(io.uploaded_payload_bytes(), 0);
+        assert_eq!(io.send_buffer_size(), 0);
+        io.shutdown().await.expect("join writer");
     }
 }

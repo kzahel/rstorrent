@@ -9,7 +9,7 @@ use std::fmt;
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
 
 use rstorrent_protocol::metadata::{
@@ -18,8 +18,8 @@ use rstorrent_protocol::metadata::{
     parse_extension_handshake, parse_metadata_message,
 };
 use rstorrent_protocol::peer_wire::{
-    EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX, HANDSHAKE_LENGTH,
-    PeerMessage, decode_handshake, encode_handshake_with_reserved,
+    BlockRequest, EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX,
+    HANDSHAKE_LENGTH, PeerMessage, decode_handshake, encode_handshake_with_reserved,
 };
 use sha1::{Digest, Sha1};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -39,7 +39,7 @@ use crate::seed_content::SeedContent;
 use crate::upload::{UploadAction, UploadCloseReason, UploadPeerState, UploadRead};
 use crate::upload_scheduler::{UploadGrant, UploadSchedulerConfig, UploadSchedulerSnapshot};
 
-use self::peer_io::IncomingPeerIo;
+use self::peer_io::{FrameValidity, IncomingPeerIo};
 use self::upload_runtime::UploadCoordinator;
 
 pub const MAX_SEED_REGISTRATIONS: usize = 1024;
@@ -944,6 +944,59 @@ enum PeerTermination {
 
 type ActiveRead = (UploadRead, JoinHandle<Result<Vec<u8>, ()>>);
 
+#[derive(Default)]
+struct QueuedPieceFrames {
+    frames: Vec<(BlockRequest, Weak<FrameValidity>)>,
+}
+
+#[derive(Default)]
+struct QueuedChokeFrame {
+    latest: Option<Weak<FrameValidity>>,
+}
+
+impl QueuedChokeFrame {
+    fn replace(&mut self) -> Arc<FrameValidity> {
+        if let Some(validity) = self.latest.take().and_then(|validity| validity.upgrade()) {
+            validity.cancel();
+        }
+        let validity = Arc::new(FrameValidity::new());
+        self.latest = Some(Arc::downgrade(&validity));
+        validity
+    }
+}
+
+impl QueuedPieceFrames {
+    fn track(&mut self, request: BlockRequest) -> Arc<FrameValidity> {
+        self.frames
+            .retain(|(_, validity)| validity.strong_count() != 0);
+        let validity = Arc::new(FrameValidity::new());
+        self.frames.push((request, Arc::downgrade(&validity)));
+        validity
+    }
+
+    fn cancel(&mut self, request: BlockRequest) {
+        self.frames.retain(|(queued, validity)| {
+            let Some(validity) = validity.upgrade() else {
+                return false;
+            };
+            if *queued == request {
+                validity.cancel();
+            }
+            true
+        });
+    }
+
+    fn cancel_all(&mut self) {
+        self.frames.retain(|(_, validity)| {
+            let Some(validity) = validity.upgrade() else {
+                return false;
+            };
+            validity.cancel();
+            true
+        });
+    }
+}
+
 const MIN_UPLOAD_SEND_TARGET: usize = 10 * 1_024;
 const MAX_UPLOAD_SEND_TARGET: usize = 500 * 1_024;
 const UPLOAD_SEND_TARGET_FACTOR_PERCENT: u64 = 50;
@@ -1064,6 +1117,8 @@ async fn run_incoming_peer_loop(
     let mut remote_metadata_id = None;
     let mut deferred_metadata = VecDeque::new();
     let mut read: Option<ActiveRead> = None;
+    let mut queued_piece_frames = QueuedPieceFrames::default();
+    let mut queued_choke_frame = QueuedChokeFrame::default();
     let mut accounted_payload = io.uploaded_payload_bytes();
     let mut send_target = UploadSendTarget::new(accounted_payload);
     let maintenance_cadence = Duration::from_secs(1)
@@ -1084,6 +1139,8 @@ async fn run_incoming_peer_loop(
             upload.set_read_enabled(ready),
             io,
             &mut read,
+            &mut queued_piece_frames,
+            &mut queued_choke_frame,
             &registration,
             &shared,
         )
@@ -1162,6 +1219,9 @@ async fn run_incoming_peer_loop(
                 upload.on_read_complete(pending, result)
             }
             PeerEvent::Grant(Ok(grant)) => {
+                if grant == UploadGrant::Choked {
+                    queued_piece_frames.cancel_all();
+                }
                 if grant != UploadGrant::Choked {
                     last_request_or_unchoke = Instant::now();
                     last_meaningful_activity = last_request_or_unchoke;
@@ -1195,6 +1255,11 @@ async fn run_incoming_peer_loop(
                 if matches!(message, PeerMessage::Request(_)) {
                     last_request_or_unchoke = last_peer_activity;
                 }
+                match message {
+                    PeerMessage::NotInterested => queued_piece_frames.cancel_all(),
+                    PeerMessage::Cancel(request) => queued_piece_frames.cancel(request),
+                    _ => {}
+                }
                 match handle_metadata_message(
                     io,
                     &mut metadata,
@@ -1216,8 +1281,16 @@ async fn run_incoming_peer_loop(
                 }
             }
         };
-        if let Some(termination) =
-            apply_upload_actions(actions, io, &mut read, &registration, &shared).await
+        if let Some(termination) = apply_upload_actions(
+            actions,
+            io,
+            &mut read,
+            &mut queued_piece_frames,
+            &mut queued_choke_frame,
+            &registration,
+            &shared,
+        )
+        .await
         {
             return termination;
         }
@@ -1264,13 +1337,36 @@ async fn apply_upload_actions(
     actions: Vec<UploadAction>,
     io: &mut IncomingPeerIo,
     read: &mut Option<ActiveRead>,
+    queued_piece_frames: &mut QueuedPieceFrames,
+    queued_choke_frame: &mut QueuedChokeFrame,
     registration: &Arc<SeedRegistration>,
     shared: &Arc<Shared>,
 ) -> Option<PeerTermination> {
     for action in actions {
         match action {
             UploadAction::Send(message) => {
-                if io.queue_message(&message).is_err() {
+                let result = match &message {
+                    PeerMessage::Piece {
+                        index,
+                        begin,
+                        block,
+                    } => {
+                        let Ok(length) = u32::try_from(block.len()) else {
+                            return Some(PeerTermination::Storage);
+                        };
+                        let validity = queued_piece_frames.track(BlockRequest {
+                            index: *index,
+                            begin: *begin,
+                            length,
+                        });
+                        io.queue_generation_fenced_message(&message, validity)
+                    }
+                    PeerMessage::Choke | PeerMessage::Unchoke => {
+                        io.queue_generation_fenced_message(&message, queued_choke_frame.replace())
+                    }
+                    _ => io.queue_message(&message),
+                };
+                if result.is_err() {
                     join_read(read.take()).await;
                     return Some(PeerTermination::Closed);
                 }
@@ -1514,9 +1610,9 @@ mod tests {
     };
     use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
     use rstorrent_protocol::peer_wire::{
-        EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX, FrameDecoder,
-        HANDSHAKE_LENGTH, PeerMessage, decode_handshake, encode_handshake_with_reserved,
-        encode_message,
+        BlockRequest, EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX,
+        FrameDecoder, HANDSHAKE_LENGTH, PeerMessage, decode_handshake,
+        encode_handshake_with_reserved, encode_message,
     };
     use sha1::{Digest, Sha1};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -1526,7 +1622,8 @@ mod tests {
     use super::{
         IncomingPeerError, IncomingPeerService, IncomingPeerServiceConfig, IncomingRejectionReason,
         IncomingTcpBootstrap, MAX_DEFERRED_METADATA_REQUESTS, METADATA_SEND_BUFFER_WATERMARK,
-        SeedRegistration, drain_metadata_requests, handle_metadata_message,
+        QueuedChokeFrame, QueuedPieceFrames, SeedRegistration, drain_metadata_requests,
+        handle_metadata_message,
     };
     use crate::peer_io::PeerIo;
     use crate::{
@@ -1534,6 +1631,37 @@ mod tests {
     };
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn queued_piece_cancellation_invalidates_only_matching_frames() {
+        let first = BlockRequest {
+            index: 0,
+            begin: 0,
+            length: 4,
+        };
+        let second = BlockRequest {
+            index: 0,
+            begin: 4,
+            length: 4,
+        };
+        let mut frames = QueuedPieceFrames::default();
+        let first_validity = frames.track(first);
+        let second_validity = frames.track(second);
+        frames.cancel(first);
+        assert!(first_validity.is_cancelled());
+        assert!(!second_validity.is_cancelled());
+        frames.cancel_all();
+        assert!(second_validity.is_cancelled());
+    }
+
+    #[test]
+    fn queued_choke_state_coalesces_to_latest_frame() {
+        let mut frame = QueuedChokeFrame::default();
+        let first = frame.replace();
+        let latest = frame.replace();
+        assert!(first.is_cancelled());
+        assert!(!latest.is_cancelled());
+    }
 
     fn root(label: &str) -> PathBuf {
         let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);

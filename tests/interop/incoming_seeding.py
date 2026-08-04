@@ -287,6 +287,17 @@ def stop_seed(
     return stopped
 
 
+def seed_snapshot(process: subprocess.Popen[str]) -> dict[str, object]:
+    if process.stdin is None:
+        raise ScenarioFailure("seed harness stdin is unavailable")
+    process.stdin.write("snapshot\n")
+    process.stdin.flush()
+    snapshot = read_json_line(process, 5)
+    if snapshot.get("event") != "snapshot":
+        raise ScenarioFailure(f"unexpected live seed observation: {snapshot}")
+    return snapshot
+
+
 def integer_field(observation: dict[str, object], field: str) -> int:
     value = observation.get(field)
     if not isinstance(value, int):
@@ -578,7 +589,16 @@ def run_fixture(
                             "libtorrent peers did not establish before Rust release"
                         )
                 await_barrier(start, 5)
-                time.sleep(0.1)
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    snapshot = seed_snapshot(first_process)
+                    if integer_field(snapshot, "established_high_water") >= 4:
+                        break
+                    time.sleep(0.01)
+                else:
+                    raise ScenarioFailure(
+                        "four leecher connections did not overlap before release"
+                    )
                 release_download.set()
                 for future in as_completed(futures):
                     label = futures[future]
