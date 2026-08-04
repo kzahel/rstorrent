@@ -588,7 +588,7 @@ async fn concurrent_tracker_cancellation_joins_and_releases_every_socket() {
     let manager = TrackerManager::start(
         magnet.udp_trackers,
         magnet.info_hash,
-        NetworkPolicy::LoopbackOnly,
+        loopback_network(Duration::from_secs(1)),
         control,
     )
     .expect("start silent concurrent trackers");
@@ -851,6 +851,7 @@ async fn udp_tracker_retransmits_reuses_token_and_cancels_cleanly() {
         &mut tokens,
         UdpTrackerAnnounce {
             info_hash: [7; 20],
+            peer_id: CLIENT_PEER_ID,
             key: 1,
             event: AnnounceEvent::Started,
             port: announced_port,
@@ -869,6 +870,7 @@ async fn udp_tracker_retransmits_reuses_token_and_cancels_cleanly() {
         &mut tokens,
         UdpTrackerAnnounce {
             info_hash: [7; 20],
+            peer_id: CLIENT_PEER_ID,
             key: 1,
             event: AnnounceEvent::None,
             port: announced_port,

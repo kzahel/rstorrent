@@ -19,7 +19,6 @@ use crate::metrics::{ByteMetric, ByteMetricSink};
 use crate::network::NetworkPolicy;
 
 pub(crate) const NETWORK_READ_LENGTH: usize = 16 * 1024;
-pub(crate) const CLIENT_PEER_ID: [u8; 20] = *b"-RS0001-000000000000";
 
 #[derive(Debug)]
 pub(crate) struct PeerIo {

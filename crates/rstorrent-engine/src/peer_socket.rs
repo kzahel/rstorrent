@@ -20,7 +20,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::network::NetworkConfig;
 use crate::peer::{DialAttempt, DialAttemptId, PeerFailure};
-use crate::peer_io::{CLIENT_PEER_ID, NETWORK_READ_LENGTH, PeerIo, PeerIoError, record_bytes};
+use crate::peer_io::{NETWORK_READ_LENGTH, PeerIo, PeerIoError, record_bytes};
 use crate::peer_runtime::connection_id;
 use crate::swarm::ConnectionId;
 use crate::{ByteMetric, ByteMetricSink};
@@ -131,9 +131,9 @@ async fn connect_with_progress(
     let handshake = if advertise_extensions {
         let mut reserved = [0; 8];
         reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
-        encode_handshake_with_reserved(info_hash, CLIENT_PEER_ID, reserved)
+        encode_handshake_with_reserved(info_hash, network.peer_id, reserved)
     } else {
-        encode_handshake(info_hash, CLIENT_PEER_ID)
+        encode_handshake(info_hash, network.peer_id)
     };
     timeout(network.peer_io_timeout, stream.write_all(&handshake))
         .await

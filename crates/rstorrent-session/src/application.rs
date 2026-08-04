@@ -8,15 +8,16 @@ use std::time::Duration;
 
 use rstorrent_engine::dht::{DhtConfig, DhtError, DhtService};
 use rstorrent_engine::{
-    DEFAULT_STORAGE_FILE_LIMIT, DescriptorFile, DescriptorStorage, DescriptorStoragePlan,
-    DiskCheckpointStage, DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink,
-    DownloadControl, DownloadError, DownloadResourceLimits, IncomingPeerError, IncomingPeerService,
-    IncomingPeerServiceConfig, IncomingPeerServiceSnapshot, IncomingTcpBootstrap, NetworkConfig,
-    PathPublicationStage, PlatformStorageClient, PlatformStorageFailureKind, PlatformStorageSpec,
-    PreparedFileHash, PublicationShape, ResumableMagnetDownloadConfig, ResumeArtifactState,
-    ResumedStorage, StorageFilePool, StorageFilePoolSnapshot, download_magnet_metadata_with_dht,
-    plan_descriptor_storage, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
-    torrent_storage_paths, verify_prepared_descriptors, verify_prepared_platform_files,
+    DEFAULT_PEER_ID, DEFAULT_STORAGE_FILE_LIMIT, DescriptorFile, DescriptorStorage,
+    DescriptorStoragePlan, DiskCheckpointStage, DownloadActivityEvent, DownloadActivitySink,
+    DownloadCheckpointSink, DownloadControl, DownloadError, DownloadResourceLimits,
+    IncomingPeerError, IncomingPeerService, IncomingPeerServiceConfig, IncomingPeerServiceSnapshot,
+    IncomingTcpBootstrap, NetworkConfig, PathPublicationStage, PlatformStorageClient,
+    PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash, PublicationShape,
+    ResumableMagnetDownloadConfig, ResumeArtifactState, ResumedStorage, StorageFilePool,
+    StorageFilePoolSnapshot, download_magnet_metadata_with_dht, plan_descriptor_storage,
+    resume_magnet_to_descriptors_with_control, resume_magnet_with_control, torrent_storage_paths,
+    verify_prepared_descriptors, verify_prepared_platform_files,
 };
 use rstorrent_protocol::metainfo::{
     BEP9_METAINFO_LIMITS, DURABLE_METAINFO_LIMITS, Metainfo, MetainfoError,
@@ -48,6 +49,13 @@ fn parse_durable_metainfo(raw_info: &[u8]) -> Result<Metainfo, MetainfoError> {
 
 fn parse_peer_metainfo(raw_info: &[u8]) -> Result<Metainfo, MetainfoError> {
     Metainfo::from_info_bytes_with_limits(raw_info, BEP9_METAINFO_LIMITS)
+}
+
+fn allocate_application_peer_id() -> Result<[u8; 20], ApplicationError> {
+    let mut peer_id = DEFAULT_PEER_ID;
+    getrandom::fill(&mut peer_id[8..])
+        .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+    Ok(peer_id)
 }
 use crate::views::{
     DurableTorrentViewState, ProgressInputs, SubscriptionError, SubscriptionSpec, TorrentActivity,
@@ -237,6 +245,11 @@ impl ApplicationService {
                 "peer I/O timeout must be nonzero".to_owned(),
             ));
         }
+        let network = if config.network.peer_id == DEFAULT_PEER_ID {
+            config.network.with_peer_id(allocate_application_peer_id()?)
+        } else {
+            config.network
+        };
         if config.view_set_lease.is_zero()
             || config.view_set_reaper_interval.is_zero()
             || config.view_set_reaper_interval > config.view_set_lease
@@ -305,11 +318,12 @@ impl ApplicationService {
             StorageFilePool::new(DEFAULT_STORAGE_FILE_LIMIT, config.platform_storage_client)
                 .map_err(|error| ApplicationError::Configuration(error.to_owned()))?;
         let mut incoming_config =
-            IncomingPeerServiceConfig::new(config.incoming_tcp, config.network.peer_io_timeout);
+            IncomingPeerServiceConfig::new(config.incoming_tcp, network.peer_io_timeout);
+        incoming_config.peer_id = network.peer_id;
         incoming_config.byte_metric_sink = Some(speed_recorder.clone());
         let mut incoming_service = IncomingPeerService::bind(incoming_config).await?;
         let mut dht_config = config.dht;
-        dht_config.network_policy = config.network.policy;
+        dht_config.network_policy = network.policy;
         dht_config.initial_snapshot = initial_dht_snapshot;
         dht_config.byte_metric_sink = Some(speed_recorder.clone());
         let dht = match DhtService::start(dht_config).await {
@@ -341,7 +355,7 @@ impl ApplicationService {
         let mut service = Self {
             store: Arc::new(Mutex::new(store)),
             storage_roots: Arc::new(storage_roots),
-            network: config.network,
+            network,
             download_resource_limits: config.download_resource_limits,
             storage_write_delay_for_testing: config.storage_write_delay_for_testing,
             storage_write_concurrency_for_testing: config.storage_write_concurrency_for_testing,
@@ -371,7 +385,7 @@ impl ApplicationService {
             "Application profile opened",
             &[
                 ("profile", &config.profile_id),
-                ("network_policy", config.network.policy.as_str()),
+                ("network_policy", network.policy.as_str()),
                 ("persistence_mode", config.persistence.diagnostic_name()),
             ],
         )?;
@@ -3493,8 +3507,8 @@ mod tests {
 
     use rstorrent_engine::dht::BootstrapNode;
     use rstorrent_engine::{
-        ByteMetric, ByteMetricSink, DownloadError, IncomingTcpBootstrap, NetworkConfig,
-        NetworkPolicy, PublicationShape, torrent_storage_paths,
+        ByteMetric, ByteMetricSink, DEFAULT_PEER_ID, DownloadError, IncomingTcpBootstrap,
+        NetworkConfig, NetworkPolicy, PublicationShape, torrent_storage_paths,
     };
     use rstorrent_protocol::dht::{
         DhtEndpoint, DhtIp, Message as DhtMessage, NodeId, decode_message as decode_dht,
@@ -6303,7 +6317,7 @@ mod tests {
             .expect("open first application lifetime");
         wait_for_seed_registrations(&first, 1).await;
         let (mut peer, mut decoder, mut pending) =
-            connect_application_seed(&first, info_hash, *b"-RS-APP-LEEcher-0000").await;
+            connect_application_seed(&first, info_hash, DEFAULT_PEER_ID).await;
         peer.write_all(&encode_message(&PeerMessage::Interested).expect("encode interested"))
             .await
             .expect("send interest");

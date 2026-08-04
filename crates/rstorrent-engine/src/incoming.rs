@@ -27,7 +27,8 @@ use tokio::time::{Instant, timeout_at};
 use tokio_util::sync::CancellationToken;
 
 use crate::metrics::{ByteMetric, ByteMetricSink};
-use crate::peer_io::{CLIENT_PEER_ID, PeerIo, record_bytes};
+use crate::network::DEFAULT_PEER_ID;
+use crate::peer_io::{PeerIo, record_bytes};
 use crate::seed_content::SeedContent;
 use crate::upload::{UploadAction, UploadCloseReason, UploadPeerState, UploadRead};
 
@@ -50,6 +51,7 @@ pub struct IncomingPeerServiceConfig {
     pub bootstrap: IncomingTcpBootstrap,
     pub handshake_timeout: Duration,
     pub peer_io_timeout: Duration,
+    pub peer_id: [u8; 20],
     pub byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
 }
 
@@ -59,6 +61,7 @@ impl IncomingPeerServiceConfig {
             bootstrap,
             handshake_timeout: DEFAULT_INCOMING_HANDSHAKE_TIMEOUT,
             peer_io_timeout,
+            peer_id: DEFAULT_PEER_ID,
             byte_metric_sink: None,
         }
     }
@@ -175,6 +178,7 @@ struct Shared {
     established: Arc<Semaphore>,
     observations: Mutex<ObservationState>,
     peer_io_timeout: Duration,
+    peer_id: [u8; 20],
     byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
 }
 
@@ -390,6 +394,7 @@ impl IncomingPeerService {
             established: Arc::new(Semaphore::new(MAX_INCOMING_ESTABLISHED)),
             observations: Mutex::new(ObservationState::default()),
             peer_io_timeout: config.peer_io_timeout,
+            peer_id: config.peer_id,
             byte_metric_sink: config.byte_metric_sink,
         });
         let cancellation = CancellationToken::new();
@@ -684,7 +689,7 @@ async fn run_handshake(
             return;
         }
     };
-    if handshake.peer_id == CLIENT_PEER_ID {
+    if handshake.peer_id == shared.peer_id {
         shared.reject(
             IncomingRejectionReason::SelfConnection,
             Some(remote),
@@ -721,7 +726,7 @@ async fn run_handshake(
     };
     let mut reserved = [0; 8];
     reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
-    let response = encode_handshake_with_reserved(info_hash, CLIENT_PEER_ID, reserved);
+    let response = encode_handshake_with_reserved(info_hash, shared.peer_id, reserved);
     let write = tokio::select! {
         biased;
         _ = cancellation.cancelled() => return,
@@ -1056,7 +1061,7 @@ mod tests {
         IncomingPeerError, IncomingPeerService, IncomingPeerServiceConfig, IncomingRejectionReason,
         IncomingTcpBootstrap, SeedRegistration,
     };
-    use crate::SeedContent;
+    use crate::{DEFAULT_PEER_ID, SeedContent};
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -1107,6 +1112,7 @@ mod tests {
             bootstrap,
             handshake_timeout: Duration::from_millis(250),
             peer_io_timeout: Duration::from_secs(2),
+            peer_id: DEFAULT_PEER_ID,
             byte_metric_sink: None,
         }
     }
@@ -1343,7 +1349,7 @@ mod tests {
         self_peer
             .write_all(&encode_handshake_with_reserved(
                 info_hash,
-                super::CLIENT_PEER_ID,
+                super::DEFAULT_PEER_ID,
                 [0; 8],
             ))
             .await

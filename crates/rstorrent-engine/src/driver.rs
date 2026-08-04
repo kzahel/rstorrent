@@ -36,6 +36,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::dht::{DhtError, DhtHandle};
 use crate::metrics::ByteMetric;
+#[cfg(test)]
+use crate::network::DEFAULT_PEER_ID;
 use crate::network::{NetworkConfig, NetworkPolicy};
 use crate::peer::{
     DialAttempt, DialAttemptId, DialCandidate, PeerEndpoint, PeerFailure, PeerIntegrityAction,
@@ -64,7 +66,8 @@ use crate::tracker::{TrackerAction, TrackerId, TrackerSchedule, TrackerWaitKind}
 mod control;
 mod storage_pipeline;
 
-const CLIENT_PEER_ID: [u8; 20] = *b"-RS0001-000000000000";
+#[cfg(test)]
+const CLIENT_PEER_ID: [u8; 20] = DEFAULT_PEER_ID;
 const DEFAULT_ADVERTISED_PEER_PORT: u16 = 6881;
 const NETWORK_RESOLUTION_TIMEOUT: Duration = Duration::from_secs(10);
 const UDP_TRACKER_RETRANSMIT_AFTER: Duration = Duration::from_secs(15);
@@ -839,6 +842,7 @@ impl UdpTrackerTiming {
 #[derive(Clone, Copy, Debug)]
 struct UdpTrackerAnnounce {
     info_hash: [u8; 20],
+    peer_id: [u8; 20],
     key: u32,
     event: AnnounceEvent,
     port: u16,
@@ -924,7 +928,7 @@ impl TrackerManager {
     fn start(
         mut trackers: Vec<UdpTrackerUrl>,
         info_hash: [u8; 20],
-        network_policy: NetworkPolicy,
+        network: NetworkConfig,
         control: DownloadControl,
     ) -> Result<Self, DownloadError> {
         shuffle_tracker_urls(&mut trackers)?;
@@ -936,7 +940,7 @@ impl TrackerManager {
             TrackerSchedule::new(trackers),
             info_hash,
             tracker_key,
-            network_policy,
+            network,
             control,
             task_cancellation,
             sender,
@@ -1199,7 +1203,7 @@ async fn run_tracker_manager(
     mut schedule: TrackerSchedule,
     info_hash: [u8; 20],
     tracker_key: u32,
-    network_policy: NetworkPolicy,
+    network: NetworkConfig,
     control: DownloadControl,
     cancellation: CancellationToken,
     sender: mpsc::Sender<TrackerUpdate>,
@@ -1212,7 +1216,7 @@ async fn run_tracker_manager(
         &mut schedule,
         info_hash,
         tracker_key,
-        network_policy,
+        network,
         &control,
         &cancellation,
         &sender,
@@ -1229,7 +1233,7 @@ async fn run_active_tracker_manager(
     schedule: &mut TrackerSchedule,
     info_hash: [u8; 20],
     tracker_key: u32,
-    network_policy: NetworkPolicy,
+    network: NetworkConfig,
     control: &DownloadControl,
     cancellation: &CancellationToken,
     sender: &mpsc::Sender<TrackerUpdate>,
@@ -1271,10 +1275,11 @@ async fn run_active_tracker_manager(
                     operations.spawn(async move {
                         let result = announce_udp_tracker(
                             &url,
-                            network_policy,
+                            network.policy,
                             &mut token_cache,
                             UdpTrackerAnnounce {
                                 info_hash,
+                                peer_id: network.peer_id,
                                 key: tracker_key,
                                 event,
                                 port: DEFAULT_ADVERTISED_PEER_PORT,
@@ -1798,7 +1803,7 @@ impl TorrentPeerCoordinator {
             peers.tracker = Some(TrackerManager::start(
                 magnet.udp_trackers.clone(),
                 magnet.info_hash,
-                network.policy,
+                network,
                 peers.control.clone(),
             )?);
         }
@@ -2518,7 +2523,7 @@ async fn announce_udp_tracker_address(
         connection_id,
         transaction_id: announce_transaction,
         info_hash: announce.info_hash,
-        peer_id: CLIENT_PEER_ID,
+        peer_id: announce.peer_id,
         downloaded: 0,
         left: UNKNOWN_MAGNET_LEFT,
         uploaded: 0,

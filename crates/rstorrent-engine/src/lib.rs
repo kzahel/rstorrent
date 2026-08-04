@@ -46,7 +46,7 @@ pub use metadata_seed::{
     bind_metadata_seed,
 };
 pub use metrics::{ByteMetric, ByteMetricSink};
-pub use network::{NetworkConfig, NetworkPolicy};
+pub use network::{DEFAULT_PEER_ID, NetworkConfig, NetworkPolicy};
 pub use part_file::{PartFile, PartFileError, PartFileIdentity};
 pub use peer_runtime::{
     PeerConnectionDirection, PeerConnectionLifecycle, PeerConnectionObservation,

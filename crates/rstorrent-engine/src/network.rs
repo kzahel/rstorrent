@@ -2,6 +2,8 @@ use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
+pub const DEFAULT_PEER_ID: [u8; 20] = *b"-RS0001-000000000000";
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NetworkPolicy {
     Offline,
@@ -45,6 +47,7 @@ pub struct NetworkConfig {
     pub policy: NetworkPolicy,
     pub peer_connect_timeout: Duration,
     pub peer_io_timeout: Duration,
+    pub peer_id: [u8; 20],
 }
 
 impl NetworkConfig {
@@ -57,7 +60,13 @@ impl NetworkConfig {
             policy,
             peer_connect_timeout,
             peer_io_timeout,
+            peer_id: DEFAULT_PEER_ID,
         }
+    }
+
+    pub const fn with_peer_id(mut self, peer_id: [u8; 20]) -> Self {
+        self.peer_id = peer_id;
+        self
     }
 }
 
