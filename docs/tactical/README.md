@@ -348,6 +348,10 @@ that scope and its cleanup or compatibility rules explicitly.
   pure deterministic video/episode classifier, one rebuildable application
   catalog, a separately leased media projection, and a read-only virtualized
   Workbench Media tab without thumbnails or playback.
+- [`073-unified-storage-and-complete-recheck.md`](073-unified-storage-and-complete-recheck.md):
+  draft; removes the single-file storage fork, gives every v1 torrent one
+  durable resume/publication path, and adds bounded full managed-storage and
+  force recheck with controlled libtorrent fault evidence.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
