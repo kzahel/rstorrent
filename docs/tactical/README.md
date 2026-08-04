@@ -371,9 +371,9 @@ that scope and its cleanup or compatibility rules explicitly.
   torrent routing, verified metadata and payload upload, restartable seeding
   ownership, and controlled RSTorrent/libtorrent evidence for one peer.
 - [`079-engine-driver-source-shape.md`](079-engine-driver-source-shape.md):
-  planned; extracts download-control observation and bounded content-storage
-  execution from the engine driver, then divides its private test suite by
-  owner without changing behavior, crate boundaries, or public API.
+  complete; extracts download-control observation and bounded content-storage
+  execution from the engine driver and divides its private test suite by owner
+  without changing behavior, crate boundaries, or public API.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

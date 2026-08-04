@@ -172,7 +172,7 @@ def parse_diagnostic(output: str, config: ProfileConfig) -> dict[str, str]:
         "materialized_bytes": "0",
         "part_slots_before": "0",
         "part_slots_after": "0",
-        "part_reopened": "true",
+        "part_reopened": "false",
     }
     required = {
         *expected,
@@ -311,8 +311,8 @@ def run_once(
         part_path = Path(diagnostic["part_path"])
         if part_path != run_path / ".downloaded.rstorrent-parts":
             raise ScenarioFailure(f"unexpected part path: {part_path}")
-        if not part_path.is_file():
-            raise ScenarioFailure("validated empty part file did not survive publication")
+        if part_path.exists():
+            raise ScenarioFailure("unused selective part file survived publication")
         if (run_path / ".downloaded.rstorrent-staging").exists():
             raise ScenarioFailure("selective staging root survived publication")
         result = ProfileResult(

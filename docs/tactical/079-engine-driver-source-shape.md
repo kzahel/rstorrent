@@ -1,11 +1,9 @@
 # Tactical 079: Engine Driver Source Shape
 
-Status: In progress from maintainer direction on 2026-08-04. The clean
-baseline, test-layout gate, and download-control extraction are complete; the
-storage-owner extraction is also complete and closing validation remains.
-This tactical is a behavior-preserving architecture slice and does not change
-the authoritative capability queue unless the maintainer explicitly
-schedules it.
+Status: Complete on 2026-08-04. The driver facade, download-control owner,
+storage-pipeline owner, and categorized private tests retain the established
+behavior and public API. This source-shape slice does not change the
+authoritative capability queue.
 
 Topics: `product-direction`, `download-correctness`, `peer-lifecycle`,
 `storage-throughput-architecture`
@@ -45,6 +43,62 @@ checkpoint field became one private `enqueue_checkpoint` operation; the same
 checkpoint task, channels, permits, and callback remain owned and awaited in
 the same order. Focused check, all 196 engine library tests, and
 warning-denying focused Clippy pass.
+
+### Final Shape And Boundary Audit
+
+| Source | Final lines | Responsibility |
+| --- | ---: | --- |
+| `driver.rs` | 4,995 | Public facade, configuration and errors, tracker/DHT/metadata coordination, content supervision, recheck, and publication. |
+| `driver/control.rs` | 2,490 | Cancellation, safe-cancel critical sections, accounting, diagnostics, activity, and platform-storage installation. |
+| `driver/storage_pipeline.rs` | 1,433 | Write/hash/checkpoint commands, queues, permits, jobs, completions, cancellation, and exact shutdown. |
+| `driver/tests/*.rs` | 7,766 | Shared private fixtures plus 80 categorized driver scenarios. |
+
+Production source across the three owner files is 8,918 lines versus the
+8,803-line inline baseline. Test source is 7,766 lines versus 7,801 including
+the former inline wrapper. The combined 79-line increase is module contracts,
+imports, declarations, and private boundary qualification rather than new
+runtime work.
+
+The engine-root `lib.rs` re-exports and workspace/engine Cargo manifests are
+unchanged. The new modules add no `pub(crate)` surface: public snapshot and
+control values are re-exported through the existing driver facade, while
+cross-owner implementation access is limited to `pub(super)`. `control.rs`
+depends only on driver errors and existing inward engine state/capability
+owners. `storage_pipeline.rs` depends only on control, checkpoint,
+selective-storage, and swarm values. Neither module points toward session,
+gateway, desktop, Android, sockets, or application commands.
+
+### Closing Validation
+
+- `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`,
+  `cargo test --workspace`, and `git diff --check` passed. The focused engine
+  list remains 196 tests and zero benchmarks; 193 pass and the same three
+  public-network probes are ignored.
+- `cargo ndk -t x86_64 -t arm64-v8a -P 28 check -p rstorrent-android --lib`
+  passed for `x86_64-linux-android` and `aarch64-linux-android`, including the
+  engine and session dependencies.
+- `first_verified_piece.py --runs 1` passed against pinned libtorrent
+  `2.0.13.0`: the 40,000-byte ordinary fixture published the exact SHA-1 and
+  removed every temporary artifact.
+- `first_verified_piece.py --selective-files --runs 1` passed the seven-file
+  boundary/skipped/padding profile with four of five wanted pieces verified,
+  exact file hashes, two retained part slots, and exact cleanup.
+- `selective_hash_profile.py --profile quick --runs 1` passed the 32 MiB,
+  128-piece, 2,048-block profile with exact three-file hashes and cleanup. The
+  harness had retained a pre-Tactical-073 expectation that an all-selected
+  download eagerly preserved an empty part file. The current storage contract
+  has zero part writes and slots and lazily creates no part artifact, so the
+  already-invalid expectation was corrected to require `part_reopened=false`
+  and an absent part path; production behavior did not change.
+- `session_checkpoint_crash.py --scenario all` passed pre-sync,
+  post-sync/pre-commit, and post-commit death gates. The first two retained
+  zero durable bits and the third retained all 256; conservative restart found
+  all 256 valid pieces, uploaded zero payload, matched SHA-1, and cleaned every
+  owned artifact in all three cases. Focused injected sync and commit failure
+  tests also passed in the workspace suite.
+
+No living topic changed architectural or capability truth, so the four named
+topics require no status edit. The stopping condition is met.
 
 ## Decision And Motivation
 
