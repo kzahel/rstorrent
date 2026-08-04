@@ -10,10 +10,11 @@ use rstorrent_engine::dht::{DhtConfig, DhtError, DhtService};
 use rstorrent_engine::{
     DEFAULT_STORAGE_FILE_LIMIT, DescriptorFile, DescriptorStorage, DescriptorStoragePlan,
     DiskCheckpointStage, DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink,
-    DownloadControl, DownloadError, DownloadResourceLimits, NetworkConfig, PathPublicationStage,
-    PlatformStorageClient, PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash,
-    PublicationShape, ResumableMagnetDownloadConfig, ResumeArtifactState, ResumedStorage,
-    StorageFilePool, StorageFilePoolSnapshot, download_magnet_metadata_with_dht,
+    DownloadControl, DownloadError, DownloadResourceLimits, IncomingPeerError, IncomingPeerService,
+    IncomingPeerServiceConfig, IncomingPeerServiceSnapshot, IncomingTcpBootstrap, NetworkConfig,
+    PathPublicationStage, PlatformStorageClient, PlatformStorageFailureKind, PlatformStorageSpec,
+    PreparedFileHash, PublicationShape, ResumableMagnetDownloadConfig, ResumeArtifactState,
+    ResumedStorage, StorageFilePool, StorageFilePoolSnapshot, download_magnet_metadata_with_dht,
     plan_descriptor_storage, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
     torrent_storage_paths, verify_prepared_descriptors, verify_prepared_platform_files,
 };
@@ -33,6 +34,7 @@ use crate::diagnostics::{
 };
 use crate::file_views::FileProgressModel;
 use crate::have::HaveState;
+use crate::incoming_seeding::{IncomingSeeding, IncomingSeedingError, SeedReconcileOutcome};
 use crate::speed::{PreparedSpeedHistory, SessionSpeedRecorder, SpeedHistoryRuntime};
 use crate::store::{
     ConfiguredStorageRoot, ManagedArtifactState, PreparedFileRecord, RemovalRecord, ResumeRecord,
@@ -65,6 +67,7 @@ pub struct ApplicationConfig {
     pub network: NetworkConfig,
     pub download_resource_limits: DownloadResourceLimits,
     pub dht: DhtConfig,
+    pub incoming_tcp: IncomingTcpBootstrap,
     pub view_set_lease: Duration,
     pub view_set_reaper_interval: Duration,
     #[doc(hidden)]
@@ -153,6 +156,7 @@ impl ApplicationConfig {
             network,
             download_resource_limits: DownloadResourceLimits::DESKTOP,
             dht,
+            incoming_tcp: IncomingTcpBootstrap::Disabled,
             view_set_lease: Duration::from_millis(crate::views::VIEW_SET_LEASE_MILLIS),
             view_set_reaper_interval: Duration::from_millis(VIEW_SET_REAPER_INTERVAL_MILLIS),
             storage_write_delay_for_testing: Duration::ZERO,
@@ -210,6 +214,8 @@ pub struct ApplicationService {
     publication_delay_for_testing: Duration,
     publication_stage_trace_for_testing: bool,
     storage_file_pool: StorageFilePool,
+    incoming_seeding: Option<IncomingSeeding>,
+    incoming_service: Option<IncomingPeerService>,
     active: Option<ActiveDownload>,
     dht: Option<DhtService>,
     dht_observations: Option<DhtObservationRuntime>,
@@ -295,11 +301,26 @@ impl ApplicationService {
                 .map_err(|error| ApplicationError::Persistence(error.to_string()))?,
         };
         let speed_recorder = speed.recorder.clone();
+        let storage_file_pool =
+            StorageFilePool::new(DEFAULT_STORAGE_FILE_LIMIT, config.platform_storage_client)
+                .map_err(|error| ApplicationError::Configuration(error.to_owned()))?;
+        let mut incoming_config =
+            IncomingPeerServiceConfig::new(config.incoming_tcp, config.network.peer_io_timeout);
+        incoming_config.byte_metric_sink = Some(speed_recorder.clone());
+        let mut incoming_service = IncomingPeerService::bind(incoming_config).await?;
         let mut dht_config = config.dht;
         dht_config.network_policy = config.network.policy;
         dht_config.initial_snapshot = initial_dht_snapshot;
         dht_config.byte_metric_sink = Some(speed_recorder.clone());
-        let dht = DhtService::start(dht_config).await?;
+        let dht = match DhtService::start(dht_config).await {
+            Ok(dht) => dht,
+            Err(error) => {
+                if let Some(incoming) = incoming_service.take() {
+                    incoming.shutdown().await?;
+                }
+                return Err(error.into());
+            }
+        };
         let dht_observation_receiver = dht.subscribe_observations();
         let initial_dht_view = inspection_view(&dht_observation_receiver.borrow());
         let snapshot = store.snapshot()?;
@@ -314,6 +335,9 @@ impl ApplicationService {
         let speed_history = speed.start(views.clone());
         let view_set_reaper =
             ViewSetLeaseReaper::start(views.clone(), config.view_set_reaper_interval);
+        let incoming_seeding = incoming_service
+            .as_ref()
+            .map(|incoming| IncomingSeeding::new(incoming.handle()));
         let mut service = Self {
             store: Arc::new(Mutex::new(store)),
             storage_roots: Arc::new(storage_roots),
@@ -328,11 +352,9 @@ impl ApplicationService {
             publication_delay_stage_for_testing: config.publication_delay_stage_for_testing,
             publication_delay_for_testing: config.publication_delay_for_testing,
             publication_stage_trace_for_testing: config.publication_stage_trace_for_testing,
-            storage_file_pool: StorageFilePool::new(
-                DEFAULT_STORAGE_FILE_LIMIT,
-                config.platform_storage_client,
-            )
-            .map_err(|error| ApplicationError::Configuration(error.to_owned()))?,
+            storage_file_pool,
+            incoming_seeding,
+            incoming_service,
             active: None,
             dht: Some(dht),
             dht_observations: Some(dht_observations),
@@ -366,6 +388,7 @@ impl ApplicationService {
         service.refresh_views()?;
         service.restore_removals().await?;
         service.restore_running().await?;
+        service.reconcile_incoming_catalog().await?;
         service.refresh_views()?;
         Ok(service)
     }
@@ -448,8 +471,25 @@ impl ApplicationService {
                 ));
             }
         }
+        let incoming_fence = match &command {
+            Command::Pause { torrent_id }
+            | Command::ForceRecheck { torrent_id }
+            | Command::Archive { torrent_id }
+            | Command::RemoveTorrent { torrent_id, .. } => Some(torrent_id.to_ascii_lowercase()),
+            Command::SetFilePriority { torrent_id, .. } if file_priority_changed => {
+                Some(torrent_id.to_ascii_lowercase())
+            }
+            _ => None,
+        };
+        if let Some(torrent_id) = incoming_fence.as_deref() {
+            self.unregister_incoming(torrent_id).await?;
+        }
         let revision_before = self.store_mut()?.revision()?;
-        let response = match self.store_mut()?.handle_durable(&request) {
+        let durable_result = {
+            let mut store = self.store_mut()?;
+            store.handle_durable(&request)
+        };
+        let response = match durable_result {
             Ok(response) => response,
             Err(error) => {
                 if error.is_resource_limit() {
@@ -462,10 +502,16 @@ impl ApplicationService {
                         &[],
                     );
                 }
+                if let Some(torrent_id) = incoming_fence.as_deref() {
+                    self.reconcile_incoming_torrent(torrent_id).await?;
+                }
                 return Err(error.into());
             }
         };
         if !matches!(response.outcome, ResponseOutcome::Success { .. }) {
+            if let Some(torrent_id) = incoming_fence.as_deref() {
+                self.reconcile_incoming_torrent(torrent_id).await?;
+            }
             return Ok(response);
         }
         let durable_mutation_applied = response.revision.parse::<u64>().map_err(|_| {
@@ -516,6 +562,8 @@ impl ApplicationService {
             }
             Command::ForceRecheck { torrent_id } => {
                 if !durable_mutation_applied {
+                    self.reconcile_incoming_torrent(&torrent_id.to_ascii_lowercase())
+                        .await?;
                     return Ok(response);
                 }
                 let torrent_id = torrent_id.to_ascii_lowercase();
@@ -558,6 +606,7 @@ impl ApplicationService {
                 )?;
             }
             Command::RestoreArchive { torrent_id } => {
+                let torrent_id = torrent_id.to_ascii_lowercase();
                 self.views.record_diagnostic(
                     DiagnosticSeverity::Info,
                     category::LIFECYCLE_TORRENT,
@@ -566,6 +615,7 @@ impl ApplicationService {
                     "Torrent restored from archive",
                     &[],
                 )?;
+                self.reconcile_incoming_torrent(&torrent_id).await?;
             }
             Command::RemoveTorrent { torrent_id, .. } => {
                 let torrent_id = torrent_id.to_ascii_lowercase();
@@ -597,6 +647,12 @@ impl ApplicationService {
 
     pub fn storage_snapshot(&self) -> Result<crate::StorageSettingsSnapshot, ApplicationError> {
         Ok(self.store_mut()?.snapshot()?.storage)
+    }
+
+    pub fn incoming_peer_snapshot(&self) -> Option<IncomingPeerServiceSnapshot> {
+        self.incoming_service
+            .as_ref()
+            .map(IncomingPeerService::snapshot)
     }
 
     pub fn suggested_storage_root_path(
@@ -1195,6 +1251,31 @@ impl ApplicationService {
     pub async fn shutdown(&mut self) -> Result<(), ApplicationError> {
         let mut active_join_error = None;
         let mut shutdown_error = None;
+        if let Some(incoming) = self.incoming_seeding.take() {
+            incoming.stop();
+        }
+        if let Some(incoming) = self.incoming_service.take() {
+            match incoming.shutdown().await {
+                Ok(terminal) => {
+                    let terminal_counts = format!(
+                        "pending={},established={},reads={},registrations={}",
+                        terminal.pending,
+                        terminal.established,
+                        terminal.reads,
+                        terminal.registrations
+                    );
+                    let _ = self.views.record_diagnostic(
+                        DiagnosticSeverity::Info,
+                        category::PEER_CONNECTION,
+                        "incoming_peer_service_stopped",
+                        None,
+                        "Incoming peer service stopped with joined owners",
+                        &[("terminal_counts", &terminal_counts)],
+                    );
+                }
+                Err(error) => active_join_error = Some(format!("incoming peer service: {error}")),
+            }
+        }
         if let Some(mut reaper) = self.view_set_reaper.take()
             && let Err(error) = reaper.shutdown().await
         {
@@ -1439,6 +1520,7 @@ impl ApplicationService {
         force_recheck: bool,
     ) -> Result<(), ApplicationError> {
         self.reap_finished().await?;
+        self.unregister_incoming(torrent_id).await?;
         if let Some(active) = &self.active {
             if active.torrent_id == torrent_id {
                 return Ok(());
@@ -1745,11 +1827,28 @@ impl ApplicationService {
         )?;
         let store = self.store.clone();
         let storage_roots = self.storage_roots.clone();
+        let incoming_seeding = self.incoming_seeding.clone();
+        let storage_file_pool = self.storage_file_pool.clone();
         let views = self.views.clone();
         let torrent_id = torrent_id.to_owned();
         Ok(tokio::spawn(async move {
             let outcome = operation.await;
-            handle_task_outcome(&store, &storage_roots, &views, &torrent_id, outcome)
+            let result = handle_task_outcome(&store, &storage_roots, &views, &torrent_id, outcome);
+            if result.is_ok()
+                && let Some(incoming_seeding) = incoming_seeding
+                && let Err(error) = reconcile_completed_seed(
+                    &store,
+                    &storage_roots,
+                    &views,
+                    &incoming_seeding,
+                    &storage_file_pool,
+                    &torrent_id,
+                )
+                .await
+            {
+                return Err(error);
+            }
+            result
         }))
     }
 
@@ -1766,6 +1865,7 @@ impl ApplicationService {
     }
 
     async fn pause(&mut self, torrent_id: &str) -> Result<(), ApplicationError> {
+        self.unregister_incoming(torrent_id).await?;
         if self
             .active
             .as_ref()
@@ -1792,12 +1892,67 @@ impl ApplicationService {
             return Ok(());
         }
         let active = self.active.take().expect("finished active task exists");
-        match active.task.await {
+        let torrent_id = active.torrent_id;
+        let result = match active.task.await {
             Ok(Ok(())) => Ok(()),
             Ok(Err(error)) => Err(ApplicationError::Join(error)),
             Err(error) if error.is_cancelled() => Ok(()),
             Err(error) => Err(ApplicationError::Join(error.to_string())),
+        };
+        self.reconcile_incoming_torrent(&torrent_id).await?;
+        result
+    }
+
+    async fn unregister_incoming(&self, torrent_id: &str) -> Result<(), ApplicationError> {
+        if let Some(incoming) = &self.incoming_seeding {
+            incoming.unregister(torrent_id).await?;
         }
+        Ok(())
+    }
+
+    async fn reconcile_incoming_torrent(&self, torrent_id: &str) -> Result<(), ApplicationError> {
+        let Some(incoming) = self.incoming_seeding.clone() else {
+            return Ok(());
+        };
+        let prepared = {
+            let store = self.store_mut()?;
+            seed_reconcile_inputs(&store, &self.storage_roots, torrent_id)?
+        };
+        let Some(prepared) = prepared else {
+            incoming.unregister(torrent_id).await?;
+            return Ok(());
+        };
+        let active = self
+            .active
+            .as_ref()
+            .is_some_and(|active| active.torrent_id == torrent_id);
+        let outcome = incoming
+            .reconcile(
+                &prepared.0,
+                prepared.1,
+                prepared.2.as_ref(),
+                active,
+                &self.storage_file_pool,
+            )
+            .await?;
+        record_seed_reconcile(&self.views, torrent_id, &outcome).map_err(Into::into)
+    }
+
+    async fn reconcile_incoming_catalog(&self) -> Result<(), ApplicationError> {
+        if self.incoming_seeding.is_none() {
+            return Ok(());
+        }
+        let torrent_ids = self
+            .store_mut()?
+            .snapshot()?
+            .torrents
+            .into_iter()
+            .map(|torrent| torrent.torrent_id)
+            .collect::<Vec<_>>();
+        for torrent_id in torrent_ids {
+            self.reconcile_incoming_torrent(&torrent_id).await?;
+        }
+        Ok(())
     }
 
     fn refresh_views(&self) -> Result<(), ApplicationError> {
@@ -1955,6 +2110,95 @@ fn remove_managed_file(path: &Path) -> Result<(), ApplicationError> {
         operation: "remove managed torrent part file",
         source,
     })
+}
+
+async fn reconcile_completed_seed(
+    store: &Arc<Mutex<SessionStore>>,
+    storage_roots: &BTreeMap<String, StorageRootLocation>,
+    views: &ViewHub,
+    incoming: &IncomingSeeding,
+    storage_file_pool: &StorageFilePool,
+    torrent_id: &str,
+) -> Result<(), String> {
+    let prepared = {
+        let store = store
+            .lock()
+            .map_err(|_| "session store lock is poisoned".to_owned())?;
+        seed_reconcile_inputs(&store, storage_roots, torrent_id)
+            .map_err(|error| error.to_string())?
+    };
+    let Some(prepared) = prepared else {
+        incoming
+            .unregister(torrent_id)
+            .await
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    };
+    let outcome = incoming
+        .reconcile(
+            &prepared.0,
+            prepared.1,
+            prepared.2.as_ref(),
+            false,
+            storage_file_pool,
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    record_seed_reconcile(views, torrent_id, &outcome).map_err(|error| error.to_string())
+}
+
+type SeedReconcileInputs = (ResumeRecord, bool, Option<StorageRootLocation>);
+
+fn seed_reconcile_inputs(
+    store: &SessionStore,
+    storage_roots: &BTreeMap<String, StorageRootLocation>,
+    torrent_id: &str,
+) -> Result<Option<SeedReconcileInputs>, StoreError> {
+    let resume = match store.load_resume(torrent_id) {
+        Ok(resume) => resume,
+        Err(StoreError::UnknownTorrent(_)) => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let snapshot = store.snapshot()?;
+    let catalog_eligible = snapshot.torrents.iter().any(|torrent| {
+        torrent.torrent_id == torrent_id && !torrent.archived && torrent.removal_state.is_none()
+    });
+    let root = storage_roots.get(&resume.storage_root).cloned();
+    Ok(Some((resume, catalog_eligible, root)))
+}
+
+fn record_seed_reconcile(
+    views: &ViewHub,
+    torrent_id: &str,
+    outcome: &SeedReconcileOutcome,
+) -> Result<(), SubscriptionError> {
+    match outcome {
+        SeedReconcileOutcome::Registered => views.record_diagnostic(
+            DiagnosticSeverity::Info,
+            category::PEER_CONNECTION,
+            "incoming_seed_registered",
+            Some(torrent_id),
+            "Completed torrent registered for incoming seeding",
+            &[],
+        ),
+        SeedReconcileOutcome::Unregistered => views.record_diagnostic(
+            DiagnosticSeverity::Info,
+            category::PEER_CONNECTION,
+            "incoming_seed_unregistered",
+            Some(torrent_id),
+            "Torrent removed from incoming seeding",
+            &[],
+        ),
+        SeedReconcileOutcome::Unavailable(detail) => views.record_diagnostic(
+            DiagnosticSeverity::Warning,
+            category::PEER_CONNECTION,
+            "incoming_seed_unavailable",
+            Some(torrent_id),
+            "Completed torrent could not be registered for incoming seeding",
+            &[("detail", detail)],
+        ),
+        SeedReconcileOutcome::AlreadyRegistered | SeedReconcileOutcome::Ineligible(_) => Ok(()),
+    }
 }
 
 fn handle_task_outcome(
@@ -3140,6 +3384,8 @@ pub enum ApplicationError {
     StorePoisoned,
     Subscription(SubscriptionError),
     Dht(DhtError),
+    Incoming(IncomingPeerError),
+    IncomingSeeding(String),
 }
 
 impl fmt::Display for ApplicationError {
@@ -3161,6 +3407,8 @@ impl fmt::Display for ApplicationError {
             Self::StorePoisoned => write!(formatter, "session store lock is poisoned"),
             Self::Subscription(error) => write!(formatter, "{error}"),
             Self::Dht(error) => write!(formatter, "{error}"),
+            Self::Incoming(error) => write!(formatter, "{error}"),
+            Self::IncomingSeeding(error) => write!(formatter, "incoming seeding: {error}"),
         }
     }
 }
@@ -3172,6 +3420,7 @@ impl Error for ApplicationError {
             Self::Io { source, .. } => Some(source),
             Self::Subscription(error) => Some(error),
             Self::Dht(error) => Some(error),
+            Self::Incoming(error) => Some(error),
             _ => None,
         }
     }
@@ -3186,6 +3435,18 @@ impl From<StoreError> for ApplicationError {
 impl From<DhtError> for ApplicationError {
     fn from(error: DhtError) -> Self {
         Self::Dht(error)
+    }
+}
+
+impl From<IncomingPeerError> for ApplicationError {
+    fn from(error: IncomingPeerError) -> Self {
+        Self::Incoming(error)
+    }
+}
+
+impl From<IncomingSeedingError> for ApplicationError {
+    fn from(error: IncomingSeedingError) -> Self {
+        Self::IncomingSeeding(error.to_string())
     }
 }
 
@@ -3232,8 +3493,8 @@ mod tests {
 
     use rstorrent_engine::dht::BootstrapNode;
     use rstorrent_engine::{
-        ByteMetric, ByteMetricSink, DownloadError, NetworkConfig, NetworkPolicy, PublicationShape,
-        torrent_storage_paths,
+        ByteMetric, ByteMetricSink, DownloadError, IncomingTcpBootstrap, NetworkConfig,
+        NetworkPolicy, PublicationShape, torrent_storage_paths,
     };
     use rstorrent_protocol::dht::{
         DhtEndpoint, DhtIp, Message as DhtMessage, NodeId, decode_message as decode_dht,
@@ -3346,6 +3607,57 @@ mod tests {
             assert_ne!(length, 0, "peer closed before expected message");
             pending.extend(decoder.push(&bytes[..length]).expect("decode peer message"));
         }
+    }
+
+    async fn wait_for_seed_registrations(service: &ApplicationService, expected: usize) {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                if service
+                    .incoming_peer_snapshot()
+                    .is_some_and(|snapshot| snapshot.registrations == expected)
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("incoming seed reconciliation deadline");
+    }
+
+    async fn connect_application_seed(
+        service: &ApplicationService,
+        info_hash: [u8; 20],
+        peer_id: [u8; 20],
+    ) -> (
+        tokio::net::TcpStream,
+        FrameDecoder,
+        std::collections::VecDeque<PeerMessage>,
+    ) {
+        let address = service
+            .incoming_peer_snapshot()
+            .expect("incoming service enabled")
+            .listen_address;
+        let mut stream = tokio::net::TcpStream::connect(address)
+            .await
+            .expect("connect application seed");
+        stream
+            .write_all(&encode_handshake(info_hash, peer_id))
+            .await
+            .expect("send seed handshake");
+        let mut handshake = [0; HANDSHAKE_LENGTH];
+        stream
+            .read_exact(&mut handshake)
+            .await
+            .expect("read seed handshake");
+        decode_handshake(&handshake, info_hash).expect("valid seed handshake");
+        let mut decoder = FrameDecoder::new();
+        let mut pending = std::collections::VecDeque::new();
+        assert_eq!(
+            read_peer_message(&mut stream, &mut decoder, &mut pending).await,
+            PeerMessage::Bitfield(vec![0b1100_0000])
+        );
+        (stream, decoder, pending)
     }
 
     async fn spawn_metadata_peer(raw_info: Vec<u8>) -> (SocketAddr, tokio::task::JoinHandle<()>) {
@@ -5949,5 +6261,226 @@ mod tests {
         service.shutdown().await.expect("shutdown");
         drop(service);
         fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn durable_complete_torrent_seeds_across_restart_and_fences_lifecycle() {
+        let root = test_root("incoming-seed-lifecycle");
+        let payload = b"abcdefg";
+        let raw_info = single_file_info("seed.bin", payload, 4);
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = crate::control::encode_info_hash(info_hash);
+        let mut configuration = config(&root);
+        configuration.incoming_tcp = IncomingTcpBootstrap::AutomaticLoopback;
+        fs::create_dir_all(root.join("payload")).expect("create payload root");
+        fs::write(root.join("payload/seed.bin"), payload).expect("write published payload");
+        {
+            let mut store = SessionStore::open(
+                configuration
+                    .durable_profile_root()
+                    .expect("durable profile"),
+                &configuration.profile_id,
+                &configuration.storage_roots,
+            )
+            .expect("open fixture store");
+            store
+                .handle_durable(&add_request("add-seed", &torrent_id))
+                .expect("add seed catalog row");
+            store
+                .record_metadata(&torrent_id, &raw_info)
+                .expect("record seed metadata");
+            store
+                .record_pieces(&torrent_id, &[0, 1])
+                .expect("record verified pieces");
+            store
+                .mark_storage_prepared(&torrent_id, StorageState::Published)
+                .expect("record published storage");
+            store.mark_complete(&torrent_id).expect("complete seed");
+        }
+
+        let mut first = ApplicationService::open(configuration.clone())
+            .await
+            .expect("open first application lifetime");
+        wait_for_seed_registrations(&first, 1).await;
+        let (mut peer, mut decoder, mut pending) =
+            connect_application_seed(&first, info_hash, *b"-RS-APP-LEEcher-0000").await;
+        peer.write_all(&encode_message(&PeerMessage::Interested).expect("encode interested"))
+            .await
+            .expect("send interest");
+        assert_eq!(
+            read_peer_message(&mut peer, &mut decoder, &mut pending).await,
+            PeerMessage::Unchoke
+        );
+        peer.write_all(
+            &encode_message(&PeerMessage::Request(
+                rstorrent_protocol::peer_wire::BlockRequest {
+                    index: 1,
+                    begin: 0,
+                    length: 3,
+                },
+            ))
+            .expect("encode payload request"),
+        )
+        .await
+        .expect("send payload request");
+        assert_eq!(
+            read_peer_message(&mut peer, &mut decoder, &mut pending).await,
+            PeerMessage::Piece {
+                index: 1,
+                begin: 0,
+                block: b"efg".to_vec(),
+            }
+        );
+        drop(peer);
+        first.shutdown().await.expect("shutdown first lifetime");
+        drop(first);
+
+        let mut second = ApplicationService::open(configuration)
+            .await
+            .expect("open restarted application");
+        wait_for_seed_registrations(&second, 1).await;
+        let (mut archived_peer, _, _) =
+            connect_application_seed(&second, info_hash, *b"-RS-ARCHIVE-00000000").await;
+        second
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "archive-seed".to_owned(),
+                expected_revision: None,
+                command: Command::Archive {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .await
+            .expect("archive seed");
+        assert_eq!(
+            archived_peer
+                .read(&mut [0; 1])
+                .await
+                .expect("observe archive close"),
+            0
+        );
+        wait_for_seed_registrations(&second, 0).await;
+        second
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "restore-seed".to_owned(),
+                expected_revision: None,
+                command: Command::RestoreArchive {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .await
+            .expect("restore seed");
+        wait_for_seed_registrations(&second, 1).await;
+
+        let (mut recheck_peer, _, _) =
+            connect_application_seed(&second, info_hash, *b"-RS-RECHECK-00000000").await;
+        second
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "recheck-seed".to_owned(),
+                expected_revision: None,
+                command: Command::ForceRecheck {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .await
+            .expect("force recheck seed");
+        assert_eq!(
+            recheck_peer
+                .read(&mut [0; 1])
+                .await
+                .expect("observe recheck close"),
+            0
+        );
+        wait_for_seed_registrations(&second, 1).await;
+
+        let (mut paused_peer, _, _) =
+            connect_application_seed(&second, info_hash, *b"-RS-PAUSED--00000000").await;
+        second
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "pause-seed".to_owned(),
+                expected_revision: None,
+                command: Command::Pause {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .await
+            .expect("pause seed");
+        assert_eq!(
+            paused_peer
+                .read(&mut [0; 1])
+                .await
+                .expect("observe pause close"),
+            0
+        );
+        wait_for_seed_registrations(&second, 0).await;
+        second
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "resume-seed".to_owned(),
+                expected_revision: None,
+                command: Command::Resume {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .await
+            .expect("resume seed");
+        wait_for_seed_registrations(&second, 1).await;
+
+        second
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "remove-seed".to_owned(),
+                expected_revision: None,
+                command: Command::RemoveTorrent {
+                    torrent_id,
+                    data: RemovalDataPolicy::Keep,
+                },
+            })
+            .await
+            .expect("remove seed");
+        wait_for_seed_registrations(&second, 0).await;
+        let terminal = second
+            .incoming_peer_snapshot()
+            .expect("incoming service remains enabled");
+        assert_eq!(terminal.pending, 0);
+        assert_eq!(terminal.established, 0);
+        assert_eq!(terminal.reads, 0);
+        second.shutdown().await.expect("shutdown second lifetime");
+        drop(second);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn application_incoming_bootstrap_is_disabled_or_exactly_fixed() {
+        let disabled_root = test_root("incoming-disabled");
+        let mut disabled = ApplicationService::open(config(&disabled_root))
+            .await
+            .expect("open disabled incoming service");
+        assert!(disabled.incoming_peer_snapshot().is_none());
+        disabled
+            .shutdown()
+            .await
+            .expect("shutdown disabled service");
+        drop(disabled);
+        fs::remove_dir_all(disabled_root).expect("remove disabled root");
+
+        let fixed_root = test_root("incoming-fixed-conflict");
+        let blocker = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind incoming port blocker");
+        let port = blocker.local_addr().expect("blocker address").port();
+        let mut configuration = config(&fixed_root);
+        configuration.incoming_tcp = IncomingTcpBootstrap::FixedLoopback(port);
+        assert!(matches!(
+            ApplicationService::open(configuration).await,
+            Err(super::ApplicationError::Incoming(
+                rstorrent_engine::IncomingPeerError::Bind { port: failed, .. }
+            )) if failed == port
+        ));
+        drop(blocker);
+        fs::remove_dir_all(fixed_root).expect("remove fixed-conflict root");
     }
 }

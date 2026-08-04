@@ -12,6 +12,7 @@ mod dht_views;
 mod diagnostics;
 mod file_views;
 mod have;
+mod incoming_seeding;
 mod speed;
 mod store;
 mod tracker_views;
@@ -37,7 +38,10 @@ pub use diagnostics::{
 };
 pub use file_views::{FileCatalogState, FileSelectionView, FileView};
 pub use have::{HaveError, HaveState};
-pub use rstorrent_engine::{DownloadResourceLimits, NetworkConfig, NetworkPolicy};
+pub use rstorrent_engine::{
+    DownloadResourceLimits, IncomingPeerServiceSnapshot, IncomingTcpBootstrap, NetworkConfig,
+    NetworkPolicy,
+};
 pub use speed::{
     SpeedCurrentRate, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,
     SpeedPersistenceState, SpeedRange, SpeedSeriesView,
