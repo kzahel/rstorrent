@@ -148,6 +148,7 @@ pub struct ResumeRecord {
     pub desired_running: bool,
     pub raw_info: Option<Vec<u8>>,
     pub publication_name: Option<String>,
+    pub managed_artifacts: ManagedArtifactState,
     pub have: Option<HaveState>,
 }
 
@@ -559,7 +560,8 @@ impl SessionStore {
             .connection
             .query_row(
                 "SELECT magnet, storage_root, state, storage_state, raw_info,
-                        publication_name, piece_count, have_state, desired_state
+                        publication_name, piece_count, have_state, desired_state,
+                        managed_artifacts
                  FROM torrents
                  WHERE info_hash = ?1",
                 [info_hash.as_slice()],
@@ -574,6 +576,7 @@ impl SessionStore {
                         row.get::<_, Option<i64>>(6)?,
                         row.get::<_, Option<Vec<u8>>>(7)?,
                         row.get::<_, String>(8)?,
+                        row.get::<_, String>(9)?,
                     ))
                 },
             )
@@ -583,6 +586,8 @@ impl SessionStore {
             .ok_or_else(|| StoreError::DurableState("invalid torrent state".to_owned()))?;
         let storage_state = StorageState::parse(&row.3)
             .ok_or_else(|| StoreError::DurableState("invalid storage state".to_owned()))?;
+        let managed_artifacts = ManagedArtifactState::parse(&row.9)
+            .ok_or_else(|| StoreError::DurableState("invalid managed artifact state".to_owned()))?;
         let skip_files = read_selection(&self.connection, &info_hash)?;
         let have = match (row.6, row.7) {
             (None, None) => None,
@@ -614,6 +619,7 @@ impl SessionStore {
             },
             raw_info: row.4,
             publication_name: row.5,
+            managed_artifacts,
             have,
         })
     }
@@ -953,6 +959,58 @@ impl SessionStore {
         if updated != 1 {
             return Err(StoreError::UnknownTorrent(torrent_id.to_owned()));
         }
+        transaction.commit()?;
+        Ok(revision)
+    }
+
+    pub fn mark_publication_prepared(&mut self, torrent_id: &str) -> Result<u64, StoreError> {
+        let info_hash = decode_info_hash(torrent_id)
+            .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
+        let transaction = self.connection.transaction()?;
+        let (storage_state, managed_artifacts, updated_revision) = transaction
+            .query_row(
+                "SELECT storage_state, managed_artifacts, updated_revision
+                 FROM torrents WHERE info_hash = ?1",
+                [info_hash.as_slice()],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                },
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_owned()))?;
+        let storage_state = StorageState::parse(&storage_state)
+            .ok_or_else(|| StoreError::DurableState("invalid storage state".to_owned()))?;
+        let managed_artifacts = ManagedArtifactState::parse(&managed_artifacts)
+            .ok_or_else(|| StoreError::DurableState("invalid managed artifact state".to_owned()))?;
+        if storage_state == StorageState::Prepared {
+            return u64::try_from(updated_revision)
+                .map_err(|_| StoreError::DurableState("torrent revision is invalid".to_owned()));
+        }
+        if storage_state != StorageState::Staging
+            || managed_artifacts != ManagedArtifactState::Staging
+        {
+            return Err(StoreError::DurableState(
+                "path publication requires owned durable staging data".to_owned(),
+            ));
+        }
+        let revision = increment_revision(&transaction)?;
+        let revision_sql = sql_revision(revision)?;
+        transaction.execute(
+            "UPDATE torrents
+             SET state = ?2, storage_state = ?3, error = NULL,
+                 updated_revision = ?4
+             WHERE info_hash = ?1",
+            params![
+                info_hash.as_slice(),
+                TorrentState::AwaitingPublication.as_str(),
+                StorageState::Prepared.as_str(),
+                revision_sql,
+            ],
+        )?;
         transaction.commit()?;
         Ok(revision)
     }
@@ -3819,5 +3877,66 @@ mod tests {
         );
         drop(reopened);
         fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn path_publication_intent_is_durable_before_confirmation() {
+        let root = test_root("path-publication-intent");
+        let configured = configured_root(&root);
+        let mut store =
+            SessionStore::open(&root, "default", &[configured.clone()]).expect("open store");
+        let raw_info =
+            b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
+        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
+        let torrent_id = crate::control::encode_info_hash(info_hash);
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-path-publication".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: true,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add source");
+        store
+            .record_metadata(&torrent_id, raw_info)
+            .expect("record metadata");
+        store
+            .mark_storage_prepared(&torrent_id, StorageState::Staging)
+            .expect("own staging artifact");
+
+        let prepared_revision = store
+            .mark_publication_prepared(&torrent_id)
+            .expect("record publication intent");
+        assert_eq!(
+            store
+                .mark_publication_prepared(&torrent_id)
+                .expect("repeat publication intent"),
+            prepared_revision
+        );
+        let prepared = store.load_resume(&torrent_id).expect("load intent");
+        assert_eq!(prepared.state, TorrentState::AwaitingPublication);
+        assert_eq!(prepared.storage_state, StorageState::Prepared);
+        assert_eq!(prepared.managed_artifacts, ManagedArtifactState::Staging);
+
+        drop(store);
+        let mut reopened =
+            SessionStore::open(&root, "default", &[configured]).expect("reopen store");
+        let prepared = reopened.load_resume(&torrent_id).expect("reload intent");
+        assert_eq!(prepared.storage_state, StorageState::Prepared);
+        assert_eq!(prepared.managed_artifacts, ManagedArtifactState::Staging);
+        reopened
+            .mark_complete(&torrent_id)
+            .expect("confirm path publication");
+        let complete = reopened.load_resume(&torrent_id).expect("load complete");
+        assert_eq!(complete.state, TorrentState::Complete);
+        assert_eq!(complete.storage_state, StorageState::Published);
+        assert_eq!(complete.managed_artifacts, ManagedArtifactState::Published);
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove profile");
     }
 }

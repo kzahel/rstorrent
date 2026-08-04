@@ -7,7 +7,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
-use rstorrent_protocol::metainfo::Metainfo;
+use rstorrent_protocol::metainfo::{Metainfo, MetainfoMode};
 use rstorrent_protocol::storage_layout::{
     FileSelection, LayoutError, LayoutSegment, SegmentTarget, TorrentLayout,
 };
@@ -80,12 +80,30 @@ pub struct DescriptorStoragePlan {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TorrentStoragePaths {
-    /// Recognizable final directory beneath the selected storage root.
+    /// Whether the recognizable/staging payload artifact is one file or a
+    /// directory tree. Logical piece/file routing remains identical.
+    pub publication_shape: PublicationShape,
+    /// Recognizable final file or directory beneath the selected storage root.
     pub output: PathBuf,
-    /// Hidden, full-info-hash-owned directory used before publication.
+    /// Hidden, full-info-hash-owned file or directory used before publication.
     pub staging: PathBuf,
     /// Hidden, full-info-hash-owned selective part file.
     pub part: PathBuf,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PublicationShape {
+    File,
+    Tree,
+}
+
+impl PublicationShape {
+    pub fn from_metainfo(metainfo: &Metainfo) -> Self {
+        match metainfo.mode {
+            MetainfoMode::SingleFile => Self::File,
+            MetainfoMode::MultiFile => Self::Tree,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -101,6 +119,7 @@ pub struct PlatformStorageSpec {
     pub root_id: String,
     pub storage_id: String,
     pub publication_name: String,
+    pub publication_shape: PublicationShape,
     pub namespace_generation: u64,
     pub published: bool,
 }
@@ -335,6 +354,7 @@ enum StorageBacking {
 pub struct SelectiveStorage {
     backing: StorageBacking,
     identity: PartFileIdentity,
+    publication_shape: PublicationShape,
     layout: TorrentLayout,
     selection: FileSelection,
     files: Vec<Option<RetainedFile>>,
@@ -748,6 +768,7 @@ impl SelectiveStorage {
         selection: FileSelection,
     ) -> Result<Self, SelectiveStorageError> {
         let paths = TorrentStoragePaths {
+            publication_shape: PublicationShape::from_metainfo(metainfo),
             staging: selective_staging_path(&output_root)?,
             part: selective_part_path(&output_root)?,
             output: output_root,
@@ -763,6 +784,7 @@ impl SelectiveStorage {
         pool: StorageFilePool,
     ) -> Result<Self, SelectiveStorageError> {
         let paths = TorrentStoragePaths {
+            publication_shape: PublicationShape::from_metainfo(metainfo),
             staging: selective_staging_path(&output_root)?,
             part: selective_part_path(&output_root)?,
             output: output_root,
@@ -789,6 +811,7 @@ impl SelectiveStorage {
         pool: StorageFilePool,
     ) -> Result<Self, SelectiveStorageError> {
         let TorrentStoragePaths {
+            publication_shape,
             output: output_root,
             staging: staging_root,
             part: part_path,
@@ -810,7 +833,13 @@ impl SelectiveStorage {
                 files.push(None);
                 continue;
             }
-            let path = joined_path(&staging_root, &metainfo_file.path);
+            let path = payload_path(
+                publication_shape,
+                &staging_root,
+                &metainfo_file.path,
+                file_index,
+                layout.files().len(),
+            )?;
             files.push(Some(RetainedFile::dynamic(
                 path_storage_reference(
                     &pool,
@@ -850,6 +879,7 @@ impl SelectiveStorage {
                 storage_id,
             },
             identity,
+            publication_shape,
             layout,
             selection,
             files,
@@ -869,6 +899,11 @@ impl SelectiveStorage {
         verified: Vec<bool>,
     ) -> Result<(Self, ResumedStorage), SelectiveStorageError> {
         validate_publication_name(&spec.publication_name)?;
+        if spec.publication_shape != PublicationShape::from_metainfo(metainfo) {
+            return Err(SelectiveStorageError::InvalidStorageOperation(
+                "platform publication shape",
+            ));
+        }
         if spec.storage_id != storage_instance_id(metainfo.info_hash) {
             return Err(SelectiveStorageError::InvalidStorageOperation(
                 "platform storage identity",
@@ -935,6 +970,7 @@ impl SelectiveStorage {
                     part_reference,
                 },
                 identity,
+                publication_shape: spec.publication_shape,
                 layout,
                 selection,
                 files,
@@ -1081,6 +1117,7 @@ impl SelectiveStorage {
                 materialization_files,
             },
             identity,
+            publication_shape: PublicationShape::from_metainfo(metainfo),
             layout,
             selection,
             files,
@@ -1170,6 +1207,7 @@ impl SelectiveStorage {
                 materialization_files: (0..layout.files().len()).map(|_| None).collect(),
             },
             identity,
+            publication_shape: PublicationShape::from_metainfo(metainfo),
             layout,
             selection,
             files,
@@ -1189,6 +1227,7 @@ impl SelectiveStorage {
         verified: Vec<bool>,
     ) -> Result<(Self, ResumedStorage), SelectiveStorageError> {
         let paths = TorrentStoragePaths {
+            publication_shape: PublicationShape::from_metainfo(metainfo),
             staging: selective_staging_path(&output_root)?,
             part: selective_part_path(&output_root)?,
             output: output_root,
@@ -1222,6 +1261,7 @@ impl SelectiveStorage {
             });
         }
         let TorrentStoragePaths {
+            publication_shape,
             output: output_root,
             staging: staging_root,
             part: part_path,
@@ -1234,6 +1274,7 @@ impl SelectiveStorage {
         if !output_exists && !staging_exists && !part_exists {
             let storage = Self::create_with_paths_and_pool(
                 TorrentStoragePaths {
+                    publication_shape,
                     output: output_root,
                     staging: staging_root,
                     part: part_path,
@@ -1253,22 +1294,27 @@ impl SelectiveStorage {
             return Err(SelectiveStorageError::IncompleteResumeArtifacts);
         }
 
-        let (tree_root, resumed, published) = if output_exists {
+        let (artifact_root, resumed, published) = if output_exists {
             (&output_root, ResumedStorage::Published, true)
         } else {
             (&staging_root, ResumedStorage::Staging, false)
         };
         let namespace_generation = u64::from(published);
         let storage_id = storage_instance_id(metainfo.info_hash);
-        let tree_metadata = tokio::fs::symlink_metadata(tree_root)
-            .await
-            .map_err(|source| SelectiveStorageError::Io {
-                operation: "inspect resumable selected tree",
-                source,
-            })?;
-        if !tree_metadata.is_dir() || tree_metadata.file_type().is_symlink() {
+        let artifact_metadata =
+            tokio::fs::symlink_metadata(artifact_root)
+                .await
+                .map_err(|source| SelectiveStorageError::Io {
+                    operation: "inspect resumable payload artifact",
+                    source,
+                })?;
+        let expected_type = match publication_shape {
+            PublicationShape::File => artifact_metadata.is_file(),
+            PublicationShape::Tree => artifact_metadata.is_dir(),
+        };
+        if !expected_type || artifact_metadata.file_type().is_symlink() {
             return Err(SelectiveStorageError::UnexpectedFileType {
-                path: tree_root.clone(),
+                path: artifact_root.clone(),
             });
         }
 
@@ -1281,7 +1327,13 @@ impl SelectiveStorage {
                 skipped_sources.push(None);
                 continue;
             }
-            let path = joined_path(tree_root, &metainfo_file.path);
+            let path = payload_path(
+                publication_shape,
+                artifact_root,
+                &metainfo_file.path,
+                file_index,
+                layout.files().len(),
+            )?;
             match tokio::fs::symlink_metadata(&path).await {
                 Ok(metadata) => {
                     if !metadata.is_file() || metadata.file_type().is_symlink() {
@@ -1379,6 +1431,7 @@ impl SelectiveStorage {
                 storage_id,
             },
             identity,
+            publication_shape,
             layout,
             selection,
             files,
@@ -1856,6 +1909,8 @@ impl SelectiveStorage {
 
     pub async fn publish(&mut self) -> Result<(), SelectiveStorageError> {
         self.sync_verified().await?;
+        let publication_shape = self.publication_shape;
+        let file_count = self.layout.files().len();
         for (file_index, metainfo_file) in self.layout.files().iter().enumerate() {
             if metainfo_file.length == 0
                 && !metainfo_file.padding
@@ -1895,7 +1950,7 @@ impl SelectiveStorage {
         tokio::fs::rename(&staging_root, &output_root)
             .await
             .map_err(|source| SelectiveStorageError::Io {
-                operation: "publish selected tree",
+                operation: "publish torrent payload artifact",
                 source,
             })?;
         for (file_index, metainfo_file) in self.layout.files().iter().enumerate() {
@@ -1909,7 +1964,13 @@ impl SelectiveStorage {
                     &storage_id,
                     1,
                     StorageFileRole::Payload(file_index),
-                    joined_path(&output_root, &metainfo_file.path),
+                    payload_path(
+                        publication_shape,
+                        &output_root,
+                        &metainfo_file.path,
+                        file_index,
+                        file_count,
+                    )?,
                 ),
                 file_index,
                 metainfo_file.length,
@@ -2877,9 +2938,35 @@ pub fn torrent_storage_paths(
     publication_name: &str,
     info_hash: [u8; 20],
 ) -> Result<TorrentStoragePaths, SelectiveStorageError> {
+    torrent_storage_paths_with_shape(
+        storage_root,
+        publication_name,
+        info_hash,
+        PublicationShape::Tree,
+    )
+}
+
+pub fn torrent_storage_paths_for_metainfo(
+    storage_root: &Path,
+    metainfo: &Metainfo,
+) -> Result<TorrentStoragePaths, SelectiveStorageError> {
+    torrent_storage_paths_with_shape(
+        storage_root,
+        &metainfo.name,
+        metainfo.info_hash,
+        PublicationShape::from_metainfo(metainfo),
+    )
+}
+
+pub fn torrent_storage_paths_with_shape(
+    storage_root: &Path,
+    publication_name: &str,
+    info_hash: [u8; 20],
+    publication_shape: PublicationShape,
+) -> Result<TorrentStoragePaths, SelectiveStorageError> {
     validate_publication_name(publication_name)?;
     let output = storage_root.join(publication_name);
-    torrent_storage_paths_for_output(output, info_hash)
+    torrent_storage_paths_for_output_with_shape(output, info_hash, publication_shape)
 }
 
 pub fn validate_publication_name(publication_name: &str) -> Result<(), SelectiveStorageError> {
@@ -2913,6 +3000,14 @@ pub(crate) fn torrent_storage_paths_for_output(
     output: PathBuf,
     info_hash: [u8; 20],
 ) -> Result<TorrentStoragePaths, SelectiveStorageError> {
+    torrent_storage_paths_for_output_with_shape(output, info_hash, PublicationShape::Tree)
+}
+
+pub(crate) fn torrent_storage_paths_for_output_with_shape(
+    output: PathBuf,
+    info_hash: [u8; 20],
+    publication_shape: PublicationShape,
+) -> Result<TorrentStoragePaths, SelectiveStorageError> {
     let parent = output
         .parent()
         .ok_or(SelectiveStorageError::InvalidOutputPath)?;
@@ -2927,10 +3022,29 @@ pub(crate) fn torrent_storage_paths_for_output(
         return Err(SelectiveStorageError::InvalidPublicationName);
     }
     Ok(TorrentStoragePaths {
+        publication_shape,
         output,
         staging,
         part,
     })
+}
+
+fn payload_path(
+    publication_shape: PublicationShape,
+    artifact_root: &Path,
+    components: &[String],
+    file_index: usize,
+    file_count: usize,
+) -> Result<PathBuf, SelectiveStorageError> {
+    match publication_shape {
+        PublicationShape::File if file_index == 0 && file_count == 1 => {
+            Ok(artifact_root.to_path_buf())
+        }
+        PublicationShape::File => Err(SelectiveStorageError::InvalidStorageOperation(
+            "single-file publication requires exactly one logical file",
+        )),
+        PublicationShape::Tree => Ok(joined_path(artifact_root, components)),
+    }
 }
 
 fn materialization_path(destination: &Path) -> Result<PathBuf, SelectiveStorageError> {
@@ -2991,7 +3105,10 @@ fn platform_storage_reference(
             } else {
                 format!(".{}.rstorrent-staging", spec.publication_name)
             };
-            std::iter::once(namespace).chain(components).collect()
+            match spec.publication_shape {
+                PublicationShape::File => vec![namespace],
+                PublicationShape::Tree => std::iter::once(namespace).chain(components).collect(),
+            }
         }
         StorageFileRole::Part => vec![format!(".{}.rstorrent-parts", spec.publication_name)],
     };
@@ -3058,11 +3175,12 @@ mod tests {
 
     use super::{
         BlockingHashResult, DescriptorFile, DescriptorStorage, PlatformStorageSpec,
-        PreparedFileHash, ResumedStorage, SelectiveStorage, SelectiveStorageError,
-        SelectiveWriteDestination, SelectiveWritePlan, SelectiveWriteSpan, SelectiveWriteStats,
-        VERIFICATION_CHUNK_LENGTH, await_blocking_hash, collect_descriptors, materialization_path,
-        remove_selective_part_if_present, remove_selective_staging_if_present, selective_part_path,
-        selective_staging_path, storage_instance_id, torrent_storage_paths,
+        PreparedFileHash, PublicationShape, ResumedStorage, SelectiveStorage,
+        SelectiveStorageError, SelectiveWriteDestination, SelectiveWritePlan, SelectiveWriteSpan,
+        SelectiveWriteStats, VERIFICATION_CHUNK_LENGTH, await_blocking_hash, collect_descriptors,
+        materialization_path, remove_selective_part_if_present,
+        remove_selective_staging_if_present, selective_part_path, selective_staging_path,
+        storage_instance_id, torrent_storage_paths, torrent_storage_paths_for_metainfo,
         verify_prepared_descriptors, verify_prepared_platform_files,
     };
 
@@ -3114,6 +3232,24 @@ mod tests {
         }
     }
 
+    fn single_file_fixture() -> Metainfo {
+        Metainfo {
+            info_hash: [9; 20],
+            piece_hashes: vec![[3; 20]; 2],
+            piece_length: 16_384,
+            total_length: 20_000,
+            name: "single.bin".to_owned(),
+            private: false,
+            mode: MetainfoMode::SingleFile,
+            files: vec![MetainfoFile {
+                path: vec!["single.bin".to_owned()],
+                length: 20_000,
+                offset: 0,
+                padding: false,
+            }],
+        }
+    }
+
     #[test]
     fn torrent_paths_use_visible_name_and_full_hash_artifacts() {
         let root = test_path("torrent-paths");
@@ -3121,6 +3257,7 @@ mod tests {
             .expect("plan torrent storage paths");
 
         assert_eq!(paths.output, root.join("Visible Name"));
+        assert_eq!(paths.publication_shape, PublicationShape::Tree);
         assert_eq!(
             paths.staging,
             root.join(format!(".{}.rstorrent-staging", "ab".repeat(20)))
@@ -3161,6 +3298,20 @@ mod tests {
                 Err(SelectiveStorageError::InvalidPublicationName)
             ));
         }
+
+        let single = single_file_fixture();
+        let single_paths = torrent_storage_paths_for_metainfo(&root, &single)
+            .expect("plan single-file storage paths");
+        assert_eq!(single_paths.publication_shape, PublicationShape::File);
+        assert_eq!(single_paths.output, root.join("single.bin"));
+
+        let multi = fixture();
+        assert_eq!(
+            torrent_storage_paths_for_metainfo(&root, &multi)
+                .expect("plan multi-file storage paths")
+                .publication_shape,
+            PublicationShape::Tree
+        );
     }
 
     fn torrent_bytes(metainfo: &Metainfo) -> Vec<u8> {
@@ -3605,6 +3756,7 @@ mod tests {
             pool: pool.clone(),
             root_id: "downloads".to_owned(),
             storage_id: storage_instance_id(metainfo.info_hash),
+            publication_shape: PublicationShape::from_metainfo(&metainfo),
             publication_name: metainfo.name.clone(),
             namespace_generation: 0,
             published: false,
