@@ -1747,4 +1747,27 @@ mod tests {
         }
         assert_eq!(flooded.request_count(), 4097);
     }
+
+    #[test]
+    #[ignore = "allocates the complete 64 MiB local metadata upload profile"]
+    fn upload_serves_every_block_of_maximum_local_metadata() {
+        let bytes = vec![8; MAX_LOCAL_METADATA_LENGTH];
+        let mut upload = MetadataUpload::new(bytes).expect("maximum local metadata");
+
+        for piece in 0..4096 {
+            let action = upload
+                .on_request(piece)
+                .expect("serve every maximum-profile block");
+            assert!(matches!(
+                action,
+                MetadataUploadAction::Data {
+                    piece: actual_piece,
+                    total_size: MAX_LOCAL_METADATA_LENGTH,
+                    block,
+                } if actual_piece == piece as u32 && block.len() == METADATA_BLOCK_LENGTH
+            ));
+        }
+        assert!(upload.is_complete());
+        assert_eq!(upload.request_count(), 4096);
+    }
 }
