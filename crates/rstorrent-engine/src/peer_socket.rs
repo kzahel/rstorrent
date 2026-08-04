@@ -4,14 +4,12 @@ use std::collections::{BTreeMap, VecDeque};
 use std::error::Error;
 use std::fmt;
 use std::io;
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
 use rstorrent_protocol::peer_wire::{
-    EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX, FrameDecoder, FrameError,
-    HANDSHAKE_LENGTH, Handshake, HandshakeError, PeerMessage, decode_handshake, encode_handshake,
-    encode_handshake_with_reserved, encode_message,
+    EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX, HANDSHAKE_LENGTH,
+    Handshake, PeerMessage, decode_handshake, encode_handshake, encode_handshake_with_reserved,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -20,26 +18,21 @@ use tokio::task::{JoinError, JoinHandle, JoinSet};
 use tokio::time::{Instant, timeout, timeout_at};
 use tokio_util::sync::CancellationToken;
 
-use crate::network::{NetworkConfig, NetworkPolicy};
+use crate::network::NetworkConfig;
 use crate::peer::{DialAttempt, DialAttemptId, PeerFailure};
+use crate::peer_io::{NETWORK_READ_LENGTH, PeerIo, PeerIoError, record_bytes};
 use crate::peer_runtime::connection_id;
 use crate::swarm::ConnectionId;
 use crate::{ByteMetric, ByteMetricSink};
 
 const CLIENT_PEER_ID: [u8; 20] = *b"-RS0001-000000000000";
-const NETWORK_READ_LENGTH: usize = 16 * 1024;
-
 pub(crate) const PEER_COMMAND_QUEUE: usize = 16;
 pub(crate) const PEER_EVENT_QUEUE: usize = 64;
 
 #[derive(Debug)]
 pub(crate) struct PeerConnection {
     attempt: DialAttempt,
-    stream: TcpStream,
-    decoder: FrameDecoder,
-    queued_messages: VecDeque<PeerMessage>,
-    io_timeout: Duration,
-    byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
+    io: PeerIo,
 }
 
 impl PeerConnection {
@@ -48,46 +41,23 @@ impl PeerConnection {
     }
 
     pub(crate) const fn io_timeout(&self) -> Duration {
-        self.io_timeout
+        self.io.io_timeout
     }
 
-    pub(crate) fn prepend_messages(&mut self, mut messages: VecDeque<PeerMessage>) {
-        messages.append(&mut self.queued_messages);
-        self.queued_messages = messages;
+    pub(crate) fn prepend_messages(&mut self, messages: VecDeque<PeerMessage>) {
+        self.io.prepend_messages(messages);
     }
 
     #[cfg(test)]
     pub(crate) fn for_test(attempt: DialAttempt, stream: TcpStream, io_timeout: Duration) -> Self {
         Self {
             attempt,
-            stream,
-            decoder: FrameDecoder::new(),
-            queued_messages: VecDeque::new(),
-            io_timeout,
-            byte_metric_sink: None,
+            io: PeerIo::new(stream, io_timeout, None),
         }
     }
 }
 
-#[derive(Debug)]
-pub(crate) enum PeerSocketError {
-    Cancelled,
-    NetworkPolicyDenied {
-        address: SocketAddr,
-        policy: NetworkPolicy,
-    },
-    Io {
-        operation: &'static str,
-        source: io::Error,
-    },
-    TimedOut {
-        operation: &'static str,
-        timeout: Duration,
-    },
-    Closed,
-    Handshake(HandshakeError),
-    Frame(FrameError),
-}
+pub(crate) type PeerSocketError = PeerIoError;
 
 impl PeerSocketError {
     pub(crate) fn peer_failure(&self) -> PeerFailure {
@@ -109,42 +79,6 @@ impl PeerSocketError {
             | Self::Handshake(_) => PeerFailure::Handshake,
             Self::Closed => PeerFailure::RemoteClosed,
             Self::Io { .. } | Self::TimedOut { .. } | Self::Frame(_) => PeerFailure::Protocol,
-        }
-    }
-}
-
-impl fmt::Display for PeerSocketError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Cancelled => formatter.write_str("peer socket operation cancelled"),
-            Self::NetworkPolicyDenied { address, policy } => {
-                write!(
-                    formatter,
-                    "outbound address {address} is denied by network policy {policy}"
-                )
-            }
-            Self::Io { operation, source } => write!(formatter, "{operation}: {source}"),
-            Self::TimedOut { operation, timeout } => {
-                write!(
-                    formatter,
-                    "peer {operation} timed out after {}s",
-                    timeout.as_secs()
-                )
-            }
-            Self::Closed => formatter.write_str("peer closed the connection"),
-            Self::Handshake(error) => write!(formatter, "peer handshake: {error}"),
-            Self::Frame(error) => write!(formatter, "peer frame: {error}"),
-        }
-    }
-}
-
-impl Error for PeerSocketError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::Io { source, .. } => Some(source),
-            Self::Handshake(error) => Some(error),
-            Self::Frame(error) => Some(error),
-            _ => None,
         }
     }
 }
@@ -248,11 +182,7 @@ async fn connect_with_progress(
     Ok((
         PeerConnection {
             attempt,
-            stream,
-            decoder: FrameDecoder::new(),
-            queued_messages: VecDeque::new(),
-            io_timeout: network.peer_io_timeout,
-            byte_metric_sink,
+            io: PeerIo::new(stream, network.peer_io_timeout, byte_metric_sink),
         },
         handshake,
     ))
@@ -261,110 +191,14 @@ async fn connect_with_progress(
 pub(crate) async fn next_message(
     peer: &mut PeerConnection,
 ) -> Result<PeerMessage, PeerSocketError> {
-    let deadline = Instant::now() + peer.io_timeout;
-    while peer.queued_messages.is_empty() {
-        let mut network_buffer = [0_u8; NETWORK_READ_LENGTH];
-        let read = timeout_at(deadline, peer.stream.read(&mut network_buffer))
-            .await
-            .map_err(|_| PeerSocketError::TimedOut {
-                operation: "message read",
-                timeout: peer.io_timeout,
-            })?
-            .map_err(|source| PeerSocketError::Io {
-                operation: "read peer message",
-                source,
-            })?;
-        if read == 0 {
-            return Err(PeerSocketError::Closed);
-        }
-        record_bytes(
-            peer.byte_metric_sink.as_ref(),
-            ByteMetric::PeerWireReceived,
-            read,
-        );
-        peer.queued_messages.extend(
-            peer.decoder
-                .push(&network_buffer[..read])
-                .map_err(PeerSocketError::Frame)?,
-        );
-    }
-    let message = peer
-        .queued_messages
-        .pop_front()
-        .expect("peer message queue is nonempty after receive loop");
-    record_incoming_message(peer, &message)?;
-    Ok(message)
-}
-
-fn record_incoming_message(
-    peer: &PeerConnection,
-    message: &PeerMessage,
-) -> Result<(), PeerSocketError> {
-    let frame_length = encode_message(message)
-        .map_err(PeerSocketError::Frame)?
-        .len();
-    let (payload_length, payload_metric) = match &message {
-        PeerMessage::Piece { block, .. } => (block.len(), None),
-        PeerMessage::Extended { payload, .. } => {
-            (payload.len(), Some(ByteMetric::MetadataPayloadReceived))
-        }
-        _ => (0, None),
-    };
-    record_bytes(
-        peer.byte_metric_sink.as_ref(),
-        ByteMetric::PeerProtocolReceived,
-        frame_length.saturating_sub(payload_length),
-    );
-    if let Some(metric) = payload_metric {
-        record_bytes(peer.byte_metric_sink.as_ref(), metric, payload_length);
-    }
-    Ok(())
+    peer.io.next_message().await
 }
 
 pub(crate) async fn send_message(
     peer: &mut PeerConnection,
     message: &PeerMessage,
 ) -> Result<(), PeerSocketError> {
-    let frame = encode_message(message).map_err(PeerSocketError::Frame)?;
-    timeout(peer.io_timeout, peer.stream.write_all(&frame))
-        .await
-        .map_err(|_| PeerSocketError::TimedOut {
-            operation: "message write",
-            timeout: peer.io_timeout,
-        })?
-        .map_err(|source| PeerSocketError::Io {
-            operation: "send peer message",
-            source,
-        })?;
-    record_bytes(
-        peer.byte_metric_sink.as_ref(),
-        ByteMetric::PeerWireSent,
-        frame.len(),
-    );
-    let (payload_length, payload_metric) = match message {
-        PeerMessage::Piece { block, .. } => (block.len(), None),
-        PeerMessage::Extended { payload, .. } => {
-            (payload.len(), Some(ByteMetric::MetadataPayloadSent))
-        }
-        _ => (0, None),
-    };
-    record_bytes(
-        peer.byte_metric_sink.as_ref(),
-        ByteMetric::PeerProtocolSent,
-        frame.len().saturating_sub(payload_length),
-    );
-    if let Some(metric) = payload_metric {
-        record_bytes(peer.byte_metric_sink.as_ref(), metric, payload_length);
-    }
-    Ok(())
-}
-
-fn record_bytes(sink: Option<&Arc<dyn ByteMetricSink>>, metric: ByteMetric, bytes: usize) {
-    if let Some(sink) = sink
-        && bytes != 0
-    {
-        sink.record(metric, bytes.try_into().unwrap_or(u64::MAX));
-    }
+    peer.io.send_message(message).await
 }
 
 #[derive(Debug)]
@@ -692,8 +526,8 @@ async fn run_peer_task(
     events: mpsc::Sender<PeerTaskEvent>,
     cancellation: &CancellationToken,
 ) -> Result<(), PeerSocketError> {
-    let mut pending_messages = std::mem::take(&mut peer.queued_messages);
-    let mut read_deadline = Instant::now() + peer.io_timeout;
+    let mut pending_messages = std::mem::take(&mut peer.io.queued_messages);
+    let mut read_deadline = Instant::now() + peer.io.io_timeout;
     let mut network_buffer = [0_u8; NETWORK_READ_LENGTH];
     loop {
         if !pending_messages.is_empty() {
@@ -732,11 +566,11 @@ async fn run_peer_task(
                 Some(PeerTaskCommand::Send(message)) => send_message(&mut peer, &message).await?,
                 None => return Ok(()),
             },
-            read = timeout_at(read_deadline, peer.stream.read(&mut network_buffer)) => {
+            read = timeout_at(read_deadline, peer.io.stream.read(&mut network_buffer)) => {
                 let read = read
                     .map_err(|_| PeerSocketError::TimedOut {
                         operation: "message read",
-                        timeout: peer.io_timeout,
+                        timeout: peer.io.io_timeout,
                     })?
                     .map_err(|source| PeerSocketError::Io {
                         operation: "read peer message",
@@ -746,18 +580,18 @@ async fn run_peer_task(
                     return Err(PeerSocketError::Closed);
                 }
                 record_bytes(
-                    peer.byte_metric_sink.as_ref(),
+                    peer.io.byte_metric_sink.as_ref(),
                     ByteMetric::PeerWireReceived,
                     read,
                 );
-                let messages = peer.decoder
+                let messages = peer.io.decoder
                     .push(&network_buffer[..read])
                     .map_err(PeerSocketError::Frame)?;
                 for message in &messages {
-                    record_incoming_message(&peer, message)?;
+                    peer.io.record_incoming_message(message)?;
                 }
                 if !messages.is_empty() {
-                    read_deadline = Instant::now() + peer.io_timeout;
+                    read_deadline = Instant::now() + peer.io.io_timeout;
                 }
                 pending_messages.extend(messages);
             }

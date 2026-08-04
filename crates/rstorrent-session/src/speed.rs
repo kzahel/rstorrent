@@ -53,7 +53,7 @@ pub enum SpeedMetric {
 }
 
 impl SpeedMetric {
-    pub const AVAILABLE: [Self; 18] = [
+    pub const AVAILABLE: [Self; 19] = [
         Self::PayloadReceived,
         Self::StagedWrite,
         Self::PayloadVerified,
@@ -72,6 +72,7 @@ impl SpeedMetric {
         Self::LogicalHashRead,
         Self::PayloadRedundant,
         Self::PayloadHashFailed,
+        Self::PayloadUploaded,
     ];
 
     pub const DEFAULT: [Self; 3] = [
@@ -123,6 +124,7 @@ impl From<ByteMetric> for SpeedMetric {
             ByteMetric::PeerProtocolSent => Self::PeerProtocolSent,
             ByteMetric::MetadataPayloadReceived => Self::MetadataPayloadReceived,
             ByteMetric::MetadataPayloadSent => Self::MetadataPayloadSent,
+            ByteMetric::PayloadUploaded => Self::PayloadUploaded,
             ByteMetric::PeerUnclassifiedReceived => Self::PeerUnclassifiedReceived,
             ByteMetric::PeerUnclassifiedSent => Self::PeerUnclassifiedSent,
             ByteMetric::DhtReceived => Self::DhtReceived,

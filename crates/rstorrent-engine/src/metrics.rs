@@ -14,6 +14,7 @@ pub enum ByteMetric {
     PeerProtocolSent,
     MetadataPayloadReceived,
     MetadataPayloadSent,
+    PayloadUploaded,
     PeerUnclassifiedReceived,
     PeerUnclassifiedSent,
     DhtReceived,

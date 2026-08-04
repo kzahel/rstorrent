@@ -10,13 +10,16 @@ mod metrics;
 mod network;
 mod part_file;
 pub mod peer;
+mod peer_io;
 mod peer_runtime;
 mod peer_socket;
 mod positional_io;
+mod seed_content;
 mod selective_storage;
 mod storage_file_pool;
 pub mod swarm;
 mod tracker;
+mod upload;
 
 pub use driver::{
     ContentPeerActivitySnapshot, ContentRequestWindowPhase, DiskCheckpointStage,
@@ -43,6 +46,7 @@ pub use peer_runtime::{
     PeerConnectionRole, PeerContentActivity, PeerRequestWindowPhase, PeerRuntimeError,
     PeerTransport,
 };
+pub use seed_content::{SeedContent, SeedContentError, SeedContentSnapshot};
 pub use selective_storage::{
     DescriptorFile, DescriptorFileRole, DescriptorStorage, DescriptorStoragePlan,
     DescriptorStoragePlanFile, MaterializationReport, PlatformStorageSpec, PreparedFileHash,
@@ -64,4 +68,8 @@ pub use storage_file_pool::{
 pub use tracker::{
     TrackerAnnounceEvent, TrackerNextAction, TrackerRuntimeRecordSnapshot, TrackerRuntimeSnapshot,
     TrackerRuntimeStatus, TrackerSource, TrackerTransport,
+};
+pub use upload::{
+    MAX_QUEUED_UPLOAD_BYTES, MAX_QUEUED_UPLOAD_REQUESTS, UploadAction, UploadCloseReason,
+    UploadPeerSnapshot, UploadPeerState, UploadRead,
 };
