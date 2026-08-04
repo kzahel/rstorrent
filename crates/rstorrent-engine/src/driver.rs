@@ -56,14 +56,11 @@ use crate::peer_socket::{
     self, PeerConnection, PeerSetError, PeerSetEvent, PeerSocketError, PeerSocketSet, PeerTaskEvent,
 };
 use crate::selective_storage::{
-    CheckpointHandles, DescriptorStorage, PlatformStorageSpec, PreparedFileHash, ResumedStorage,
-    SelectiveHashPlan, SelectiveStorage, SelectiveStorageError, SelectiveWriteJob,
-    remove_selective_part_if_present, remove_selective_staging_if_present,
-    torrent_storage_paths_for_output, validate_publication_name,
-};
-use crate::storage::{
-    StagingFile, StagingHashPlan, StagingWritePlan, StorageError, VERIFICATION_CHUNK_LENGTH,
-    remove_staging_if_present, staging_path,
+    CheckpointHandles, DescriptorStorage, PlatformStorageSpec, PreparedFileHash, PublicationShape,
+    ResumedStorage, SelectiveHashPlan, SelectiveStorage, SelectiveStorageError, SelectiveWriteJob,
+    VERIFICATION_CHUNK_LENGTH, remove_selective_part_if_present,
+    remove_selective_staging_if_present, torrent_storage_paths_for_output_with_shape,
+    validate_publication_name,
 };
 use crate::storage_file_pool::StorageFilePool;
 use crate::swarm::{
@@ -2704,7 +2701,6 @@ pub enum DownloadError {
     Frame(FrameError),
     Piece(PieceError),
     Layout(LayoutError),
-    Storage(StorageError),
     SelectiveStorage(SelectiveStorageError),
     PeerClosed,
     NoUsablePeer,
@@ -2773,7 +2769,6 @@ impl fmt::Display for DownloadError {
             Self::Frame(error) => write!(formatter, "peer frame: {error}"),
             Self::Piece(error) => write!(formatter, "piece state: {error}"),
             Self::Layout(error) => write!(formatter, "torrent layout: {error}"),
-            Self::Storage(error) => write!(formatter, "storage: {error}"),
             Self::SelectiveStorage(error) => write!(formatter, "selective storage: {error}"),
             Self::PeerClosed => write!(formatter, "peer closed before piece verification"),
             Self::NoUsablePeer => {
@@ -2860,7 +2855,6 @@ impl Error for DownloadError {
             Self::Frame(error) => Some(error),
             Self::Piece(error) => Some(error),
             Self::Layout(error) => Some(error),
-            Self::Storage(error) => Some(error),
             Self::SelectiveStorage(error) => Some(error),
             Self::CleanupAfterFailure { source, .. } => Some(source),
             _ => None,
@@ -2972,7 +2966,6 @@ pub async fn download_magnet_with_control(
         return Err(DownloadError::Cancelled);
     }
     let output_path = config.output_path.clone();
-    let staging = staging_path(&output_path).map_err(DownloadError::Storage)?;
     let result = run_magnet_download(config, control.clone()).await;
     let result = require_terminal_owner_cleanup(&control, result);
     control.clear_buffered_payload();
@@ -2982,7 +2975,6 @@ pub async fn download_magnet_with_control(
         Err(error) if preserves_existing_artifact(&error) => Err(error),
         Err(error) => {
             let cleanup = async {
-                remove_staging_if_present(&staging).await?;
                 remove_selective_staging_if_present(&output_path).await?;
                 remove_selective_part_if_present(&output_path).await
             }
@@ -3007,7 +2999,6 @@ pub async fn download_verified_piece_with_control(
         return Err(DownloadError::Cancelled);
     }
 
-    let staging = staging_path(&config.output_path).map_err(DownloadError::Storage)?;
     let output_path = config.output_path.clone();
     let result = run_download(config, control.clone(), None).await;
     let result = require_terminal_owner_cleanup(&control, result);
@@ -3018,7 +3009,6 @@ pub async fn download_verified_piece_with_control(
         Err(error) if preserves_existing_artifact(&error) => Err(error),
         Err(error) => {
             let cleanup = async {
-                remove_staging_if_present(&staging).await?;
                 remove_selective_staging_if_present(&output_path).await?;
                 remove_selective_part_if_present(&output_path).await
             }
@@ -3155,9 +3145,7 @@ fn validate_network_config(config: NetworkConfig) -> Result<(), DownloadError> {
 fn preserves_existing_artifact(error: &DownloadError) -> bool {
     matches!(
         error,
-        DownloadError::Storage(StorageError::ExistingOutput(_))
-            | DownloadError::Storage(StorageError::ExistingStaging(_))
-            | DownloadError::SelectiveStorage(SelectiveStorageError::ExistingOutput(_))
+        DownloadError::SelectiveStorage(SelectiveStorageError::ExistingOutput(_))
             | DownloadError::SelectiveStorage(SelectiveStorageError::ExistingStaging(_))
             | DownloadError::SelectiveStorage(SelectiveStorageError::ExistingPartFile(_))
             | DownloadError::SelectiveStorage(SelectiveStorageError::PartFile(
@@ -5587,119 +5575,13 @@ async fn run_content_download(
 ) -> Result<DownloadReport, DownloadError> {
     peers.control = control.clone();
     peers.publish_peer_registry(true);
-    let result = match metainfo.mode {
-        rstorrent_protocol::metainfo::MetainfoMode::SingleFile => {
-            if resume.is_some() {
-                Err(DownloadError::Metainfo(MetainfoError::Unsupported(
-                    "resumable execution currently requires multi-file metainfo",
-                )))
-            } else if descriptors.is_some() {
-                Err(DownloadError::Metainfo(MetainfoError::Unsupported(
-                    "descriptor diagnostic execution requires multi-file metainfo",
-                )))
-            } else if !config.skip_files.is_empty() || !config.materialize_files.is_empty() {
-                Err(DownloadError::Metainfo(MetainfoError::Unsupported(
-                    "selected single-file diagnostic execution",
-                )))
-            } else {
-                run_single_download(config, metainfo, control, peers).await
-            }
-        }
-        rstorrent_protocol::metainfo::MetainfoMode::MultiFile => {
-            run_selective_download(config, metainfo, control, descriptors, peers, resume).await
-        }
-    };
+    let result =
+        run_selective_download(config, metainfo, control, descriptors, peers, resume).await;
     peers.close_current(result.as_ref().err().and_then(content_peer_failure))?;
     result
 }
 
-async fn run_single_download(
-    config: ContentDownloadConfig,
-    metainfo: Metainfo,
-    control: DownloadControl,
-    peers: &mut TorrentPeerCoordinator,
-) -> Result<DownloadReport, DownloadError> {
-    let layout = TorrentLayout::from_metainfo(&metainfo);
-    let selection = FileSelection::new(&layout, &[]).map_err(DownloadError::Layout)?;
-    let piece_count = u32::try_from(layout.piece_count())
-        .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
-    let mut plans = Vec::with_capacity(layout.piece_count());
-    for piece in 0..piece_count {
-        plans.push((
-            piece,
-            layout
-                .request_ranges(piece, &selection)
-                .map_err(DownloadError::Layout)?,
-        ));
-    }
-    let storage = StagingFile::create(config.output_path.clone(), metainfo.total_length)
-        .await
-        .map_err(DownloadError::Storage)?;
-    let download = ContentSwarmDownload::new(
-        config.swarm_config,
-        config.max_buffered_payload_bytes,
-        plans,
-        ContentStorage::Single(storage),
-        ContentDownloadContext {
-            metainfo: &metainfo,
-            layout: &layout,
-            resume: None,
-            control: &control,
-        },
-    )
-    .await?;
-    let mut completed = download_content_swarm(peers, download).await?;
-    let piece = completed
-        .last_piece
-        .expect("completed single-file swarm has a verified piece");
-    let block_count = completed.total_blocks;
-    let bytes_written = completed.total_bytes;
-    let selected_written_bytes = completed.selected_written_bytes;
-    let outstanding_request_high_water = completed
-        .state
-        .snapshot(peers.elapsed())
-        .outstanding_request_high_water;
-    let payload_high_water = control.snapshot().payload_high_water;
-    let storage = completed.take_storage()?;
-    drop(completed);
-    let ContentStorage::Single(storage) = storage else {
-        return Err(DownloadError::StorageTask(
-            "single-file download returned selective storage".to_owned(),
-        ));
-    };
-    storage.finalize().await.map_err(DownloadError::Storage)?;
-    Ok(DownloadReport {
-        info_hash: metainfo.info_hash,
-        piece_hash: piece.hash,
-        bytes_written,
-        block_count,
-        payload_limit: config.max_buffered_payload_bytes,
-        payload_high_water,
-        outstanding_request_limit: config.swarm_config.max_outstanding_request_bytes,
-        outstanding_request_high_water,
-        active_piece_limit: config.swarm_config.max_active_piece_bytes,
-        verification_buffer: VERIFICATION_CHUNK_LENGTH,
-        piece_count: layout.piece_count(),
-        verified_piece_count: layout.piece_count(),
-        skipped_piece_count: 0,
-        selected_file_bytes: metainfo.total_length,
-        skipped_file_bytes: 0,
-        padding_bytes: 0,
-        selected_written_bytes,
-        part_written_bytes: 0,
-        materialized_bytes: 0,
-        part_slots_before_materialization: 0,
-        part_slots_after_materialization: 0,
-        part_reopened: false,
-        part_path: None,
-        prepared_files: Vec::new(),
-    })
-}
-
-enum ContentStorage {
-    Single(StagingFile),
-    Selective(Box<SelectiveStorage>),
-}
+struct ContentStorage(Box<SelectiveStorage>);
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct ContentWriteStats {
@@ -5717,7 +5599,6 @@ enum ContentStorageCommand {
     Verify {
         piece: u32,
         generation: PieceGeneration,
-        offset: u64,
         length: u32,
         expected: [u8; 20],
         durable: bool,
@@ -5767,21 +5648,15 @@ struct CoalescedContentWrite {
     members: Vec<ContentWriteMember>,
 }
 
-enum ContentWriteOperation {
-    Single(StagingWritePlan),
-    Selective(SelectiveWriteJob),
-}
+struct ContentWriteOperation(SelectiveWriteJob);
 
 impl ContentWriteOperation {
     async fn execute(self) -> Result<(), DownloadError> {
-        match self {
-            Self::Single(plan) => plan.execute().await.map_err(DownloadError::Storage),
-            Self::Selective(plan) => plan
-                .execute()
-                .await
-                .map(|_| ())
-                .map_err(DownloadError::SelectiveStorage),
-        }
+        self.0
+            .execute()
+            .await
+            .map(|_| ())
+            .map_err(DownloadError::SelectiveStorage)
     }
 }
 
@@ -5794,10 +5669,7 @@ struct ContentWriteJob {
     writes: Vec<PreparedPhysicalContentWrite>,
 }
 
-enum ContentHashOperation {
-    Single(StagingHashPlan),
-    Selective(SelectiveHashPlan),
-}
+struct ContentHashOperation(SelectiveHashPlan);
 
 struct ContentHashJob {
     piece: u32,
@@ -5816,7 +5688,6 @@ struct ContentHashJobResult {
     expected: [u8; 20],
     durable: bool,
     durability_targets: Vec<DurabilityTarget>,
-    selective: bool,
     result: Result<[u8; 20], DownloadError>,
 }
 
@@ -5983,12 +5854,8 @@ impl ContentStoragePipeline {
     ) -> Result<Self, DownloadError> {
         let checkpoint = match checkpoints {
             Some(checkpoints) => {
-                let ContentStorage::Selective(storage) = &mut storage else {
-                    return Err(DownloadError::StorageTask(
-                        "resumable checkpoint requires selective storage".to_owned(),
-                    ));
-                };
                 let handles = storage
+                    .0
                     .checkpoint_handles()
                     .await
                     .map_err(DownloadError::SelectiveStorage)?;
@@ -6773,19 +6640,14 @@ async fn prepare_content_storage_writes(
         else {
             unreachable!("write batches contain only write commands");
         };
-        let stats = match storage {
-            ContentStorage::Single(_) => Ok(ContentWriteStats {
-                selected_bytes: bytes.len(),
-                part_bytes: 0,
-            }),
-            ContentStorage::Selective(storage) => storage
-                .write_stats(block.piece, block.begin, bytes.len())
-                .map(|stats| ContentWriteStats {
-                    selected_bytes: stats.wanted_bytes,
-                    part_bytes: stats.skipped_bytes,
-                })
-                .map_err(DownloadError::SelectiveStorage),
-        };
+        let stats = storage
+            .0
+            .write_stats(block.piece, block.begin, bytes.len())
+            .map(|stats| ContentWriteStats {
+                selected_bytes: stats.wanted_bytes,
+                part_bytes: stats.skipped_bytes,
+            })
+            .map_err(DownloadError::SelectiveStorage);
         let stats = match stats {
             Ok(stats) => stats,
             Err(error) => {
@@ -6819,17 +6681,12 @@ async fn prepare_content_storage_writes(
     let mut physical = Vec::with_capacity(writes.len());
     let mut writes = writes.into_iter();
     while let Some(write) = writes.next() {
-        let operation = match storage {
-            ContentStorage::Single(storage) => storage
-                .plan_write(write.offset, write.bytes)
-                .map(ContentWriteOperation::Single)
-                .map_err(DownloadError::Storage),
-            ContentStorage::Selective(storage) => storage
-                .prepare_write(write.piece, write.begin, write.bytes)
-                .await
-                .map(ContentWriteOperation::Selective)
-                .map_err(DownloadError::SelectiveStorage),
-        };
+        let operation = storage
+            .0
+            .prepare_write(write.piece, write.begin, write.bytes)
+            .await
+            .map(ContentWriteOperation)
+            .map_err(DownloadError::SelectiveStorage);
         match operation {
             Ok(operation) => physical.push(PreparedPhysicalContentWrite {
                 operation,
@@ -7003,7 +6860,6 @@ fn prepare_content_storage_hash(
     let ContentStorageCommand::Verify {
         piece,
         generation,
-        offset,
         length,
         expected,
         durable,
@@ -7011,32 +6867,21 @@ fn prepare_content_storage_hash(
     else {
         unreachable!("write commands execute through the bounded batch path");
     };
-    let prepared = match storage {
-        ContentStorage::Single(storage) => storage
-            .plan_hash(offset, length)
-            .map(|operation| (ContentHashOperation::Single(operation), Vec::new()))
-            .map_err(DownloadError::Storage),
-        ContentStorage::Selective(storage) => {
-            let durability_targets = if durable {
-                storage
-                    .durability_targets(piece)
-                    .map_err(DownloadError::SelectiveStorage)
-            } else {
-                Ok(Vec::new())
-            };
-            durability_targets.and_then(|durability_targets| {
-                storage
-                    .prepare_hash(piece)
-                    .map(|operation| {
-                        (
-                            ContentHashOperation::Selective(operation),
-                            durability_targets,
-                        )
-                    })
-                    .map_err(DownloadError::SelectiveStorage)
-            })
-        }
+    let durability_targets = if durable {
+        storage
+            .0
+            .durability_targets(piece)
+            .map_err(DownloadError::SelectiveStorage)
+    } else {
+        Ok(Vec::new())
     };
+    let prepared = durability_targets.and_then(|durability_targets| {
+        storage
+            .0
+            .prepare_hash(piece)
+            .map(|operation| (ContentHashOperation(operation), durability_targets))
+            .map_err(DownloadError::SelectiveStorage)
+    });
     match prepared {
         Ok((operation, durability_targets)) => Ok(ContentHashJob {
             piece,
@@ -7057,14 +6902,12 @@ fn prepare_content_storage_hash(
 }
 
 async fn execute_content_hash_job(job: ContentHashJob) -> ContentHashJobResult {
-    let selective = matches!(job.operation, ContentHashOperation::Selective(_));
-    let result = match job.operation {
-        ContentHashOperation::Single(plan) => plan.execute().await.map_err(DownloadError::Storage),
-        ContentHashOperation::Selective(plan) => plan
-            .execute()
-            .await
-            .map_err(DownloadError::SelectiveStorage),
-    };
+    let result = job
+        .operation
+        .0
+        .execute()
+        .await
+        .map_err(DownloadError::SelectiveStorage);
     ContentHashJobResult {
         piece: job.piece,
         generation: job.generation,
@@ -7072,7 +6915,6 @@ async fn execute_content_hash_job(job: ContentHashJob) -> ContentHashJobResult {
         expected: job.expected,
         durable: job.durable,
         durability_targets: job.durability_targets,
-        selective,
         result,
     }
 }
@@ -7083,15 +6925,11 @@ fn finish_content_hash_job(
     control: &DownloadControl,
 ) -> ContentStorageCompletion {
     let verification = result.result.and_then(|actual| {
-        if actual == result.expected && result.selective {
+        if actual == result.expected {
             let piece_index = usize::try_from(result.piece)
                 .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
-            let ContentStorage::Selective(storage) = storage else {
-                return Err(DownloadError::StorageTask(
-                    "selective hash completed against single-file storage".to_owned(),
-                ));
-            };
             storage
+                .0
                 .record_verified(piece_index)
                 .map_err(DownloadError::SelectiveStorage)?;
         }
@@ -7403,7 +7241,6 @@ impl<'a> ContentSwarmDownload<'a> {
                         .layout
                         .piece_length_at(block.piece)
                         .map_err(DownloadError::Layout)?;
-                    let offset = single_file_offset(self.layout, block.piece, 0)?;
                     let expected = self.metainfo.piece_hashes[piece_index];
                     let durable = self.resume.is_some();
                     self.state
@@ -7413,7 +7250,6 @@ impl<'a> ContentSwarmDownload<'a> {
                         .enqueue(ContentStorageCommand::Verify {
                             piece: block.piece,
                             generation,
-                            offset,
                             length,
                             expected,
                             durable,
@@ -8353,9 +8189,10 @@ async fn run_selective_download(
                 None,
             ),
             (None, Some(resume)) => {
-                let paths = torrent_storage_paths_for_output(
+                let paths = torrent_storage_paths_for_output_with_shape(
                     config.output_path.clone(),
                     metainfo.info_hash,
+                    PublicationShape::from_metainfo(&metainfo),
                 )
                 .map_err(DownloadError::SelectiveStorage)?;
                 let (storage, resumed) = match control.storage_file_pool() {
@@ -8533,7 +8370,7 @@ async fn run_selective_download(
             config.swarm_config,
             config.max_buffered_payload_bytes,
             plans,
-            ContentStorage::Selective(Box::new(storage)),
+            ContentStorage(Box::new(storage)),
             ContentDownloadContext {
                 metainfo: &metainfo,
                 layout: &layout,
@@ -8555,14 +8392,7 @@ async fn run_selective_download(
         );
         let returned_storage = completed.take_storage()?;
         drop(completed);
-        storage = match returned_storage {
-            ContentStorage::Selective(storage) => *storage,
-            ContentStorage::Single(_) => {
-                return Err(DownloadError::StorageTask(
-                    "selective download returned single-file storage".to_owned(),
-                ));
-            }
-        };
+        storage = *returned_storage.0;
         result
     };
 
@@ -8757,6 +8587,7 @@ mod tests {
         encode_message,
     };
     use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
+    use rstorrent_protocol::storage_layout::{FileSelection, LayoutError, TorrentLayout};
     use rstorrent_protocol::udp_tracker::AnnounceEvent;
     use sha1::{Digest, Sha1};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -8793,10 +8624,9 @@ mod tests {
     };
     use crate::peer_runtime::PeerConnectionLifecycle;
     use crate::selective_storage::{
-        CheckpointFileReference, CheckpointHandles, SelectiveStorageError, selective_part_path,
-        selective_staging_path,
+        CheckpointFileReference, CheckpointHandles, SelectiveStorage, SelectiveStorageError,
+        selective_part_path, selective_staging_path, selective_staging_path as staging_path,
     };
-    use crate::storage::{StagingFile, StorageError, staging_path};
     use crate::storage_file_pool::StorageFileLease;
     use crate::swarm::{
         BlockKey, DEFAULT_INITIAL_REQUESTS_PER_CONNECTION, DEFAULT_MAX_ESTABLISHED_CONNECTIONS,
@@ -8986,11 +8816,7 @@ mod tests {
 
         let output = test_path("checkpoint-overlap-storage.bin");
         let staged = staging_path(&output).expect("staging path");
-        let mut storage = ContentStorage::Single(
-            StagingFile::create(output, 16)
-                .await
-                .expect("create overlap staging file"),
-        );
+        let mut storage = single_file_content_storage(output, 16, 16).await;
         let writes =
             execute_content_storage_writes(&mut storage, vec![queued_write(0, 0, 16)], &control)
                 .await;
@@ -9005,7 +8831,6 @@ mod tests {
             ContentStorageCommand::Verify {
                 piece: 0,
                 generation: PieceGeneration::new(1).expect("generation"),
-                offset: 0,
                 length: 16,
                 expected,
                 durable: false,
@@ -9297,11 +9122,7 @@ mod tests {
     async fn failed_coalesced_write_mutates_no_valid_prefix() {
         let output = test_path("coalesced-write-failure.bin");
         let staged = staging_path(&output).expect("staging path");
-        let mut storage = ContentStorage::Single(
-            StagingFile::create(output.clone(), 4)
-                .await
-                .expect("create staging file"),
-        );
+        let mut storage = single_file_content_storage(output.clone(), 4, 4).await;
         let commands = vec![queued_write(0, 0, 4), queued_write(0, 4, 4)];
 
         let completions =
@@ -9311,14 +9132,13 @@ mod tests {
         assert!(matches!(
             &completions[0],
             ContentStorageCompletion::Write {
-                result: Err(DownloadError::Storage(StorageError::BlockOutOfRange { .. })),
+                result: Err(DownloadError::SelectiveStorage(
+                    SelectiveStorageError::Layout(LayoutError::IntervalOutOfRange { .. })
+                )),
                 ..
             }
         ));
-        assert_eq!(
-            tokio::fs::read(&staged).await.expect("read staged file"),
-            vec![0; 4]
-        );
+        assert!(!staged.exists(), "invalid batch must create no artifact");
         drop(storage);
         let _ = tokio::fs::remove_file(staged).await;
     }
@@ -9336,6 +9156,25 @@ mod tests {
         std::env::temp_dir().join(format!(
             "rstorrent-driver-test-{}-{sequence}-{name}",
             std::process::id()
+        ))
+    }
+
+    async fn single_file_content_storage(
+        output: PathBuf,
+        length: usize,
+        piece_length: usize,
+    ) -> ContentStorage {
+        let metainfo = Metainfo::from_info_bytes(&single_file_info_with_piece_length(
+            &vec![0; length],
+            piece_length,
+        ))
+        .expect("single-file storage metainfo");
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[]).expect("all files wanted");
+        ContentStorage(Box::new(
+            SelectiveStorage::create(output, &metainfo, layout, selection)
+                .await
+                .expect("create unified torrent storage"),
         ))
     }
 
@@ -11043,11 +10882,8 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let staging = staging_path(&output).expect("staging path");
         let control = DownloadControl::new();
         control.set_storage_write_delay(Duration::from_millis(300));
-        let storage = ContentStorage::Single(
-            StagingFile::create(output.clone(), (5 * block_length) as u64)
-                .await
-                .expect("create write-limit storage"),
-        );
+        let storage =
+            single_file_content_storage(output.clone(), 5 * block_length, block_length).await;
         let mut pipeline = ContentStoragePipeline::start(storage, &control, 5 * block_length, None)
             .await
             .expect("start write-limit pipeline");
@@ -11103,18 +10939,17 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
 
         let output = test_path("storage-hash-limits.bin");
         let staging = staging_path(&output).expect("hash staging path");
-        let storage = StagingFile::create(
+        let mut storage = single_file_content_storage(
             output.clone(),
-            ((CONTENT_STORAGE_HASH_CONCURRENCY + 1) * block_length) as u64,
+            (CONTENT_STORAGE_HASH_CONCURRENCY + 1) * block_length,
+            block_length,
         )
-        .await
-        .expect("create hash-limit storage");
+        .await;
         for piece in 0..=CONTENT_STORAGE_HASH_CONCURRENCY {
             storage
-                .plan_write(
-                    (piece * block_length) as u64,
-                    vec![piece as u8; block_length],
-                )
+                .0
+                .prepare_write(piece as u32, 0, vec![piece as u8; block_length])
+                .await
                 .expect("plan hash fixture write")
                 .execute()
                 .await
@@ -11123,7 +10958,7 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let control = DownloadControl::new();
         control.set_storage_hash_delay(Duration::from_millis(300));
         let mut pipeline = ContentStoragePipeline::start(
-            ContentStorage::Single(storage),
+            storage,
             &control,
             (CONTENT_STORAGE_HASH_CONCURRENCY + 1) * block_length,
             None,
@@ -11136,7 +10971,6 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
                 .enqueue(ContentStorageCommand::Verify {
                     piece: piece as u32,
                     generation: PieceGeneration::new(1).expect("generation"),
-                    offset: (piece * block_length) as u64,
                     length: block_length as u32,
                     expected,
                     durable: false,
@@ -11159,7 +10993,6 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
             .enqueue(ContentStorageCommand::Verify {
                 piece: piece as u32,
                 generation: PieceGeneration::new(1).expect("generation"),
-                offset: (piece * block_length) as u64,
                 length: block_length as u32,
                 expected,
                 durable: false,
@@ -11187,11 +11020,12 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let block_length = MIN_PAYLOAD_ALLOWANCE;
         let output = test_path("storage-cross-class.bin");
         let staging = staging_path(&output).expect("cross-class staging path");
-        let storage = StagingFile::create(output.clone(), (2 * block_length) as u64)
-            .await
-            .expect("create cross-class storage");
+        let mut storage =
+            single_file_content_storage(output.clone(), 2 * block_length, block_length).await;
         storage
-            .plan_write(0, vec![0x51; block_length])
+            .0
+            .prepare_write(0, 0, vec![0x51; block_length])
+            .await
             .expect("plan first fixture write")
             .execute()
             .await
@@ -11199,20 +11033,14 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         let control = DownloadControl::new();
         control.set_storage_hash_delay(Duration::from_millis(250));
         control.set_storage_write_delay(Duration::from_millis(250));
-        let mut pipeline = ContentStoragePipeline::start(
-            ContentStorage::Single(storage),
-            &control,
-            2 * block_length,
-            None,
-        )
-        .await
-        .expect("start cross-class pipeline");
+        let mut pipeline = ContentStoragePipeline::start(storage, &control, 2 * block_length, None)
+            .await
+            .expect("start cross-class pipeline");
         let expected: [u8; 20] = Sha1::digest(vec![0x51; block_length]).into();
         pipeline
             .enqueue(ContentStorageCommand::Verify {
                 piece: 0,
                 generation: PieceGeneration::new(1).expect("generation"),
-                offset: 0,
                 length: block_length as u32,
                 expected,
                 durable: false,
@@ -11258,36 +11086,28 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
 
         let output = test_path("storage-full-completion.bin");
         let staging = staging_path(&output).expect("completion staging path");
-        let storage = StagingFile::create(output.clone(), (2 * block_length) as u64)
-            .await
-            .expect("create completion storage");
+        let mut storage =
+            single_file_content_storage(output.clone(), 2 * block_length, block_length).await;
         for piece in 0..2 {
             storage
-                .plan_write(
-                    (piece * block_length) as u64,
-                    vec![piece as u8; block_length],
-                )
+                .0
+                .prepare_write(piece as u32, 0, vec![piece as u8; block_length])
+                .await
                 .expect("plan completion fixture")
                 .execute()
                 .await
                 .expect("write completion fixture");
         }
         let control = DownloadControl::new();
-        let mut pipeline = ContentStoragePipeline::start(
-            ContentStorage::Single(storage),
-            &control,
-            block_length,
-            None,
-        )
-        .await
-        .expect("start one-slot completion pipeline");
+        let mut pipeline = ContentStoragePipeline::start(storage, &control, block_length, None)
+            .await
+            .expect("start one-slot completion pipeline");
         for piece in 0..2 {
             let expected: [u8; 20] = Sha1::digest(vec![piece as u8; block_length]).into();
             pipeline
                 .enqueue(ContentStorageCommand::Verify {
                     piece: piece as u32,
                     generation: PieceGeneration::new(1).expect("generation"),
-                    offset: (piece * block_length) as u64,
                     length: block_length as u32,
                     expected,
                     durable: false,
@@ -12091,12 +11911,9 @@ d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
         assert!(!output.exists());
         let staging = staging_path(&output).expect("staging path");
         assert!(
-            staging.exists(),
-            "direct content cancellation stays resumable"
+            !staging.exists(),
+            "cancellation before the first write leaves no empty artifact"
         );
-        tokio::fs::remove_file(staging)
-            .await
-            .expect("remove canceled staging file");
     }
 
     #[tokio::test]

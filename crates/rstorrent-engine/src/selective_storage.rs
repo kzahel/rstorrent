@@ -20,12 +20,13 @@ use crate::part_file::{
     PartFile, PartFileCheckpointReference, PartFileError, PartFileIdentity, PartFileSpan,
 };
 use crate::positional_io::{read_exact_at, write_all_at};
-use crate::storage::VERIFICATION_CHUNK_LENGTH;
 use crate::storage_file_pool::{
     DEFAULT_STORAGE_FILE_LIMIT, PlatformStorageFailureKind, PlatformStorageTarget,
     StorageFileAccess, StorageFileKey, StorageFileLease, StorageFileLocator, StorageFilePool,
     StorageFilePoolError, StorageFileReference, StorageFileRole,
 };
+
+pub const VERIFICATION_CHUNK_LENGTH: usize = 16 * 1024;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SelectiveWriteStats {
@@ -2994,13 +2995,6 @@ fn is_internal_artifact_name(name: &str) -> bool {
                 hash.len() == 40 && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
             })
         })
-}
-
-pub(crate) fn torrent_storage_paths_for_output(
-    output: PathBuf,
-    info_hash: [u8; 20],
-) -> Result<TorrentStoragePaths, SelectiveStorageError> {
-    torrent_storage_paths_for_output_with_shape(output, info_hash, PublicationShape::Tree)
 }
 
 pub(crate) fn torrent_storage_paths_for_output_with_shape(
