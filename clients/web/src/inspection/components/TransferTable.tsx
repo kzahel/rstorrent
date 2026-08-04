@@ -12,6 +12,7 @@ import {
   VirtualTable,
   type VirtualColumn,
 } from "./VirtualTable";
+import { TorrentStatus } from "./TorrentStatus";
 import tableStyles from "./TorrentTable.module.css";
 
 const COLUMNS: readonly VirtualColumn<TorrentRow>[] = [
@@ -39,11 +40,7 @@ const COLUMNS: readonly VirtualColumn<TorrentRow>[] = [
     width: 132,
     sortable: true,
     sortValue: (row) => row.status,
-    render: (row) => (
-      <span className={tableStyles.status} data-status={row.status}>
-        {statusLabel(row)}
-      </span>
-    ),
+    render: (row) => <TorrentStatus row={row} label={statusLabel(row)} />,
   },
   {
     id: "progress",

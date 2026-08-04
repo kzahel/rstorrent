@@ -216,6 +216,12 @@ inspection tables do not gain batch behavior without row actions. The current
 implementation still follows Tacticals `058`--`059` until a bounded tactical
 applies this successor direction.
 
+Tactical `070` makes an error-bearing torrent status a nested explanatory
+control without disturbing those row gestures. Hover exposes its bounded
+error, keyboard and assistive technology receive the same context, and
+activation establishes a singleton current row before opening and focusing
+the General error detail.
+
 Torrent-detail tab selection is a paint-only state change. Labels retain the
 same font metrics, the underline is out of layout flow, and bounded count
 badges keep fixed inline geometry. Peers and configured-tracker counts come

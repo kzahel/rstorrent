@@ -112,6 +112,53 @@ describe("inspection application", () => {
     ).toBeVisible();
   });
 
+  it("explains and opens torrent errors from status", async () => {
+    const user = userEvent.setup();
+    renderScenario("disk-error", 8_000);
+
+    const transfers = screen.getByRole("grid", { name: "Transfer queue" });
+    const status = within(transfers).getByRole("button", {
+      name: "Error: Write failed: destination has no free space. Open General details",
+    });
+    expect(status).toHaveAttribute(
+      "title",
+      "Write failed: destination has no free space\nOpen General details.",
+    );
+    expect(
+      within(transfers).getByRole("checkbox", {
+        name: "Deselect Big Buck Bunny — storage failure",
+      }),
+    ).toBeChecked();
+    expect(
+      within(transfers).queryByRole("button", { name: "Complete" }),
+    ).not.toBeInTheDocument();
+
+    status.focus();
+    await user.keyboard("{Enter}");
+
+    expect(
+      screen.getByRole("button", { name: "Workbench" }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("tab", { name: "General" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    const detail = screen.getByRole("region", { name: "Torrent details" });
+    const error = within(detail).getByRole("alert");
+    expect(error).toHaveTextContent(
+      "Storage needs attentionWrite failed: destination has no free space",
+    );
+    expect(error).toHaveFocus();
+    expect(
+      within(screen.getByRole("grid", { name: "Torrent library" })).getByRole(
+        "button",
+        {
+          name: "error: Write failed: destination has no free space. Open General details",
+        },
+      ),
+    ).toBeVisible();
+  });
+
   it("renders the bounded swarm registry independently of active connections", async () => {
     const user = userEvent.setup();
     renderScenario("swarm-lifecycle", 24_000);

@@ -74,3 +74,37 @@
 .status[data-status="complete"] {
   color: var(--success-strong);
 }
+
+.statusButton {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.32rem;
+  border: 0;
+  border-radius: 0.28rem;
+  padding: 0.12rem 0.24rem;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.statusButton > :first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.statusButton > :last-child {
+  flex: 0 0 auto;
+  font-size: var(--ui-font-caption);
+}
+
+.statusButton:hover {
+  background: var(--danger-soft);
+  text-decoration: underline;
+  text-underline-offset: 0.16rem;
+}
+
+.statusButton:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}

@@ -168,6 +168,29 @@ function GeneralDetail({
 }: {
   readonly torrent: NonNullable<ReturnType<typeof useCurrentTorrent>>;
 }) {
+  const detailTarget = useInspectionStore(
+    (state) => state.presentation.detailTarget,
+  );
+  const clearDetailTarget = useInspectionStore(
+    (state) => state.clearDetailTarget,
+  );
+  const errorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (
+      detailTarget?.type !== "torrent_error" ||
+      detailTarget.torrentId !== torrent.id
+    ) {
+      return;
+    }
+    const error = errorRef.current;
+    if (error !== null) {
+      error.scrollIntoView?.({ block: "nearest" });
+      error.focus({ preventScroll: true });
+    }
+    clearDetailTarget();
+  }, [clearDetailTarget, detailTarget, torrent.id]);
+
   return (
     <div className={styles.general}>
       <section className={styles.summaryCard}>
@@ -201,7 +224,12 @@ function GeneralDetail({
         <code>{torrent.infoHash}</code>
       </div>
       {torrent.error === null ? null : (
-        <div className={styles.error} role="alert">
+        <div
+          ref={errorRef}
+          className={styles.error}
+          role="alert"
+          tabIndex={-1}
+        >
           <strong>Storage needs attention</strong>
           <span>{torrent.error}</span>
         </div>

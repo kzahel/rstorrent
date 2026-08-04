@@ -332,6 +332,9 @@ that scope and its cleanup or compatibility rules explicitly.
   proposed; replaces Android's eager SAF descriptor manifest with bounded
   dynamic acquisition and one session-wide Rust file pool shared with path
   storage.
+- [`070-actionable-torrent-error-status.md`](070-actionable-torrent-error-status.md):
+  complete; makes torrent error status explanatory on hover and focus, then
+  routes activation to the focused General error detail.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

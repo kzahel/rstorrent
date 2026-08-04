@@ -9,6 +9,7 @@ import {
 } from "../format";
 import type { TorrentRow, ViewMaterialization } from "../model";
 import { torrentMatchesCategory } from "../state";
+import { TorrentStatus } from "./TorrentStatus";
 import { VirtualTable, type VirtualColumn } from "./VirtualTable";
 import styles from "./TorrentTable.module.css";
 
@@ -59,11 +60,7 @@ const COLUMNS: readonly VirtualColumn<TorrentRow>[] = [
     minimumViewport: 440,
     sortable: true,
     sortValue: (row) => row.status,
-    render: (row) => (
-      <span className={styles.status} data-status={row.status}>
-        {row.status}
-      </span>
-    ),
+    render: (row) => <TorrentStatus row={row} />,
   },
   {
     id: "down",

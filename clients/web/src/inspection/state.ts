@@ -48,6 +48,10 @@ export interface PresentationState {
   readonly activeTab: DetailTab;
   readonly detailPanePercent: number;
   readonly detailOpen: boolean;
+  readonly detailTarget: {
+    readonly type: "torrent_error";
+    readonly torrentId: string;
+  } | null;
   readonly sidebarOpen: boolean;
   readonly layout: "wide" | "compact" | "phone";
   readonly interfaceSize: InterfaceSize;
@@ -81,6 +85,8 @@ export interface InspectionActions {
   readonly selectOnlyTorrent: (torrentId: string) => void;
   readonly openTorrentDetail: (torrentId: string) => void;
   readonly openTorrentInWorkbench: (torrentId: string) => void;
+  readonly openTorrentErrorDetail: (torrentId: string) => void;
+  readonly clearDetailTarget: () => void;
   readonly clearTorrentSelection: () => void;
   readonly setCurrentPeer: (connectionId: string | null) => void;
   readonly selectTab: (tab: DetailTab) => void;
@@ -167,6 +173,7 @@ const DEFAULT_PRESENTATION: PresentationState = {
   activeTab: "peers",
   detailPanePercent: DEFAULT_DETAIL_PANE_PERCENT,
   detailOpen: false,
+  detailTarget: null,
   sidebarOpen: false,
   layout: "wide",
   interfaceSize: DEFAULT_INTERFACE_SIZE,
@@ -229,6 +236,7 @@ export function createInspectionStore(
           ...state.presentation,
           destination,
           sidebarOpen: false,
+          detailTarget: null,
         };
         persistNavigation(navigationPreferencesFor(presentation));
         return { presentation };
@@ -280,6 +288,7 @@ export function createInspectionStore(
               selection.currentTorrentId === null
                 ? false
                 : state.presentation.detailOpen,
+            detailTarget: null,
           },
         };
       });
@@ -295,6 +304,7 @@ export function createInspectionStore(
                 torrentSelectionInitialized: true,
                 selectedTorrentIds: [torrentId],
                 currentPeerId: null,
+                detailTarget: null,
               },
             },
       );
@@ -314,6 +324,7 @@ export function createInspectionStore(
               : [torrentId],
             currentPeerId: null,
             detailOpen: true,
+            detailTarget: null,
           },
         };
       });
@@ -329,11 +340,44 @@ export function createInspectionStore(
           selectedTorrentIds: [torrentId],
           currentPeerId: null,
           detailOpen: true,
+          detailTarget: null,
           sidebarOpen: false,
         };
         persistNavigation(navigationPreferencesFor(presentation));
         return { presentation };
       });
+    },
+    openTorrentErrorDetail: (torrentId) => {
+      set((state) => {
+        const torrent = state.torrents[torrentId];
+        if (torrent === undefined || torrent.error === null) return state;
+        const presentation = {
+          ...state.presentation,
+          destination: "workbench" as const,
+          currentTorrentId: torrentId,
+          torrentSelectionInitialized: true,
+          selectedTorrentIds: [torrentId],
+          currentPeerId: null,
+          activeTab: "general" as const,
+          detailOpen: true,
+          detailTarget: { type: "torrent_error" as const, torrentId },
+          sidebarOpen: false,
+        };
+        persistNavigation(navigationPreferencesFor(presentation));
+        return { presentation };
+      });
+    },
+    clearDetailTarget: () => {
+      set((state) =>
+        state.presentation.detailTarget === null
+          ? state
+          : {
+              presentation: {
+                ...state.presentation,
+                detailTarget: null,
+              },
+            },
+      );
     },
     clearTorrentSelection: () => {
       set((state) => ({
@@ -344,6 +388,7 @@ export function createInspectionStore(
           selectedTorrentIds: [],
           currentPeerId: null,
           detailOpen: false,
+          detailTarget: null,
         },
       }));
     },
@@ -354,7 +399,7 @@ export function createInspectionStore(
     },
     selectTab: (activeTab) => {
       set((state) => ({
-        presentation: { ...state.presentation, activeTab },
+        presentation: { ...state.presentation, activeTab, detailTarget: null },
       }));
     },
     setSpeedRange: (speedRange) => {
@@ -391,7 +436,11 @@ export function createInspectionStore(
     },
     closeDetail: () => {
       set((state) => ({
-        presentation: { ...state.presentation, detailOpen: false },
+        presentation: {
+          ...state.presentation,
+          detailOpen: false,
+          detailTarget: null,
+        },
       }));
     },
     toggleSidebar: () => {
@@ -517,6 +566,10 @@ export function reduceInspectionUpdate(
           torrentPresentation.currentTorrentId === previousCurrent
             ? state.presentation.detailOpen
             : false,
+        detailTarget:
+          torrentPresentation.currentTorrentId === previousCurrent
+            ? state.presentation.detailTarget
+            : null,
       },
     };
   }
@@ -693,6 +746,10 @@ export function reduceInspectionUpdate(
         torrentPresentation.currentTorrentId === currentId
           ? state.presentation.detailOpen
           : false,
+      detailTarget:
+        torrentPresentation.currentTorrentId === currentId
+          ? state.presentation.detailTarget
+          : null,
     },
   };
 }

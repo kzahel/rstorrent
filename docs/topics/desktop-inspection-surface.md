@@ -31,6 +31,12 @@ Tactical `050` extends the shared React Settings surface with browser-local
 Auto, Light, and Dark themes, preserving Interface size and applying persisted
 appearance before React content.
 
+Tactical `070` makes torrent failures discoverable from both clean Transfers
+and dense Workbench tables. An error-bearing status exposes its bounded reason
+on hover and through its accessible name, then routes activation to the
+selected torrent's focused General error card. Ordinary statuses remain plain
+text, and the UI does not parse error prose into state or actions.
+
 Tactical `055` implements the accepted application-interface direction and
 preserves this entire dense surface as the first-class Workbench destination
 alongside a truthful torrent-backed Library and clean Transfers queue.

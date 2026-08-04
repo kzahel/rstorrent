@@ -217,6 +217,11 @@
   font-size: var(--ui-font-small);
 }
 
+.error:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
 .empty {
   display: grid;
   height: 100%;

@@ -134,6 +134,32 @@ describe("inspection store", () => {
     });
   });
 
+  it("opens an errored torrent directly at its General error detail", () => {
+    const store = createInspectionStore();
+    const failed = {
+      ...row("failed", "error"),
+      error: "Write failed: destination has no free space",
+    };
+    store.getState().applyUpdate({
+      type: "snapshot",
+      snapshot: snapshot([row("other", "paused"), failed]),
+    });
+    store.getState().setTorrentSelection(["other", "failed"], "other");
+
+    store.getState().openTorrentErrorDetail("failed");
+
+    expect(store.getState().presentation).toMatchObject({
+      destination: "workbench",
+      currentTorrentId: "failed",
+      selectedTorrentIds: ["failed"],
+      activeTab: "general",
+      detailOpen: true,
+      detailTarget: { type: "torrent_error", torrentId: "failed" },
+    });
+    store.getState().clearDetailTarget();
+    expect(store.getState().presentation.detailTarget).toBeNull();
+  });
+
   it("bounds retained diagnostic rows and reports drops", () => {
     const store = createInspectionStore();
     store.getState().applyUpdate({ type: "snapshot", snapshot: snapshot([]) });

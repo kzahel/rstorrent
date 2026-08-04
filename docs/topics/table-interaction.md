@@ -154,6 +154,11 @@ then its own endpoint rather than using a stale index.
   actions”; hidden selected targets disclose their outside-view count.
 - Focus remains roving and virtualized while offscreen logical selection does
   not expand the DOM.
+- A genuine nested row control may preserve its own keyboard focus and suppress
+  row-body gestures. Tactical `070` uses this exception for an error-bearing
+  torrent status: it first establishes that torrent as the singleton current
+  selection, then opens the focused General error detail. A status without an
+  attached error remains plain text.
 
 Done may remain visible while multiple or hidden rows are selected for touch
 discoverability. It collapses to current rather than ending a mode.
@@ -191,3 +196,9 @@ that independence while retaining the useful keyboard, accessibility, hidden
 target disclosure, and scale work. The accepted simplification is that a user
 cannot browse an unrelated row while preserving a multi-selection: ordinary
 navigation intentionally collapses to that one row.
+
+Tactical [`070`](../tactical/070-actionable-torrent-error-status.md) applies
+the nested-control rule to the concrete support failure that motivated it.
+Pointer and keyboard activation cannot bubble into range or row selection, and
+the destination, singleton selection, General tab, open detail, and one-shot
+focus target change atomically.
