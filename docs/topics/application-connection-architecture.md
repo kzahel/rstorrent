@@ -39,6 +39,9 @@ view-set resources, snapshots, patches, epochs, cursors, resets and leases.
 [`client-view-delivery-policy.md`](client-view-delivery-policy.md) owns which
 views the client requests and how frequently semantic changes may be emitted.
 [`client-surfaces.md`](client-surfaces.md) owns platform hosting and lifecycle.
+[`remote-access-authentication.md`](remote-access-authentication.md) owns the
+future owner password, host identity, device identity, resume and
+hardware-key threat model around a relay circuit.
 
 This topic records a future remote-compatibility requirement. It does not by
 itself authorize a production listener, relay service, pairing flow, account
@@ -413,8 +416,11 @@ typed application frame
 Exact authentication, pairing, device identity, cryptography, key rotation,
 record sequence, padding, compression-oracle policy and relay discovery are
 deliberately not selected here. A security tactical must choose and review
-them before remote implementation. The application connection must not need
-to know whether an encrypted record traveled directly or through a relay.
+them before remote implementation. The investigation background and evidence
+gates now live in
+[`remote-access-authentication.md`](remote-access-authentication.md). The
+application connection must not need to know whether an encrypted record
+traveled directly or through a relay.
 
 ## Ownership, Tasks And Cancellation
 

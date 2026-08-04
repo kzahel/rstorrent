@@ -81,6 +81,10 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`application-connection-architecture.md`](application-connection-architecture.md):
   one typed application API over HTTP, multiplexed WebSocket and Tauri IPC,
   resumable view attachments, and future opaque encrypted relay layering.
+- [`remote-access-authentication.md`](remote-access-authentication.md):
+  owner username/passphrase E2E access, SRP and OPAQUE background, host and
+  device identity, hardware-backed degradation, clone and active-proxy threat
+  scenarios, and pre-implementation security research gates.
 - [`client-view-delivery-policy.md`](client-view-delivery-policy.md):
   client-selected real-time, balanced, low-bandwidth and background view
   cadence, lifecycle policy, observer cost, and required evidence.
