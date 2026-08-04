@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! Bounded loopback HTTP and WebSocket adapter for the application contract.
+//! Bounded HTTP and WebSocket adapter for the application contract.
 
 mod application_websocket;
 
@@ -17,12 +17,16 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use axum::extract::Request;
 use axum::extract::rejection::{JsonRejection, QueryRejection};
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri, header};
+use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use rstorrent_platform::{DownloadDirectoryPicker, NativeDownloadDirectoryPicker, PickerError};
 use rstorrent_session::{
     ApplicationService, OpenViewSetRequest, RequestEnvelope, StorageRootSnapshot,
@@ -34,6 +38,7 @@ use tokio::net::TcpListener;
 use tokio::sync::{Mutex, Semaphore};
 use tokio_util::sync::CancellationToken;
 use tower_http::cors::CorsLayer;
+use tower_http::services::ServeDir;
 use ts_rs::TS;
 
 pub const MAX_INCOMING_MESSAGE_BYTES: usize = 64 * 1024;
@@ -41,6 +46,10 @@ pub const MAX_HTTP_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_CONNECTIONS: usize = 8;
 pub const MAX_TOKEN_BYTES: usize = 128;
 pub const MAX_ORIGIN_BYTES: usize = 512;
+pub const MAX_BASIC_USERNAME_BYTES: usize = 64;
+pub const MAX_BASIC_PASSWORD_BYTES: usize = 128;
+pub const MAX_BASIC_AUTHORIZATION_BYTES: usize = 512;
+pub const MAX_BUILD_ID_BYTES: usize = 128;
 pub const HTTP_OWNER_HEX_BYTES: usize = 32;
 
 static NEXT_HTTP_OWNER: AtomicU64 = AtomicU64::new(1);
@@ -56,13 +65,46 @@ pub struct GatewayConfig {
 #[derive(Clone)]
 pub enum GatewayAuthentication {
     Bearer { token: String },
+    Basic(BasicCredentials),
     UnauthenticatedLoopbackDevelopment,
+}
+
+#[derive(Clone)]
+pub struct BasicCredentials {
+    authorization: String,
+}
+
+impl GatewayAuthentication {
+    pub fn basic(username: &str, password: &str) -> Result<Self, GatewayError> {
+        if username.is_empty()
+            || username.len() > MAX_BASIC_USERNAME_BYTES
+            || username.contains(':')
+        {
+            return Err(GatewayError::Configuration(format!(
+                "basic username must be 1..={MAX_BASIC_USERNAME_BYTES} bytes and contain no colon"
+            )));
+        }
+        if password.is_empty() || password.len() > MAX_BASIC_PASSWORD_BYTES {
+            return Err(GatewayError::Configuration(format!(
+                "basic password must be 1..={MAX_BASIC_PASSWORD_BYTES} bytes"
+            )));
+        }
+        let encoded = BASE64_STANDARD.encode(format!("{username}:{password}"));
+        let authorization = format!("Basic {encoded}");
+        if authorization.len() > MAX_BASIC_AUTHORIZATION_BYTES {
+            return Err(GatewayError::Configuration(
+                "encoded basic credential exceeds its configured bound".to_owned(),
+            ));
+        }
+        Ok(Self::Basic(BasicCredentials { authorization }))
+    }
 }
 
 impl fmt::Debug for GatewayAuthentication {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Bearer { .. } => formatter.write_str("Bearer { token: [redacted] }"),
+            Self::Basic(_) => formatter.write_str("Basic { credential: [redacted] }"),
             Self::UnauthenticatedLoopbackDevelopment => {
                 formatter.write_str("UnauthenticatedLoopbackDevelopment")
             }
@@ -102,9 +144,18 @@ impl GatewayConfig {
     }
 
     pub fn validate(&self) -> Result<(), GatewayError> {
-        if !self.bind.ip().is_loopback() {
+        if !matches!(self.authentication, GatewayAuthentication::Basic(_))
+            && !self.bind.ip().is_loopback()
+        {
             return Err(GatewayError::Configuration(
                 "the proof gateway only binds a loopback address".to_owned(),
+            ));
+        }
+        if matches!(self.authentication, GatewayAuthentication::Basic(_))
+            && (self.bind.ip().is_unspecified() || self.bind.ip().is_multicast())
+        {
+            return Err(GatewayError::Configuration(
+                "the authenticated host requires one explicit unicast bind address".to_owned(),
             ));
         }
         match &self.authentication {
@@ -140,6 +191,13 @@ impl GatewayConfig {
             return Err(GatewayError::Configuration(
                 "unauthenticated development mode requires an exact HTTP loopback origin with a port"
                     .to_owned(),
+                ));
+        }
+        if matches!(self.authentication, GatewayAuthentication::Basic(_))
+            && !is_https_origin(&self.allowed_origin)
+        {
+            return Err(GatewayError::Configuration(
+                "basic authentication requires one exact HTTPS public origin".to_owned(),
             ));
         }
         if self.max_connections == 0 || self.max_connections > MAX_CONNECTIONS {
@@ -148,6 +206,31 @@ impl GatewayConfig {
             )));
         }
         Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct HostedAssets {
+    root: PathBuf,
+    build_id: String,
+}
+
+impl HostedAssets {
+    pub fn new(root: PathBuf, build_id: String) -> Result<Self, GatewayError> {
+        if !root.is_absolute() || !root.is_dir() || !root.join("index.html").is_file() {
+            return Err(GatewayError::Configuration(
+                "hosted web root must be an absolute directory containing index.html".to_owned(),
+            ));
+        }
+        if build_id.is_empty()
+            || build_id.len() > MAX_BUILD_ID_BYTES
+            || !build_id.bytes().all(|byte| byte.is_ascii_graphic())
+        {
+            return Err(GatewayError::Configuration(format!(
+                "hosted build ID must be 1..={MAX_BUILD_ID_BYTES} printable ASCII bytes"
+            )));
+        }
+        Ok(Self { root, build_id })
     }
 }
 
@@ -223,6 +306,7 @@ struct GatewayState {
     connection_metrics: ApplicationConnectionMetrics,
     gateway_shutdown: CancellationToken,
     download_directory_picker: Arc<dyn DownloadDirectoryPicker>,
+    hosted_assets: Option<Arc<HostedAssets>>,
 }
 
 impl fmt::Debug for GatewayState {
@@ -243,13 +327,59 @@ pub async fn bind(
     config: GatewayConfig,
     service: Arc<Mutex<ApplicationService>>,
 ) -> Result<GatewayServer, GatewayError> {
-    bind_with_picker(config, service, Arc::new(NativeDownloadDirectoryPicker)).await
+    bind_with_picker_and_assets(
+        config,
+        service,
+        Arc::new(NativeDownloadDirectoryPicker),
+        None,
+    )
+    .await
 }
 
+pub async fn bind_hosted(
+    config: GatewayConfig,
+    service: Arc<Mutex<ApplicationService>>,
+    assets: HostedAssets,
+) -> Result<GatewayServer, GatewayError> {
+    if !matches!(config.authentication, GatewayAuthentication::Basic(_)) {
+        return Err(GatewayError::Configuration(
+            "hosted web assets require basic authentication".to_owned(),
+        ));
+    }
+    bind_with_picker_and_assets(
+        config,
+        service,
+        Arc::new(UnavailableDownloadDirectoryPicker),
+        Some(assets),
+    )
+    .await
+}
+
+struct UnavailableDownloadDirectoryPicker;
+
+impl DownloadDirectoryPicker for UnavailableDownloadDirectoryPicker {
+    fn choose<'a>(
+        &'a self,
+        _starting_directory: &'a std::path::Path,
+    ) -> rstorrent_platform::PickerFuture<'a> {
+        Box::pin(async { Err(PickerError::Unsupported) })
+    }
+}
+
+#[cfg(test)]
 async fn bind_with_picker(
     config: GatewayConfig,
     service: Arc<Mutex<ApplicationService>>,
     download_directory_picker: Arc<dyn DownloadDirectoryPicker>,
+) -> Result<GatewayServer, GatewayError> {
+    bind_with_picker_and_assets(config, service, download_directory_picker, None).await
+}
+
+async fn bind_with_picker_and_assets(
+    config: GatewayConfig,
+    service: Arc<Mutex<ApplicationService>>,
+    download_directory_picker: Arc<dyn DownloadDirectoryPicker>,
+    hosted_assets: Option<HostedAssets>,
 ) -> Result<GatewayServer, GatewayError> {
     config.validate()?;
     let listener = TcpListener::bind(config.bind)
@@ -266,6 +396,7 @@ async fn bind_with_picker(
         connection_metrics: ApplicationConnectionMetrics::default(),
         gateway_shutdown: CancellationToken::new(),
         download_directory_picker,
+        hosted_assets: hosted_assets.map(Arc::new),
     };
     Ok(GatewayServer {
         listener,
@@ -312,7 +443,7 @@ impl GatewayServer {
                 header::CONTENT_TYPE,
                 HeaderName::from_static("x-rstorrent-owner"),
             ]);
-        let router = Router::new()
+        let mut router = Router::new()
             .route(
                 "/api/v1/connect",
                 get(application_websocket::upgrade_application_connection),
@@ -330,11 +461,19 @@ impl GatewayServer {
                 "/api/v1/view-sets/{id}",
                 axum::routing::delete(close_view_set),
             )
+            .route("/healthz", get(healthz))
             .layer(axum::extract::DefaultBodyLimit::max(
                 MAX_INCOMING_MESSAGE_BYTES,
             ))
             .layer(cors)
-            .with_state(self.state);
+            .with_state(self.state.clone());
+        if let Some(assets) = &self.state.hosted_assets {
+            router = router.fallback_service(ServeDir::new(&assets.root));
+        }
+        router = router.layer(middleware::from_fn_with_state(
+            self.state.clone(),
+            require_basic_auth,
+        ));
         axum::serve(
             self.listener,
             router.into_make_service_with_connect_info::<SocketAddr>(),
@@ -349,6 +488,61 @@ impl GatewayServer {
     }
 }
 
+async fn require_basic_auth(
+    State(state): State<GatewayState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let GatewayAuthentication::Basic(credentials) = state.authentication.as_ref() else {
+        return next.run(request).await;
+    };
+    let accepted = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| value.len() <= MAX_BASIC_AUTHORIZATION_BYTES)
+        .is_some_and(|value| {
+            constant_time_equal(value.as_bytes(), credentials.authorization.as_bytes())
+        });
+    if accepted {
+        next.run(request).await
+    } else {
+        basic_auth_rejection()
+    }
+}
+
+fn basic_auth_rejection() -> Response {
+    let mut response = api_error(
+        StatusCode::UNAUTHORIZED,
+        ApiErrorCode::AuthenticationFailed,
+        "gateway credential was rejected",
+    );
+    response.headers_mut().insert(
+        header::WWW_AUTHENTICATE,
+        HeaderValue::from_static("Basic realm=\"RSTorrent\", charset=\"UTF-8\""),
+    );
+    response
+}
+
+#[derive(Serialize)]
+struct HealthResponse<'a> {
+    status: &'static str,
+    build_id: &'a str,
+}
+
+async fn healthz(State(state): State<GatewayState>) -> Response {
+    let Some(assets) = &state.hosted_assets else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    json_response(
+        StatusCode::OK,
+        &HealthResponse {
+            status: "ok",
+            build_id: &assets.build_id,
+        },
+    )
+}
+
 fn is_loopback_http_origin(origin: &str) -> bool {
     let Ok(uri) = origin.parse::<Uri>() else {
         return false;
@@ -361,6 +555,23 @@ fn is_loopback_http_origin(origin: &str) -> bool {
     };
     if authority.port_u16().is_none() || !matches!(authority.host(), "127.0.0.1" | "[::1]" | "::1")
     {
+        return false;
+    }
+    uri.path_and_query()
+        .is_none_or(|path| path.as_str().is_empty() || path.as_str() == "/")
+}
+
+fn is_https_origin(origin: &str) -> bool {
+    let Ok(uri) = origin.parse::<Uri>() else {
+        return false;
+    };
+    if uri.scheme_str() != Some("https") {
+        return false;
+    }
+    let Some(authority) = uri.authority() else {
+        return false;
+    };
+    if authority.host().is_empty() {
         return false;
     }
     uri.path_and_query()
@@ -757,8 +968,8 @@ mod tests {
 
     use super::{
         ApplicationClientFrame, ApplicationConnectionErrorCode, ApplicationServerFrame,
-        ChooseDownloadRootResponse, GatewayAuthentication, GatewayConfig, bind, bind_with_picker,
-        constant_time_equal,
+        ChooseDownloadRootResponse, GatewayAuthentication, GatewayConfig, HostedAssets, bind,
+        bind_hosted, bind_with_picker, constant_time_equal,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -870,9 +1081,32 @@ mod tests {
         owner: Option<&str>,
         body: Option<String>,
     ) -> (u16, Vec<u8>) {
+        let authorization = token.map(|token| format!("Bearer {token}"));
+        let (status, _, body) = raw_http_request(
+            address,
+            method,
+            path,
+            authorization.as_deref(),
+            origin,
+            owner,
+            body,
+        )
+        .await;
+        (status, body)
+    }
+
+    async fn raw_http_request(
+        address: SocketAddr,
+        method: &str,
+        path: &str,
+        authorization: Option<&str>,
+        origin: Option<&str>,
+        owner: Option<&str>,
+        body: Option<String>,
+    ) -> (u16, String, Vec<u8>) {
         let method = method.to_owned();
         let path = path.to_owned();
-        let token = token.map(str::to_owned);
+        let authorization = authorization.map(str::to_owned);
         let origin = origin.map(str::to_owned);
         let owner = owner.map(str::to_owned);
         tokio::task::spawn_blocking(move || {
@@ -881,8 +1115,8 @@ mod tests {
                 "{method} {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\nContent-Length: {}\r\n",
                 body.len()
             );
-            if let Some(token) = token {
-                request.push_str(&format!("Authorization: Bearer {token}\r\n"));
+            if let Some(authorization) = authorization {
+                request.push_str(&format!("Authorization: {authorization}\r\n"));
             }
             if let Some(origin) = origin {
                 request.push_str(&format!("Origin: {origin}\r\n"));
@@ -917,7 +1151,7 @@ mod tests {
                 .and_then(|line| line.split_whitespace().nth(1))
                 .and_then(|status| status.parse().ok())
                 .expect("HTTP response status");
-            (status, response[(split + 4)..].to_vec())
+            (status, headers.to_owned(), response[(split + 4)..].to_vec())
         })
         .await
         .expect("HTTP request task")
@@ -928,6 +1162,143 @@ mod tests {
         assert!(constant_time_equal(b"token", b"token"));
         assert!(!constant_time_equal(b"token", b"taken"));
         assert!(!constant_time_equal(b"token", b"token-longer"));
+    }
+
+    #[test]
+    fn basic_credentials_are_bounded_and_redacted() {
+        let authentication =
+            GatewayAuthentication::basic("preview", "doorstop").expect("valid basic credential");
+        assert_eq!(
+            format!("{authentication:?}"),
+            "Basic { credential: [redacted] }"
+        );
+        assert!(GatewayAuthentication::basic("", "doorstop").is_err());
+        assert!(GatewayAuthentication::basic("bad:name", "doorstop").is_err());
+        assert!(GatewayAuthentication::basic("preview", "").is_err());
+    }
+
+    #[tokio::test]
+    async fn hosted_assets_require_basic_auth_and_exact_origin() {
+        let root = test_root("hosted-assets");
+        let web_root = root.join("web");
+        std::fs::create_dir_all(web_root.join("assets")).expect("create web root");
+        std::fs::write(web_root.join("index.html"), b"private-preview-index").expect("write index");
+        std::fs::write(web_root.join("assets/app.js"), b"private-preview-asset")
+            .expect("write asset");
+        let service = test_service(&root).await;
+        let origin = "https://preview.example";
+        let authentication =
+            GatewayAuthentication::basic("preview", "doorstop").expect("basic auth");
+        let authorization = match &authentication {
+            GatewayAuthentication::Basic(credentials) => credentials.authorization.clone(),
+            _ => unreachable!("constructed basic authentication"),
+        };
+        let server = bind_hosted(
+            GatewayConfig {
+                bind: "127.0.0.1:0".parse().expect("address"),
+                authentication,
+                allowed_origin: origin.to_owned(),
+                max_connections: 2,
+            },
+            service.clone(),
+            HostedAssets::new(web_root, "test-build".to_owned()).expect("hosted assets"),
+        )
+        .await
+        .expect("bind hosted server");
+        let address = server.local_addr();
+        let shutdown = CancellationToken::new();
+        let task = tokio::spawn(server.serve(shutdown.clone()));
+
+        let (status, headers, _) =
+            raw_http_request(address, "GET", "/", None, None, None, None).await;
+        assert_eq!(status, 401);
+        assert!(headers.contains("www-authenticate: Basic realm=\"RSTorrent\""));
+        assert_eq!(
+            raw_http_request(address, "GET", "/", Some("Basic wrong"), None, None, None,)
+                .await
+                .0,
+            401
+        );
+        let (status, _, body) =
+            raw_http_request(address, "GET", "/", Some(&authorization), None, None, None).await;
+        assert_eq!(status, 200);
+        assert_eq!(body, b"private-preview-index");
+        let (status, _, body) = raw_http_request(
+            address,
+            "GET",
+            "/healthz",
+            Some(&authorization),
+            None,
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&body).expect("health JSON"),
+            serde_json::json!({"status": "ok", "build_id": "test-build"})
+        );
+        assert_eq!(
+            raw_http_request(
+                address,
+                "GET",
+                "/assets/missing.js",
+                Some(&authorization),
+                None,
+                None,
+                None,
+            )
+            .await
+            .0,
+            404
+        );
+
+        let mut request = format!("ws://{address}/api/v1/connect")
+            .into_client_request()
+            .expect("request");
+        request
+            .headers_mut()
+            .insert("Origin", origin.parse().expect("origin"));
+        request.headers_mut().insert(
+            "Authorization",
+            authorization.parse().expect("authorization"),
+        );
+        let (mut socket, _) = connect_async(request).await.expect("connect");
+        send_application_message(
+            &mut socket,
+            &ApplicationClientFrame::Connect {
+                api_version: rstorrent_session::API_VERSION,
+                encoding: rstorrent_session::ApiEncoding::Json,
+                client_instance_id: "00000000000000000000000000000001".to_owned(),
+                token: None,
+            },
+        )
+        .await;
+        assert!(matches!(
+            read_application_message(&mut socket).await,
+            ApplicationServerFrame::Connected { .. }
+        ));
+        socket.close(None).await.expect("close socket");
+
+        let mut wrong_origin = format!("ws://{address}/api/v1/connect")
+            .into_client_request()
+            .expect("request");
+        wrong_origin
+            .headers_mut()
+            .insert("Origin", "https://wrong.example".parse().expect("origin"));
+        wrong_origin.headers_mut().insert(
+            "Authorization",
+            authorization.parse().expect("authorization"),
+        );
+        assert!(connect_async(wrong_origin).await.is_err());
+
+        shutdown.cancel();
+        task.await
+            .expect("server join")
+            .expect("server termination");
+        service.lock().await.shutdown().await.expect("shutdown");
+        drop(service);
+        std::fs::remove_dir_all(root).expect("remove root");
     }
 
     #[tokio::test]

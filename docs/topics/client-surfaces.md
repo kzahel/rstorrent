@@ -32,7 +32,10 @@ Rust view-set lease. The live path is proven through the headless browser
 gateway; Android remains intentionally unchanged.
 Tactical `036` packages that same production-built live browser path behind
 `./scripts/webui`, with isolated persistent state, default online networking,
-normal-browser opening, and joined terminal-owned shutdown. Tactical `048`
+normal-browser opening, and joined terminal-owned shutdown. Tactical `076`
+adds an explicit same-origin production build for one Basic-authenticated
+private maintainer host, including phone-sized browser access, without making
+remote hosting a general product capability. Tactical `048`
 selects the React inspection application for Tauri and supplies it with the
 same leased view-set semantics over acknowledged in-process Channel delivery;
 the desktop opens no loopback server. Tactical `037` adds the first live
@@ -157,11 +160,14 @@ query, while Tauri stays in process. The detailed direction and open choices
 live in
 [`web-ui-design.md`](web-ui-design.md).
 
-The initial browser surface may prove the network transport on loopback with
-explicit test credentials. That is not a claim of safe Internet exposure.
-LAN binding, TLS, pairing, accounts, relay operation, wake-up delivery, remote
-authorization policy, and deployment require later threat models and
-tacticals.
+The ordinary browser surface proves its network transport on loopback with
+explicit test credentials. Tactical `076` separately permits one
+maintainer-operated private host behind TLS and Basic authentication, with the
+gateway enforcing the same credential and exact HTTPS Origin. That bounded
+deployment is not a claim of safe general Internet exposure. Pairing,
+accounts, relay operation, wake-up delivery, device authorization, stable
+compatibility, and product remote-access policy require later threat models
+and tacticals.
 
 Tactical `035` also adds an explicit unauthenticated development mode for
 local UI bring-up and headless evidence. It binds only an OS-assigned loopback

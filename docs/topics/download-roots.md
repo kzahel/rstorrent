@@ -19,7 +19,10 @@ live React surface. Tactical `063` adds the checked-by-default start-content
 option, metadata-only intake with no payload artifact, and live path-backed
 file selection in the Files tab. A manual macOS chooser/restart smoke also
 remains required because Computer Use cannot attach to the transient system
-folder panel. Windows remains unimplemented, and Android already proves one
+folder panel. Tactical `076` lets a headless private host install one explicit
+configured payload root while making the native picker unavailable; it does
+not add ambient remote path authority or change durable root identity.
+Windows remains unimplemented, and Android already proves one
 user-selected persisted SAF root but not general multi-root management.
 
 ## Scope

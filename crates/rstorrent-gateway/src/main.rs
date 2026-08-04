@@ -5,7 +5,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use rstorrent_gateway::{GatewayAuthentication, GatewayConfig, bind};
+use rstorrent_gateway::{
+    GatewayAuthentication, GatewayConfig, HostedAssets, MAX_BASIC_PASSWORD_BYTES, bind, bind_hosted,
+};
 use rstorrent_session::{
     ApplicationConfig, ApplicationService, ConfiguredStorageRoot, DownloadResourceLimits,
     NetworkConfig, NetworkPolicy,
@@ -43,9 +45,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 GatewayAuthentication::UnauthenticatedLoopbackDevelopment,
             )
         }
+        "basic" => (
+            required_string("RSTORRENT_GATEWAY_BIND")?.parse::<SocketAddr>()?,
+            GatewayAuthentication::basic(
+                &required_string("RSTORRENT_GATEWAY_BASIC_USERNAME")?,
+                &required_password_file("RSTORRENT_GATEWAY_BASIC_PASSWORD_FILE")?,
+            )?,
+        ),
         value => {
             return Err(format!(
-                "RSTORRENT_GATEWAY_AUTH must be bearer or unauthenticated_loopback_development; got {value}"
+                "RSTORRENT_GATEWAY_AUTH must be bearer, basic, or unauthenticated_loopback_development; got {value}"
             )
             .into());
         }
@@ -128,22 +137,36 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     let application = ApplicationService::open(application_config).await?;
     let application = Arc::new(Mutex::new(application));
-    let server = bind(
-        GatewayConfig {
-            bind: bind_addr,
-            authentication,
-            allowed_origin: origin,
-            max_connections: rstorrent_gateway::MAX_CONNECTIONS,
-        },
-        application.clone(),
-    )
-    .await?;
+    let config = GatewayConfig {
+        bind: bind_addr,
+        authentication,
+        allowed_origin: origin,
+        max_connections: rstorrent_gateway::MAX_CONNECTIONS,
+    };
+    let web_root = optional_path("RSTORRENT_WEB_ROOT")?;
+    let build_id = env::var("RSTORRENT_BUILD_ID").ok();
+    let server = match (web_root, build_id) {
+        (Some(web_root), Some(build_id)) => {
+            bind_hosted(
+                config,
+                application.clone(),
+                HostedAssets::new(web_root, build_id)?,
+            )
+            .await?
+        }
+        (None, None) => bind(config, application.clone()).await?,
+        _ => {
+            return Err(
+                "RSTORRENT_WEB_ROOT and RSTORRENT_BUILD_ID must be configured together".into(),
+            );
+        }
+    };
     eprintln!("gateway listening on {}", server.local_addr());
     let connection_metrics = server.connection_metrics();
     let shutdown = CancellationToken::new();
     let signal_shutdown = shutdown.clone();
     tokio::spawn(async move {
-        let _ = tokio::signal::ctrl_c().await;
+        wait_for_shutdown_signal().await;
         signal_shutdown.cancel();
     });
     server.serve(shutdown).await?;
@@ -153,6 +176,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
     );
     application.lock().await.shutdown().await?;
     Ok(())
+}
+
+async fn wait_for_shutdown_signal() {
+    #[cfg(unix)]
+    {
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("install terminate signal handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = terminate.recv() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
 }
 
 fn required_string(name: &str) -> Result<String, Box<dyn Error>> {
@@ -173,4 +213,27 @@ fn optional_path(name: &str) -> Result<Option<PathBuf>, Box<dyn Error>> {
         Some(value) if value.is_empty() => Err(format!("{name} must be nonempty").into()),
         Some(value) => Ok(Some(PathBuf::from(value))),
     }
+}
+
+fn required_password_file(name: &str) -> Result<String, Box<dyn Error>> {
+    let path = required_path(name)?;
+    let bytes = std::fs::read(&path)?;
+    if bytes.len() > MAX_BASIC_PASSWORD_BYTES + 2 {
+        return Err(format!("{name} exceeds its configured password bound").into());
+    }
+    let mut password = String::from_utf8(bytes)?;
+    if password.ends_with("\r\n") {
+        password.truncate(password.len() - 2);
+    } else if password.ends_with('\n') {
+        password.pop();
+    }
+    if password.contains(['\r', '\n']) {
+        return Err(format!("{name} must contain one password line").into());
+    }
+    if password.is_empty() || password.len() > MAX_BASIC_PASSWORD_BYTES {
+        return Err(
+            format!("{name} must contain 1..={MAX_BASIC_PASSWORD_BYTES} password bytes").into(),
+        );
+    }
+    Ok(password)
 }

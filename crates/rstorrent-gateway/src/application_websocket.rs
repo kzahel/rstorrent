@@ -1535,7 +1535,8 @@ fn connection_token_matches(
                 && candidate.len() <= MAX_TOKEN_BYTES
                 && constant_time_equal(candidate.as_bytes(), token.as_bytes())
         }),
-        GatewayAuthentication::UnauthenticatedLoopbackDevelopment => candidate.is_none(),
+        GatewayAuthentication::Basic(_)
+        | GatewayAuthentication::UnauthenticatedLoopbackDevelopment => candidate.is_none(),
     }
 }
 

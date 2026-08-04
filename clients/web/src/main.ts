@@ -1,4 +1,5 @@
 import { applyStoredColorTheme } from "./inspection/appearance";
+import { resolveInspectionBootstrapTarget } from "./inspection/bootstrap-target";
 
 const parameters = new URLSearchParams(window.location.search);
 const appearance = applyStoredColorTheme();
@@ -16,14 +17,22 @@ void startInspection().catch(renderBootstrapError);
 async function startInspection(): Promise<void> {
   const { startDemoInspection, startLiveInspection, startTauriInspection } =
     await import("./inspection/bootstrap");
-  if (parameters.has("demo")) {
-    startDemoInspection(parameters);
-  } else if (parameters.has("live")) {
-    await startLiveInspection(parameters);
-  } else if ("__TAURI_INTERNALS__" in window) {
-    await startTauriInspection();
-  } else {
-    startDemoInspection(parameters);
+  const target = resolveInspectionBootstrapTarget(
+    parameters,
+    "__TAURI_INTERNALS__" in window,
+    import.meta.env.VITE_RSTORRENT_DEFAULT_LIVE,
+    window.location.origin,
+  );
+  switch (target.type) {
+    case "demo":
+      startDemoInspection(target.parameters);
+      break;
+    case "live":
+      await startLiveInspection(target.parameters);
+      break;
+    case "tauri":
+      await startTauriInspection();
+      break;
   }
 }
 

@@ -30,8 +30,10 @@ export async function startLiveInspection(
   const gateway = parameters.get("live");
   if (gateway === null) throw new Error("live gateway URL is required");
   const baseUrl = new URL(gateway);
-  if (baseUrl.protocol !== "http:" || !isLoopbackHost(baseUrl.hostname)) {
-    throw new Error("live gateway must use an HTTP loopback address");
+  if (!isAllowedLiveGateway(baseUrl, window.location.origin)) {
+    throw new Error(
+      "live gateway must use an HTTP loopback address or the exact HTTPS page origin",
+    );
   }
   const token = parameters.get("token");
   const transport = parameters.get("transport");
@@ -85,6 +87,22 @@ function applicationRoot(): HTMLElement {
 
 function isLoopbackHost(host: string): boolean {
   return host === "127.0.0.1" || host === "[::1]" || host === "::1";
+}
+
+export function isAllowedLiveGateway(baseUrl: URL, pageOrigin: string): boolean {
+  if (
+    baseUrl.username !== "" ||
+    baseUrl.password !== "" ||
+    baseUrl.pathname !== "/" ||
+    baseUrl.search !== "" ||
+    baseUrl.hash !== ""
+  ) {
+    return false;
+  }
+  if (baseUrl.protocol === "http:") {
+    return isLoopbackHost(baseUrl.hostname) && baseUrl.port !== "";
+  }
+  return baseUrl.protocol === "https:" && baseUrl.origin === pageOrigin;
 }
 
 function parseElapsed(value: string | null): number {

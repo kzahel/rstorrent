@@ -11,8 +11,12 @@ delivery shares the extracted Rust acknowledgement core without opening a
 socket. The legacy `/control` route, frames, direct-DOM frontend and superseded
 tests are deleted. Future relay delivery still wraps these application frames
 in an end-to-end encrypted circuit rather than creating another application
-API; the production listener, authentication and encryption campaign remains
-unauthorized and unimplemented.
+API. Tactical `076` adds one deliberately limited maintainer-operated private
+host: bounded Basic authentication covers static, health, HTTP, and WebSocket
+routes; the gateway still enforces the exact public HTTPS Origin; and the
+production React build selects the same origin explicitly. This is not the
+future relay, device-authentication, encryption, or stable-public-compatibility
+campaign, which remains unauthorized and unimplemented.
 
 ## Purpose And Scope
 
