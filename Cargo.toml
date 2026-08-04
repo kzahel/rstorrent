@@ -32,8 +32,19 @@ tokio-util = "0.7.16"
 tower-http = "0.6.11"
 ts-rs = { version = "12.0.1", features = ["serde-compat"] }
 
-# Keep debug engine and desktop runs representative enough for networking,
-# hashing, storage, and UI work while retaining debug assertions, debug info,
-# and incremental compilation.
+# Keep ordinary engine and desktop runs representative enough for networking,
+# hashing, storage, and UI work. Preserve the dev profile's debug assertions
+# and overflow checks plus file/line backtraces, but avoid the full debug and
+# incremental artifacts that rapidly exhaust disk space on macOS.
 [profile.dev]
 opt-level = 2
+debug = "line-tables-only"
+incremental = false
+
+# Use this profile for deliberate source-level debugger sessions that need
+# local variables and unoptimized control flow. It has a separate output
+# directory so its full debug artifacts can be cleaned independently.
+[profile.debugging]
+inherits = "dev"
+opt-level = 0
+debug = "full"

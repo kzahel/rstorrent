@@ -156,6 +156,24 @@ cargo clippy --workspace -- -D warnings
 cargo test --workspace
 ```
 
+The ordinary dev and test profiles use optimized code with file-and-line
+backtraces, debug assertions, and overflow checks, but omit full debugger
+information and incremental compilation to keep macOS build artifacts
+bounded. For a deliberate source-level debugger session, use the separate
+full-debug profile:
+
+```bash
+cargo test --profile debugging -p rstorrent-engine
+cargo run --profile debugging -p rstorrent-desktop
+```
+
+Its artifacts are isolated under `target/debugging` and can be removed without
+discarding ordinary dev or release output:
+
+```bash
+cargo clean --profile debugging
+```
+
 ## Launching The Desktop App
 
 Install the locked web dependencies when necessary, build the static web
