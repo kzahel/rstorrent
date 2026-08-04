@@ -98,8 +98,8 @@ def start_gateway(
     )
 
 
-def verify_payload(storage: Path, info_hash: str, expected_hash: str) -> None:
-    payload = storage / info_hash / "payload.bin"
+def verify_payload(storage: Path, content_root: str, expected_hash: str) -> None:
+    payload = storage / content_root / "payload.bin"
     if not payload.is_file():
         raise ScenarioFailure(f"gateway download payload is absent: {payload}")
     actual = hashlib.sha1(payload.read_bytes()).hexdigest()

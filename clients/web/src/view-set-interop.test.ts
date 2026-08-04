@@ -157,9 +157,13 @@ liveDescribe("authenticated polling gateway interop", () => {
       await waitUntil(
         () => {
           if (controllerError !== undefined) throw controllerError;
+          const torrent =
+            state === undefined
+              ? undefined
+              : torrentFrom(state.views.library, torrentId);
           return (
-            state !== undefined &&
-            torrentFrom(state.views.library, torrentId)?.state === "complete"
+            torrent?.state === "complete" &&
+            torrent.storage_state === "published"
           );
         },
         () =>
@@ -170,6 +174,7 @@ liveDescribe("authenticated polling gateway interop", () => {
 
       const summary = state && torrentFrom(state.views.library, torrentId);
       expect(summary?.verified_piece_count).toBe(3);
+      expect(summary?.storage_state).toBe("published");
       expect(state?.views.details?.type).toBe("torrent");
       expect(state?.views.pieces?.type).toBe("piece_activity");
       expect(requested).toBeGreaterThan(0);

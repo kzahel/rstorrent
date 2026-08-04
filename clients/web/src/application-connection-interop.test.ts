@@ -120,7 +120,13 @@ liveDescribe("multiplexed application connection interop", () => {
         },
       ]);
       await waitUntil(
-        () => libraryTorrent(state, torrentId)?.state === "complete",
+        () => {
+          const torrent = libraryTorrent(state, torrentId);
+          return (
+            torrent?.state === "complete" &&
+            torrent.storage_state === "published"
+          );
+        },
         () => controllerError,
       );
 
@@ -132,6 +138,7 @@ liveDescribe("multiplexed application connection interop", () => {
           : 0,
       ).toBe(3);
       expect(libraryTorrent(state, torrentId)?.verified_piece_count).toBe(3);
+      expect(libraryTorrent(state, torrentId)?.storage_state).toBe("published");
       console.log(
         `application_connection_interop info_hash=${torrentId} ` +
           `updates=${updates} requested=${requested} received=${received} ` +

@@ -25,7 +25,7 @@ from application_surface_harness import (
     verify_payload,
 )
 from first_verified_piece import ScenarioFailure, add_seed, create_session, wait_for_listener
-from magnet_metadata import create_fixture, magnet_uri
+from magnet_metadata import ROOT_NAME, create_fixture, magnet_uri
 
 
 def run_typescript_client(
@@ -108,7 +108,7 @@ def run() -> None:
             magnet_uri(fixture.info_hash, f"127.0.0.1:{port}"),
             fixture.info_hash,
         )
-        verify_payload(storage, fixture.info_hash, fixture.payload_hash)
+        verify_payload(storage, ROOT_NAME, fixture.payload_hash)
         gateway_diagnostics = stop_gateway(gateway)
         gateway = None
         metrics = connection_metrics(gateway_diagnostics)

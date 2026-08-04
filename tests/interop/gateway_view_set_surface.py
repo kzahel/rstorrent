@@ -23,7 +23,7 @@ from application_surface_harness import (
     stop_gateway,
     verify_payload,
 )
-from magnet_metadata import create_fixture, magnet_uri
+from magnet_metadata import ROOT_NAME, create_fixture, magnet_uri
 
 
 def run_typescript_client(
@@ -101,7 +101,7 @@ def run() -> None:
             magnet_uri(fixture.info_hash, f"127.0.0.1:{port}"),
             fixture.info_hash,
         )
-        verify_payload(storage, fixture.info_hash, fixture.payload_hash)
+        verify_payload(storage, ROOT_NAME, fixture.payload_hash)
         stop_gateway(gateway)
         gateway = None
         print(
