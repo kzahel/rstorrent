@@ -11,6 +11,7 @@ mod metrics;
 mod network;
 mod part_file;
 pub mod peer;
+mod peer_budget;
 mod peer_io;
 mod peer_runtime;
 mod peer_socket;
@@ -21,6 +22,7 @@ mod storage_file_pool;
 pub mod swarm;
 mod tracker;
 mod upload;
+mod upload_scheduler;
 
 pub use driver::{
     ContentPeerActivitySnapshot, ContentRequestWindowPhase, DiskCheckpointStage,
@@ -49,6 +51,11 @@ pub use metadata_seed::{
 pub use metrics::{ByteMetric, ByteMetricSink};
 pub use network::{DEFAULT_PEER_ID, NetworkConfig, NetworkPolicy};
 pub use part_file::{PartFile, PartFileError, PartFileIdentity};
+pub use peer_budget::{
+    DEFAULT_CONNECTION_LIMIT, DEFAULT_INCOMING_CONNECTION_SLACK, DEFAULT_LISTEN_BACKLOG,
+    PeerBudget, PeerBudgetConfig, PeerBudgetDirection, PeerBudgetPermit, PeerBudgetPhase,
+    PeerBudgetRejection, PeerBudgetSnapshot, effective_connection_limit,
+};
 pub use peer_runtime::{
     PeerConnectionDirection, PeerConnectionLifecycle, PeerConnectionObservation,
     PeerConnectionRole, PeerContentActivity, PeerRequestWindowPhase, PeerRuntimeError,
@@ -80,4 +87,9 @@ pub use tracker::{
 pub use upload::{
     MAX_QUEUED_UPLOAD_BYTES, MAX_QUEUED_UPLOAD_REQUESTS, UploadAction, UploadCloseReason,
     UploadPeerSnapshot, UploadPeerState, UploadRead,
+};
+pub use upload_scheduler::{
+    DEFAULT_OPTIMISTIC_UNCHOKE_INTERVAL, DEFAULT_SEEDING_PIECE_QUOTA, DEFAULT_UNCHOKE_INTERVAL,
+    DEFAULT_UNCHOKE_SLOTS, UploadDecision, UploadGrant, UploadPeerId, UploadScheduler,
+    UploadSchedulerConfig, UploadSchedulerPeer, UploadSchedulerSnapshot,
 };
