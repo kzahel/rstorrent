@@ -14,11 +14,17 @@ import styles from "./MoreActionsMenu.module.css";
 
 export interface MoreActionsMenuProps {
   readonly disabled: boolean;
+  readonly copyMagnetDisabled: boolean;
+  readonly showTestTorrents: boolean;
+  readonly onCopyMagnet: () => Promise<void>;
   readonly onAddTestTorrent: (torrent: TestTorrentShortcut) => Promise<void>;
 }
 
 export function MoreActionsMenu({
   disabled,
+  copyMagnetDisabled,
+  showTestTorrents,
+  onCopyMagnet,
   onAddTestTorrent,
 }: MoreActionsMenuProps) {
   const [open, setOpen] = useState(false);
@@ -80,7 +86,10 @@ export function MoreActionsMenu({
     if (!(event.target instanceof HTMLElement)) return;
     if (event.target.dataset.rootMenuItem === undefined) return;
     if (moveWithinMenu(event, rootMenuRef.current, "rootMenuItem")) return;
-    if (event.key === "ArrowRight") {
+    if (
+      event.key === "ArrowRight" &&
+      event.target === submenuTriggerRef.current
+    ) {
       event.preventDefault();
       setSubmenuOpen(true);
     } else if (event.key === "ArrowLeft") {
@@ -102,6 +111,15 @@ export function MoreActionsMenu({
     closeMenu(false);
     await onAddTestTorrent(torrent);
     globalThis.setTimeout(() => triggerRef.current?.focus(), 0);
+  };
+
+  const selectCopyMagnet = async () => {
+    closeMenu(false);
+    try {
+      await onCopyMagnet();
+    } finally {
+      globalThis.setTimeout(() => triggerRef.current?.focus(), 0);
+    }
   };
 
   return (
@@ -134,51 +152,65 @@ export function MoreActionsMenu({
           aria-label="More actions"
           onKeyDown={handleRootKeyDown}
         >
-          <div
-            className={styles.submenuOwner}
-            onMouseEnter={() => setSubmenuOpen(true)}
+          <button
+            className={styles.menuItem}
+            type="button"
+            role="menuitem"
+            tabIndex={-1}
+            data-root-menu-item
+            disabled={copyMagnetDisabled}
+            onClick={() => void selectCopyMagnet()}
           >
-            <button
-              ref={submenuTriggerRef}
-              className={styles.menuItem}
-              type="button"
-              role="menuitem"
-              tabIndex={-1}
-              data-root-menu-item
-              aria-haspopup="menu"
-              aria-expanded={submenuOpen}
-              onClick={() => setSubmenuOpen(true)}
+            <Icon name="copy" />
+            <span>Copy magnet link</span>
+          </button>
+          {showTestTorrents ? (
+            <div
+              className={styles.submenuOwner}
+              onMouseEnter={() => setSubmenuOpen(true)}
             >
-              <Icon name="plus" />
-              <span>Add test torrent</span>
-              <span className={styles.submenuArrow} aria-hidden="true">
-                ›
-              </span>
-            </button>
-            {submenuOpen ? (
-              <div
-                ref={submenuRef}
-                className={styles.submenu}
-                role="menu"
-                aria-label="Add test torrent"
-                onKeyDown={handleSubmenuKeyDown}
+              <button
+                ref={submenuTriggerRef}
+                className={styles.menuItem}
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                data-root-menu-item
+                aria-haspopup="menu"
+                aria-expanded={submenuOpen}
+                onClick={() => setSubmenuOpen(true)}
               >
-                {WEBTORRENT_TEST_TORRENTS.map((torrent) => (
-                  <button
-                    key={torrent.id}
-                    className={styles.menuItem}
-                    type="button"
-                    role="menuitem"
-                    tabIndex={-1}
-                    data-submenu-item
-                    onClick={() => void selectTestTorrent(torrent)}
-                  >
-                    {torrent.menuLabel}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
+                <Icon name="plus" />
+                <span>Add test torrent</span>
+                <span className={styles.submenuArrow} aria-hidden="true">
+                  ›
+                </span>
+              </button>
+              {submenuOpen ? (
+                <div
+                  ref={submenuRef}
+                  className={styles.submenu}
+                  role="menu"
+                  aria-label="Add test torrent"
+                  onKeyDown={handleSubmenuKeyDown}
+                >
+                  {WEBTORRENT_TEST_TORRENTS.map((torrent) => (
+                    <button
+                      key={torrent.id}
+                      className={styles.menuItem}
+                      type="button"
+                      role="menuitem"
+                      tabIndex={-1}
+                      data-submenu-item
+                      onClick={() => void selectTestTorrent(torrent)}
+                    >
+                      {torrent.menuLabel}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -216,5 +248,5 @@ function menuItems(
   const attribute = dataName.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
   return Array.from(
     container.querySelectorAll<HTMLElement>(`[data-${attribute}]`),
-  );
+  ).filter((item) => !item.matches(":disabled"));
 }

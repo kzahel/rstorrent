@@ -58,6 +58,7 @@ const controllers: InspectionController[] = [];
 
 afterEach(async () => {
   cleanup();
+  Reflect.deleteProperty(navigator, "clipboard");
   document.documentElement.removeAttribute("data-color-theme");
   if (typeof globalThis.localStorage?.clear === "function") {
     globalThis.localStorage.clear();
@@ -945,6 +946,67 @@ describe("inspection application", () => {
     expect(within(dialog).getByText(/future torrents only/i)).toBeVisible();
   });
 
+  it("copies one selected torrent's canonical magnet with truthful feedback", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn<(value: string) => Promise<void>>();
+    writeText.mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const snapshot = {
+      ...buildScenarioSnapshot("healthy-download", 42_000, false, 1),
+      demo: null,
+    };
+    const current = snapshot.torrents[snapshot.torrentOrder[0]!]!;
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot,
+    });
+    renderApplication(application);
+
+    const more = screen.getByRole("button", { name: "More" });
+    await user.click(more);
+    const copy = screen.getByRole("menuitem", { name: "Copy magnet link" });
+    expect(copy).toBeEnabled();
+    await user.click(copy);
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        `magnet:?xt=urn:btih:${current.infoHash}`,
+      ),
+    );
+    expect(screen.getByText("Magnet link copied", { exact: true })).toBeVisible();
+    expect(screen.queryByRole("menu", { name: "More actions" })).not.toBeInTheDocument();
+    await waitFor(() => expect(more).toHaveFocus());
+
+    writeText.mockRejectedValueOnce(new Error("permission denied"));
+    await user.click(more);
+    await user.click(screen.getByRole("menuitem", { name: "Copy magnet link" }));
+    expect(
+      await screen.findByText(
+        "Could not copy magnet link: permission denied",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await waitFor(() => expect(more).toHaveFocus());
+
+    await user.click(
+      screen.getByRole("checkbox", { name: "Select Sintel 4K open movie" }),
+    );
+    await user.click(more);
+    expect(
+      screen.getByRole("menuitem", { name: "Copy magnet link" }),
+    ).toBeDisabled();
+    await user.keyboard("{Escape}");
+
+    fireEvent.click(screen.getByRole("grid", { name: "Transfer queue" }));
+    await user.click(more);
+    expect(
+      screen.getByRole("menuitem", { name: "Copy magnet link" }),
+    ).toBeDisabled();
+  });
+
   it("dispatches an exact test magnet through the keyboard submenu", async () => {
     const user = userEvent.setup();
     const application = new RecordingLiveApplication({
@@ -967,6 +1029,9 @@ describe("inspection application", () => {
     const addTestTorrent = screen.getByRole("menuitem", {
       name: "Add test torrent",
     });
+    expect(
+      screen.getByRole("menuitem", { name: "Copy magnet link" }),
+    ).toBeDisabled();
     expect(more).toHaveAttribute("aria-expanded", "true");
     expect(addTestTorrent).toHaveFocus();
 

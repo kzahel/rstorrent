@@ -66,6 +66,10 @@ contract now lives in [`table-interaction.md`](table-interaction.md): it names
 the singular detail-owning row as active, names checked command targets as the
 batch selection, makes row focus follow active navigation, and adds
 Shift+Arrow plus platform select-all as pending implementation work.
+Tactical `071` adds a presentation-only **Copy magnet link** More action for
+exactly one selected torrent. It synthesizes the canonical v1 URI from the
+already projected info hash, reports actual clipboard success or failure, and
+does not claim byte-for-byte preservation of the submitted source URI.
 
 ## Purpose
 
@@ -561,6 +565,13 @@ screens pass serious/critical accessibility checks, retain keyboard-operable
 controls, and do not make the continuously changing feed an `aria-live`
 stream. Console state remains one application-lifetime presentation concern;
 no diagnostic history or filters are written to browser storage.
+
+Tactical `071` adds deterministic component and browser coverage for the
+selection-aware copy action. The browser grants clipboard permission, reads
+back the exact canonical URI, checks restored More focus and disabled
+multi-selection behavior, and finds no serious or critical Axe violations in
+the open menu. No application-view bytes, generated contracts, or durable
+state are added.
 
 ## Likely Sequencing
 

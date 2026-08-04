@@ -79,6 +79,8 @@ export function TorrentActions() {
       ? targetRows[0]?.archived
       : undefined;
   const removeCandidate = targetRows.length === 1 ? targetRows[0] : undefined;
+  const copyMagnetCandidate =
+    targetRows.length === 1 ? targetRows[0] : undefined;
   const canRemove =
     removeCandidate !== undefined &&
     (removeCandidate.removalState === null ||
@@ -171,6 +173,26 @@ export function TorrentActions() {
 
   const addTestTorrent = async (torrent: TestTorrentShortcut) => {
     await beginAdd(torrent.magnet, false);
+  };
+
+  const copyMagnetLink = async () => {
+    if (copyMagnetCandidate === undefined) return;
+    try {
+      const clipboard = navigator.clipboard;
+      if (clipboard === undefined) {
+        throw new Error("Clipboard access is unavailable");
+      }
+      await clipboard.writeText(
+        `magnet:?xt=urn:btih:${copyMagnetCandidate.infoHash}`,
+      );
+      setStatus("Magnet link copied");
+    } catch (error) {
+      setStatus(
+        `Could not copy magnet link: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   };
 
   const chooseFolder = async (
@@ -297,9 +319,12 @@ export function TorrentActions() {
         >
           <Icon name="pause" /> Pause
         </button>
-        {demo === null ? (
+        {demo === null || targetRows.length > 0 ? (
           <MoreActionsMenu
             disabled={adding}
+            copyMagnetDisabled={copyMagnetCandidate === undefined}
+            showTestTorrents={demo === null}
+            onCopyMagnet={copyMagnetLink}
             onAddTestTorrent={addTestTorrent}
           />
         ) : null}

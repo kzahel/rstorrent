@@ -40,11 +40,13 @@ mutation to the new surface: bounded magnet intake through the semantic
 command boundary. Tactical `038`
 adds five curated public test-torrent shortcuts without adding a debug backend
 command or bypassing application policy. Android remains intentionally
-unchanged. Tactical `049` replaces the React product's generic Logs table with
-the structured ordered console through both browser polling and Tauri Channel
-delivery. Shared generated Rust/TypeScript/Kotlin semantic artifacts continue
-to compile, but Android presentation intentionally does not mirror this dense
-desktop diagnostic surface.
+unchanged. Tactical `071` adds a local selection-aware canonical magnet copy
+action through the browser/Tauri clipboard surface without changing the
+application contract or Android. Tactical `049` replaces the React product's
+generic Logs table with the structured ordered console through both browser
+polling and Tauri Channel delivery. Shared generated Rust/TypeScript/Kotlin
+semantic artifacts continue to compile, but Android presentation intentionally
+does not mirror this dense desktop diagnostic surface.
 
 ## Scope
 
@@ -179,6 +181,9 @@ generated application request.
 Typed and curated magnet intake share that path. A deterministic catalog test
 keeps the UI shortcuts identical to `tests/live/torrents.json`; public swarm
 availability remains variable evidence rather than a UI guarantee.
+The selected-torrent More menu can also copy a canonical v1 magnet synthesized
+from the already projected info hash. This presentation action does not imply
+that the original submitted URI was retained byte-for-byte.
 
 ## Reactive Views
 

@@ -202,3 +202,8 @@ the nested-control rule to the concrete support failure that motivated it.
 Pointer and keyboard activation cannot bubble into range or row selection, and
 the destination, singleton selection, General tab, open detail, and one-shot
 focus target change atomically.
+
+Tactical [`071`](../tactical/071-copy-magnet-link.md) applies the same explicit
+action-scope rule to canonical magnet copy: the item is enabled only when the
+complete selection contains exactly one torrent. It never chooses a current or
+visible member from a larger selected set implicitly.

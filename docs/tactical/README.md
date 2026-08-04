@@ -341,6 +341,9 @@ that scope and its cleanup or compatibility rules explicitly.
 - [`070-actionable-torrent-error-status.md`](070-actionable-torrent-error-status.md):
   complete; makes torrent error status explanatory on hover and focus, then
   routes activation to the focused General error detail.
+- [`071-copy-magnet-link.md`](071-copy-magnet-link.md): complete; adds a
+  singleton-selection More action that copies a canonical v1 magnet from the
+  projected info hash with truthful clipboard feedback and accessible focus.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

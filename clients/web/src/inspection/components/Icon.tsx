@@ -4,6 +4,7 @@ export type IconName =
   | "archive"
   | "chevronDown"
   | "close"
+  | "copy"
   | "library"
   | "menu"
   | "pause"
@@ -52,6 +53,13 @@ function IconPaths({ name }: { readonly name: IconName }) {
       return <path d="m5.5 7.75 4.5 4.5 4.5-4.5" />;
     case "close":
       return <path d="m5 5 10 10M15 5 5 15" />;
+    case "copy":
+      return (
+        <>
+          <rect x="6.25" y="6.25" width="9.5" height="9.5" rx="1.25" />
+          <path d="M13.75 6.25v-1.5a.5.5 0 0 0-.5-.5h-8.5a.5.5 0 0 0-.5.5v8.5a.5.5 0 0 0 .5.5h1.5" />
+        </>
+      );
     case "library":
       return (
         <>

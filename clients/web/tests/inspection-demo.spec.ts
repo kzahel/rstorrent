@@ -73,6 +73,42 @@ test("primary destinations preserve shared source state", async ({ page }) => {
   await capture(page, "rstorrent-destinations-wide.png");
 });
 
+test("More copies one selected torrent's canonical magnet", async ({
+  context,
+  page,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.setViewportSize({ width: 1024, height: 720 });
+  await page.goto("/?demo=healthy-download&at=42000&autoplay=0");
+
+  const more = page.getByRole("button", { name: "More" });
+  await more.click();
+  const menu = page.getByRole("menu", { name: "More actions" });
+  const copy = menu.getByRole("menuitem", { name: "Copy magnet link" });
+  await expect(copy).toBeEnabled();
+
+  const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
+    (violation) => violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+  await copy.click();
+
+  await expect(page.getByText("Magnet link copied", { exact: true })).toBeVisible();
+  await expect(menu).toHaveCount(0);
+  await expect(more).toBeFocused();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    "magnet:?xt=urn:btih:a962f460b83861cfb5faa1d7ad7da9c3f3cc2fc4",
+  );
+
+  await page
+    .getByRole("checkbox", { name: "Select Sintel 4K open movie" })
+    .click();
+  await more.click();
+  await expect(
+    page.getByRole("menuitem", { name: "Copy magnet link" }),
+  ).toBeDisabled();
+});
+
 test("phone destinations and contextual filters remain reachable", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/?demo=healthy-download&at=42000&autoplay=0");
