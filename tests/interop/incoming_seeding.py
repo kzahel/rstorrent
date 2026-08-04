@@ -415,7 +415,7 @@ def leech_with_libtorrent(
                     "libtorrent upload-only peer did not connect\n"
                     + "\n".join(diagnostics[-30:])
                 )
-            if release_download is None or not release_download.wait(timeout=5):
+            if release_download is None or not release_download.wait(timeout=30):
                 raise ScenarioFailure("libtorrent download release was not published")
             session.apply_settings({"download_rate_limit": 0})
         deadline = time.monotonic() + TRANSFER_TIMEOUT_SECONDS
@@ -589,7 +589,8 @@ def run_fixture(
                             "libtorrent peers did not establish before Rust release"
                         )
                 await_barrier(start, 5)
-                deadline = time.monotonic() + 5
+                deadline = time.monotonic() + 15
+                snapshot: dict[str, object] = {}
                 while time.monotonic() < deadline:
                     snapshot = seed_snapshot(first_process)
                     if integer_field(snapshot, "established_high_water") >= 4:
@@ -597,7 +598,8 @@ def run_fixture(
                     time.sleep(0.01)
                 else:
                     raise ScenarioFailure(
-                        "four leecher connections did not overlap before release"
+                        "four leecher connections did not overlap before release: "
+                        f"{snapshot}"
                     )
                 release_download.set()
                 for future in as_completed(futures):

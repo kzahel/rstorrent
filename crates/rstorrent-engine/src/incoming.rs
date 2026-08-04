@@ -198,9 +198,32 @@ pub struct IncomingPeerServiceSnapshot {
     pub read_high_water: usize,
     pub read_bytes_high_water: usize,
     pub payload_bytes_sent: u64,
+    pub payload_rate_bytes: u64,
+    pub torrent_uploads: Vec<TorrentUploadSnapshot>,
+    pub peer_uploads: Vec<PeerUploadSnapshot>,
     pub rejection_counts: BTreeMap<IncomingRejectionReason, u64>,
     pub recent_rejections: Vec<IncomingRejection>,
     pub accepting_registrations: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct UploadTrafficSnapshot {
+    pub payload_bytes: u64,
+    pub payload_rate_bytes: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TorrentUploadSnapshot {
+    pub info_hash: [u8; 20],
+    pub peers: usize,
+    pub traffic: UploadTrafficSnapshot,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PeerUploadSnapshot {
+    pub generation: u64,
+    pub info_hash: [u8; 20],
+    pub traffic: UploadTrafficSnapshot,
 }
 
 #[derive(Debug, Default)]
@@ -221,9 +244,106 @@ struct ObservationState {
     upload_slots_high_water: usize,
     read_high_water: usize,
     read_bytes_high_water: usize,
-    payload_bytes_sent: u64,
     rejection_counts: BTreeMap<IncomingRejectionReason, u64>,
     recent_rejections: VecDeque<IncomingRejection>,
+}
+
+#[derive(Debug)]
+struct PeerUploadEntry {
+    info_hash: [u8; 20],
+    counter: Arc<UploadCounter>,
+}
+
+#[derive(Debug)]
+struct UploadCounter {
+    total: AtomicU64,
+    started_at: Instant,
+    rate: Mutex<UploadRateWindow>,
+}
+
+impl UploadCounter {
+    fn new() -> Self {
+        Self {
+            total: AtomicU64::new(0),
+            started_at: Instant::now(),
+            rate: Mutex::new(UploadRateWindow::default()),
+        }
+    }
+
+    fn record(&self, bytes: u64) {
+        let _ = self
+            .total
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |total| {
+                Some(total.saturating_add(bytes))
+            });
+        self.rate_guard().record(bytes, self.started_at.elapsed());
+    }
+
+    fn snapshot(&self) -> UploadTrafficSnapshot {
+        UploadTrafficSnapshot {
+            payload_bytes: self.total.load(Ordering::Acquire),
+            payload_rate_bytes: self.rate_guard().snapshot(self.started_at.elapsed()),
+        }
+    }
+
+    fn rate_guard(&self) -> MutexGuard<'_, UploadRateWindow> {
+        self.rate
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+#[derive(Debug, Default)]
+struct UploadRateWindow {
+    window_started: Duration,
+    window_bytes: u64,
+    last_rate: u64,
+}
+
+impl UploadRateWindow {
+    fn record(&mut self, bytes: u64, now: Duration) {
+        self.roll(now);
+        self.window_bytes = self.window_bytes.saturating_add(bytes);
+    }
+
+    fn snapshot(&mut self, now: Duration) -> u64 {
+        self.roll(now);
+        self.last_rate
+    }
+
+    fn roll(&mut self, now: Duration) {
+        let elapsed = now.saturating_sub(self.window_started);
+        if elapsed < Duration::from_secs(1) {
+            return;
+        }
+        let millis = u64::try_from(elapsed.as_millis())
+            .unwrap_or(u64::MAX)
+            .max(1);
+        self.last_rate = self.window_bytes.saturating_mul(1_000) / millis;
+        self.window_bytes = 0;
+        self.window_started = now;
+    }
+}
+
+#[derive(Debug)]
+struct IncomingUploadMetricSink {
+    upstream: Option<Arc<dyn ByteMetricSink>>,
+    peer: Arc<UploadCounter>,
+    torrent: Arc<UploadCounter>,
+    session: Arc<UploadCounter>,
+}
+
+impl ByteMetricSink for IncomingUploadMetricSink {
+    fn record(&self, metric: ByteMetric, bytes: u64) {
+        if let Some(upstream) = &self.upstream {
+            upstream.record(metric, bytes);
+        }
+        if metric == ByteMetric::PayloadUploaded {
+            self.peer.record(bytes);
+            self.torrent.record(bytes);
+            self.session.record(bytes);
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -238,6 +358,8 @@ struct Shared {
     upload_coordinator: UploadCoordinator,
     upload_reads: Arc<Semaphore>,
     upload_read_limit: usize,
+    session_upload: Arc<UploadCounter>,
+    peer_uploads: Mutex<BTreeMap<crate::upload_scheduler::UploadPeerId, PeerUploadEntry>>,
     observations: Mutex<ObservationState>,
     peer_activity_timeout: Duration,
     keepalive_interval: Duration,
@@ -254,6 +376,7 @@ struct RegistrationRuntime {
     accepting: AtomicBool,
     healthy: AtomicBool,
     cancellation: CancellationToken,
+    upload: Arc<UploadCounter>,
     peers: AsyncMutex<JoinSet<()>>,
 }
 
@@ -265,6 +388,7 @@ impl RegistrationRuntime {
             accepting: AtomicBool::new(true),
             healthy: AtomicBool::new(true),
             cancellation: CancellationToken::new(),
+            upload: Arc::new(UploadCounter::new()),
             peers: AsyncMutex::new(JoinSet::new()),
         }
     }
@@ -300,6 +424,15 @@ impl RegistrationRuntime {
         let membership = shared
             .upload_coordinator
             .register(data.info_hash, piece_length);
+        let peer_upload = Arc::new(UploadCounter::new());
+        shared.peer_uploads_guard().insert(
+            membership.id,
+            PeerUploadEntry {
+                info_hash: data.info_hash,
+                counter: peer_upload.clone(),
+            },
+        );
+        let torrent_upload = self.upload.clone();
         peers.spawn(async move {
             let _membership = UploadMembershipGuard {
                 shared: shared.clone(),
@@ -312,8 +445,12 @@ impl RegistrationRuntime {
                 data,
                 cancellation,
                 shared.clone(),
-                membership.id,
-                membership.grants,
+                IncomingUploadMembership {
+                    id: membership.id,
+                    grants: membership.grants,
+                    peer: peer_upload,
+                    torrent: torrent_upload,
+                },
             )
             .await;
             drop(permit);
@@ -371,6 +508,7 @@ struct UploadMembershipGuard {
 
 impl Drop for UploadMembershipGuard {
     fn drop(&mut self) {
+        self.shared.peer_uploads_guard().remove(&self.id);
         self.shared.upload_coordinator.remove(self.id);
     }
 }
@@ -510,6 +648,8 @@ impl IncomingPeerService {
             upload_coordinator,
             upload_reads: Arc::new(Semaphore::new(config.upload_read_jobs)),
             upload_read_limit: config.upload_read_jobs,
+            session_upload: Arc::new(UploadCounter::new()),
+            peer_uploads: Mutex::new(BTreeMap::new()),
             observations: Mutex::new(ObservationState::default()),
             peer_activity_timeout: config.peer_activity_timeout,
             keepalive_interval: config.keepalive_interval,
@@ -603,6 +743,14 @@ impl Shared {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    fn peer_uploads_guard(
+        &self,
+    ) -> MutexGuard<'_, BTreeMap<crate::upload_scheduler::UploadPeerId, PeerUploadEntry>> {
+        self.peer_uploads
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     fn reject(
         &self,
         reason: IncomingRejectionReason,
@@ -623,10 +771,32 @@ impl Shared {
 
     fn snapshot(&self) -> IncomingPeerServiceSnapshot {
         let observations = self.observations_guard();
+        let peer_uploads = self.peer_uploads_guard();
+        let registry = self.registry_guard();
+        let torrent_uploads = registry
+            .iter()
+            .map(|(info_hash, registration)| TorrentUploadSnapshot {
+                info_hash: *info_hash,
+                peers: peer_uploads
+                    .values()
+                    .filter(|peer| peer.info_hash == *info_hash)
+                    .count(),
+                traffic: registration.upload.snapshot(),
+            })
+            .collect();
+        let peer_uploads = peer_uploads
+            .iter()
+            .map(|(id, peer)| PeerUploadSnapshot {
+                generation: id.get(),
+                info_hash: peer.info_hash,
+                traffic: peer.counter.snapshot(),
+            })
+            .collect();
+        let session_upload = self.session_upload.snapshot();
         IncomingPeerServiceSnapshot {
             bootstrap: self.bootstrap,
             listen_address: self.listen_address,
-            registrations: self.registry_guard().len(),
+            registrations: registry.len(),
             pending: observations.pending,
             pending_high_water: observations.pending_high_water,
             established: observations.established,
@@ -646,7 +816,10 @@ impl Shared {
             upload_slots_high_water: observations.upload_slots_high_water,
             read_high_water: observations.read_high_water,
             read_bytes_high_water: observations.read_bytes_high_water,
-            payload_bytes_sent: observations.payload_bytes_sent,
+            payload_bytes_sent: session_upload.payload_bytes,
+            payload_rate_bytes: session_upload.payload_rate_bytes,
+            torrent_uploads,
+            peer_uploads,
             rejection_counts: observations.rejection_counts.clone(),
             recent_rejections: observations.recent_rejections.iter().copied().collect(),
             accepting_registrations: self.accepting_registrations.load(Ordering::Acquire),
@@ -944,6 +1117,13 @@ enum PeerTermination {
 
 type ActiveRead = (UploadRead, JoinHandle<Result<Vec<u8>, ()>>);
 
+struct IncomingUploadMembership {
+    id: crate::upload_scheduler::UploadPeerId,
+    grants: tokio::sync::watch::Receiver<UploadGrant>,
+    peer: Arc<UploadCounter>,
+    torrent: Arc<UploadCounter>,
+}
+
 #[derive(Default)]
 struct QueuedPieceFrames {
     frames: Vec<(BlockRequest, Weak<FrameValidity>)>,
@@ -1043,14 +1223,21 @@ async fn run_incoming_peer(
     registration: Arc<SeedRegistration>,
     cancellation: CancellationToken,
     shared: Arc<Shared>,
-    upload_peer: crate::upload_scheduler::UploadPeerId,
-    mut grants: tokio::sync::watch::Receiver<UploadGrant>,
+    membership: IncomingUploadMembership,
 ) -> PeerTermination {
-    let mut io = IncomingPeerIo::new(
-        stream,
-        shared.peer_activity_timeout,
-        shared.byte_metric_sink.clone(),
-    );
+    let IncomingUploadMembership {
+        id: upload_peer,
+        mut grants,
+        peer: peer_upload,
+        torrent: torrent_upload,
+    } = membership;
+    let byte_metric_sink: Arc<dyn ByteMetricSink> = Arc::new(IncomingUploadMetricSink {
+        upstream: shared.byte_metric_sink.clone(),
+        peer: peer_upload,
+        torrent: torrent_upload,
+        session: shared.session_upload.clone(),
+    });
+    let mut io = IncomingPeerIo::new(stream, shared.peer_activity_timeout, Some(byte_metric_sink));
     let termination = run_incoming_peer_loop(
         &mut io,
         supports_extensions,
@@ -1063,8 +1250,6 @@ async fn run_incoming_peer(
     .await;
     let payload = io.uploaded_payload_bytes();
     if payload != 0 {
-        let mut observations = shared.observations_guard();
-        observations.payload_bytes_sent = observations.payload_bytes_sent.saturating_add(payload);
         shared
             .upload_coordinator
             .update_payload(upload_peer, payload);
@@ -1622,8 +1807,8 @@ mod tests {
     use super::{
         IncomingPeerError, IncomingPeerService, IncomingPeerServiceConfig, IncomingRejectionReason,
         IncomingTcpBootstrap, MAX_DEFERRED_METADATA_REQUESTS, METADATA_SEND_BUFFER_WATERMARK,
-        QueuedChokeFrame, QueuedPieceFrames, SeedRegistration, drain_metadata_requests,
-        handle_metadata_message,
+        QueuedChokeFrame, QueuedPieceFrames, SeedRegistration, UploadRateWindow,
+        drain_metadata_requests, handle_metadata_message,
     };
     use crate::peer_io::PeerIo;
     use crate::{
@@ -1661,6 +1846,17 @@ mod tests {
         let latest = frame.replace();
         assert!(first.is_cancelled());
         assert!(!latest.is_cancelled());
+    }
+
+    #[test]
+    fn upload_rate_uses_completed_nonoverlapping_windows() {
+        let mut rate = UploadRateWindow::default();
+        rate.record(4_000, Duration::from_millis(250));
+        assert_eq!(rate.snapshot(Duration::from_millis(999)), 0);
+        assert_eq!(rate.snapshot(Duration::from_secs(1)), 4_000);
+        rate.record(2_000, Duration::from_millis(1_250));
+        assert_eq!(rate.snapshot(Duration::from_secs(2)), 2_000);
+        assert_eq!(rate.snapshot(Duration::from_secs(3)), 0);
     }
 
     fn root(label: &str) -> PathBuf {
@@ -1975,6 +2171,16 @@ mod tests {
             }
         );
 
+        let live = handle.snapshot();
+        assert_eq!(live.payload_bytes_sent, 4);
+        assert_eq!(live.torrent_uploads.len(), 1);
+        assert_eq!(live.torrent_uploads[0].info_hash, info_hash);
+        assert_eq!(live.torrent_uploads[0].peers, 1);
+        assert_eq!(live.torrent_uploads[0].traffic.payload_bytes, 4);
+        assert_eq!(live.peer_uploads.len(), 1);
+        assert_eq!(live.peer_uploads[0].info_hash, info_hash);
+        assert_eq!(live.peer_uploads[0].traffic.payload_bytes, 4);
+
         assert!(handle.unregister(token).await.expect("unregister seed"));
         assert_eq!(stream.read(&mut [0; 1]).await.expect("observe close"), 0);
         let before_shutdown = handle.snapshot();
@@ -1983,6 +2189,8 @@ mod tests {
         assert_eq!(before_shutdown.reads, 0);
         assert_eq!(before_shutdown.read_bytes, 0);
         assert_eq!(before_shutdown.payload_bytes_sent, 4);
+        assert!(before_shutdown.torrent_uploads.is_empty());
+        assert!(before_shutdown.peer_uploads.is_empty());
         assert_eq!(before_shutdown.established_high_water, 1);
         assert_eq!(before_shutdown.queued_requests_high_water, 1);
         assert_eq!(before_shutdown.read_high_water, 1);

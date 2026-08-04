@@ -45,8 +45,8 @@ pub use incoming::{
     IncomingPeerService, IncomingPeerServiceConfig, IncomingPeerServiceSnapshot, IncomingRejection,
     IncomingRejectionReason, IncomingTcpBootstrap, MAX_CONFIGURED_UPLOAD_READ_JOBS,
     MAX_DEFERRED_METADATA_REQUESTS, MAX_INCOMING_PENDING, MAX_INCOMING_WRITER_BYTES,
-    MAX_SEED_REGISTRATIONS, METADATA_SEND_BUFFER_WATERMARK, SeedRegistration,
-    SeedRegistrationToken,
+    MAX_SEED_REGISTRATIONS, METADATA_SEND_BUFFER_WATERMARK, PeerUploadSnapshot, SeedRegistration,
+    SeedRegistrationToken, TorrentUploadSnapshot, UploadTrafficSnapshot,
 };
 pub use metadata_seed::{
     MetadataSeedConfig, MetadataSeedError, MetadataSeedReport, MetadataSeedServer,
