@@ -870,6 +870,222 @@ describe("inspection application", () => {
     ]);
   });
 
+  it("opens the hidden torrent chooser only for empty pointer or keyboard Add", async () => {
+    const user = userEvent.setup();
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: liveSnapshot({
+        roots: [downloadRoot("root_a", "Downloads")],
+        defaultRoot: "root_a",
+        showAddOptions: false,
+      }),
+    });
+    renderApplication(application);
+    const fileInput = torrentFileInput();
+    const openChooser = vi.spyOn(fileInput, "click");
+    const add = screen.getByRole("button", { name: "Add" });
+    const draft = screen.getByRole("textbox", {
+      name: "Magnet link or torrent URL",
+    });
+
+    expect(fileInput).toHaveAttribute(
+      "accept",
+      ".torrent,application/x-bittorrent",
+    );
+    expect(fileInput).not.toHaveAttribute("multiple");
+    await user.click(add);
+    expect(openChooser).toHaveBeenCalledOnce();
+    draft.focus();
+    await user.keyboard("{Enter}");
+    expect(openChooser).toHaveBeenCalledTimes(2);
+    expect(application.commands).toEqual([]);
+    expect(screen.getByRole("status")).toHaveTextContent("");
+
+    await user.type(draft, "not a magnet");
+    await user.click(add);
+    expect(openChooser).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Enter a magnet link beginning with magnet:?")).toBeVisible();
+    expect(application.commands).toEqual([]);
+  });
+
+  it("uploads one selected file immediately through the usable default root", async () => {
+    const user = userEvent.setup();
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: liveSnapshot({
+        roots: [downloadRoot("root_a", "Downloads")],
+        defaultRoot: "root_a",
+        showAddOptions: false,
+      }),
+    });
+    renderApplication(application);
+    const bytes = new Uint8Array([100, 52, 58, 105, 110, 102, 111, 101]);
+    const source = bytes.buffer.slice(0) as ArrayBuffer;
+    const file = new File([bytes], "private-name.torrent", {
+      type: "application/octet-stream",
+    });
+    const read = vi.fn().mockResolvedValue(source);
+    Object.defineProperty(file, "arrayBuffer", { value: read });
+    const fileInput = torrentFileInput();
+
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    await waitFor(() =>
+      expect(application.commands).toContainEqual({
+        type: "add_torrent_bytes",
+        source,
+        storageRoot: "root_a",
+        startContent: true,
+      }),
+    );
+    expect(read).toHaveBeenCalledOnce();
+    expect(fileInput).toHaveValue("");
+    expect(JSON.stringify(application.commands)).not.toContain("private-name");
+    expect(screen.getByText("Torrent added", { exact: true })).toBeVisible();
+  });
+
+  it("retains only the File while options are chosen and applies them after read", async () => {
+    const user = userEvent.setup();
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: liveSnapshot({
+        roots: [
+          downloadRoot("root_a", "Default Downloads"),
+          downloadRoot("root_b", "External Drive"),
+        ],
+        defaultRoot: "root_a",
+        showAddOptions: true,
+      }),
+    });
+    renderApplication(application);
+    const source = new Uint8Array([1, 2, 3, 4]).buffer;
+    const file = new File([new Uint8Array(source)], "options.torrent", {
+      type: "application/x-bittorrent",
+    });
+    const read = vi.fn().mockResolvedValue(source);
+    Object.defineProperty(file, "arrayBuffer", { value: read });
+
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.change(torrentFileInput(), { target: { files: [file] } });
+    const dialog = screen.getByRole("dialog", { name: "Choose download options" });
+    expect(read).not.toHaveBeenCalled();
+    expect(application.commands).toEqual([]);
+
+    await user.click(within(dialog).getByRole("radio", { name: /External Drive/ }));
+    await user.click(
+      within(dialog).getByRole("checkbox", {
+        name: /Start downloading files when metadata is available/,
+      }),
+    );
+    await user.click(
+      within(dialog).getByRole("checkbox", { name: /Don’t show these options again/ }),
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Add torrent" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Choose download options" })).not.toBeInTheDocument(),
+    );
+    expect(read).toHaveBeenCalledOnce();
+    expect(application.commands).toEqual([
+      {
+        type: "add_torrent_bytes",
+        source,
+        storageRoot: "root_b",
+        startContent: false,
+      },
+      { type: "set_show_add_options", show: false },
+    ]);
+  });
+
+  it("rejects empty files and keeps a dialog file available after a read failure", async () => {
+    const user = userEvent.setup();
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: liveSnapshot({
+        roots: [downloadRoot("root_a", "Downloads")],
+        defaultRoot: "root_a",
+        showAddOptions: true,
+      }),
+    });
+    renderApplication(application);
+    const fileInput = torrentFileInput();
+    fireEvent.change(fileInput, {
+      target: { files: [new File([], "empty.torrent")] },
+    });
+    expect(screen.getByText("Torrent files must contain at least one byte.")).toBeVisible();
+    expect(application.commands).toEqual([]);
+
+    const source = new Uint8Array([1, 2, 3]).buffer;
+    const file = new File([new Uint8Array(source)], "retry.torrent");
+    const read = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("permission denied"))
+      .mockResolvedValueOnce(source);
+    Object.defineProperty(file, "arrayBuffer", { value: read });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    const dialog = screen.getByRole("dialog", { name: "Choose download options" });
+    await user.click(within(dialog).getByRole("button", { name: "Add torrent" }));
+    expect(
+      await within(dialog).findByText(
+        "Could not read the torrent file: permission denied",
+      ),
+    ).toBeVisible();
+    expect(application.commands).toEqual([]);
+
+    await user.click(within(dialog).getByRole("button", { name: "Add torrent" }));
+    await waitFor(() =>
+      expect(application.commands).toContainEqual({
+        type: "add_torrent_bytes",
+        source,
+        storageRoot: "root_a",
+        startContent: true,
+      }),
+    );
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it("resets same-file selection and blocks duplicate submission while reading", async () => {
+    const user = userEvent.setup();
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: liveSnapshot({
+        roots: [downloadRoot("root_a", "Downloads")],
+        defaultRoot: "root_a",
+        showAddOptions: false,
+      }),
+    });
+    renderApplication(application);
+    const source = new Uint8Array([1, 2, 3]).buffer;
+    let finishRead: ((value: ArrayBuffer) => void) | undefined;
+    const read = vi.fn(
+      () =>
+        new Promise<ArrayBuffer>((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    const file = new File([new Uint8Array(source)], "same.torrent");
+    Object.defineProperty(file, "arrayBuffer", { value: read });
+    const fileInput = torrentFileInput();
+    const openChooser = vi.spyOn(fileInput, "click");
+    const add = screen.getByRole("button", { name: "Add" });
+
+    await user.click(add);
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    await waitFor(() => expect(add).toHaveTextContent("Adding…"));
+    expect(fileInput).toHaveValue("");
+    fireEvent.submit(add.closest("form")!);
+    expect(openChooser).toHaveBeenCalledOnce();
+    expect(read).toHaveBeenCalledOnce();
+    finishRead?.(source);
+    await waitFor(() => expect(application.commands).toHaveLength(1));
+
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    finishRead?.(source);
+    await waitFor(() => expect(application.commands).toHaveLength(2));
+  });
+
   it("uses an alternate root for one add without changing the default", async () => {
     const user = userEvent.setup();
     const application = new RecordingLiveApplication({
@@ -1126,6 +1342,14 @@ function renderApplication(
       <App />
     </InspectionProvider>,
   );
+}
+
+function torrentFileInput(): HTMLInputElement {
+  const input = document.querySelector<HTMLInputElement>(
+    'input[type="file"][accept=".torrent,application/x-bittorrent"]',
+  );
+  if (input === null) throw new Error("torrent file input is missing");
+  return input;
 }
 
 class RecordingLiveApplication implements InspectionApplication {

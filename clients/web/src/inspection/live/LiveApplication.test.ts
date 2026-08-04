@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type {
+  AddTorrentBytesRequest,
   ApiHello,
   DhtInspectionView,
   OpenViewSetRequest,
@@ -25,6 +26,10 @@ class FakeLiveClient implements ApplicationViewClient {
   readonly updates: UpdateViewSetRequest[] = [];
   readonly opens: OpenViewSetRequest[] = [];
   readonly requests: RequestEnvelope[] = [];
+  readonly uploads: {
+    readonly request: AddTorrentBytesRequest;
+    readonly source: ArrayBuffer;
+  }[] = [];
   openCount = 0;
   private rejectPoll: ((error: Error) => void) | null = null;
 
@@ -59,6 +64,25 @@ class FakeLiveClient implements ApplicationViewClient {
 
   async dispatch(request: RequestEnvelope): Promise<ResponseEnvelope> {
     this.requests.push(request);
+    return {
+      version: 1,
+      request_id: request.request_id,
+      revision: "4",
+      status: "success",
+      snapshot: {
+        profile_id: "live",
+        revision: "4",
+        storage: { roots: [], show_add_options: true },
+        torrents: [],
+      },
+    };
+  }
+
+  async addTorrentBytes(
+    request: AddTorrentBytesRequest,
+    source: ArrayBuffer,
+  ): Promise<ResponseEnvelope> {
+    this.uploads.push({ request, source });
     return {
       version: 1,
       request_id: request.request_id,
@@ -180,6 +204,34 @@ describe("LiveApplication", () => {
       storage_root: "root_a",
       start_content: false,
       skip_files: [],
+    });
+    await application.close();
+  });
+
+  it("maps torrent bytes to one all-files upload without a caller digest", async () => {
+    const client = new FakeLiveClient();
+    const application = await LiveApplication.open(client);
+    const source = new Uint8Array([100, 52, 58, 105, 110, 102, 111, 101]).buffer;
+
+    await expect(
+      application.dispatch({
+        type: "add_torrent_bytes",
+        source,
+        storageRoot: "root_a",
+        startContent: false,
+      }),
+    ).resolves.toEqual({ accepted: true, message: "Torrent added" });
+    expect(client.uploads).toHaveLength(1);
+    expect(client.uploads[0]).toEqual({
+      request: {
+        version: 1,
+        request_id: expect.stringMatching(/^web-[0-9a-f]{32}-1$/),
+        storage_root: "root_a",
+        start_content: false,
+        selection: { type: "all" },
+        source_length: source.byteLength,
+      },
+      source,
     });
     await application.close();
   });

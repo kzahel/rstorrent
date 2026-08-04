@@ -13,6 +13,10 @@ import {
 } from "../context";
 import type { DownloadRoot, InspectionCommand, TorrentRow } from "../model";
 import type { TestTorrentShortcut } from "../testTorrents";
+import {
+  readTorrentFile,
+  torrentFileSizeError,
+} from "../torrentFile";
 import { validateTorrentInput } from "../torrentInput";
 import { Icon } from "./Icon";
 import { AddTorrentDialog } from "./AddTorrentDialog";
@@ -22,10 +26,18 @@ import styles from "./TorrentActions.module.css";
 
 type BatchCommand = "pause" | "resume" | "archive" | "unarchive";
 
-interface PendingAdd {
+interface PendingMagnetAdd {
+  readonly type: "magnet";
   readonly magnet: string;
   readonly clearInputOnSuccess: boolean;
 }
+
+interface PendingTorrentFileAdd {
+  readonly type: "torrent_file";
+  readonly file: File;
+}
+
+type PendingAdd = PendingMagnetAdd | PendingTorrentFileAdd;
 
 export function TorrentActions() {
   const torrents = useInspectionStore((state) => state.torrents);
@@ -44,6 +56,7 @@ export function TorrentActions() {
   const [removeTarget, setRemoveTarget] = useState<TorrentRow | undefined>();
   const addingRef = useRef(false);
   const addInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const removeButtonRef = useRef<HTMLButtonElement>(null);
   const statusId = useId();
   const targetRows = useMemo(
@@ -137,38 +150,97 @@ export function TorrentActions() {
         root.id === storage.defaultRoot && root.availability === "available",
     );
     if (storage.showAddOptions || defaultRoot === undefined) {
-      setPendingAdd({ magnet: validated.magnet, clearInputOnSuccess });
+      setPendingAdd({
+        type: "magnet",
+        magnet: validated.magnet,
+        clearInputOnSuccess,
+      });
       return true;
     }
-    return addToRoot(validated.magnet, defaultRoot.id, clearInputOnSuccess);
+    return addToRoot(
+      {
+        type: "magnet",
+        magnet: validated.magnet,
+        clearInputOnSuccess,
+      },
+      defaultRoot.id,
+    );
   };
 
   const addToRoot = async (
-    magnet: string,
+    source: PendingAdd,
     storageRoot: string,
-    clearInputOnSuccess: boolean,
     startContent = true,
   ) => {
+    if (addingRef.current) return false;
     addingRef.current = true;
     setAdding(true);
     try {
-      const accepted = await send({
-        type: "add_magnet",
-        magnet,
-        storageRoot,
-        startContent,
-      });
-      if (accepted && clearInputOnSuccess) setTorrentInput("");
-      return accepted;
+      const result = await executePendingAdd(source, storageRoot, startContent);
+      setStatus(result.message);
+      if (source.type === "magnet" && source.clearInputOnSuccess) {
+        setTorrentInput("");
+      }
+      return true;
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+      return false;
     } finally {
       addingRef.current = false;
       setAdding(false);
     }
   };
 
-  const addTorrent = async (event: FormEvent<HTMLFormElement>) => {
+  const executePendingAdd = async (
+    source: PendingAdd,
+    storageRoot: string,
+    startContent: boolean,
+  ) => {
+    if (source.type === "magnet") {
+      return execute({
+        type: "add_magnet",
+        magnet: source.magnet,
+        storageRoot,
+        startContent,
+      });
+    }
+    const bytes = await readTorrentFile(source.file);
+    return execute({
+      type: "add_torrent_bytes",
+      source: bytes,
+      storageRoot,
+      startContent,
+    });
+  };
+
+  const addTorrent = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    await beginAdd(torrentInput, true);
+    if (addingRef.current) return;
+    if (torrentInput.trim().length === 0) {
+      fileInputRef.current?.click();
+      return;
+    }
+    void beginAdd(torrentInput, true);
+  };
+
+  const selectTorrentFile = (file: File) => {
+    if (addingRef.current) return;
+    const sizeError = torrentFileSizeError(file.size);
+    if (sizeError !== null) {
+      setStatus(sizeError);
+      return;
+    }
+    setInputInvalid(false);
+    const source: PendingTorrentFileAdd = { type: "torrent_file", file };
+    const defaultRoot = storage.roots.find(
+      (root) =>
+        root.id === storage.defaultRoot && root.availability === "available",
+    );
+    if (storage.showAddOptions || defaultRoot === undefined) {
+      setPendingAdd(source);
+      return;
+    }
+    void addToRoot(source, defaultRoot.id);
   };
 
   const addTestTorrent = async (torrent: TestTorrentShortcut) => {
@@ -215,12 +287,7 @@ export function TorrentActions() {
     addingRef.current = true;
     setAdding(true);
     try {
-      const result = await execute({
-        type: "add_magnet",
-        magnet: pendingAdd.magnet,
-        storageRoot: rootId,
-        startContent,
-      });
+      const result = await executePendingAdd(pendingAdd, rootId, startContent);
       let message = result.message;
       if (dontShowAgain) {
         try {
@@ -235,7 +302,12 @@ export function TorrentActions() {
           }`;
         }
       }
-      if (pendingAdd.clearInputOnSuccess) setTorrentInput("");
+      if (
+        pendingAdd.type === "magnet" &&
+        pendingAdd.clearInputOnSuccess
+      ) {
+        setTorrentInput("");
+      }
       setPendingAdd(null);
       setStatus(message);
     } finally {
@@ -283,6 +355,17 @@ export function TorrentActions() {
               onChange={(event) => {
                 setTorrentInput(event.currentTarget.value);
                 setInputInvalid(false);
+              }}
+            />
+            <input
+              ref={fileInputRef}
+              hidden
+              type="file"
+              accept=".torrent,application/x-bittorrent"
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0];
+                event.currentTarget.value = "";
+                if (file !== undefined) selectTorrentFile(file);
               }}
             />
             <button

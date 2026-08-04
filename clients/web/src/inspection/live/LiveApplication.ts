@@ -1,4 +1,5 @@
 import type {
+  AddTorrentBytesRequest,
   ApiHello,
   DiagnosticEvent,
   FileView,
@@ -76,6 +77,7 @@ export class LiveApplication implements InspectionApplication {
   private mappedPieces: MappedPieceActivity | null = null;
   private hello: ApiHello | null = null;
   private closed = false;
+  private readonly lifetime = new AbortController();
   private readonly requestInstanceId = generateRequestInstanceId();
   private requestSequence = 1;
   private removeWakeHints: (() => void) | null = null;
@@ -175,6 +177,37 @@ export class LiveApplication implements InspectionApplication {
       } catch (error) {
         return { accepted: false, message: asError(error).message };
       }
+    }
+    if (command.type === "add_torrent_bytes") {
+      if (this.client.addTorrentBytes === undefined) {
+        return {
+          accepted: false,
+          message: "Torrent file upload is unavailable on this connection",
+        };
+      }
+      const request: AddTorrentBytesRequest = {
+        version: 1,
+        request_id: `web-${this.requestInstanceId}-${this.requestSequence++}`,
+        storage_root: command.storageRoot,
+        start_content: command.startContent,
+        selection: { type: "all" },
+        source_length: command.source.byteLength,
+      };
+      const response = await this.client.addTorrentBytes(
+        request,
+        command.source,
+        this.lifetime.signal,
+      );
+      this.controller?.requestImmediatePoll();
+      if (response.status === "error") {
+        return { accepted: false, message: response.error.message };
+      }
+      this.snapshot = {
+        ...this.snapshot,
+        storage: mapStorage(response.snapshot.storage),
+      };
+      this.emit({ type: "snapshot", snapshot: this.snapshot });
+      return { accepted: true, message: "Torrent added" };
     }
     if (
       command.type !== "add_magnet" &&
@@ -307,6 +340,7 @@ export class LiveApplication implements InspectionApplication {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    this.lifetime.abort("live application closed");
     this.removeWakeHints?.();
     this.removeWakeHints = null;
     this.listeners.clear();

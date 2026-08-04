@@ -502,6 +502,12 @@ export type InspectionCommand =
       readonly startContent: boolean;
     }
   | {
+      readonly type: "add_torrent_bytes";
+      readonly source: ArrayBuffer;
+      readonly storageRoot: string;
+      readonly startContent: boolean;
+    }
+  | {
       readonly type: "set_file_priority";
       readonly torrentId: string;
       readonly fileIndices: readonly number[];

@@ -156,6 +156,8 @@ export class DemoApplication implements InspectionApplication {
         return accepted("Generated demo transfer added");
       case "add_magnet":
         return rejected("Live magnet add is unavailable in demo scenarios");
+      case "add_torrent_bytes":
+        return rejected("Torrent file upload is unavailable in demo scenarios");
       case "set_file_priority":
         return rejected("File priority changes are unavailable in demo scenarios");
       case "force_recheck":
