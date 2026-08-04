@@ -45,6 +45,9 @@ Topics own the current truth for a continuing concern. Tactical docs under
   lifecycle/version facts, and explicit user-submitted diagnostic context.
 - [`capability-readiness.md`](capability-readiness.md): master engine and product
   scoreboard, evidence vocabulary, priority policy, and bounded current queue.
+- [`code-organization-and-refactoring.md`](code-organization-and-refactoring.md):
+  living module, crate, test-placement, source-pressure, and likely refactor
+  boundary snapshot.
 - [`download-correctness.md`](download-correctness.md): completion, integrity,
   request ownership, recovery invariants, observed incidents, and executable
   scenario ledger.
