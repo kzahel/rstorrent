@@ -1,7 +1,8 @@
 # Tactical 065: DHT Observatory
 
-Status: Planned; direction accepted and visualization revised on 2026-08-03.
-Implementation has not begun.
+Status: Active; direction accepted and visualization revised on 2026-08-03.
+Pinned-source reinspection completed on 2026-08-04; implementation is in
+progress.
 
 Topics: `dht-discovery`, `application-view-api`, `web-ui-design`,
 `desktop-inspection-surface`, `capability-readiness`
@@ -124,6 +125,50 @@ Re-inspect libtorrent `2.0.13` at
 RSTorrent adopts useful inspection distinctions, not libtorrent's alert API,
 status structs, C++ ownership graph, or routing policy.
 
+The 2026-08-04 reinspection used exact commit
+`7d7fc38fac61177fa5e02148f791b2f65250b09d` and found:
+
+- `routing_table::status`, `size`, `depth`, `next_refresh`, `node_failed`,
+  `fill_from_replacements`, and `find_bucket` in
+  `src/kademlia/routing_table.cpp` keep live and replacement occupancy
+  separate, expose active bucket state, promote replacements after failure,
+  and select refresh work from least-recently queried nodes. Libtorrent uses a
+  dynamically split table whose vector index is distance depth; that layout is
+  not RSTorrent's fixed 160-slot array and is not copied into the contract.
+- `node_entry::node_entry` and `update_rtt` in
+  `src/kademlia/node_entry.cpp` distinguish confirmed/pinged nodes, timeout
+  count, last query, and bounded RTT history. RSTorrent keeps its existing
+  response-age plus failure classification and exposes only the age needed to
+  explain good/questionable state.
+- `rpc_manager::invoke`, `incoming`, `unreachable`, and its timeout sweep in
+  `src/kademlia/rpc_manager.cpp` correlate replies to the exact endpoint,
+  retain bounded outstanding requests, remove cancelled work, and surface
+  short and terminal timeouts. The observatory adopts an exact active-
+  transaction gauge, not transaction rows or IDs.
+- `traversal_algorithm::status`, `finished`, `failed`, `done`, and
+  `add_requests` in `src/kademlia/traversal_algorithm.cpp` expose response,
+  timeout, outstanding, branch, target, and remaining-node facts while
+  convergence is decided from responded/alive candidates. `get_peers.cpp`
+  computes shared prefix as `160 - distance_exp(id, target())`. RSTorrent
+  therefore derives convergence only from responded candidates with known
+  IDs, while retaining its existing alpha, deadline, and completion policy.
+- `node::status` in `src/kademlia/node.cpp` snapshots routing and active
+  traversals together. `dht_tracker::incoming_packet`, `send_packet`,
+  `dht_status`, and `stop` in `src/kademlia/dht_tracker.cpp` count bytes at the
+  socket boundary, apply rate limits before mutation, and cancel timers on
+  stop. RSTorrent follows those observation boundaries through one latest-
+  value actor publication and joined application forwarder.
+- Focused cases inspected in `test/test_dht.cpp` were the routing-table
+  failure/reset sequence near `test_routing_table`,
+  `routing_table_uniform`, `routing_table_balance`,
+  `routing_table_for_each`, `read_only_node`,
+  `rpc_reply_ignores_wrong_port`, `unsorted_traversal_results`, and
+  `node_id_bucket_distribution`. `test/test_direct_dht.cpp`'s
+  `direct_dht_request` covers successful and timed-out request completion plus
+  session abort. These cases select exact bucket totals, endpoint correlation,
+  unknown-ID exclusion from convergence, bounded replacement state, and
+  terminal cleanup for independent RSTorrent tests.
+
 ### JSTorrent product history
 
 Inspect local JSTorrent revision
@@ -137,6 +182,47 @@ Inspect local JSTorrent revision
 RSTorrent keeps the useful operational questions but intentionally replaces
 the endpoint-heavy table with routing-space and lookup summaries. No source or
 fixture is copied.
+
+The 2026-08-04 reinspection confirmed exact sibling commit
+`9895410beeed6aff554053769bd006a3fbd373ef`. `DhtTab.tsx` shows status, node
+identity, live node/bucket totals, byte counters, per-method sent/succeeded/
+received counts, discovered peers, and an optional endpoint table. The compact
+facts remain useful; the endpoint table, binary Ready/Starting label, inline
+styles, and UI-owned node formatting are intentionally not retained.
+
+In `packages/engine/src/dht/`, `routing-table.ts` owns dynamically split
+K-buckets, LRU freshness, questionable-node detection and persistence;
+`iterative-lookup.ts` explicitly calculates the K closest **responded** nodes
+before declaring convergence; `krpc-socket.ts` counts malformed and rate-
+limited input after socket receipt and destroys pending transactions on close;
+`dht-node.ts` owns bootstrap, maintenance, lookup, cumulative statistics and
+teardown; and `dht-persistence.ts` validates restored hints. Focused tests
+inspected were `routing-table.test.ts`, `iterative-lookup.test.ts`,
+`transaction-manager.test.ts`, `krpc-socket.test.ts`,
+`dht-node-bootstrap.test.ts`, `dht-maintenance.test.ts`, and
+`dht-persistence.test.ts`, especially full-bucket ping/eviction, K-closest
+responded convergence, alpha bounds, packet loss, malformed input, transaction
+destroy, bootstrap failure, questionable refresh, corrupt persistence, and
+restart identity. RSTorrent adopts those questions through independently
+authored fixed-bucket observations and existing actor tests; no sibling source,
+fixture, or persistence shape is imported.
+
+### Adopted behavior and intentional differences
+
+- Adopt exact fixed-bucket occupancy, response freshness, replacement count,
+  current transaction/lookup allocation, socket byte totals, and responded-
+  candidate convergence because each explains owned RSTorrent state.
+- Preserve the existing fixed 160-bucket `RoutingTable`, routing admission,
+  alpha-3 traversal, candidate/peer limits, timeouts, private gating, and
+  persistence. Observation cannot change those policies.
+- Differ from both references by publishing one endpoint-free immutable
+  latest value and by presenting shared-prefix depth `0..=31` plus an explicit
+  deeper tail. Differ from libtorrent by not estimating global population and
+  from JSTorrent by not exposing a raw node table.
+- Treat unknown-ID bootstrap candidates as unqueried/in-flight/failed counts
+  but exclude them from convergence. Count malformed datagram bytes at receipt
+  even when decode fails. Force private cancellation, actor failure, and
+  shutdown observations rather than waiting for the ordinary 500 ms cadence.
 
 ## Existing Boundary And Concrete Improvement
 

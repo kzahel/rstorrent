@@ -38,16 +38,19 @@ impl NodeId {
         left.xor_distance(target).cmp(&right.xor_distance(target))
     }
 
-    fn bucket_index(self, other: Self) -> Option<usize> {
+    /// Returns the number of most-significant bits shared with another ID.
+    pub fn shared_prefix_bits(self, other: Self) -> u16 {
         let distance = self.xor_distance(other);
-        let leading = distance
-            .iter()
-            .take_while(|byte| **byte == 0)
-            .count()
-            .saturating_mul(8);
-        let first = *distance.get(leading / 8)?;
-        let leading = leading + first.leading_zeros() as usize;
-        (leading < 160).then_some(159 - leading)
+        let whole_bytes = distance.iter().take_while(|byte| **byte == 0).count();
+        if whole_bytes == NODE_ID_LENGTH {
+            return 160;
+        }
+        (whole_bytes * 8 + distance[whole_bytes].leading_zeros() as usize) as u16
+    }
+
+    fn bucket_index(self, other: Self) -> Option<usize> {
+        let shared = usize::from(self.shared_prefix_bits(other));
+        (shared < 160).then_some(159 - shared)
     }
 }
 
@@ -919,6 +922,23 @@ pub enum RoutingAdmission {
     Rejected,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RoutingBucketInspection {
+    pub bucket_index: u16,
+    pub good_nodes: u8,
+    pub questionable_nodes: u8,
+    pub replacement_candidates: u8,
+    pub oldest_live_response_age_seconds: Option<u64>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RoutingTableInspection {
+    pub routing_nodes: u16,
+    pub occupied_buckets: u16,
+    pub deepest_shared_prefix_bits: Option<u16>,
+    pub buckets: Vec<RoutingBucketInspection>,
+}
+
 /// Fixed-distance K-buckets with independently bounded replacement caches.
 ///
 /// Only `record_response` admits a node to the live table. `heard_about`
@@ -948,6 +968,58 @@ impl RoutingTable {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    /// Captures endpoint-free routing occupancy at one monotonic instant.
+    pub fn inspection(&self, now_seconds: u64) -> RoutingTableInspection {
+        let mut routing_nodes = 0_u16;
+        let mut occupied_buckets = 0_u16;
+        let mut deepest_shared_prefix_bits = None;
+        let buckets = self
+            .buckets
+            .iter()
+            .enumerate()
+            .map(|(bucket_index, bucket)| {
+                let mut good_nodes = 0_u8;
+                let mut questionable_nodes = 0_u8;
+                let mut oldest_live_response_age_seconds = None;
+                for node in &bucket.live {
+                    match node.state(now_seconds) {
+                        RoutingNodeState::Good => good_nodes = good_nodes.saturating_add(1),
+                        RoutingNodeState::Questionable => {
+                            questionable_nodes = questionable_nodes.saturating_add(1);
+                        }
+                        RoutingNodeState::Bad => {}
+                    }
+                    let age = now_seconds.saturating_sub(node.last_response_seconds);
+                    oldest_live_response_age_seconds = Some(
+                        oldest_live_response_age_seconds.map_or(age, |oldest: u64| oldest.max(age)),
+                    );
+                }
+                let live = u16::from(good_nodes) + u16::from(questionable_nodes);
+                if live != 0 {
+                    routing_nodes = routing_nodes.saturating_add(live);
+                    occupied_buckets = occupied_buckets.saturating_add(1);
+                    let depth = 159_u16.saturating_sub(bucket_index as u16);
+                    deepest_shared_prefix_bits = Some(
+                        deepest_shared_prefix_bits.map_or(depth, |deepest: u16| deepest.max(depth)),
+                    );
+                }
+                RoutingBucketInspection {
+                    bucket_index: bucket_index as u16,
+                    good_nodes,
+                    questionable_nodes,
+                    replacement_candidates: bucket.replacements.len() as u8,
+                    oldest_live_response_age_seconds,
+                }
+            })
+            .collect();
+        RoutingTableInspection {
+            routing_nodes,
+            occupied_buckets,
+            deepest_shared_prefix_bits,
+            buckets,
+        }
     }
 
     pub fn record_response(&mut self, contact: NodeContact, now_seconds: u64) -> RoutingAdmission {
@@ -1297,6 +1369,75 @@ mod tests {
         assert!(table.record_failure(contacts[0]));
         assert_eq!(table.len(), K);
         assert!(table.closest(contacts[8].id, K, now).contains(&contacts[8]));
+    }
+
+    #[test]
+    fn shared_prefix_and_routing_inspection_preserve_all_fixed_buckets() {
+        let local = NodeId::ZERO;
+        let at_depth = |depth: u16, suffix: u16| {
+            let mut bytes = [0_u8; NODE_ID_LENGTH];
+            let byte = usize::from(depth / 8);
+            let bit = depth % 8;
+            bytes[byte] = 0x80 >> bit;
+            bytes[18..].copy_from_slice(&suffix.to_be_bytes());
+            NodeId(bytes)
+        };
+        assert_eq!(local.shared_prefix_bits(local), 160);
+        assert_eq!(local.shared_prefix_bits(at_depth(0, 1)), 0);
+        assert_eq!(local.shared_prefix_bits(at_depth(17, 2)), 17);
+        assert_eq!(local.shared_prefix_bits(at_depth(24, 3)), 24);
+        assert_eq!(local.shared_prefix_bits(at_depth(159, 1)), 159);
+
+        let now = 10_000;
+        let mut table = RoutingTable::new(local);
+        let depth_zero = NodeContact {
+            id: at_depth(0, 1),
+            address: ep4(6101),
+        };
+        let depth_seventeen = NodeContact {
+            id: at_depth(17, 2),
+            address: ep4(6102),
+        };
+        let depth_one_fifty_nine = NodeContact {
+            id: at_depth(159, 1),
+            address: ep4(6103),
+        };
+        assert_eq!(
+            table.record_response(depth_zero, now),
+            RoutingAdmission::Added
+        );
+        assert_eq!(
+            table.record_response(depth_seventeen, now - GOOD_NODE_AGE_SECONDS - 1),
+            RoutingAdmission::Added
+        );
+        assert_eq!(
+            table.record_response(depth_one_fifty_nine, now - 42),
+            RoutingAdmission::Added
+        );
+        let replacement = NodeContact {
+            id: at_depth(24, 4),
+            address: ep4(6104),
+        };
+        assert_eq!(
+            table.heard_about(replacement, now),
+            RoutingAdmission::ReplacementCached
+        );
+
+        let inspection = table.inspection(now);
+        assert_eq!(inspection.buckets.len(), 160);
+        assert_eq!(inspection.routing_nodes, 3);
+        assert_eq!(inspection.occupied_buckets, 3);
+        assert_eq!(inspection.deepest_shared_prefix_bits, Some(159));
+        assert_eq!(inspection.buckets[159].good_nodes, 1);
+        assert_eq!(inspection.buckets[142].questionable_nodes, 1);
+        assert_eq!(
+            inspection.buckets[142].oldest_live_response_age_seconds,
+            Some(GOOD_NODE_AGE_SECONDS + 1)
+        );
+        assert_eq!(inspection.buckets[135].replacement_candidates, 1);
+        assert_eq!(inspection.buckets[0].good_nodes, 1);
+        assert_eq!(inspection.buckets[0].bucket_index, 0);
+        assert_eq!(inspection.buckets[159].bucket_index, 159);
     }
 
     #[test]

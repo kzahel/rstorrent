@@ -9,12 +9,12 @@ use std::time::Duration;
 
 use rstorrent_protocol::dht::{
     ALPHA, DhtEndpoint, DhtIp, K, MAX_DATAGRAM_SIZE, Message, NodeContact, NodeId, Query,
-    ResponseMessage, RoutingTable, Want, decode_message, encode_error, encode_query,
-    encode_response, generate_bep42_id, verify_bep42_id,
+    ResponseMessage, RoutingBucketInspection, RoutingTable, Want, decode_message, encode_error,
+    encode_query, encode_response, generate_bep42_id, verify_bep42_id,
 };
 use sha1::{Digest, Sha1};
 use tokio::net::{UdpSocket, lookup_host};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{Instant, MissedTickBehavior, interval};
 use tokio_util::sync::CancellationToken;
@@ -38,6 +38,7 @@ pub const DEFAULT_QUERY_TIMEOUT: Duration = Duration::from_secs(5);
 pub const DEFAULT_LOOKUP_TIMEOUT: Duration = Duration::from_secs(30);
 pub const DEFAULT_BOOTSTRAP_RETRY_INTERVAL: Duration = Duration::from_secs(60);
 pub const DEFAULT_ROUTING_REFRESH_INTERVAL: Duration = Duration::from_secs(15 * 60);
+pub const DHT_OBSERVATION_INTERVAL: Duration = Duration::from_millis(500);
 const PEER_TTL: Duration = Duration::from_secs(30 * 60);
 const TOKEN_ROTATION: Duration = Duration::from_secs(5 * 60);
 const EXTERNAL_ADDRESS_VOTES: usize = 3;
@@ -169,6 +170,67 @@ pub struct DhtStats {
     pub discovered_peers: u64,
     pub bootstrap_attempts: u64,
     pub routing_refreshes: u64,
+    pub datagram_bytes_sent: u64,
+    pub datagram_bytes_received: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DhtLifecycle {
+    Offline,
+    BootstrapEmpty,
+    Participating,
+    Inactive,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DhtLookupObservation {
+    pub lookup_id: u64,
+    pub target: NodeId,
+    pub age_millis: u64,
+    pub deadline_in_millis: u64,
+    pub unqueried_candidates: u16,
+    pub in_flight_candidates: u16,
+    pub responded_candidates: u16,
+    pub failed_candidates: u16,
+    pub discovered_peers: u16,
+    pub closest_responded_prefix_bits: Option<u16>,
+    pub last_convergence_improvement_age_millis: Option<u64>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DhtObservation {
+    pub lifecycle: DhtLifecycle,
+    pub network_policy: NetworkPolicy,
+    pub local_node_id: NodeId,
+    pub captured_millis: u64,
+    pub routing_nodes_v4: u16,
+    pub occupied_buckets_v4: u16,
+    pub deepest_shared_prefix_bits_v4: Option<u16>,
+    pub stats: DhtStats,
+    pub buckets_v4: Vec<RoutingBucketInspection>,
+    pub lookups: Vec<DhtLookupObservation>,
+}
+
+impl DhtObservation {
+    fn initial(network_policy: NetworkPolicy, local_node_id: NodeId) -> Self {
+        let routing = RoutingTable::new(local_node_id).inspection(0);
+        Self {
+            lifecycle: if matches!(network_policy, NetworkPolicy::Offline) {
+                DhtLifecycle::Offline
+            } else {
+                DhtLifecycle::BootstrapEmpty
+            },
+            network_policy,
+            local_node_id,
+            captured_millis: 0,
+            routing_nodes_v4: routing.routing_nodes,
+            occupied_buckets_v4: routing.occupied_buckets,
+            deepest_shared_prefix_bits_v4: routing.deepest_shared_prefix_bits,
+            stats: DhtStats::default(),
+            buckets_v4: routing.buckets,
+            lookups: Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -249,6 +311,7 @@ pub struct DhtService {
     cancellation: CancellationToken,
     task: Option<JoinHandle<Result<DhtSnapshot, DhtError>>>,
     local_address: SocketAddr,
+    observations: watch::Receiver<DhtObservation>,
 }
 
 impl DhtService {
@@ -271,6 +334,8 @@ impl DhtService {
             .map_err(|error| DhtError::Io(error.to_string()))?;
         let bootstrap = resolve_bootstrap(&config, snapshot.as_ref()).await;
         let (sender, receiver) = mpsc::channel(DHT_COMMAND_QUEUE);
+        let (observation_sender, observations) =
+            watch::channel(DhtObservation::initial(config.network_policy, node_id));
         let cancellation = CancellationToken::new();
         let task_cancellation = cancellation.clone();
         let actor = Actor::new(
@@ -280,6 +345,7 @@ impl DhtService {
             bootstrap,
             receiver,
             task_cancellation,
+            observation_sender,
         )?;
         let task = tokio::spawn(async move { actor.run().await });
         Ok(Self {
@@ -287,6 +353,7 @@ impl DhtService {
             cancellation,
             task: Some(task),
             local_address,
+            observations,
         })
     }
 
@@ -296,6 +363,10 @@ impl DhtService {
 
     pub fn local_address(&self) -> SocketAddr {
         self.local_address
+    }
+
+    pub fn subscribe_observations(&self) -> watch::Receiver<DhtObservation> {
+        self.observations.clone()
     }
 
     pub async fn shutdown(mut self) -> Result<DhtSnapshot, DhtError> {
@@ -356,26 +427,36 @@ struct Candidate {
 
 #[derive(Debug)]
 struct Lookup {
+    id: u64,
     target: NodeId,
     candidates: Vec<Candidate>,
     peers: BTreeSet<SocketAddr>,
     waiters: Vec<oneshot::Sender<Result<Vec<SocketAddr>, DhtError>>>,
     deadline: Instant,
+    started_at: Instant,
+    closest_responded_prefix_bits: Option<u16>,
+    last_convergence_improvement_at: Option<Instant>,
 }
 
 impl Lookup {
     fn new(
+        id: u64,
         target: NodeId,
         seeds: impl IntoIterator<Item = Candidate>,
         waiter: oneshot::Sender<Result<Vec<SocketAddr>, DhtError>>,
         deadline: Instant,
+        now: Instant,
     ) -> Self {
         let mut lookup = Self {
+            id,
             target,
             candidates: Vec::new(),
             peers: BTreeSet::new(),
             waiters: vec![waiter],
             deadline,
+            started_at: now,
+            closest_responded_prefix_bits: None,
+            last_convergence_improvement_at: None,
         };
         for seed in seeds {
             lookup.add_candidate(seed.contact, seed.address);
@@ -442,8 +523,44 @@ impl Lookup {
             if contact.is_some() {
                 candidate.contact = contact;
             }
+            if state == CandidateState::Responded
+                && let Some(contact) = candidate.contact
+            {
+                let prefix = self.target.shared_prefix_bits(contact.id);
+                if self
+                    .closest_responded_prefix_bits
+                    .is_none_or(|closest| prefix > closest)
+                {
+                    self.closest_responded_prefix_bits = Some(prefix);
+                    self.last_convergence_improvement_at = Some(Instant::now());
+                }
+            }
         }
         self.sort_candidates();
+    }
+
+    fn observation(&self, now: Instant) -> DhtLookupObservation {
+        let count = |state| {
+            self.candidates
+                .iter()
+                .filter(|candidate| candidate.state == state)
+                .count() as u16
+        };
+        DhtLookupObservation {
+            lookup_id: self.id,
+            target: self.target,
+            age_millis: duration_millis(now.saturating_duration_since(self.started_at)),
+            deadline_in_millis: duration_millis(self.deadline.saturating_duration_since(now)),
+            unqueried_candidates: count(CandidateState::Unqueried),
+            in_flight_candidates: count(CandidateState::InFlight),
+            responded_candidates: count(CandidateState::Responded),
+            failed_candidates: count(CandidateState::Failed),
+            discovered_peers: self.peers.len() as u16,
+            closest_responded_prefix_bits: self.closest_responded_prefix_bits,
+            last_convergence_improvement_age_millis: self
+                .last_convergence_improvement_at
+                .map(|at| duration_millis(now.saturating_duration_since(at))),
+        }
     }
 
     fn has_work(&self) -> bool {
@@ -596,6 +713,9 @@ struct Actor {
     commands: mpsc::Receiver<Command>,
     cancellation: CancellationToken,
     stats: DhtStats,
+    observations: watch::Sender<DhtObservation>,
+    last_observation: Instant,
+    next_lookup_id: u64,
 }
 
 impl Actor {
@@ -606,6 +726,7 @@ impl Actor {
         bootstrap: ResolvedBootstrap,
         commands: mpsc::Receiver<Command>,
         cancellation: CancellationToken,
+        observations: watch::Sender<DhtObservation>,
     ) -> Result<Self, DhtError> {
         let now = Instant::now();
         let tokens = Tokens::new(now)?;
@@ -635,11 +756,24 @@ impl Actor {
             commands,
             cancellation,
             stats: DhtStats::default(),
+            observations,
+            last_observation: now,
+            next_lookup_id: 1,
         })
     }
 
     async fn run(mut self) -> Result<DhtSnapshot, DhtError> {
+        let result = self.run_active().await;
+        if result.is_err() {
+            self.cancel_all(DhtError::ActorStopped);
+        }
+        self.publish_observation(Some(DhtLifecycle::Inactive));
+        result.map(|()| self.snapshot())
+    }
+
+    async fn run_active(&mut self) -> Result<(), DhtError> {
         let _ = self.bootstrap().await;
+        self.publish_observation(None);
         let mut receive_buffer = [0_u8; MAX_DATAGRAM_SIZE + 1];
         let mut maintenance = interval(Duration::from_millis(200));
         maintenance.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -648,25 +782,29 @@ impl Actor {
                 biased;
                 _ = self.cancellation.cancelled() => {
                     self.cancel_all(DhtError::Cancelled);
-                    return Ok(self.snapshot());
+                    return Ok(());
                 }
                 command = self.commands.recv() => {
                     match command {
                         Some(Command::Shutdown(acknowledge)) => {
                             self.cancel_all(DhtError::Cancelled);
                             let _ = acknowledge.send(());
-                            return Ok(self.snapshot());
+                            return Ok(());
                         }
                         Some(command) => self.handle_command(command).await?,
                         None => {
                             self.cancel_all(DhtError::ActorStopped);
-                            return Ok(self.snapshot());
+                            return Ok(());
                         }
                     }
                 }
                 received = self.socket.recv_from(&mut receive_buffer) => {
                     match received {
                         Ok((length, source)) => {
+                            self.stats.datagram_bytes_received = self
+                                .stats
+                                .datagram_bytes_received
+                                .saturating_add(length as u64);
                             if let Some(sink) = &self.config.byte_metric_sink {
                                 sink.record(ByteMetric::DhtReceived, length as u64);
                             }
@@ -680,7 +818,14 @@ impl Actor {
                         Err(error) => return Err(DhtError::Io(error.to_string())),
                     }
                 }
-                _ = maintenance.tick() => self.maintain().await?,
+                _ = maintenance.tick() => {
+                    self.maintain().await?;
+                    if Instant::now().saturating_duration_since(self.last_observation)
+                        >= DHT_OBSERVATION_INTERVAL
+                    {
+                        self.publish_observation(None);
+                    }
+                },
             }
         }
     }
@@ -801,15 +946,19 @@ impl Actor {
                         state: CandidateState::Unqueried,
                     });
                 }
+                let now = Instant::now();
                 self.lookups.insert(
                     info_hash,
                     Lookup::new(
+                        self.next_lookup_id,
                         info_hash,
                         seeds,
                         result,
-                        Instant::now() + self.config.lookup_timeout,
+                        now + self.config.lookup_timeout,
+                        now,
                     ),
                 );
+                self.next_lookup_id = self.next_lookup_id.checked_add(1).unwrap_or(1);
                 self.fill_lookup(info_hash).await?;
                 if let Some(result) = self
                     .lookups
@@ -906,6 +1055,7 @@ impl Actor {
         if let Some(sink) = &self.config.byte_metric_sink {
             sink.record(ByteMetric::DhtSent, sent as u64);
         }
+        self.stats.datagram_bytes_sent = self.stats.datagram_bytes_sent.saturating_add(sent as u64);
         self.transactions.insert(
             transaction_id,
             Transaction {
@@ -1166,9 +1316,12 @@ impl Actor {
         };
         if let Ok(bytes) = result
             && let Ok(sent) = self.socket.send_to(&bytes, source).await
-            && let Some(sink) = &self.config.byte_metric_sink
         {
-            sink.record(ByteMetric::DhtSent, sent as u64);
+            self.stats.datagram_bytes_sent =
+                self.stats.datagram_bytes_sent.saturating_add(sent as u64);
+            if let Some(sink) = &self.config.byte_metric_sink {
+                sink.record(ByteMetric::DhtSent, sent as u64);
+            }
         }
         Ok(())
     }
@@ -1398,6 +1551,43 @@ impl Actor {
         }
     }
 
+    fn publish_observation(&mut self, lifecycle: Option<DhtLifecycle>) {
+        let now = Instant::now();
+        let elapsed = self.started.elapsed();
+        let routing = self.routing_v4.inspection(elapsed.as_secs());
+        let mut stats = self.stats;
+        stats.routing_nodes_v4 = u32::from(routing.routing_nodes);
+        stats.active_transactions = self.transactions.len().try_into().unwrap_or(u32::MAX);
+        stats.active_lookups = self.lookups.len().try_into().unwrap_or(u32::MAX);
+        let mut lookups = self
+            .lookups
+            .values()
+            .map(|lookup| lookup.observation(now))
+            .collect::<Vec<_>>();
+        lookups.sort_by_key(|lookup| lookup.lookup_id);
+        self.observations.send_replace(DhtObservation {
+            lifecycle: lifecycle.unwrap_or({
+                if matches!(self.config.network_policy, NetworkPolicy::Offline) {
+                    DhtLifecycle::Offline
+                } else if routing.routing_nodes == 0 {
+                    DhtLifecycle::BootstrapEmpty
+                } else {
+                    DhtLifecycle::Participating
+                }
+            }),
+            network_policy: self.config.network_policy,
+            local_node_id: self.node_id,
+            captured_millis: duration_millis(elapsed),
+            routing_nodes_v4: routing.routing_nodes,
+            occupied_buckets_v4: routing.occupied_buckets,
+            deepest_shared_prefix_bits_v4: routing.deepest_shared_prefix_bits,
+            stats,
+            buckets_v4: routing.buckets,
+            lookups,
+        });
+        self.last_observation = now;
+    }
+
     fn observe_external(
         &mut self,
         observed: Option<DhtEndpoint>,
@@ -1522,6 +1712,10 @@ fn random_node_id() -> Result<NodeId, DhtError> {
     Ok(NodeId(bytes))
 }
 
+fn duration_millis(duration: Duration) -> u64 {
+    duration.as_millis().try_into().unwrap_or(u64::MAX)
+}
+
 fn random_bytes() -> Result<[u8; 20], DhtError> {
     let mut bytes = [0; 20];
     getrandom::fill(&mut bytes).map_err(|error| DhtError::Io(error.to_string()))?;
@@ -1640,6 +1834,65 @@ mod tests {
         assert_eq!(matched.endpoint, endpoint);
         assert!(transactions.is_empty());
     }
+
+    #[test]
+    fn lookup_observation_advances_only_for_closer_responded_ids() {
+        let target = NodeId::ZERO;
+        let candidate = |prefix: u8, port: u16| {
+            let mut id = [0_u8; 20];
+            id[0] = prefix;
+            Candidate {
+                contact: Some(NodeContact {
+                    id: NodeId(id),
+                    address: dht_endpoint(SocketAddr::from((Ipv4Addr::LOCALHOST, port))),
+                }),
+                address: SocketAddr::from((Ipv4Addr::LOCALHOST, port)),
+                state: CandidateState::Unqueried,
+            }
+        };
+        let now = Instant::now();
+        let (sender, _receiver) = oneshot::channel();
+        let mut lookup = Lookup::new(
+            7,
+            target,
+            [candidate(0x80, 6201), candidate(0x20, 6202)],
+            sender,
+            now + Duration::from_secs(30),
+            now,
+        );
+        let first = lookup.candidates[0];
+        lookup.mark(first.address, CandidateState::Responded, first.contact);
+        let first_prefix = lookup
+            .closest_responded_prefix_bits
+            .expect("first convergence prefix");
+        let first_improvement = lookup
+            .last_convergence_improvement_at
+            .expect("first convergence instant");
+
+        let farther = lookup
+            .candidates
+            .iter()
+            .copied()
+            .find(|candidate| {
+                candidate
+                    .contact
+                    .is_some_and(|contact| target.shared_prefix_bits(contact.id) < first_prefix)
+            })
+            .expect("farther candidate");
+        lookup.mark(farther.address, CandidateState::Responded, farther.contact);
+        assert_eq!(lookup.closest_responded_prefix_bits, Some(first_prefix));
+        assert_eq!(
+            lookup.last_convergence_improvement_at,
+            Some(first_improvement)
+        );
+        let observation = lookup.observation(Instant::now());
+        assert_eq!(observation.lookup_id, 7);
+        assert_eq!(observation.responded_candidates, 2);
+        assert_eq!(
+            observation.closest_responded_prefix_bits,
+            Some(first_prefix)
+        );
+    }
     use rstorrent_protocol::dht::{ResponseMessage, decode_message};
 
     fn loopback_config(bootstrap: Vec<BootstrapNode>) -> DhtConfig {
@@ -1752,6 +2005,66 @@ mod tests {
             Err(DhtError::NetworkDisabled)
         );
         service.shutdown().await.expect("shutdown");
+    }
+
+    #[tokio::test]
+    async fn observations_are_latest_value_bounded_and_terminal() {
+        let router = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind silent router");
+        let router_address = router.local_addr().expect("router address");
+        let mut config = loopback_config(vec![BootstrapNode::Address(router_address)]);
+        config.query_timeout = Duration::from_secs(2);
+        let service = DhtService::start(config).await.expect("start DHT");
+        let service_address = service.local_address();
+        let mut observations = service.subscribe_observations();
+        assert_eq!(observations.borrow().buckets_v4.len(), 160);
+        observations.borrow_and_update();
+
+        let handle = service.handle();
+        let lookup_handle = handle.clone();
+        let lookup = tokio::spawn(async move { lookup_handle.lookup([5; 20]).await });
+        let malformed = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind malformed sender");
+        malformed
+            .send_to(b"x", service_address)
+            .await
+            .expect("send malformed datagram");
+
+        let active = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                observations.changed().await.expect("active observation");
+                let observation = observations.borrow_and_update().clone();
+                if !observation.lookups.is_empty()
+                    && observation.stats.malformed_received == 1
+                    && observation.stats.datagram_bytes_sent > 0
+                {
+                    break observation;
+                }
+            }
+        })
+        .await
+        .expect("active observation timeout");
+        assert_eq!(active.lifecycle, DhtLifecycle::BootstrapEmpty);
+        assert_eq!(active.stats.datagram_bytes_received, 1);
+        assert_eq!(active.lookups.len(), 1);
+        assert!(active.stats.active_transactions <= MAX_ACTIVE_TRANSACTIONS as u32);
+
+        service.shutdown().await.expect("shutdown");
+        let terminal = loop {
+            let observation = observations.borrow_and_update().clone();
+            if observation.lifecycle == DhtLifecycle::Inactive {
+                break observation;
+            }
+            if observations.changed().await.is_err() {
+                break observations.borrow_and_update().clone();
+            }
+        };
+        assert_eq!(terminal.lifecycle, DhtLifecycle::Inactive);
+        assert_eq!(terminal.stats.active_transactions, 0);
+        assert!(terminal.lookups.is_empty());
+        assert_eq!(lookup.await.expect("lookup task"), Err(DhtError::Cancelled));
     }
 
     #[tokio::test]
