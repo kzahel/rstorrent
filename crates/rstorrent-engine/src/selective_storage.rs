@@ -1139,6 +1139,9 @@ impl SelectiveStorage {
                 piece_index: verified.len(),
             });
         }
+        if spec.managed {
+            spec.pool.invalidate_storage(&spec.storage_id);
+        }
         let resuming = spec.managed;
         let mut files = Vec::with_capacity(layout.files().len());
         let mut skipped_sources = Vec::with_capacity(layout.files().len());
@@ -1531,6 +1534,10 @@ impl SelectiveStorage {
             staging: staging_root,
             part: part_path,
         } = paths;
+        let storage_id = storage_instance_id(metainfo.info_hash);
+        // Recheck must observe the current namespace instead of an open handle
+        // retained by the preceding download/check generation.
+        pool.invalidate_storage(&storage_id);
         let output_exists = path_exists(&output_root, "inspect resumable selected output").await?;
         let staging_exists =
             path_exists(&staging_root, "inspect resumable selected staging").await?;
@@ -1591,7 +1598,6 @@ impl SelectiveStorage {
             (&staging_root, ResumedStorage::Staging, false)
         };
         let namespace_generation = u64::from(published);
-        let storage_id = storage_instance_id(metainfo.info_hash);
         if output_exists || staging_exists {
             let artifact_metadata =
                 tokio::fs::symlink_metadata(artifact_root)
@@ -2263,8 +2269,13 @@ impl SelectiveStorage {
     }
 
     pub(crate) async fn commit_path_publication(&mut self) -> Result<(), SelectiveStorageError> {
-        let publication_shape = self.publication_shape;
-        let file_count = self.layout.files().len();
+        self.rename_path_publication().await?;
+        self.sync_path_publication_namespace().await?;
+        self.finish_path_publication()?;
+        Ok(())
+    }
+
+    pub(crate) async fn rename_path_publication(&mut self) -> Result<(), SelectiveStorageError> {
         let (output_root, staging_root, pool, storage_id) = match &self.backing {
             StorageBacking::Paths {
                 output_root,
@@ -2284,14 +2295,48 @@ impl SelectiveStorage {
                 ));
             }
         };
-
         pool.invalidate_storage(&storage_id);
-        rename_noreplace(staging_root.clone(), output_root.clone()).await?;
+        rename_noreplace(staging_root, output_root).await
+    }
+
+    pub(crate) async fn sync_path_publication_namespace(
+        &self,
+    ) -> Result<(), SelectiveStorageError> {
+        let output_root = match &self.backing {
+            StorageBacking::Paths { output_root, .. } => output_root,
+            StorageBacking::Platform { .. } | StorageBacking::Descriptors { .. } => {
+                return Err(SelectiveStorageError::InvalidStorageOperation(
+                    "path publication",
+                ));
+            }
+        };
         let parent = output_root
             .parent()
             .ok_or(SelectiveStorageError::InvalidOutputPath)?
             .to_path_buf();
-        sync_publication_directory(parent).await?;
+        sync_publication_directory(parent).await
+    }
+
+    pub(crate) fn finish_path_publication(&mut self) -> Result<(), SelectiveStorageError> {
+        let publication_shape = self.publication_shape;
+        let file_count = self.layout.files().len();
+        let (output_root, pool, storage_id) = match &self.backing {
+            StorageBacking::Paths {
+                output_root,
+                part_reference,
+                storage_id,
+                ..
+            } => (
+                output_root.clone(),
+                part_reference.pool().clone(),
+                storage_id.clone(),
+            ),
+            StorageBacking::Platform { .. } | StorageBacking::Descriptors { .. } => {
+                return Err(SelectiveStorageError::InvalidStorageOperation(
+                    "path publication",
+                ));
+            }
+        };
         for (file_index, metainfo_file) in self.layout.files().iter().enumerate() {
             let Some(file) = self.files[file_index].as_mut() else {
                 continue;
@@ -4722,6 +4767,68 @@ mod tests {
                 .expect("normalized bytes"),
             bytes
         );
+        tokio::fs::remove_dir_all(root).await.expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn resumed_recheck_drops_cached_handles_before_observing_replacement() {
+        let root = test_path("published-replaced-handle");
+        tokio::fs::create_dir(&root).await.expect("create root");
+        let metainfo = single_file_fixture();
+        let paths =
+            torrent_storage_paths_for_metainfo(&root, &metainfo).expect("plan published paths");
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[]).expect("selection");
+        let pool = StorageFilePool::new(4, None).expect("file pool");
+        let original = vec![0x31; metainfo.total_length as usize];
+        let replacement = vec![0x72; metainfo.total_length as usize];
+        tokio::fs::write(&paths.output, &original)
+            .await
+            .expect("write original publication");
+
+        let (mut first, _) = SelectiveStorage::resume_with_paths_and_pool_expected(
+            paths.clone(),
+            &metainfo,
+            layout.clone(),
+            selection.clone(),
+            vec![false; layout.piece_count()],
+            pool.clone(),
+            Some(ResumeArtifactState::Published),
+        )
+        .await
+        .expect("open first generation");
+        let first_hash = first.hash_piece(0).await.expect("hash original generation");
+        drop(first);
+
+        tokio::fs::remove_file(&paths.output)
+            .await
+            .expect("unlink original publication");
+        tokio::fs::write(&paths.output, &replacement)
+            .await
+            .expect("write replacement publication");
+        let (mut second, _) = SelectiveStorage::resume_with_paths_and_pool_expected(
+            paths,
+            &metainfo,
+            layout.clone(),
+            selection,
+            vec![false; layout.piece_count()],
+            pool.clone(),
+            Some(ResumeArtifactState::Published),
+        )
+        .await
+        .expect("open replacement generation");
+        let second_hash = second
+            .hash_piece(0)
+            .await
+            .expect("hash replacement generation");
+
+        assert_ne!(first_hash, second_hash);
+        assert_eq!(
+            second_hash,
+            <[u8; 20]>::from(Sha1::digest(&replacement[..layout.piece_length() as usize]))
+        );
+        drop(second);
+        pool.shutdown().await.expect("shutdown pool");
         tokio::fs::remove_dir_all(root).await.expect("remove root");
     }
 

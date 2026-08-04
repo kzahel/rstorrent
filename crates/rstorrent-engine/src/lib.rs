@@ -24,7 +24,7 @@ pub use driver::{
     DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink, DownloadConfig,
     DownloadControl, DownloadDiagnosticSnapshot, DownloadError, DownloadProgress, DownloadReport,
     DownloadResourceLimits, MagnetDownloadConfig, MetadataAcquisitionPhase,
-    MetadataAcquisitionSnapshot, MetadataPeerSnapshot, MetadataPeerStage,
+    MetadataAcquisitionSnapshot, MetadataPeerSnapshot, MetadataPeerStage, PathPublicationStage,
     ResumableMagnetDownloadConfig, SwarmActivitySnapshot, download_magnet,
     download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
     download_magnet_with_control, download_verified_piece,

@@ -268,6 +268,7 @@ pub enum DownloadActivityEvent {
         contributor_count: usize,
         failed_bytes: usize,
     },
+    PathPublicationStage(PathPublicationStage),
     StorageState(Box<DiskRuntimeSnapshot>),
     TrackerAnnounceStarted {
         tracker: String,
@@ -330,6 +331,13 @@ pub enum DownloadActivityEvent {
     },
     TrackerState(Box<TrackerRuntimeSnapshot>),
     SwarmState(Box<SwarmActivitySnapshot>),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PathPublicationStage {
+    IntentDurable = 1,
+    Renamed = 2,
+    NamespaceDurable = 3,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1237,6 +1245,10 @@ impl DownloadControl {
         self.inner
             .checkpoint_commit_delay_millis
             .store(millis, Ordering::Release);
+    }
+
+    async fn enter_path_publication_stage(&self, stage: PathPublicationStage) {
+        self.emit(DownloadActivityEvent::PathPublicationStage(stage));
     }
 
     #[cfg(test)]
@@ -8619,9 +8631,25 @@ async fn run_selective_download(
                 .publication_prepared()
                 .map_err(DownloadError::Checkpoint)?;
         }
+        control
+            .enter_path_publication_stage(PathPublicationStage::IntentDurable)
+            .await;
         storage
-            .commit_path_publication()
+            .rename_path_publication()
             .await
+            .map_err(DownloadError::SelectiveStorage)?;
+        control
+            .enter_path_publication_stage(PathPublicationStage::Renamed)
+            .await;
+        storage
+            .sync_path_publication_namespace()
+            .await
+            .map_err(DownloadError::SelectiveStorage)?;
+        control
+            .enter_path_publication_stage(PathPublicationStage::NamespaceDurable)
+            .await;
+        storage
+            .finish_path_publication()
             .map_err(DownloadError::SelectiveStorage)?;
     }
     if ((!descriptor_backed && !platform_backed) || completed_existing_publication)

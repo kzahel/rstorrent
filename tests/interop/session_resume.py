@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import hashlib
 import json
 import selectors
 import shutil
@@ -97,6 +98,9 @@ def start_process(
     checkpoint_sync_delay_millis: int = 0,
     checkpoint_commit_delay_millis: int = 0,
     trace_checkpoint_stages: bool = False,
+    publication_delay_stage: str | None = None,
+    publication_delay_millis: int = 0,
+    trace_publication_stages: bool = False,
     storage_write_concurrency: int = 4,
     storage_hash_concurrency: int = 4,
 ) -> subprocess.Popen[str]:
@@ -127,6 +131,13 @@ def start_process(
         )
     if trace_checkpoint_stages:
         command.extend(["--trace-checkpoint-stages", "true"])
+    if publication_delay_stage is not None:
+        command.extend(["--publication-delay-stage", publication_delay_stage])
+        command.extend(
+            ["--publication-delay-millis", str(publication_delay_millis)]
+        )
+    if trace_publication_stages:
+        command.extend(["--trace-publication-stages", "true"])
     return subprocess.Popen(
         command,
         stdin=subprocess.PIPE,
@@ -204,6 +215,24 @@ def read_durable_state(
         if have_state[34 + index // 8] & (1 << (7 - index % 8))
     )
     return raw_info, piece_count, verified, state
+
+
+def valid_payload_pieces(path: Path, torrent_info: lt.torrent_info) -> list[int]:
+    if not path.is_file():
+        return []
+    valid: list[int] = []
+    with path.open("rb") as payload:
+        for piece_index in range(torrent_info.num_pieces()):
+            length = torrent_info.piece_size(piece_index)
+            piece = payload.read(length)
+            if len(piece) != length:
+                break
+            expected = torrent_info.hash_for_piece(piece_index)
+            if hasattr(expected, "to_bytes"):
+                expected = expected.to_bytes()
+            if hashlib.sha1(piece).digest() == expected:
+                valid.append(piece_index)
+    return valid
 
 
 def wait_for_piece_checkpoint(
@@ -359,13 +388,18 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
 
         upload_before_restart = handle.status().total_payload_upload
         process = start_process(binary, profile_root, payload_root)
-        pieces_after_recheck = pieces_before_kill - 1
+        valid_after_crash = valid_payload_pieces(
+            staging_payload,
+            fixture.torrent_info,
+        )
+        pieces_after_recheck = len(valid_after_crash)
         completion = wait_for_complete(process, fixture)
         upload_after_restart = handle.status().total_payload_upload
         restart_payload_upload = upload_after_restart - upload_before_restart
-        expected_restart_upload = (
-            fixture.torrent_info.total_size()
-            - pieces_after_recheck * RESUME_PIECE_SIZE
+        expected_restart_upload = sum(
+            fixture.torrent_info.piece_size(piece_index)
+            for piece_index in range(fixture.torrent_info.num_pieces())
+            if piece_index not in valid_after_crash
         )
         if restart_payload_upload != expected_restart_upload:
             raise ScenarioFailure(
@@ -374,7 +408,7 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
                 f"expected {expected_restart_upload}, got {restart_payload_upload}"
             )
 
-        output_payload = payload_root / fixture.info_hash / "payload.bin"
+        output_payload = payload_root / fixture.torrent_info.name() / "payload.bin"
         payload_hash = compare_payloads(fixture.payload_path, output_payload)
         if payload_hash != fixture.payload_hash:
             raise ScenarioFailure("resumed payload differs from libtorrent seed")

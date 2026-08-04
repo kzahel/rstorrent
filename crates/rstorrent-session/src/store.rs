@@ -161,6 +161,7 @@ pub struct RemovalRecord {
     pub state: RemovalState,
     pub raw_info: Option<Vec<u8>>,
     pub publication_name: Option<String>,
+    pub storage_state: StorageState,
     pub managed_artifacts: ManagedArtifactState,
     pub error: Option<String>,
 }
@@ -630,8 +631,8 @@ impl SessionStore {
         self.connection
             .query_row(
                 "SELECT r.operation_id, t.storage_root, r.data_policy, r.state,
-                        t.raw_info, t.publication_name, t.managed_artifacts,
-                        r.error
+                        t.raw_info, t.publication_name, t.storage_state,
+                        t.managed_artifacts, r.error
                  FROM removal_jobs r
                  JOIN torrents t ON t.info_hash = r.info_hash
                  WHERE r.info_hash = ?1",
@@ -644,8 +645,9 @@ impl SessionStore {
                         state: row.get(3)?,
                         raw_info: row.get(4)?,
                         publication_name: row.get(5)?,
-                        managed_artifacts: row.get(6)?,
-                        error: row.get(7)?,
+                        storage_state: row.get(6)?,
+                        managed_artifacts: row.get(7)?,
+                        error: row.get(8)?,
                     })
                 },
             )
@@ -657,7 +659,7 @@ impl SessionStore {
     pub fn load_removals(&self) -> Result<Vec<RemovalRecord>, StoreError> {
         let mut statement = self.connection.prepare(
             "SELECT t.info_hash, r.operation_id, t.storage_root, r.data_policy,
-                    r.state, t.raw_info, t.publication_name,
+                    r.state, t.raw_info, t.publication_name, t.storage_state,
                     t.managed_artifacts, r.error
              FROM removal_jobs r
              JOIN torrents t ON t.info_hash = r.info_hash
@@ -673,8 +675,9 @@ impl SessionStore {
                     state: row.get(4)?,
                     raw_info: row.get(5)?,
                     publication_name: row.get(6)?,
-                    managed_artifacts: row.get(7)?,
-                    error: row.get(8)?,
+                    storage_state: row.get(7)?,
+                    managed_artifacts: row.get(8)?,
+                    error: row.get(9)?,
                 },
             ))
         })?;
@@ -2781,6 +2784,7 @@ struct RemovalRow {
     state: String,
     raw_info: Option<Vec<u8>>,
     publication_name: Option<String>,
+    storage_state: String,
     managed_artifacts: String,
     error: Option<String>,
 }
@@ -2792,6 +2796,8 @@ fn removal_record(torrent_id: &str, row: RemovalRow) -> Result<RemovalRecord, St
         .ok_or_else(|| StoreError::DurableState("invalid removal state".to_owned()))?;
     let managed_artifacts = ManagedArtifactState::parse(&row.managed_artifacts)
         .ok_or_else(|| StoreError::DurableState("invalid managed artifact state".to_owned()))?;
+    let storage_state = StorageState::parse(&row.storage_state)
+        .ok_or_else(|| StoreError::DurableState("invalid storage state".to_owned()))?;
     Ok(RemovalRecord {
         torrent_id: torrent_id.to_ascii_lowercase(),
         operation_id: row.operation_id,
@@ -2800,6 +2806,7 @@ fn removal_record(torrent_id: &str, row: RemovalRow) -> Result<RemovalRecord, St
         state,
         raw_info: row.raw_info,
         publication_name: row.publication_name,
+        storage_state,
         managed_artifacts,
         error: row.error,
     })

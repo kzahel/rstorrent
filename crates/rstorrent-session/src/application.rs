@@ -10,12 +10,12 @@ use rstorrent_engine::dht::{DhtConfig, DhtError, DhtService};
 use rstorrent_engine::{
     DEFAULT_STORAGE_FILE_LIMIT, DescriptorFile, DescriptorStorage, DescriptorStoragePlan,
     DiskCheckpointStage, DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink,
-    DownloadControl, DownloadError, DownloadResourceLimits, NetworkConfig, PlatformStorageClient,
-    PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash, PublicationShape,
-    ResumableMagnetDownloadConfig, ResumeArtifactState, ResumedStorage, StorageFilePool,
-    StorageFilePoolSnapshot, download_magnet_metadata_with_dht, plan_descriptor_storage,
-    resume_magnet_to_descriptors_with_control, resume_magnet_with_control, torrent_storage_paths,
-    verify_prepared_descriptors, verify_prepared_platform_files,
+    DownloadControl, DownloadError, DownloadResourceLimits, NetworkConfig, PathPublicationStage,
+    PlatformStorageClient, PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash,
+    PublicationShape, ResumableMagnetDownloadConfig, ResumeArtifactState, ResumedStorage,
+    StorageFilePool, StorageFilePoolSnapshot, download_magnet_metadata_with_dht,
+    plan_descriptor_storage, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
+    torrent_storage_paths, verify_prepared_descriptors, verify_prepared_platform_files,
 };
 use rstorrent_protocol::metainfo::Metainfo;
 use tokio::task::JoinHandle;
@@ -70,6 +70,12 @@ pub struct ApplicationConfig {
     #[doc(hidden)]
     pub checkpoint_stage_trace_for_testing: bool,
     #[doc(hidden)]
+    pub publication_delay_stage_for_testing: Option<PathPublicationStage>,
+    #[doc(hidden)]
+    pub publication_delay_for_testing: Duration,
+    #[doc(hidden)]
+    pub publication_stage_trace_for_testing: bool,
+    #[doc(hidden)]
     pub platform_storage_client: Option<PlatformStorageClient>,
 }
 
@@ -96,6 +102,9 @@ impl ApplicationConfig {
             checkpoint_sync_delay_for_testing: Duration::ZERO,
             checkpoint_commit_delay_for_testing: Duration::ZERO,
             checkpoint_stage_trace_for_testing: false,
+            publication_delay_stage_for_testing: None,
+            publication_delay_for_testing: Duration::ZERO,
+            publication_stage_trace_for_testing: false,
             platform_storage_client: None,
         }
     }
@@ -134,6 +143,9 @@ pub struct ApplicationService {
     checkpoint_sync_delay_for_testing: Duration,
     checkpoint_commit_delay_for_testing: Duration,
     checkpoint_stage_trace_for_testing: bool,
+    publication_delay_stage_for_testing: Option<PathPublicationStage>,
+    publication_delay_for_testing: Duration,
+    publication_stage_trace_for_testing: bool,
     storage_file_pool: StorageFilePool,
     active: Option<ActiveDownload>,
     dht: Option<DhtService>,
@@ -168,6 +180,7 @@ impl ApplicationService {
         if config.storage_write_delay_for_testing > Duration::from_secs(10)
             || config.checkpoint_sync_delay_for_testing > Duration::from_secs(60)
             || config.checkpoint_commit_delay_for_testing > Duration::from_secs(60)
+            || config.publication_delay_for_testing > Duration::from_secs(60)
         {
             return Err(ApplicationError::Configuration(
                 "test storage delay exceeds its fixed maximum".to_owned(),
@@ -240,6 +253,9 @@ impl ApplicationService {
             checkpoint_sync_delay_for_testing: config.checkpoint_sync_delay_for_testing,
             checkpoint_commit_delay_for_testing: config.checkpoint_commit_delay_for_testing,
             checkpoint_stage_trace_for_testing: config.checkpoint_stage_trace_for_testing,
+            publication_delay_stage_for_testing: config.publication_delay_stage_for_testing,
+            publication_delay_for_testing: config.publication_delay_for_testing,
+            publication_stage_trace_for_testing: config.publication_stage_trace_for_testing,
             storage_file_pool: StorageFilePool::new(
                 DEFAULT_STORAGE_FILE_LIMIT,
                 config.platform_storage_client,
@@ -1222,6 +1238,18 @@ impl ApplicationService {
             RemovalDataPolicy::DeleteManaged => {
                 match self.storage_roots.get(&removal.storage_root).cloned() {
                     Some(StorageRootLocation::Path(root)) => {
+                        let publication_shape = match removal
+                            .raw_info
+                            .as_deref()
+                            .map(Metainfo::from_info_bytes)
+                            .transpose()
+                        {
+                            Ok(Some(metainfo)) => PublicationShape::from_metainfo(&metainfo),
+                            Ok(None) => PublicationShape::Tree,
+                            Err(error) => {
+                                return self.fail_removal(&removal, &error.to_string());
+                            }
+                        };
                         let owned_torrent_id = torrent_id.to_owned();
                         let publication_name = removal.publication_name.clone();
                         match tokio::task::spawn_blocking(move || {
@@ -1229,6 +1257,8 @@ impl ApplicationService {
                                 &root,
                                 &owned_torrent_id,
                                 publication_name.as_deref(),
+                                publication_shape,
+                                removal.storage_state,
                                 removal.managed_artifacts,
                             )
                         })
@@ -1583,6 +1613,9 @@ impl ApplicationService {
             torrent_id: torrent_id.to_owned(),
             views: self.views.clone(),
             trace_checkpoint_stages: self.checkpoint_stage_trace_for_testing,
+            trace_publication_stages: self.publication_stage_trace_for_testing,
+            publication_delay_stage: self.publication_delay_stage_for_testing,
+            publication_delay: self.publication_delay_for_testing,
             last_checkpoint_stage: Mutex::new(None),
         }));
         control.set_byte_metric_sink(self.speed_recorder.clone());
@@ -1691,6 +1724,8 @@ fn delete_path_artifacts(
     root: &Path,
     torrent_id: &str,
     publication_name: Option<&str>,
+    publication_shape: PublicationShape,
+    storage_state: StorageState,
     managed_artifacts: ManagedArtifactState,
 ) -> Result<(), ApplicationError> {
     match managed_artifacts {
@@ -1701,8 +1736,8 @@ fn delete_path_artifacts(
                 .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
             let part = rstorrent_engine::selective_part_path(&output)
                 .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-            remove_managed_directory(&output)?;
-            remove_managed_directory(&staging)?;
+            remove_managed_artifact(&output, PublicationShape::Tree)?;
+            remove_managed_artifact(&staging, PublicationShape::Tree)?;
             remove_managed_file(&part)?;
         }
         ManagedArtifactState::Staging | ManagedArtifactState::Published => {
@@ -1716,17 +1751,54 @@ fn delete_path_artifacts(
             })?;
             let paths = torrent_storage_paths(root, publication_name, info_hash)
                 .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-            if managed_artifacts == ManagedArtifactState::Published {
-                remove_managed_directory(&paths.output)?;
+            let output_exists = std::fs::symlink_metadata(&paths.output).is_ok();
+            let staging_exists = std::fs::symlink_metadata(&paths.staging).is_ok();
+            let ambiguous_both = matches!(
+                (storage_state, managed_artifacts),
+                (StorageState::Prepared, ManagedArtifactState::Staging)
+                    | (StorageState::Published, ManagedArtifactState::Published)
+            );
+            if output_exists && staging_exists && ambiguous_both {
+                return Err(ApplicationError::Configuration(
+                    "managed publication has both staging and final artifacts".to_owned(),
+                ));
             }
-            remove_managed_directory(&paths.staging)?;
+            match (storage_state, managed_artifacts) {
+                (StorageState::Prepared, ManagedArtifactState::Staging) => {
+                    if output_exists {
+                        remove_managed_artifact(&paths.output, publication_shape)?;
+                    } else {
+                        remove_managed_artifact(&paths.staging, publication_shape)?;
+                    }
+                }
+                (StorageState::Published, ManagedArtifactState::Published) => {
+                    if staging_exists {
+                        return Err(ApplicationError::Configuration(
+                            "published managed storage has only a staging artifact".to_owned(),
+                        ));
+                    }
+                    remove_managed_artifact(&paths.output, publication_shape)?;
+                }
+                (_, ManagedArtifactState::Staging) => {
+                    remove_managed_artifact(&paths.staging, publication_shape)?;
+                }
+                (_, ManagedArtifactState::Published) => {
+                    remove_managed_artifact(&paths.output, publication_shape)?;
+                }
+                (_, ManagedArtifactState::None | ManagedArtifactState::Legacy) => {
+                    unreachable!("managed artifact state was matched above")
+                }
+            }
             remove_managed_file(&paths.part)?;
         }
     }
     Ok(())
 }
 
-fn remove_managed_directory(path: &Path) -> Result<(), ApplicationError> {
+fn remove_managed_artifact(
+    path: &Path,
+    publication_shape: PublicationShape,
+) -> Result<(), ApplicationError> {
     let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -1737,16 +1809,30 @@ fn remove_managed_directory(path: &Path) -> Result<(), ApplicationError> {
             });
         }
     };
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
-        std::fs::remove_file(path).map_err(|source| ApplicationError::Io {
-            operation: "remove managed torrent artifact",
-            source,
-        })
-    } else {
-        std::fs::remove_dir_all(path).map_err(|source| ApplicationError::Io {
-            operation: "remove managed torrent directory",
-            source,
-        })
+    if metadata.file_type().is_symlink()
+        || match publication_shape {
+            PublicationShape::File => !metadata.is_file(),
+            PublicationShape::Tree => !metadata.is_dir(),
+        }
+    {
+        return Err(ApplicationError::Configuration(format!(
+            "managed torrent artifact has an unexpected type: {}",
+            path.display()
+        )));
+    }
+    match publication_shape {
+        PublicationShape::File => {
+            std::fs::remove_file(path).map_err(|source| ApplicationError::Io {
+                operation: "remove managed torrent file",
+                source,
+            })
+        }
+        PublicationShape::Tree => {
+            std::fs::remove_dir_all(path).map_err(|source| ApplicationError::Io {
+                operation: "remove managed torrent directory",
+                source,
+            })
+        }
     }
 }
 
@@ -1761,7 +1847,7 @@ fn remove_managed_file(path: &Path) -> Result<(), ApplicationError> {
             });
         }
     };
-    if metadata.is_dir() && !metadata.file_type().is_symlink() {
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
         return Err(ApplicationError::Configuration(format!(
             "managed part-file path is a directory: {}",
             path.display()
@@ -2188,6 +2274,9 @@ struct ViewActivitySink {
     torrent_id: String,
     views: ViewHub,
     trace_checkpoint_stages: bool,
+    trace_publication_stages: bool,
+    publication_delay_stage: Option<PathPublicationStage>,
+    publication_delay: Duration,
     last_checkpoint_stage: Mutex<Option<DiskCheckpointStage>>,
 }
 
@@ -2197,6 +2286,14 @@ const fn checkpoint_stage_name(stage: DiskCheckpointStage) -> &'static str {
         DiskCheckpointStage::Syncing => "syncing",
         DiskCheckpointStage::Committing => "committing",
         DiskCheckpointStage::Error => "error",
+    }
+}
+
+const fn publication_stage_name(stage: PathPublicationStage) -> &'static str {
+    match stage {
+        PathPublicationStage::IntentDurable => "intent_durable",
+        PathPublicationStage::Renamed => "renamed",
+        PathPublicationStage::NamespaceDurable => "namespace_durable",
     }
 }
 
@@ -2242,6 +2339,15 @@ fn piece_diagnostic_context(
 
 impl DownloadActivitySink for ViewActivitySink {
     fn record(&self, event: DownloadActivityEvent) {
+        if let DownloadActivityEvent::PathPublicationStage(stage) = &event {
+            if self.publication_delay_stage == Some(*stage) && !self.publication_delay.is_zero() {
+                eprintln!("publication_gate={}", publication_stage_name(*stage));
+                std::thread::sleep(self.publication_delay);
+            } else if self.trace_publication_stages && self.publication_delay_stage.is_none() {
+                eprintln!("publication_stage={}", publication_stage_name(*stage));
+            }
+            return;
+        }
         if let DownloadActivityEvent::PeerConnections { captured_at, peers } = &event {
             let _ = self.views.record_peer_connections(
                 &self.torrent_id,
@@ -2741,6 +2847,9 @@ impl ViewActivitySink {
             DownloadActivityEvent::StorageState(_) => {
                 unreachable!("disk projections are handled before diagnostic events")
             }
+            DownloadActivityEvent::PathPublicationStage(_) => {
+                unreachable!("publication stages are handled before diagnostic events")
+            }
         }
     }
 }
@@ -3021,7 +3130,9 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use rstorrent_engine::dht::BootstrapNode;
-    use rstorrent_engine::{DownloadError, NetworkConfig, NetworkPolicy, torrent_storage_paths};
+    use rstorrent_engine::{
+        DownloadError, NetworkConfig, NetworkPolicy, PublicationShape, torrent_storage_paths,
+    };
     use rstorrent_protocol::dht::{
         DhtEndpoint, DhtIp, Message as DhtMessage, NodeId, decode_message as decode_dht,
         encode_response as encode_dht_response,
@@ -4175,10 +4286,8 @@ mod tests {
         let staging = payload.join(format!(".{torrent_id}.rstorrent-staging"));
         let part = payload.join(format!(".{torrent_id}.rstorrent-parts"));
         let sibling = payload.join("keep-me");
-        fs::create_dir_all(&output).expect("create output");
-        fs::write(output.join("payload.bin"), b"payload").expect("write output");
-        fs::create_dir_all(&staging).expect("create staging");
-        fs::write(staging.join("partial.bin"), b"partial").expect("write staging");
+        fs::create_dir_all(&payload).expect("create payload root");
+        fs::write(&output, b"payload").expect("write output");
         fs::write(&part, b"parts").expect("write part file");
         fs::write(&sibling, b"sibling").expect("write sibling");
 
@@ -4233,6 +4342,8 @@ mod tests {
             &payload,
             torrent_id,
             Some("named"),
+            PublicationShape::Tree,
+            StorageState::Staging,
             ManagedArtifactState::Staging,
         )
         .expect("clean staging-owned artifacts");
@@ -4243,6 +4354,131 @@ mod tests {
         );
         assert!(!staging.exists());
         assert!(!part.exists());
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn publishing_cleanup_deletes_whichever_owned_side_survived() {
+        for final_visible in [false, true] {
+            let root = test_root(if final_visible {
+                "publishing-cleanup-final"
+            } else {
+                "publishing-cleanup-staging"
+            });
+            let payload = root.join("payload");
+            let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+            let owned = if final_visible {
+                payload.join("named")
+            } else {
+                payload.join(format!(".{torrent_id}.rstorrent-staging"))
+            };
+            let part = payload.join(format!(".{torrent_id}.rstorrent-parts"));
+            fs::create_dir_all(&owned).expect("create owned publication side");
+            fs::write(owned.join("payload"), b"owned").expect("write owned payload");
+            fs::write(&part, b"owned").expect("write owned part");
+
+            delete_path_artifacts(
+                &payload,
+                torrent_id,
+                Some("named"),
+                PublicationShape::Tree,
+                StorageState::Prepared,
+                ManagedArtifactState::Staging,
+            )
+            .expect("clean publishing-owned artifacts");
+
+            assert!(!owned.exists());
+            assert!(!part.exists());
+            fs::remove_dir_all(root).expect("remove test root");
+        }
+    }
+
+    #[test]
+    fn publishing_cleanup_fails_closed_when_both_sides_exist() {
+        let root = test_root("publishing-cleanup-ambiguous");
+        let payload = root.join("payload");
+        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let output = payload.join("named");
+        let staging = payload.join(format!(".{torrent_id}.rstorrent-staging"));
+        fs::create_dir_all(&output).expect("create final");
+        fs::create_dir_all(&staging).expect("create staging");
+
+        let error = delete_path_artifacts(
+            &payload,
+            torrent_id,
+            Some("named"),
+            PublicationShape::Tree,
+            StorageState::Prepared,
+            ManagedArtifactState::Staging,
+        )
+        .expect_err("ambiguous artifacts must be preserved");
+
+        assert!(error.to_string().contains("both staging and final"));
+        assert!(output.exists());
+        assert!(staging.exists());
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn published_single_file_cleanup_uses_the_recorded_file_shape() {
+        let root = test_root("published-single-cleanup");
+        let payload = root.join("payload");
+        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let output = payload.join("named.bin");
+        fs::create_dir_all(&payload).expect("create payload root");
+        fs::write(&output, b"owned").expect("write owned final file");
+
+        delete_path_artifacts(
+            &payload,
+            torrent_id,
+            Some("named.bin"),
+            PublicationShape::File,
+            StorageState::Published,
+            ManagedArtifactState::Published,
+        )
+        .expect("clean published single file");
+
+        assert!(!output.exists());
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn managed_cleanup_preserves_a_replacement_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let root = test_root("cleanup-symlink");
+        let payload = root.join("payload");
+        let outside = root.join("outside");
+        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let staging = payload.join(format!(".{torrent_id}.rstorrent-staging"));
+        fs::create_dir_all(&payload).expect("create payload root");
+        fs::create_dir_all(&outside).expect("create outside directory");
+        fs::write(outside.join("preserve"), b"foreign").expect("write outside file");
+        symlink(&outside, &staging).expect("replace staging with symlink");
+
+        let error = delete_path_artifacts(
+            &payload,
+            torrent_id,
+            Some("named"),
+            PublicationShape::Tree,
+            StorageState::Staging,
+            ManagedArtifactState::Staging,
+        )
+        .expect_err("replacement symlink must fail closed");
+
+        assert!(error.to_string().contains("unexpected type"));
+        assert!(
+            fs::symlink_metadata(&staging)
+                .expect("preserved link")
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(
+            fs::read(outside.join("preserve")).expect("outside file"),
+            b"foreign"
+        );
+        fs::remove_file(staging).expect("remove fixture symlink");
         fs::remove_dir_all(root).expect("remove test root");
     }
 
@@ -4489,8 +4725,8 @@ mod tests {
             .expect("persist pending removal");
         drop(store);
         let output = root.join("payload").join("test");
-        fs::create_dir_all(&output).expect("create interrupted output");
-        fs::write(output.join("payload.bin"), b"payload").expect("write output");
+        fs::create_dir_all(output.parent().expect("output parent")).expect("create payload root");
+        fs::write(&output, b"payload").expect("write interrupted output");
 
         let mut service = ApplicationService::open(config)
             .await

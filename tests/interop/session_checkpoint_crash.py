@@ -34,6 +34,7 @@ from session_resume import (
     read_durable_state,
     start_process,
     stop_process,
+    valid_payload_pieces,
     wait_for_complete,
 )
 
@@ -85,6 +86,7 @@ class CrashResult:
     scenario: str
     revision_after_crash: int
     durable_pieces_after_crash: int
+    valid_pieces_after_crash: int
     restart_payload_upload: int
     payload_hash: str
     elapsed_seconds: float
@@ -231,6 +233,15 @@ def run_once(binary: Path, scenario: CrashScenario) -> CrashResult:
                 f"{scenario.name} retained unexpected durable count {verified}"
             )
 
+        staging_payload = (
+            payload_root
+            / f".{fixture.info_hash}.rstorrent-staging"
+            / "payload.bin"
+        )
+        valid_after_crash = valid_payload_pieces(
+            staging_payload,
+            fixture.torrent_info,
+        )
         upload_before_restart = handle.status().total_payload_upload
         process = start_process(
             binary,
@@ -247,14 +258,18 @@ def run_once(binary: Path, scenario: CrashScenario) -> CrashResult:
         restart_payload_upload = (
             handle.status().total_payload_upload - upload_before_restart
         )
-        expected_restart_upload = TOTAL_SIZE - verified * PIECE_SIZE
+        expected_restart_upload = sum(
+            fixture.torrent_info.piece_size(piece_index)
+            for piece_index in range(fixture.torrent_info.num_pieces())
+            if piece_index not in valid_after_crash
+        )
         if restart_payload_upload != expected_restart_upload:
             raise ScenarioFailure(
                 f"{scenario.name} restart uploaded {restart_payload_upload} bytes; "
                 f"expected {expected_restart_upload}"
             )
 
-        output_payload = payload_root / fixture.info_hash / "payload.bin"
+        output_payload = payload_root / fixture.torrent_info.name() / "payload.bin"
         payload_hash = compare_payloads(fixture.payload_path, output_payload)
         if payload_hash != fixture.payload_hash:
             raise ScenarioFailure(f"{scenario.name} restart payload differs from seed")
@@ -270,6 +285,7 @@ def run_once(binary: Path, scenario: CrashScenario) -> CrashResult:
             scenario=scenario.name,
             revision_after_crash=revision,
             durable_pieces_after_crash=verified,
+            valid_pieces_after_crash=len(valid_after_crash),
             restart_payload_upload=restart_payload_upload,
             payload_hash=payload_hash,
             elapsed_seconds=time.monotonic() - started,
@@ -349,6 +365,7 @@ def main() -> int:
                 f"crash={result.scenario} "
                 f"revision_after_crash={result.revision_after_crash} "
                 f"durable_pieces_after_crash={result.durable_pieces_after_crash} "
+                f"valid_pieces_after_crash={result.valid_pieces_after_crash} "
                 f"restart_payload_upload={result.restart_payload_upload} "
                 f"payload_sha1={result.payload_hash} "
                 f"elapsed_seconds={result.elapsed_seconds:.3f} cleanup=ok"
