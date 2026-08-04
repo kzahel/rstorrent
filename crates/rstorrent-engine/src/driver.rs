@@ -8,7 +8,6 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use rstorrent_protocol::bencode::MAX_BENCODE_INPUT_LENGTH;
 use rstorrent_protocol::magnet::{Magnet, MagnetError, PeerHint, UdpTrackerUrl};
 use rstorrent_protocol::metadata::{
     MetadataError, MetadataExtensionUpdate, MetadataInstant, MetadataMessage,
@@ -16,7 +15,9 @@ use rstorrent_protocol::metadata::{
     encode_extension_handshake, encode_metadata_reject, encode_metadata_request,
     parse_extension_handshake, parse_metadata_message,
 };
-use rstorrent_protocol::metainfo::{MAX_PIECES, Metainfo, MetainfoError};
+use rstorrent_protocol::metainfo::{
+    BEP9_METAINFO_LIMITS, DURABLE_METAINFO_LIMITS, Metainfo, MetainfoError,
+};
 use rstorrent_protocol::peer_wire::{
     FrameError, Handshake, HandshakeError, MAX_REQUEST_BLOCK_LENGTH, PeerMessage,
 };
@@ -110,6 +111,7 @@ const MAX_METADATA_PEERS: usize = 8;
 const METADATA_SCHEDULER_TICK: Duration = Duration::from_millis(100);
 const MAX_RECENT_METADATA_ATTEMPTS: usize = 64;
 const MAX_DIAGNOSTIC_ERROR_LENGTH: usize = 256;
+const MAX_ENGINE_PIECES: usize = 52_428;
 
 const fn content_storage_job_limit(max_buffered_payload_bytes: usize) -> usize {
     max_buffered_payload_bytes / MAX_REQUEST_BLOCK_LENGTH as usize
@@ -3192,7 +3194,7 @@ impl PremetadataPeerState {
             PeerMessage::Choke => self.choking = true,
             PeerMessage::Unchoke => self.choking = false,
             PeerMessage::Have(index) => {
-                if !self.haves.contains(&index) && self.haves.len() == MAX_PIECES {
+                if !self.haves.contains(&index) && self.haves.len() == MAX_ENGINE_PIECES {
                     return Err(DownloadError::InvalidPremetadataState(
                         "too many distinct HAVE indices",
                     ));
@@ -3200,7 +3202,7 @@ impl PremetadataPeerState {
                 self.haves.insert(index);
             }
             PeerMessage::Bitfield(bitfield) => {
-                if bitfield.len() > MAX_PIECES.div_ceil(8) {
+                if bitfield.len() > MAX_ENGINE_PIECES.div_ceil(8) {
                     return Err(DownloadError::InvalidPremetadataState(
                         "bitfield exceeds the supported piece-count bound",
                     ));
@@ -5215,7 +5217,8 @@ async fn run_resumable_magnet_download(
     let descriptors = descriptors.map(|(descriptors, _)| descriptors);
 
     if let Some(raw_info) = config.verified_info {
-        let metainfo = Metainfo::from_info_bytes(&raw_info).map_err(DownloadError::Metainfo)?;
+        let metainfo = Metainfo::from_info_bytes_with_limits(&raw_info, DURABLE_METAINFO_LIMITS)
+            .map_err(DownloadError::Metainfo)?;
         if metainfo.info_hash != magnet.info_hash {
             return Err(DownloadError::Checkpoint(
                 "stored metadata does not match the magnet identity".to_owned(),
@@ -5552,7 +5555,8 @@ fn finish_metadata_acquisition(
     peer_state: PremetadataPeerState,
     peer: &mut PeerConnection,
 ) -> Result<(Vec<u8>, Metainfo), DownloadError> {
-    let metainfo = Metainfo::from_info_bytes(&bytes).map_err(DownloadError::Metainfo)?;
+    let metainfo = Metainfo::from_info_bytes_with_limits(&bytes, BEP9_METAINFO_LIMITS)
+        .map_err(DownloadError::Metainfo)?;
     peer.prepend_messages(peer_state.validated_messages(&metainfo)?);
     Ok((bytes, metainfo))
 }
@@ -5563,7 +5567,8 @@ async fn run_download(
     descriptors: Option<DescriptorStorage>,
 ) -> Result<DownloadReport, DownloadError> {
     let metainfo_bytes = read_bounded_metainfo(&config.metainfo_path).await?;
-    let metainfo = Metainfo::from_bytes(&metainfo_bytes).map_err(DownloadError::Metainfo)?;
+    let metainfo = Metainfo::from_bytes_with_limits(&metainfo_bytes, BEP9_METAINFO_LIMITS)
+        .map_err(DownloadError::Metainfo)?;
     let mut peers =
         TorrentPeerCoordinator::from_endpoint(config.peer, PeerSource::Manual, config.network)?;
     let content_config = ContentDownloadConfig {
@@ -8752,16 +8757,16 @@ async fn read_bounded_metainfo(path: &Path) -> Result<Vec<u8>, DownloadError> {
         source,
     })?;
     let mut bytes = Vec::new();
-    file.take((MAX_BENCODE_INPUT_LENGTH + 1) as u64)
+    file.take((BEP9_METAINFO_LIMITS.max_outer_bytes + 1) as u64)
         .read_to_end(&mut bytes)
         .await
         .map_err(|source| DownloadError::Io {
             operation: "read metainfo",
             source,
         })?;
-    if bytes.len() > MAX_BENCODE_INPUT_LENGTH {
+    if bytes.len() > BEP9_METAINFO_LIMITS.max_outer_bytes {
         return Err(DownloadError::MetainfoTooLarge {
-            maximum: MAX_BENCODE_INPUT_LENGTH,
+            maximum: BEP9_METAINFO_LIMITS.max_outer_bytes,
         });
     }
     Ok(bytes)
@@ -8814,7 +8819,7 @@ mod tests {
         MetadataMessage, UT_METADATA_LOCAL_ID, encode_extension_handshake, encode_metadata_data,
         encode_metadata_reject, parse_metadata_message,
     };
-    use rstorrent_protocol::metainfo::Metainfo;
+    use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo, MetainfoError};
     use rstorrent_protocol::peer_wire::{
         EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX, HANDSHAKE_LENGTH,
         PeerMessage, decode_handshake, encode_handshake, encode_handshake_with_reserved,
@@ -8851,6 +8856,21 @@ mod tests {
         resume_magnet_with_control, retrying_dht_lookup, run_content_download,
         run_magnet_download_with_peers, send_message,
     };
+
+    trait TestMetainfoParse: Sized {
+        fn from_bytes(bytes: &[u8]) -> Result<Self, MetainfoError>;
+        fn from_info_bytes(bytes: &[u8]) -> Result<Self, MetainfoError>;
+    }
+
+    impl TestMetainfoParse for Metainfo {
+        fn from_bytes(bytes: &[u8]) -> Result<Self, MetainfoError> {
+            Self::from_bytes_with_limits(bytes, BEP9_METAINFO_LIMITS)
+        }
+
+        fn from_info_bytes(bytes: &[u8]) -> Result<Self, MetainfoError> {
+            Self::from_info_bytes_with_limits(bytes, BEP9_METAINFO_LIMITS)
+        }
+    }
     use crate::checkpoint::{CheckpointBatch, CheckpointIntent, DurabilityTarget};
     use crate::dht::{BootstrapNode, DhtConfig, DhtService};
     use crate::network::{NetworkConfig, NetworkPolicy};

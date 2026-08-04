@@ -18,8 +18,7 @@ use rstorrent_engine::{
     download_verified_piece_to_descriptors_with_control, download_verified_piece_with_control,
     plan_descriptor_storage, platform_storage_channel,
 };
-use rstorrent_protocol::bencode::MAX_BENCODE_INPUT_LENGTH;
-use rstorrent_protocol::metainfo::Metainfo;
+use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_session::{
     ApplicationConfig, ApplicationService, ConfiguredStorageRoot, PlatformRemovalPlan,
     RequestEnvelope, ResponseEnvelope, SubscriptionSpec, ViewSubscription, ViewUpdate,
@@ -1063,9 +1062,10 @@ pub fn saf_storage_plan(
     materialize_files: Vec<u32>,
 ) -> SafStoragePlan {
     let result = (|| {
-        if metainfo_bytes.len() > MAX_BENCODE_INPUT_LENGTH {
+        if metainfo_bytes.len() > BEP9_METAINFO_LIMITS.max_outer_bytes {
             return Err(format!(
-                "metainfo exceeds input limit {MAX_BENCODE_INPUT_LENGTH}"
+                "metainfo exceeds input limit {}",
+                BEP9_METAINFO_LIMITS.max_outer_bytes
             ));
         }
         if skip_files.len() > MAX_FILE_SELECTIONS || materialize_files.len() > MAX_FILE_SELECTIONS {
@@ -1073,7 +1073,8 @@ pub fn saf_storage_plan(
                 "file selection lists may contain at most {MAX_FILE_SELECTIONS} entries"
             ));
         }
-        let metainfo = Metainfo::from_bytes(&metainfo_bytes).map_err(|error| error.to_string())?;
+        let metainfo = Metainfo::from_bytes_with_limits(&metainfo_bytes, BEP9_METAINFO_LIMITS)
+            .map_err(|error| error.to_string())?;
         let skip_files: Vec<usize> = skip_files.into_iter().map(|index| index as usize).collect();
         let materialize_files: Vec<usize> = materialize_files
             .into_iter()

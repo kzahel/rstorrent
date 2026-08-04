@@ -17,7 +17,9 @@ use rstorrent_engine::{
     plan_descriptor_storage, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
     torrent_storage_paths, verify_prepared_descriptors, verify_prepared_platform_files,
 };
-use rstorrent_protocol::metainfo::Metainfo;
+use rstorrent_protocol::metainfo::{
+    BEP9_METAINFO_LIMITS, DURABLE_METAINFO_LIMITS, Metainfo, MetainfoError,
+};
 use tokio::task::JoinHandle;
 
 use crate::control::{
@@ -38,6 +40,14 @@ use crate::store::{
 };
 use crate::tracker_views::TrackerViewModel;
 use crate::view_sets::{VIEW_SET_REAPER_INTERVAL_MILLIS, ViewSetLeaseReaper};
+
+fn parse_durable_metainfo(raw_info: &[u8]) -> Result<Metainfo, MetainfoError> {
+    Metainfo::from_info_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS)
+}
+
+fn parse_peer_metainfo(raw_info: &[u8]) -> Result<Metainfo, MetainfoError> {
+    Metainfo::from_info_bytes_with_limits(raw_info, BEP9_METAINFO_LIMITS)
+}
 use crate::views::{
     DurableTorrentViewState, ProgressInputs, SubscriptionError, SubscriptionSpec, TorrentActivity,
     ViewHub, ViewSubscription, ranges_from_pieces,
@@ -719,7 +729,7 @@ impl ApplicationService {
         let raw_info = resume.raw_info.ok_or_else(|| {
             ApplicationError::Configuration("torrent metadata is not available".to_owned())
         })?;
-        let metainfo = Metainfo::from_info_bytes(&raw_info)
+        let metainfo = parse_durable_metainfo(&raw_info)
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
         require_publication_name(resume.publication_name.as_deref(), &metainfo)?;
         let skip_files = resume
@@ -768,7 +778,7 @@ impl ApplicationService {
         let raw_info = resume.raw_info.ok_or_else(|| {
             ApplicationError::Configuration("torrent metadata is not available".to_owned())
         })?;
-        let metainfo = Metainfo::from_info_bytes(&raw_info)
+        let metainfo = parse_durable_metainfo(&raw_info)
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
         require_publication_name(resume.publication_name.as_deref(), &metainfo)?;
         let initialize_storage = resume.storage_state == StorageState::None;
@@ -855,7 +865,7 @@ impl ApplicationService {
         let raw_info = resume.raw_info.ok_or_else(|| {
             ApplicationError::Configuration("torrent metadata is not available".to_owned())
         })?;
-        let metainfo = Metainfo::from_info_bytes(&raw_info)
+        let metainfo = parse_durable_metainfo(&raw_info)
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
         self.storage_file_pool.invalidate_storage(&torrent_id);
         Ok(metainfo.name)
@@ -885,7 +895,7 @@ impl ApplicationService {
         let raw_info = resume.raw_info.ok_or_else(|| {
             ApplicationError::Configuration("torrent metadata is not available".to_owned())
         })?;
-        let metainfo = Metainfo::from_info_bytes(&raw_info)
+        let metainfo = parse_durable_metainfo(&raw_info)
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
         let expected = self
             .store_mut()?
@@ -1029,7 +1039,7 @@ impl ApplicationService {
         let raw_info = removal.raw_info.ok_or_else(|| {
             ApplicationError::Configuration("torrent metadata is not available".to_owned())
         })?;
-        let metainfo = Metainfo::from_info_bytes(&raw_info)
+        let metainfo = parse_durable_metainfo(&raw_info)
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
         if let Some(publication_name) = removal.publication_name.as_deref() {
             require_publication_name(Some(publication_name), &metainfo)?;
@@ -1251,7 +1261,7 @@ impl ApplicationService {
                         let publication_shape = match removal
                             .raw_info
                             .as_deref()
-                            .map(Metainfo::from_info_bytes)
+                            .map(parse_durable_metainfo)
                             .transpose()
                         {
                             Ok(Some(metainfo)) => PublicationShape::from_metainfo(&metainfo),
@@ -1373,7 +1383,7 @@ impl ApplicationService {
             return Ok(());
         }
         if let Some(raw_info) = &resume.raw_info {
-            let metainfo = match Metainfo::from_info_bytes(raw_info) {
+            let metainfo = match parse_durable_metainfo(raw_info) {
                 Ok(metainfo) => metainfo,
                 Err(error) => {
                     self.store_mut()?
@@ -1446,7 +1456,7 @@ impl ApplicationService {
                         return Ok(ApplicationTaskReport::Metadata);
                     }
                     let metainfo =
-                        Metainfo::from_info_bytes(&raw_info).map_err(DownloadError::Metainfo)?;
+                        parse_peer_metainfo(&raw_info).map_err(DownloadError::Metainfo)?;
                     task_control.set_platform_storage(PlatformStorageSpec {
                         pool: storage_pool,
                         root_id,
@@ -1493,7 +1503,7 @@ impl ApplicationService {
             && resume.storage_state == StorageState::None
             && let Some(raw_info) = resume.raw_info.as_ref()
         {
-            let metainfo = Metainfo::from_info_bytes(raw_info)
+            let metainfo = parse_durable_metainfo(raw_info)
                 .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
             let paths = torrent_storage_paths(&root_path, &metainfo.name, metainfo.info_hash)
                 .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
@@ -1579,7 +1589,7 @@ impl ApplicationService {
                 .verified_info
                 .as_ref()
                 .expect("platform content start requires verified metadata");
-            let metainfo = Metainfo::from_info_bytes(raw_info)
+            let metainfo = parse_durable_metainfo(raw_info)
                 .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
             control.set_platform_storage(PlatformStorageSpec {
                 pool: self.storage_file_pool.clone(),
@@ -2942,7 +2952,7 @@ fn durable_view_state(
         let metainfo = resume
             .raw_info
             .as_deref()
-            .and_then(|raw_info| Metainfo::from_info_bytes(raw_info).ok());
+            .and_then(|raw_info| parse_durable_metainfo(raw_info).ok());
         let display_name = metainfo.as_ref().map(|metainfo| metainfo.name.clone());
         let files = if let Some(metainfo) = metainfo.as_ref() {
             let filesystem_content_base = filesystem_content_base(
@@ -3124,9 +3134,9 @@ pub fn application_error_response(
         ApplicationError::Busy(_) => ErrorCode::Busy,
         ApplicationError::Configuration(_) => ErrorCode::InvalidRequest,
         ApplicationError::Store(StoreError::UnknownTorrent(_)) => ErrorCode::UnknownTorrent,
-        ApplicationError::Store(StoreError::DurableState(_) | StoreError::Have(_)) => {
-            ErrorCode::InvalidDurableState
-        }
+        ApplicationError::Store(
+            StoreError::DurableState(_) | StoreError::Have(_) | StoreError::ResourceLimit { .. },
+        ) => ErrorCode::InvalidDurableState,
         _ => ErrorCode::Internal,
     };
     ResponseEnvelope::error(request_id, revision, code, error.to_string())

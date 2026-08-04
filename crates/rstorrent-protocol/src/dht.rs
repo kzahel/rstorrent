@@ -10,6 +10,7 @@ pub const NODE_ID_LENGTH: usize = 20;
 pub const K: usize = 8;
 pub const ALPHA: usize = 3;
 pub const MAX_DATAGRAM_SIZE: usize = 1024;
+pub const MAX_DHT_DECODED_ITEMS: usize = 1024;
 pub const MAX_TRANSACTION_LENGTH: usize = 8;
 pub const MAX_RESPONSE_NODES: usize = 16;
 pub const MAX_RESPONSE_PEERS: usize = 200;
@@ -229,6 +230,7 @@ pub fn decode_message(bytes: &[u8]) -> Result<Message, DhtCodecError> {
         Limits {
             max_input_length: MAX_DATAGRAM_SIZE,
             max_string_length: MAX_DATAGRAM_SIZE,
+            max_decoded_items: MAX_DHT_DECODED_ITEMS,
             max_depth: 8,
             max_collection_entries: 64,
         },

@@ -5,10 +5,9 @@ use std::time::Duration;
 
 use rstorrent_engine::dht::DhtSnapshot;
 use rstorrent_engine::{PreparedFileHash, plan_descriptor_storage, validate_publication_name};
-use rstorrent_protocol::bencode::MAX_BENCODE_INPUT_LENGTH;
 use rstorrent_protocol::dht::{DhtEndpoint, DhtIp, NodeContact, NodeId};
 use rstorrent_protocol::magnet::Magnet;
-use rstorrent_protocol::metainfo::{MAX_FILES, MAX_PIECES, Metainfo};
+use rstorrent_protocol::metainfo::{DURABLE_METAINFO_LIMITS, Metainfo, MetainfoError};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use crate::control::{
@@ -17,9 +16,9 @@ use crate::control::{
     StorageSettingsSnapshot, StorageState, TorrentSnapshot, TorrentState, decode_info_hash,
     encode_info_hash, parse_revision, validate_identifier, validate_request,
 };
-use crate::have::{HaveError, HaveState};
+use crate::have::{HaveError, HaveState, MAX_DURABLE_HAVE_STATE_BYTES, MAX_DURABLE_PIECES};
 
-const SCHEMA_VERSION: i64 = 6;
+const SCHEMA_VERSION: i64 = 7;
 const DATABASE_FILENAME: &str = "session.db";
 const MAX_RECEIPTS: i64 = 1024;
 pub const MAX_STORAGE_ROOTS: usize = 32;
@@ -799,15 +798,10 @@ impl SessionStore {
         torrent_id: &str,
         raw_info: &[u8],
     ) -> Result<u64, StoreError> {
-        if raw_info.len() > MAX_BENCODE_INPUT_LENGTH {
-            return Err(StoreError::DurableState(format!(
-                "verified metadata exceeds {MAX_BENCODE_INPUT_LENGTH} bytes"
-            )));
-        }
+        validate_raw_info_length(raw_info)?;
         let expected_info_hash = decode_info_hash(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
-        let metainfo = Metainfo::from_info_bytes(raw_info)
-            .map_err(|error| StoreError::DurableState(error.to_string()))?;
+        let metainfo = parse_durable_metainfo(raw_info)?;
         if metainfo.info_hash != expected_info_hash {
             return Err(StoreError::DurableState(
                 "verified metadata does not match torrent identity".to_owned(),
@@ -816,6 +810,7 @@ impl SessionStore {
         validate_publication_name(&metainfo.name)
             .map_err(|error| StoreError::DurableState(error.to_string()))?;
         let have = HaveState::empty(expected_info_hash, metainfo.piece_count())?.encode();
+        validate_have_state_length(&have)?;
         let transaction = self.connection.transaction()?;
         let revision = increment_revision(&transaction)?;
         let revision_sql = sql_revision(revision)?;
@@ -905,6 +900,8 @@ impl SessionStore {
                 "replacement have state has the wrong identity".to_owned(),
             ));
         }
+        let encoded = have.encode();
+        validate_have_state_length(&encoded)?;
         let transaction = self.connection.transaction()?;
         let (piece_count, _) = read_have_columns(&transaction, &info_hash)?;
         if have.pieces().len() != piece_count {
@@ -918,7 +915,7 @@ impl SessionStore {
             "UPDATE torrents
              SET have_state = ?2, updated_revision = ?3
              WHERE info_hash = ?1",
-            params![info_hash.as_slice(), have.encode(), revision_sql],
+            params![info_hash.as_slice(), encoded, revision_sql],
         )?;
         transaction.commit()?;
         Ok(revision)
@@ -1129,8 +1126,7 @@ impl SessionStore {
             .ok_or_else(|| {
                 StoreError::DurableState("torrent has no verified metadata".to_owned())
             })?;
-        let metainfo = Metainfo::from_info_bytes(&raw_info)
-            .map_err(|error| StoreError::DurableState(error.to_string()))?;
+        let metainfo = parse_durable_metainfo(&raw_info)?;
         let skip_files = read_selection(&self.connection, &info_hash)?
             .into_iter()
             .map(|index| index as usize)
@@ -1383,8 +1379,7 @@ impl SessionStore {
             .ok_or_else(|| {
                 StoreError::DurableState("torrent has no verified metadata".to_owned())
             })?;
-        let metainfo = Metainfo::from_info_bytes(&raw_info)
-            .map_err(|error| StoreError::DurableState(error.to_string()))?;
+        let metainfo = parse_durable_metainfo(&raw_info)?;
         if metainfo.info_hash != info_hash {
             return Err(StoreError::DurableState(
                 "stored metadata does not match torrent identity".to_owned(),
@@ -1489,6 +1484,11 @@ pub enum StoreError {
     Configuration(String),
     UnknownTorrent(String),
     DurableState(String),
+    ResourceLimit {
+        resource: &'static str,
+        actual: usize,
+        maximum: usize,
+    },
 }
 
 impl fmt::Display for StoreError {
@@ -1510,6 +1510,14 @@ impl fmt::Display for StoreError {
                 write!(formatter, "torrent {torrent_id} is not in the profile")
             }
             Self::DurableState(message) => write!(formatter, "invalid durable state: {message}"),
+            Self::ResourceLimit {
+                resource,
+                actual,
+                maximum,
+            } => write!(
+                formatter,
+                "durable {resource} {actual} exceeds limit {maximum}"
+            ),
         }
     }
 }
@@ -1540,7 +1548,14 @@ impl From<serde_json::Error> for StoreError {
 
 impl From<HaveError> for StoreError {
     fn from(error: HaveError) -> Self {
-        Self::Have(error)
+        match error {
+            HaveError::InvalidPieceCount { actual, maximum } => Self::ResourceLimit {
+                resource: "piece count",
+                actual,
+                maximum,
+            },
+            error => Self::Have(error),
+        }
     }
 }
 
@@ -1608,10 +1623,10 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
                 ),
                 piece_count INTEGER CHECK (
                     piece_count IS NULL OR
-                    (piece_count > 0 AND piece_count <= 26214)
+                    (piece_count > 0 AND piece_count <= 52428)
                 ),
                 have_state BLOB CHECK (
-                    have_state IS NULL OR length(have_state) <= 3311
+                    have_state IS NULL OR length(have_state) <= 6588
                 ),
                 error TEXT CHECK (error IS NULL OR length(error) <= 1024),
                 archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
@@ -1827,8 +1842,11 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
              )",
             [],
         )?;
-        transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        transaction.pragma_update(None, "user_version", 6)?;
         transaction.commit()?;
+    }
+    if (1..=6).contains(&version) {
+        migrate_piece_bounds_to_v7(connection)?;
     }
     let stored_profile: String = connection.query_row(
         "SELECT profile_id FROM profile_state WHERE singleton = 1",
@@ -1840,6 +1858,116 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
             "profile directory belongs to {stored_profile}, not {profile_id}"
         )));
     }
+    Ok(())
+}
+
+fn migrate_piece_bounds_to_v7(connection: &mut Connection) -> Result<(), StoreError> {
+    let transaction = connection.transaction()?;
+    transaction.pragma_update(None, "defer_foreign_keys", true)?;
+    transaction.execute_batch(
+        "ALTER TABLE file_selection RENAME TO file_selection_v6;
+         ALTER TABLE prepared_files RENAME TO prepared_files_v6;
+         ALTER TABLE removal_jobs RENAME TO removal_jobs_v6;
+         ALTER TABLE torrents RENAME TO torrents_v6;
+         CREATE TABLE torrents (
+            info_hash BLOB PRIMARY KEY CHECK (length(info_hash) = 20),
+            magnet TEXT NOT NULL CHECK (length(magnet) <= 16384),
+            storage_root TEXT NOT NULL
+                REFERENCES storage_roots(root_id) ON UPDATE CASCADE,
+            desired_state TEXT NOT NULL
+                CHECK (desired_state IN ('running', 'paused')),
+            state TEXT NOT NULL CHECK (
+                state IN (
+                    'awaiting_metadata', 'awaiting_storage', 'checking',
+                    'downloading', 'awaiting_publication', 'paused',
+                    'complete', 'needs_repair', 'error'
+                )
+            ),
+            storage_state TEXT NOT NULL CHECK (
+                storage_state IN (
+                    'none', 'staging', 'prepared', 'published',
+                    'needs_repair'
+                )
+            ),
+            raw_info BLOB CHECK (
+                raw_info IS NULL OR length(raw_info) <= 1048576
+            ),
+            publication_name TEXT CHECK (
+                publication_name IS NULL OR
+                length(publication_name) BETWEEN 1 AND 255
+            ),
+            managed_artifacts TEXT NOT NULL DEFAULT 'none' CHECK (
+                managed_artifacts IN (
+                    'legacy', 'none', 'staging', 'published'
+                )
+            ),
+            piece_count INTEGER CHECK (
+                piece_count IS NULL OR
+                (piece_count > 0 AND piece_count <= 52428)
+            ),
+            have_state BLOB CHECK (
+                have_state IS NULL OR length(have_state) <= 6588
+            ),
+            error TEXT CHECK (error IS NULL OR length(error) <= 1024),
+            archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
+            created_revision INTEGER NOT NULL,
+            updated_revision INTEGER NOT NULL,
+            CHECK (
+                (piece_count IS NULL AND have_state IS NULL) OR
+                (piece_count IS NOT NULL AND have_state IS NOT NULL)
+            )
+         );
+         INSERT INTO torrents(
+            info_hash, magnet, storage_root, desired_state, state,
+            storage_state, raw_info, publication_name, managed_artifacts,
+            piece_count, have_state, error, archived, created_revision,
+            updated_revision
+         ) SELECT
+            info_hash, magnet, storage_root, desired_state, state,
+            storage_state, raw_info, publication_name, managed_artifacts,
+            piece_count, have_state, error, archived, created_revision,
+            updated_revision
+         FROM torrents_v6;
+         CREATE TABLE file_selection (
+            info_hash BLOB NOT NULL
+                REFERENCES torrents(info_hash) ON DELETE CASCADE,
+            file_index INTEGER NOT NULL
+                CHECK (file_index >= 0 AND file_index < 4096),
+            wanted INTEGER NOT NULL CHECK (wanted = 0),
+            PRIMARY KEY (info_hash, file_index)
+         ) WITHOUT ROWID;
+         INSERT INTO file_selection SELECT * FROM file_selection_v6;
+         CREATE TABLE prepared_files (
+            info_hash BLOB NOT NULL
+                REFERENCES torrents(info_hash) ON DELETE CASCADE,
+            file_index INTEGER NOT NULL
+                CHECK (file_index >= 0 AND file_index < 4096),
+            length INTEGER NOT NULL CHECK (length >= 0),
+            sha1 BLOB NOT NULL CHECK (length(sha1) = 20),
+            PRIMARY KEY (info_hash, file_index)
+         ) WITHOUT ROWID;
+         INSERT INTO prepared_files SELECT * FROM prepared_files_v6;
+         CREATE TABLE removal_jobs (
+            info_hash BLOB PRIMARY KEY
+                REFERENCES torrents(info_hash) ON DELETE CASCADE,
+            operation_id TEXT NOT NULL UNIQUE
+                CHECK (length(operation_id) BETWEEN 1 AND 128),
+            data_policy TEXT NOT NULL
+                CHECK (data_policy IN ('keep', 'delete_managed')),
+            state TEXT NOT NULL
+                CHECK (state IN ('pending', 'awaiting_platform', 'failed')),
+            error TEXT CHECK (error IS NULL OR length(error) <= 1024),
+            created_revision INTEGER NOT NULL CHECK (created_revision >= 0),
+            updated_revision INTEGER NOT NULL CHECK (updated_revision >= 0)
+         ) WITHOUT ROWID;
+         INSERT INTO removal_jobs SELECT * FROM removal_jobs_v6;
+         DROP TABLE file_selection_v6;
+         DROP TABLE prepared_files_v6;
+         DROP TABLE removal_jobs_v6;
+         DROP TABLE torrents_v6;",
+    )?;
+    transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    transaction.commit()?;
     Ok(())
 }
 
@@ -2400,7 +2528,7 @@ fn set_file_priority(
             "file selection requires verified metadata".to_owned(),
         )
     })?;
-    let metainfo = Metainfo::from_info_bytes(&raw_info)
+    let metainfo = Metainfo::from_info_bytes_with_limits(&raw_info, DURABLE_METAINFO_LIMITS)
         .map_err(|error| (ErrorCode::InvalidDurableState, error.to_string()))?;
     for &file_index in file_indices {
         let file_index = usize::try_from(file_index).map_err(|_| {
@@ -2894,7 +3022,9 @@ fn read_selection(connection: &Connection, info_hash: &[u8; 20]) -> Result<Vec<u
     let mut selection = Vec::new();
     for row in rows {
         let index = row?;
-        if !(0..i64::try_from(MAX_FILES).expect("file bound fits i64")).contains(&index) {
+        if !(0..i64::try_from(DURABLE_METAINFO_LIMITS.max_files).expect("file bound fits i64"))
+            .contains(&index)
+        {
             return Err(StoreError::DurableState(
                 "invalid file selection index".to_owned(),
             ));
@@ -2953,7 +3083,10 @@ fn read_have_columns(
         .optional()?
         .ok_or_else(|| StoreError::UnknownTorrent(encode_info_hash(*info_hash)))?;
     match row {
-        (Some(piece_count), Some(bytes)) => Ok((bounded_piece_count(piece_count)?, bytes)),
+        (Some(piece_count), Some(bytes)) => {
+            validate_have_state_length(&bytes)?;
+            Ok((bounded_piece_count(piece_count)?, bytes))
+        }
         _ => Err(StoreError::DurableState(
             "torrent has no verified metadata and have state".to_owned(),
         )),
@@ -2963,12 +3096,55 @@ fn read_have_columns(
 fn bounded_piece_count(piece_count: i64) -> Result<usize, StoreError> {
     let piece_count = usize::try_from(piece_count)
         .map_err(|_| StoreError::DurableState("negative piece count".to_owned()))?;
-    if piece_count == 0 || piece_count > MAX_PIECES {
-        return Err(StoreError::DurableState(format!(
-            "piece count {piece_count} exceeds bound {MAX_PIECES}"
-        )));
+    if piece_count == 0 || piece_count > MAX_DURABLE_PIECES {
+        return Err(StoreError::ResourceLimit {
+            resource: "piece count",
+            actual: piece_count,
+            maximum: MAX_DURABLE_PIECES,
+        });
     }
     Ok(piece_count)
+}
+
+fn validate_raw_info_length(raw_info: &[u8]) -> Result<(), StoreError> {
+    if raw_info.len() > DURABLE_METAINFO_LIMITS.max_info_bytes {
+        return Err(StoreError::ResourceLimit {
+            resource: "raw_info bytes",
+            actual: raw_info.len(),
+            maximum: DURABLE_METAINFO_LIMITS.max_info_bytes,
+        });
+    }
+    Ok(())
+}
+
+fn validate_have_state_length(bytes: &[u8]) -> Result<(), StoreError> {
+    if bytes.len() > MAX_DURABLE_HAVE_STATE_BYTES {
+        return Err(StoreError::ResourceLimit {
+            resource: "have-state bytes",
+            actual: bytes.len(),
+            maximum: MAX_DURABLE_HAVE_STATE_BYTES,
+        });
+    }
+    Ok(())
+}
+
+fn parse_durable_metainfo(raw_info: &[u8]) -> Result<Metainfo, StoreError> {
+    validate_raw_info_length(raw_info)?;
+    Metainfo::from_info_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS).map_err(|error| {
+        match error {
+            MetainfoError::InfoTooLarge { length, maximum } => StoreError::ResourceLimit {
+                resource: "raw_info bytes",
+                actual: length,
+                maximum,
+            },
+            MetainfoError::TooManyPieces { actual, maximum } => StoreError::ResourceLimit {
+                resource: "piece count",
+                actual,
+                maximum,
+            },
+            error => StoreError::DurableState(error.to_string()),
+        }
+    })
 }
 
 fn canonical_magnet(magnet: &Magnet) -> String {
@@ -3035,7 +3211,7 @@ mod tests {
         ConfiguredStorageRoot, ManagedArtifactState, PreparedFileRecord, SCHEMA_VERSION,
         SessionStore, StoreError,
     };
-    use crate::have::HaveState;
+    use crate::have::{HaveState, MAX_DURABLE_HAVE_STATE_BYTES, MAX_DURABLE_PIECES};
     use crate::{
         CONTROL_VERSION, Command, ErrorCode, FilePriority, RemovalDataPolicy, RemovalState,
         RequestEnvelope, ResponseOutcome, StorageState, TorrentState,
@@ -3130,6 +3306,21 @@ mod tests {
         let mut info = b"d5:filesld6:lengthi4e4:pathl5:a.bineed6:lengthi4e4:pathl5:b.bineee4:name5:multi12:piece lengthi4e6:pieces40:".to_vec();
         info.extend_from_slice(&[b'a'; 20]);
         info.extend_from_slice(&[b'b'; 20]);
+        info.push(b'e');
+        info
+    }
+
+    fn single_file_info_for_pieces(piece_count: usize, piece_length: u32) -> Vec<u8> {
+        let total_length = u64::try_from(piece_count)
+            .expect("piece count fits u64")
+            .checked_mul(u64::from(piece_length))
+            .expect("fixture length");
+        let hash_bytes = piece_count.checked_mul(20).expect("fixture hash bytes");
+        let mut info = format!(
+            "d6:lengthi{total_length}e4:name1:x12:piece lengthi{piece_length}e6:pieces{hash_bytes}:"
+        )
+        .into_bytes();
+        info.resize(info.len() + hash_bytes, 0);
         info.push(b'e');
         info
     }
@@ -3602,6 +3793,192 @@ mod tests {
             .expect("read schema version");
         assert_eq!(version, SCHEMA_VERSION);
         drop(migrated);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn migrates_version_six_bounds_without_losing_related_rows() {
+        let root = test_root("schema-v6-bounds");
+        let configured = configured_root(&root);
+        let mut store =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
+        let request = add_request("add-before-v6-migration");
+        store.handle_durable(&request).expect("add torrent");
+        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "remove-before-v6-migration".to_owned(),
+                expected_revision: None,
+                command: Command::RemoveTorrent {
+                    torrent_id: torrent_id.to_owned(),
+                    data: RemovalDataPolicy::Keep,
+                },
+            })
+            .expect("begin removal");
+        let database_path = store.database_path().to_owned();
+        drop(store);
+
+        let connection = Connection::open(&database_path).expect("open raw database");
+        let info_hash = crate::control::decode_info_hash(torrent_id).expect("fixture identity");
+        connection
+            .execute(
+                "INSERT INTO prepared_files(info_hash, file_index, length, sha1)
+                 VALUES (?1, 0, 0, ?2)",
+                rusqlite::params![info_hash.as_slice(), [0_u8; 20].as_slice()],
+            )
+            .expect("insert prepared row");
+        connection
+            .pragma_update(None, "user_version", 6)
+            .expect("mark schema six");
+        drop(connection);
+
+        let migrated = SessionStore::open(&root, "default", &[configured]).expect("migrate v6");
+        assert_eq!(migrated.snapshot().expect("snapshot").torrents.len(), 1);
+        assert_eq!(
+            migrated
+                .load_removal(torrent_id)
+                .expect("preserved removal")
+                .policy,
+            RemovalDataPolicy::Keep
+        );
+        let connection = Connection::open(database_path).expect("inspect migration");
+        for (table, expected) in [
+            ("file_selection", 2_i64),
+            ("prepared_files", 1_i64),
+            ("removal_jobs", 1_i64),
+        ] {
+            let count: i64 = connection
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("count preserved rows");
+            assert_eq!(count, expected, "{table}");
+        }
+        let schema: String = connection
+            .query_row(
+                "SELECT sql FROM sqlite_master
+                 WHERE type = 'table' AND name = 'torrents'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read torrent schema");
+        assert!(schema.contains("piece_count <= 52428"));
+        assert!(schema.contains("length(have_state) <= 6588"));
+        drop(connection);
+        drop(migrated);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn durable_geometry_and_resource_limits_are_exact() {
+        let root = test_root("durable-resource-limits");
+        let configured = configured_root(&root);
+        let mut store = SessionStore::open(&root, "default", &[configured]).expect("open store");
+        let raw_info = single_file_info_for_pieces(40_960, 256 * 1024);
+        let torrent_id = crate::control::encode_info_hash(Sha1::digest(&raw_info).into());
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-large-geometry".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: false,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add geometry");
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("persist 40,960-piece geometry");
+        assert_eq!(
+            store
+                .load_resume(&torrent_id)
+                .expect("load geometry")
+                .have
+                .expect("have state")
+                .pieces()
+                .len(),
+            40_960
+        );
+
+        assert_eq!(
+            super::bounded_piece_count(MAX_DURABLE_PIECES as i64).expect("exact piece limit"),
+            MAX_DURABLE_PIECES
+        );
+        assert!(matches!(
+            super::bounded_piece_count((MAX_DURABLE_PIECES + 1) as i64),
+            Err(StoreError::ResourceLimit {
+                resource: "piece count",
+                actual,
+                maximum,
+            }) if actual == MAX_DURABLE_PIECES + 1 && maximum == MAX_DURABLE_PIECES
+        ));
+        super::validate_have_state_length(&vec![0; MAX_DURABLE_HAVE_STATE_BYTES])
+            .expect("exact have-state limit");
+        assert!(matches!(
+            super::validate_have_state_length(&vec![0; MAX_DURABLE_HAVE_STATE_BYTES + 1]),
+            Err(StoreError::ResourceLimit {
+                resource: "have-state bytes",
+                actual,
+                maximum,
+            }) if actual == MAX_DURABLE_HAVE_STATE_BYTES + 1
+                && maximum == MAX_DURABLE_HAVE_STATE_BYTES
+        ));
+
+        let revision = store.revision().expect("revision before rejection");
+        let oversized = vec![0; super::DURABLE_METAINFO_LIMITS.max_info_bytes + 1];
+        assert!(matches!(
+            store.record_metadata(&torrent_id, &oversized),
+            Err(StoreError::ResourceLimit {
+                resource: "raw_info bytes",
+                actual,
+                maximum,
+            }) if actual == oversized.len()
+                && maximum == super::DURABLE_METAINFO_LIMITS.max_info_bytes
+        ));
+        assert_eq!(store.revision().expect("unchanged revision"), revision);
+
+        let database_path = store.database_path().to_owned();
+        drop(store);
+        let connection = Connection::open(database_path).expect("inspect exact schema bounds");
+        let exact_hash = [0x55_u8; 20];
+        let exact_have = vec![0_u8; MAX_DURABLE_HAVE_STATE_BYTES];
+        connection
+            .execute(
+                "INSERT INTO torrents(
+                    info_hash, magnet, storage_root, desired_state, state,
+                    storage_state, piece_count, have_state, archived,
+                    created_revision, updated_revision
+                 ) VALUES (
+                    ?1, 'magnet:', 'downloads', 'paused', 'paused', 'none',
+                    ?2, ?3, 0, 0, 0
+                 )",
+                rusqlite::params![exact_hash.as_slice(), MAX_DURABLE_PIECES as i64, exact_have],
+            )
+            .expect("schema accepts exact durable bounds");
+        assert!(
+            connection
+                .execute(
+                    "UPDATE torrents SET piece_count = ?1 WHERE info_hash = ?2",
+                    rusqlite::params![(MAX_DURABLE_PIECES + 1) as i64, exact_hash.as_slice()],
+                )
+                .is_err()
+        );
+        assert!(
+            connection
+                .execute(
+                    "UPDATE torrents SET have_state = ?1 WHERE info_hash = ?2",
+                    rusqlite::params![
+                        vec![0_u8; MAX_DURABLE_HAVE_STATE_BYTES + 1],
+                        exact_hash.as_slice()
+                    ],
+                )
+                .is_err()
+        );
+        drop(connection);
         fs::remove_dir_all(root).expect("remove test profile");
     }
 

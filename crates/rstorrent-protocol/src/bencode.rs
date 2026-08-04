@@ -3,11 +3,13 @@ use std::fmt;
 use std::ops::Range;
 
 pub const MAX_BENCODE_INPUT_LENGTH: usize = 1024 * 1024;
+pub const MAX_BENCODE_DECODED_ITEMS: usize = 1_000_000;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
     pub max_input_length: usize,
     pub max_string_length: usize,
+    pub max_decoded_items: usize,
     pub max_depth: usize,
     pub max_collection_entries: usize,
 }
@@ -17,6 +19,7 @@ impl Default for Limits {
         Self {
             max_input_length: MAX_BENCODE_INPUT_LENGTH,
             max_string_length: 512 * 1024,
+            max_decoded_items: MAX_BENCODE_DECODED_ITEMS,
             max_depth: 32,
             max_collection_entries: 4096,
         }
@@ -77,6 +80,10 @@ pub enum ParseError {
         position: usize,
         maximum: usize,
     },
+    TooManyDecodedItems {
+        position: usize,
+        maximum: usize,
+    },
     DictionaryKeysNotStrictlySorted {
         position: usize,
     },
@@ -130,6 +137,10 @@ impl fmt::Display for ParseError {
             Self::CollectionTooLarge { position, maximum } => write!(
                 formatter,
                 "bencode collection at byte {position} exceeds entry limit {maximum}"
+            ),
+            Self::TooManyDecodedItems { position, maximum } => write!(
+                formatter,
+                "bencode item at byte {position} exceeds decoded-item limit {maximum}"
             ),
             Self::DictionaryKeysNotStrictlySorted { position } => write!(
                 formatter,
@@ -202,6 +213,7 @@ fn parse_prefix_with_dictionary_order(
     let mut parser = Parser {
         input,
         position: 0,
+        decoded_items: 0,
         limits,
         allow_unsorted_dictionaries,
     };
@@ -212,6 +224,7 @@ fn parse_prefix_with_dictionary_order(
 struct Parser<'a> {
     input: &'a [u8],
     position: usize,
+    decoded_items: usize,
     limits: Limits,
     allow_unsorted_dictionaries: bool,
 }
@@ -227,12 +240,16 @@ impl<'a> Parser<'a> {
 
         let start = self.position;
         let token = self.peek()?;
+        if !matches!(token, b'i' | b'l' | b'd' | b'0'..=b'9') {
+            return Err(ParseError::InvalidToken { position: start });
+        }
+        self.consume_decoded_item()?;
         let value = match token {
             b'i' => self.parse_integer()?,
             b'l' => self.parse_list(depth)?,
             b'd' => self.parse_dictionary(depth)?,
             b'0'..=b'9' => Value::Bytes(self.parse_bytes()?),
-            _ => return Err(ParseError::InvalidToken { position: start }),
+            _ => unreachable!("token was validated above"),
         };
         Ok(Node {
             value,
@@ -345,6 +362,7 @@ impl<'a> Parser<'a> {
                     position: key_position,
                 });
             }
+            self.consume_decoded_item()?;
             let key = self.parse_bytes()?;
             if self.allow_unsorted_dictionaries {
                 if entries.iter().any(|previous| previous.key == key) {
@@ -367,6 +385,17 @@ impl<'a> Parser<'a> {
         Ok(Value::Dictionary(entries))
     }
 
+    fn consume_decoded_item(&mut self) -> Result<(), ParseError> {
+        if self.decoded_items == self.limits.max_decoded_items {
+            return Err(ParseError::TooManyDecodedItems {
+                position: self.position,
+                maximum: self.limits.max_decoded_items,
+            });
+        }
+        self.decoded_items += 1;
+        Ok(())
+    }
+
     fn peek(&self) -> Result<u8, ParseError> {
         self.input
             .get(self.position)
@@ -380,8 +409,8 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Limits, ParseError, Value, parse, parse_prefix, parse_with_limits,
-        parse_with_limits_permissive_dictionaries,
+        Limits, ParseError, Value, parse, parse_prefix, parse_prefix_with_limits,
+        parse_with_limits, parse_with_limits_permissive_dictionaries,
     };
 
     #[test]
@@ -440,6 +469,7 @@ mod tests {
         let limits = Limits {
             max_input_length: 16,
             max_string_length: 2,
+            max_decoded_items: 8,
             max_depth: 1,
             max_collection_entries: 1,
         };
@@ -459,6 +489,44 @@ mod tests {
             parse_with_limits(b"li1ei2ee", limits),
             Err(ParseError::CollectionTooLarge { .. })
         ));
+    }
+
+    #[test]
+    fn counts_values_and_dictionary_keys_before_insertion() {
+        let exact = Limits {
+            max_input_length: 64,
+            max_string_length: 16,
+            max_decoded_items: 4,
+            max_depth: 4,
+            max_collection_entries: 4,
+        };
+        parse_with_limits(b"d1:ali1eee", exact).expect("four retained items");
+
+        let exceeded = Limits {
+            max_decoded_items: 3,
+            ..exact
+        };
+        assert_eq!(
+            parse_with_limits(b"d1:ali1eee", exceeded),
+            Err(ParseError::TooManyDecodedItems {
+                position: 5,
+                maximum: 3,
+            })
+        );
+        assert_eq!(
+            parse_with_limits_permissive_dictionaries(b"d1:ali1eee", exceeded),
+            Err(ParseError::TooManyDecodedItems {
+                position: 5,
+                maximum: 3,
+            })
+        );
+        assert_eq!(
+            parse_prefix_with_limits(b"d1:ali1eeeDATA", exceeded),
+            Err(ParseError::TooManyDecodedItems {
+                position: 5,
+                maximum: 3,
+            })
+        );
     }
 
     #[test]

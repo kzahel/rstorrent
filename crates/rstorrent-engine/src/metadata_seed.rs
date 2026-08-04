@@ -6,13 +6,12 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use rstorrent_protocol::bencode::MAX_BENCODE_INPUT_LENGTH;
 use rstorrent_protocol::metadata::{
     MetadataError, MetadataExtensionUpdate, MetadataMessage, MetadataUpload, MetadataUploadAction,
     UT_METADATA_LOCAL_ID, encode_extension_handshake, encode_metadata_data, encode_metadata_reject,
     metadata_block_count, parse_extension_handshake, parse_metadata_message,
 };
-use rstorrent_protocol::metainfo::{Metainfo, MetainfoError};
+use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo, MetainfoError};
 use rstorrent_protocol::peer_wire::{
     EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX, FrameDecoder, FrameError,
     HANDSHAKE_LENGTH, HandshakeError, PeerMessage, decode_handshake,
@@ -141,11 +140,13 @@ pub async fn bind_metadata_seed(
     }
 
     let metainfo_bytes = read_bounded_metainfo(&config.metainfo_path).await?;
-    let metainfo = Metainfo::from_bytes(&metainfo_bytes).map_err(MetadataSeedError::Metainfo)?;
-    let metadata = Metainfo::info_bytes(&metainfo_bytes)
+    let metainfo = Metainfo::from_bytes_with_limits(&metainfo_bytes, BEP9_METAINFO_LIMITS)
+        .map_err(MetadataSeedError::Metainfo)?;
+    let metadata = Metainfo::info_bytes_with_limits(&metainfo_bytes, BEP9_METAINFO_LIMITS)
         .map_err(MetadataSeedError::Metainfo)?
         .to_vec();
-    let raw_metainfo = Metainfo::from_info_bytes(&metadata).map_err(MetadataSeedError::Metainfo)?;
+    let raw_metainfo = Metainfo::from_info_bytes_with_limits(&metadata, BEP9_METAINFO_LIMITS)
+        .map_err(MetadataSeedError::Metainfo)?;
     if raw_metainfo != metainfo {
         return Err(MetadataSeedError::Metainfo(MetainfoError::InvalidField(
             "raw info dictionary identity",
@@ -396,16 +397,16 @@ async fn read_bounded_metainfo(path: &Path) -> Result<Vec<u8>, MetadataSeedError
             source,
         })?;
     let mut bytes = Vec::new();
-    file.take((MAX_BENCODE_INPUT_LENGTH + 1) as u64)
+    file.take((BEP9_METAINFO_LIMITS.max_outer_bytes + 1) as u64)
         .read_to_end(&mut bytes)
         .await
         .map_err(|source| MetadataSeedError::Io {
             operation: "read metadata seed metainfo",
             source,
         })?;
-    if bytes.len() > MAX_BENCODE_INPUT_LENGTH {
+    if bytes.len() > BEP9_METAINFO_LIMITS.max_outer_bytes {
         return Err(MetadataSeedError::MetainfoTooLarge {
-            maximum: MAX_BENCODE_INPUT_LENGTH,
+            maximum: BEP9_METAINFO_LIMITS.max_outer_bytes,
         });
     }
     Ok(bytes)

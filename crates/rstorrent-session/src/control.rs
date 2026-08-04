@@ -1,5 +1,6 @@
 use rstorrent_protocol::magnet::{MAX_MAGNET_LENGTH, Magnet};
-use rstorrent_protocol::metainfo::MAX_FILES;
+
+const MAX_FILE_SELECTION_ENTRIES: usize = 4096;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -410,15 +411,16 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
             Magnet::parse(magnet)
                 .map_err(|error| (ErrorCode::InvalidRequest, error.to_string()))?;
             validate_identifier(storage_root, "storage root", MAX_ROOT_ID_LENGTH)?;
-            if skip_files.len() > MAX_FILES {
+            if skip_files.len() > MAX_FILE_SELECTION_ENTRIES {
                 return Err((
                     ErrorCode::InvalidRequest,
-                    format!("file selection exceeds {MAX_FILES} entries"),
+                    format!("file selection exceeds {MAX_FILE_SELECTION_ENTRIES} entries"),
                 ));
             }
             let mut previous = None;
             for index in skip_files {
-                if usize::try_from(*index).map_or(true, |index| index >= MAX_FILES) {
+                if usize::try_from(*index).map_or(true, |index| index >= MAX_FILE_SELECTION_ENTRIES)
+                {
                     return Err((
                         ErrorCode::InvalidRequest,
                         "file selection index exceeds the supported file bound".to_owned(),
@@ -439,15 +441,18 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
             priority: _,
         } => {
             validate_torrent_id(torrent_id)?;
-            if file_indices.is_empty() || file_indices.len() > MAX_FILES {
+            if file_indices.is_empty() || file_indices.len() > MAX_FILE_SELECTION_ENTRIES {
                 return Err((
                     ErrorCode::InvalidRequest,
-                    format!("file selection must contain between 1 and {MAX_FILES} entries"),
+                    format!(
+                        "file selection must contain between 1 and {MAX_FILE_SELECTION_ENTRIES} entries"
+                    ),
                 ));
             }
             let mut previous = None;
             for index in file_indices {
-                if usize::try_from(*index).map_or(true, |index| index >= MAX_FILES) {
+                if usize::try_from(*index).map_or(true, |index| index >= MAX_FILE_SELECTION_ENTRIES)
+                {
                     return Err((
                         ErrorCode::InvalidRequest,
                         "file selection index exceeds the supported file bound".to_owned(),

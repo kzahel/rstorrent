@@ -15,6 +15,7 @@ pub const MAX_METADATA_LENGTH: usize = 1024 * 1024;
 pub const MAX_METADATA_BLOCKS: usize = MAX_METADATA_LENGTH / METADATA_BLOCK_LENGTH;
 pub const MAX_METADATA_REQUESTS_IN_FLIGHT: usize = 2;
 pub const MAX_METADATA_UPLOAD_REQUESTS: usize = 256;
+pub const MAX_METADATA_MESSAGE_DECODED_ITEMS: usize = 1024;
 pub const MAX_TORRENT_METADATA_PEERS: usize = 32;
 pub const METADATA_REQUEST_RAMP_MILLIS: u64 = 1_000;
 pub const METADATA_ASSIGNMENT_TIMEOUT_MILLIS: u64 = 3_000;
@@ -1024,6 +1025,7 @@ fn extension_limits() -> Limits {
     Limits {
         max_input_length: MAX_EXTENSION_PAYLOAD_LENGTH,
         max_string_length: 4096,
+        max_decoded_items: MAX_METADATA_MESSAGE_DECODED_ITEMS,
         max_depth: 8,
         max_collection_entries: 128,
     }

@@ -1,11 +1,11 @@
 use std::error::Error;
 use std::fmt;
 
-use rstorrent_protocol::metainfo::MAX_PIECES;
-
 const HAVE_MAGIC: &[u8; 8] = b"RSTHAVE\0";
 const HAVE_VERSION: u16 = 1;
 const HAVE_HEADER_LENGTH: usize = 8 + 2 + 20 + 4;
+pub const MAX_DURABLE_PIECES: usize = 52_428;
+pub const MAX_DURABLE_HAVE_STATE_BYTES: usize = HAVE_HEADER_LENGTH + MAX_DURABLE_PIECES.div_ceil(8);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HaveState {
@@ -166,10 +166,10 @@ impl fmt::Display for HaveError {
 impl Error for HaveError {}
 
 fn validate_piece_count(piece_count: usize) -> Result<(), HaveError> {
-    if piece_count == 0 || piece_count > MAX_PIECES {
+    if piece_count == 0 || piece_count > MAX_DURABLE_PIECES {
         return Err(HaveError::InvalidPieceCount {
             actual: piece_count,
-            maximum: MAX_PIECES,
+            maximum: MAX_DURABLE_PIECES,
         });
     }
     Ok(())
@@ -177,7 +177,9 @@ fn validate_piece_count(piece_count: usize) -> Result<(), HaveError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{HAVE_HEADER_LENGTH, HaveError, HaveState};
+    use super::{
+        HAVE_HEADER_LENGTH, HaveError, HaveState, MAX_DURABLE_HAVE_STATE_BYTES, MAX_DURABLE_PIECES,
+    };
 
     #[test]
     fn round_trips_boundary_bit_counts() {
@@ -222,6 +224,24 @@ mod tests {
         assert_eq!(
             HaveState::decode(&invalid, [1; 20], 9),
             Err(HaveError::NonzeroPadding)
+        );
+    }
+
+    #[test]
+    fn accepts_exact_durable_piece_boundary_and_rejects_the_next_piece() {
+        let state = HaveState::empty([9; 20], MAX_DURABLE_PIECES).expect("exact maximum");
+        let encoded = state.encode();
+        assert_eq!(encoded.len(), MAX_DURABLE_HAVE_STATE_BYTES);
+        assert_eq!(
+            HaveState::decode(&encoded, [9; 20], MAX_DURABLE_PIECES).expect("decode maximum"),
+            state
+        );
+        assert_eq!(
+            HaveState::empty([9; 20], MAX_DURABLE_PIECES + 1),
+            Err(HaveError::InvalidPieceCount {
+                actual: MAX_DURABLE_PIECES + 1,
+                maximum: MAX_DURABLE_PIECES,
+            })
         );
     }
 }
