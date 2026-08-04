@@ -843,12 +843,13 @@ impl SessionStore {
                     revision,
                     read_snapshot(&transaction, &self.profile_id)?,
                 ),
-                Err((code, message)) => ResponseEnvelope::error(
+                Err(AddTorrentBytesError::Response(code, message)) => ResponseEnvelope::error(
                     request.request_id.clone(),
                     current_revision,
                     code,
                     message,
                 ),
+                Err(AddTorrentBytesError::Store(error)) => return Err(error),
             }
         };
         insert_receipt(&transaction, &request.request_id, &request_json, &response)?;
@@ -2777,6 +2778,11 @@ fn apply_mutation(
     }
 }
 
+enum AddTorrentBytesError {
+    Response(ErrorCode, String),
+    Store(StoreError),
+}
+
 fn add_torrent_bytes(
     transaction: &Transaction<'_>,
     request: &AddTorrentBytesRequest,
@@ -2785,7 +2791,7 @@ fn add_torrent_bytes(
     projection: &MetainfoProjection,
     skip_files: &[u32],
     current_revision: u64,
-) -> Result<u64, (ErrorCode, String)> {
+) -> Result<u64, AddTorrentBytesError> {
     let root_exists = transaction
         .query_row(
             "SELECT 1 FROM storage_roots WHERE root_id = ?1",
@@ -2793,10 +2799,10 @@ fn add_torrent_bytes(
             |_| Ok(()),
         )
         .optional()
-        .map_err(internal_error)?
+        .map_err(|error| AddTorrentBytesError::Store(StoreError::Sqlite(error)))?
         .is_some();
     if !root_exists {
-        return Err((
+        return Err(AddTorrentBytesError::Response(
             ErrorCode::UnknownStorageRoot,
             format!("storage root {} is not configured", request.storage_root),
         ));
@@ -2810,30 +2816,33 @@ fn add_torrent_bytes(
             |_| Ok(()),
         )
         .optional()
-        .map_err(internal_error)?
+        .map_err(|error| AddTorrentBytesError::Store(StoreError::Sqlite(error)))?
         .is_some();
     if exists {
-        return Err((
+        return Err(AddTorrentBytesError::Response(
             ErrorCode::InvalidTorrentState,
             format!("torrent {torrent_id} already exists"),
         ));
     }
 
     let have = HaveState::empty(metainfo.info_hash, metainfo.piece_count())
-        .map_err(|error| (ErrorCode::ResourceLimit, error.to_string()))?
+        .map_err(|error| {
+            AddTorrentBytesError::Response(ErrorCode::ResourceLimit, error.to_string())
+        })?
         .encode();
     let raw_info = &source[projection.info_span.clone()];
-    let revision = current_revision
-        .checked_add(1)
-        .ok_or_else(|| internal_message("profile revision overflow"))?;
-    let revision_sql =
-        i64::try_from(revision).map_err(|_| internal_message("profile revision overflow"))?;
+    let revision = current_revision.checked_add(1).ok_or_else(|| {
+        AddTorrentBytesError::Response(ErrorCode::Internal, "profile revision overflow".to_owned())
+    })?;
+    let revision_sql = i64::try_from(revision).map_err(|_| {
+        AddTorrentBytesError::Response(ErrorCode::Internal, "profile revision overflow".to_owned())
+    })?;
     transaction
         .execute(
             "UPDATE profile_state SET revision = ?1 WHERE singleton = 1",
             [revision_sql],
         )
-        .map_err(internal_error)?;
+        .map_err(|error| AddTorrentBytesError::Store(StoreError::Sqlite(error)))?;
     transaction
         .execute(
             "INSERT INTO torrents(
@@ -2858,13 +2867,17 @@ fn add_torrent_bytes(
                 },
                 raw_info,
                 metainfo.name,
-                i64::try_from(metainfo.piece_count())
-                    .map_err(|_| internal_message("piece count overflows i64"))?,
+                i64::try_from(metainfo.piece_count()).map_err(|_| {
+                    AddTorrentBytesError::Response(
+                        ErrorCode::Internal,
+                        "piece count overflows i64".to_owned(),
+                    )
+                })?,
                 have,
                 revision_sql,
             ],
         )
-        .map_err(internal_error)?;
+        .map_err(|error| AddTorrentBytesError::Store(StoreError::Sqlite(error)))?;
     transaction
         .execute(
             "INSERT INTO torrent_source(
@@ -2873,12 +2886,16 @@ fn add_torrent_bytes(
             params![
                 metainfo.info_hash.as_slice(),
                 source,
-                i64::try_from(source.len())
-                    .map_err(|_| internal_message("torrent source length overflows i64"))?,
+                i64::try_from(source.len()).map_err(|_| {
+                    AddTorrentBytesError::Response(
+                        ErrorCode::Internal,
+                        "torrent source length overflows i64".to_owned(),
+                    )
+                })?,
                 source_digest,
             ],
         )
-        .map_err(internal_error)?;
+        .map_err(|error| AddTorrentBytesError::Store(StoreError::Sqlite(error)))?;
     for tracker in &projection.trackers {
         let transport = match tracker.transport {
             MetainfoTrackerTransport::Udp => "udp",
@@ -2898,7 +2915,7 @@ fn add_torrent_bytes(
                     transport,
                 ],
             )
-            .map_err(internal_error)?;
+            .map_err(|error| AddTorrentBytesError::Store(StoreError::Sqlite(error)))?;
     }
     for file_index in skip_files {
         transaction
@@ -2907,7 +2924,7 @@ fn add_torrent_bytes(
                  VALUES (?1, ?2, 0)",
                 params![metainfo.info_hash.as_slice(), i64::from(*file_index)],
             )
-            .map_err(internal_error)?;
+            .map_err(|error| AddTorrentBytesError::Store(StoreError::Sqlite(error)))?;
     }
     Ok(revision)
 }
@@ -4449,6 +4466,36 @@ mod tests {
         }
     }
 
+    fn maximum_torrent_source(fill: u8) -> Vec<u8> {
+        let outer_bytes =
+            rstorrent_protocol::metainfo::EXPLICIT_IMPORT_METAINFO_LIMITS.max_outer_bytes;
+        let info_bytes = outer_bytes - b"d4:info".len() - 1;
+        let mut prefix = b"d6:lengthi1e4:name1:a12:piece lengthi1e6:pieces20:".to_vec();
+        prefix.extend_from_slice(&[0; 20]);
+        prefix.extend_from_slice(b"6:source");
+        let mut value_bytes = info_bytes - prefix.len() - 1;
+        loop {
+            let actual = prefix.len() + value_bytes.to_string().len() + 1 + value_bytes + 1;
+            if actual == info_bytes {
+                break;
+            }
+            if actual < info_bytes {
+                value_bytes += info_bytes - actual;
+            } else {
+                value_bytes -= actual - info_bytes;
+            }
+        }
+        let mut source = Vec::with_capacity(outer_bytes);
+        source.extend_from_slice(b"d4:info");
+        source.extend_from_slice(&prefix);
+        source.extend_from_slice(value_bytes.to_string().as_bytes());
+        source.push(b':');
+        source.resize(source.len() + value_bytes, fill);
+        source.extend_from_slice(b"ee");
+        assert_eq!(source.len(), outer_bytes);
+        source
+    }
+
     fn multi_file_torrent_source(file_count: u32) -> Vec<u8> {
         let mut info = b"d5:filesl".to_vec();
         for index in 0..file_count {
@@ -4647,6 +4694,70 @@ mod tests {
             .expect("store remains responsive");
         assert_eq!(resume.state, TorrentState::AwaitingMetadata);
         assert!(resume.raw_info.is_none());
+    }
+
+    #[test]
+    #[ignore = "allocates two maximum metainfo sources to profile the live page cap"]
+    fn maximum_ephemeral_source_fits_and_following_import_rolls_back() {
+        let configured = ConfiguredStorageRoot::platform("downloads");
+        let mut store =
+            SessionStore::open_ephemeral("maximum-source", std::slice::from_ref(&configured))
+                .expect("open default ephemeral store");
+        let first_source = maximum_torrent_source(b'a');
+        let first_request = torrent_bytes_request("maximum-source-first", &first_source);
+        let first = store
+            .handle_torrent_bytes(&first_request, first_source)
+            .expect("first maximum source fits");
+        assert!(matches!(first.outcome, ResponseOutcome::Success { .. }));
+        let usage = store.page_usage().expect("first import page usage");
+        assert!(usage.page_count < usage.maximum_page_count);
+        assert!(usage.page_count * usage.page_size > 120 * 1024 * 1024);
+        let first_lengths: (i64, i64) = store
+            .connection
+            .query_row(
+                "SELECT length(s.metainfo), length(t.raw_info)
+                   FROM torrent_source s
+                   JOIN torrents t USING (info_hash)",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("inspect maximum source and exact info");
+        assert_eq!(
+            first_lengths,
+            (
+                rstorrent_protocol::metainfo::EXPLICIT_IMPORT_METAINFO_LIMITS.max_outer_bytes
+                    as i64,
+                (rstorrent_protocol::metainfo::EXPLICIT_IMPORT_METAINFO_LIMITS.max_outer_bytes
+                    - b"d4:info".len()
+                    - 1) as i64,
+            )
+        );
+
+        let revision = store.revision().expect("revision before exhaustion");
+        let second_source = maximum_torrent_source(b'b');
+        let second_request = torrent_bytes_request("maximum-source-second", &second_source);
+        let error = store
+            .handle_torrent_bytes(&second_request, second_source)
+            .expect_err("following maximum source exceeds the live page cap");
+        assert!(error.is_resource_limit(), "unexpected error: {error}");
+        assert_eq!(store.revision().expect("rolled back revision"), revision);
+        assert_eq!(
+            store
+                .snapshot()
+                .expect("store remains responsive")
+                .torrents
+                .len(),
+            1
+        );
+        assert_eq!(
+            store
+                .connection
+                .query_row("SELECT COUNT(*) FROM torrent_source", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .expect("count intact source rows"),
+            1
+        );
     }
 
     fn multi_file_info() -> Vec<u8> {
