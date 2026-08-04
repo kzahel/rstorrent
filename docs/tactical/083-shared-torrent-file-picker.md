@@ -1,7 +1,8 @@
 # Tactical 083: Shared Torrent File Picker
 
-Status: Planned on 2026-08-04. The interaction and contract revision are
-authorized by maintainer direction; implementation has not started.
+Status: Complete on 2026-08-04. The interaction and contract revision were
+authorized by maintainer direction; all four implementation gates and the
+stopping condition are satisfied.
 
 Topics: `web-ui-design`, `client-surfaces`, `application-control`,
 `application-connection-architecture`, `capability-readiness`
@@ -82,9 +83,10 @@ The tactical stops when all of the following are true:
   `begin_torrent_upload -> torrent_upload_ready -> one binary message -> result`,
   validates the declared length against the binary message, and releases its
   one-host permit on every terminal path;
-- HTTP still derives length and digest from its raw body, and Tauri still
-  derives both from `InvokeBody::Raw`; neither gains a caller digest, path,
-  loopback listener, multipart form, or alternate application mutation;
+- HTTP and Tauri still derive length from their raw bodies, and common Rust
+  preparation derives the digest from those bytes; neither gains a caller
+  digest, path, loopback listener, multipart form, or alternate application
+  mutation;
 - the toolbar and Add dialog expose one indeterminate **Adding…** state across
   file read, transport, parse, and commit, with no byte percentage or transport
   queue presented as semantic progress;
@@ -315,6 +317,53 @@ record evidence, update owning topics/readiness, and close the tactical.
 No public network, libtorrent peer, payload download, visible browser, visible
 Tauri window, Android build/runtime, emulator, physical device, or deployment
 mutation is required for this presentation slice.
+
+## Implementation And Evidence
+
+All four gates completed. Commit `3b19aaa` removes `source_sha256` from the
+caller-visible Rust, generated TypeScript, and JSON Schema request while
+retaining exact `source_length`. HTTP and raw Tauri intake construct that
+length from the body they already own; WebSocket retains declaration, ready,
+one binary message, and correlated result. Common session preparation computes
+SHA-256 once from the complete source. Its receipt helper inserts that
+server-derived digest into the same legacy JSON fingerprint shape, so an old
+successful request replays byte-for-byte while changed options or same-length
+changed bytes conflict. A focused WebSocket case proves old clients with the
+retired extra field remain tolerated.
+
+Commit `7377b05` adds the transport-neutral React byte intent and empty-Add
+interaction. `LiveApplication` assigns the ordinary namespaced request ID,
+selection `all`, exact buffer length, root, and start intent, then invokes only
+the active `ApplicationViewClient`. The toolbar synchronously clicks one hidden
+single-file input for whitespace-only submission and leaves every nonempty
+input on the magnet validator. It resets the DOM input after capture, rejects
+numeric zero/over-64-MiB sizes before allocation, retains only the `File` while
+the existing options dialog is open, and reads one `ArrayBuffer` when an add
+attempt begins. One component-local busy owner covers read and transport;
+dialog failures retain the file for retry, while success preserves ordinary
+status, snapshot, focus, preference, and navigation behavior.
+
+The final product harness generates an independent 157-byte v1 source and
+drives the production React build in headless Chrome. Empty Add emitted one
+real `filechooser`; metadata-only confirmation produced one application
+WebSocket, one binary frame, no semantic HTTP request, the exact visible
+info-hash row, no payload artifacts, and no serious or critical axe findings.
+Gateway metrics recorded one upload declaration, one ready admission, one
+accepted connection, and zero active connections after joined shutdown.
+
+The closing gate passed `cargo fmt --all -- --check`,
+`cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace`, generated-contract regeneration without drift, all
+web tests (161 passed, two skipped), TypeScript typechecking, production web
+build and CSP check, a no-window desktop build, Python syntax validation, the
+focused live picker harness, and `git diff --check`. Focused session, gateway,
+desktop raw-IPC, WebSocket/Tauri client, LiveApplication, component, demo, and
+pure file-intake tests also pass.
+
+Visible picker affordances, progress, chunking/resume, multiple files,
+pre-add parsing/selection, native desktop file associations, Android intake,
+remote URL fetch, source export, HTTP tracker execution, and v2/hybrid support
+remain deliberately deferred.
 
 ## Validation Matrix
 

@@ -20,6 +20,11 @@ campaign, which remains unauthorized and unimplemented. Tactical `081`
 extends the same connection with one declared, one-frame binary `.torrent`
 attachment bounded at 64 MiB while retaining the 64-KiB text bound; HTTP
 remains an explicit automation adapter and Tauri uses raw in-process IPC.
+Tactical `083` keeps that admission/framing sequence but removes the caller
+digest: the declaration carries exact length and semantic options, while
+common Rust preparation derives SHA-256 from the received bytes. The shared
+React picker uses the existing active adapter and does not open an HTTP side
+lane for ordinary browser intake.
 
 ## Purpose And Scope
 
@@ -142,7 +147,8 @@ then sends exactly one correlated binary message up to the calibrated
 HTTP carries a raw `application/x-bittorrent` body for automation, while Tauri
 supplies a raw IPC body in process. The attachment is not an arbitrary data
 channel, does not carry payload pieces, and does not raise ordinary JSON/text
-limits.
+limits. The caller declares exact source length but no digest; source SHA-256
+is derived only after Rust owns the complete attachment.
 
 WebSocket creation does not depend on an HTTP request. The socket can open,
 update and close view sets directly. HTTP remains a complete alternative, not

@@ -19,6 +19,81 @@ const transportBenchmark =
   process.env.RSTORRENT_LIVE_TRANSPORT_BENCHMARK === "1";
 const benchmarkTransport = process.env.RSTORRENT_LIVE_TRANSPORT;
 const expectFileSelection = process.env.RSTORRENT_LIVE_FILE_SELECTION === "1";
+const torrentFile = process.env.RSTORRENT_LIVE_TORRENT_FILE;
+const expectTorrentFilePicker =
+  process.env.RSTORRENT_LIVE_TORRENT_FILE_PICKER === "1";
+
+test("live torrent file picker uses one WebSocket binary attachment", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  test.skip(
+    !expectTorrentFilePicker ||
+      gateway === undefined ||
+      gatewayToken === undefined ||
+      torrentFile === undefined ||
+      torrentId === undefined ||
+      torrentName === undefined,
+    "controlled live torrent file picker is opt-in",
+  );
+  let applicationUpgrades = 0;
+  let binaryFrames = 0;
+  const semanticHttpRequests: string[] = [];
+  const expectedSocket = `${gateway!.replace(/^http/, "ws")}/api/v1/connect`;
+  page.on("websocket", (socket) => {
+    if (socket.url() !== expectedSocket) return;
+    applicationUpgrades += 1;
+    socket.on("framesent", (frame) => {
+      if (typeof frame.payload !== "string") binaryFrames += 1;
+    });
+  });
+  page.on("request", (request) => {
+    if (!request.url().startsWith(gateway!)) return;
+    const url = new URL(request.url());
+    if (url.pathname !== "/api/v1/connect") {
+      semanticHttpRequests.push(`${request.method()} ${url.pathname}`);
+    }
+  });
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(liveUrl());
+  const transfers = page.getByRole("grid", { name: "Transfer queue" });
+  await expect(transfers).toBeVisible();
+  await expect.poll(() => applicationUpgrades).toBe(1);
+  const addForm = page.getByRole("form", { name: "Add torrent" });
+  const chooserEvent = page.waitForEvent("filechooser");
+  await addForm.getByRole("button", { name: "Add" }).click();
+  const chooser = await chooserEvent;
+  expect(chooser.isMultiple()).toBe(false);
+  await chooser.setFiles(torrentFile!);
+
+  const dialog = page.getByRole("dialog", {
+    name: "Choose download options",
+  });
+  await expect(dialog).toBeVisible();
+  await dialog
+    .getByRole("checkbox", {
+      name: /Start downloading files when metadata is available/,
+    })
+    .uncheck();
+  await dialog.getByRole("button", { name: "Add torrent" }).click();
+  await expect(page.getByText("Torrent added", { exact: true })).toBeVisible();
+  const row = transfers.locator(`[data-row-id="${torrentId!}"]`);
+  await expect(row).toContainText(torrentName!, { timeout: 10_000 });
+  await expect.poll(() => binaryFrames).toBe(1);
+
+  const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+  expect(applicationUpgrades).toBe(1);
+  expect(binaryFrames).toBe(1);
+  expect(semanticHttpRequests).toEqual([]);
+  console.log(
+    `torrent_file_picker_live_milestones ${JSON.stringify({ applicationUpgrades, binaryFrames, semanticHttpRequests: semanticHttpRequests.length, axeViolations: violations.length })}`,
+  );
+});
 
 test("paired application transport throughput", async ({ page }) => {
   test.setTimeout(240_000);

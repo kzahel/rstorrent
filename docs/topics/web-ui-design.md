@@ -75,6 +75,12 @@ shared portalled overlay layer. File actions, torrent More and its submenu,
 table Columns, and column help now share collision-aware positioning,
 dismissal, focus restoration, keyboard semantics, layering, and responsive
 bounds while retaining visible actions and existing targeting policy.
+Tactical `083` makes empty Add synchronously open a hidden single-file
+`.torrent` chooser in the same shared browser/Tauri toolbar. Nonempty input
+retains magnet validation. The existing root/start dialog owns options while
+the component retains only the browser `File`; bytes are read when the add
+begins and no filename, path, digest, or progress percentage enters
+presentation state.
 
 ## Purpose
 
@@ -517,7 +523,11 @@ The Add dialog now has one checked-by-default **Start downloading files when
 metadata is available** checkbox. Clearing it acquires metadata without
 creating content artifacts and directs the user to the Files tab; no file tree
 or second modal is introduced. Hiding add options continues to use the usable
-default root and starts content normally.
+default root and starts content normally. Tactical `083` reuses this exact
+dialog for a chosen `.torrent`. Empty or over-64-MiB files fail locally; a
+read or adapter failure remains visible, and a dialog-owned file can be
+retried without selecting it again. Chooser cancellation is a no-op, and the
+hidden input resets after selection so the same file can be chosen later.
 
 Column visibility, widths, sort, and live-sort preference persist per table in
 a versioned browser-local setting. Resize separators work by pointer and
@@ -550,6 +560,14 @@ keeps Workbench and Transfers below 100 rendered rows, keeps Library below 100
 rendered cards, and retains fewer than 2,000 total DOM elements after changing
 destinations. These are bounded development assertions rather than a general
 browser performance guarantee.
+
+Tactical `083` adds deterministic empty/nonempty Add, pointer/keyboard chooser,
+cancel, advisory accept, same-file reset, default/chosen root, start-content,
+post-success preference, busy, size, read-failure, retry, and byte-intent
+coverage. Its production headless run observes the actual file chooser and
+one binary frame through the ordinary WebSocket, no semantic HTTP requests,
+the visible imported row, no payload artifacts for metadata-only intake, and
+no serious/critical axe findings.
 
 Tactical `058` adds pure state and component coverage for independent current
 and batch torrent selection, modifier and keyboard entry, touch long press and

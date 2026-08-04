@@ -39,7 +39,10 @@ operation beside the JSON command union: source length and SHA-256 join
 semantic request identity, while WebSocket, HTTP, and Tauri adapters carry the
 bytes without paths or base64. Exact duplicate replay, stale-revision
 rejection, rollback and source-conflict behavior share the existing command
-semantics.
+semantics. Tactical `083` removes SHA-256 from the caller declaration: Rust
+derives it from the received bytes and reconstructs the same legacy receipt
+fingerprint, so existing exact replays and different-byte conflicts remain
+unchanged while browser intake needs no source hashing or secure context.
 
 ## Scope
 
@@ -79,10 +82,12 @@ state.
 A bounded byte attachment may accompany a closed semantic operation when the
 intent itself is binary, as for `.torrent` intake. The request still
 owns version, request ID, optional expected revision, established storage-root
-identity, start intent, selection, exact source length, and digest. Durable
-receipt replay compares the digest and normalized options rather than storing
-bytes in JSON. Adapters may frame or carry the attachment differently, but no
-adapter gains alternate mutation, duplicate, revision, or storage policy.
+identity, start intent, selection, and exact source length. Common Rust
+preparation derives the exact-source digest before persistence. Durable
+receipt replay compares that server-derived digest and normalized options
+rather than storing bytes in JSON. Adapters may frame or carry the attachment
+differently, but no adapter gains alternate mutation, duplicate, revision, or
+storage policy.
 Tactical `081` bounds this attachment at 64 MiB, admits one at a time per host,
 and replaces per-file index enumeration with canonical
 all/none/range intent plus later paged mutations so the command envelope stays
@@ -220,7 +225,10 @@ feedback, but the application service remains authoritative for syntax,
 resource bounds, durable duplicate handling, storage policy, and busy state.
 Remote `.torrent` URL fetching remains absent rather than being represented as
 a successful magnet add. Tactical `081` adds the separate file-byte operation;
-the shared React presentation has not yet exposed its browser file picker.
+Tactical `083` exposes it through the shared React empty-Add file chooser for
+ordinary browser and Tauri use. The UI retains only the browser `File` while
+root/start options are pending, then sends one bounded `ArrayBuffer` with
+initial selection `all`.
 
 Tactical `040` makes archive orthogonal to running intent and gives removal a
 durable generation. The application service first persists paused removal

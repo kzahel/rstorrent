@@ -53,12 +53,15 @@ does not mirror this dense desktop diagnostic surface.
 
 Tactical `081` adds adapter-level v1 `.torrent` byte intake through
 the ordinary browser WebSocket and raw in-process Tauri IPC, plus HTTP
-automation, without adding a visible file picker. The raw
+automation. The raw
 attachment maximum is 64 MiB while text/JSON remains 64 KiB; file and tracker
 inspection move to bounded pages so larger accepted catalogs do not inflate
-one view snapshot. A subsequent presentation slice can let the shared Add
-flow select a browser `File`, read its `ArrayBuffer`, and call that
-transport-neutral client operation.
+one view snapshot. Tactical `083` adds the shared presentation: empty Add
+opens one advisory single-file chooser in browser and Tauri, reuses the
+existing root/start dialog, retains only the `File` while options are pending,
+and submits one bounded `ArrayBuffer` through the active adapter. Nonempty Add
+remains the magnet path; there is no client digest, upload percentage, path,
+or alternate native picker command.
 
 ## Scope
 
@@ -189,12 +192,12 @@ development entry and stores its profile beneath ignored `.local/webui` by
 default. It is a maintainer-facing local bridge, not a change to the accepted
 in-process Tauri product architecture. Tactical `048` makes that same React
 application the Tauri product entry through an in-process adapter. The React
-application currently supports inspection, magnet add, pause, and resume, but
-not visible `.torrent` file selection or the full application command set. Its
-HTTP, WebSocket, and Tauri clients implement the generated transport-neutral
-byte-intake operation; the Add presentation has not yet called it. React emits
-a transport-neutral magnet intent; only the live adapter constructs the
-generated application request.
+application currently supports inspection, magnet and local `.torrent` add,
+pause, and resume, but not the full application command set. Its HTTP,
+WebSocket, and Tauri clients implement the generated transport-neutral
+byte-intake operation. React emits transport-neutral magnet or byte intent;
+only the live adapter constructs the generated application request, assigns
+selection `all`, and chooses the active transport.
 Typed and curated magnet intake share that path. A deterministic catalog test
 keeps the UI shortcuts identical to `tests/live/torrents.json`; public swarm
 availability remains variable evidence rather than a UI guarantee.
@@ -320,6 +323,17 @@ outlives a shortened test lease, displays retained state as stale, then opens
 a distinct view set and installs a fresh coherent snapshot. Wide, compact,
 phone, accessibility, payload-hash, process-join, and temporary-cleanup checks
 run without a visible browser or Tauri window.
+
+Tactical `083` adds a focused production-build browser proof without a
+visible window. Headless Chrome receives a real `filechooser` event from empty
+Add, selects an independently generated 157-byte v1 source, confirms
+metadata-only intake, and observes one application WebSocket, one binary
+attachment, zero semantic HTTP requests, the exact visible torrent row, and
+zero serious/critical axe findings. Gateway metrics record one upload
+declaration/admission and zero retained connections after joined shutdown;
+the metadata-only run creates no payload artifacts. Tauri reuses these React
+components and its tested raw-IPC adapter rather than gaining a path or native
+source-file owner.
 
 Android presentation requires separate evidence because it is implemented in
 Compose. Routine automation targets an explicitly owned no-window AVD and
