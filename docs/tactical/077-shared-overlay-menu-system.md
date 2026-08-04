@@ -1,7 +1,6 @@
 # Tactical 077: Shared Overlay And Menu System
 
-Status: Planned from maintainer direction on 2026-08-04. Implementation has
-not started.
+Status: Complete. Implemented and validated on 2026-08-04.
 
 Topics: `web-ui-design`
 
@@ -388,6 +387,95 @@ screenshots must be captured with each relevant overlay open.
 Rust workspace, protocol interoperability, public swarms, visible Tauri,
 Android builds, emulators, and physical devices are not relevant to this
 frontend-only slice.
+
+## Implemented Result
+
+- Pinned `react-aria-components` `1.20.0` and placed every direct library use
+  behind `AnchoredOverlay`. The local surface owns press/context triggers,
+  action items, disabled items, sections, separators, submenus, anchored
+  dialogs, and overlay buttons. Feature components continue to own labels,
+  command eligibility, and callbacks.
+- Moved interface-size projection and semantic metrics to the document root.
+  The bootstrap applies stored theme and interface size before React content,
+  and the live store projection stays synchronized. Body-portalled overlays
+  inherit the same Auto/Light/Dark and Compact/Standard/Spacious values as the
+  application without a second appearance owner.
+- Migrated File actions, torrent More and Add test torrent, table Columns, and
+  column help. Their component-local document listeners, manual portals,
+  fixed coordinates, absolute submenu direction, and duplicated focus loops
+  are removed.
+- Ordinary overlays use layer 80, nested overlays use layer 81, application
+  chrome remains below them, and existing modal backdrops start at layer 100.
+  The local CSS intentionally overrides React Aria's large inline default so
+  an anchored page overlay cannot cover an active modal.
+- A 4-pixel anchor offset and 8-pixel container padding supply the shared
+  placement boundary. React Aria tracks anchors, scrolling ancestors, content,
+  and viewport changes and flips or shifts as needed. Below 440 pixels, a root
+  menu with a submenu and its child divide the usable width into two wrapping
+  panels; this retained the hierarchy at 320 pixels without overlapping the
+  parent or installing another resize listener.
+- Escape unwinds one overlay level and restores its trigger. Tab closes the
+  root menu and advances in document focus order. Action selection closes the
+  complete menu tree. Disabling the trigger or unmounting its owner removes
+  the portal. The interaction-modal underlay makes the first outside tap a
+  dismiss-only action; it deliberately does not also activate the obscured
+  control, avoiding duplicate or accidental commands.
+- A permanent test-only harness exercises the same content with press or
+  desktop context-menu invocation. Production rows retain visible More
+  affordances, and their right-click and touch-long-press targeting policy is
+  unchanged.
+- The complete Axe run exposed an existing phone Swarm summary that overflowed
+  without keyboard access. Its bounded compatibility fix makes the summary an
+  explicitly focusable horizontal scroll region rather than suppressing the
+  serious finding.
+
+## Dependency And Build Evidence
+
+The resolved production additions are Apache-2.0 React Aria Components,
+`react-aria`, `react-stately`, `@internationalized/date`,
+`@internationalized/number`, `@internationalized/string`,
+`@react-types/shared`, and `@swc/helpers`; and MIT `aria-hidden`,
+`client-only`, `clsx`, and `use-sync-external-store`. The installed packages
+contain their license files and no upstream `NOTICE` file. The repository does
+not bundle `node_modules`; the existing `THIRD_PARTY_NOTICES.md` release rule
+already requires an exact license bundle for shipped Apache components, so no
+source-checkout notice change was required. `npm audit --omit=dev` reported
+zero vulnerabilities.
+
+Compared with the recorded pre-dependency production baseline, the bootstrap
+JavaScript changed from 887.00 kB / 173.73 kB gzip to 1,040.44 kB / 221.94 kB
+gzip: a 153.44 kB minified and 48.21 kB gzip cost. The main CSS changed from
+78.31 kB / 14.04 kB gzip to 77.88 kB / 14.02 kB gzip after removing the four
+local popup implementations. The separate entry chunk is 4.61 kB / 1.92 kB
+gzip. This is an accepted measured cost for the shared semantics and
+positioning boundary, not a claim that the dependency is free.
+
+## Validation Evidence
+
+- `npm run typecheck`: pass.
+- `npm test`: 27 files passed and 2 expected opt-in files skipped; 151 tests
+  passed and 2 skipped.
+- `npm run build`: pass, including the CSP scan of both JavaScript bundles;
+  neither uses `eval` or the `Function` constructor.
+- Full deterministic Playwright: 28 passed and the five live opt-in cases
+  skipped. The open-overlay Axe serious/critical scans were empty.
+- The overlay harness passed press geometry at 320x568, 390x844, the reported
+  456x1024 size, 920x720, and 1440x900 at all four corners. It also passed
+  live resize, pointer and touch activation, root and nested keyboard paths,
+  Home/End/typeahead, pointer and keyboard context invocation, outside
+  dismissal, all nine density/theme combinations, layers, trigger disable,
+  and owner removal.
+- Deterministic product coverage passed File actions on the reported phone
+  path, torrent More and submenu command behavior, Columns persistence, and
+  column-help focus/content. Open File actions and Columns screenshots at
+  wide and phone sizes plus menu/submenu Light and Dark screenshots were
+  captured and visually inspected; content was legible, correctly themed,
+  and inside the viewport.
+- `git diff --check`: pass.
+
+The stopping condition is met. Choosing production context-menu targets,
+changing touch gestures, and unifying the existing modal dialogs remain the
+explicit next boundaries.
 
 ## Escalation And Next Boundary
 

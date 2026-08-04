@@ -83,7 +83,7 @@ test("More copies one selected torrent's canonical magnet", async ({
 
   const more = page.getByRole("button", { name: "More" });
   await more.click();
-  const menu = page.getByRole("menu", { name: "More actions" });
+  const menu = page.getByRole("menu", { name: "More" });
   const copy = menu.getByRole("menuitem", { name: "Copy magnet link" });
   await expect(copy).toBeEnabled();
 
@@ -339,7 +339,7 @@ test("interface size settings persist and keep geometry coherent", async ({
   await page.setViewportSize({ width: 1024, height: 720 });
   await openScenario(page, "healthy-download", 42_000);
 
-  const app = page.locator('[data-interface-size]');
+  const app = page.locator("#app > [data-interface-size]");
   const library = page.getByRole("grid", { name: "Torrent library" });
   const firstRow = library.locator("[data-row-id]").first();
   const archive = page.getByRole("button", { name: "Archive", exact: true });
@@ -388,7 +388,7 @@ test("interface size settings persist and keep geometry coherent", async ({
   await expect(settings).toBeFocused();
 
   await page.reload();
-  await expect(page.locator('[data-interface-size]')).toHaveAttribute(
+  await expect(app).toHaveAttribute(
     "data-interface-size",
     "spacious",
   );
@@ -952,16 +952,19 @@ test("full file catalog stays virtualized across wide compact and phone layouts"
   await expect(files.getByRole("checkbox").first()).toBeVisible();
   await files.getByRole("row").nth(1).click();
   await page.getByRole("button", { name: "More file actions" }).click();
-  const fileActions = page.getByRole("menu", { name: "File actions" });
+  const fileActions = page.getByRole("menu", { name: "More file actions" });
   await expect(
     fileActions.getByRole("menuitem", { name: "Normal", exact: true }),
   ).toBeDisabled();
   await expect(
     fileActions.getByRole("menuitem", { name: "Skip", exact: true }),
   ).toBeDisabled();
-  await expect(fileActions).toContainText(
-    "File priority changes are unavailable in demo scenarios.",
-  );
+  await expect(
+    page.getByText(
+      "File priority changes are unavailable in demo scenarios.",
+    ),
+  ).toBeVisible();
+  await capture(page, "rstorrent-file-actions-wide.png");
   await page.keyboard.press("Escape");
   await files.getByRole("row").nth(1).focus();
   await page.keyboard.press("ArrowDown");
@@ -990,14 +993,14 @@ test("full file catalog stays virtualized across wide compact and phone layouts"
   const columns = page.getByRole("button", { name: "Columns" }).last();
   await columns.click();
   await page.getByRole("checkbox", { name: "Storage Path" }).check();
+  await capture(page, "rstorrent-columns-wide.png");
+  await page.keyboard.press("Escape");
   await expect(files.getByRole("columnheader", { name: "Storage Path" })).toBeVisible();
   const nameResize = files.getByRole("separator", { name: "Resize Name column" });
   const initialWidth = Number(await nameResize.getAttribute("aria-valuenow"));
   await nameResize.focus();
   await page.keyboard.press("ArrowRight");
   await expect(nameResize).toHaveAttribute("aria-valuenow", String(initialWidth + 12));
-  await columns.click();
-
   const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
     (violation) => violation.impact === "serious" || violation.impact === "critical",
   );
@@ -1042,6 +1045,33 @@ test("full file catalog stays virtualized across wide compact and phone layouts"
         .evaluate((element) => Math.round(element.getBoundingClientRect().right)),
     )
     .toBeLessThanOrEqual(0);
+  await columns.click();
+  await expect(
+    page.getByRole("dialog", { name: "Table column settings" }),
+  ).toBeVisible();
+  await capture(page, "rstorrent-columns-phone.png");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "More file actions" }).click();
+  const phoneFileActions = page.getByRole("menu", {
+    name: "More file actions",
+  });
+  await expect(
+    phoneFileActions.getByRole("menuitem", { name: "Normal", exact: true }),
+  ).toBeVisible();
+  await expect(
+    phoneFileActions.getByRole("menuitem", { name: "Skip", exact: true }),
+  ).toBeVisible();
+  const phoneMenuBounds = await phoneFileActions
+    .locator("..")
+    .locator("..")
+    .boundingBox();
+  expect(phoneMenuBounds).not.toBeNull();
+  expect(phoneMenuBounds!.x).toBeGreaterThanOrEqual(7);
+  expect(phoneMenuBounds!.y).toBeGreaterThanOrEqual(7);
+  expect(phoneMenuBounds!.x + phoneMenuBounds!.width).toBeLessThanOrEqual(383);
+  expect(phoneMenuBounds!.y + phoneMenuBounds!.height).toBeLessThanOrEqual(837);
+  await capture(page, "rstorrent-file-actions-phone.png");
+  await page.keyboard.press("Escape");
   await capture(page, "rstorrent-files-phone.png");
   console.log(`file_scale_metrics ${JSON.stringify({ ...metrics, updateRenderMs })}`);
 });

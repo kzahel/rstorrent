@@ -37,9 +37,9 @@ beforeAll(() => {
     disconnect() {}
   };
   globalThis.requestAnimationFrame = (callback) => {
-    callback(0);
-    return 1;
+    return window.setTimeout(() => callback(0), 0);
   };
+  globalThis.cancelAnimationFrame = (handle) => window.clearTimeout(handle);
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
     () =>
       ({
@@ -60,6 +60,7 @@ afterEach(async () => {
   cleanup();
   Reflect.deleteProperty(navigator, "clipboard");
   document.documentElement.removeAttribute("data-color-theme");
+  document.documentElement.removeAttribute("data-interface-size");
   if (typeof globalThis.localStorage?.clear === "function") {
     globalThis.localStorage.clear();
   }
@@ -343,14 +344,20 @@ describe("inspection application", () => {
     await user.click(
       screen.getByRole("button", { name: "More file actions" }),
     );
-    const fileActions = screen.getByRole("menu", { name: "File actions" });
-    expect(within(fileActions).getByRole("menuitem", { name: "Normal" })).toBeDisabled();
+    const fileActions = screen.getByRole("menu", {
+      name: "More file actions",
+    });
+    expect(
+      within(fileActions).getByRole("menuitem", { name: "Normal" }),
+    ).toHaveAttribute("aria-disabled", "true");
     expect(
       within(fileActions).getByRole("menuitem", { name: "Skip" }),
-    ).toBeDisabled();
-    expect(fileActions).toHaveTextContent(
-      "File priority changes are unavailable in demo scenarios.",
-    );
+    ).toHaveAttribute("aria-disabled", "true");
+    expect(
+      screen.getByText(
+        "File priority changes are unavailable in demo scenarios.",
+      ),
+    ).toBeVisible();
     await user.keyboard("{Escape}");
 
     firstFile.focus();
@@ -377,6 +384,7 @@ describe("inspection application", () => {
 
     await user.click(screen.getAllByRole("button", { name: "Columns" }).at(-1)!);
     await user.click(screen.getByRole("checkbox", { name: "Storage Path" }));
+    await user.keyboard("{Escape}");
     expect(within(files).getByRole("columnheader", { name: /Storage Path/ })).toBeVisible();
   });
 
@@ -399,7 +407,7 @@ describe("inspection application", () => {
     await user.click(within(files).getAllByRole("row")[1]!);
     await user.click(screen.getByRole("button", { name: "More file actions" }));
     const skip = screen.getByRole("menuitem", { name: "Skip" });
-    expect(skip).toBeEnabled();
+    expect(skip).not.toHaveAttribute("aria-disabled");
     await user.click(skip);
 
     await waitFor(() =>
@@ -413,7 +421,7 @@ describe("inspection application", () => {
 
     await user.click(screen.getByRole("button", { name: "More file actions" }));
     const normal = screen.getByRole("menuitem", { name: "Normal" });
-    expect(normal).toBeEnabled();
+    expect(normal).not.toHaveAttribute("aria-disabled");
     await user.click(normal);
     await waitFor(() =>
       expect(application.commands.at(-1)).toEqual({
@@ -968,7 +976,7 @@ describe("inspection application", () => {
     const more = screen.getByRole("button", { name: "More" });
     await user.click(more);
     const copy = screen.getByRole("menuitem", { name: "Copy magnet link" });
-    expect(copy).toBeEnabled();
+    expect(copy).not.toHaveAttribute("aria-disabled");
     await user.click(copy);
 
     await waitFor(() =>
@@ -977,7 +985,7 @@ describe("inspection application", () => {
       ),
     );
     expect(screen.getByText("Magnet link copied", { exact: true })).toBeVisible();
-    expect(screen.queryByRole("menu", { name: "More actions" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menu", { name: "More" })).not.toBeInTheDocument();
     await waitFor(() => expect(more).toHaveFocus());
 
     writeText.mockRejectedValueOnce(new Error("permission denied"));
@@ -997,14 +1005,14 @@ describe("inspection application", () => {
     await user.click(more);
     expect(
       screen.getByRole("menuitem", { name: "Copy magnet link" }),
-    ).toBeDisabled();
+    ).toHaveAttribute("aria-disabled", "true");
     await user.keyboard("{Escape}");
 
     fireEvent.click(screen.getByRole("grid", { name: "Transfer queue" }));
     await user.click(more);
     expect(
       screen.getByRole("menuitem", { name: "Copy magnet link" }),
-    ).toBeDisabled();
+    ).toHaveAttribute("aria-disabled", "true");
   });
 
   it("dispatches an exact test magnet through the keyboard submenu", async () => {
@@ -1031,19 +1039,19 @@ describe("inspection application", () => {
     });
     expect(
       screen.getByRole("menuitem", { name: "Copy magnet link" }),
-    ).toBeDisabled();
+    ).toHaveAttribute("aria-disabled", "true");
     expect(more).toHaveAttribute("aria-expanded", "true");
-    expect(addTestTorrent).toHaveFocus();
+    expect(addTestTorrent).toHaveAttribute("data-focused");
 
     await user.keyboard("{ArrowRight}");
     const submenu = screen.getByRole("menu", { name: "Add test torrent" });
     const bunny = within(submenu).getByRole("menuitem", {
       name: "Big Buck Bunny",
     });
-    expect(bunny).toHaveFocus();
+    expect(bunny).toHaveAttribute("data-focused");
     await user.keyboard("{End}");
     const wired = within(submenu).getByRole("menuitem", { name: "WIRED CD" });
-    expect(wired).toHaveFocus();
+    expect(wired).toHaveAttribute("data-focused");
     await user.keyboard("{Enter}");
 
     const wiredSource = WEBTORRENT_TEST_TORRENTS.at(-1)!;
@@ -1059,30 +1067,38 @@ describe("inspection application", () => {
     });
     expect(draft).toHaveValue("unfinished draft");
     expect(screen.getByText("Torrent added", { exact: true })).toBeVisible();
-    expect(screen.queryByRole("menu", { name: "More actions" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menu", { name: "More" })).not.toBeInTheDocument();
     await waitFor(() => expect(more).toHaveFocus());
 
     await user.click(more);
     await user.click(
       screen.getByRole("menuitem", { name: "Add test torrent" }),
     );
-    expect(screen.getByRole("menu", { name: "Add test torrent" })).toBeVisible();
+    const clickedSubmenu = screen.getByRole("menu", {
+      name: "Add test torrent",
+    });
+    expect(clickedSubmenu).toBeVisible();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("menuitem", { name: "Big Buck Bunny" }),
+      ).toHaveFocus(),
+    );
     await user.keyboard("{Escape}");
     expect(
       screen.queryByRole("menu", { name: "Add test torrent" }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole("menuitem", { name: "Add test torrent" }),
-    ).toHaveFocus();
+    ).toHaveAttribute("data-focused");
     await user.keyboard("{Escape}");
-    expect(screen.queryByRole("menu", { name: "More actions" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menu", { name: "More" })).not.toBeInTheDocument();
     expect(more).toHaveFocus();
 
     await user.keyboard("{ArrowDown}");
-    expect(screen.getByRole("menu", { name: "More actions" })).toBeVisible();
+    expect(screen.getByRole("menu", { name: "More" })).toBeVisible();
     await user.tab();
     expect(
-      screen.queryByRole("menu", { name: "More actions" }),
+      screen.queryByRole("menu", { name: "More" }),
     ).not.toBeInTheDocument();
   });
 });

@@ -365,7 +365,7 @@ test("live metadata-only add and file selection", async ({ page }) => {
   await expect(prefixRow).toBeVisible();
   await prefixRow.click();
   await page.getByRole("button", { name: "More file actions" }).click();
-  const fileActions = page.getByRole("menu", { name: "File actions" });
+  const fileActions = page.getByRole("menu", { name: "More file actions" });
   await expect(fileActions.getByRole("menuitem")).toHaveCount(2);
   await fileActions
     .getByRole("menuitem", { name: "Skip", exact: true })
@@ -383,7 +383,7 @@ test("live metadata-only add and file selection", async ({ page }) => {
   await prefixRow.click();
   await page.getByRole("button", { name: "More file actions" }).click();
   await page
-    .getByRole("menu", { name: "File actions" })
+    .getByRole("menu", { name: "More file actions" })
     .getByRole("menuitem", { name: "Normal", exact: true })
     .click();
   await expect(prefixRow.getByText("Normal", { exact: true })).toBeVisible();

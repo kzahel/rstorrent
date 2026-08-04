@@ -53,6 +53,9 @@
   --ui-space-sm: 0.5rem;
   --ui-space-md: 0.85rem;
   --ui-space-lg: 1.15rem;
+  /* Sticky application chrome tops out at 20; modal backdrops start at 100. */
+  --layer-anchored-overlay: 80;
+  --layer-anchored-submenu: 81;
 }
 
 :root[data-interface-size="compact"] {

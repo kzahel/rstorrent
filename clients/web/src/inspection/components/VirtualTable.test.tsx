@@ -2,7 +2,14 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { useState } from "react";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -45,9 +52,9 @@ beforeAll(() => {
     disconnect() {}
   };
   globalThis.requestAnimationFrame = (callback) => {
-    callback(0);
-    return 1;
+    return window.setTimeout(() => callback(0), 0);
   };
+  globalThis.cancelAnimationFrame = (handle) => window.clearTimeout(handle);
   Object.defineProperty(globalThis, "localStorage", {
     configurable: true,
     value: {
@@ -94,7 +101,7 @@ describe("VirtualTable", () => {
     expect(rowIds(container)).toEqual(["large", "ten", "null"]);
   });
 
-  it("opens column help without sorting and restores focus on Escape", () => {
+  it("opens column help without sorting and restores focus on Escape", async () => {
     render(
       <VirtualTable
         tableId="help-test"
@@ -108,17 +115,21 @@ describe("VirtualTable", () => {
     );
     const help = screen.getByRole("button", { name: "Explain Value" });
     const header = screen.getByRole("columnheader", { name: "Value" });
+    help.focus();
     fireEvent.click(help);
     expect(header).not.toHaveAttribute("aria-sort");
     expect(help).toHaveAttribute("aria-expanded", "true");
     expect(
       screen.getByRole("dialog", { name: "Value column help" }),
     ).toHaveTextContent("exact decimal strings");
-    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.keyDown(
+      screen.getByRole("dialog", { name: "Value column help" }),
+      { key: "Escape" },
+    );
     expect(
       screen.queryByRole("dialog", { name: "Value column help" }),
     ).not.toBeInTheDocument();
-    expect(help).toHaveFocus();
+    await waitFor(() => expect(help).toHaveFocus());
   });
 
   it("hides optional columns by default and exposes persisted controls", () => {
@@ -136,6 +147,10 @@ describe("VirtualTable", () => {
     expect(screen.queryByRole("columnheader", { name: "Optional" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Columns" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Optional" }));
+    fireEvent.keyDown(
+      screen.getByRole("dialog", { name: "Table column settings" }),
+      { key: "Escape" },
+    );
     expect(screen.getByRole("columnheader", { name: /Optional/ })).toBeVisible();
     first.unmount();
 
@@ -365,7 +380,7 @@ describe("VirtualTable", () => {
     expect(checkedRowNames()).toEqual(["four", "three", "two"]);
   });
 
-  it("makes bare navigation singleton and extends keyboard selection ranges", () => {
+  it("makes bare navigation singleton and extends keyboard selection ranges", async () => {
     function KeyboardTable() {
       const rows = ["one", "two", "three", "four", "five"].map(
         (id, index) => ({ id, value: String(index + 1) }),
@@ -404,7 +419,7 @@ describe("VirtualTable", () => {
 
     fireEvent.keyDown(grid, { key: "ArrowDown" });
     expect(current()).toHaveAttribute("data-row-id", "three");
-    expect(current()).toHaveFocus();
+    await waitFor(() => expect(current()).toHaveFocus());
     expect(checkedRowNames()).toEqual(["three"]);
 
     fireEvent.keyDown(grid, { key: "ArrowDown", shiftKey: true });

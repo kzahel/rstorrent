@@ -70,6 +70,11 @@ Tactical `071` adds a presentation-only **Copy magnet link** More action for
 exactly one selected torrent. It synthesizes the canonical v1 URI from the
 already projected info hash, reports actual clipboard success or failure, and
 does not claim byte-for-byte preservation of the submitted source URI.
+Tactical `077` replaces the four component-local popup implementations with a
+shared portalled overlay layer. File actions, torrent More and its submenu,
+table Columns, and column help now share collision-aware positioning,
+dismissal, focus restoration, keyboard semantics, layering, and responsive
+bounds while retaining visible actions and existing targeting policy.
 
 ## Purpose
 
@@ -124,6 +129,14 @@ application-state owner and its React bindings for narrow selectors. No
 routing, design-system, or data-grid library is selected by this topic. Each
 dependency must solve a concrete need and preserve strict typing, headless
 testability, accessibility, and bounded rendering.
+
+Tactical `077` accepts exact `react-aria-components` `1.20.0` as the focused
+unstyled overlay and menu dependency. Direct library composition remains
+inside one local wrapper rather than becoming feature-component policy.
+RSTorrent still owns styling, appearance tokens, labels, command eligibility,
+and tests; React Aria owns the difficult portal, positioning, menu, submenu,
+focus, and dismissal mechanics. Do not add a parallel overlay package or the
+styled React Spectrum system without new measured evidence.
 
 ## Information Hierarchy
 
@@ -224,6 +237,17 @@ Touch is a first-class input. Primary actions cannot require hover, right
 click, or a fine pointer. Context menus may complement visible or otherwise
 discoverable actions but cannot be their only access path. Density may adapt
 without removing information or making controls too small to operate.
+
+Anchored action menus and popover dialogs render through a body portal so
+application and table overflow cannot clip them. They keep an 8-pixel viewport
+boundary, flip and shift with available space, inherit root theme and
+interface-size tokens, and stay below modal dialogs. At narrow phone widths a
+nested menu divides usable width with its parent rather than rendering off
+screen or covering the parent. Escape restores the relevant trigger; Tab
+continues through document focus order. The first outside tap dismisses only
+and does not also activate the obscured control. The shared trigger supports
+desktop context invocation, but production context targets and touch-long-
+press policy remain separate product decisions.
 
 The continuing actionable-table interaction contract lives in
 [`table-interaction.md`](table-interaction.md). Tactical `069` implements its
@@ -480,14 +504,14 @@ and waits for the authoritative Files view to change the priority column. Demo
 scenarios retain disabled actions with an explicit reason rather than
 pretending to mutate engine state.
 
-Tactical `077` is planned to replace the component-local Files and torrent
-action menus, table Columns popover, and column-help overlay with one locally
-styled React Aria Components layer. The shared layer owns body-portalled
-rendering, collision-aware placement and sizing, focus, dismissal, nested-menu
-behavior, and portal-safe theme/interface metrics. It remains compatible with
-desktop context-menu triggering, but this slice does not attach right-click
-behavior to product rows or reassign the table's touch long-press selection
-gesture.
+Tactical `077` replaces the component-local Files and torrent action menus,
+table Columns popover, and column-help overlay with one locally styled React
+Aria Components layer. It retains action and table state in the feature
+owners, while the shared layer owns body-portalled rendering, collision-aware
+placement and sizing, focus, dismissal, nested-menu behavior, and portal-safe
+theme/interface metrics. Its context-trigger capability remains test-only;
+product rows do not gain right-click behavior and table touch long press still
+selects.
 
 The Add dialog now has one checked-by-default **Start downloading files when
 metadata is available** checkbox. Clearing it acquires metadata without
@@ -584,6 +608,18 @@ back the exact canonical URI, checks restored More focus and disabled
 multi-selection behavior, and finds no serious or critical Axe violations in
 the open menu. No application-view bytes, generated contracts, or durable
 state are added.
+
+Tactical `077` adds deterministic overlay evidence at 320x568, 390x844,
+456x1024, 920x720, and 1440x900, at every trigger corner and after live
+resize. Pointer, touch, keyboard, nested, context, dismissal, lifecycle, all
+density/theme combinations, and open-overlay serious/critical Axe checks pass.
+The full browser gate passes 28 deterministic cases with five live opt-in
+cases skipped. Open File actions, Columns, help, and shared menu/submenu
+screenshots were visually inspected at representative wide and phone sizes in
+Light and Dark. The accepted dependency adds 153.44 kB minified / 48.21 kB
+gzip to the production bootstrap while removing about 0.43 kB of component
+CSS; `npm audit --omit=dev` reports no vulnerabilities and the CSP scan stays
+clean.
 
 ## Likely Sequencing
 

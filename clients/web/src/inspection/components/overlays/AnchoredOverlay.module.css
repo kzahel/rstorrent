@@ -1,6 +1,7 @@
 .menuPopover,
 .dialogPopover {
-  z-index: 100;
+  /* Override the library inline default so page overlays stay below modals. */
+  z-index: var(--layer-anchored-overlay) !important;
   max-width: calc(100vw - 1rem);
   max-height: calc(100dvh - 1rem);
   border: 1px solid var(--border-strong);
@@ -9,6 +10,10 @@
   background: var(--surface-primary);
   box-shadow: 0 10px 28px rgb(15 30 46 / 20%);
   overflow: auto;
+}
+
+.menuPopover[data-trigger="SubmenuTrigger"] {
+  z-index: var(--layer-anchored-submenu) !important;
 }
 
 .menuPopover {
@@ -58,6 +63,24 @@
   color: var(--text-muted);
 }
 
+.menuSection {
+  display: grid;
+}
+
+.menuSectionHeader {
+  padding: 0.32rem 0.72rem 0.18rem;
+  color: var(--text-muted);
+  font-size: var(--ui-font-caption);
+  font-weight: 720;
+}
+
+.menuSeparator {
+  height: 1px;
+  margin: 0.28rem 0.5rem;
+  border: 0;
+  background: var(--border-soft);
+}
+
 .menuItem[data-has-submenu]::after {
   margin-left: auto;
   content: "›";
@@ -85,5 +108,18 @@
   .menuPopover,
   .dialogPopover {
     transition: none;
+  }
+}
+
+@media (max-width: 439px) {
+  .menuPopover:has(.menuItem[data-has-submenu]),
+  .menuPopover[data-trigger="SubmenuTrigger"] {
+    width: calc((100vw - 1.25rem) / 2);
+    min-width: 0;
+  }
+
+  .menuPopover:has(.menuItem[data-has-submenu]) .menuItem,
+  .menuPopover[data-trigger="SubmenuTrigger"] .menuItem {
+    white-space: normal;
   }
 }

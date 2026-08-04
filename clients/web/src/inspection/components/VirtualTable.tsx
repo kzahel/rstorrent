@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
@@ -11,12 +10,16 @@ import {
   type ReactNode,
   type UIEvent,
 } from "react";
-import { createPortal } from "react-dom";
 
 import {
   INTERFACE_METRICS,
   type InterfaceSize,
 } from "../appearance";
+import {
+  AnchoredDialog,
+  AnchoredDialogTrigger,
+  OverlayButton,
+} from "./overlays/AnchoredOverlay";
 import styles from "./VirtualTable.module.css";
 
 export interface VirtualColumn<Row> {
@@ -67,14 +70,6 @@ interface SortState {
   readonly direction: "asc" | "desc";
 }
 
-interface HeaderHelpState {
-  readonly columnId: string;
-  readonly left: number;
-  readonly top: number;
-  readonly width: number;
-  readonly maximumHeight: number;
-}
-
 const TABLE_CONFIG_VERSION = 1;
 
 export function VirtualTable<Row>({
@@ -111,12 +106,6 @@ export function VirtualTable<Row>({
   const [columnWidths, setColumnWidths] = useState<Readonly<Record<string, number>>>(
     () => loadTableConfig(tableId, columns)?.widths ?? {},
   );
-  const [columnsOpen, setColumnsOpen] = useState(false);
-  const columnsButtonRef = useRef<HTMLButtonElement>(null);
-  const headerHelpIdPrefix = useId().replaceAll(":", "");
-  const headerHelpButtonRef = useRef<HTMLButtonElement>(null);
-  const headerHelpPopoverRef = useRef<HTMLDivElement>(null);
-  const [headerHelp, setHeaderHelp] = useState<HeaderHelpState | null>(null);
   const resizeRef = useRef<{
     readonly columnId: string;
     readonly pointerId: number;
@@ -148,26 +137,7 @@ export function VirtualTable<Row>({
     setSort(loaded?.sort ?? initialSort ?? null);
     setLiveSort(loaded?.liveSort ?? false);
     setFrozenOrder(null);
-    setHeaderHelp(null);
   }, [columns, initialSort, tableId]);
-
-  useEffect(() => {
-    if (headerHelp === null) return;
-    headerHelpPopoverRef.current?.focus();
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      setHeaderHelp(null);
-      headerHelpButtonRef.current?.focus();
-    };
-    const closeOnResize = () => setHeaderHelp(null);
-    document.addEventListener("keydown", closeOnEscape);
-    globalThis.addEventListener("resize", closeOnResize);
-    return () => {
-      document.removeEventListener("keydown", closeOnEscape);
-      globalThis.removeEventListener("resize", closeOnResize);
-    };
-  }, [headerHelp]);
 
   useEffect(() => {
     saveTableConfig(tableId, {
@@ -548,10 +518,6 @@ export function VirtualTable<Row>({
   const configuredVisibleCount = columns.filter(
     (column) => !hiddenColumns.has(column.id),
   ).length;
-  const headerHelpColumn =
-    headerHelp === null
-      ? undefined
-      : visibleColumns.find((column) => column.id === headerHelp.columnId);
   const selectedVisibleCount =
     selection === undefined
       ? 0
@@ -591,39 +557,7 @@ export function VirtualTable<Row>({
     selection.onChange([...next], nextCurrentId);
   };
 
-  const toggleHeaderHelp = (
-    trigger: HTMLButtonElement,
-    column: VirtualColumn<Row>,
-  ) => {
-    if (headerHelp?.columnId === column.id) {
-      setHeaderHelp(null);
-      return;
-    }
-    const bounds = trigger.getBoundingClientRect();
-    const viewportWidth = globalThis.innerWidth || 1_024;
-    const viewportHeight = globalThis.innerHeight || 768;
-    const width = Math.min(
-      column.headerHelpWidth ?? 352,
-      Math.max(0, viewportWidth - 16),
-    );
-    const left = Math.max(
-      8,
-      Math.min(bounds.right - width, viewportWidth - width - 8),
-    );
-    const belowTop = bounds.bottom + 6;
-    const top = viewportHeight - belowTop >= 420 ? belowTop : 8;
-    headerHelpButtonRef.current = trigger;
-    setHeaderHelp({
-      columnId: column.id,
-      left,
-      top,
-      width,
-      maximumHeight: Math.max(160, viewportHeight - top - 8),
-    });
-  };
-
   return (
-    <>
     <div className={styles.container} style={tableStyle}>
       <div className={styles.toolbar}>
         <span>
@@ -647,26 +581,11 @@ export function VirtualTable<Row>({
             </button>
           </>
         )}
-        <button
-          ref={columnsButtonRef}
-          type="button"
-          aria-haspopup="dialog"
-          aria-expanded={columnsOpen}
-          onClick={() => setColumnsOpen((open) => !open)}
-        >
-          Columns
-        </button>
-        {columnsOpen ? (
-          <div
-            className={styles.columnMenu}
-            role="dialog"
+        <AnchoredDialogTrigger key={`columns-${tableId}`}>
+          <OverlayButton>Columns</OverlayButton>
+          <AnchoredDialog
+            className={styles.columnMenu!}
             aria-label="Table column settings"
-            onKeyDown={(event) => {
-              if (event.key !== "Escape") return;
-              event.preventDefault();
-              setColumnsOpen(false);
-              requestAnimationFrame(() => columnsButtonRef.current?.focus());
-            }}
           >
             <strong>Visible columns</strong>
             {columns.map((column) => {
@@ -725,8 +644,8 @@ export function VirtualTable<Row>({
             >
               Reset table
             </button>
-          </div>
-        ) : null}
+          </AnchoredDialog>
+        </AnchoredDialogTrigger>
       </div>
       <div
         ref={viewportRef}
@@ -867,24 +786,27 @@ export function VirtualTable<Row>({
                 {sorted ? <span aria-hidden="true">{sort.direction === "asc" ? "▲" : "▼"}</span> : null}
               </button>
               {column.headerHelp !== undefined ? (
-                <button
-                  className={styles.headerHelpButton}
-                  type="button"
-                  aria-label={`Explain ${column.label}`}
-                  aria-haspopup="dialog"
-                  aria-expanded={headerHelp?.columnId === column.id}
-                  aria-controls={
-                    headerHelp?.columnId === column.id
-                      ? `${headerHelpIdPrefix}-${column.id}-help`
-                      : undefined
-                  }
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={(event) =>
-                    toggleHeaderHelp(event.currentTarget, column)
-                  }
+                <AnchoredDialogTrigger
+                  key={`${tableId}-${column.id}-help`}
                 >
-                  ?
-                </button>
+                  <OverlayButton
+                    className={styles.headerHelpButton!}
+                    aria-label={`Explain ${column.label}`}
+                  >
+                    ?
+                  </OverlayButton>
+                  <AnchoredDialog
+                    className={styles.headerHelpPopover!}
+                    aria-label={`${column.label} column help`}
+                    style={
+                      {
+                        "--header-help-width": `${column.headerHelpWidth ?? 352}px`,
+                      } as CSSProperties
+                    }
+                  >
+                    {column.headerHelp}
+                  </AnchoredDialog>
+                </AnchoredDialogTrigger>
               ) : null}
               <div
                 className={styles.resizeHandle}
@@ -1003,34 +925,6 @@ export function VirtualTable<Row>({
       )}
       </div>
     </div>
-    {headerHelp !== null && headerHelpColumn?.headerHelp !== undefined
-      ? createPortal(
-          <div
-            className={styles.headerHelpLayer}
-            onPointerDown={() => setHeaderHelp(null)}
-          >
-            <div
-              ref={headerHelpPopoverRef}
-              id={`${headerHelpIdPrefix}-${headerHelpColumn.id}-help`}
-              className={styles.headerHelpPopover}
-              role="dialog"
-              aria-label={`${headerHelpColumn.label} column help`}
-              tabIndex={0}
-              style={{
-                left: headerHelp.left,
-                top: headerHelp.top,
-                width: headerHelp.width,
-                maxHeight: headerHelp.maximumHeight,
-              }}
-              onPointerDown={(event) => event.stopPropagation()}
-            >
-              {headerHelpColumn.headerHelp}
-            </div>
-          </div>,
-          document.body,
-        )
-      : null}
-    </>
   );
 }
 

@@ -201,7 +201,11 @@ function SwarmSummary({ swarm }: { readonly swarm: SwarmSet | undefined }) {
   const total = counts?.total ?? 0;
   const capacity = swarm?.maximumRecords ?? 1_000;
   return (
-    <div className={styles.summary} aria-label="Swarm registry summary">
+    <div
+      className={styles.summary}
+      aria-label="Swarm registry summary"
+      tabIndex={0}
+    >
       <strong>{total.toLocaleString()}</strong>
       <span>known</span>
       <span className={styles.separator} aria-hidden="true" />

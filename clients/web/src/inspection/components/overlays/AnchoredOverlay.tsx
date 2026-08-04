@@ -2,10 +2,14 @@ import {
   Button,
   Dialog,
   DialogTrigger,
+  Header,
   Menu,
   MenuItem,
+  MenuSection,
   MenuTrigger,
   Popover,
+  RootMenuTriggerStateContext,
+  Separator,
   SubmenuTrigger,
   type ButtonProps,
   type DialogProps,
@@ -16,7 +20,11 @@ import {
 } from "react-aria-components";
 import {
   forwardRef,
+  useContext,
+  useEffect,
   useId,
+  useRef,
+  useState,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -34,9 +42,33 @@ export const OverlayButton = forwardRef<HTMLButtonElement, ButtonProps>(
 
 export function ActionMenuTrigger({
   children,
+  isDisabled = false,
+  isOpen: controlledOpen,
+  onOpenChange,
   ...props
-}: MenuTriggerProps): ReactElement | null {
-  return <MenuTrigger {...props}>{children}</MenuTrigger>;
+}: MenuTriggerProps & { readonly isDisabled?: boolean }): ReactElement | null {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+
+  useEffect(() => {
+    if (!isDisabled || !open) return;
+    setUncontrolledOpen(false);
+    onOpenChange?.(false);
+  }, [isDisabled, onOpenChange, open]);
+
+  return (
+    <MenuTrigger
+      {...props}
+      isOpen={open}
+      onOpenChange={(nextOpen) => {
+        if (isDisabled && nextOpen) return;
+        setUncontrolledOpen(nextOpen);
+        onOpenChange?.(nextOpen);
+      }}
+    >
+      {children}
+    </MenuTrigger>
+  );
 }
 
 export function ActionMenuPopover({
@@ -49,6 +81,7 @@ export function ActionMenuPopover({
   readonly placement?: PopoverProps["placement"];
 }): ReactElement {
   const descriptionId = useId();
+  const triggerState = useContext(RootMenuTriggerStateContext);
   return (
     <Popover
       className={styles.menuPopover!}
@@ -57,21 +90,69 @@ export function ActionMenuPopover({
       containerPadding={VIEWPORT_PADDING}
       shouldFlip
     >
-      <Menu
-        className={styles.menu!}
-        {...(description === undefined
-          ? {}
-          : { "aria-describedby": descriptionId })}
+      <div
+        onKeyDownCapture={(event) => {
+          if (event.key !== "Tab") return;
+          event.preventDefault();
+          const trigger = menuTriggerFor(event.currentTarget);
+          triggerState?.close();
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() =>
+              moveFocusFrom(trigger, event.shiftKey ? -1 : 1),
+            ),
+          );
+        }}
       >
-        {children}
-      </Menu>
-      {description === undefined ? null : (
-        <p id={descriptionId} className={styles.menuDescription!}>
-          {description}
-        </p>
-      )}
+        <Menu
+          className={styles.menu!}
+          {...(description === undefined
+            ? {}
+            : { "aria-describedby": descriptionId })}
+        >
+          {children}
+        </Menu>
+        {description === undefined ? null : (
+          <p id={descriptionId} className={styles.menuDescription!}>
+            {description}
+          </p>
+        )}
+      </div>
     </Popover>
   );
+}
+
+function menuTriggerFor(content: HTMLElement): HTMLElement | null {
+  const triggerId = content
+    .querySelector<HTMLElement>("[role='menu']")
+    ?.getAttribute("aria-labelledby")
+    ?.split(" ")[0];
+  return triggerId === undefined
+    ? null
+    : document.getElementById(triggerId);
+}
+
+function moveFocusFrom(trigger: HTMLElement | null, direction: -1 | 1): void {
+  if (trigger === null || !trigger.isConnected) return;
+  const candidates = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter(isTabbable);
+  const triggerIndex = candidates.indexOf(trigger);
+  if (triggerIndex < 0 || candidates.length === 0) return;
+  const target =
+    candidates[
+      (triggerIndex + direction + candidates.length) % candidates.length
+    ];
+  target?.focus();
+}
+
+function isTabbable(element: HTMLElement): boolean {
+  if (element.matches(":disabled, [aria-hidden='true'] *, [inert] *")) {
+    return false;
+  }
+  const style = getComputedStyle(element);
+  return style.display !== "none" && style.visibility !== "hidden";
 }
 
 export function ActionMenuItem({
@@ -87,16 +168,43 @@ export function ActionMenuItem({
   );
 }
 
+export function ActionMenuSection({
+  label,
+  children,
+}: {
+  readonly label: ReactNode;
+  readonly children: ReactNode;
+}): ReactElement {
+  return (
+    <MenuSection className={styles.menuSection!}>
+      <Header className={styles.menuSectionHeader!}>{label}</Header>
+      {children}
+    </MenuSection>
+  );
+}
+
+export function ActionMenuSeparator(): ReactElement {
+  return <Separator className={styles.menuSeparator!} />;
+}
+
 export function ActionSubmenu({
   trigger,
   children,
 }: {
-  readonly trigger: ReactElement;
+  readonly trigger: ReactNode;
   readonly children: ReactNode;
 }): ReactElement {
+  const submenuRef = useRef<HTMLDivElement>(null);
   return (
     <SubmenuTrigger delay={200}>
-      {trigger}
+      <MenuItem
+        className={styles.menuItem!}
+        onPress={() =>
+          requestAnimationFrame(() => submenuRef.current?.focus())
+        }
+      >
+        {trigger}
+      </MenuItem>
       <Popover
         className={styles.menuPopover!}
         placement="start top"
@@ -104,7 +212,7 @@ export function ActionSubmenu({
         containerPadding={VIEWPORT_PADDING}
         shouldFlip
       >
-        <Menu className={styles.menu!}>
+        <Menu ref={submenuRef} className={styles.menu!}>
           {children}
         </Menu>
       </Popover>

@@ -1,0 +1,58 @@
+body {
+  overflow: hidden;
+  color: var(--text-primary);
+  background: var(--surface-primary);
+}
+
+.harness {
+  min-height: 100dvh;
+  font-size: var(--ui-font-body);
+}
+
+.target {
+  position: fixed;
+}
+
+.target[data-corner="top-left"] {
+  top: 8px;
+  left: 8px;
+}
+
+.target[data-corner="top-right"] {
+  top: 8px;
+  right: 8px;
+}
+
+.target[data-corner="bottom-left"] {
+  bottom: 8px;
+  left: 8px;
+}
+
+.target[data-corner="bottom-right"] {
+  right: 8px;
+  bottom: 8px;
+}
+
+.target button,
+.controls button {
+  min-height: var(--ui-control-height);
+  border: 1px solid var(--border-strong);
+  border-radius: 0.38rem;
+  padding: 0 var(--ui-space-sm);
+  color: var(--text-primary);
+  background: var(--surface-secondary);
+  font: inherit;
+}
+
+.controls {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  gap: var(--ui-space-sm);
+  transform: translate(-50%, -50%);
+}
+
+.controls output {
+  text-align: center;
+}
