@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
+use std::sync::Arc;
 
 use sha1::{Digest, Sha1};
 
@@ -960,13 +961,17 @@ pub enum MetadataUploadAction {
 
 #[derive(Debug)]
 pub struct MetadataUpload {
-    bytes: Vec<u8>,
+    bytes: Arc<[u8]>,
     served: Vec<bool>,
     request_count: usize,
 }
 
 impl MetadataUpload {
     pub fn new(bytes: Vec<u8>) -> Result<Self, MetadataError> {
+        Self::from_shared(bytes.into())
+    }
+
+    pub fn from_shared(bytes: Arc<[u8]>) -> Result<Self, MetadataError> {
         let size = validate_local_size(i64::try_from(bytes.len()).map_err(|_| {
             MetadataError::InvalidSize {
                 size: i64::MAX,

@@ -1,11 +1,13 @@
 //! Runtime-independent payload upload admission and cancellation state.
 
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 use rstorrent_protocol::peer_wire::{BlockRequest, MAX_REQUEST_BLOCK_LENGTH, PeerMessage};
 
-pub const MAX_QUEUED_UPLOAD_REQUESTS: usize = 32;
-pub const MAX_QUEUED_UPLOAD_BYTES: usize = 512 * 1024;
+pub const MAX_QUEUED_UPLOAD_REQUESTS: usize = 2_000;
+pub const MAX_QUEUED_UPLOAD_BYTES: usize =
+    MAX_QUEUED_UPLOAD_REQUESTS * MAX_REQUEST_BLOCK_LENGTH as usize;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct UploadRead {
@@ -37,6 +39,7 @@ pub struct UploadPeerSnapshot {
     pub queued_requests_high_water: usize,
     pub queued_bytes_high_water: usize,
     pub read_in_flight: bool,
+    pub read_enabled: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -53,12 +56,13 @@ struct InFlightRequest {
 
 #[derive(Debug)]
 pub struct UploadPeerState {
-    piece_lengths: Vec<u32>,
-    available: Vec<bool>,
+    piece_lengths: Arc<[u32]>,
+    available: Arc<[bool]>,
     interested: bool,
     choking: bool,
     queued: VecDeque<PendingRequest>,
     in_flight: Option<InFlightRequest>,
+    read_enabled: bool,
     pending_bytes: usize,
     next_generation: u64,
     queued_requests_high_water: usize,
@@ -67,6 +71,13 @@ pub struct UploadPeerState {
 
 impl UploadPeerState {
     pub fn new(piece_lengths: Vec<u32>, available: Vec<bool>) -> Result<Self, &'static str> {
+        Self::from_shared(piece_lengths.into(), available.into())
+    }
+
+    pub fn from_shared(
+        piece_lengths: Arc<[u32]>,
+        available: Arc<[bool]>,
+    ) -> Result<Self, &'static str> {
         if piece_lengths.len() != available.len() {
             return Err("piece lengths and availability must have equal lengths");
         }
@@ -80,6 +91,7 @@ impl UploadPeerState {
             choking: true,
             queued: VecDeque::new(),
             in_flight: None,
+            read_enabled: true,
             pending_bytes: 0,
             next_generation: 1,
             queued_requests_high_water: 0,
@@ -106,7 +118,33 @@ impl UploadPeerState {
             queued_requests_high_water: self.queued_requests_high_water,
             queued_bytes_high_water: self.queued_bytes_high_water,
             read_in_flight: self.in_flight.is_some(),
+            read_enabled: self.read_enabled,
         }
+    }
+
+    pub fn set_granted(&mut self, granted: bool) -> Vec<UploadAction> {
+        if granted {
+            if !self.interested || !self.choking {
+                return Vec::new();
+            }
+            self.choking = false;
+            let mut actions = vec![UploadAction::Send(PeerMessage::Unchoke)];
+            self.start_next_read(&mut actions);
+            actions
+        } else if self.choking {
+            Vec::new()
+        } else {
+            self.choking = true;
+            self.clear_pending_requests();
+            vec![UploadAction::Send(PeerMessage::Choke)]
+        }
+    }
+
+    pub fn set_read_enabled(&mut self, enabled: bool) -> Vec<UploadAction> {
+        self.read_enabled = enabled;
+        let mut actions = Vec::new();
+        self.start_next_read(&mut actions);
+        actions
     }
 
     pub fn on_message(&mut self, message: &PeerMessage) -> Vec<UploadAction> {
@@ -162,26 +200,19 @@ impl UploadPeerState {
 
     fn on_interested(&mut self) -> Vec<UploadAction> {
         self.interested = true;
-        if self.choking {
-            self.choking = false;
-            vec![UploadAction::Send(PeerMessage::Unchoke)]
-        } else {
-            Vec::new()
-        }
+        Vec::new()
     }
 
     fn on_not_interested(&mut self) -> Vec<UploadAction> {
         self.interested = false;
+        let was_choking = self.choking;
         self.choking = true;
-        self.pending_bytes = self
-            .in_flight
-            .as_ref()
-            .map_or(0, |in_flight| in_flight.pending.request.length as usize);
-        self.queued.clear();
-        if let Some(in_flight) = &mut self.in_flight {
-            in_flight.cancelled = true;
+        self.clear_pending_requests();
+        if was_choking {
+            Vec::new()
+        } else {
+            vec![UploadAction::Send(PeerMessage::Choke)]
         }
-        vec![UploadAction::Send(PeerMessage::Choke)]
     }
 
     fn on_request(&mut self, request: BlockRequest) -> Vec<UploadAction> {
@@ -234,7 +265,7 @@ impl UploadPeerState {
     }
 
     fn start_next_read(&mut self, actions: &mut Vec<UploadAction>) {
-        if self.in_flight.is_some() || self.choking || !self.interested {
+        if self.in_flight.is_some() || self.choking || !self.interested || !self.read_enabled {
             return;
         }
         let Some(pending) = self.queued.pop_front() else {
@@ -252,6 +283,17 @@ impl UploadPeerState {
 
     fn pending_count(&self) -> usize {
         self.queued.len() + usize::from(self.in_flight.is_some())
+    }
+
+    fn clear_pending_requests(&mut self) {
+        self.pending_bytes = self
+            .in_flight
+            .as_ref()
+            .map_or(0, |in_flight| in_flight.pending.request.length as usize);
+        self.queued.clear();
+        if let Some(in_flight) = &mut self.in_flight {
+            in_flight.cancelled = true;
+        }
     }
 
     fn valid_request(&self, request: BlockRequest) -> bool {
@@ -279,7 +321,8 @@ mod tests {
     use rstorrent_protocol::peer_wire::{BlockRequest, PeerMessage};
 
     use super::{
-        MAX_QUEUED_UPLOAD_REQUESTS, UploadAction, UploadCloseReason, UploadPeerState, UploadRead,
+        MAX_QUEUED_UPLOAD_BYTES, MAX_QUEUED_UPLOAD_REQUESTS, UploadAction, UploadCloseReason,
+        UploadPeerState, UploadRead,
     };
 
     fn request(index: u32, begin: u32, length: u32) -> BlockRequest {
@@ -291,8 +334,9 @@ mod tests {
     }
 
     fn interested(state: &mut UploadPeerState) {
+        assert!(state.on_message(&PeerMessage::Interested).is_empty());
         assert_eq!(
-            state.on_message(&PeerMessage::Interested),
+            state.set_granted(true),
             [UploadAction::Send(PeerMessage::Unchoke)]
         );
     }
@@ -357,7 +401,7 @@ mod tests {
             let _ = state.on_message(&PeerMessage::Request(block));
         }
         assert_eq!(state.snapshot().queued_requests, MAX_QUEUED_UPLOAD_REQUESTS);
-        assert_eq!(state.snapshot().queued_bytes, 512 * 1024);
+        assert_eq!(state.snapshot().queued_bytes, MAX_QUEUED_UPLOAD_BYTES);
         assert_eq!(
             state.on_message(&PeerMessage::Request(block)),
             [UploadAction::Close(UploadCloseReason::RequestLimit)]

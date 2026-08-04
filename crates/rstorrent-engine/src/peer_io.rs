@@ -28,6 +28,7 @@ pub(crate) struct PeerIo {
     queued_frames: VecDeque<QueuedFrame>,
     pub(crate) io_timeout: Duration,
     pub(crate) byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
+    uploaded_payload_bytes: u64,
 }
 
 #[derive(Debug)]
@@ -51,6 +52,7 @@ impl PeerIo {
             queued_frames: VecDeque::new(),
             io_timeout,
             byte_metric_sink,
+            uploaded_payload_bytes: 0,
         }
     }
 
@@ -165,32 +167,50 @@ impl PeerIo {
             .sum()
     }
 
+    pub(crate) const fn uploaded_payload_bytes(&self) -> u64 {
+        self.uploaded_payload_bytes
+    }
+
     fn flush_queued_frames(&mut self) -> Result<(), PeerIoError> {
         while let Some(frame) = self.queued_frames.front_mut() {
-            match self.stream.try_write(&frame.bytes[frame.written..]) {
-                Ok(0) => return Err(PeerIoError::Closed),
-                Ok(written) => frame.written += written,
-                Err(source) if source.kind() == io::ErrorKind::WouldBlock => return Ok(()),
-                Err(source) => {
-                    return Err(PeerIoError::Io {
-                        operation: "send peer message",
-                        source,
-                    });
-                }
+            let start = frame.written;
+            let (written, frame_length, payload_length, payload_metric) =
+                match self.stream.try_write(&frame.bytes[start..]) {
+                    Ok(0) => return Err(PeerIoError::Closed),
+                    Ok(written) => {
+                        frame.written += written;
+                        (
+                            written,
+                            frame.bytes.len(),
+                            frame.payload_length,
+                            frame.payload_metric,
+                        )
+                    }
+                    Err(source) if source.kind() == io::ErrorKind::WouldBlock => return Ok(()),
+                    Err(source) => {
+                        return Err(PeerIoError::Io {
+                            operation: "send peer message",
+                            source,
+                        });
+                    }
+                };
+            let payload_written = record_sent_range(
+                self.byte_metric_sink.as_ref(),
+                frame_length,
+                payload_length,
+                payload_metric,
+                start,
+                written,
+            );
+            if payload_metric == Some(ByteMetric::PayloadUploaded) {
+                self.uploaded_payload_bytes = self
+                    .uploaded_payload_bytes
+                    .saturating_add(payload_written.try_into().unwrap_or(u64::MAX));
             }
             if frame.written != frame.bytes.len() {
                 return Ok(());
             }
-            let frame = self
-                .queued_frames
-                .pop_front()
-                .expect("completed queued frame is present");
-            record_sent_frame(
-                self.byte_metric_sink.as_ref(),
-                frame.bytes.len(),
-                frame.payload_length,
-                frame.payload_metric,
-            );
+            self.queued_frames.pop_front();
         }
         Ok(())
     }
@@ -214,6 +234,11 @@ impl PeerIo {
             payload_length,
             payload_metric,
         );
+        if payload_metric == Some(ByteMetric::PayloadUploaded) {
+            self.uploaded_payload_bytes = self
+                .uploaded_payload_bytes
+                .saturating_add(payload_length.try_into().unwrap_or(u64::MAX));
+        }
         Ok(())
     }
 
@@ -263,6 +288,29 @@ fn record_sent_frame(
     if let Some(metric) = payload_metric {
         record_bytes(sink, metric, payload_length);
     }
+}
+
+fn record_sent_range(
+    sink: Option<&Arc<dyn ByteMetricSink>>,
+    frame_length: usize,
+    payload_length: usize,
+    payload_metric: Option<ByteMetric>,
+    start: usize,
+    written: usize,
+) -> usize {
+    let end = start.saturating_add(written).min(frame_length);
+    let payload_start = frame_length.saturating_sub(payload_length);
+    let payload_written = end.saturating_sub(start.max(payload_start)).min(written);
+    record_bytes(sink, ByteMetric::PeerWireSent, written);
+    record_bytes(
+        sink,
+        ByteMetric::PeerProtocolSent,
+        written.saturating_sub(payload_written),
+    );
+    if let Some(metric) = payload_metric {
+        record_bytes(sink, metric, payload_written);
+    }
+    payload_written
 }
 
 #[derive(Debug)]
