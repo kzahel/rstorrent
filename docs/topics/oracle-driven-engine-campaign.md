@@ -633,8 +633,19 @@ full-reference public Big Buck Bunny pair published exact content after
 29.323 seconds for RSTorrent and 36.599 seconds for libtorrent; that changing
 swarm remains contextual evidence.
 
-Next executable action: use Tactical `054`'s retained large matrix and raw
-probe to measure whether page-cache rereads justify a bounded pending-write
-read-through tactical. Do not implement it from architectural analogy alone.
+Tactical `073` is the latest engine-correctness restart checkpoint. Commits
+`7abea41` through `99a5369` remove the v1 metainfo-mode storage fork, install
+all-wanted managed full recheck and force recheck, close path publication
+crash windows, and require dynamic platform publication to re-enter the same
+piece checker. Its structured local campaign passes exact `length`, one-entry
+`files`, and cross-file repair against pinned libtorrent 2.0.13, three
+checkpoint deaths, three path-publication deaths with the seed unavailable,
+and exact cleanup. The API 34 product path passes provider-rename death and
+fresh published-piece recheck at the established 40-handle/one-pending-request
+high waters.
+
+Next executable action: follow the single authorized **Now** item in
+`capability-readiness.md`. No pending-write read-through, performance, or BEP
+breadth slice is implied by Tactical `073` completion.
 
 Human blocker: **none**.

@@ -15,6 +15,9 @@ coarse joined torrent-generation fence, retained physical routes, lazy part
 creation, and exact verified-span promotion. Tactical `067` now routes path
 and Android SAF files through one session-wide 40-descriptor pool and performs
 all payload I/O in Rust after lazy platform capability acquisition.
+Tactical `073` removes the specialized single-file owner: every v1 metainfo
+shape now uses the same bounded positional write/hash executor, checkpoint
+epoch, managed full recheck, and publication fence.
 
 ## Purpose And Scope
 
@@ -392,14 +395,14 @@ changes are infrequent control operations and may use targeted fences:
   these operations change handle or path identity. They are not ordinary
   per-block barriers.
 
-Tactical [`062`](../tactical/062-user-visible-publication-layout.md) now gives
-path identity an engine-owned plan: the final multi-file tree uses the
-verified recognizable torrent name, while staging and part artifacts use the
-full info hash. For path storage the session separately persists whether it
-owns no artifacts, only internal staging, a published tree, or the legacy hash
-layout. That ownership boundary lets joined removal clean exact artifacts
-without deleting an unrelated named destination that previously caused a
-collision.
+Tacticals [`062`](../tactical/062-user-visible-publication-layout.md) and
+[`073`](../tactical/073-unified-storage-and-complete-recheck.md) give path
+identity an engine-owned plan. The final recognizable artifact and hidden
+staging artifact are both regular files for BEP 3 `length` and both trees for
+`files`; the part artifact remains full-info-hash-owned. The session persists
+none, staging, publishing, or published ownership independently of topology.
+That boundary lets joined removal clean exact artifacts without deleting an
+unrelated named destination that previously caused a collision.
 
 Libtorrent also treats file-priority changes as asynchronous fenced disk jobs
 and documents that changing an already-created file to skipped does not move
@@ -470,10 +473,12 @@ all epoch bits, encodes once and commits once.
 | After writes and hash pass, before payload sync | The piece may exist on disk but its have bit is absent; recheck or redownload is safe. |
 | After payload sync, before SQLite commit | Durable bytes may be ahead of durable metadata; this is a safe false negative. |
 | During the SQLite transaction | SQLite exposes either the old or committed epoch; no partial have update is trusted. |
-| After the epoch commit | Existing conservative restart rehashes the claim before presenting it as verified. |
+| After the epoch commit | Conservative restart rehashes every wanted managed piece, including the claim, before presenting current verified state. |
 
-The current restart path rehashes every claimed piece, which remains the final
-integrity authority. A later clean-shutdown fast-resume design may skip some
+The current restart path rehashes every physically readable wanted piece,
+including persisted false bits. The replacement bitmap is committed only after
+all bounded hash jobs join and newly recovered staging targets pass their
+durability barrier. A later clean-shutdown fast-resume design may skip some
 hashing only after it defines stronger file identity, directory durability and
 storage-generation evidence.
 
@@ -642,7 +647,7 @@ reports actionable without turning logs into application state.
 | Part-file payload | Mutable cursor behind the torrent owner | Slot map is locked; payload I/O is positional outside it | One slot coordinator plus concurrent positional slot payload workers |
 | Part-file metadata | Slot change is immediately synchronized | Dirty slot metadata flush is separate from payload writes | Dirty mapping generations join batched durability epochs |
 | Selection changes | Live path and dynamic-SAF Normal/Skip use a joined torrent-generation fence | Asynchronous fenced jobs export part data; wanted-to-skipped does not migrate existing files | Targeted file/range routing-generation fence if measured reconnection cost justifies it |
-| Durability/resume | Resumable selective storage performs per-piece payload sync followed by a per-piece `FULL` SQLite transaction; single-file staging syncs only at finalization | Resume snapshot persistence remains caller-owned rather than a per-piece SQL barrier | Bounded dirty epoch, one sync per destination, one merged SQLite transaction |
+| Durability/resume | All v1 shapes use bounded dirty epochs, one sync per captured destination, merged SQLite commits, and an all-wanted managed full recheck | Resume snapshot persistence remains caller-owned rather than a per-piece SQL barrier | Measure only future hash-skipping policies against the retained full-check oracle |
 | Aggregate scheduling | Torrent-local resource authority | Session disk pool, 1 MiB default queued-byte watermark and ten generic threads | Session/root capacity and fairness with measured backend-specific limits |
 
 The normative storage shape comes from pinned BEP sources:

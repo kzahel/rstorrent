@@ -46,6 +46,12 @@ supervisors' joined cleanup and final empty peer observation.
 Tactical `063` adds live binary file selection while retaining full boundary
 piece verification, conservative recheck, explicit generation joins, and exact
 part-to-file materialization.
+Tactical `073` removes the remaining single-file storage fork. BEP 3
+`length`, one-entry `files`, and ordinary multi-file torrents now share one
+positional storage, checkpoint, full-recheck, repair, and publication
+pipeline. Restart and force recheck hash every physically readable wanted
+piece, including persisted false bits, before current have state becomes
+authoritative.
 
 ## Scope
 
@@ -95,8 +101,10 @@ have state and storage-root identity.
   unrelated verified pieces.
 - Storage failure cannot leave a block counted as received when its bytes were
   not accepted by the storage owner.
-- Restart trusts persisted have state only after the configured continuity or
-  conservative recheck policy validates current bytes.
+- Restart treats persisted have state only as input evidence. The conservative
+  policy hashes every readable wanted piece in managed staging or publication,
+  recovers valid false bits, and clears invalid true bits before atomically
+  replacing current have state.
 - Completion and seeding eligibility must derive from verified wanted pieces
   and completed publication, never a rounded percentage.
 
@@ -205,15 +213,15 @@ related unit test exists.
 | DL-C08 | One endgame copy arrives after another completed | First valid block wins, losers are cancelled, and late duplicates are harmless. | Passing pure, scripted exact core-cancel-before-storage, and public complete evidence with 0--432 KiB bounded redundancy. |
 | DL-C09 | A received piece fails its SHA-1 hash | No have bit is set; the whole piece becomes schedulable again; contributor evidence is bounded. | Passing pure and scripted evidence: sole corrupt and ambiguous multi-source generations reset, preserve unrelated state, apply exact-generation reputation, and complete from a clean generation. |
 | DL-C10 | Storage write fails after a block arrives | The block is not considered received and no false verified state is committed. | Passing deterministic state evidence; broader filesystem recovery policy remains incomplete. |
-| DL-C11 | Restart claims all but one piece | Claimed pieces are rechecked, the missing piece downloads, and publication occurs once. | Passing controlled process-death and conservative recheck evidence for the established multi-file profile. |
-| DL-C12 | A claimed piece changed on disk before restart | Recheck clears only the bad claim and never publishes it as verified. | Passing controlled corruption and resume evidence. |
+| DL-C11 | Restart claims all but one piece | All wanted pieces are rechecked, the missing piece downloads, and publication occurs once. | Passing controlled process-death evidence for `length`, one-entry `files`, and cross-file profiles. |
+| DL-C12 | A claimed piece changed on disk before restart | Recheck clears only the bad claim and never publishes it as verified. | Passing deterministic and controlled corruption, truncation, missing-file, and exact-piece repair evidence. |
 | DL-C13 | Final wanted piece crosses selected and skipped files | Full logical piece is reconstructed, hash-verified, and bytes land in their correct storage classes. | Passing deterministic and controlled libtorrent selective-file evidence. |
 | DL-C14 | Wanted piece contains BEP 47 padding bytes | Synthetic zeros participate in verification without writing a padding file. | Passing deterministic and controlled selective-storage evidence. |
 | DL-C15 | Pause or shutdown occurs during active work | No new work starts, owners cancel and join, durable state stays conservative, and sockets close. | Passing runtime, web, AVD, selected physical, saturated-queue, multi-peer exact-join, metadata-worker cancellation, and session content-pause evidence. Tactical `046` specifically proves the pause receipt follows socket close, zero pending owners, and the final empty peer observation. |
 | DL-C16 | All current trackers fail but retain retries | Torrent reports waiting with the next automatic discovery action, not blocked. | Passing deterministic, runtime, web, and AVD evidence. |
 | DL-C17 | Network policy is offline | No DNS or socket work occurs and UI requests network enablement without rewriting torrent intent. | Passing deterministic, runtime, web, and AVD evidence. |
 | DL-C18 | Torrent reaches displayed 100% before publication finishes | State remains incomplete until verified content completes the publication contract. | Passing path and Android SAF publication-state evidence for controlled fixtures. |
-| DL-C19 | Multi-piece single-file torrent | The ordinary product path downloads, verifies, resumes, and publishes all pieces. | Partial: controlled runtime and 16-piece libtorrent publication pass; durable single-file resume remains absent. |
+| DL-C19 | Multi-piece single-file torrent | The ordinary product path downloads, verifies, resumes, and publishes all pieces. | Passing deterministic, controlled libtorrent, three checkpoint-death, three publication-death, and exact cleanup evidence through the unified storage owner. |
 | DL-C20 | Every established slot is occupied by peers that never unchoke | A useful eligible candidate eventually replaces an unproductive peer after bounded grace and can receive work. | Passing deterministic and full eight-slot loopback replacement evidence. |
 | DL-C21 | Every established peer lacks the remaining wanted piece | A peer advertising that piece is retained or opened, while irrelevant peers cannot monopolize every slot. | Passing availability-aware retention/replacement and split-final-piece evidence. |
 | DL-C22 | Pending dial slots connect but never finish handshake | Per-operation deadlines release dial capacity and another candidate can be tried without exceeding socket/task bounds. | Passing bounded three-dial runtime evidence with two silent handshakes and one useful peer. |
@@ -221,6 +229,8 @@ related unit test exists.
 | DL-C24 | All current peers are unproductive and no replacement is eligible | The torrent retains discovery/retry deadlines and avoids destructive reconnect churn; it reports waiting rather than blocked. | Passing deterministic deadline and loopback no-churn evidence. |
 | DL-C25 | Hostile peer churn and observations fill every configured bound | Registry, connection, dial, request, payload, event, task, history, and diagnostic limits hold while uniquely useful or active state is protected. | Passing bounded deterministic state plus queue-saturation, cancellation, churn, and exact-join runtime evidence for the installed owner. |
 | DL-C26 | A multi-file torrent changes between Skip and Normal before and after content starts | Metadata-only intake creates no payload artifact; Skip changes wanted-piece planning only after the old generation joins; Normal rechecks current sources, materializes verified skipped spans, and removes an empty part file without false have state. | Passing selective-storage, store, two-generation loopback, and bearer-authenticated controlled browser/libtorrent evidence from Tactical `063`. |
+| DL-C27 | Valid managed bytes exist while durable have says absent | Full recheck discovers, synchronizes when needed, and atomically restores those bits without peer payload. | Passing empty/stale bitmap, pre-sync, post-sync/pre-commit, and seed-unavailable restart evidence; the retained campaign recovered all 256 physically valid pieces with zero restart upload. |
+| DL-C28 | Process death crosses path or provider publication | Durable ownership identifies the one valid artifact side, fresh handles are fully rechecked, and only then may completion commit. | Passing path intent/rename/namespace gates with the seed unavailable, plus API 34 provider-rename death and fresh published-piece recheck. |
 
 ## Required Scheduler Observability
 
@@ -332,6 +342,18 @@ zero pieces before sync and after sync/before commit, then safely retained all
 256 after the observed post-commit boundary. Selective part-file,
 mixed-source, paired publication and cleanup evidence remain exact. Peer
 selection and request policy are unchanged.
+
+Tactical `073` completed the joined resume/publication contract. Its final
+structured campaign used independently encoded deterministic `length`,
+one-entry `files`, and cross-file torrents against pinned libtorrent 2.0.13.
+Corrupting one 32 KiB piece repaired exactly 32 KiB for each one-file shape;
+removing the middle cross-file source repaired exactly the two affected
+pieces, 64 KiB. Pre-sync and post-sync/pre-commit deaths retained zero durable
+bits but recovered all 256 valid pieces with the seed unavailable; post-commit
+retained all 256. Death after durable publication intent, rename, and
+namespace sync reopened the recorded staging/final side, rechecked all three
+pieces without a seed, published exact SHA-1 content, and cleaned every owned
+artifact. No singular `.rstorrent-part` artifact was created.
 
 Routine engine validation remains headless; no additional product UI is
 required by that slice.

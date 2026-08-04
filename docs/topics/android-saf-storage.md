@@ -11,6 +11,9 @@ artifacts, and fresh dynamic publication verification. Three product-path API
 evidence. The fixed startup manifest remains only in legacy diagnostic proof
 APIs and is not an acceptable or used product architecture. A newly
 authorized physical run was attempted, but ChromeOS ARCVM ADB was unavailable.
+Tactical `073` now makes dynamic publication confirmation a durable
+`published`/`checking` handoff; fresh published handles run through the common
+piece checker before `complete` can commit.
 
 ## Scope
 
@@ -241,12 +244,22 @@ Provider publication remains an explicit joined namespace transition:
 3. remove affected handles from the pool and wait for in-flight references;
 4. let Android rename the exact owned staging document;
 5. advance the namespace generation; and
-6. reopen published documents dynamically for the existing conservative
-   verification and publication confirmation.
+6. reopen published documents dynamically with a new namespace generation;
+7. atomically enter published checking and replace have state from the common
+   bounded all-wanted piece checker; and
+8. commit complete only after that recheck finishes successfully.
 
 A crash on either side of the provider rename retains the durable two-phase
 state established by Tactical `009`. Dynamic acquisition changes how files are
 reopened, not what constitutes published success.
+
+The final Tactical 073 API 34 no-window AVD run force-stopped during download,
+rechecked and repaired one corrupted piece, killed the process after provider
+rename, and restarted through `checking/published`, `recheck_started`, and
+`have_rechecked` before `complete`. The 16-piece/256 KiB payload matched its
+SHA-1, the run recovered the persisted grant-loss path, provider request high
+water was one, Rust-owned handle high water remained at the configured 40,
+and joined shutdown plus owned cleanup passed.
 
 Repair preserves the stable root ID while replacing or refreshing its platform
 locator. It invalidates every pool entry under the old capability before work

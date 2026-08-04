@@ -96,8 +96,8 @@ engine evidence.
 
 ### Later
 
-Complete single-file durable resume, IPv6 DHT operation, incoming peer
-listening, payload upload and seeding, PEX, local service discovery, uTP, NAT
+Complete IPv6 DHT operation, incoming peer listening, payload upload and
+seeding, PEX, local service discovery, uTP, NAT
 traversal, v2 and hybrid torrents, playback-oriented file priorities, dynamic
 VPN and metered-network controls, and production remote access remain
 important. After core parity, common-denominator versus full-reference deltas
@@ -148,7 +148,7 @@ does not.
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
 | Bounded 16 KiB block pipeline | Implemented | deterministic, runtime, interop, live | Per-connection depth adapts under distinct torrent request and resident-payload limits; desktop uses 256 MiB/32 MiB and Android 128 MiB/16 MiB, with no session-wide multi-torrent budget yet. | [`download-correctness`](download-correctness.md) |
-| Sequential multi-piece download | Implemented | runtime, interop | Ordinary single-file and selective multi-file complete; single-file durable resume is absent. | [`download-correctness`](download-correctness.md) |
+| Sequential multi-piece download | Implemented | deterministic, runtime, interop | BEP 3 `length`, one-entry `files`, and ordinary multi-file torrents share one download, durable resume, repair, and publication pipeline. | [`download-correctness`](download-correctness.md) |
 | Availability-aware piece selection | Partial | deterministic, runtime, interop | Swarm-wide availability, partial-first work, fairness, and unique-piece retention exist; rarest-first and measured scoring are absent. | [`download-correctness`](download-correctness.md) |
 | Choke recovery | Implemented | deterministic, runtime, interop | Requests move to another peer and full choked sets are replaceable; mature choking/reputation policy is absent. | [`download-correctness`](download-correctness.md) |
 | Per-request timeout and slow-peer handling | Implemented | deterministic, runtime | Useful response samples derive a bounded inactivity deadline and reduce a stalled peer to one probe; broader snub reputation remains absent. | [`download-correctness`](download-correctness.md) |
@@ -164,10 +164,10 @@ does not.
 | SHA-1 piece verification before have state | Implemented | deterministic, runtime, interop | Failure resets only the attempted v1 piece and preserves unrelated verified state. | [`download-correctness`](download-correctness.md) |
 | Multi-file mapping and selective files | Implemented | deterministic, runtime, interop, web, AVD | Path and dynamic-SAF Normal/Skip routing, lazy part storage, boundary materialization, and metadata-only intake pass; high/low scheduling remains absent. | [`client-persistence`](client-persistence.md), [`download-correctness`](download-correctness.md), [`android-saf-storage`](android-saf-storage.md) |
 | Cross-file, skipped-file, and padding storage | Implemented | deterministic, runtime, interop, web | Lazy part creation, retained lowered destinations, promotion, and empty-part cleanup pass; BEP 47 symlinks are deliberately rejected. | [`client-persistence`](client-persistence.md) |
-| Path-backed staging and publication | Implemented | deterministic, runtime, interop | New multi-file torrents publish beneath the verified recognizable name with hash-owned internal artifacts and fail-closed collision cleanup; single-file durable publication, disk-space policy, relocation, and broad filesystem failure profiles remain incomplete. | [`client-persistence`](client-persistence.md), [`download-roots`](download-roots.md) |
+| Path-backed staging and publication | Implemented | deterministic, runtime, interop | Explicit file/tree topology, hash-owned internal artifacts, durable publishing intent, atomic no-replace rename, namespace sync, crash reconciliation, and fail-closed removal pass. Disk-space policy, relocation, and broader filesystem/provider coverage remain incomplete. | [`client-persistence`](client-persistence.md), [`download-roots`](download-roots.md) |
 | Bounded asynchronous content storage | Implemented | deterministic, runtime, interop, live | Payload sync and batched SQLite checkpoints use a separate bounded joined owner; immutable positional writes and hashes execute with independent bounds and explicit generation joins. Raw-stage sweeps, final defaults, Android concurrency evidence and multi-torrent/root fairness remain open. | [`storage-throughput-architecture`](storage-throughput-architecture.md) |
-| Android SAF storage and publication | Implemented | deterministic, runtime, AVD, physical | The product uses lazy dynamic acquisition and one 40-handle path/SAF pool; three current product-path AVD cycles pass at 6 owned handles and 3 pending requests. General root management, cloud/removable policy, migration, and a current physical dynamic-provider rerun remain absent. | [`android-saf-storage`](android-saf-storage.md), [`client-persistence`](client-persistence.md) |
-| Durable have state and conservative recheck | Implemented | deterministic, runtime, interop, AVD, physical | It rehashes claimed pieces rather than providing optimized fast resume. | [`client-persistence`](client-persistence.md) |
+| Android SAF storage and publication | Implemented | deterministic, runtime, AVD, physical | The product uses lazy dynamic acquisition and one 40-handle path/SAF pool; the current API 34 rename-death run re-enters published full recheck at 40 owned handles and one pending request. General root management, cloud/removable policy, migration, and a current physical dynamic-provider rerun remain absent. | [`android-saf-storage`](android-saf-storage.md), [`client-persistence`](client-persistence.md) |
+| Durable have state and conservative recheck | Implemented | deterministic, runtime, interop, AVD, physical | Startup and semantic force recheck hash all wanted managed pieces, recover valid false bits, clear stale true bits, and atomically replace have state; optimized fast resume is deliberately absent. | [`client-persistence`](client-persistence.md) |
 | Recovery after content hash failure | Implemented | deterministic, runtime | Sole corrupt and ambiguous multi-source generations retry cleanly with bounded exact-generation attribution. | [`download-correctness`](download-correctness.md) |
 
 ### Application And Product Surfaces

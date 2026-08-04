@@ -18,7 +18,9 @@ transactional control and separates paused start-content intent from metadata
 acquisition without adding a second pending-torrent authority. Tactical `067`
 replaces the Android product's fixed startup descriptor manifest with lazy,
 bounded platform acquisition while preserving the same durable root,
-selection, checkpoint, publication, repair, and removal authority.
+selection, checkpoint, publication, repair, and removal authority. Tactical
+`073` unifies BEP 3 file/tree storage and replaces claimed-bit-only restart
+with an atomic all-wanted managed full recheck.
 
 ## Scope
 
@@ -161,17 +163,20 @@ defined.
 
 ### Resume is evidence, not verification
 
-A persisted have-bit does not prove that current payload bytes are correct.
-The initial restart path is deliberately conservative:
+A persisted have-bit does not prove that current payload bytes are correct,
+and a false bit does not prove that usable bytes are absent. The managed
+restart path is deliberately conservative:
 
 1. validate database and encoding versions and torrent identity;
 2. hash and parse the stored raw info bytes;
 3. validate the bitfield shape and storage-root resolution;
-4. validate payload and part-file geometry;
-5. hash every piece claimed by the persisted bitfield through the existing
-   fixed-buffer storage mapping; and
-6. restore only pieces that pass, clearing failed or unavailable pieces so
-   they can be downloaded again.
+4. reconcile durable file/tree staging, publishing, or published ownership
+   with the physical artifact side and fail closed on ambiguous types;
+5. enter `checking`, remove the old bitmap from runtime authority, and hash
+   every physically readable wanted piece through the ordinary fixed-buffer
+   logical mapping, including persisted false bits; and
+6. synchronize newly recovered staging targets as required, then atomically
+   replace the exact bitmap and leave checking only after every hash job joins.
 
 This is durable resume with bounded recheck, not optimistic fast resume. A
 future fast-resume policy may skip payload hashes when clean shutdown,
@@ -181,9 +186,9 @@ hashing.
 
 The critical crash-ordering invariant is one-sided: durable storage and
 verification occur before the database may commit a have-bit. A crash between
-verification and that database commit can create a false negative that costs
-another check or download. It must not create a false positive that presents
-unverified content as complete.
+verification and that database commit can create a false negative, but full
+recheck now recovers valid managed bytes without requiring redownload. It must
+not create a false positive that presents unverified content as complete.
 
 ## Logical Architecture
 
@@ -482,6 +487,19 @@ adds durable bounded `Normal`/`Skip` mutation without a schema change. Store
 and application evidence covers sparse restoration, receipt replay, invalid
 and padding indices, all-skipped idle state, joined generation replacement,
 and metadata-only restart with no content artifact.
+
+[`../tactical/073-unified-storage-and-complete-recheck.md`](../tactical/073-unified-storage-and-complete-recheck.md)
+removes the specialized single-file resume path without adding a schema or
+resume file. Schema 6's `prepared` storage state plus its one-owner managed
+artifact state now also records path publication intent. `length`, one-entry
+`files`, and cross-file fixtures use one engine owner and SQLite bitmap.
+Restart and force recheck replace have state from all wanted piece hashes;
+valid unclaimed data is recovered, stale claims are cleared, complete content
+is rechecked before exposure, and paused corruption starts no network repair.
+Path publication uses durable intent, atomic no-replace rename, containing-
+directory sync, and a final complete transaction. Dynamic provider
+confirmation enters durable `published/checking` and fresh published handles
+must complete that same piece check before completion.
 
 This evidence does not broaden into a general multi-torrent scheduler, stable
 public wire protocol, UI settings catalog, remote listener,

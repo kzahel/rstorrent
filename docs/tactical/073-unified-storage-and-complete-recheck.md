@@ -1,6 +1,7 @@
 # Tactical 073: Unified Storage And Complete Recheck
 
-Status: Draft for maintainer review. Implementation has not started.
+Status: Complete. Implemented in commits `7abea41`, `4557732`, `5bb1b08`,
+`9906e4a`, `461e2c3`, and `99a5369`.
 
 Topics: `download-correctness`, `client-persistence`, `download-roots`,
 `storage-throughput-architecture`, `android-saf-storage`,
@@ -423,11 +424,17 @@ RSTorrent intentionally differs in several ways:
 - Existing tacticals `052`, `053`, `054`, `062`, `063`, and `067` own the
   durability, positional-plan, concurrency, named publication, live
   selection, and dynamic platform boundaries this slice must preserve.
-- Before implementation, inspect the then-current pinned JSTorrent revision
-  for single/multi path normalization, resume/check behavior, part storage,
-  and Android/ChromeOS failures. Record the exact revision, paths, and adopted
-  or rejected lessons in this section before code lands. JSTorrent is product
-  history, not a persistence-format or architecture donor.
+- JSTorrent revision `9895410beeed6aff554053769bd006a3fbd373ef` was
+  inspected at `packages/engine/src/core/torrent-parser.ts`,
+  `torrent-content-storage.ts`, `torrent.ts::{verifyResumeData,
+  _doCheckPieces,_batchVerifyPieces}`, and `torrent-initializer.ts`, plus
+  `test/core/{resume-listtree,batch-verify,recheck-manifest}.test.ts` and the
+  adapter verification tests. Its shared file-list owner, handle closure
+  before checking, bounded 8 MiB batches, part storage, and Android adapter
+  history reinforced a common owner with fresh handles and bounded work.
+  RSTorrent explicitly rejects JSTorrent's stat/size fast-trust shortcut:
+  current piece SHA-1 remains authoritative. No JSTorrent persistence format,
+  source, fixture, or architecture was imported.
 
 ## Implementation Sequence And Logical Commits
 
@@ -475,7 +482,7 @@ new artifact.
 | Pure protocol/layout | BEP 3 `length`, one-entry `files`, multi-file cross-piece, final short piece, padding, zero-length file, hostile path, piece/file count bounds, and exact logical segment order. |
 | Pure storage planning | File/tree final and staging shapes; full-hash internal names; final/staging/part non-aliasing; ownership/existence reconciliation table; symlink/wrong-type rejection; Windows/macOS/Linux path component behavior. |
 | Storage unit/runtime | Fresh/staging/published reads and writes for all shapes; empty/true/false/malformed old bitmaps; valid unclaimed recovery; exact corruption/missing/truncation effects; oversized logical hashing; read-only check; part short read; cross-file missing span; fixed-buffer and concurrency high water; cancellation and stale-generation rejection. |
-| Checkpoint/store | Death before sync, after sync before have replacement, after replacement, and during batch failure; atomic checking transitions; exact bitmap replacement; completed/paused/running intent; no false presentation of complete; schema-7 fresh/version-6 migration/reopen coverage for durable publishing intent. |
+| Checkpoint/store | Death before sync, after sync before have replacement, after replacement, and during batch failure; atomic checking transitions; exact bitmap replacement; completed/paused/running intent; no false presentation of complete; schema-6 fresh/reopen coverage for the equivalently explicit `prepared` publication intent plus managed artifact owner. |
 | Publication/path | File and tree atomic no-replace rename; namespace durability injection; death before publishing intent, after intent before rename, after rename, after namespace sync, and before/after published callback; restart with staging only/final only/neither/both; unowned final collision preservation; repair and managed removal. |
 | Application/transport | Startup check before network, explicit force recheck of paused/active/complete torrents, missing/corrupt repair of exact piece set, cancellation/removal/shutdown joins, diagnostics/progress, generated Rust/TypeScript/Kotlin contract stability or regeneration. |
 | Platform deterministic | Single and multi logical layouts over dynamic handles; OpenExisting-only recheck; missing/short/replaced/non-seekable handles; grant loss; four-active/16-queued and 40-owned-handle bounds; publication acknowledgement followed by fresh full check. |
@@ -602,3 +609,182 @@ When the stopping condition passes:
 - append exact implementation commits, validation commands/results, resource
   high waters, intentional differences, and any still-open evidence limit to
   this document.
+
+## Completion Record
+
+### Landed implementation
+
+- `7abea41` makes publication topology explicit. BEP 3 `length` owns regular-
+  file final/staging artifacts; `files` owns tree artifacts even with one
+  entry. Hash-owned part storage remains orthogonal to metainfo shape.
+- `4557732` routes every v1 content download through `TorrentLayout`,
+  `FileSelection`, `SelectiveStorage`, the content supervisor, batched
+  durability, and one publication state machine. It deletes `StagingFile`,
+  `run_single_download`, `ContentStorage::Single`, and production generation
+  of the singular `.rstorrent-part` suffix.
+- `5bb1b08` preserves the shared owner on Android while mapping grant,
+  missing, provider, non-seekable, cancellation, deadline, and internal
+  failures into bounded platform storage outcomes.
+- `9906e4a` installs the piece-ordered all-wanted full checker, bounded hash
+  admission/join, current-bitmap replacement, startup check of completed
+  publications, semantic `force_recheck`, read-only published checking,
+  oversized normalization after check, cache invalidation, exact file/tree
+  removal, and durable path publication intent.
+- `461e2c3` closes and injects path publication gates at intent, rename, and
+  containing-namespace durability; adds fail-closed artifact/type/symlink
+  reconciliation and the structured path/libtorrent crash harness.
+- `99a5369` changes current dynamic platform confirmation from direct
+  completion to a durable `published`/`checking` handoff. Fresh published
+  handles must finish the same bounded piece checker before completion. It
+  also restarts interrupted paused checks, gives Android requests process-
+  unique durable identities, and makes the SAF harness own its no-window AVD.
+
+The internal owner retains the `SelectiveStorage` name because its selection
+and part-storage behavior remain real; the name is not a separate persistence
+mechanism. No schema 7 was necessary. Schema 6's `storage_state = prepared`
+plus its single managed-artifact owner is the explicit publication operation
+record required by this tactical, and fresh/reopen/crash tests cover it.
+
+### Deterministic and runtime evidence
+
+The engine and session suites cover:
+
+- `length`, one-entry `files`, cross-file, skipped, padding, zero-length and
+  final-short-piece layouts through the same planner and storage owner;
+- empty and stale have bitmaps, valid false-bit recovery, corrupt true-bit
+  clearing, missing and short sources, cross-file source loss, part short
+  reads, read-only exact publication, and oversized-file normalization;
+- at most the configured four desktop or two Android hash jobs in flight,
+  one fixed 16 KiB buffer per hash, cancellation admission closure, worker
+  join, stale-generation rejection, and pooled-handle invalidation before
+  recheck;
+- paused, running, complete, active, replayed and interrupted force-recheck
+  lifecycle, including no peer repair for invalid paused content;
+- exact have replacement in one successful recheck transaction, with no old
+  verified presentation while checking;
+- regular-file and tree no-replace publication, symlink/wrong-type rejection,
+  both-artifact ambiguity, and exact managed removal for none, staging,
+  publishing, and published ownership; and
+- pre-sync, post-sync/pre-commit, post-commit, intent, rename, namespace-sync,
+  and published-callback failure ordering.
+
+The final workspace run passed 193 engine tests with three opt-in public-
+network tests ignored, 110 session tests, and every Android, desktop, gateway,
+platform and protocol test. No ignored test is counted as tactical evidence.
+
+### Controlled path and libtorrent campaign
+
+The final command was:
+
+```bash
+source ~/.profile
+uv run --project tests/interop \
+  python tests/interop/unified_resume_recheck.py --phase all
+```
+
+It emitted one passing JSON result and removed every temporary profile,
+payload, torrent, log, and seed artifact. The tested RSTorrent binary SHA-256
+was `815db2c9f8696dca6e1352d3df9527848c858101b25f34455707a2db2ef65304`.
+The oracle binding and native library both reported `2.0.13.0`, and the source
+revision was the exact pin
+`7d7fc38fac61177fa5e02148f791b2f65250b09d`.
+
+| Fixture | Info hash | Final shape | Corruption/removal | Exact repair upload | Libtorrent retained |
+| --- | --- | --- | --- | ---: | ---: |
+| BEP 3 `length`, 96,123 bytes | `ed77f0b2e7755558f823363cde2fbb9fa5fe62f1` | file | piece 1 corrupt | 32,768 bytes | 2/3 pieces |
+| one-entry `files`, 70,123 bytes | `c07b339ca4bb68e8655f2ae58e1dc96cf4fa76a6` | tree | piece 1 corrupt | 32,768 bytes | 2/3 pieces |
+| cross-file, 90,123 bytes | `cbbb43f14ce55078c11622794a25dc9b8a268ae2` | tree | middle source removed; pieces 0 and 1 affected | 65,536 bytes | 1/3 pieces |
+
+Every final file length and SHA-1 matched, every owned artifact cleaned, and
+no singular `.rstorrent-part` existed. The fixtures and bencoding are authored
+independently in the harness; libtorrent supplies seed and comparable client-
+check outcomes, not RSTorrent data or source.
+
+The 256-piece checkpoint fixture produced these conservative outcomes:
+
+| Death gate | Durable bits | Physically valid at observation | Restart upload | Final SHA-1 |
+| --- | ---: | ---: | ---: | --- |
+| before payload sync | 0 | 256 | 0 | `645e90d7a71313eb68b0c2c3de0dd165bdcd893c` |
+| after sync, before commit | 0 | 256 | 0 | `645e90d7a71313eb68b0c2c3de0dd165bdcd893c` |
+| after commit | 256 | 256 | 0 | `645e90d7a71313eb68b0c2c3de0dd165bdcd893c` |
+
+The pre-sync process death happened after valid writes were still observable
+through the operating system cache; it therefore demonstrates safe recovery,
+not a promise that unsynchronized bytes survive power loss. Deterministic
+short/torn-source cases clear their affected pieces. No gate produced a false
+durable bit.
+
+Path publication death after durable intent observed staging; death after
+rename and after containing-namespace sync observed final. All three retained
+durable `awaiting_publication`/`prepared` with have `[0,1,2]`, restarted with
+the seed unavailable, rechecked the exact owned side, published the exact
+single-file SHA-1, and cleaned successfully. There is no separate durable
+operation between a successful directory sync and the following published
+callback, so `namespace_durable` is the exact injectable final pre-callback
+gate.
+
+### Android and generated-contract evidence
+
+The final Android build command was:
+
+```bash
+source ~/.profile
+experiments/android-engine-bootstrap/build.sh
+```
+
+It cross-compiled `rstorrent-android` for x86_64 API 28 and arm64-v8a API 28,
+regenerated both UniFFI Kotlin bindings, assembled the debug APK, and passed
+the debug JVM unit tests. A separate `cargo ndk` session-library build also
+passed for both targets during the campaign.
+
+The final product-path command was:
+
+```bash
+source ~/.profile
+uv run --project tests/interop \
+  python tests/interop/android_saf_session.py \
+  --avd jstorrent-tablet --headless
+```
+
+The harness-owned API 34 AVD passed a 16-piece, 256 KiB fixture with three
+durable claims before interruption, 213,246 restart upload bytes, activity
+recreation/background and pause/resume, revoked-grant fail-closed recovery,
+one corruption repair, process death after provider rename, a second process
+start, fresh published-piece recheck, exact payload SHA-1
+`363a09c4940de553b7f1f874bdb948aedd69f0f9`, joined foreground shutdown, and
+cleanup. Trace order was `checking/published`, `recheck_started`,
+`have_rechecked`, then `complete`. Rust-owned handle high water was 40 at the
+configured limit and platform pending-request high water was one. No physical
+device claim was added; current cloud/removable/OEM-provider compatibility
+remains outside the evidence.
+
+Generated web contracts were stable after `npm run generate`. `npm run
+typecheck` passed, and `npm test` passed 146 tests with two intentional skips.
+
+### Final repository gates
+
+```bash
+source ~/.profile
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+```
+
+All passed. The platform build, controlled path campaign, and no-window AVD
+commands above also passed after the final implementation commit.
+
+### Intentional limits retained
+
+- Every admitted managed restart performs a full wanted-piece SHA-1 check.
+  Timestamp, size, inode, or clean-shutdown fast trust remains absent.
+- Valid arbitrary user files are not adopted, merged, overwritten, renamed,
+  or deleted without durable RSTorrent ownership. Old singular bring-up
+  artifacts are left untouched.
+- The fixed-descriptor Android API remains diagnostic compatibility surface;
+  the product uses dynamic acquisition. Its publication manifest is verified
+  byte-for-byte, while current product publication additionally enters the
+  common piece recheck before completion.
+- BEP 52/v2/hybrid storage, unfinished-block resume, partial-check frontiers,
+  relocation, disk-space reservation, seeding/upload, numeric priorities,
+  multi-torrent scheduling, and broad filesystem/provider matrices remain the
+  explicit non-goals above.

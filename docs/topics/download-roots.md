@@ -6,7 +6,9 @@ Status: Product behavior accepted in maintainer discussion on 2026-08-03 and
 implemented for the macOS code paths and initial native Linux adapter in
 [`061-user-selected-download-roots.md`](../tactical/061-user-selected-download-roots.md).
 [`062-user-visible-publication-layout.md`](../tactical/062-user-visible-publication-layout.md)
-implements recognizable multi-file publication beneath those roots.
+introduced recognizable multi-file publication beneath those roots. Tactical
+[`073`](../tactical/073-unified-storage-and-complete-recheck.md) completes the
+same durable file/tree topology for BEP 3 single-file and multi-file forms.
 Fresh desktop and manual-WebUI profiles no longer install an implicit
 app-data-backed payload root. The shared add flow requires a chosen folder,
 retains a torrent-specific opaque root ID, and provides durable default,
@@ -289,6 +291,15 @@ the visible directory; incomplete staging and part artifacts retain hidden
 full-info-hash names. Durable ownership prevents a destination conflict from
 making an unrelated existing directory eligible for managed deletion.
 
+Tactical 073 makes the topology explicit rather than inferring it from file
+count. A BEP 3 `length` form owns a regular-file final and regular-file hidden
+staging artifact. A `files` form owns directory-tree final and staging
+artifacts even when the list contains one file. Both use the same full-info-
+hash plural part artifact when selection needs piece slots, the same durable
+ownership states, atomic no-replace publication, and fail-closed type/symlink
+checks. The obsolete singular `.rstorrent-part` bring-up artifact is neither
+created nor adopted.
+
 ## JSTorrent Product Cheat Sheet
 
 JSTorrent is the first-party behavior and terminology reference for this
@@ -351,7 +362,8 @@ still missing. Implement and validate the Windows picker separately. Keep
 first-root, stable-ID, default, repair, and per-torrent semantics identical
 while allowing native capability handling to differ.
 
-Tactical 062 completes the user-visible multi-file publication-layout slice,
-and Tactical 063 completes the current metadata-only/live-selection flow.
+Tactical 073 completes the unified single-/multi-file publication and managed
+resume slice, and Tactical 063 completes the current metadata-only/live-
+selection flow.
 Later intake work should add `.torrent` sources or pre-metadata cancellation
 without moving file selection out of the Files tab.

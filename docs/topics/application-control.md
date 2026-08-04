@@ -27,6 +27,10 @@ source, delivery, and local loss while keeping them separate from commands and
 product-state authority. Tactical `063` adds metadata-only magnet intent and
 durable live `Normal`/`Skip` file selection through the same semantic command
 boundary.
+Tactical `073` adds `force_recheck` as a semantic durable command with the
+same expected-revision and request-receipt rules. It joins an active matching
+generation, preserves durable run intent, and starts the common managed-
+storage check without exposing paths, handles, or engine tasks.
 
 ## Scope
 
@@ -114,6 +118,16 @@ internals. Selection commits before the active immutable engine generation is
 cancelled and joined. Metadata acquisition may continue for a paused
 start-content intent, but content storage remains unopened until explicit
 resume.
+
+Force recheck is likewise semantic. A replayed successful request cannot
+start another generation, and a stale request mutates neither runtime nor
+durable state. During checking, presentation exposes no old verified total as
+current authority. Valid paused content may return to complete; invalid paused
+content retains its exact replacement bitmap without admitting peer repair,
+while running intent downloads only the missing or corrupt wanted pieces.
+Android application request IDs now include a process-random namespace before
+their monotonic suffix, matching the browser contract and preventing a
+restarted process from reusing `android-1` for different durable intent.
 
 Authorization is transport context, not a user-supplied command field. A
 future remote transport must authenticate a principal, attach verified
