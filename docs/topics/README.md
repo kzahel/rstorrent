@@ -112,6 +112,10 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`peer-lifecycle.md`](peer-lifecycle.md): peer observations, bounded records,
   derived dial eligibility, connection attempts, adversarial multi-peer
   ownership, slot replacement, and the discovery-to-swarm boundary.
+- [`incoming-reachability-and-seeding.md`](incoming-reachability-and-seeding.md):
+  campaign direction from a session-owned peer listener through verified
+  upload, truthful advertisement, gateway mapping, settings, product status,
+  and external reachability evidence.
 - [`tracker-discovery.md`](tracker-discovery.md): tracker URL and announce
   lifecycle, bounded results, scheduling direction, and the
   tracker-to-peer-observation boundary.
