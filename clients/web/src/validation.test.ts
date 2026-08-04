@@ -145,6 +145,23 @@ describe("disk view validation", () => {
   });
 });
 
+describe("DHT view validation", () => {
+  it("accepts exact bounded state and rejects reordered or inconsistent buckets", () => {
+    const batch = dhtBatch();
+    expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
+    batch.updates[0]!.snapshot.inspection.buckets_v4[159]!.bucket_index = 158;
+    expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
+      /exact engine index order/,
+    );
+
+    const inconsistent = dhtBatch();
+    inconsistent.updates[0]!.snapshot.inspection.routing_nodes_v4 = 2;
+    expect(() => decodeUpdateBatch(JSON.stringify(inconsistent))).toThrow(
+      /aggregates do not match/,
+    );
+  });
+});
+
 describe("piece activity validation", () => {
   it("accepts keyed attempts and rejects overlapping lifecycle ranges", () => {
     const batch = pieceBatch();
@@ -214,6 +231,73 @@ function diagnosticBatch() {
         },
       },
     ],
+  };
+}
+
+function dhtBatch() {
+  const buckets = Array.from({ length: 160 }, (_, bucket_index) => ({
+    bucket_index,
+    good_nodes: 0,
+    questionable_nodes: 0,
+    replacement_candidates: 0,
+    oldest_live_response_age_millis: null as string | null,
+  }));
+  buckets[159] = {
+    bucket_index: 159,
+    good_nodes: 1,
+    questionable_nodes: 0,
+    replacement_candidates: 2,
+    oldest_live_response_age_millis: "12000",
+  };
+  return {
+    api_version: 1,
+    view_set_id: "vs_000102030405060708090a0b0c0d0e0f",
+    epoch: "1",
+    base_cursor: "0",
+    cursor: "1",
+    durable_revision: "1",
+    updates: [{
+      type: "snapshot" as const,
+      view_id: "dht",
+      snapshot: {
+        type: "session_dht" as const,
+        inspection: {
+          lifecycle: "participating" as const,
+          network_policy: "loopback_only" as const,
+          local_node_id: "0".repeat(40),
+          captured_millis: "1000",
+          routing_nodes_v4: 1,
+          occupied_buckets_v4: 1,
+          deepest_shared_prefix_bits_v4: 0,
+          active_transactions: 1,
+          active_lookups: 1,
+          queries_sent: "1",
+          responses_received: "1",
+          queries_received: "0",
+          malformed_received: "0",
+          rate_limited: "0",
+          discovered_peers: "0",
+          bootstrap_attempts: "1",
+          routing_refreshes: "0",
+          datagram_bytes_sent: "42",
+          datagram_bytes_received: "84",
+          buckets_v4: buckets,
+          lookups: [{
+            lookup_id: "1",
+            target_id: "1".repeat(40),
+            age_millis: "500",
+            deadline_in_millis: "29500",
+            unqueried_candidates: 8,
+            in_flight_candidates: 3,
+            responded_candidates: 2,
+            failed_candidates: 1,
+            discovered_peers: 0,
+            closest_responded_prefix_bits: 7,
+            last_convergence_improvement_age_millis: "100",
+          }],
+        },
+      },
+    }],
   };
 }
 

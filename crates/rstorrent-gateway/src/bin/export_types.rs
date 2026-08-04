@@ -10,7 +10,8 @@ use rstorrent_gateway::{
 use rstorrent_session::{
     ActivePiece, ActivePieceStageView, ApiEncoding, ApiHello, ApiLimits, ApiVersion,
     ApplicationCall, ApplicationCallResult, CapabilityStatus, Command, DeliveryMode,
-    DeliveryPolicy, DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
+    DeliveryPolicy, DhtBucketView, DhtInspectionView, DhtLifecycleView, DhtLookupView,
+    DhtNetworkPolicyView, DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
     DiagnosticProfile, DiagnosticRetention, DiagnosticSeverity, DiagnosticSubject, DiagnosticValue,
     DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
     ErrorCode, ErrorResponse, FileCatalogState, FilePriority, FileSelectionView, FileView,
@@ -107,6 +108,11 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<DiskPieceStageView>(&mut declarations)?;
     append::<DiskPipelineView>(&mut declarations)?;
     append::<DiskPieceView>(&mut declarations)?;
+    append::<DhtLifecycleView>(&mut declarations)?;
+    append::<DhtNetworkPolicyView>(&mut declarations)?;
+    append::<DhtBucketView>(&mut declarations)?;
+    append::<DhtLookupView>(&mut declarations)?;
+    append::<DhtInspectionView>(&mut declarations)?;
     append::<SpeedMetric>(&mut declarations)?;
     append::<SpeedRange>(&mut declarations)?;
     append::<SpeedPersistenceState>(&mut declarations)?;

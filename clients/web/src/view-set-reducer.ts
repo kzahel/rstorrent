@@ -132,6 +132,11 @@ function cloneSnapshot(snapshot: ViewSnapshot): ViewSnapshot {
         pipeline: { ...snapshot.pipeline },
         pieces: [...snapshot.pieces],
       };
+    case "session_dht":
+      return {
+        ...snapshot,
+        inspection: cloneDhtInspection(snapshot.inspection),
+      };
     case "session_speed":
       return {
         ...snapshot,
@@ -211,6 +216,11 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
         pieces: [...pieces.values()],
       };
     }
+    case "session_dht":
+      return {
+        type: "session_dht",
+        inspection: cloneDhtInspection(patch.inspection),
+      };
     case "session_speed":
       return {
         type: "session_speed",
@@ -293,6 +303,16 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
       };
     }
   }
+}
+
+function cloneDhtInspection(
+  inspection: Extract<ViewSnapshot, { type: "session_dht" }>["inspection"],
+): Extract<ViewSnapshot, { type: "session_dht" }>["inspection"] {
+  return {
+    ...inspection,
+    buckets_v4: inspection.buckets_v4.map((bucket) => ({ ...bucket })),
+    lookups: inspection.lookups.map((lookup) => ({ ...lookup })),
+  };
 }
 
 function cloneSpeedHistory(

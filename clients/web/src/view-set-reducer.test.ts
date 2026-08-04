@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { TorrentView, UpdateBatch } from "./api";
+import type { DhtInspectionView, TorrentView, UpdateBatch } from "./api";
 import {
   reduceUpdateBatch,
   ViewSetContinuityError,
@@ -30,6 +30,38 @@ function torrent(verified: number): TorrentView {
     },
     archived: false,
     delete_managed_data_supported: true,
+  };
+}
+
+function dhtInspection(captured: string): DhtInspectionView {
+  return {
+    lifecycle: "participating",
+    network_policy: "loopback_only",
+    local_node_id: torrentId,
+    captured_millis: captured,
+    routing_nodes_v4: 0,
+    occupied_buckets_v4: 0,
+    deepest_shared_prefix_bits_v4: null,
+    active_transactions: 0,
+    active_lookups: 0,
+    queries_sent: "0",
+    responses_received: "0",
+    queries_received: "0",
+    malformed_received: "0",
+    rate_limited: "0",
+    discovered_peers: "0",
+    bootstrap_attempts: "0",
+    routing_refreshes: "0",
+    datagram_bytes_sent: "0",
+    datagram_bytes_received: "0",
+    buckets_v4: Array.from({ length: 160 }, (_, bucket_index) => ({
+      bucket_index,
+      good_nodes: 0,
+      questionable_nodes: 0,
+      replacement_candidates: 0,
+      oldest_live_response_age_millis: null,
+    })),
+    lookups: [],
   };
 }
 
@@ -224,6 +256,31 @@ describe("view-set reducer", () => {
       pipeline: { pressure: "backpressured", intake_backpressured: true },
       pieces: [{ row_id: "torrent-a:4:1", piece_index: 4, stage: "writing" }],
     });
+  });
+
+  it("replaces the complete DHT observation on a patch", () => {
+    let state = reduceUpdateBatch(
+      undefined,
+      batch("0", "1", [{
+        type: "snapshot",
+        view_id: "dht",
+        snapshot: { type: "session_dht", inspection: dhtInspection("1") },
+      }]),
+    );
+    state = reduceUpdateBatch(
+      state,
+      batch("1", "2", [{
+        type: "patch",
+        view_id: "dht",
+        patch: { type: "session_dht", inspection: dhtInspection("2") },
+      }]),
+    );
+    const view = state.views.dht;
+    expect(view?.type).toBe("session_dht");
+    if (view?.type !== "session_dht") throw new Error("missing DHT view");
+    expect(view.inspection.captured_millis).toBe("2");
+    expect(view.inspection.buckets_v4).toHaveLength(160);
+    expect(view.inspection.buckets_v4[0]?.bucket_index).toBe(0);
   });
 
   it("applies compact verified changes and keyed active piece retries", () => {

@@ -95,6 +95,7 @@ impl Default for ApiHello {
                 "torrent_files".to_owned(),
                 "torrent_trackers".to_owned(),
                 "session_disk".to_owned(),
+                "session_dht".to_owned(),
                 "session_speed".to_owned(),
                 "piece_activity".to_owned(),
                 "diagnostics".to_owned(),
@@ -141,6 +142,11 @@ pub enum ViewSpec {
         delivery: ViewDeliveryPolicy,
     },
     SessionDisk {
+        view_id: String,
+        #[serde(default)]
+        delivery: ViewDeliveryPolicy,
+    },
+    SessionDht {
         view_id: String,
         #[serde(default)]
         delivery: ViewDeliveryPolicy,
@@ -194,6 +200,7 @@ impl ViewSpec {
             | Self::TorrentSummary { view_id, .. }
             | Self::PieceActivity { view_id, .. }
             | Self::SessionDisk { view_id, .. }
+            | Self::SessionDht { view_id, .. }
             | Self::SessionSpeed { view_id, .. }
             | Self::TorrentPeers { view_id, .. }
             | Self::TorrentSwarm { view_id, .. }
@@ -209,6 +216,7 @@ impl ViewSpec {
             | Self::TorrentSummary { delivery, .. }
             | Self::PieceActivity { delivery, .. }
             | Self::SessionDisk { delivery, .. }
+            | Self::SessionDht { delivery, .. }
             | Self::SessionSpeed { delivery, .. }
             | Self::TorrentPeers { delivery, .. }
             | Self::TorrentSwarm { delivery, .. }
@@ -236,6 +244,7 @@ impl ViewSpec {
                 None,
             ),
             Self::SessionDisk { .. } => (ViewSelector::TorrentList, ViewProjection::Disk, None),
+            Self::SessionDht { .. } => (ViewSelector::SessionDht, ViewProjection::Dht, None),
             Self::SessionSpeed { range, metrics, .. } => (
                 ViewSelector::SessionSpeed {
                     range: *range,

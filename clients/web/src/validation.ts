@@ -44,6 +44,12 @@ const MAX_FILES = 4_096;
 const MAX_TRACKERS = 32;
 const MAX_DISK_PIECES = 16_384;
 const MAX_ACTIVE_PIECES = 16_384;
+const DHT_BUCKETS = 160;
+const DHT_BUCKET_CAPACITY = 8;
+const MAX_DHT_TRANSACTIONS = 256;
+const MAX_DHT_LOOKUPS = 16;
+const MAX_DHT_LOOKUP_CANDIDATES = 256;
+const MAX_DHT_LOOKUP_PEERS = 200;
 const MAX_DIAGNOSTIC_EVENTS = 2_048;
 const MAX_DIAGNOSTIC_PATCH_EVENTS = 128;
 const MAX_U32 = 4_294_967_295;
@@ -407,6 +413,176 @@ function validateUpdate(value: unknown): void {
   }
 }
 
+function validateDhtInspection(value: unknown): void {
+  const inspection = asRecord(value, "DHT inspection");
+  oneOf(inspection.lifecycle, "DHT lifecycle", [
+    "offline",
+    "bootstrap_empty",
+    "participating",
+    "inactive",
+  ]);
+  oneOf(inspection.network_policy, "DHT network policy", [
+    "offline",
+    "loopback_only",
+    "online",
+  ]);
+  torrentId(string(inspection.local_node_id, "DHT local node ID"));
+  decimal(inspection.captured_millis, "DHT capture time");
+  const routingNodes = boundedInteger(
+    inspection.routing_nodes_v4,
+    "DHT routing nodes",
+    0,
+    DHT_BUCKETS * DHT_BUCKET_CAPACITY,
+  );
+  const occupiedBuckets = boundedInteger(
+    inspection.occupied_buckets_v4,
+    "DHT occupied buckets",
+    0,
+    DHT_BUCKETS,
+  );
+  const deepest = inspection.deepest_shared_prefix_bits_v4 === null
+    ? null
+    : boundedInteger(
+        inspection.deepest_shared_prefix_bits_v4,
+        "DHT deepest shared prefix",
+        0,
+        159,
+      );
+  boundedInteger(
+    inspection.active_transactions,
+    "DHT active transactions",
+    0,
+    MAX_DHT_TRANSACTIONS,
+  );
+  const activeLookups = boundedInteger(
+    inspection.active_lookups,
+    "DHT active lookups",
+    0,
+    MAX_DHT_LOOKUPS,
+  );
+  for (const [field, label] of [
+    ["queries_sent", "queries sent"],
+    ["responses_received", "responses received"],
+    ["queries_received", "queries received"],
+    ["malformed_received", "malformed datagrams"],
+    ["rate_limited", "rate-limited datagrams"],
+    ["discovered_peers", "discovered peers"],
+    ["bootstrap_attempts", "bootstrap attempts"],
+    ["routing_refreshes", "routing refreshes"],
+    ["datagram_bytes_sent", "datagram bytes sent"],
+    ["datagram_bytes_received", "datagram bytes received"],
+  ] as const) {
+    decimal(inspection[field], `DHT ${label}`);
+  }
+
+  const buckets = array(inspection.buckets_v4, "DHT IPv4 buckets");
+  if (buckets.length !== DHT_BUCKETS) {
+    throw new ContractError("DHT inspection must contain exactly 160 buckets");
+  }
+  let countedNodes = 0;
+  let countedOccupied = 0;
+  let countedDeepest: number | null = null;
+  buckets.forEach((value, index) => {
+    const bucket = asRecord(value, "DHT bucket");
+    if (boundedInteger(bucket.bucket_index, "DHT bucket index", 0, 159) !== index) {
+      throw new ContractError("DHT buckets are not in exact engine index order");
+    }
+    const good = boundedInteger(
+      bucket.good_nodes,
+      "DHT good nodes",
+      0,
+      DHT_BUCKET_CAPACITY,
+    );
+    const questionable = boundedInteger(
+      bucket.questionable_nodes,
+      "DHT questionable nodes",
+      0,
+      DHT_BUCKET_CAPACITY,
+    );
+    boundedInteger(
+      bucket.replacement_candidates,
+      "DHT replacement candidates",
+      0,
+      DHT_BUCKET_CAPACITY,
+    );
+    if (good + questionable > DHT_BUCKET_CAPACITY) {
+      throw new ContractError("DHT live bucket occupancy exceeds K=8");
+    }
+    const live = good + questionable;
+    if ((bucket.oldest_live_response_age_millis === null) !== (live === 0)) {
+      throw new ContractError("DHT bucket freshness does not match live occupancy");
+    }
+    if (bucket.oldest_live_response_age_millis !== null) {
+      decimal(bucket.oldest_live_response_age_millis, "DHT oldest response age");
+    }
+    countedNodes += live;
+    if (live > 0) {
+      countedOccupied += 1;
+      countedDeepest = Math.max(countedDeepest ?? 0, 159 - index);
+    }
+  });
+  if (countedNodes !== routingNodes || countedOccupied !== occupiedBuckets) {
+    throw new ContractError("DHT routing aggregates do not match bucket occupancy");
+  }
+  if (countedDeepest !== deepest) {
+    throw new ContractError("DHT deepest prefix does not match bucket occupancy");
+  }
+
+  const lookups = array(inspection.lookups, "DHT lookups");
+  if (lookups.length !== activeLookups || lookups.length > MAX_DHT_LOOKUPS) {
+    throw new ContractError("DHT lookup rows do not match the active lookup gauge");
+  }
+  const lookupIds = new Set<string>();
+  for (const value of lookups) {
+    const lookup = asRecord(value, "DHT lookup");
+    const lookupId = decimal(lookup.lookup_id, "DHT lookup ID");
+    if (lookupIds.has(lookupId)) {
+      throw new ContractError("DHT lookup IDs must be unique");
+    }
+    lookupIds.add(lookupId);
+    torrentId(string(lookup.target_id, "DHT lookup target ID"));
+    decimal(lookup.age_millis, "DHT lookup age");
+    decimal(lookup.deadline_in_millis, "DHT lookup deadline");
+    let candidateCount = 0;
+    for (const [field, label] of [
+      ["unqueried_candidates", "unqueried candidates"],
+      ["in_flight_candidates", "in-flight candidates"],
+      ["responded_candidates", "responded candidates"],
+      ["failed_candidates", "failed candidates"],
+    ] as const) {
+      candidateCount += boundedInteger(
+        lookup[field],
+        `DHT ${label}`,
+        0,
+        MAX_DHT_LOOKUP_CANDIDATES,
+      );
+    }
+    if (candidateCount > MAX_DHT_LOOKUP_CANDIDATES) {
+      throw new ContractError("DHT lookup candidates exceed their fixed bound");
+    }
+    boundedInteger(
+      lookup.discovered_peers,
+      "DHT lookup discovered peers",
+      0,
+      MAX_DHT_LOOKUP_PEERS,
+    );
+    if (lookup.closest_responded_prefix_bits !== null) {
+      boundedInteger(
+        lookup.closest_responded_prefix_bits,
+        "DHT closest responded prefix",
+        0,
+        160,
+      );
+    }
+    if (lookup.last_convergence_improvement_age_millis !== null) {
+      decimal(
+        lookup.last_convergence_improvement_age_millis,
+        "DHT convergence improvement age",
+      );
+    }
+  }
+}
+
 function validateViewSnapshot(value: unknown): void {
   const snapshot = asRecord(value, "view snapshot");
   switch (string(snapshot.type, "view snapshot type")) {
@@ -438,6 +614,9 @@ function validateViewSnapshot(value: unknown): void {
       pieces.forEach(validateDiskPiece);
       break;
     }
+    case "session_dht":
+      validateDhtInspection(snapshot.inspection);
+      break;
     case "session_speed":
       validateSpeedHistory(snapshot.history);
       break;
@@ -567,6 +746,9 @@ function validateViewPatch(value: unknown): void {
       );
       break;
     }
+    case "session_dht":
+      validateDhtInspection(patch.inspection);
+      break;
     case "session_speed":
       validateSpeedHistory(patch.history);
       break;

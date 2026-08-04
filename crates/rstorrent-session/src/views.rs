@@ -51,6 +51,7 @@ static NEXT_EPOCH: AtomicU64 = AtomicU64::new(1);
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ViewSelector {
     TorrentList,
+    SessionDht,
     Torrent {
         torrent_id: String,
     },
@@ -67,12 +68,120 @@ pub enum ViewProjection {
     Summary,
     PieceActivity,
     Disk,
+    Dht,
     Speed,
     Peers,
     Swarm,
     Files,
     Trackers,
     Diagnostics,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum DhtLifecycleView {
+    Offline,
+    BootstrapEmpty,
+    Participating,
+    Inactive,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum DhtNetworkPolicyView {
+    Offline,
+    LoopbackOnly,
+    Online,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct DhtBucketView {
+    pub bucket_index: u16,
+    pub good_nodes: u8,
+    pub questionable_nodes: u8,
+    pub replacement_candidates: u8,
+    pub oldest_live_response_age_millis: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct DhtLookupView {
+    pub lookup_id: String,
+    pub target_id: String,
+    pub age_millis: String,
+    pub deadline_in_millis: String,
+    pub unqueried_candidates: u16,
+    pub in_flight_candidates: u16,
+    pub responded_candidates: u16,
+    pub failed_candidates: u16,
+    pub discovered_peers: u16,
+    pub closest_responded_prefix_bits: Option<u16>,
+    pub last_convergence_improvement_age_millis: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct DhtInspectionView {
+    pub lifecycle: DhtLifecycleView,
+    pub network_policy: DhtNetworkPolicyView,
+    pub local_node_id: String,
+    pub captured_millis: String,
+    pub routing_nodes_v4: u16,
+    pub occupied_buckets_v4: u16,
+    pub deepest_shared_prefix_bits_v4: Option<u16>,
+    pub active_transactions: u32,
+    pub active_lookups: u32,
+    pub queries_sent: String,
+    pub responses_received: String,
+    pub queries_received: String,
+    pub malformed_received: String,
+    pub rate_limited: String,
+    pub discovered_peers: String,
+    pub bootstrap_attempts: String,
+    pub routing_refreshes: String,
+    pub datagram_bytes_sent: String,
+    pub datagram_bytes_received: String,
+    pub buckets_v4: Vec<DhtBucketView>,
+    pub lookups: Vec<DhtLookupView>,
+}
+
+impl DhtInspectionView {
+    fn inactive() -> Self {
+        Self {
+            lifecycle: DhtLifecycleView::Inactive,
+            network_policy: DhtNetworkPolicyView::Offline,
+            local_node_id: "0000000000000000000000000000000000000000".to_owned(),
+            captured_millis: "0".to_owned(),
+            routing_nodes_v4: 0,
+            occupied_buckets_v4: 0,
+            deepest_shared_prefix_bits_v4: None,
+            active_transactions: 0,
+            active_lookups: 0,
+            queries_sent: "0".to_owned(),
+            responses_received: "0".to_owned(),
+            queries_received: "0".to_owned(),
+            malformed_received: "0".to_owned(),
+            rate_limited: "0".to_owned(),
+            discovered_peers: "0".to_owned(),
+            bootstrap_attempts: "0".to_owned(),
+            routing_refreshes: "0".to_owned(),
+            datagram_bytes_sent: "0".to_owned(),
+            datagram_bytes_received: "0".to_owned(),
+            buckets_v4: (0..160)
+                .map(|bucket_index| DhtBucketView {
+                    bucket_index,
+                    good_nodes: 0,
+                    questionable_nodes: 0,
+                    replacement_candidates: 0,
+                    oldest_live_response_age_millis: None,
+                })
+                .collect(),
+            lookups: Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -1071,6 +1180,9 @@ pub enum ViewSnapshot {
         pipeline: DiskPipelineView,
         pieces: Vec<DiskPieceView>,
     },
+    SessionDht {
+        inspection: DhtInspectionView,
+    },
     SessionSpeed {
         history: SpeedHistoryView,
     },
@@ -1131,6 +1243,9 @@ pub enum ViewPatch {
         pipeline: DiskPipelineView,
         upsert: Vec<DiskPieceView>,
         removed: Vec<String>,
+    },
+    SessionDht {
+        inspection: DhtInspectionView,
     },
     SessionSpeed {
         history: SpeedHistoryView,
@@ -1216,6 +1331,7 @@ pub(crate) struct HubState {
     torrents: BTreeMap<String, TorrentModel>,
     storage: StorageSettingsSnapshot,
     disk: DiskSessionModel,
+    dht: DhtInspectionView,
     speed: Arc<Mutex<SessionRateHistory>>,
     diagnostics: DiagnosticStore,
     subscribers: BTreeMap<u64, Weak<SubscriberInner>>,
@@ -1391,6 +1507,20 @@ impl ViewHub {
         view_set_lease: Duration,
         speed: Arc<Mutex<SessionRateHistory>>,
     ) -> Result<Self, SubscriptionError> {
+        Self::new_with_runtime_views(
+            snapshot,
+            view_set_lease,
+            speed,
+            DhtInspectionView::inactive(),
+        )
+    }
+
+    pub(crate) fn new_with_runtime_views(
+        snapshot: &ServiceSnapshot,
+        view_set_lease: Duration,
+        speed: Arc<Mutex<SessionRateHistory>>,
+        dht: DhtInspectionView,
+    ) -> Result<Self, SubscriptionError> {
         let revision = parse_revision(&snapshot.revision)?;
         Ok(Self {
             inner: Arc::new(Mutex::new(HubState {
@@ -1408,6 +1538,7 @@ impl ViewHub {
                     .collect(),
                 storage: snapshot.storage.clone(),
                 disk: DiskSessionModel::default(),
+                dht,
                 speed,
                 diagnostics: DiagnosticStore::default(),
                 subscribers: BTreeMap::new(),
@@ -1559,6 +1690,53 @@ impl ViewHub {
                     ViewPatch::SessionSpeed { history },
                     revision,
                 )?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn publish_dht(
+        &self,
+        inspection: DhtInspectionView,
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        if hub.dht == inspection {
+            return Ok(());
+        }
+        hub.dht = inspection.clone();
+        let revision = hub.revision;
+        hub.subscribers.retain(|_, weak| weak.strong_count() != 0);
+        let subscribers = hub
+            .subscribers
+            .values()
+            .filter_map(Weak::upgrade)
+            .collect::<Vec<_>>();
+        for subscriber in subscribers {
+            if matches!(subscriber.spec.selector, ViewSelector::SessionDht) {
+                subscriber.enqueue_patch(
+                    revision,
+                    ViewPatch::SessionDht {
+                        inspection: inspection.clone(),
+                    },
+                )?;
+            }
+        }
+        hub.retain_live_view_sets();
+        let view_sets = hub.view_sets.values().cloned().collect::<Vec<_>>();
+        for view_set in view_sets {
+            for spec in view_set.view_specs()? {
+                if matches!(spec, crate::ViewSpec::SessionDht { .. }) {
+                    view_set.enqueue_patch(
+                        spec.view_id(),
+                        ViewPatch::SessionDht {
+                            inspection: inspection.clone(),
+                        },
+                        revision,
+                    )?;
+                }
             }
         }
         Ok(())
@@ -2083,6 +2261,9 @@ impl HubState {
                     pieces: disk.pieces.into_values().collect(),
                 }
             }
+            (ViewSelector::SessionDht, ViewProjection::Dht) => ViewSnapshot::SessionDht {
+                inspection: self.dht.clone(),
+            },
             (ViewSelector::SessionSpeed { range, metrics }, ViewProjection::Speed) => {
                 let mut history = self
                     .speed
@@ -2168,6 +2349,7 @@ impl HubState {
             (
                 ViewSelector::TorrentList,
                 ViewProjection::PieceActivity
+                | ViewProjection::Dht
                 | ViewProjection::Speed
                 | ViewProjection::Peers
                 | ViewProjection::Swarm
@@ -2176,13 +2358,16 @@ impl HubState {
             ) => {
                 unreachable!("invalid projection is rejected before snapshot construction")
             }
-            (ViewSelector::Torrent { .. }, ViewProjection::Disk) => {
+            (ViewSelector::Torrent { .. }, ViewProjection::Disk | ViewProjection::Dht) => {
                 unreachable!("invalid projection is rejected before snapshot construction")
             }
             (ViewSelector::Torrent { .. }, ViewProjection::Speed) => {
                 unreachable!("invalid projection is rejected before snapshot construction")
             }
             (ViewSelector::SessionSpeed { .. }, _) => {
+                unreachable!("invalid projection is rejected before snapshot construction")
+            }
+            (ViewSelector::SessionDht, _) => {
                 unreachable!("invalid projection is rejected before snapshot construction")
             }
         }
@@ -3346,6 +3531,7 @@ pub(crate) fn validate_spec(spec: &SubscriptionSpec) -> Result<(), SubscriptionE
         && matches!(
             spec.projection,
             ViewProjection::PieceActivity
+                | ViewProjection::Dht
                 | ViewProjection::Peers
                 | ViewProjection::Swarm
                 | ViewProjection::Files
@@ -3357,12 +3543,16 @@ pub(crate) fn validate_spec(spec: &SubscriptionSpec) -> Result<(), SubscriptionE
     if matches!(spec.selector, ViewSelector::Torrent { .. })
         && matches!(
             spec.projection,
-            ViewProjection::Disk | ViewProjection::Speed
+            ViewProjection::Disk | ViewProjection::Dht | ViewProjection::Speed
         )
     {
         return Err(SubscriptionError::InvalidProjection);
     }
     match (&spec.selector, spec.projection) {
+        (ViewSelector::SessionDht, ViewProjection::Dht) => {}
+        (ViewSelector::SessionDht, _) | (_, ViewProjection::Dht) => {
+            return Err(SubscriptionError::InvalidProjection);
+        }
         (ViewSelector::SessionSpeed { metrics, .. }, ViewProjection::Speed)
             if !metrics.is_empty()
                 && metrics.len() <= MAX_SPEED_SERIES
@@ -3539,7 +3729,14 @@ fn patch_for(
             | ViewProjection::Files
             | ViewProjection::Trackers,
         ) => None,
-        (_, ViewProjection::Disk | ViewProjection::Speed | ViewProjection::Diagnostics) => None,
+        (
+            _,
+            ViewProjection::Disk
+            | ViewProjection::Dht
+            | ViewProjection::Speed
+            | ViewProjection::Diagnostics,
+        ) => None,
+        (ViewSelector::SessionDht, _) => None,
         (ViewSelector::SessionSpeed { .. }, _) => None,
     }
 }
@@ -3974,6 +4171,15 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
             true
         }
         (
+            ViewPatch::SessionDht { inspection },
+            ViewPatch::SessionDht {
+                inspection: next_inspection,
+            },
+        ) => {
+            *inspection = next_inspection.clone();
+            true
+        }
+        (
             ViewPatch::SessionSpeed { history },
             ViewPatch::SessionSpeed {
                 history: next_history,
@@ -4141,7 +4347,9 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
 
 fn selector_torrent_id(selector: &ViewSelector) -> Option<&str> {
     match selector {
-        ViewSelector::TorrentList | ViewSelector::SessionSpeed { .. } => None,
+        ViewSelector::TorrentList
+        | ViewSelector::SessionDht
+        | ViewSelector::SessionSpeed { .. } => None,
         ViewSelector::Torrent { torrent_id } => Some(torrent_id),
     }
 }
@@ -4274,10 +4482,11 @@ mod tests {
     };
 
     use super::{
-        DeliveryPolicy, DiagnosticFilter, DiagnosticSeverity, DurableTorrentViewState, IndexRange,
-        ProgressAction, ProgressDisposition, ProgressInputs, ProgressReason, ResetReason,
-        SubscriptionSpec, TorrentActivity, ViewHub, ViewPatch, ViewProjection, ViewSelector,
-        ViewSnapshot, ViewUpdatePayload, assess_progress, ranges_from_pieces,
+        DeliveryPolicy, DhtInspectionView, DiagnosticFilter, DiagnosticSeverity,
+        DurableTorrentViewState, IndexRange, ProgressAction, ProgressDisposition, ProgressInputs,
+        ProgressReason, ResetReason, SubscriptionSpec, TorrentActivity, ViewHub, ViewPatch,
+        ViewProjection, ViewSelector, ViewSnapshot, ViewUpdatePayload, assess_progress,
+        ranges_from_pieces,
     };
     use crate::diagnostics::{
         DiagnosticCategory, DiagnosticEvent, DiagnosticProfile, DiagnosticRetention,
@@ -4337,6 +4546,58 @@ mod tests {
             },
             diagnostics: None,
         }
+    }
+
+    fn dht_spec() -> SubscriptionSpec {
+        SubscriptionSpec {
+            selector: ViewSelector::SessionDht,
+            projection: ViewProjection::Dht,
+            delivery: DeliveryPolicy {
+                min_interval_millis: 0,
+                max_queue_bytes: 256 * 1024,
+            },
+            diagnostics: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn dht_view_replaces_and_coalesces_one_complete_observation() {
+        let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
+        let subscription = hub.subscribe(dht_spec()).expect("DHT subscription");
+        let initial = subscription
+            .next_update()
+            .await
+            .expect("initial DHT snapshot");
+        let ViewUpdatePayload::Snapshot {
+            snapshot: ViewSnapshot::SessionDht { inspection },
+        } = initial.payload
+        else {
+            panic!("expected DHT snapshot");
+        };
+        assert_eq!(inspection.buckets_v4.len(), 160);
+
+        let mut first = DhtInspectionView::inactive();
+        first.captured_millis = "1".to_owned();
+        first.queries_sent = "10".to_owned();
+        hub.publish_dht(first).expect("first observation");
+        let mut latest = DhtInspectionView::inactive();
+        latest.captured_millis = "2".to_owned();
+        latest.queries_sent = "11".to_owned();
+        hub.publish_dht(latest).expect("latest observation");
+
+        let update = subscription
+            .next_update()
+            .await
+            .expect("coalesced DHT patch");
+        let ViewUpdatePayload::Patch {
+            patch: ViewPatch::SessionDht { inspection },
+        } = update.payload
+        else {
+            panic!("expected DHT replacement patch");
+        };
+        assert_eq!(inspection.captured_millis, "2");
+        assert_eq!(inspection.queries_sent, "11");
+        assert_eq!(inspection.buckets_v4.len(), 160);
     }
 
     #[test]

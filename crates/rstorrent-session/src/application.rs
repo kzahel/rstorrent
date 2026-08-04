@@ -24,6 +24,7 @@ use crate::control::{
     Command, ErrorCode, FilePriority, RemovalDataPolicy, RemovalState, RequestEnvelope,
     ResponseEnvelope, ResponseOutcome, StorageRootSnapshot, StorageState, TorrentState,
 };
+use crate::dht_views::{DhtObservationRuntime, inspection_view};
 use crate::diagnostics::{
     DiagnosticCategory, DiagnosticDraft, DiagnosticField, DiagnosticSeverity, DiagnosticSubject,
     category,
@@ -136,6 +137,7 @@ pub struct ApplicationService {
     storage_file_pool: StorageFilePool,
     active: Option<ActiveDownload>,
     dht: Option<DhtService>,
+    dht_observations: Option<DhtObservationRuntime>,
     speed_recorder: Arc<SessionSpeedRecorder>,
     speed_history: Option<SpeedHistoryRuntime>,
     views: ViewHub,
@@ -213,12 +215,17 @@ impl ApplicationService {
         dht_config.initial_snapshot = initial_dht_snapshot;
         dht_config.byte_metric_sink = Some(speed_recorder.clone());
         let dht = DhtService::start(dht_config).await?;
+        let dht_observation_receiver = dht.subscribe_observations();
+        let initial_dht_view = inspection_view(&dht_observation_receiver.borrow());
         let snapshot = store.snapshot()?;
-        let views = ViewHub::new_with_speed_history(
+        let views = ViewHub::new_with_runtime_views(
             &snapshot,
             config.view_set_lease,
             speed.history.clone(),
+            initial_dht_view,
         )?;
+        let dht_observations =
+            DhtObservationRuntime::start(dht_observation_receiver, views.clone());
         let speed_history = speed.start(views.clone());
         let view_set_reaper =
             ViewSetLeaseReaper::start(views.clone(), config.view_set_reaper_interval);
@@ -240,6 +247,7 @@ impl ApplicationService {
             .map_err(|error| ApplicationError::Configuration(error.to_owned()))?,
             active: None,
             dht: Some(dht),
+            dht_observations: Some(dht_observations),
             speed_recorder,
             speed_history: Some(speed_history),
             views,
@@ -1052,6 +1060,7 @@ impl ApplicationService {
 
     pub async fn shutdown(&mut self) -> Result<(), ApplicationError> {
         let mut active_join_error = None;
+        let mut shutdown_error = None;
         if let Some(mut reaper) = self.view_set_reaper.take()
             && let Err(error) = reaper.shutdown().await
         {
@@ -1075,14 +1084,38 @@ impl ApplicationService {
             .await
             .map_err(|error| ApplicationError::Join(error.to_string()))?;
         if let Some(dht) = self.dht.take() {
-            let snapshot = dht.shutdown().await?;
-            self.store_mut()?.save_dht_snapshot(snapshot)?;
+            match dht.shutdown().await {
+                Ok(snapshot) => {
+                    if let Err(error) = self
+                        .store_mut()
+                        .and_then(|mut store| store.save_dht_snapshot(snapshot).map_err(Into::into))
+                    {
+                        shutdown_error = Some(error);
+                    }
+                }
+                Err(error) => shutdown_error = Some(error.into()),
+            }
+        }
+        if let Some(observations) = self.dht_observations.take() {
+            match observations.join().await {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) if active_join_error.is_none() => {
+                    active_join_error = Some(format!("DHT observation forwarder: {error}"));
+                }
+                Err(error) if active_join_error.is_none() => {
+                    active_join_error = Some(format!("DHT observation forwarder: {error}"));
+                }
+                Ok(Err(_)) | Err(_) => {}
+            }
         }
         if let Some(speed_history) = self.speed_history.take()
             && let Err(error) = speed_history.shutdown().await
             && active_join_error.is_none()
         {
             active_join_error = Some(format!("speed history: {error}"));
+        }
+        if let Some(error) = shutdown_error {
+            return Err(error);
         }
         if let Some(error) = active_join_error {
             return Err(ApplicationError::Join(error));
@@ -2902,8 +2935,8 @@ mod tests {
         handle_task_outcome,
     };
     use crate::{
-        CONTROL_VERSION, Command, ConfiguredStorageRoot, DeliveryPolicy, DiagnosticFilter,
-        DiagnosticProfile, DiagnosticSeverity, FilePriority, OpenViewSetOptions,
+        CONTROL_VERSION, Command, ConfiguredStorageRoot, DeliveryPolicy, DhtLifecycleView,
+        DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity, FilePriority, OpenViewSetOptions,
         OpenViewSetRequest, ProgressDisposition, ProgressReason, RemovalDataPolicy, RemovalState,
         RequestEnvelope, ResponseOutcome, SessionStore, StorageState, SubscriptionSpec,
         TorrentState, ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetError,
@@ -3219,6 +3252,54 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         second.shutdown().await.expect("second shutdown");
         drop(second);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn application_shutdown_joins_terminal_dht_view_forwarding() {
+        let root = test_root("dht-terminal-view");
+        let mut application = ApplicationService::open(config(&root))
+            .await
+            .expect("open application");
+        let subscription = application
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::SessionDht,
+                projection: ViewProjection::Dht,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 256 * 1024,
+                },
+                diagnostics: None,
+            })
+            .expect("subscribe to DHT view");
+        subscription
+            .next_update()
+            .await
+            .expect("initial DHT snapshot");
+
+        application.shutdown().await.expect("shutdown application");
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            loop {
+                let update = subscription
+                    .next_update()
+                    .await
+                    .expect("terminal DHT update");
+                if let ViewUpdatePayload::Patch {
+                    patch: ViewPatch::SessionDht { inspection },
+                } = update.payload
+                    && inspection.lifecycle == DhtLifecycleView::Inactive
+                {
+                    assert_eq!(inspection.active_transactions, 0);
+                    assert_eq!(inspection.active_lookups, 0);
+                    assert!(inspection.lookups.is_empty());
+                    break;
+                }
+            }
+        })
+        .await
+        .expect("terminal DHT view timed out");
+        drop(application);
         fs::remove_dir_all(root).expect("remove test root");
     }
 

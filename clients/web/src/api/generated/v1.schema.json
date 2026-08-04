@@ -1015,6 +1015,249 @@
       ],
       "type": "string"
     },
+    "DhtBucketView": {
+      "properties": {
+        "bucket_index": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "good_nodes": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "oldest_live_response_age_millis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "questionable_nodes": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "replacement_candidates": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "bucket_index",
+        "good_nodes",
+        "questionable_nodes",
+        "replacement_candidates"
+      ],
+      "type": "object"
+    },
+    "DhtInspectionView": {
+      "properties": {
+        "active_lookups": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "active_transactions": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "bootstrap_attempts": {
+          "type": "string"
+        },
+        "buckets_v4": {
+          "items": {
+            "$ref": "#/$defs/DhtBucketView"
+          },
+          "type": "array"
+        },
+        "captured_millis": {
+          "type": "string"
+        },
+        "datagram_bytes_received": {
+          "type": "string"
+        },
+        "datagram_bytes_sent": {
+          "type": "string"
+        },
+        "deepest_shared_prefix_bits_v4": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "discovered_peers": {
+          "type": "string"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/DhtLifecycleView"
+        },
+        "local_node_id": {
+          "type": "string"
+        },
+        "lookups": {
+          "items": {
+            "$ref": "#/$defs/DhtLookupView"
+          },
+          "type": "array"
+        },
+        "malformed_received": {
+          "type": "string"
+        },
+        "network_policy": {
+          "$ref": "#/$defs/DhtNetworkPolicyView"
+        },
+        "occupied_buckets_v4": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "queries_received": {
+          "type": "string"
+        },
+        "queries_sent": {
+          "type": "string"
+        },
+        "rate_limited": {
+          "type": "string"
+        },
+        "responses_received": {
+          "type": "string"
+        },
+        "routing_nodes_v4": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "routing_refreshes": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "lifecycle",
+        "network_policy",
+        "local_node_id",
+        "captured_millis",
+        "routing_nodes_v4",
+        "occupied_buckets_v4",
+        "active_transactions",
+        "active_lookups",
+        "queries_sent",
+        "responses_received",
+        "queries_received",
+        "malformed_received",
+        "rate_limited",
+        "discovered_peers",
+        "bootstrap_attempts",
+        "routing_refreshes",
+        "datagram_bytes_sent",
+        "datagram_bytes_received",
+        "buckets_v4",
+        "lookups"
+      ],
+      "type": "object"
+    },
+    "DhtLifecycleView": {
+      "enum": [
+        "offline",
+        "bootstrap_empty",
+        "participating",
+        "inactive"
+      ],
+      "type": "string"
+    },
+    "DhtLookupView": {
+      "properties": {
+        "age_millis": {
+          "type": "string"
+        },
+        "closest_responded_prefix_bits": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "deadline_in_millis": {
+          "type": "string"
+        },
+        "discovered_peers": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "failed_candidates": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "in_flight_candidates": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "last_convergence_improvement_age_millis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lookup_id": {
+          "type": "string"
+        },
+        "responded_candidates": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "target_id": {
+          "type": "string"
+        },
+        "unqueried_candidates": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "lookup_id",
+        "target_id",
+        "age_millis",
+        "deadline_in_millis",
+        "unqueried_candidates",
+        "in_flight_candidates",
+        "responded_candidates",
+        "failed_candidates",
+        "discovered_peers"
+      ],
+      "type": "object"
+    },
+    "DhtNetworkPolicyView": {
+      "enum": [
+        "offline",
+        "loopback_only",
+        "online"
+      ],
+      "type": "string"
+    },
     "DiagnosticEvent": {
       "properties": {
         "category": {
@@ -3421,6 +3664,22 @@
         },
         {
           "properties": {
+            "inspection": {
+              "$ref": "#/$defs/DhtInspectionView"
+            },
+            "type": {
+              "const": "session_dht",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "inspection"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "history": {
               "$ref": "#/$defs/SpeedHistoryView"
             },
@@ -3788,6 +4047,22 @@
         },
         {
           "properties": {
+            "inspection": {
+              "$ref": "#/$defs/DhtInspectionView"
+            },
+            "type": {
+              "const": "session_dht",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "inspection"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "history": {
               "$ref": "#/$defs/SpeedHistoryView"
             },
@@ -4037,6 +4312,28 @@
             },
             "type": {
               "const": "session_disk",
+              "type": "string"
+            },
+            "view_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "view_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "delivery": {
+              "$ref": "#/$defs/ViewDeliveryPolicy",
+              "default": {
+                "min_interval_millis": 0
+              }
+            },
+            "type": {
+              "const": "session_dht",
               "type": "string"
             },
             "view_id": {

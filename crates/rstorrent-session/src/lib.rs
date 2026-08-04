@@ -8,6 +8,7 @@ uniffi::setup_scaffolding!();
 mod application;
 mod application_connection;
 mod control;
+mod dht_views;
 mod diagnostics;
 mod file_views;
 mod have;
@@ -56,13 +57,14 @@ pub use view_sets::{
     ViewSet, ViewSetError, ViewSetOwner, ViewSetStats, ViewSetUpdate, ViewSpec,
 };
 pub use views::{
-    ActivePiece, ActivePieceStageView, CapabilityStatus, DeliveryPolicy, DiskCheckpointStageView,
-    DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView, IndexRange,
-    PeerDirection, PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle,
-    PeerRequestPhase, PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction,
-    ProgressAssessment, ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason,
-    ResetReason, SubscriptionError, SubscriptionSpec, SubscriptionStats, SwarmCatalogState,
-    SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentView, VIEW_CONTRACT_VERSION, ViewHub,
-    ViewPatch, ViewProjection, ViewSelector, ViewSnapshot, ViewSubscription, ViewUpdate,
-    ViewUpdatePayload, assess_progress,
+    ActivePiece, ActivePieceStageView, CapabilityStatus, DeliveryPolicy, DhtBucketView,
+    DhtInspectionView, DhtLifecycleView, DhtLookupView, DhtNetworkPolicyView,
+    DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
+    IndexRange, PeerDirection, PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView,
+    PeerLifecycle, PeerRequestPhase, PeerRole, PeerSourceView, PeerTransportKind, PeerView,
+    ProgressAction, ProgressAssessment, ProgressDisposition, ProgressInputs, ProgressPhase,
+    ProgressReason, ResetReason, SubscriptionError, SubscriptionSpec, SubscriptionStats,
+    SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentView,
+    VIEW_CONTRACT_VERSION, ViewHub, ViewPatch, ViewProjection, ViewSelector, ViewSnapshot,
+    ViewSubscription, ViewUpdate, ViewUpdatePayload, assess_progress,
 };
