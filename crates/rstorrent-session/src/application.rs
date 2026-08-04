@@ -25,8 +25,9 @@ use rstorrent_protocol::metainfo::{
 use tokio::task::JoinHandle;
 
 use crate::control::{
-    Command, ErrorCode, FilePriority, RemovalDataPolicy, RemovalState, RequestEnvelope,
-    ResponseEnvelope, ResponseOutcome, StorageRootSnapshot, StorageState, TorrentState,
+    AddTorrentBytesRequest, Command, ErrorCode, FilePriority, RemovalDataPolicy, RemovalState,
+    RequestEnvelope, ResponseEnvelope, ResponseOutcome, StorageRootSnapshot, StorageState,
+    TorrentState,
 };
 use crate::dht_views::{DhtObservationRuntime, inspection_view};
 use crate::diagnostics::{
@@ -39,7 +40,7 @@ use crate::incoming_seeding::{IncomingSeeding, IncomingSeedingError, SeedReconci
 use crate::speed::{PreparedSpeedHistory, SessionSpeedRecorder, SpeedHistoryRuntime};
 use crate::store::{
     ConfiguredStorageRoot, ManagedArtifactState, PreparedFileRecord, RemovalRecord, ResumeRecord,
-    SessionStore, StorageRootLocation, StoreError, StoredStorageRoot,
+    SessionStore, StorageRootLocation, StoreError, StoredStorageRoot, prepare_torrent_bytes,
 };
 use crate::tracker_views::TrackerViewModel;
 
@@ -652,6 +653,105 @@ impl ApplicationService {
             }
             Command::Snapshot => {}
         }
+        Ok(response)
+    }
+
+    pub async fn add_torrent_bytes(
+        &mut self,
+        request: AddTorrentBytesRequest,
+        source: Vec<u8>,
+    ) -> Result<ResponseEnvelope, ApplicationError> {
+        self.reap_finished().await?;
+        if !self.storage_roots.contains_key(&request.storage_root) {
+            let snapshot = self.store_mut()?.snapshot()?;
+            let known = snapshot
+                .storage
+                .roots
+                .iter()
+                .any(|root| root.root_id == request.storage_root);
+            return Ok(ResponseEnvelope::error(
+                request.request_id,
+                self.store_mut()?.revision()?,
+                if known {
+                    ErrorCode::StorageNeedsRepair
+                } else {
+                    ErrorCode::UnknownStorageRoot
+                },
+                if known {
+                    format!(
+                        "storage root {} is unavailable and needs repair",
+                        request.storage_root
+                    )
+                } else {
+                    format!("storage root {} is not configured", request.storage_root)
+                },
+            ));
+        }
+
+        let prepare_request = request.clone();
+        let prepared = match tokio::task::spawn_blocking(move || {
+            prepare_torrent_bytes(&prepare_request, source)
+        })
+        .await
+        .map_err(|error| ApplicationError::Join(error.to_string()))?
+        {
+            Ok(prepared) => prepared,
+            Err((code, message)) => {
+                return Ok(ResponseEnvelope::error(
+                    request.request_id,
+                    self.store_mut()?.revision()?,
+                    code,
+                    message,
+                ));
+            }
+        };
+        let torrent_id = prepared.torrent_id();
+        if let Some(active) = &self.active
+            && active.torrent_id != torrent_id
+        {
+            return Ok(ResponseEnvelope::error(
+                request.request_id,
+                self.store_mut()?.revision()?,
+                ErrorCode::Busy,
+                format!(
+                    "torrent {} already owns the download slot",
+                    active.torrent_id
+                ),
+            ));
+        }
+
+        let durable_result = self
+            .store_mut()?
+            .handle_prepared_torrent_bytes(&request, &prepared);
+        let response = match durable_result {
+            Ok(response) => response,
+            Err(error) => {
+                if error.is_resource_limit() {
+                    let _ = self.views.record_diagnostic(
+                        DiagnosticSeverity::Error,
+                        category::STORAGE_IO,
+                        "application_state_resource_limit",
+                        None,
+                        "Application state reached its configured resource limit",
+                        &[],
+                    );
+                }
+                return Err(error.into());
+            }
+        };
+        if !matches!(response.outcome, ResponseOutcome::Success { .. }) {
+            return Ok(response);
+        }
+        self.refresh_views()?;
+        self.views.record_diagnostic(
+            DiagnosticSeverity::Info,
+            category::LIFECYCLE_TORRENT,
+            "torrent_bytes_added",
+            Some(&torrent_id),
+            "Torrent metainfo bytes added to the session",
+            &[],
+        )?;
+        self.start_if_possible(&torrent_id).await?;
         Ok(response)
     }
 
@@ -3524,6 +3624,7 @@ mod tests {
     };
     use rusqlite::Connection;
     use sha1::{Digest, Sha1};
+    use sha2::Sha256;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, UdpSocket};
 
@@ -3532,12 +3633,13 @@ mod tests {
         handle_task_outcome,
     };
     use crate::{
-        CONTROL_VERSION, Command, ConfiguredStorageRoot, DeliveryPolicy, DhtLifecycleView,
-        DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity, FilePriority, OpenViewSetOptions,
-        OpenViewSetRequest, ProgressDisposition, ProgressReason, RemovalDataPolicy, RemovalState,
-        RequestEnvelope, ResponseOutcome, SessionStore, StorageState, SubscriptionSpec,
-        TorrentState, ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetError,
-        ViewSetOwner, ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdatePayload,
+        AddTorrentBytesRequest, CONTROL_VERSION, Command, ConfiguredStorageRoot, DeliveryPolicy,
+        DhtLifecycleView, DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity, FilePriority,
+        OpenViewSetOptions, OpenViewSetRequest, ProgressDisposition, ProgressReason,
+        RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseOutcome, SessionStore,
+        StorageState, SubscriptionSpec, TorrentState, ViewDeliveryPolicy, ViewPatch,
+        ViewProjection, ViewSelector, ViewSetError, ViewSetOwner, ViewSetUpdate, ViewSnapshot,
+        ViewSpec, ViewUpdatePayload,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -3605,6 +3707,27 @@ mod tests {
         info.extend_from_slice(&hashes);
         info.push(b'e');
         info
+    }
+
+    fn torrent_bytes_request(
+        request_id: &str,
+        source: &[u8],
+        start_content: bool,
+    ) -> AddTorrentBytesRequest {
+        let source_sha256 = Sha256::digest(source)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        AddTorrentBytesRequest {
+            version: CONTROL_VERSION,
+            request_id: request_id.to_owned(),
+            expected_revision: None,
+            storage_root: "downloads".to_owned(),
+            start_content,
+            skip_files: Vec::new(),
+            source_length: source.len() as u32,
+            source_sha256,
+        }
     }
 
     async fn read_peer_message(
@@ -3789,6 +3912,61 @@ mod tests {
             .expect("waiter task");
         assert_eq!(result, Err(ViewSetError::Closed));
         drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn torrent_bytes_metadata_only_add_restarts_without_payload_artifacts() {
+        let root = test_root("torrent-bytes-metadata-only");
+        let raw_info = multi_file_info();
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let mut source = b"d4:info".to_vec();
+        source.extend_from_slice(&raw_info);
+        source.push(b'e');
+        let mut service = ApplicationService::open(config(&root))
+            .await
+            .expect("open application");
+
+        let response = service
+            .add_torrent_bytes(
+                torrent_bytes_request("bytes-metadata-only", &source, false),
+                source,
+            )
+            .await
+            .expect("add torrent bytes");
+        assert!(matches!(response.outcome, ResponseOutcome::Success { .. }));
+        let resume = service
+            .store_mut()
+            .expect("store")
+            .load_resume(&torrent_id)
+            .expect("load imported torrent");
+        assert_eq!(resume.raw_info.as_deref(), Some(raw_info.as_slice()));
+        assert_eq!(resume.state, TorrentState::Paused);
+        assert!(!resume.desired_running);
+        let paths = torrent_storage_paths(&root.join("payload"), "multi", info_hash)
+            .expect("storage paths");
+        assert!(!paths.output.exists());
+        assert!(!paths.staging.exists());
+        assert!(!paths.part.exists());
+        service.shutdown().await.expect("shutdown application");
+        drop(service);
+
+        let mut reopened = ApplicationService::open(config(&root))
+            .await
+            .expect("reopen application");
+        let resume = reopened
+            .store_mut()
+            .expect("store")
+            .load_resume(&torrent_id)
+            .expect("restart imported torrent");
+        assert_eq!(resume.raw_info.as_deref(), Some(raw_info.as_slice()));
+        assert_eq!(resume.state, TorrentState::Paused);
+        assert!(!paths.output.exists());
+        assert!(!paths.staging.exists());
+        assert!(!paths.part.exists());
+        reopened.shutdown().await.expect("shutdown reopened");
+        drop(reopened);
         fs::remove_dir_all(root).expect("remove test root");
     }
 

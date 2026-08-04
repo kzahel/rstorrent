@@ -484,9 +484,7 @@ fn parse_path(
         source_hash.update((raw.len() as u64).to_be_bytes());
         source_hash.update(raw);
         let component = project_component(raw);
-        let next_length = encoded_length
-            .checked_add(component.len() + usize::from(count != 0))
-            .unwrap_or(usize::MAX);
+        let next_length = encoded_length.saturating_add(component.len() + usize::from(count != 0));
         if next_length > parser.limits.max_path_bytes {
             return Err(MetainfoError::UnsafePath {
                 file: Some(file),

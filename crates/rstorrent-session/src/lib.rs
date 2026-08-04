@@ -27,10 +27,10 @@ pub use application_connection::{
     ApplicationCallResult,
 };
 pub use control::{
-    CONTROL_VERSION, Command, ErrorCode, ErrorResponse, FilePriority, RemovalDataPolicy,
-    RemovalState, RequestEnvelope, ResponseEnvelope, ResponseOutcome, ServiceSnapshot,
-    StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot, StorageState,
-    TorrentSnapshot, TorrentState,
+    AddTorrentBytesRequest, CONTROL_VERSION, Command, ErrorCode, ErrorResponse, FilePriority,
+    RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope, ResponseOutcome,
+    ServiceSnapshot, StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot,
+    StorageState, TorrentSnapshot, TorrentState,
 };
 pub use diagnostics::{
     DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter, DiagnosticProfile,

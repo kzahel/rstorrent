@@ -1,6 +1,7 @@
 use rstorrent_protocol::magnet::{MAX_MAGNET_LENGTH, Magnet};
 
 const MAX_FILE_SELECTION_ENTRIES: usize = 4096;
+const MAX_FILE_INDEX: usize = 374_998;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -20,6 +21,21 @@ pub struct RequestEnvelope {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expected_revision: Option<String>,
     pub command: Command,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+pub struct AddTorrentBytesRequest {
+    pub version: u16,
+    pub request_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_revision: Option<String>,
+    pub storage_root: String,
+    #[serde(default = "default_true")]
+    pub start_content: bool,
+    #[serde(default)]
+    pub skip_files: Vec<u32>,
+    pub source_length: u32,
+    pub source_sha256: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -420,8 +436,7 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
             }
             let mut previous = None;
             for index in skip_files {
-                if usize::try_from(*index).map_or(true, |index| index >= MAX_FILE_SELECTION_ENTRIES)
-                {
+                if usize::try_from(*index).map_or(true, |index| index >= MAX_FILE_INDEX) {
                     return Err((
                         ErrorCode::InvalidRequest,
                         "file selection index exceeds the supported file bound".to_owned(),
@@ -452,8 +467,7 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
             }
             let mut previous = None;
             for index in file_indices {
-                if usize::try_from(*index).map_or(true, |index| index >= MAX_FILE_SELECTION_ENTRIES)
-                {
+                if usize::try_from(*index).map_or(true, |index| index >= MAX_FILE_INDEX) {
                     return Err((
                         ErrorCode::InvalidRequest,
                         "file selection index exceeds the supported file bound".to_owned(),
@@ -482,6 +496,71 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
         }
         Command::SetShowAddOptions { .. } => {}
         Command::Snapshot | Command::Shutdown => {}
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_add_torrent_bytes_request(
+    request: &AddTorrentBytesRequest,
+) -> Result<(), (ErrorCode, String)> {
+    if request.version != CONTROL_VERSION {
+        return Err((
+            ErrorCode::InvalidVersion,
+            format!(
+                "control version {} is unsupported; expected {CONTROL_VERSION}",
+                request.version
+            ),
+        ));
+    }
+    validate_identifier(&request.request_id, "request ID", MAX_REQUEST_ID_LENGTH)?;
+    if let Some(revision) = &request.expected_revision {
+        parse_revision(revision)?;
+    }
+    validate_identifier(&request.storage_root, "storage root", MAX_ROOT_ID_LENGTH)?;
+    if request.skip_files.len() > MAX_FILE_SELECTION_ENTRIES {
+        return Err((
+            ErrorCode::InvalidRequest,
+            format!("file selection exceeds {MAX_FILE_SELECTION_ENTRIES} entries"),
+        ));
+    }
+    let mut previous = None;
+    for index in &request.skip_files {
+        if usize::try_from(*index).map_or(true, |index| index >= MAX_FILE_INDEX) {
+            return Err((
+                ErrorCode::InvalidRequest,
+                "file selection index exceeds the supported file bound".to_owned(),
+            ));
+        }
+        if previous.is_some_and(|previous| previous >= *index) {
+            return Err((
+                ErrorCode::InvalidRequest,
+                "file selection indices must be sorted and unique".to_owned(),
+            ));
+        }
+        previous = Some(*index);
+    }
+    if request.source_length == 0
+        || request.source_length as usize
+            > rstorrent_protocol::metainfo::MAX_EXPLICIT_METAINFO_LENGTH
+    {
+        return Err((
+            ErrorCode::InvalidRequest,
+            format!(
+                "torrent source length must be 1..={} bytes",
+                rstorrent_protocol::metainfo::MAX_EXPLICIT_METAINFO_LENGTH
+            ),
+        ));
+    }
+    if request.source_sha256.len() != 64
+        || !request
+            .source_sha256
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+    {
+        return Err((
+            ErrorCode::InvalidRequest,
+            "torrent source SHA-256 must be 64 lowercase hexadecimal characters".to_owned(),
+        ));
     }
     Ok(())
 }
