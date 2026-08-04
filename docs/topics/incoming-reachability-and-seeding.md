@@ -6,9 +6,13 @@ Status: Tactical
 [`078`](../tactical/078-local-single-peer-tcp-seeding.md) completes the first
 campaign slice: one application-owned IPv4 loopback listener routes bounded
 incoming handshakes and seeds verified metadata and payload from eligible
-completed path-backed torrents across application restart. Multi-peer upload
-policy, persisted settings, actual-port advertisement, non-loopback binding,
-and NAT mapping remain future slices.
+completed path-backed torrents across application restart. Tactical
+[`082`](../tactical/082-bounded-multi-peer-upload-ownership.md) drafts the next
+multi-peer upload/accounting slice from pinned libtorrent defaults but is not
+yet implemented. It is now in progress by explicit maintainer direction
+without being promoted ahead of the readiness queue. Persisted settings,
+actual-port advertisement, non-loopback binding, and NAT mapping remain future
+slices.
 
 ## Purpose And Scope
 
@@ -21,8 +25,9 @@ and the evidence required to claim each step.
 
 This is a campaign and readiness record rather than one implementation
 tactical. Each implementing tactical must retain one bounded, falsifiable
-end-to-end outcome. The suggested sequence below names future slices without
-creating, numbering, or authorizing them.
+end-to-end outcome. The suggested sequence below distinguishes completed,
+drafted, and prospective slices; drafting and numbering a slice does not by
+itself authorize or prioritize implementation.
 
 The topic does not make PEX, local service discovery, uTP, BEP 55 hole
 punching, incoming MSE/PE, a remote daemon, or broad public-swarm seeding part
@@ -266,7 +271,7 @@ cancellation, lifecycle fences, and joined shutdown.
 NAT mapping, public discovery, settings UI, uTP, incoming encryption,
 multi-peer choking strategy, and ratio/time goals remain out of scope.
 
-### 2. Bounded multi-peer upload ownership and accounting
+### 2. [Bounded multi-peer upload ownership and accounting](../tactical/082-bounded-multi-peer-upload-ownership.md) — in progress
 
 Grow from one useful incoming peer to a coherent bounded upload owner:
 
@@ -274,15 +279,16 @@ Grow from one useful incoming peer to a coherent bounded upload owner:
 - admit, choke, unchoke, and rotate a bounded number of upload slots;
 - bound queued requests, reads, and serialized responses per peer and across
   the torrent;
-- add exact protocol and payload upload accounting plus useful rates;
+- add exact protocol and physical piece-payload upload accounting plus rates;
 - prevent slow readers and storage latency from starving unrelated work; and
 - retain prompt pause, completion-policy, removal, and shutdown joins.
 
 Controlled simultaneous RSTorrent and libtorrent leechers should prove
-fair progress, exact content, declared high-water marks, and cleanup. Mature
-tit-for-tat policy, optimistic unchoking parity, and public performance
-tuning may remain later work unless reference evidence shows that deferring
-them would force the wrong state shape.
+fair progress, exact content, declared high-water marks, and cleanup. The
+source-first draft adopts libtorrent's eight fixed slots, automatically
+derived optimistic slot, 15/30-second cadence, and complete-seed round-robin
+20-piece policy now because those choices shape ownership and accounting.
+Downloading-torrent tit-for-tat and public performance tuning remain later.
 
 ### 3. Persisted listener, upload, and seeding settings
 
@@ -454,10 +460,13 @@ with all six gates and their exact execution record. It establishes local
 single-peer TCP listening and payload seeding only; it is not LAN/public
 reachability, listener advertisement, or NAT evidence.
 
-The next campaign boundary remains bounded multi-peer upload ownership and
-accounting: coordinated incoming/total budgets, multiple fair upload slots,
-exact useful-upload counters and rates, slow-reader isolation, and controlled
-simultaneous RSTorrent/libtorrent leechers. A tactical must be explicitly
-authorized before that work begins. Persisted settings follow the enforcing
-multi-peer owner; truthful tracker/DHT port use and gateway mapping remain
-later independent slices.
+Tactical
+[`082`](../tactical/082-bounded-multi-peer-upload-ownership.md) now records the
+next campaign boundary: coordinated incoming/total budgets, eight fair upload
+slots, exact physical-payload counters and rates, slow-reader isolation, and
+controlled simultaneous RSTorrent/libtorrent leechers. Its limits and tuning
+default to pinned libtorrent 2.0.13 wherever the semantics match, with explicit
+RSTorrent deviations. It is executing by explicit maintainer direction
+without changing the broader readiness queue. Persisted settings follow the
+enforcing multi-peer owner; truthful tracker/DHT port use and gateway mapping
+remain later independent slices.
