@@ -332,6 +332,12 @@ that scope and its cleanup or compatibility rules explicitly.
   proposed; replaces Android's eager SAF descriptor manifest with bounded
   dynamic acquisition and one session-wide Rust file pool shared with path
   storage.
+- [`068-active-and-batch-table-interaction.md`](068-active-and-batch-table-interaction.md):
+  superseded; established synchronized active-row and batch-selection
+  mechanics before product trial exposed ambiguous shared action scope.
+- [`069-current-within-table-selection.md`](069-current-within-table-selection.md):
+  complete; constrains current row to checked selection and makes every table
+  action target that one explicit selection set.
 - [`070-actionable-torrent-error-status.md`](070-actionable-torrent-error-status.md):
   complete; makes torrent error status explanatory on hover and focus, then
   routes activation to the focused General error detail.

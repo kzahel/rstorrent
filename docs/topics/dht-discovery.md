@@ -248,9 +248,13 @@ table, or a runtime that cannot be stopped and resumed cleanly.
 Planned Tactical [`065`](../tactical/065-dht-observatory.md) adds a read-only
 product inspection surface without changing these protocol deferrals. It
 projects bounded aggregate counters, all 160 IPv4 XOR-distance bucket
-occupancies, and at most 16 active lookup summaries. The first slice explicitly
-does not expose raw routing-node endpoints or DHT controls and does not change
-the Partial protocol-support claim.
+occupancies with oldest-response age, and at most 16 active lookup summaries
+with closest-responded prefix depth and last-improvement age. The static visual
+shows prefix depths `0..=31` directly and preserves every deeper bucket in an
+explicit aggregate tail; it does not treat statistically unlikely depths as
+unreachable. The first slice explicitly does not expose raw routing-node
+endpoints or DHT controls and does not change the Partial protocol-support
+claim.
 
 ## Maintenance Contract
 

@@ -138,8 +138,13 @@ active connections. One central tab vocabulary owns torrent/session scope,
 and the `swarm-lifecycle` plus 1,000-row fixtures cover state legibility,
 responsive layout, accessibility, and bounded rendering. Tactical
 [`065`](../tactical/065-dht-observatory.md) makes DHT a
-session observatory led by a 160-bucket XOR-distance ribbon and bounded lookup
-summaries, with no force graph, globe, or raw node table in the first slice.
+session observatory led by a static shared-prefix-depth distribution with
+mirrored replacement occupancy, freshness, a truthful deeper-band summary, and
+bounded lookup-convergence rows. An optional presentation toggle shows the
+literal 160-slot engine array using the same observation, making the normalized
+encoding teachable and screenshots diagnostic without introducing chart
+inspection as required interaction. No force graph, globe, or raw node table
+enters the first slice.
 Completed Tactical [`066`](../tactical/066-smooth-session-speed-history.md)
 makes Speed a session-owned range-selected history rendered by local high-DPI
 Canvas code.
@@ -214,22 +219,17 @@ discoverable actions but cannot be their only access path. Density may adapt
 without removing information or making controls too small to operate.
 
 The continuing actionable-table interaction contract lives in
-[`table-interaction.md`](table-interaction.md). It distinguishes one active row
-that owns detail from checked batch-command targets, while treating keyboard
-row focus as mechanics that follow the active row rather than a third visible
-selection. Row-body activation retains that meaning during batch selection;
-Arrow navigation changes the active row and detail, Shift+Arrow extends or
-shrinks the batch range, and Command/Control+A selects the complete current
-filtered table. Actionable tables retain visible checkboxes; read-only
-inspection tables do not gain batch behavior without row actions. The current
-implementation still follows Tacticals `058`--`059` until a bounded tactical
-applies this successor direction.
-
-Tactical `070` makes an error-bearing torrent status a nested explanatory
-control without disturbing those row gestures. Hover exposes its bounded
-error, keyboard and assistive technology receive the same context, and
-activation establishes a singleton current row before opening and focusing
-the General error detail.
+[`table-interaction.md`](table-interaction.md). Tactical `069` implements its
+current-within-selection model: one singular current row owns detail and is
+always checked, while every checked row is an action target. Row-body and bare
+keyboard navigation collapse to one current row; checkbox, modifier, range,
+and select-all gestures build the selection. Actionable tables retain visible
+checkboxes; read-only inspection tables do not gain batch behavior without row
+actions. Tactical `070` makes an error-bearing torrent status a nested
+explanatory control without disturbing those row gestures. Hover exposes its
+bounded error, keyboard and assistive technology receive the same context, and
+activation establishes a singleton current row before opening and focusing the
+General error detail.
 
 Torrent-detail tab selection is a paint-only state change. Labels retain the
 same font metrics, the underline is out of layout flow, and bounded count

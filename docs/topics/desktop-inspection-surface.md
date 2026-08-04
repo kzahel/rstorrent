@@ -185,8 +185,11 @@ privacy posture. Tactical
 [`064`](../tactical/064-registry-backed-swarm-inspection.md) now projects the
 retained peer registry as the bounded, live Swarm detail. The remaining
 accepted detail direction is bounded by planned Tactical
-[`065`](../tactical/065-dht-observatory.md): DHT leads with truthful XOR-bucket
-occupancy and active lookups rather than a raw node table. Completed Tactical
+[`065`](../tactical/065-dht-observatory.md): DHT leads with a static shared-
+prefix-depth distribution, routing freshness, and lookup convergence rather
+than a raw node table or required chart interaction; a presentation-only mode
+can expose the literal 160-slot engine array for teaching and screenshot
+diagnosis. Completed Tactical
 [`066`](../tactical/066-smooth-session-speed-history.md) gives Speed bounded
 live plus durable coarse session history, range-selected delivery, and a hand-
 rolled RAF-smooth Canvas renderer. The remaining inspection design includes:
