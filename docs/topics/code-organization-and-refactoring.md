@@ -2,7 +2,9 @@
 
 Status: Living guidance and repository snapshot, refreshed on 2026-08-04
 after Tacticals [`079`](../tactical/079-engine-driver-source-shape.md) and
-[`075`](../tactical/075-ephemeral-application-state.md).
+[`075`](../tactical/075-ephemeral-application-state.md). Focused Tactical
+[`080`](../tactical/080-session-view-subsystem-boundaries.md) is planned but
+implementation has not started.
 
 Topic: `code-organization-and-refactoring`
 
@@ -122,7 +124,8 @@ owns one tightly coupled deterministic state machine.
 
 ### 1. Session View And View-Set Boundaries
 
-This is the best current standalone refactor.
+This is the best current standalone refactor and is now bounded by planned
+Tactical [`080`](../tactical/080-session-view-subsystem-boundaries.md).
 
 `views.rs` contains public contract values, projection models, hub state,
 subscription queues, activity mapping, snapshot and patch construction, and
@@ -202,10 +205,10 @@ automatically:
   algorithms while leaving React focus, measurement, and rendering ownership
   in the component.
 
-Tactical [`077`](../tactical/077-shared-overlay-menu-system.md) has removed the
-shared overlay concern from this list. Choose among the remaining seams based
-on the next web feature's pressure; do not adopt a data-grid or validation
-framework merely to reduce file length.
+Tactical [`077`](../tactical/077-shared-overlay-menu-system.md) owns the shared
+overlay concern separately, so it is not included in this refactor list.
+Choose among the remaining seams based on the next web feature's pressure; do
+not adopt a data-grid or validation framework merely to reduce file length.
 
 ### 5. Android Product Graduation
 
@@ -245,8 +248,8 @@ first seeding slice deliberately excludes Android product work.
 
 There should not be one umbrella refactor tactical.
 
-- If the next work is a dedicated structural improvement, create a focused
-  tactical for the session view/view-set subsystem.
+- Planned Tactical `080` is the selected dedicated structural improvement;
+  implementation remains paused until separately requested.
 - If the next work is the already planned seeding capability, implement
   Tactical `078` directly; its owner map already includes the bounded
   extractions the feature needs.
@@ -277,6 +280,10 @@ lifecycle, or navigation problem remains.
 
 ## History
 
+- **2026-08-04:** Selected the session view/view-set boundary and created
+  Tactical `080` with byte-stable generated-contract, one-way dependency,
+  owner/task/lock, test-layout, and adapter-regression gates. No implementation
+  started.
 - **2026-08-04:** Created the living topic from the repository-wide review
   recorded in Tactical `079`, refreshed after its completed extraction and
   Tactical `075`, and ranked session views ahead of selective storage for a

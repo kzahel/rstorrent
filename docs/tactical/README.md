@@ -379,6 +379,10 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; extracts download-control observation and bounded content-storage
   execution from the engine driver and divides its private test suite by owner
   without changing behavior, crate boundaries, or public API.
+- [`080-session-view-subsystem-boundaries.md`](080-session-view-subsystem-boundaries.md):
+  planned; separates portable view contracts, current projection models,
+  legacy subscriptions, leased view-set delivery, diffs, and ranges behind
+  one-way private dependencies without changing API or behavior.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
