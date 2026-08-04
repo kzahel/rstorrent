@@ -383,6 +383,11 @@ that scope and its cleanup or compatibility rules explicitly.
   planned; separates portable view contracts, current projection models,
   legacy subscriptions, leased view-set delivery, diffs, and ranges behind
   one-way private dependencies without changing API or behavior.
+- [`081-v1-torrent-byte-intake.md`](081-v1-torrent-byte-intake.md): planned;
+  separates exact source provenance from operational metadata, adds bounded
+  v1 outer-metainfo and tracker-tier persistence, and carries one semantic
+  byte-intake operation through WebSocket, HTTP automation, and raw Tauri IPC
+  without adding visible picker UX or chunking.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

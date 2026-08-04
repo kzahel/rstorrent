@@ -51,6 +51,12 @@ polling and Tauri Channel delivery. Shared generated Rust/TypeScript/Kotlin
 semantic artifacts continue to compile, but Android presentation intentionally
 does not mirror this dense desktop diagnostic surface.
 
+Planned Tactical `081` adds adapter-level v1 `.torrent` byte intake through
+the ordinary browser WebSocket and raw in-process Tauri IPC, plus HTTP
+automation, without adding a visible file picker. The subsequent presentation
+slice will let the shared Add flow select a browser `File`, read its
+`ArrayBuffer`, and call that transport-neutral client operation.
+
 ## Scope
 
 This topic owns the product-client surfaces above the shared application

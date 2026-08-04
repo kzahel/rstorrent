@@ -23,7 +23,10 @@ selection, checkpoint, publication, repair, and removal authority. Tactical
 with an atomic all-wanted managed full recheck. Tactical `075` implements the
 accepted bounded ephemeral application-state mode with private session and
 metrics databases, explicit page maxima, no profile files, and unchanged
-external payload-root semantics.
+external payload-root semantics. Planned Tactical `081` now records the
+accepted source boundary: exact original magnet or outer-metainfo input is
+provenance, while hash-authorized `raw_info`, normalized trackers and hints,
+and ordinary resume state remain operational SQLite authority.
 
 ## Scope
 
@@ -153,11 +156,12 @@ filesystem journal.
 Payload roots remain separate capabilities. Ephemeral application state does
 not claim that a started download writes no payload, staging, or part data; a
 fully memory-backed content store requires its own engine and resource design.
-Likewise, accepting this mode does not decide how a future original `.torrent`
-source is retained in durable mode. Tactical
-[`075`](../tactical/075-ephemeral-application-state.md) records the bounded
-implementation, page/RSS measurements, controlled loopback lifecycle, and
-no-file evidence.
+The accepted Tactical `081` boundary retains a future exact original source in
+the same private in-memory session database, never in a temporary or payload
+file, so it disappears with the rest of the ephemeral catalog. Tactical
+[`075`](../tactical/075-ephemeral-application-state.md) records the implemented
+page/RSS measurements, controlled loopback lifecycle, and no-file evidence;
+Tactical `081` must prove the added source BLOB obeys those bounds.
 
 ### Verified metadata is durable
 
@@ -188,6 +192,30 @@ limits are session-owned numeric capabilities rather than consequences of a
 bencode byte constant. Excess raw-info bytes, piece count, or encoded have
 state fails as a typed internal resource limit before a write transaction;
 restart reparses exact stored bytes under the durable metainfo profile.
+
+### Accepted original-source and explicit-import boundary
+
+Planned Tactical `081` advances the schema so a torrent no longer requires a
+magnet source. Operational state retains exact `raw_info`, normalized tracker
+tiers and peer hints, and current resume intent. A separate one-source record
+retains either the bounded verbatim submitted magnet or the bounded complete
+outer `.torrent` bytes plus length and SHA-256. Existing rows are marked
+canonicalized unless one retained successful add receipt unambiguously proves
+their verbatim submission; bounded request receipts are evictable retry
+infrastructure and never become source authority.
+
+The exact outer source is a provenance/export BLOB in SQLite, not runtime
+authority and not a payload-adjacent or profile sidecar file. Ordinary startup
+does not select or parse it. Durable mode therefore keeps one transactional
+backup/removal boundary; ephemeral mode gets the same semantics in memory
+without a path. A later explicit export may use those exact bytes, while a
+source-less export remains synthesized and must be labeled accordingly.
+
+Explicit `.torrent` and durable `raw_info` rise together to 16 MiB under the
+existing structural limits. Peer-controlled BEP 9 metadata remains one MiB.
+This is a context-specific hostile-input bound, not trust in a local filename
+or authenticated caller. Original-source bytes and tracker credentials remain
+sensitive and are excluded from routine snapshots and logs.
 
 ### Verified-piece state is essential resume state
 

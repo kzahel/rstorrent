@@ -40,6 +40,10 @@ Tactical `057` adds a retained producer-throughput matrix over the exact
 production view combinations. It changes no semantic API, but makes observer
 cost, serialized update volume, queue high water and reset recovery explicit
 hardware-profile evidence.
+Planned Tactical `081` extends tracker rows with truthful metainfo source and
+HTTP/HTTPS configured-but-unsupported state while keeping credential-bearing
+URL components out of the projection. It does not make the view or diagnostics
+the tracker configuration authority.
 
 ## Purpose And Scope
 

@@ -8,7 +8,10 @@ startup operations and classified the remaining live failure at content-peer
 admission rather than tracker intake. Tactical `043` makes the deterministic
 schedule's retained lifecycle the authoritative inspectable state and proves
 it through the live browser surface. Other transports and metainfo tracker
-tiers remain unimplemented.
+tiers remain unimplemented. Planned Tactical `081` owns the first persisted
+BEP 12 metainfo tiers and source attribution while retaining HTTP/HTTPS
+trackers as truthfully unsupported configuration rather than implementing
+those transports.
 
 ## Scope
 
@@ -245,3 +248,9 @@ session-wide resource policy. Incoming listening and NAT traversal are
 separate, lower-priority work. The headless public-torrent comparator adds
 useful live evidence but cannot replace controlled protocol and libtorrent
 tests.
+
+Tactical `081` is the accepted bounded exception to the first gap: it parses
+and persists up to 32 valid unique `announce-list`/`announce` URLs, preserves
+compact tier grouping and metainfo source, feeds only UDP rows into the
+existing manager, and projects retained HTTP/HTTPS rows as unsupported. It
+does not implement their wire protocols or broaden tracker authentication.

@@ -16,6 +16,12 @@ is numeric rather than byte-derived. Controlled libtorrent exchange remains
 green in both directions at the unchanged one-MiB BEP 9 maximum. This adds no
 product `.torrent` intake or broader protocol claim.
 
+Planned Tactical [`081`](../tactical/081-v1-torrent-byte-intake.md) authorizes
+bounded v1 outer-metainfo intake and BEP 12 tier retention over the existing
+UDP tracker runtime. This plan changes no support row until deterministic,
+runtime, and controlled libtorrent evidence is recorded; HTTP/HTTPS tracker
+transport, v2/hybrid integrity, and the one-MiB BEP 9 maximum remain unchanged.
+
 ## Purpose And Claim Policy
 
 This topic maps product behavior to normative BitTorrent Enhancement Proposals

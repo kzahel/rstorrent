@@ -16,7 +16,10 @@ host: bounded Basic authentication covers static, health, HTTP, and WebSocket
 routes; the gateway still enforces the exact public HTTPS Origin; and the
 production React build selects the same origin explicitly. This is not the
 future relay, device-authentication, encryption, or stable-public-compatibility
-campaign, which remains unauthorized and unimplemented.
+campaign, which remains unauthorized and unimplemented. Planned Tactical
+`081` extends the same connection with one declared, one-frame binary
+`.torrent` attachment while retaining the 64-KiB text bound; HTTP remains an
+explicit automation adapter and Tauri uses raw in-process IPC.
 
 ## Purpose And Scope
 
@@ -131,6 +134,13 @@ Every capable adapter exposes the same operations:
 - detach delivery without necessarily destroying the view set;
 - close a view set; and
 - close the client connection.
+
+Planned Tactical `081` adds one bounded byte-bearing semantic operation. The
+ordinary browser declares its metadata in a text frame, waits for admission,
+then sends exactly one correlated binary message. HTTP carries a raw
+`application/x-bittorrent` body for automation, while Tauri supplies a raw IPC
+body in process. The attachment is not an arbitrary data channel, does not
+carry payload pieces, and does not raise ordinary JSON/text limits.
 
 WebSocket creation does not depend on an HTTP request. The socket can open,
 update and close view sets directly. HTTP remains a complete alternative, not

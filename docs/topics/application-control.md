@@ -34,7 +34,10 @@ storage check without exposing paths, handles, or engine tasks.
 Tactical `075` keeps that semantic contract and its request receipts intact in
 an explicitly selected, private, bounded in-memory application-state mode.
 SQLite `FULL` now has the typed `resource_limit` response classification in
-both persistence modes.
+both persistence modes. Planned Tactical `081` adds one byte-bearing v1
+metainfo operation beside the JSON command union: source length and SHA-256
+join semantic request identity, while WebSocket, HTTP, and Tauri adapters carry
+the bytes without paths or base64.
 
 ## Scope
 
@@ -70,6 +73,14 @@ intent into durable state and engine lifecycle operations. Peer messages,
 piece buffers, SQL rows, logs, and task handles are not part of the contract.
 Structured observability remains separate from command responses and product
 state.
+
+A bounded byte attachment may accompany a closed semantic operation when the
+intent itself is binary, as for planned `.torrent` intake. The request still
+owns version, request ID, optional expected revision, established storage-root
+identity, start intent, selection, exact source length, and digest. Durable
+receipt replay compares the digest and normalized options rather than storing
+bytes in JSON. Adapters may frame or carry the attachment differently, but no
+adapter gains alternate mutation, duplicate, revision, or storage policy.
 
 Application views may expose a derived progress assessment without promoting
 it to a second durable state machine. The assessment distinguishes an active
