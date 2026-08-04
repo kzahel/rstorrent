@@ -48,6 +48,12 @@ total count and stable offset, so accepted libtorrent-scale catalogs do not
 require one rendered snapshot or whole-catalog patch. The existing 16-MiB
 snapshot ceiling is a page bound. It does not make the view or
 diagnostics the tracker configuration authority.
+Planned Tactical
+[`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
+adds one small complete-replacement client-settings projection to the existing
+always-present torrent-list view. It distinguishes configured intent from
+active/effective listener and limit state without adding a named view, lease,
+queue, task, or persisted runtime observation.
 
 ## Purpose And Scope
 

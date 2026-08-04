@@ -395,6 +395,15 @@ that scope and its cleanup or compatibility rules explicitly.
   exact physical payload accounting. Simultaneous two-RSTorrent/two-libtorrent
   clients independently verified four complete copies while all declared
   limits and joined cleanup held.
+- [`083-shared-torrent-file-picker.md`](083-shared-torrent-file-picker.md):
+  complete; adds one shared browser/Tauri torrent-file chooser, bounded binary
+  intake through the active adapter, server-derived source identity, initial
+  all-file selection, and headless WebSocket product evidence.
+- [`084-persisted-client-connection-and-seeding-settings.md`](084-persisted-client-connection-and-seeding-settings.md):
+  planned; defines a typed settings subsystem and one atomic persisted group
+  for loopback listener policy, the global peer ceiling, and payload upload
+  slots through startup enforcement, existing application transports and
+  views, and the shared browser/Tauri Settings surface.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

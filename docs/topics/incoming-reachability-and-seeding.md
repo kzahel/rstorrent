@@ -6,9 +6,11 @@ Status: Tacticals
 [`078`](../tactical/078-local-single-peer-tcp-seeding.md) and
 [`082`](../tactical/082-bounded-multi-peer-upload-ownership.md) complete local
 incoming TCP seeding through a bounded multi-peer upload owner with exact
-physical-payload accounting. Persisted settings, actual-port advertisement,
-non-loopback binding, and NAT mapping remain future slices. This explicitly
-directed completion did not change the broader readiness queue.
+physical-payload accounting. Planned Tactical
+[`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
+defines the first persisted listener, connection-limit, and upload-slot
+settings slice. Actual-port advertisement, non-loopback binding, finite
+bandwidth, seeding goals, and NAT mapping remain future slices.
 
 ## Purpose And Scope
 
@@ -300,16 +302,21 @@ ten-peer evidence proves the eight-slot ceiling, one optimistic slot, fair
 rotation, slow-writer isolation, cancellation fencing, and joined cleanup.
 Downloading-torrent tit-for-tat and public performance tuning remain later.
 
-### 3. Persisted listener, upload, and seeding settings
+### 3. Persisted client connection and seeding settings — planned
 
-Give the application service typed, enforced, restartable settings for the
-listener policy, pending and established incoming limits, upload slots, and
-bandwidth policy. Add seeding goals only after the preceding slice supplies
-authoritative counters and lifecycle transitions.
+Tactical
+[`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
+plans one typed, atomic settings group for loopback listener policy, the
+ordinary session-wide peer ceiling, and piece-payload upload slots. It adopts
+the pinned libtorrent defaults where existing owners have equivalent
+semantics while preserving listener-disabled as RSTorrent's default.
 
-This slice owns setting validation, defaults, restart versus live-apply
-semantics, durable application authority, generated contracts where needed,
-and equivalent headless behavior. It does not require visible settings UI.
+The slice owns validation, typed SQLite persistence, restart-applied
+configured-versus-active semantics, startup enforcement, generated contracts,
+the shared browser/Tauri Settings surface, and equivalent headless behavior.
+Pending-handshake and incoming-slack tuning remain internal safety policy.
+Finite bandwidth and ratio/time seeding goals wait for their own enforcing and
+durability owners.
 
 ### 4. Truthful tracker and DHT reachability
 
@@ -439,15 +446,13 @@ high-water marks, terminal owner counts, and what the evidence does not prove.
 
 ## Open Decisions
 
-After Tactical `082`, the campaign direction does not yet settle:
+After planned Tactical `084`, the campaign direction does not yet settle:
 
-- default listener policy and fixed-port posture per product platform;
 - whether automatic port fallback is ever allowed after a fixed bind fails;
 - whether the temporary rule that a desired-running complete torrent seeds
   automatically should become a distinct durable seeding intent;
-- whether listener, connection, upload-slot, timeout, bandwidth, and seeding
-  settings apply live or on service restart, and how invalid persisted values
-  recover;
+- whether a later slice should make listener, connection-limit, or upload-slot
+  changes live, including the required rebind, eviction, and regrant behavior;
 - when ratio and elapsed-time goals become product settings;
 - how to choose among multiple interfaces or successful external mappings;
 - how VPN, metered networks, Android background lifecycle, and local-network
@@ -457,9 +462,9 @@ After Tactical `082`, the campaign direction does not yet settle:
 - when incoming MSE/PE, IPv6 firewall pinholes, LSD, PEX, or BEP 55 become
   independently justified tacticals.
 
-The next settings tactical should reuse the enforcing owners and adopted
-defaults rather than expose placeholders, while leaving external-port and
-multi-interface policy for their focused slices.
+Tactical `084` resolves the initial default, bounds, persistence authority,
+restart semantics, and corrupt-row behavior. External-port and
+multi-interface policy remain focused later slices.
 
 ## Campaign Checkpoint And Next Action
 
@@ -469,6 +474,9 @@ coordinated incoming/total budgets, eight fair upload slots, exact physical-
 payload counters and rates, slow-reader isolation, and controlled simultaneous
 RSTorrent/libtorrent evidence. Its limits and tuning default to pinned
 libtorrent 2.0.13 wherever the semantics match, with explicit RSTorrent
-deviations. Persisted settings are the next boundary in this vertical story;
-truthful tracker/DHT port use and gateway mapping remain later independent
-slices.
+deviations. Planned Tactical
+[`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
+is the next boundary in this vertical story: a typed settings subsystem and
+end-to-end persisted listener/global-peer/upload-slot group through the shared
+Settings surface. Truthful tracker/DHT port use and gateway mapping remain
+later independent slices.

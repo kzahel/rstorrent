@@ -401,6 +401,13 @@ future server.
   Those controls should extend application network prerequisites while
   preserving torrent intent; VPN-grade leak prevention requires explicit
   Android network binding and race analysis.
+- Planned Tactical
+  [`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
+  splits the shared React Settings dialog into focused appearance, download,
+  and connection/seeding sections. Browser-hosted and Tauri clients receive
+  the same atomic persisted loopback-listener/global-peer/upload-slot form;
+  Android receives generated contract coverage but no Compose settings screen
+  in that slice.
 - No HTTP playback server exists.
 
 Tacticals `008` and `009` record the implemented contract, exact controlled

@@ -1,0 +1,716 @@
+# Tactical 084: Persisted Client Connection And Seeding Settings
+
+Status: Planned on 2026-08-04 after maintainer direction to persist basic
+client settings and establish a deliberate settings schema and module boundary.
+This planning commit does not authorize implementation.
+
+Topics: `incoming-reachability-and-seeding`, `client-persistence`,
+`application-control`, `application-view-api`, `client-surfaces`,
+`code-organization-and-refactoring`, `capability-readiness`
+
+Dependencies: completed Tacticals
+[`033`](033-headless-view-set-foundation.md),
+[`048`](048-unified-view-delivery-and-tauri-migration.md),
+[`060`](060-multiplexed-application-websocket.md),
+[`075`](075-ephemeral-application-state.md),
+[`078`](078-local-single-peer-tcp-seeding.md),
+[`080`](080-session-view-subsystem-boundaries.md), and
+[`082`](082-bounded-multi-peer-upload-ownership.md) establish the durable
+revisioned store, generated and transported application contract, leased view
+delivery, incoming listener, settings-adjacent source boundaries, and enforcing
+peer/upload owners used by this slice.
+
+## Decision And Motivation
+
+Persist the first engine-affecting client settings and carry them through one
+real product path: typed application state, SQLite migration, startup
+enforcement, generated contracts, the ordinary browser and Tauri adapters, and
+the shared React Settings dialog.
+
+RSTorrent already has settings-related infrastructure, but not one coherent
+engine-settings owner:
+
+- SQLite persists `default_root` and `show_add_options` in a singleton
+  `storage_settings` row;
+- browser-local appearance and navigation preferences use validated local
+  storage independently from application state;
+- `RequestEnvelope`, durable revisions and receipts, `ServiceSnapshot`, leased
+  views, `POST /api/v1/commands`, the multiplexed WebSocket, Tauri dispatch,
+  generated TypeScript/JSON Schema, and UniFFI provide reusable transport and
+  contract machinery; and
+- listener, peer-budget, upload-slot, and timeout policy currently enter
+  through immutable `ApplicationConfig` fields and are not loaded from the
+  profile database, exposed by the application contract, or editable through
+  a product client.
+
+Do not add the new values directly to the current 6,700-line
+`application.rs`, 6,200-line `store.rs`, 800-line `control.rs`, and monolithic
+Settings dialog. This feature supplies a concrete extraction seam: portable
+settings values and validation, typed settings persistence, and conversion
+from configured values to runtime owner inputs change together and can be
+tested without torrent lifecycle, socket, or UI infrastructure.
+
+The slice is intentionally smaller than a generic settings system. It adds
+only settings enforced by Tactical `082`'s existing owners:
+
+1. local incoming TCP listener policy;
+2. the ordinary session-wide peer connection ceiling; and
+3. the session-wide piece-payload upload-slot ceiling.
+
+Finite bandwidth, ratio/time seeding goals, pending-handshake tuning, incoming
+slack, upload request/read/writer bounds, timeout tuning, and public
+reachability do not enter the schema before their own enforcing and product
+semantics exist.
+
+## Desired Outcome And Stopping Condition
+
+The tactical stops when all of the following are true:
+
+- one production `ClientSettings` contract owns exact field meanings,
+  defaults, ranges, serialization, generated declarations, and conversion to
+  existing engine owners;
+- the default is listener disabled, 200 ordinary session connections, and
+  eight payload upload slots, preserving the current product listener posture
+  while adopting Tactical `082`'s pinned libtorrent defaults for the two
+  equivalent limits;
+- listener policy is exactly disabled, OS-selected IPv4 loopback, or a fixed
+  IPv4 loopback port from 1,024 through 65,535;
+- configured ordinary peer connections are bounded from 1 through 2,000 and
+  remain subject to the existing descriptor-derived effective clamp and fixed
+  incoming slack of ten;
+- configured payload upload slots are bounded from 0 through 50; zero keeps
+  every interested peer choked for piece payload without claiming that the
+  listener, handshake, or BEP 9 metadata path is disabled;
+- a typed SQLite singleton row, schema migration, constraints, and atomic
+  full-settings mutation persist one coherent desired configuration under the
+  existing revision, receipt, replay, conflict, and rollback rules;
+- every existing supported schema version migrates to the safe default without
+  changing listener behavior, and malformed durable settings fail closed
+  rather than being silently clamped, discarded, or replaced;
+- durable settings are loaded before `PeerBudget`, `UploadScheduler`, and
+  `IncomingPeerService` are constructed;
+- the active service retains the exact settings used to construct its owners,
+  while later mutations update only configured intent and truthfully report
+  whether an application restart is required;
+- reverting configured intent to the active values clears restart-required
+  state without restarting, while closing and reopening the durable profile
+  makes the configured values active;
+- restart-required mutations are rejected for an ephemeral profile because
+  its database cannot survive the restart needed to apply them;
+- a persisted fixed-port bind conflict does not make the profile or Settings
+  UI inaccessible: the application opens with no incoming listener, reports a
+  bounded typed bind failure, and can persist a recoverable replacement;
+- configured settings remain distinct from active settings, the
+  descriptor-clamped effective connection limit, actual bound loopback port,
+  and listener bind status;
+- one atomic `SetClientSettings` application command uses the existing generic
+  HTTP, WebSocket, Tauri, and UniFFI command paths without a settings-specific
+  route, daemon, or side channel;
+- the ordinary service snapshot exposes durable configured intent, while the
+  small torrent-list application view also exposes active/effective/listener
+  runtime state and publishes an exact settings replacement when intent or
+  observation changes;
+- the React Settings dialog is divided into focused appearance, downloads,
+  and connection/seeding sections, and the new section saves the whole typed
+  group atomically with clear loopback-only, restart, effective-limit, and
+  bind-failure language;
+- browser-hosted and Tauri clients use the same React controls and semantic
+  command, while Android receives regenerated compile-checked contract values
+  without adding a Compose settings screen in this slice;
+- deterministic schema, migration, command, snapshot/view, startup,
+  configured-versus-active, bind-failure, limit-enforcement, generated
+  contract, component, headless product, and controlled peer evidence pass;
+  and
+- the tactical and every owning topic record the implemented boundary,
+  evidence, deliberate deviations, and remaining live-mutation and
+  reachability work.
+
+## Product Settings Contract
+
+### Portable configured values
+
+The Rust contract is a closed typed group, not a string-keyed bag:
+
+```text
+ClientSettings
+  listener: ListenerPolicy
+  peer_connection_limit: u32
+  upload_slots: u16
+
+ListenerPolicy
+  disabled
+  automatic_loopback
+  fixed_loopback { port: u16 }
+```
+
+JSON uses the existing tagged-enum convention. A fixed port is valid only from
+1,024 through 65,535. `automatic_loopback` binds `127.0.0.1:0` and reports the
+actual OS-selected port. It is not an alias for all interfaces, LAN access,
+public access, tracker advertisement, DHT announcement, or router mapping.
+
+`peer_connection_limit` is the configured ordinary session-wide ceiling
+shared by outgoing connecting sockets, outgoing established sockets, and
+accepted incoming sockets. It is not an incoming-only limit and does not
+replace the existing 30-established/30-pending outbound per-torrent working
+sets. At runtime the configured value is reduced by Tactical `082`'s existing
+file-descriptor calculation. Accepted incoming sockets retain the fixed ten-
+connection slack above that effective normal ceiling. Slack is safety/replacement
+policy and is not user configurable here.
+
+`upload_slots` limits peers simultaneously granted piece-payload upload across
+all complete seeds. It does not mean torrents, connections, request
+descriptors, read jobs, file handles, or bytes per second. The existing
+automatically derived optimistic slot remains inside this total. A value of
+zero is a deliberate payload-choke setting, not listener disablement.
+
+### Defaults and input bounds
+
+| Setting | Default | Accepted values | Authority |
+| --- | ---: | --- | --- |
+| Listener | Disabled | disabled, automatic loopback, fixed loopback 1,024--65,535 | Preserve current RSTorrent product/security posture; JSTorrent's restart-required auto/manual shape is corroborating UX evidence. |
+| Ordinary session peers | 200 | 1--2,000 before FD clamp | Adopt pinned libtorrent `connections_limit = 200`; use JSTorrent's current 2,000 product-input maximum as a bounded UI/API ceiling, not as an engine allocation promise. |
+| Payload upload slots | 8 | 0--50 | Adopt pinned libtorrent `unchoke_slots_limit = 8`; retain zero semantics from both references and JSTorrent's current bounded product-input maximum. |
+
+`ClientSettings::default()` is the production default authority and reads the
+existing engine constants rather than restating 200 and eight in application
+code. Migration inserts the default through bound parameters derived from that
+constructor. Tests read the production constructor. SQLite `CHECK`
+constraints and generated numeric bounds remain independent corruption and
+hostile-input defenses and receive parity tests against the Rust validator.
+
+Do not add a second TypeScript defaults table. The web client receives current
+values from the application and uses generated types plus small form helpers.
+
+### Configured, active, effective, and observed state
+
+Persist only configured user intent. The application retains active values and
+runtime observations:
+
+```text
+ClientSettingsRuntimeView
+  configured: ClientSettings
+  active: ClientSettings
+  restart_required: bool
+  effective_peer_connection_limit: u32
+  listener_status:
+    disabled
+    listening { address, port }
+    bind_failed { reason, detail }
+```
+
+`active` means the values supplied to this service generation's enforcing
+owners. It does not mean a fixed bind succeeded. `listener_status` is the bind
+authority. `effective_peer_connection_limit` is derived from the active
+configured value plus current process descriptor evidence. Neither is stored.
+
+Bind failure reasons are a small closed classification such as address in use,
+permission denied, address unavailable, and other. Detail is sanitized and
+bounded to 512 UTF-8 bytes. Do not expose an unbounded OS error, filesystem
+path, interface inventory, or diagnostic log as application state.
+
+The stable `ServiceSnapshot` adds configured `client_settings` so snapshot
+commands and durable receipts remain about persisted semantic state. The
+`torrent_list` view adds the runtime view above, parallel to its existing small
+storage-settings projection. Runtime listener state is not serialized into a
+durable request receipt. Older fixtures or producers that omit the new
+snapshot field decode to safe defaults; the live server always emits it.
+
+## Persistence And Command Semantics
+
+### Typed schema
+
+Advance the session schema from version 8 to version 9 with one typed row:
+
+```text
+client_settings
+  singleton = 1
+  listener_mode
+  listener_port NULL unless fixed_loopback
+  peer_connection_limit
+  upload_slots
+```
+
+Use typed columns and cross-field `CHECK` constraints. Do not create a generic
+`settings(key, json)` table, arbitrary extension namespace, JSON blob, per-key
+receipt, or platform-specific shadow store. The database remains the one Rust
+application-service authority on desktop and Android.
+
+Migration creates and inserts the row transactionally before advancing
+`user_version`. Existing profiles receive disabled/200/8, preserving the
+current desktop and gateway listener behavior. A missing row, duplicated row,
+unknown mode, inconsistent fixed port, out-of-range number, negative SQLite
+integer, or narrowing overflow is typed durable corruption and prevents the
+profile from opening. Do not copy JSTorrent's clamp-to-default behavior for
+corrupt persisted values.
+
+Ephemeral profiles create the same table and expose the same default snapshot,
+so ordinary read paths stay identical. `SetClientSettings` returns a typed
+invalid-durable-state error before mutation in ephemeral mode because the
+configured values could not survive the restart required to enforce them.
+Controlled ephemeral seeding tests use an explicit diagnostic bootstrap rather
+than pretending to persist a product preference.
+
+### Atomic mutation
+
+Add one full-replacement command:
+
+```text
+SetClientSettings { settings: ClientSettings }
+```
+
+The existing request envelope supplies request ID and optional expected
+revision. Validation of the complete group occurs before a transaction. One
+successful transaction updates the singleton, increments the revision, writes
+one receipt, and returns the configured service snapshot. Invalid input,
+stale revision, different-payload receipt reuse, SQLite failure, or page-limit
+failure changes neither settings nor revision.
+
+Sending the already configured group is a replay-safe semantic no-op according
+to the store's existing command rules. Reusing a successful request ID with
+the same normalized group returns its prior durable result; reusing it with a
+different field is a conflict. A new request may revert configured values to
+the active group, immediately clearing `restart_required` in the runtime view.
+
+The command never restarts the application, rebinds the listener, evicts a
+peer, revokes an upload grant, or mutates a running budget. All three values
+are restart-applied in this first slice so one atomic configured group cannot
+become a partially active runtime group.
+
+## Startup And Failure Semantics
+
+Product `ApplicationConfig` selects persisted settings authority. After the
+profile store opens and migrates, `ApplicationService::open` reads
+`ClientSettings` before constructing network owners, then:
+
+1. converts the peer limit into `PeerBudgetConfig` while retaining detected
+   descriptor state and the fixed incoming slack;
+2. converts upload slots into `UploadSchedulerConfig` while retaining the
+   fixed 15/30-second cadence, automatic optimistic calculation, and 20-piece
+   quota; and
+3. converts listener policy into the existing `IncomingTcpBootstrap`.
+
+Low-level timeout, backlog, pending-handshake, read-job, handle, request,
+writer, and testing knobs remain outside `ClientSettings`. Remove or narrow
+the duplicated product-semantic `ApplicationConfig` fields so products cannot
+silently choose one listener/limit value while snapshots report another.
+Focused diagnostics and the incoming-seed harness may use one explicit,
+clearly named settings bootstrap that bypasses durable mutation and reports
+configured equal to active. It must not become a second product authority.
+
+Listener bind failure changes existing application-open behavior because a
+persisted bad fixed port must be recoverable. Catch only the typed incoming
+bind failure, retain no incoming service or seeding registration owner, record
+the bounded `bind_failed` observation and diagnostic, and continue opening the
+catalog, views, command path, DHT according to its independent policy, and
+Settings UI. Other incoming initialization or task-ownership failures remain
+fatal. Disabled state remains an intentional absence, not a failure.
+
+Shutdown joins whatever listener generation actually started. A bind-failed
+or disabled generation owns no accept task. Opening the next generation
+retries exactly the currently configured policy; it does not silently fall
+back from fixed to automatic or choose another fixed port.
+
+## Module And Dependency Refactor
+
+Keep the work in `rstorrent-session`; no new crate is justified. Establish a
+private subsystem with a deliberate facade:
+
+```text
+rstorrent-session/src/
+  settings.rs                 private facade and crate-root re-exports
+  settings/
+    contract.rs               portable values, defaults, validation, views
+    persistence.rs            schema fragment, row decoding, transaction ops
+    runtime.rs                configured -> owner inputs and runtime snapshot
+    tests/
+      contract.rs
+      persistence.rs
+      runtime.rs
+```
+
+Exact test filenames may be combined when small. Do not create one file per
+field or enum.
+
+The boundary has these responsibilities:
+
+- `contract` depends on Serde, schema/generation support, and stable inward
+  engine default constants, not Rusqlite, Tokio, sockets, tasks, channels,
+  Tauri, Axum, React, or platform adapters;
+- `persistence` provides private functions over the one `SessionStore`-owned
+  connection or transaction; it does not introduce a repository trait,
+  second connection, settings singleton, async writer, or cache;
+- `runtime` performs deterministic validation/conversion and composes the
+  configured/active/effective/listener view; `ApplicationService` still owns
+  task construction, bind attempts, diagnostics, view publication, and joined
+  shutdown; and
+- `control.rs` retains the general request/response envelope and command enum,
+  but imports settings values instead of defining them inline.
+
+Move the existing portable `StorageSettingsSnapshot`, `StorageRootSnapshot`,
+and `StorageRootAvailability` family beside the new settings contract while
+preserving their crate-root paths, derives, serialization, generated names,
+and behavior. Storage-root SQL and lifecycle remain `SessionStore` concerns;
+do not move unrelated root, torrent, receipt, DHT, source, or removal logic
+merely to reduce line counts.
+
+Do not add a generic `ConfigHub`, key/value observer, actor, service trait,
+dependency-injection container, schema-reflection runtime, or mutable global.
+The exact concrete improvement is that settings invariants become testable and
+navigable without application lifecycle or the whole SQLite store, while the
+existing owners keep their connection, task, and transaction authority.
+
+## Application View And Transport Contract
+
+The existing semantic paths are sufficient:
+
+```text
+React Settings form
+  -> SetClientSettings in RequestEnvelope
+  -> active application adapter
+       browser: multiplexed /api/v1/connect
+       explicit diagnostic: POST /api/v1/commands
+       desktop: Tauri application_dispatch
+       Android: generated UniFFI command value
+  -> ApplicationService
+  -> SessionStore atomic mutation
+  -> configured ServiceSnapshot response
+  -> torrent-list settings replacement with runtime state
+```
+
+Do not add `/settings`, a second WebSocket, REST resources per setting, a
+native host, a settings daemon, or UI-owned persistence. The API and view
+contract generators add `ClientSettings`, listener policy/status,
+`ClientSettingsRuntimeView`, the command variant, service field, and
+torrent-list snapshot/patch field to the existing v1 development contract.
+No stable public compatibility claim or API version increase is made.
+
+The small settings view is complete replacement state, not keyed rows or a
+history. It does not need a new named view, cadence, task, queue, lease, or
+resource limit. It rides the existing always-present torrent-list projection
+and remains far below its current snapshot and queue bounds. Application
+mutation refresh publishes configured change; listener startup publishes the
+initial active/effective/status state before a client snapshot is opened.
+
+## Shared React Settings Surface
+
+Split the current dialog around real ownership while preserving its modal,
+focus trap, Escape/backdrop, status, and responsive behavior:
+
+```text
+SettingsDialog
+  AppearanceSettingsSection       browser-local preferences
+  DownloadSettingsSection         application storage settings/actions
+  ConnectionSeedingSettingsSection application client settings/runtime
+```
+
+This is a focused component extraction, not a generic schema-rendered form.
+The generated schema validates transport structure; handwritten controls own
+labels, grouping, error placement, pending state, accessibility, and
+explanatory copy.
+
+The new section contains one local draft and one **Save** action for the whole
+group:
+
+- incoming TCP: Off, automatic local port, or fixed local port;
+- global peer connections: numeric 1--2,000;
+- payload upload slots: numeric 0--50; and
+- current status: active policy, actual `127.0.0.1` port or bounded bind
+  failure, effective connection limit when clamped, and restart-required
+  notice when configured differs from active.
+
+Copy must say that this listener is local to the same device and is not LAN or
+Internet reachability. Do not show UPnP, NAT status, advertised port, external
+address, firewall success, bandwidth, ratio, elapsed seeding goal, or an
+incoming-peer table. Saving does not display success until the application
+accepts the atomic command. A typed failure retains the draft and announces a
+bounded error. Successful save replaces the form with authoritative
+configured state and, when needed, says that restarting the application is
+required; it does not offer a destructive or platform-specific restart button.
+
+Appearance remains browser-local and download settings remain backend-owned.
+Do not merge them into `ClientSettings`, mirror engine values into local
+storage, or make one reset action erase unrelated preference and storage-root
+state.
+
+The shared React implementation covers browser-hosted and Tauri desktop
+surfaces. Android compiles and transports the generated contract but gets no
+new Compose navigation, screen, SharedPreferences mirror, foreground restart,
+or physical-device requirement in this slice.
+
+## Owner, Task, Lock, And Cancellation Map
+
+| Owner | State/work | Lifetime and termination |
+| --- | --- | --- |
+| `SessionStore` | One SQLite connection, schema migration, configured settings row, revision and request receipt | One application service; mutation is one bounded synchronous transaction and no task |
+| Settings contract/persistence helpers | Pure validation/conversion and private SQL functions over borrowed connection/transaction | Stack-bounded calls; own no connection, lock, cache, task, or channel |
+| `ApplicationService` | Active settings, listener observation, construction of budget/scheduler/listener, diagnostics and view refresh | One service generation; joins only runtime owners that actually started |
+| `PeerBudget` | Existing configured/effective counts and permits | Constructed once from active settings; unchanged until joined service shutdown |
+| Incoming service/coordinator | Existing listener, peer tasks, scheduler and reads | Constructed once from active settings; existing cancellation/join order retained |
+| `ViewHub` | Small configured/active/effective/status replacement | Existing application lifetime and view-set closure; no new task or queue |
+| React Settings dialog | One draft, one in-flight save, backend error/status and focus | Dialog close discards unsaved draft; unmount ignores late presentation completion under existing application call owner |
+| HTTP/WebSocket/Tauri/UniFFI adapters | Existing typed command dispatch | Existing request/connection/window/application cancellation paths; no settings-specific task |
+
+The application mutex continues to serialize semantic commands in gateway and
+desktop adapters. The store mutex/connection, view hub mutex, peer-budget
+mutex, and incoming task joins remain distinct. Do not await while holding a
+new lock, because this slice adds no lock. Persistence completes before view
+publication. Settings mutation never calls socket code from inside a SQLite
+transaction.
+
+## Normative And Reference Dossier
+
+These settings are application policy rather than a BitTorrent wire BEP.
+BEP 3 still governs the peer state exercised after startup; Tactical `082`
+owns the protocol/resource policy. This tactical uses the pinned
+implementation and first-party history to select defaults, completeness
+cases, and UX semantics rather than to copy architecture or source.
+
+### Pinned libtorrent 2.0.13
+
+The required checkout is `reference/libtorrent` at
+`7d7fc38fac61177fa5e02148f791b2f65250b09d` (`v2.0.13`). Inspected paths are:
+
+- `src/settings_pack.cpp` defines `listen_interfaces` as all-interface port
+  6881, incoming TCP enabled, `connections_limit = 200`,
+  `unchoke_slots_limit = 8`, `connections_slack = 10`, and the five-entry
+  listen queue;
+- `include/libtorrent/settings_pack.hpp` documents empty/interface/port-zero
+  listening, loopback examples, global connection meaning, unlimited negative
+  upload slots, incoming slack, and the fact that backlog changes wait for a
+  listener update;
+- `src/session_impl.cpp::{apply_settings_pack_impl,
+  update_listen_interfaces,update_connections_limit,update_unchoke_limit}`
+  applies packs live, reopens listeners, normalizes nonpositive connection
+  values, evicts excess connections, and updates slot policy;
+- `test/test_settings_pack.cpp` covers typed setting names, defaults, clear and
+  duplicate replacement behavior;
+- `test/test_transfer.cpp` applies upload-slot values 0, -1, and 8 to a running
+  session; and
+- `simulation/test_swarm.cpp::{default_connections_limit,
+  default_connections_limit_negative,unchoke_slots_limit,
+  unchoke_slots_limit_negative,settings_stress_test}` exercises unusual
+  connection/slot values under swarm simulation.
+
+RSTorrent adopts the equivalent 200 and eight defaults and retains the ten
+slack internally. It deliberately does not adopt all-interface port 6881,
+negative/unbounded user values, or live application. All-interface binding
+would expand product security/reachability scope. Live listener reopen,
+connection eviction, and slot regrant require explicit mutation and joined
+lifecycle owners that do not yet exist; persisting configured-versus-active
+state is truthful without front-loading them.
+
+### JSTorrent product history
+
+The local checkout is `../jstorrent` at
+`9895410beeed6aff554053769bd006a3fbd373ef`. Inspected paths are:
+
+- `packages/engine/src/config/config-schema.ts` is a typed source of truth for
+  setting/runtime/storage categories, defaults, numeric bounds, and
+  restart-required fields. It defaults global peers to 200, caps the product
+  input at 2,000, caps upload slots at 50 while permitting zero, and marks
+  automatic/manual listening port changes restart-required;
+- `packages/engine/src/config/base-config-hub.ts` separates effective cache
+  values from persisted pending restart changes and provides subscriptions;
+- `packages/engine/src/adapters/native/native-config-hub.ts` and
+  `packages/client/src/host/host-channel-config-hub.ts` persist settings per
+  key while treating runtime values and storage roots separately;
+- `packages/engine/test/config/{config-hub.test.ts,
+  native-config-hub.test.ts,config-engine-integration.test.ts}` covers
+  validation, persisted pending values, unchanged effective values,
+  subscriptions, and engine propagation; and
+- `packages/client/src/components/SettingsOverlay.tsx::NetworkTab` presents
+  configured versus current port, speed/connection/slot values, discovery,
+  and restart language.
+
+RSTorrent adopts the lessons that one typed contract should distinguish
+persisted intent from runtime observation, centralize defaults and bounds, and
+make restart-required state explicit. It does not copy JSTorrent's large
+all-domain schema/hub/overlay, per-key asynchronous persistence, local/native
+shadow stores, silent corrupt-value clamping, reactive listener assumptions,
+four-slot default, auto-generated manual port, UI categories for unimplemented
+features, or JavaScript source shape. SQLite atomic groups, Rust validation,
+existing application revisions, and focused React sections remain the local
+architecture.
+
+No source, fixture, schema text, or UI component is imported from either
+reference.
+
+## Shape-Changing Edge Cases
+
+The initial implementation and tests must cover:
+
+- fresh version-9 durable and ephemeral databases plus migration from every
+  supported historical version;
+- exact default parity across Rust constructor, inserted row, decoded row,
+  generated schema, service snapshot, runtime view, and initial form;
+- listener disabled, automatic loopback with an observed nonzero port, fixed
+  ports 1,023/1,024/65,535/65,536, and inconsistent mode/port rows;
+- connection values 0/1/199/200/2,000/2,001 plus a descriptor clamp below the
+  configured value;
+- upload slots 0/1/7/8/50/51 and the automatic optimistic count at the active
+  default;
+- exact request replay, different-settings conflict, stale expected revision,
+  invalid complete group rollback, no-op, and revert-to-active behavior;
+- durable mutation followed by command response, settings view replacement,
+  application close/reopen, active value adoption, and cleared restart state;
+- rejected ephemeral mutation with unchanged revision and settings;
+- automatic bind failure, fixed address-in-use failure, accessible application
+  commands/views after failure, persisted repair, and successful next open;
+- disabled or bind-failed generations registering no seed owner and leaking no
+  listener, peer, read, writer, or file-handle task;
+- configured connection limit enforced jointly by outgoing and incoming
+  sockets after restart, with fixed ten slack still internal;
+- configured zero/one/eight slots enforced against scripted interested peers
+  after restart without changing request/read/writer caps;
+- unknown/additional JSON fields, closed invalid enum variants, fractional,
+  negative, overflow, numeric-string, and missing-field input at HTTP,
+  WebSocket, Tauri, and generated validators;
+- Settings dialog draft/edit/cancel/save/error/retry, fixed-port conditional
+  control, boundary inputs, effective clamp notice, restart notice, bind
+  failure, focus return, keyboard operation, phone layout, and accessibility;
+  and
+- application shutdown during a save or after failed/successful listener
+  startup with no detached command, store, listener, view, or adapter work.
+
+## Implementation Gates And Commit Boundaries
+
+### Gate 1: Contract and module boundary
+
+Create the settings facade and portable contract, move the existing storage-
+settings DTO family without contract drift, define defaults/validation/runtime
+view, retain crate-root exports, and add pure boundary tests. Regenerate
+contracts only for the intentional new client-settings types and prove all
+existing storage names/bytes remain compatible.
+
+This is a useful commit boundary.
+
+### Gate 2: Typed persistence and semantic command
+
+Add schema version 9, historical migrations, row decoding, atomic full-group
+mutation, durable/ephemeral behavior, command validation, receipt/revision
+cases, service snapshot configured state, and settings view replacement. Keep
+all transport adapters on their generic command path.
+
+This is a useful commit boundary after migration and replay evidence passes.
+
+### Gate 3: Startup enforcement and recoverable listener status
+
+Load persisted values before runtime construction, narrow duplicated
+`ApplicationConfig` authority, apply peer/slot/listener values to existing
+owners, retain active/effective observation, make bind failure recoverable,
+and prove restart, limit, slot, teardown, and controlled peer behavior with
+injected small values.
+
+### Gate 4: Shared Settings UI refactor and product path
+
+Extract the three focused React sections, add the atomic connection/seeding
+form, carry it through `LiveApplication` and generated clients, and prove
+browser/Tauri equivalence. Android contract generation and compilation pass;
+Compose UI remains unchanged.
+
+This is a useful commit boundary after component, live-adapter, generated
+contract, and headless accessibility tests pass.
+
+### Gate 5: Restarted product and closure evidence
+
+Use a temporary durable profile through the ordinary headless browser gateway:
+save a nondefault automatic/fixed-loopback, connection, and slot group; observe
+the configured/active mismatch; join shutdown; reopen; observe active/effective
+and actual listener state; then complete verified content from that endpoint
+with a controlled RSTorrent or libtorrent peer. Exercise a separate fixed-port
+conflict and recover it through the command path. Record exact resource high
+water and terminal zero owners, run the complete validation matrix, update all
+owning topics, and close the tactical.
+
+No public network, visible browser/window, emulator, physical device,
+deployment, or router operation is required.
+
+## Validation Matrix
+
+| Layer | Required evidence |
+| --- | --- |
+| Pure contract | Exact defaults, enum serialization, numeric boundaries, complete-group and cross-field validation, configured/active/restart derivation, bind classification and bounded detail |
+| SQLite | Version-9 creation, every supported migration, typed constraints, missing/duplicate/corrupt rows, atomic mutation, no-op, stale/conflict/replay, rollback, ephemeral rejection and page bounds |
+| Application startup | Store read precedes owner construction; disabled/automatic/fixed behavior; FD-effective limit; 0/1/8 slots; configured versus active across restart; recoverable bind failure; zero terminal owners |
+| Runtime limits | Mixed outgoing/incoming admission under configured/effective/slack limits; scripted interested peers under configured slots; unchanged request/read/writer/file caps and scheduler policy |
+| Application/view | Configured service snapshots, complete runtime replacement, immediate mutation refresh, initial listener status, reset/replay/lease behavior and no persisted runtime observation |
+| HTTP/WebSocket/Tauri | One existing generic command path, hostile input rejection, expected revision, response correlation, disconnect/cancel, no new route or settings-specific owner |
+| Generated contract | Rust/TypeScript/JSON Schema/validators and UniFFI contain the exact typed values; old defaulted snapshots remain accepted; contract regeneration has no unexplained drift |
+| React | Focused section boundaries, atomic draft/save, local-only language, conditional fixed port, limits, server error, effective/restart/bind states, keyboard/focus/responsive/accessibility behavior |
+| Headless product | Browser-hosted command, durable close/reopen, active settings and actual port, controlled verified incoming transfer, fixed-bind recovery, joined connection/view/gateway cleanup |
+| Platform consumers | Shared Tauri UI/client and no-window build pass; Android bindings and existing Compose build/tests pass without a new settings screen |
+| Workspace | `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, generated-contract drift, web tests/typecheck/build/CSP, relevant Android checks, focused controlled interop and `git diff --check` |
+
+## Non-Goals And Deliberate Deferrals
+
+- Live listener rebind, live connection-limit reduction/peer eviction, live
+  upload-slot regrant, an application restart command, or platform auto-restart.
+- Separate incoming-only or per-torrent connection limits, user-configurable
+  incoming slack, pending handshakes, backlog, connection pacing, turnover,
+  timeouts, request descriptors, read jobs, file handles, writer descriptors,
+  writer bytes, scheduler cadence, optimistic count, or seed quota.
+- Upload/download bandwidth limits, token buckets, per-torrent rate limits,
+  persisted payload totals, ratio goals, elapsed seeding goals, active-seed
+  queues, stop-on-goal, incomplete-torrent upload, or tit-for-tat.
+- Non-loopback or IPv6 binding, interface selection, firewall configuration,
+  tracker/DHT/BEP 10 port advertisement, observed external address, UPnP IGD,
+  PCP, NAT-PMP, LAN/public evidence, or a reachability claim.
+- Incoming peers in ordinary Peers/Swarm views, persistent peer history,
+  connection eviction UI, bandwidth charts, or settings-derived diagnostics
+  beyond the bounded listener/configuration facts.
+- A generic schema-rendered form, arbitrary key/value registry, settings
+  plugin namespace, dynamic setting discovery, generic observer hub, global
+  mutable singleton, new crate, persistence trait, repository layer, actor, or
+  second SQLite connection.
+- Moving unrelated torrent, receipt, storage-root, DHT, source, removal,
+  view-delivery, or application lifecycle code merely to shorten files.
+- Merging browser-local appearance/navigation preferences, storage-root state,
+  and engine settings into one reset or persistence authority.
+- Android Compose settings UI, SharedPreferences/UserDefaults shadow storage,
+  mobile restart UX, VPN/metered/local-network permission policy, or physical
+  device work.
+- A stable public settings API, external daemon configuration, accounts,
+  authentication changes, relay, remote administration, import/export, or
+  migration from JSTorrent settings.
+
+## Escalation And Autonomous Implementation Authority
+
+Once implementation is explicitly authorized, ordinary authority includes
+focused module/component extraction, schema version 9 and tests, generated
+contract changes, bounded bind-error classification, adapting diagnostic
+seeding harnesses to the explicit settings bootstrap, and fixing same-boundary
+snapshot/replay/lifecycle bugs revealed by validation.
+
+Stop for maintainer direction before:
+
+- making any setting live-applied or disconnecting/rechoking a running peer in
+  response to configuration;
+- changing listener scope beyond IPv4 loopback, enabling the listener by
+  default, silently falling back after a fixed bind, or advertising/mapping a
+  port;
+- changing the 200/eight defaults, the 1--2,000 or 0--50 product bounds, the
+  fixed ten slack, or another Tactical `082` safety constant without new
+  reference or measured evidence;
+- adding bandwidth, seeding goals, per-torrent policy, incoming-peer views, or
+  any setting not listed in the closed initial contract;
+- making ephemeral settings survive service close, adding another persistence
+  authority, or weakening durable corruption failure;
+- introducing a generic settings framework, new crate, third-party runtime
+  dependency with material tradeoffs, or stable public compatibility promise;
+- adding Android UI/platform policy, public-network, visible/physical UI,
+  deployment, destructive user-data, or external coordination work.
+
+## Next Slice Boundary
+
+After this tactical, the product can configure and restart into a real bounded
+local listener and its shared peer/upload limits through durable, validated,
+observable application state. The next incoming-stream slice may integrate
+incoming generations into ordinary bounded Peers/Swarm presentation or make
+the actual listener port truthful in tracker/DHT advertisement; neither is
+silently included here.
+
+Finite bandwidth belongs after a write-boundary token-bucket owner exists.
+Ratio/time goals belong after exact per-torrent uploaded totals are durably
+defined and automatic completion-policy transitions have their own tactical.
+Public/LAN listening and UPnP/PCP/NAT-PMP remain later independent security and
+reachability slices.

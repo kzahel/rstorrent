@@ -130,12 +130,15 @@ payload artifacts.
 
 ### Now
 
-**Discuss and authorize persisted incoming-listener and seeding settings.**
-Tactical `082` established the enforcing connection, upload-slot, timeout,
-accounting, and shared file-handle owners plus pinned defaults. The next slice
-should expose only settings those owners can enforce, retaining loopback-only
-binding until listener advertisement and public reachability have separate
-evidence.
+**Review and authorize Tactical `084`, persisted client connection and seeding
+settings.** Tactical
+[`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
+plans one typed, atomic, restart-applied settings group for loopback listener
+policy, the global peer ceiling, and payload upload slots. It carries the group
+through SQLite, existing application transports and views, startup enforcing
+owners, and the shared browser/Tauri Settings surface while leaving internal
+safety limits, bandwidth, seeding goals, advertisement, and public
+reachability out of scope.
 
 ### Next
 
@@ -145,7 +148,7 @@ evidence.
 
 ### Later
 
-Complete IPv6 DHT operation, persisted listener/upload settings, finite
+Complete IPv6 DHT operation, live listener/upload-setting application, finite
 bandwidth and seeding goals, listener advertisement, LAN/public binding, PEX,
 local service discovery, uTP, NAT traversal, v2 and hybrid torrents,
 playback-oriented file priorities, dynamic VPN and metered-network controls,

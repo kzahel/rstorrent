@@ -531,9 +531,12 @@ successful mutation unreadable after upgrade.
   required before a later fast-resume path may skip hashing.
 - How completed payload moved outside the application is deliberately
   relocated or rediscovered.
-- Explicit persisted listener, upload-budget, and seeding-goal settings; the
-  implemented single-peer slice uses immutable bootstrap and existing
-  desired-running intent without schema changes.
+- Planned Tactical
+  [`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
+  defines a typed SQLite singleton and atomic full-group mutation for loopback
+  listener policy, the ordinary global peer ceiling, and payload upload slots.
+  Finite bandwidth, durable upload totals, ratio/time seeding goals, and live
+  setting application remain later boundaries.
 - JSTorrent migration is accepted as an explicit user-initiated semantic
   import into one selected backend, not in-place reuse of the legacy database
   or live synchronization between backends. The exact supported source

@@ -277,10 +277,13 @@ without treating the diagnostic WebSocket gateway as a product daemon.
 [`../tactical/013-explicit-live-network-policy.md`](../tactical/013-explicit-live-network-policy.md)
 records explicit offline, loopback-only, and online engine policy selection.
 The current application configuration is immutable for the service lifetime.
-A later control slice must own safe runtime mutation, cancel active network
-resources promptly, preserve torrent intent, and restart eligible work when
-network prerequisites return. Android network binding and VPN leak prevention
-require separate platform evidence.
+Planned Tactical
+[`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
+adds an atomic durable client-settings replacement while deliberately keeping
+listener, global peer-limit, and upload-slot enforcement restart-applied. A
+later live-control slice must own safe listener rebind, connection eviction,
+slot regrant, cancellation, and torrent-intent preservation. Android network
+binding and VPN leak prevention require separate platform evidence.
 
 [`../tactical/075-ephemeral-application-state.md`](../tactical/075-ephemeral-application-state.md)
 adds an immutable persistence-mode choice at the same service-lifetime

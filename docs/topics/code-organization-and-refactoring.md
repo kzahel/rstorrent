@@ -3,7 +3,9 @@
 Status: Living guidance and repository snapshot, refreshed on 2026-08-04
 after completed Tacticals
 [`079`](../tactical/079-engine-driver-source-shape.md) and
-[`080`](../tactical/080-session-view-subsystem-boundaries.md).
+[`080`](../tactical/080-session-view-subsystem-boundaries.md), with the next
+feature-driven seam selected by planned Tactical
+[`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md).
 
 Topic: `code-organization-and-refactoring`
 
@@ -60,12 +62,15 @@ neither delivery accumulator imports or extends `ViewHub`. Do not continue
 splitting the 1,706-line hub merely because it remains the largest child; it
 now has one coherent coordinator/registry owner and focused lower seams.
 
-Planned Tactical [`078`](../tactical/078-local-single-peer-tcp-seeding.md)
-already specifies the next feature-driven module boundaries: direction-neutral
-peer I/O, incoming admission, runtime-independent upload state, immutable seed
-content, and session-owned seeding eligibility. Its implementation should add
-those owners rather than enlarge `driver.rs`, `selective_storage.rs`, or
-`application.rs`.
+Tacticals `078` and `082` implemented the feature-driven incoming and upload
+owners without enlarging the download driver. Planned Tactical
+[`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
+selects the next concrete seam: one private session settings facade with
+portable contract, borrowed-transaction persistence helpers, deterministic
+runtime conversion, and focused tests. It preserves `ApplicationService` and
+`SessionStore` ownership, moves the existing storage-settings DTO family
+without public contract drift, and does not introduce a generic configuration
+hub, repository layer, or new crate.
 
 ## Source-Organization Guidance
 
