@@ -191,6 +191,10 @@ pub struct IncomingPeerServiceSnapshot {
     pub queued_bytes_high_water: usize,
     pub metadata_requests_high_water: usize,
     pub metadata_send_buffer_high_water: usize,
+    pub writer_send_buffer_high_water: usize,
+    pub upload_regular_high_water: usize,
+    pub upload_optimistic_high_water: usize,
+    pub upload_slots_high_water: usize,
     pub read_high_water: usize,
     pub read_bytes_high_water: usize,
     pub payload_bytes_sent: u64,
@@ -211,6 +215,10 @@ struct ObservationState {
     queued_bytes_high_water: usize,
     metadata_requests_high_water: usize,
     metadata_send_buffer_high_water: usize,
+    writer_send_buffer_high_water: usize,
+    upload_regular_high_water: usize,
+    upload_optimistic_high_water: usize,
+    upload_slots_high_water: usize,
     read_high_water: usize,
     read_bytes_high_water: usize,
     payload_bytes_sent: u64,
@@ -632,6 +640,10 @@ impl Shared {
             queued_bytes_high_water: observations.queued_bytes_high_water,
             metadata_requests_high_water: observations.metadata_requests_high_water,
             metadata_send_buffer_high_water: observations.metadata_send_buffer_high_water,
+            writer_send_buffer_high_water: observations.writer_send_buffer_high_water,
+            upload_regular_high_water: observations.upload_regular_high_water,
+            upload_optimistic_high_water: observations.upload_optimistic_high_water,
+            upload_slots_high_water: observations.upload_slots_high_water,
             read_high_water: observations.read_high_water,
             read_bytes_high_water: observations.read_bytes_high_water,
             payload_bytes_sent: observations.payload_bytes_sent,
@@ -1232,6 +1244,19 @@ async fn run_incoming_peer_loop(
         observations.metadata_send_buffer_high_water = observations
             .metadata_send_buffer_high_water
             .max(io.send_buffer_high_water());
+        observations.writer_send_buffer_high_water = observations
+            .writer_send_buffer_high_water
+            .max(io.send_buffer_high_water());
+        let scheduler = shared.upload_coordinator.snapshot();
+        observations.upload_regular_high_water = observations
+            .upload_regular_high_water
+            .max(scheduler.regular);
+        observations.upload_optimistic_high_water = observations
+            .upload_optimistic_high_water
+            .max(scheduler.optimistic);
+        observations.upload_slots_high_water = observations
+            .upload_slots_high_water
+            .max(scheduler.regular.saturating_add(scheduler.optimistic));
     }
 }
 

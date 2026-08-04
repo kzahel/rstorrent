@@ -88,6 +88,8 @@ async fn run() -> Result<(), SeedHarnessError> {
         "registrations": ready.registrations,
         "pending_high_water": ready.pending_high_water,
         "established_high_water": ready.established_high_water,
+        "connection_high_water": ready.peer_budget.total_high_water,
+        "upload_slots_high_water": ready.upload_slots_high_water,
         "queued_requests_high_water": ready.queued_requests_high_water,
         "queued_bytes_high_water": ready.queued_bytes_high_water,
         "read_high_water": ready.read_high_water,
@@ -130,10 +132,15 @@ async fn run() -> Result<(), SeedHarnessError> {
         "payload_bytes_sent": final_snapshot.payload_bytes_sent,
         "pending_high_water": final_snapshot.pending_high_water,
         "established_high_water": final_snapshot.established_high_water,
+        "connection_high_water": final_snapshot.peer_budget.total_high_water,
+        "upload_regular_high_water": final_snapshot.upload_regular_high_water,
+        "upload_optimistic_high_water": final_snapshot.upload_optimistic_high_water,
+        "upload_slots_high_water": final_snapshot.upload_slots_high_water,
         "queued_requests_high_water": final_snapshot.queued_requests_high_water,
         "queued_bytes_high_water": final_snapshot.queued_bytes_high_water,
         "read_high_water": final_snapshot.read_high_water,
         "read_bytes_high_water": final_snapshot.read_bytes_high_water,
+        "writer_send_buffer_high_water": final_snapshot.writer_send_buffer_high_water,
     });
     stdout
         .write_all(format!("{stopped_json}\n").as_bytes())

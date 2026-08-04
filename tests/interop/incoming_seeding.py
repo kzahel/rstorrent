@@ -11,7 +11,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -63,7 +65,7 @@ def create_single_fixture(root: Path) -> Fixture:
     storage_root = fixture_root / "published"
     storage_root.mkdir(parents=True)
     payload_name = "incoming-single.bin"
-    payload_length = 23_000
+    payload_length = 64 * 1024 * 1024 + 731
     payload_path = storage_root / payload_name
     expected_hash = write_payload(payload_path, 0, payload_length)
 
@@ -78,7 +80,11 @@ def create_single_fixture(root: Path) -> Fixture:
     torrent_path = fixture_root / "single.torrent"
     torrent_path.write_bytes(bytes(lt.bencode(creator.generate())))
     torrent_info = lt.torrent_info(str(torrent_path))
-    validate_fixture(torrent_info, expected_pieces=2, expected_size=payload_length)
+    validate_fixture(
+        torrent_info,
+        expected_pieces=(payload_length + PIECE_SIZE - 1) // PIECE_SIZE,
+        expected_size=payload_length,
+    )
     return Fixture(
         name="single",
         torrent_path=torrent_path,
@@ -98,8 +104,8 @@ def create_multi_fixture(root: Path) -> Fixture:
     torrent_root.mkdir(parents=True)
     file_shapes = (
         (Path("a.bin"), 7_000),
-        (Path("nested/b.bin"), 11_000),
-        (Path("c.bin"), 7_000),
+        (Path("nested/b.bin"), 4_200_777),
+        (Path("c.bin"), 4_193_456),
     )
     files = lt.file_storage()
     expected: list[tuple[Path, str]] = []
@@ -120,7 +126,11 @@ def create_multi_fixture(root: Path) -> Fixture:
     torrent_path = fixture_root / "multi.torrent"
     torrent_path.write_bytes(bytes(lt.bencode(creator.generate())))
     torrent_info = lt.torrent_info(str(torrent_path))
-    validate_fixture(torrent_info, expected_pieces=2, expected_size=offset)
+    validate_fixture(
+        torrent_info,
+        expected_pieces=(offset + PIECE_SIZE - 1) // PIECE_SIZE,
+        expected_size=offset,
+    )
     if file_shapes[0][1] >= PIECE_SIZE:
         raise ScenarioFailure("multi-file fixture no longer crosses its first boundary")
     if offset % PIECE_SIZE == 0:
@@ -246,7 +256,11 @@ def start_seed(binary: Path, fixture: Fixture) -> tuple[subprocess.Popen[str], d
         raise
 
 
-def stop_seed(process: subprocess.Popen[str], expected_payload: int) -> dict[str, object]:
+def stop_seed(
+    process: subprocess.Popen[str],
+    expected_payload: int,
+    minimum_established: int,
+) -> dict[str, object]:
     if process.stdin is None:
         raise ScenarioFailure("seed harness stdin is unavailable")
     process.stdin.write("\n")
@@ -269,7 +283,7 @@ def stop_seed(process: subprocess.Popen[str], expected_payload: int) -> dict[str
         raise ScenarioFailure(
             f"seed sent {payload} payload bytes, expected at least {expected_payload}"
         )
-    assert_resource_bounds(stopped)
+    assert_resource_bounds(stopped, minimum_established)
     return stopped
 
 
@@ -280,19 +294,43 @@ def integer_field(observation: dict[str, object], field: str) -> int:
     return value
 
 
-def assert_resource_bounds(observation: dict[str, object]) -> None:
+def assert_resource_bounds(
+    observation: dict[str, object], minimum_established: int
+) -> None:
     limits = {
         "pending_high_water": 8,
-        "established_high_water": 1,
-        "queued_requests_high_water": 32,
-        "queued_bytes_high_water": 512 * 1024,
-        "read_high_water": 1,
-        "read_bytes_high_water": 16 * 1024,
+        "established_high_water": 210,
+        "connection_high_water": 210,
+        "queued_requests_high_water": 2_000,
+        "queued_bytes_high_water": 2_000 * 16 * 1024,
+        "read_high_water": 10,
+        "read_bytes_high_water": 10 * 16 * 1024,
+        "writer_send_buffer_high_water": 528_396,
+        "upload_slots_high_water": 8,
+        "upload_optimistic_high_water": 1,
     }
     for field, maximum in limits.items():
         actual = integer_field(observation, field)
         if actual > maximum:
             raise ScenarioFailure(f"{field} reached {actual}, exceeding {maximum}")
+    established = integer_field(observation, "established_high_water")
+    if established < minimum_established:
+        raise ScenarioFailure(
+            f"established high water reached {established}, "
+            f"expected at least {minimum_established}"
+        )
+    connections = integer_field(observation, "connection_high_water")
+    if connections < minimum_established:
+        raise ScenarioFailure(
+            f"connection high water reached {connections}, "
+            f"expected at least {minimum_established}"
+        )
+    slots = integer_field(observation, "upload_slots_high_water")
+    if slots < minimum_established:
+        raise ScenarioFailure(
+            f"upload slot high water reached {slots}, "
+            f"expected at least {minimum_established}"
+        )
 
 
 def parse_address(ready: dict[str, object]) -> tuple[str, int]:
@@ -322,10 +360,21 @@ def create_outbound_only_session() -> lt.session:
     )
 
 
+def await_barrier(barrier: threading.Barrier, timeout_seconds: float) -> None:
+    try:
+        barrier.wait(timeout=timeout_seconds)
+    except threading.BrokenBarrierError as error:
+        raise ScenarioFailure("concurrent leecher start barrier broke") from error
+
+
 def leech_with_libtorrent(
     fixture: Fixture,
     ready: dict[str, object],
     output_root: Path,
+    start: threading.Barrier | None = None,
+    finish: threading.Barrier | None = None,
+    connected: threading.Event | None = None,
+    release_download: threading.Event | None = None,
 ) -> None:
     session = create_outbound_only_session()
     handle: lt.torrent_handle | None = None
@@ -336,8 +385,28 @@ def leech_with_libtorrent(
         parameters.save_path = str(output_root)
         parameters.flags &= ~lt.torrent_flags.paused
         parameters.flags &= ~lt.torrent_flags.auto_managed
+        if connected is not None:
+            session.apply_settings({"download_rate_limit": 1})
         handle = session.add_torrent(parameters)
+        if start is not None:
+            await_barrier(start, 5)
         handle.connect_peer(parse_address(ready))
+        if connected is not None:
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                diagnostics.extend(alert.message() for alert in session.pop_alerts())
+                if handle.status().num_peers >= 1:
+                    connected.set()
+                    break
+                time.sleep(0.01)
+            else:
+                raise ScenarioFailure(
+                    "libtorrent upload-only peer did not connect\n"
+                    + "\n".join(diagnostics[-30:])
+                )
+            if release_download is None or not release_download.wait(timeout=5):
+                raise ScenarioFailure("libtorrent download release was not published")
+            session.apply_settings({"download_rate_limit": 0})
         deadline = time.monotonic() + TRANSFER_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             diagnostics.extend(alert.message() for alert in session.pop_alerts())
@@ -355,6 +424,8 @@ def leech_with_libtorrent(
                 + "\n".join(diagnostics[-30:])
             )
         compare_fixture_files(fixture, output_root, include_torrent_root=True)
+        if finish is not None:
+            await_barrier(finish, PROCESS_TIMEOUT_SECONDS)
     finally:
         if handle is not None and handle.is_valid():
             session.remove_torrent(handle)
@@ -369,9 +440,13 @@ def leech_with_rstorrent(
     fixture: Fixture,
     ready: dict[str, object],
     output_root: Path,
+    start: threading.Barrier | None = None,
+    finish: threading.Barrier | None = None,
 ) -> str:
     host, port = parse_address(ready)
     magnet = f"magnet:?xt=urn:btih:{fixture.info_hash}&x.pe={host}:{port}"
+    if start is not None:
+        await_barrier(start, 5)
     completed = subprocess.run(
         [
             str(binary),
@@ -411,6 +486,8 @@ def leech_with_rstorrent(
             f"expected {expected_piece_field}"
         )
     compare_fixture_files(fixture, output_root, include_torrent_root=False)
+    if finish is not None:
+        await_barrier(finish, PROCESS_TIMEOUT_SECONDS)
     return completed.stdout.strip()
 
 
@@ -450,14 +527,78 @@ def run_fixture(
     seed_binary: Path,
     leech_binary: Path,
     fixture: Fixture,
-) -> tuple[SeedRun, SeedRun, str]:
+    concurrent_clients: bool,
+) -> tuple[SeedRun, SeedRun, tuple[str, ...], str]:
     first_process, first_ready = start_seed(seed_binary, fixture)
     first_stopped: dict[str, object]
     try:
-        libtorrent_output = fixture.torrent_path.parent / "libtorrent-output"
-        libtorrent_output.mkdir()
-        leech_with_libtorrent(fixture, first_ready, libtorrent_output)
-        first_stopped = stop_seed(first_process, fixture.total_size)
+        diagnostics: dict[str, str] = {}
+        if concurrent_clients:
+            start = threading.Barrier(3)
+            finish = threading.Barrier(4)
+            release_download = threading.Event()
+            libtorrent_connected = (threading.Event(), threading.Event())
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                futures = {}
+                for ordinal in range(2):
+                    libtorrent_output = fixture.torrent_path.parent / (
+                        f"libtorrent-output-{ordinal}"
+                    )
+                    libtorrent_output.mkdir()
+                    future = executor.submit(
+                        leech_with_libtorrent,
+                        fixture,
+                        first_ready,
+                        libtorrent_output,
+                        None,
+                        finish,
+                        libtorrent_connected[ordinal],
+                        release_download,
+                    )
+                    futures[future] = f"libtorrent-{ordinal}"
+                for ordinal in range(2):
+                    rstorrent_output = fixture.torrent_path.parent / (
+                        f"rstorrent-single-{ordinal}.out"
+                        if fixture.output_is_file
+                        else f"rstorrent-output-{ordinal}"
+                    )
+                    future = executor.submit(
+                        leech_with_rstorrent,
+                        leech_binary,
+                        fixture,
+                        first_ready,
+                        rstorrent_output,
+                        start,
+                        finish,
+                    )
+                    futures[future] = f"rstorrent-{ordinal}"
+                for connected in libtorrent_connected:
+                    if not connected.wait(timeout=5):
+                        raise ScenarioFailure(
+                            "libtorrent peers did not establish before Rust release"
+                        )
+                await_barrier(start, 5)
+                time.sleep(0.1)
+                release_download.set()
+                for future in as_completed(futures):
+                    label = futures[future]
+                    result = future.result()
+                    if isinstance(result, str):
+                        diagnostics[label] = result
+            first_stopped = stop_seed(
+                first_process,
+                fixture.total_size * 4,
+                minimum_established=4,
+            )
+        else:
+            libtorrent_output = fixture.torrent_path.parent / "libtorrent-output"
+            libtorrent_output.mkdir()
+            leech_with_libtorrent(fixture, first_ready, libtorrent_output)
+            first_stopped = stop_seed(
+                first_process,
+                fixture.total_size,
+                minimum_established=1,
+            )
     except BaseException:
         terminate_process(first_process)
         raise
@@ -474,13 +615,18 @@ def run_fixture(
             second_ready,
             rstorrent_output,
         )
-        second_stopped = stop_seed(second_process, fixture.total_size)
+        second_stopped = stop_seed(
+            second_process,
+            fixture.total_size,
+            minimum_established=1,
+        )
     except BaseException:
         terminate_process(second_process)
         raise
     return (
         SeedRun(first_ready, first_stopped),
         SeedRun(second_ready, second_stopped),
+        tuple(diagnostics[key] for key in sorted(diagnostics)),
         rstorrent_diagnostic,
     )
 
@@ -492,10 +638,12 @@ def run(repository: Path) -> None:
         seed_binary, leech_binary = build_binaries(repository)
         fixtures = (create_single_fixture(run_root), create_multi_fixture(run_root))
         for fixture in fixtures:
-            first, restarted, diagnostic = run_fixture(
+            concurrent = fixture.name == "single"
+            first, restarted, diagnostics, restart_diagnostic = run_fixture(
                 seed_binary,
                 leech_binary,
                 fixture,
+                concurrent,
             )
             print(
                 json.dumps(
@@ -504,9 +652,11 @@ def run(repository: Path) -> None:
                         "info_hash": fixture.info_hash,
                         "bytes": fixture.total_size,
                         "pieces": fixture.torrent_info.num_pieces(),
+                        "concurrent_four_peer_evidence": concurrent,
                         "libtorrent_seed": first.stopped,
                         "restarted_rstorrent_seed": restarted.stopped,
-                        "rstorrent_diagnostic": diagnostic,
+                        "rstorrent_diagnostics": diagnostics,
+                        "restart_diagnostic": restart_diagnostic,
                     },
                     sort_keys=True,
                 )
