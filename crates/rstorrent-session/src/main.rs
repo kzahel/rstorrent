@@ -101,6 +101,7 @@ fn parse_arguments(
         ));
     }
     let mut profile_root = None;
+    let mut ephemeral = false;
     let mut profile_id = "default".to_owned();
     let mut storage_roots = Vec::new();
     let mut timeout = Duration::from_secs(120);
@@ -118,6 +119,16 @@ fn parse_arguments(
         let name = arguments[index]
             .to_str()
             .ok_or_else(|| DiagnosticError::Arguments("argument name is not UTF-8".to_owned()))?;
+        if name == "--ephemeral" {
+            if ephemeral {
+                return Err(DiagnosticError::Arguments(
+                    "--ephemeral may appear only once".to_owned(),
+                ));
+            }
+            ephemeral = true;
+            index += 1;
+            continue;
+        }
         let value = arguments
             .get(index + 1)
             .ok_or_else(|| DiagnosticError::Arguments(format!("{name} requires one value")))?;
@@ -226,13 +237,26 @@ fn parse_arguments(
             "at least one --storage-root is required".to_owned(),
         ));
     }
-    let mut config = ApplicationConfig::new(
-        profile_root
-            .ok_or_else(|| DiagnosticError::Arguments("--profile-root is required".to_owned()))?,
-        profile_id,
-        storage_roots,
-        NetworkConfig::new(NetworkPolicy::LoopbackOnly, timeout, timeout),
-    );
+    if ephemeral && profile_root.is_some() {
+        return Err(DiagnosticError::Arguments(
+            "--ephemeral and --profile-root are mutually exclusive".to_owned(),
+        ));
+    }
+    let network = NetworkConfig::new(NetworkPolicy::LoopbackOnly, timeout, timeout);
+    let mut config = if ephemeral {
+        ApplicationConfig::ephemeral(profile_id, storage_roots, network)
+    } else {
+        ApplicationConfig::new(
+            profile_root.ok_or_else(|| {
+                DiagnosticError::Arguments(
+                    "--profile-root is required unless --ephemeral is set".to_owned(),
+                )
+            })?,
+            profile_id,
+            storage_roots,
+            network,
+        )
+    };
     config.download_resource_limits = download_resource_limits;
     config.storage_write_concurrency_for_testing = storage_write_concurrency;
     config.storage_hash_concurrency_for_testing = storage_hash_concurrency;
@@ -327,6 +351,8 @@ mod tests {
 
     use rstorrent_engine::PathPublicationStage;
 
+    use rstorrent_session::ApplicationPersistence;
+
     use super::{NetworkPolicy, parse_arguments};
 
     #[test]
@@ -346,7 +372,12 @@ mod tests {
             .map(OsString::from),
         )
         .expect("parse diagnostic arguments");
-        assert_eq!(config.profile_root, PathBuf::from("/tmp/profile"));
+        assert_eq!(
+            config.persistence,
+            ApplicationPersistence::Durable {
+                profile_root: PathBuf::from("/tmp/profile")
+            }
+        );
         assert_eq!(config.profile_id, "test");
         assert_eq!(config.storage_roots[0].id, "downloads");
         assert_eq!(config.network.peer_connect_timeout.as_secs(), 9);
@@ -360,6 +391,32 @@ mod tests {
         assert!(
             parse_arguments((0..34).map(|index| OsString::from(format!("argument-{index}"))))
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn parses_ephemeral_without_a_profile_root_and_rejects_conflict() {
+        let config = parse_arguments(
+            ["--ephemeral", "--storage-root", "downloads=/tmp/payload"]
+                .into_iter()
+                .map(OsString::from),
+        )
+        .expect("parse ephemeral diagnostic arguments");
+        assert_eq!(config.persistence, ApplicationPersistence::Ephemeral);
+
+        assert!(
+            parse_arguments(
+                [
+                    "--ephemeral",
+                    "--profile-root",
+                    "/tmp/profile",
+                    "--storage-root",
+                    "downloads=/tmp/payload",
+                ]
+                .into_iter()
+                .map(OsString::from),
+            )
+            .is_err()
         );
     }
 

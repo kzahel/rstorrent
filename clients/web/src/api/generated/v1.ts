@@ -9,7 +9,7 @@ export type RemovalDataPolicy = "keep" | "delete_managed";
 
 export type RemovalState = "pending" | "awaiting_platform" | "failed";
 
-export type ErrorCode = "invalid_version" | "invalid_request" | "request_conflict" | "stale_revision" | "unknown_storage_root" | "storage_root_in_use" | "unknown_torrent" | "invalid_torrent_state" | "invalid_durable_state" | "storage_needs_repair" | "busy" | "internal";
+export type ErrorCode = "invalid_version" | "invalid_request" | "request_conflict" | "stale_revision" | "unknown_storage_root" | "storage_root_in_use" | "unknown_torrent" | "invalid_torrent_state" | "invalid_durable_state" | "resource_limit" | "storage_needs_repair" | "busy" | "internal";
 
 export type ErrorResponse = { code: ErrorCode, message: string, };
 

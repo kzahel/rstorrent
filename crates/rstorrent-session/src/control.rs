@@ -228,6 +228,7 @@ pub enum ErrorCode {
     UnknownTorrent,
     InvalidTorrentState,
     InvalidDurableState,
+    ResourceLimit,
     StorageNeedsRepair,
     Busy,
     Internal,

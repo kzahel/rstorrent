@@ -59,7 +59,7 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub struct ApplicationConfig {
-    pub profile_root: PathBuf,
+    pub persistence: ApplicationPersistence,
     pub profile_id: String,
     pub storage_roots: Vec<ConfiguredStorageRoot>,
     pub network: NetworkConfig,
@@ -89,6 +89,28 @@ pub struct ApplicationConfig {
     pub platform_storage_client: Option<PlatformStorageClient>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ApplicationPersistence {
+    Durable { profile_root: PathBuf },
+    Ephemeral,
+}
+
+impl ApplicationPersistence {
+    pub fn durable_profile_root(&self) -> Option<&Path> {
+        match self {
+            Self::Durable { profile_root } => Some(profile_root),
+            Self::Ephemeral => None,
+        }
+    }
+
+    fn diagnostic_name(&self) -> &'static str {
+        match self {
+            Self::Durable { .. } => "durable",
+            Self::Ephemeral => "ephemeral",
+        }
+    }
+}
+
 impl ApplicationConfig {
     pub fn new(
         profile_root: PathBuf,
@@ -96,9 +118,36 @@ impl ApplicationConfig {
         storage_roots: Vec<ConfiguredStorageRoot>,
         network: NetworkConfig,
     ) -> Self {
+        Self::with_persistence(
+            ApplicationPersistence::Durable { profile_root },
+            profile_id,
+            storage_roots,
+            network,
+        )
+    }
+
+    pub fn ephemeral(
+        profile_id: String,
+        storage_roots: Vec<ConfiguredStorageRoot>,
+        network: NetworkConfig,
+    ) -> Self {
+        Self::with_persistence(
+            ApplicationPersistence::Ephemeral,
+            profile_id,
+            storage_roots,
+            network,
+        )
+    }
+
+    fn with_persistence(
+        persistence: ApplicationPersistence,
+        profile_id: String,
+        storage_roots: Vec<ConfiguredStorageRoot>,
+        network: NetworkConfig,
+    ) -> Self {
         let dht = DhtConfig::for_network(network.policy);
         Self {
-            profile_root,
+            persistence,
             profile_id,
             storage_roots,
             network,
@@ -117,6 +166,10 @@ impl ApplicationConfig {
             publication_stage_trace_for_testing: false,
             platform_storage_client: None,
         }
+    }
+
+    pub fn durable_profile_root(&self) -> Option<&Path> {
+        self.persistence.durable_profile_root()
     }
 }
 
@@ -221,17 +274,26 @@ impl ApplicationService {
                 })?;
             }
         }
-        let store = SessionStore::open(
-            &config.profile_root,
-            &config.profile_id,
-            &config.storage_roots,
-        )?;
+        let store = match &config.persistence {
+            ApplicationPersistence::Durable { profile_root } => {
+                SessionStore::open(profile_root, &config.profile_id, &config.storage_roots)?
+            }
+            ApplicationPersistence::Ephemeral => {
+                SessionStore::open_ephemeral(&config.profile_id, &config.storage_roots)?
+            }
+        };
         let storage_roots = available_storage_roots(store.storage_roots()?);
         let (initial_dht_snapshot, dht_state_warning) = match store.load_dht_snapshot() {
             Ok(snapshot) => (snapshot, None),
             Err(error) => (None, Some(error.to_string())),
         };
-        let speed = PreparedSpeedHistory::open(&config.profile_root);
+        let speed = match &config.persistence {
+            ApplicationPersistence::Durable { profile_root } => {
+                PreparedSpeedHistory::open_durable(profile_root)
+            }
+            ApplicationPersistence::Ephemeral => PreparedSpeedHistory::open_ephemeral()
+                .map_err(|error| ApplicationError::Persistence(error.to_string()))?,
+        };
         let speed_recorder = speed.recorder.clone();
         let mut dht_config = config.dht;
         dht_config.network_policy = config.network.policy;
@@ -288,6 +350,7 @@ impl ApplicationService {
             &[
                 ("profile", &config.profile_id),
                 ("network_policy", config.network.policy.as_str()),
+                ("persistence_mode", config.persistence.diagnostic_name()),
             ],
         )?;
         if let Some(detail) = dht_state_warning {
@@ -386,7 +449,22 @@ impl ApplicationService {
             }
         }
         let revision_before = self.store_mut()?.revision()?;
-        let response = self.store_mut()?.handle_durable(&request)?;
+        let response = match self.store_mut()?.handle_durable(&request) {
+            Ok(response) => response,
+            Err(error) => {
+                if error.is_resource_limit() {
+                    let _ = self.views.record_diagnostic(
+                        DiagnosticSeverity::Error,
+                        category::STORAGE_IO,
+                        "application_state_resource_limit",
+                        None,
+                        "Application state reached its configured resource limit",
+                        &[],
+                    );
+                }
+                return Err(error.into());
+            }
+        };
         if !matches!(response.outcome, ResponseOutcome::Success { .. }) {
             return Ok(response);
         }
@@ -3056,6 +3134,7 @@ pub enum ApplicationError {
         source: std::io::Error,
     },
     Configuration(String),
+    Persistence(String),
     Busy(String),
     Join(String),
     StorePoisoned,
@@ -3071,6 +3150,7 @@ impl fmt::Display for ApplicationError {
             Self::Configuration(message) => {
                 write!(formatter, "application configuration: {message}")
             }
+            Self::Persistence(message) => write!(formatter, "application persistence: {message}"),
             Self::Busy(torrent_id) => {
                 write!(
                     formatter,
@@ -3133,10 +3213,11 @@ pub fn application_error_response(
     let code = match error {
         ApplicationError::Busy(_) => ErrorCode::Busy,
         ApplicationError::Configuration(_) => ErrorCode::InvalidRequest,
+        ApplicationError::Store(error) if error.is_resource_limit() => ErrorCode::ResourceLimit,
         ApplicationError::Store(StoreError::UnknownTorrent(_)) => ErrorCode::UnknownTorrent,
-        ApplicationError::Store(
-            StoreError::DurableState(_) | StoreError::Have(_) | StoreError::ResourceLimit { .. },
-        ) => ErrorCode::InvalidDurableState,
+        ApplicationError::Store(StoreError::DurableState(_) | StoreError::Have(_)) => {
+            ErrorCode::InvalidDurableState
+        }
         _ => ErrorCode::Internal,
     };
     ResponseEnvelope::error(request_id, revision, code, error.to_string())
@@ -3151,7 +3232,8 @@ mod tests {
 
     use rstorrent_engine::dht::BootstrapNode;
     use rstorrent_engine::{
-        DownloadError, NetworkConfig, NetworkPolicy, PublicationShape, torrent_storage_paths,
+        ByteMetric, ByteMetricSink, DownloadError, NetworkConfig, NetworkPolicy, PublicationShape,
+        torrent_storage_paths,
     };
     use rstorrent_protocol::dht::{
         DhtEndpoint, DhtIp, Message as DhtMessage, NodeId, decode_message as decode_dht,
@@ -3264,6 +3346,80 @@ mod tests {
             assert_ne!(length, 0, "peer closed before expected message");
             pending.extend(decoder.push(&bytes[..length]).expect("decode peer message"));
         }
+    }
+
+    async fn spawn_metadata_peer(raw_info: Vec<u8>) -> (SocketAddr, tokio::task::JoinHandle<()>) {
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind metadata peer");
+        let address = listener.local_addr().expect("metadata peer address");
+        let task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept metadata peer");
+            let mut handshake = [0; HANDSHAKE_LENGTH];
+            stream
+                .read_exact(&mut handshake)
+                .await
+                .expect("read metadata handshake");
+            let handshake =
+                decode_handshake(&handshake, info_hash).expect("metadata handshake identity");
+            assert!(handshake.supports_extensions());
+            let mut reserved = [0; 8];
+            reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+            stream
+                .write_all(&encode_handshake_with_reserved(
+                    info_hash,
+                    *b"-RS-EPHEMERAL-000000",
+                    reserved,
+                ))
+                .await
+                .expect("send metadata handshake");
+            let mut decoder = FrameDecoder::new();
+            let mut pending = std::collections::VecDeque::new();
+            assert!(matches!(
+                read_peer_message(&mut stream, &mut decoder, &mut pending).await,
+                PeerMessage::Extended { id: 0, .. }
+            ));
+            stream
+                .write_all(
+                    &encode_message(&PeerMessage::Extended {
+                        id: 0,
+                        payload: encode_extension_handshake(Some(raw_info.len())),
+                    })
+                    .expect("encode extension handshake"),
+                )
+                .await
+                .expect("send extension handshake");
+            let PeerMessage::Extended {
+                id: 1,
+                payload: request,
+            } = read_peer_message(&mut stream, &mut decoder, &mut pending).await
+            else {
+                panic!("metadata request expected");
+            };
+            assert_eq!(
+                parse_metadata_message(&request).expect("parse metadata request"),
+                MetadataMessage::Request { piece: 0 }
+            );
+            stream
+                .write_all(
+                    &encode_message(&PeerMessage::Extended {
+                        id: 1,
+                        payload: encode_metadata_data(0, raw_info.len(), &raw_info)
+                            .expect("encode metadata"),
+                    })
+                    .expect("encode metadata message"),
+                )
+                .await
+                .expect("send metadata");
+            let mut tail = [0; 32];
+            match stream.read(&mut tail).await {
+                Ok(0) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset => {}
+                outcome => panic!("metadata connection did not close: {outcome:?}"),
+            }
+        });
+        (address, task)
     }
 
     fn dht_endpoint(address: SocketAddr) -> DhtEndpoint {
@@ -3444,6 +3600,243 @@ mod tests {
         fs::remove_dir_all(root).expect("remove test root");
     }
 
+    #[tokio::test]
+    async fn ephemeral_application_owns_loopback_state_until_joined_shutdown() {
+        let root = test_root("ephemeral-loopback");
+        let payload_root = root.join("payload");
+        fs::create_dir_all(&payload_root).expect("pre-provision payload root");
+        let absent_profile = root.join("profile-was-never-configured");
+        let raw_info = multi_file_info();
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let (address, peer_task) = spawn_metadata_peer(raw_info).await;
+        let application_config = ApplicationConfig::ephemeral(
+            "ephemeral-test".to_owned(),
+            vec![ConfiguredStorageRoot::path(
+                "downloads",
+                payload_root.clone(),
+            )],
+            NetworkConfig::new(
+                NetworkPolicy::LoopbackOnly,
+                std::time::Duration::from_secs(5),
+                std::time::Duration::from_secs(5),
+            ),
+        );
+        let mut service = ApplicationService::open(application_config.clone())
+            .await
+            .expect("open ephemeral application");
+        assert!(!absent_profile.exists());
+        let usage = service
+            .store
+            .lock()
+            .expect("session store")
+            .page_usage()
+            .expect("session page usage");
+        assert!(usage.page_count <= usage.maximum_page_count);
+
+        let diagnostics = service
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::TorrentList,
+                projection: ViewProjection::Diagnostics,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 256 * 1024,
+                },
+                diagnostics: Some(DiagnosticFilter::default()),
+            })
+            .expect("diagnostic subscription")
+            .next_update()
+            .await
+            .expect("diagnostic snapshot");
+        assert!(
+            serde_json::to_string(&diagnostics)
+                .expect("encode diagnostics")
+                .contains("ephemeral")
+        );
+
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "ephemeral-add".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={address}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: false,
+                    skip_files: Vec::new(),
+                },
+            })
+            .await
+            .expect("add ephemeral metadata-only torrent");
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                tokio::task::yield_now().await;
+                let response = service
+                    .dispatch(RequestEnvelope {
+                        version: CONTROL_VERSION,
+                        request_id: "ephemeral-wait".to_owned(),
+                        expected_revision: None,
+                        command: Command::Snapshot,
+                    })
+                    .await
+                    .expect("ephemeral snapshot");
+                let ResponseOutcome::Success { snapshot } = response.outcome else {
+                    panic!("snapshot failed");
+                };
+                if snapshot.torrents[0].metadata_available {
+                    break;
+                }
+            }
+        })
+        .await
+        .expect("ephemeral metadata timed out");
+        tokio::time::timeout(std::time::Duration::from_secs(1), peer_task)
+            .await
+            .expect("ephemeral peer did not join")
+            .expect("ephemeral peer task");
+
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "ephemeral-selection".to_owned(),
+                expected_revision: None,
+                command: Command::SetFilePriority {
+                    torrent_id: torrent_id.clone(),
+                    file_indices: vec![1],
+                    priority: FilePriority::Skip,
+                },
+            })
+            .await
+            .expect("change ephemeral selection");
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "ephemeral-setting".to_owned(),
+                expected_revision: None,
+                command: Command::SetShowAddOptions { show: false },
+            })
+            .await
+            .expect("change ephemeral setting");
+        service
+            .speed_recorder
+            .record(ByteMetric::PayloadReceived, 4096);
+
+        let owner = ViewSetOwner::trusted("ephemeral-client");
+        let opened = service
+            .open_view_set(
+                owner.clone(),
+                OpenViewSetRequest {
+                    views: vec![ViewSpec::TorrentList {
+                        view_id: "library".to_owned(),
+                        delivery: ViewDeliveryPolicy::default(),
+                    }],
+                    options: OpenViewSetOptions::default(),
+                },
+            )
+            .expect("open ephemeral view set");
+        service
+            .close_view_set(&owner, &opened.view_set_id)
+            .expect("close last ephemeral view set");
+        let snapshot = service
+            .store
+            .lock()
+            .expect("session store")
+            .snapshot()
+            .expect("snapshot after detachment");
+        assert_eq!(snapshot.torrents[0].skip_files, vec![1]);
+        assert!(!snapshot.storage.show_add_options);
+        assert!(!absent_profile.exists());
+        assert_eq!(
+            fs::read_dir(&payload_root)
+                .expect("read payload root")
+                .count(),
+            0
+        );
+
+        service.shutdown().await.expect("joined ephemeral shutdown");
+        assert!(
+            service
+                .store
+                .lock()
+                .expect("session store after shutdown")
+                .load_dht_snapshot()
+                .expect("load in-memory DHT snapshot")
+                .is_some()
+        );
+        drop(service);
+        assert!(!absent_profile.exists());
+        assert_eq!(
+            fs::read_dir(&payload_root)
+                .expect("read payload root")
+                .count(),
+            0
+        );
+
+        let mut fresh = ApplicationService::open(application_config)
+            .await
+            .expect("open fresh ephemeral application");
+        let fresh_snapshot = fresh
+            .store
+            .lock()
+            .expect("fresh session store")
+            .snapshot()
+            .expect("fresh snapshot");
+        assert_eq!(fresh_snapshot.revision, "0");
+        assert!(fresh_snapshot.torrents.is_empty());
+        assert!(fresh_snapshot.storage.show_add_options);
+        assert!(
+            fresh
+                .store
+                .lock()
+                .expect("fresh session store")
+                .load_dht_snapshot()
+                .expect("load fresh DHT snapshot")
+                .is_none()
+        );
+        fresh.shutdown().await.expect("shutdown fresh application");
+        drop(fresh);
+        fs::remove_dir_all(root).expect("remove ephemeral test root");
+    }
+
+    #[tokio::test]
+    async fn ephemeral_application_opens_and_closes_offline_without_a_profile() {
+        let root = test_root("ephemeral-offline");
+        let payload_root = root.join("payload");
+        fs::create_dir_all(&payload_root).expect("pre-provision payload root");
+        let absent_profile = root.join("profile-was-never-configured");
+        let mut application_config = ApplicationConfig::ephemeral(
+            "offline-ephemeral".to_owned(),
+            vec![ConfiguredStorageRoot::path(
+                "downloads",
+                payload_root.clone(),
+            )],
+            NetworkConfig::new(
+                NetworkPolicy::Offline,
+                std::time::Duration::from_secs(1),
+                std::time::Duration::from_secs(1),
+            ),
+        );
+        application_config.dht.bootstrap_nodes.clear();
+        let mut service = ApplicationService::open(application_config)
+            .await
+            .expect("open offline ephemeral application");
+        assert_eq!(service.revision().expect("offline revision"), 0);
+        assert!(!absent_profile.exists());
+        service
+            .shutdown()
+            .await
+            .expect("shutdown offline ephemeral application");
+        drop(service);
+        assert!(!absent_profile.exists());
+        assert_eq!(
+            fs::read_dir(&payload_root)
+                .expect("read payload root")
+                .count(),
+            0
+        );
+        fs::remove_dir_all(root).expect("remove offline ephemeral test root");
+    }
+
     async fn answer_dht_query(router: &UdpSocket) {
         let mut packet = [0_u8; 1024];
         let (length, client) = tokio::time::timeout(
@@ -3492,7 +3885,9 @@ mod tests {
         let mut persisted = config(&root);
         persisted.dht.bootstrap_nodes.clear();
         let store = SessionStore::open(
-            &persisted.profile_root,
+            persisted
+                .durable_profile_root()
+                .expect("durable profile root"),
             &persisted.profile_id,
             &persisted.storage_roots,
         )
@@ -3655,7 +4050,9 @@ mod tests {
         let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
         let torrent_id = super::encode_info_hash(info_hash);
         let mut store = SessionStore::open(
-            &configuration.profile_root,
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
             &configuration.profile_id,
             &configuration.storage_roots,
         )
@@ -3752,7 +4149,9 @@ mod tests {
         let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
         let torrent_id = super::encode_info_hash(info_hash);
         let mut store = SessionStore::open(
-            &configuration.profile_root,
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
             &configuration.profile_id,
             &configuration.storage_roots,
         )
@@ -3825,7 +4224,9 @@ mod tests {
         let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
         let torrent_id = super::encode_info_hash(info_hash);
         let mut store = SessionStore::open(
-            &configuration.profile_root,
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
             &configuration.profile_id,
             &configuration.storage_roots,
         )
@@ -3994,7 +4395,9 @@ mod tests {
         });
 
         let mut store = SessionStore::open(
-            &configuration.profile_root,
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
             &configuration.profile_id,
             &configuration.storage_roots,
         )
@@ -4215,7 +4618,9 @@ mod tests {
         });
 
         let mut store = SessionStore::open(
-            &configuration.profile_root,
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
             &configuration.profile_id,
             &configuration.storage_roots,
         )
@@ -4305,7 +4710,9 @@ mod tests {
         let configuration = config(&root);
         let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
         let mut store = SessionStore::open(
-            &configuration.profile_root,
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
             &configuration.profile_id,
             &configuration.storage_roots,
         )
@@ -4358,7 +4765,7 @@ mod tests {
         let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
         let torrent_id = crate::control::encode_info_hash(info_hash);
         let mut store = SessionStore::open(
-            &config.profile_root,
+            config.durable_profile_root().expect("durable profile root"),
             &config.profile_id,
             &config.storage_roots,
         )
@@ -4583,7 +4990,7 @@ mod tests {
         let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
         let torrent_id = crate::control::encode_info_hash(info_hash);
         let mut store = SessionStore::open(
-            &config.profile_root,
+            config.durable_profile_root().expect("durable profile root"),
             &config.profile_id,
             &config.storage_roots,
         )
@@ -4594,7 +5001,10 @@ mod tests {
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
-        let database = store.database_path().to_owned();
+        let database = store
+            .database_path()
+            .expect("durable database path")
+            .to_owned();
         drop(store);
         let connection = Connection::open(database).expect("open raw database");
         connection
@@ -4707,7 +5117,7 @@ mod tests {
         let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
         let torrent_id = crate::control::encode_info_hash(info_hash);
         let mut store = SessionStore::open(
-            &config.profile_root,
+            config.durable_profile_root().expect("durable profile root"),
             &config.profile_id,
             &config.storage_roots,
         )
@@ -4791,7 +5201,7 @@ mod tests {
         let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
         let torrent_id = crate::control::encode_info_hash(info_hash);
         let mut store = SessionStore::open(
-            &config.profile_root,
+            config.durable_profile_root().expect("durable profile root"),
             &config.profile_id,
             &config.storage_roots,
         )
@@ -4849,7 +5259,7 @@ mod tests {
         let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
         let torrent_id = crate::control::encode_info_hash(info_hash);
         let mut store = SessionStore::open(
-            &config.profile_root,
+            config.durable_profile_root().expect("durable profile root"),
             &config.profile_id,
             &config.storage_roots,
         )
@@ -5176,7 +5586,9 @@ mod tests {
         let torrent_id = super::encode_info_hash(info_hash);
         let configured_root = configuration.storage_roots[0].clone();
         let mut store = SessionStore::open(
-            &configuration.profile_root,
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
             &configuration.profile_id,
             &[configured_root],
         )
@@ -5256,7 +5668,9 @@ mod tests {
         let torrent_id = super::encode_info_hash(info_hash);
         let configured_root = configuration.storage_roots[0].clone();
         let mut store = SessionStore::open(
-            &configuration.profile_root,
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
             &configuration.profile_id,
             &[configured_root],
         )
@@ -5267,7 +5681,10 @@ mod tests {
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
-        let database = store.database_path().to_owned();
+        let database = store
+            .database_path()
+            .expect("durable database path")
+            .to_owned();
         drop(store);
 
         let connection = Connection::open(database).expect("open raw database");
@@ -5315,7 +5732,9 @@ mod tests {
         let torrent_id = super::encode_info_hash(info_hash);
         let configured_root = configuration.storage_roots[0].clone();
         let mut store = SessionStore::open(
-            &configuration.profile_root,
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
             &configuration.profile_id,
             &[configured_root],
         )
@@ -5326,7 +5745,10 @@ mod tests {
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
-        let database = store.database_path().to_owned();
+        let database = store
+            .database_path()
+            .expect("durable database path")
+            .to_owned();
         drop(store);
 
         let connection = Connection::open(database).expect("open raw database");
@@ -5381,7 +5803,9 @@ mod tests {
         let torrent_id = super::encode_info_hash(info_hash);
         let configured_root = configuration.storage_roots[0].clone();
         let mut store = SessionStore::open(
-            &configuration.profile_root,
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
             &configuration.profile_id,
             &[configured_root],
         )
@@ -5392,7 +5816,10 @@ mod tests {
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
-        let database = store.database_path().to_owned();
+        let database = store
+            .database_path()
+            .expect("durable database path")
+            .to_owned();
         drop(store);
 
         let connection = Connection::open(database).expect("open raw database");
@@ -5443,7 +5870,9 @@ mod tests {
         let torrent_id = super::encode_info_hash(info_hash);
         let configured_root = configuration.storage_roots[0].clone();
         let mut store = SessionStore::open(
-            &configuration.profile_root,
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
             &configuration.profile_id,
             std::slice::from_ref(&configured_root),
         )

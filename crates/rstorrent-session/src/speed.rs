@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 use std::path::Path;
-use std::sync::mpsc::{SyncSender, sync_channel};
+use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -17,10 +17,12 @@ use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
 
 use crate::ViewHub;
+use crate::diagnostics::{DiagnosticSeverity, category};
 
 const METRICS_DATABASE_FILENAME: &str = "metrics.db";
 const METRICS_SCHEMA_VERSION: i64 = 1;
 const METRICS_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
+pub(crate) const EPHEMERAL_METRICS_MAX_BYTES: u64 = 32 * 1024 * 1024;
 pub const MAX_SPEED_SERIES: usize = 8;
 
 #[derive(
@@ -667,7 +669,7 @@ pub(crate) struct PreparedSpeedHistory {
 }
 
 impl PreparedSpeedHistory {
-    pub(crate) fn open(profile_root: &Path) -> Self {
+    pub(crate) fn open_durable(profile_root: &Path) -> Self {
         let mut history = SessionRateHistory::new();
         let now = history.now_millis();
         let store = match MetricsStore::open(profile_root) {
@@ -701,6 +703,26 @@ impl PreparedSpeedHistory {
         }
     }
 
+    pub(crate) fn open_ephemeral() -> Result<Self, MetricsStoreError> {
+        let mut history = SessionRateHistory::new();
+        let now = history.now_millis();
+        let store = MetricsStore::open_ephemeral()?;
+        for row in store.load(now)? {
+            let current = now / row.bucket_millis * row.bucket_millis;
+            if row.complete || row.start_millis == current {
+                history.restore(row);
+            }
+        }
+        history.resume_at(now);
+        let history = Arc::new(Mutex::new(history));
+        let recorder = Arc::new(SessionSpeedRecorder::new(history.clone()));
+        Ok(Self {
+            history,
+            recorder,
+            store: Some(store),
+        })
+    }
+
     pub(crate) fn start(self, views: ViewHub) -> SpeedHistoryRuntime {
         SpeedHistoryRuntime::start(self, views)
     }
@@ -723,23 +745,14 @@ impl SpeedHistoryRuntime {
         let cancellation = CancellationToken::new();
         let task_cancellation = cancellation.clone();
         let history = prepared.history;
+        let writer_views = views.clone();
         let writer = prepared.store.map(|mut store| {
             let (sender, receiver) = sync_channel::<WriterCommand>(1);
             let writer_history = history.clone();
             let join = thread::Builder::new()
                 .name("rstorrent-metrics-writer".to_owned())
                 .spawn(move || {
-                    while let Ok(command) = receiver.recv() {
-                        match command {
-                            WriterCommand::Write(rows) => {
-                                let degraded = store.write(&rows).is_err();
-                                if let Ok(mut history) = writer_history.lock() {
-                                    history.set_persistence_degraded(degraded);
-                                }
-                            }
-                            WriterCommand::Shutdown => break,
-                        }
-                    }
+                    run_metrics_writer(&mut store, receiver, writer_history, writer_views)
                 })
                 .ok();
             (sender, join)
@@ -799,6 +812,37 @@ impl SpeedHistoryRuntime {
             return Ok(());
         };
         task.await
+    }
+}
+
+fn run_metrics_writer(
+    store: &mut MetricsStore,
+    receiver: Receiver<WriterCommand>,
+    history: Arc<Mutex<SessionRateHistory>>,
+    views: ViewHub,
+) {
+    let mut failure_reported = false;
+    while let Ok(command) = receiver.recv() {
+        match command {
+            WriterCommand::Write(rows) => {
+                let degraded = store.write(&rows).is_err();
+                if let Ok(mut history) = history.lock() {
+                    history.set_persistence_degraded(degraded);
+                }
+                if degraded && !failure_reported {
+                    let _ = views.record_diagnostic(
+                        DiagnosticSeverity::Error,
+                        category::STORAGE_IO,
+                        "speed_history_persistence_degraded",
+                        None,
+                        "Speed history persistence is degraded",
+                        &[],
+                    );
+                    failure_reported = true;
+                }
+            }
+            WriterCommand::Shutdown => break,
+        }
     }
 }
 
@@ -866,6 +910,26 @@ impl MetricsStore {
         connection.pragma_update(None, "synchronous", "NORMAL")?;
         migrate_metrics(&mut connection)?;
         Ok(Self { connection })
+    }
+
+    pub(crate) fn open_ephemeral() -> Result<Self, MetricsStoreError> {
+        Self::open_ephemeral_with_maximum_bytes(EPHEMERAL_METRICS_MAX_BYTES)
+    }
+
+    fn open_ephemeral_with_maximum_bytes(maximum_bytes: u64) -> Result<Self, MetricsStoreError> {
+        let mut connection = Connection::open_in_memory()?;
+        configure_ephemeral_metrics(&connection, maximum_bytes)?;
+        migrate_metrics(&mut connection)?;
+        Ok(Self { connection })
+    }
+
+    #[cfg(test)]
+    fn page_usage(&self) -> Result<(u64, u64, u64), MetricsStoreError> {
+        Ok((
+            metrics_pragma_u64(&self.connection, "page_size")?,
+            metrics_pragma_u64(&self.connection, "page_count")?,
+            metrics_pragma_u64(&self.connection, "max_page_count")?,
+        ))
     }
 
     pub(crate) fn load(&self, now_millis: u64) -> Result<Vec<PersistRow>, MetricsStoreError> {
@@ -953,6 +1017,63 @@ impl MetricsStore {
     }
 }
 
+fn configure_ephemeral_metrics(
+    connection: &Connection,
+    maximum_bytes: u64,
+) -> Result<(), MetricsStoreError> {
+    connection.pragma_update(None, "foreign_keys", true)?;
+    let foreign_keys: i64 =
+        connection.pragma_query_value(None, "foreign_keys", |row| row.get(0))?;
+    if foreign_keys != 1 {
+        return Err(MetricsStoreError::RequiredPragma("foreign_keys"));
+    }
+
+    connection.pragma_update(None, "journal_mode", "MEMORY")?;
+    let journal_mode: String =
+        connection.pragma_query_value(None, "journal_mode", |row| row.get(0))?;
+    if !journal_mode.eq_ignore_ascii_case("memory") {
+        return Err(MetricsStoreError::RequiredPragma("journal_mode=MEMORY"));
+    }
+
+    connection.pragma_update(None, "synchronous", "OFF")?;
+    let synchronous: i64 = connection.pragma_query_value(None, "synchronous", |row| row.get(0))?;
+    if synchronous != 0 {
+        return Err(MetricsStoreError::RequiredPragma("synchronous=OFF"));
+    }
+
+    connection.pragma_update(None, "temp_store", "MEMORY")?;
+    let temp_store: i64 = connection.pragma_query_value(None, "temp_store", |row| row.get(0))?;
+    if temp_store != 2 {
+        return Err(MetricsStoreError::RequiredPragma("temp_store=MEMORY"));
+    }
+
+    let page_size = metrics_pragma_u64(connection, "page_size")?;
+    let maximum_page_count = maximum_bytes / page_size;
+    if maximum_page_count == 0 {
+        return Err(MetricsStoreError::Configuration(
+            "ephemeral metrics maximum is smaller than one SQLite page".to_owned(),
+        ));
+    }
+    let maximum_page_count = i64::try_from(maximum_page_count).map_err(|_| {
+        MetricsStoreError::Configuration(
+            "ephemeral metrics page maximum exceeds SQLite i64".to_owned(),
+        )
+    })?;
+    connection.pragma_update(None, "max_page_count", maximum_page_count)?;
+    let configured: i64 =
+        connection.pragma_query_value(None, "max_page_count", |row| row.get(0))?;
+    if configured != maximum_page_count {
+        return Err(MetricsStoreError::RequiredPragma("max_page_count"));
+    }
+    Ok(())
+}
+
+fn metrics_pragma_u64(connection: &Connection, pragma: &str) -> Result<u64, MetricsStoreError> {
+    let value: i64 = connection.pragma_query_value(None, pragma, |row| row.get(0))?;
+    u64::try_from(value)
+        .map_err(|_| MetricsStoreError::Configuration(format!("negative SQLite {pragma}")))
+}
+
 fn migrate_metrics(connection: &mut Connection) -> Result<(), MetricsStoreError> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS metrics_meta (
@@ -1005,6 +1126,8 @@ pub(crate) enum MetricsStoreError {
     Io(std::io::Error),
     Sql(rusqlite::Error),
     UnsupportedSchema,
+    RequiredPragma(&'static str),
+    Configuration(String),
 }
 
 impl fmt::Display for MetricsStoreError {
@@ -1013,6 +1136,12 @@ impl fmt::Display for MetricsStoreError {
             Self::Io(error) => write!(formatter, "metrics store I/O: {error}"),
             Self::Sql(error) => write!(formatter, "metrics store SQLite: {error}"),
             Self::UnsupportedSchema => formatter.write_str("unsupported metrics store schema"),
+            Self::RequiredPragma(pragma) => {
+                write!(formatter, "metrics database could not enable {pragma}")
+            }
+            Self::Configuration(message) => {
+                write!(formatter, "metrics database configuration: {message}")
+            }
         }
     }
 }
@@ -1022,7 +1151,7 @@ impl Error for MetricsStoreError {
         match self {
             Self::Io(error) => Some(error),
             Self::Sql(error) => Some(error),
-            Self::UnsupportedSchema => None,
+            Self::UnsupportedSchema | Self::RequiredPragma(_) | Self::Configuration(_) => None,
         }
     }
 }
@@ -1122,6 +1251,131 @@ mod tests {
         }));
         drop(store);
         std::fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn ephemeral_metrics_are_private_bounded_and_transactional() {
+        let now = 2_000_000_000;
+        let row = PersistRow {
+            bucket_millis: 60_000,
+            start_millis: now - 60_000,
+            metric: SpeedMetric::PayloadReceived,
+            bytes: 4096,
+            complete: true,
+        };
+        let mut first = MetricsStore::open_ephemeral().expect("open ephemeral metrics");
+        let journal: String = first
+            .connection
+            .pragma_query_value(None, "journal_mode", |row| row.get(0))
+            .expect("journal mode");
+        let synchronous: i64 = first
+            .connection
+            .pragma_query_value(None, "synchronous", |row| row.get(0))
+            .expect("synchronous");
+        let temp_store: i64 = first
+            .connection
+            .pragma_query_value(None, "temp_store", |row| row.get(0))
+            .expect("temp store");
+        assert_eq!(journal.to_ascii_lowercase(), "memory");
+        assert_eq!(synchronous, 0);
+        assert_eq!(temp_store, 2);
+        let (page_size, page_count, maximum_page_count) =
+            first.page_usage().expect("metrics page usage");
+        assert!(page_count <= maximum_page_count);
+        let maximum_bytes = page_size * maximum_page_count;
+        assert!(maximum_bytes <= EPHEMERAL_METRICS_MAX_BYTES);
+        assert!(EPHEMERAL_METRICS_MAX_BYTES - maximum_bytes < page_size);
+
+        first.write(std::slice::from_ref(&row)).expect("write row");
+        assert_eq!(first.load(now).expect("load row"), vec![row]);
+        let second = MetricsStore::open_ephemeral().expect("open isolated metrics");
+        assert!(second.load(now).expect("load isolated metrics").is_empty());
+        drop(first);
+        let fresh = MetricsStore::open_ephemeral().expect("open fresh metrics");
+        assert!(fresh.load(now).expect("load fresh metrics").is_empty());
+
+        let mut bounded = MetricsStore::open_ephemeral_with_maximum_bytes(128 * 1024)
+            .expect("open bounded metrics");
+        let rows = (0..10_000_u64)
+            .map(|index| PersistRow {
+                bucket_millis: 1_000,
+                start_millis: now + index * 1_000,
+                metric: SpeedMetric::PayloadReceived,
+                bytes: index,
+                complete: true,
+            })
+            .collect::<Vec<_>>();
+        assert!(bounded.write(&rows).is_err());
+        assert!(
+            bounded
+                .load(now + 10_000_000)
+                .expect("bounded metrics remain responsive")
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn metrics_cap_reports_one_degradation_diagnostic() {
+        let now = 2_000_000_000;
+        let rows = (0..10_000_u64)
+            .map(|index| PersistRow {
+                bucket_millis: 1_000,
+                start_millis: now + index * 1_000,
+                metric: SpeedMetric::PayloadReceived,
+                bytes: index,
+                complete: true,
+            })
+            .collect::<Vec<_>>();
+        let mut store = MetricsStore::open_ephemeral_with_maximum_bytes(128 * 1024)
+            .expect("open bounded metrics");
+        let history = Arc::new(Mutex::new(SessionRateHistory::new()));
+        let views = ViewHub::new(&crate::ServiceSnapshot {
+            profile_id: "metrics-test".to_owned(),
+            revision: "0".to_owned(),
+            storage: Default::default(),
+            torrents: Vec::new(),
+        })
+        .expect("create view hub");
+        let (sender, receiver) = std::sync::mpsc::channel();
+        sender
+            .send(WriterCommand::Write(rows.clone()))
+            .expect("queue first failed write");
+        sender
+            .send(WriterCommand::Write(rows))
+            .expect("queue repeated failed write");
+        sender
+            .send(WriterCommand::Shutdown)
+            .expect("queue writer shutdown");
+        run_metrics_writer(&mut store, receiver, history.clone(), views.clone());
+        assert!(history.lock().expect("rate history").persistence_degraded);
+
+        let update = views
+            .subscribe(crate::SubscriptionSpec {
+                selector: crate::ViewSelector::TorrentList,
+                projection: crate::ViewProjection::Diagnostics,
+                delivery: crate::DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 256 * 1024,
+                },
+                diagnostics: Some(crate::DiagnosticFilter::default()),
+            })
+            .expect("subscribe diagnostics")
+            .next_update()
+            .await
+            .expect("diagnostic snapshot");
+        let crate::ViewUpdatePayload::Snapshot {
+            snapshot: crate::ViewSnapshot::Diagnostics { events, .. },
+        } = update.payload
+        else {
+            panic!("expected diagnostic snapshot");
+        };
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event.code == "speed_history_persistence_degraded")
+                .count(),
+            1
+        );
     }
 
     #[test]

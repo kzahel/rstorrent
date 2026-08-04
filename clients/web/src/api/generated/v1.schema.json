@@ -1925,6 +1925,7 @@
         "unknown_torrent",
         "invalid_torrent_state",
         "invalid_durable_state",
+        "resource_limit",
         "storage_needs_repair",
         "busy",
         "internal"

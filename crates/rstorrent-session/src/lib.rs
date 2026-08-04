@@ -19,8 +19,8 @@ mod view_sets;
 mod views;
 
 pub use application::{
-    ApplicationConfig, ApplicationError, ApplicationService, PlatformRemovalPlan,
-    application_error_response,
+    ApplicationConfig, ApplicationError, ApplicationPersistence, ApplicationService,
+    PlatformRemovalPlan, application_error_response,
 };
 pub use application_connection::{
     AcknowledgedViewStream, AcknowledgedViewStreamError, ApplicationCall, ApplicationCallError,

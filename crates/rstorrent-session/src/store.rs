@@ -21,6 +21,7 @@ use crate::have::{HaveError, HaveState, MAX_DURABLE_HAVE_STATE_BYTES, MAX_DURABL
 const SCHEMA_VERSION: i64 = 7;
 const DATABASE_FILENAME: &str = "session.db";
 const MAX_RECEIPTS: i64 = 1024;
+pub(crate) const EPHEMERAL_SESSION_MAX_BYTES: u64 = 128 * 1024 * 1024;
 pub const MAX_STORAGE_ROOTS: usize = 32;
 pub const MAX_STORAGE_ROOT_LOCATOR_LENGTH: usize = 4096;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(2);
@@ -168,7 +169,14 @@ pub struct RemovalRecord {
 pub struct SessionStore {
     connection: Connection,
     profile_id: String,
-    database_path: PathBuf,
+    database_path: Option<PathBuf>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct DatabasePageUsage {
+    pub(crate) page_size: u64,
+    pub(crate) page_count: u64,
+    pub(crate) maximum_page_count: u64,
 }
 
 impl fmt::Debug for SessionStore {
@@ -187,53 +195,110 @@ impl SessionStore {
         profile_id: &str,
         storage_roots: &[ConfiguredStorageRoot],
     ) -> Result<Self, StoreError> {
+        std::fs::create_dir_all(profile_root).map_err(|source| StoreError::Io {
+            operation: "create profile directory",
+            source,
+        })?;
+        let database_path = profile_root.join(DATABASE_FILENAME);
+        let connection = Connection::open(&database_path)?;
+        Self::initialize(
+            connection,
+            profile_id,
+            storage_roots,
+            Some(database_path),
+            None,
+        )
+    }
+
+    pub fn open_ephemeral(
+        profile_id: &str,
+        storage_roots: &[ConfiguredStorageRoot],
+    ) -> Result<Self, StoreError> {
+        Self::open_ephemeral_with_maximum_bytes(
+            profile_id,
+            storage_roots,
+            EPHEMERAL_SESSION_MAX_BYTES,
+        )
+    }
+
+    fn open_ephemeral_with_maximum_bytes(
+        profile_id: &str,
+        storage_roots: &[ConfiguredStorageRoot],
+        maximum_bytes: u64,
+    ) -> Result<Self, StoreError> {
+        Self::initialize(
+            Connection::open_in_memory()?,
+            profile_id,
+            storage_roots,
+            None,
+            Some(maximum_bytes),
+        )
+    }
+
+    fn initialize(
+        mut connection: Connection,
+        profile_id: &str,
+        storage_roots: &[ConfiguredStorageRoot],
+        database_path: Option<PathBuf>,
+        ephemeral_maximum_bytes: Option<u64>,
+    ) -> Result<Self, StoreError> {
         validate_identifier(
             profile_id,
             "profile ID",
             crate::control::MAX_PROFILE_ID_LENGTH,
         )
         .map_err(|(_, message)| StoreError::Configuration(message))?;
-        std::fs::create_dir_all(profile_root).map_err(|source| StoreError::Io {
-            operation: "create profile directory",
-            source,
-        })?;
-        let database_path = profile_root.join(DATABASE_FILENAME);
-        let mut connection = Connection::open(&database_path)?;
-        connection.busy_timeout(BUSY_TIMEOUT)?;
         connection.pragma_update(None, "foreign_keys", true)?;
         let foreign_keys: i64 =
             connection.pragma_query_value(None, "foreign_keys", |row| row.get(0))?;
         if foreign_keys != 1 {
             return Err(StoreError::RequiredPragma("foreign_keys"));
         }
-        let journal_mode: String =
-            connection.pragma_query_value(None, "journal_mode", |row| row.get(0))?;
-        if !journal_mode.eq_ignore_ascii_case("wal") {
-            connection.pragma_update(None, "journal_mode", "WAL")?;
-        }
-        let journal_mode: String =
-            connection.pragma_query_value(None, "journal_mode", |row| row.get(0))?;
-        if !journal_mode.eq_ignore_ascii_case("wal") {
-            return Err(StoreError::RequiredPragma("journal_mode=WAL"));
-        }
-        connection.pragma_update(None, "synchronous", "FULL")?;
-        let synchronous: i64 =
-            connection.pragma_query_value(None, "synchronous", |row| row.get(0))?;
-        if synchronous != 2 {
-            return Err(StoreError::RequiredPragma("synchronous=FULL"));
+
+        if let Some(maximum_bytes) = ephemeral_maximum_bytes {
+            configure_ephemeral_connection(&connection, maximum_bytes)?;
+        } else {
+            connection.busy_timeout(BUSY_TIMEOUT)?;
+            let journal_mode: String =
+                connection.pragma_query_value(None, "journal_mode", |row| row.get(0))?;
+            if !journal_mode.eq_ignore_ascii_case("wal") {
+                connection.pragma_update(None, "journal_mode", "WAL")?;
+            }
+            let journal_mode: String =
+                connection.pragma_query_value(None, "journal_mode", |row| row.get(0))?;
+            if !journal_mode.eq_ignore_ascii_case("wal") {
+                return Err(StoreError::RequiredPragma("journal_mode=WAL"));
+            }
+            connection.pragma_update(None, "synchronous", "FULL")?;
+            let synchronous: i64 =
+                connection.pragma_query_value(None, "synchronous", |row| row.get(0))?;
+            if synchronous != 2 {
+                return Err(StoreError::RequiredPragma("synchronous=FULL"));
+            }
         }
         migrate(&mut connection, profile_id)?;
         register_storage_roots(&mut connection, storage_roots)?;
 
-        Ok(Self {
+        let store = Self {
             connection,
             profile_id: profile_id.to_owned(),
             database_path,
-        })
+        };
+        if ephemeral_maximum_bytes.is_some() {
+            let usage = store.page_usage()?;
+            if usage.page_count > usage.maximum_page_count {
+                return Err(StoreError::RequiredPragma("max_page_count"));
+            }
+        }
+        Ok(store)
     }
 
-    pub fn database_path(&self) -> &Path {
-        &self.database_path
+    pub fn database_path(&self) -> Option<&Path> {
+        self.database_path.as_deref()
+    }
+
+    pub(crate) fn page_usage(&self) -> Result<DatabasePageUsage, StoreError> {
+        database_page_usage(&self.connection)
     }
 
     pub fn revision(&self) -> Result<u64, StoreError> {
@@ -1522,6 +1587,17 @@ impl fmt::Display for StoreError {
     }
 }
 
+impl StoreError {
+    pub fn is_resource_limit(&self) -> bool {
+        matches!(self, Self::ResourceLimit { .. })
+            || matches!(
+                self,
+                Self::Sqlite(rusqlite::Error::SqliteFailure(failure, _))
+                    if failure.code == rusqlite::ErrorCode::DiskFull
+            )
+    }
+}
+
 impl Error for StoreError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
@@ -1557,6 +1633,63 @@ impl From<HaveError> for StoreError {
             error => Self::Have(error),
         }
     }
+}
+
+fn configure_ephemeral_connection(
+    connection: &Connection,
+    maximum_bytes: u64,
+) -> Result<(), StoreError> {
+    connection.pragma_update(None, "journal_mode", "MEMORY")?;
+    let journal_mode: String =
+        connection.pragma_query_value(None, "journal_mode", |row| row.get(0))?;
+    if !journal_mode.eq_ignore_ascii_case("memory") {
+        return Err(StoreError::RequiredPragma("journal_mode=MEMORY"));
+    }
+
+    connection.pragma_update(None, "synchronous", "OFF")?;
+    let synchronous: i64 = connection.pragma_query_value(None, "synchronous", |row| row.get(0))?;
+    if synchronous != 0 {
+        return Err(StoreError::RequiredPragma("synchronous=OFF"));
+    }
+
+    connection.pragma_update(None, "temp_store", "MEMORY")?;
+    let temp_store: i64 = connection.pragma_query_value(None, "temp_store", |row| row.get(0))?;
+    if temp_store != 2 {
+        return Err(StoreError::RequiredPragma("temp_store=MEMORY"));
+    }
+
+    let page_size = pragma_u64(connection, "page_size")?;
+    let maximum_page_count = maximum_bytes / page_size;
+    if maximum_page_count == 0 {
+        return Err(StoreError::Configuration(
+            "ephemeral session database maximum is smaller than one SQLite page".to_owned(),
+        ));
+    }
+    let maximum_page_count = i64::try_from(maximum_page_count).map_err(|_| {
+        StoreError::Configuration(
+            "ephemeral session database page maximum exceeds SQLite i64".to_owned(),
+        )
+    })?;
+    connection.pragma_update(None, "max_page_count", maximum_page_count)?;
+    let configured: i64 =
+        connection.pragma_query_value(None, "max_page_count", |row| row.get(0))?;
+    if configured != maximum_page_count {
+        return Err(StoreError::RequiredPragma("max_page_count"));
+    }
+    Ok(())
+}
+
+fn database_page_usage(connection: &Connection) -> Result<DatabasePageUsage, StoreError> {
+    Ok(DatabasePageUsage {
+        page_size: pragma_u64(connection, "page_size")?,
+        page_count: pragma_u64(connection, "page_count")?,
+        maximum_page_count: pragma_u64(connection, "max_page_count")?,
+    })
+}
+
+fn pragma_u64(connection: &Connection, pragma: &str) -> Result<u64, StoreError> {
+    let value: i64 = connection.pragma_query_value(None, pragma, |row| row.get(0))?;
+    u64::try_from(value).map_err(|_| StoreError::DurableState(format!("negative SQLite {pragma}")))
 }
 
 fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreError> {
@@ -3302,6 +3435,140 @@ mod tests {
         }
     }
 
+    #[test]
+    fn ephemeral_store_is_private_bounded_and_preserves_receipts() {
+        let configured = ConfiguredStorageRoot::platform("downloads");
+        let mut first =
+            SessionStore::open_ephemeral("same-profile", std::slice::from_ref(&configured))
+                .expect("open first ephemeral store");
+        let second =
+            SessionStore::open_ephemeral("same-profile", std::slice::from_ref(&configured))
+                .expect("open second ephemeral store");
+
+        assert_eq!(first.database_path(), None);
+        assert_eq!(first.revision().expect("first revision"), 0);
+        assert_eq!(second.revision().expect("second revision"), 0);
+        let journal: String = first
+            .connection
+            .pragma_query_value(None, "journal_mode", |row| row.get(0))
+            .expect("journal mode");
+        let synchronous: i64 = first
+            .connection
+            .pragma_query_value(None, "synchronous", |row| row.get(0))
+            .expect("synchronous");
+        let temp_store: i64 = first
+            .connection
+            .pragma_query_value(None, "temp_store", |row| row.get(0))
+            .expect("temp store");
+        let foreign_keys: i64 = first
+            .connection
+            .pragma_query_value(None, "foreign_keys", |row| row.get(0))
+            .expect("foreign keys");
+        assert_eq!(journal.to_ascii_lowercase(), "memory");
+        assert_eq!(synchronous, 0);
+        assert_eq!(temp_store, 2);
+        assert_eq!(foreign_keys, 1);
+        let usage = first.page_usage().expect("page usage");
+        assert!(usage.page_count <= usage.maximum_page_count);
+        let maximum_bytes = usage.page_size * usage.maximum_page_count;
+        assert!(maximum_bytes <= super::EPHEMERAL_SESSION_MAX_BYTES);
+        assert!(super::EPHEMERAL_SESSION_MAX_BYTES - maximum_bytes < usage.page_size);
+
+        let request = add_request("ephemeral-replay");
+        let accepted = first.handle_durable(&request).expect("accept request");
+        assert_eq!(
+            first.handle_durable(&request).expect("replay request"),
+            accepted
+        );
+        let mut conflict = request;
+        conflict.command = Command::Pause {
+            torrent_id: "000102030405060708090a0b0c0d0e0f10111213".to_owned(),
+        };
+        assert!(matches!(
+            first
+                .handle_durable(&conflict)
+                .expect("return conflict response")
+                .outcome,
+            ResponseOutcome::Error {
+                error: crate::ErrorResponse {
+                    code: ErrorCode::RequestConflict,
+                    ..
+                }
+            }
+        ));
+        assert_eq!(second.revision().expect("isolated revision"), 0);
+        assert!(
+            second
+                .snapshot()
+                .expect("isolated snapshot")
+                .torrents
+                .is_empty()
+        );
+
+        drop(first);
+        let fresh = SessionStore::open_ephemeral("same-profile", &[configured])
+            .expect("open fresh ephemeral store");
+        assert_eq!(fresh.revision().expect("fresh revision"), 0);
+        assert!(
+            fresh
+                .snapshot()
+                .expect("fresh snapshot")
+                .torrents
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn ephemeral_page_cap_rolls_back_current_metadata_transaction() {
+        let configured = ConfiguredStorageRoot::platform("downloads");
+        let mut store = SessionStore::open_ephemeral_with_maximum_bytes(
+            "bounded",
+            std::slice::from_ref(&configured),
+            512 * 1024,
+        )
+        .expect("open bounded ephemeral store");
+        let raw_info = single_file_info_for_pieces(100_000, 16_384);
+        let torrent_id = crate::control::encode_info_hash(Sha1::digest(&raw_info).into());
+        let request = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "bounded-add".to_owned(),
+            expected_revision: None,
+            command: Command::AddMagnet {
+                magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
+                storage_root: "downloads".to_owned(),
+                start_content: false,
+                skip_files: Vec::new(),
+            },
+        };
+        store.handle_durable(&request).expect("add pending magnet");
+        let revision = store.revision().expect("revision before exhaustion");
+
+        let error = store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect_err("metadata must exceed the page cap");
+        assert!(error.is_resource_limit(), "unexpected error: {error}");
+        assert!(matches!(
+            crate::application_error_response(
+                "bounded-metadata".to_owned(),
+                revision,
+                &crate::ApplicationError::Store(error),
+            )
+            .outcome,
+            ResponseOutcome::Error {
+                error: crate::ErrorResponse {
+                    code: ErrorCode::ResourceLimit,
+                    ..
+                }
+            }
+        ));
+        assert_eq!(store.revision().expect("rolled back revision"), revision);
+        let resume = store
+            .load_resume(&torrent_id)
+            .expect("store remains responsive");
+        assert_eq!(resume.state, TorrentState::AwaitingMetadata);
+        assert!(resume.raw_info.is_none());
+    }
+
     fn multi_file_info() -> Vec<u8> {
         let mut info = b"d5:filesld6:lengthi4e4:pathl5:a.bineed6:lengthi4e4:pathl5:b.bineee4:name5:multi12:piece lengthi4e6:pieces40:".to_vec();
         info.extend_from_slice(&[b'a'; 20]);
@@ -3462,7 +3729,10 @@ mod tests {
         let store =
             SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
         assert_eq!(store.revision().expect("revision"), 0);
-        let database_path = store.database_path().to_owned();
+        let database_path = store
+            .database_path()
+            .expect("durable database path")
+            .to_owned();
         drop(store);
 
         let store = SessionStore::open(&root, "default", std::slice::from_ref(&configured))
@@ -3606,7 +3876,10 @@ mod tests {
             store.load_dht_snapshot().expect("load DHT state"),
             Some(snapshot)
         );
-        let database = store.database_path().to_owned();
+        let database = store
+            .database_path()
+            .expect("durable database path")
+            .to_owned();
         drop(store);
         let connection = Connection::open(&database).expect("inspect database");
         connection
@@ -3633,7 +3906,10 @@ mod tests {
             SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
         let request = add_request("add-before-migration");
         let expected = store.handle_durable(&request).expect("add durable torrent");
-        let database_path = store.database_path().to_owned();
+        let database_path = store
+            .database_path()
+            .expect("durable database path")
+            .to_owned();
         drop(store);
 
         let connection = Connection::open(&database_path).expect("open raw database");
@@ -3688,7 +3964,10 @@ mod tests {
         store
             .handle_durable(&add_request("add-before-v3-migration"))
             .expect("add durable torrent");
-        let database_path = store.database_path().to_owned();
+        let database_path = store
+            .database_path()
+            .expect("durable database path")
+            .to_owned();
         drop(store);
 
         let connection = Connection::open(&database_path).expect("open raw database");
@@ -3752,7 +4031,10 @@ mod tests {
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
-        let database_path = store.database_path().to_owned();
+        let database_path = store
+            .database_path()
+            .expect("durable database path")
+            .to_owned();
         drop(store);
 
         let connection = Connection::open(&database_path).expect("open raw database");
@@ -3816,7 +4098,10 @@ mod tests {
                 },
             })
             .expect("begin removal");
-        let database_path = store.database_path().to_owned();
+        let database_path = store
+            .database_path()
+            .expect("durable database path")
+            .to_owned();
         drop(store);
 
         let connection = Connection::open(&database_path).expect("open raw database");
@@ -3941,7 +4226,10 @@ mod tests {
         ));
         assert_eq!(store.revision().expect("unchanged revision"), revision);
 
-        let database_path = store.database_path().to_owned();
+        let database_path = store
+            .database_path()
+            .expect("durable database path")
+            .to_owned();
         drop(store);
         let connection = Connection::open(database_path).expect("inspect exact schema bounds");
         let exact_hash = [0x55_u8; 20];
@@ -4062,7 +4350,10 @@ mod tests {
         let mut store = SessionStore::open(&root, "default", std::slice::from_ref(&configured))
             .expect("open session store");
         store.handle_durable(&request).expect("add torrent");
-        let database_path = store.database_path().to_owned();
+        let database_path = store
+            .database_path()
+            .expect("durable database path")
+            .to_owned();
         drop(store);
 
         let connection = Connection::open(&database_path).expect("open receipt database");
