@@ -164,7 +164,10 @@ the same private in-memory session database, never in a temporary or payload
 file, so it disappears with the rest of the ephemeral catalog. Tactical
 [`075`](../tactical/075-ephemeral-application-state.md) records the implemented
 page/RSS measurements, controlled loopback lifecycle, and no-file evidence;
-Tactical `081` must prove the added source BLOB obeys those bounds.
+Tactical `081` provisionally raises the main-database budget to 256 MiB and
+must measure that one 64-MiB source plus retained exact info and catalog
+overhead fits, while preserving the independent 32-MiB metrics budget and
+atomic typed exhaustion.
 
 ### Verified metadata is durable
 
@@ -214,10 +217,15 @@ backup/removal boundary; ephemeral mode gets the same semantics in memory
 without a path. A later explicit export may use those exact bytes, while a
 source-less export remains synthesized and must be labeled accordingly.
 
-Explicit `.torrent` and durable `raw_info` rise together to 16 MiB under the
-existing structural limits. Peer-controlled BEP 9 metadata remains one MiB.
-This is a context-specific hostile-input bound, not trust in a local filename
-or authenticated caller. Original-source bytes and tracker credentials remain
+Planned Tactical `081` raises explicit `.torrent`, original-source, and
+durable `raw_info` bounds to a provisional 64 MiB while independently raising
+peer-controlled BEP 9 metadata to libtorrent's 30-MiB default. The larger
+durable profile is required because the adopted 2,097,152-piece limit alone
+permits a 40-MiB v1 piece-hash string. The tactical also raises have-state and
+schema cardinalities and requires compact or paged downstream owners rather
+than treating this as a parser-only constants change. These remain
+context-specific hostile-input bounds, not trust in a local filename or
+authenticated caller. Original-source bytes and tracker credentials remain
 sensitive and are excluded from routine snapshots and logs.
 
 ### Verified-piece state is essential resume state

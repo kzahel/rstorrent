@@ -27,10 +27,15 @@ binding, listener advertisement, NAT traversal, mature choking, or multi-peer
 upload policy.
 
 Planned Tactical [`081`](../tactical/081-v1-torrent-byte-intake.md) authorizes
-bounded v1 outer-metainfo intake and BEP 12 tier retention over the existing
-UDP tracker runtime. This plan changes no support row until deterministic,
-runtime, and controlled libtorrent evidence is recorded; HTTP/HTTPS tracker
-transport, v2/hybrid integrity, and the one-MiB BEP 9 maximum remain unchanged.
+bounded v1 outer-metainfo intake, libtorrent-aligned large-v1 limits, and BEP
+12 tier retention over the existing UDP tracker runtime. Its planned profiles
+separate a 30-MiB BEP 9 receive ceiling from a provisional 64-MiB caller-owned
+and durable ceiling, retain upload of valid local metadata at its actual
+bounded size, adopt 2,097,152 pieces and a 536,854,528-byte piece length, and
+require measured comparison for structural limits without direct numeric
+equivalents. This plan changes no support row until deterministic, runtime,
+resource, and controlled libtorrent evidence is recorded; HTTP/HTTPS tracker
+transport and v2/hybrid integrity remain absent.
 
 ## Purpose And Claim Policy
 

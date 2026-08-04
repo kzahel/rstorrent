@@ -104,7 +104,12 @@ accepted persistent-source and v1 `.torrent` intake boundary. It is authorized
 but not implemented: exact source and operational metadata remain distinct,
 SQLite retains bounded original source bytes in durable or ephemeral mode,
 metainfo tracker tiers become operational state, and one semantic byte
-operation is adapted to WebSocket, HTTP automation, and raw Tauri IPC.
+operation is adapted to WebSocket, HTTP automation, and raw Tauri IPC. Its
+amended compatibility target follows pinned libtorrent's v1 limits: 30-MiB
+BEP 9 receive, provisional 64-MiB explicit/durable/source input and local
+metadata upload, 2,097,152 pieces, 536,854,528-byte pieces, and measured
+calibration where parser, catalog, path, view, or platform representations are
+not apples-to-apples.
 
 ## Current Queue
 
@@ -112,10 +117,12 @@ operation is adapted to WebSocket, HTTP automation, and raw Tauri IPC.
 
 **Execute Tactical
 [`081`](../tactical/081-v1-torrent-byte-intake.md).** Implement bounded v1
-outer-metainfo parsing and persistence, truthful source fidelity, 16-MiB
-explicit/durable metadata, metainfo tracker tiers, one atomic semantic byte
-operation, one-frame browser WebSocket intake, raw HTTP automation, raw Tauri
-IPC, and controlled libtorrent evidence without adding visible picker UX.
+outer-metainfo parsing and persistence, truthful source fidelity, the
+libtorrent-aligned large-v1 parser/geometry limits and scalable downstream
+owners, full paged metainfo tracker/file catalogs, one atomic semantic byte
+operation, one-frame 64-MiB browser WebSocket intake, raw HTTP automation, raw
+Tauri IPC, and controlled libtorrent evidence without adding visible picker
+UX.
 
 ### Next
 

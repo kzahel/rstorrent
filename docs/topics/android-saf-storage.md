@@ -14,6 +14,11 @@ authorized physical run was attempted, but ChromeOS ARCVM ADB was unavailable.
 Tactical `073` now makes dynamic publication confirmation a durable
 `published`/`checking` handoff; fresh published handles run through the common
 piece checker before `complete` can commit.
+Planned Tactical `081` extends the shared catalog/storage boundary to
+libtorrent-scale v1 metainfo: Android consumes compact selection and paged
+file catalogs, derives the same deterministic safe operational paths, and
+keeps provider requests, documents, and descriptors lazy. It does not add an
+Android `.torrent` picker or document-intent intake.
 
 ## Scope
 

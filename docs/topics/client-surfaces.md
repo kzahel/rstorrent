@@ -53,9 +53,12 @@ does not mirror this dense desktop diagnostic surface.
 
 Planned Tactical `081` adds adapter-level v1 `.torrent` byte intake through
 the ordinary browser WebSocket and raw in-process Tauri IPC, plus HTTP
-automation, without adding a visible file picker. The subsequent presentation
-slice will let the shared Add flow select a browser `File`, read its
-`ArrayBuffer`, and call that transport-neutral client operation.
+automation, without adding a visible file picker. The provisional raw
+attachment maximum is 64 MiB while text/JSON remains 64 KiB; file and tracker
+inspection move to bounded pages so larger accepted catalogs do not inflate
+one view snapshot. The subsequent presentation slice will let the shared Add
+flow select a browser `File`, read its `ArrayBuffer`, and call that
+transport-neutral client operation.
 
 ## Scope
 

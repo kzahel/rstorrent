@@ -81,6 +81,10 @@ identity, start intent, selection, exact source length, and digest. Durable
 receipt replay compares the digest and normalized options rather than storing
 bytes in JSON. Adapters may frame or carry the attachment differently, but no
 adapter gains alternate mutation, duplicate, revision, or storage policy.
+Tactical `081` provisionally bounds this attachment at 64 MiB, admits one at a
+time per host, and replaces per-file index enumeration with canonical
+all/none/range intent plus later paged mutations so the command envelope stays
+within 64 KiB at the accepted file cardinality.
 
 Application views may expose a derived progress assessment without promoting
 it to a second durable state machine. The assessment distinguishes an active

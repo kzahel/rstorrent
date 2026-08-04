@@ -42,8 +42,12 @@ cost, serialized update volume, queue high water and reset recovery explicit
 hardware-profile evidence.
 Planned Tactical `081` extends tracker rows with truthful metainfo source and
 HTTP/HTTPS configured-but-unsupported state while keeping credential-bearing
-URL components out of the projection. It does not make the view or diagnostics
-the tracker configuration authority.
+URL components out of the projection. It also replaces the current complete
+4,096-file and 32-tracker snapshot assumptions with bounded pages carrying a
+total count and stable cursor/range, so accepted libtorrent-scale catalogs do
+not require one rendered snapshot or whole-catalog patch. The existing 16-MiB
+snapshot ceiling becomes a page bound. It does not make the view or
+diagnostics the tracker configuration authority.
 
 ## Purpose And Scope
 
@@ -731,6 +735,11 @@ The view set retains that coherent initial snapshot separately while later
 small patches remain governed by the 512 KiB steady-state ceiling. Gateway and
 browser readers enforce the same 16 MiB maximum; an oversized response fails
 explicitly rather than truncating.
+
+That is the implemented whole-catalog contract, not the post-Tactical-081
+cardinality policy. Tactical `081` must preserve these bounds per page while
+adding total-count, stable traversal, reset, and page-scoped patch semantics;
+clients may not infer total accepted file or tracker count from page length.
 
 Responsive interest requests Files only while that tab is visible and evicts
 the materialization after the ordered view removal. A phone detail does not

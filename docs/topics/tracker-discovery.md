@@ -252,7 +252,10 @@ comparator adds useful live evidence but cannot replace controlled protocol
 and libtorrent tests.
 
 Tactical `081` is the accepted bounded exception to the first gap: it parses
-and persists up to 32 valid unique `announce-list`/`announce` URLs, preserves
-compact tier grouping and metainfo source, feeds only UDP rows into the
-existing manager, and projects retained HTTP/HTTPS rows as unsupported. It
-does not implement their wire protocols or broaden tracker authentication.
+and persists every valid unique `announce-list`/`announce` URL admitted by its
+outer byte and calibrated decode-work profiles, preserves compact tier
+grouping and metainfo source, feeds only UDP rows into the existing manager,
+and projects retained HTTP/HTTPS rows through a bounded paged view as
+unsupported. The full catalog no longer has a 32-record ceiling, while the
+existing limit of eight concurrently active UDP operations remains. It does
+not implement other tracker wire protocols or broaden tracker authentication.
