@@ -1,1333 +1,72 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::error::Error;
-use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 use tokio::sync::Notify;
-use tokio::time::Instant;
-use ts_rs::TS;
+use tokio::task::{JoinError, JoinHandle};
+use tokio_util::sync::CancellationToken;
 
-use rstorrent_engine::peer::{
-    DialEligibility, PeerFailure, PeerRegistrySnapshot, PeerSource, PeerSources,
-};
+use rstorrent_engine::peer::PeerRegistrySnapshot;
 use rstorrent_engine::{
-    DiskCheckpointStage, DiskPieceRuntimeSnapshot, DiskPieceStage, DiskPressure,
-    DiskRuntimeSnapshot, PeerConnectionDirection, PeerConnectionLifecycle,
-    PeerConnectionObservation, PeerConnectionRole, PeerRequestWindowPhase, PeerTransport,
+    DiskPieceRuntimeSnapshot, DiskRuntimeSnapshot, PeerConnectionObservation,
     TrackerRuntimeSnapshot,
 };
-use rstorrent_protocol::peer_id::identify_client;
 
-use crate::control::{
-    RemovalState, ServiceSnapshot, StorageSettingsSnapshot, StorageState, TorrentSnapshot,
-    TorrentState,
-};
+use crate::control::{ServiceSnapshot, StorageSettingsSnapshot, StorageState, TorrentState};
 use crate::diagnostics::{
     DiagnosticCategory, DiagnosticDraft, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
-    DiagnosticRetention, DiagnosticSeverity, DiagnosticStore, MAX_DIAGNOSTIC_PATCH_BYTES,
-    MAX_DIAGNOSTIC_PATCH_EVENTS, diagnostic_matches, interest_matches, patch_encoded_len,
-    valid_filter,
+    DiagnosticSeverity, DiagnosticStore, diagnostic_matches, interest_matches,
 };
 use crate::file_views::{FileCatalogState, FileProgressModel, FileView};
-use crate::speed::{
-    MAX_SPEED_SERIES, SessionRateHistory, SpeedHistoryView, SpeedMetric, SpeedRange,
-};
-use crate::tracker_views::{TrackerCatalogState, TrackerView, TrackerViewModel};
+use crate::speed::SessionRateHistory;
+use crate::tracker_views::{TrackerCatalogState, TrackerView};
 
+mod contract;
+mod diff;
+mod model;
+mod ranges;
+mod subscription;
 mod view_set;
 
-pub use view_set::{
-    API_VERSION, ApiEncoding, ApiHello, ApiLimits, ApiVersion, DeliveryMode, OpenViewSetOptions,
-    OpenViewSetRequest, OpenViewSetResponse, UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy,
-    ViewSet, ViewSetError, ViewSetOwner, ViewSetStats, ViewSetUpdate, ViewSpec,
+pub(crate) use diff::coalesce_patch;
+use diff::{
+    disk_patch, patch_for, projection_requires_snapshot, targeted_activity_patch,
+    targeted_peer_patch, targeted_swarm_patch, targeted_tracker_patch,
 };
-pub(crate) use view_set::{
-    DEFAULT_VIEW_SET_QUEUE_BYTES, VIEW_SET_LEASE_MILLIS, VIEW_SET_REAPER_INTERVAL_MILLIS,
-    ViewSetInner, ViewSetLeaseReaper,
-};
+pub(crate) use ranges::ranges_from_pieces;
+use ranges::{insert_range, range_cardinality};
+pub(crate) use subscription::validate_spec;
+use subscription::{QueueState, SubscriberInner, parse_revision};
 
-pub const VIEW_CONTRACT_VERSION: u16 = 2;
-pub const MIN_SUBSCRIPTION_QUEUE_BYTES: u32 = 4 * 1024;
-pub const MAX_SUBSCRIPTION_QUEUE_BYTES: u32 = 4 * 1024 * 1024;
-pub const MAX_SUBSCRIPTION_INTERVAL_MILLIS: u32 = 60_000;
+pub use contract::{
+    API_VERSION, ActivePiece, ActivePieceStageView, ApiEncoding, ApiHello, ApiLimits, ApiVersion,
+    CapabilityStatus, DeliveryMode, DeliveryPolicy, DhtBucketView, DhtInspectionView,
+    DhtLifecycleView, DhtLookupView, DhtNetworkPolicyView, DiskCheckpointStageView,
+    DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView, IndexRange,
+    OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
+    PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerRequestPhase,
+    PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
+    ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason, ResetReason,
+    SubscriptionError, SubscriptionSpec, SubscriptionStats, SwarmCatalogState, SwarmCountsView,
+    SwarmPeerState, SwarmPeerView, TorrentView, UpdateBatch, UpdateViewSetRequest,
+    VIEW_CONTRACT_VERSION, ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector,
+    ViewSetError, ViewSetOwner, ViewSetStats, ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate,
+    ViewUpdatePayload,
+};
+pub(crate) use contract::{
+    DEFAULT_VIEW_SET_QUEUE_BYTES, VIEW_SET_LEASE_MILLIS, VIEW_SET_REAPER_INTERVAL_MILLIS,
+};
+use contract::{MAX_VIEW_SET_WAIT_MILLIS, MAX_VIEW_SETS, MAX_VIEW_SETS_PER_OWNER};
+pub use model::assess_progress;
+use model::{DiskSessionModel, DiskSessionView, SwarmModel, TorrentModel, swarm_model};
+pub(crate) use model::{DurableTorrentViewState, TorrentActivity};
+use view_set::{
+    PollState, ViewSetInitialState, ViewSetInner, generate_view_set_id, parse_decimal,
+    validated_open, validated_update,
+};
 
 static NEXT_EPOCH: AtomicU64 = AtomicU64::new(1);
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ViewSelector {
-    TorrentList,
-    SessionDht,
-    Torrent {
-        torrent_id: String,
-    },
-    SessionSpeed {
-        range: SpeedRange,
-        metrics: Vec<SpeedMetric>,
-    },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum ViewProjection {
-    Summary,
-    PieceActivity,
-    Disk,
-    Dht,
-    Speed,
-    Peers,
-    Swarm,
-    Files,
-    Trackers,
-    Diagnostics,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum DhtLifecycleView {
-    Offline,
-    BootstrapEmpty,
-    Participating,
-    Inactive,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum DhtNetworkPolicyView {
-    Offline,
-    LoopbackOnly,
-    Online,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct DhtBucketView {
-    pub bucket_index: u16,
-    pub good_nodes: u8,
-    pub questionable_nodes: u8,
-    pub replacement_candidates: u8,
-    pub oldest_live_response_age_millis: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct DhtLookupView {
-    pub lookup_id: String,
-    pub target_id: String,
-    pub age_millis: String,
-    pub deadline_in_millis: String,
-    pub unqueried_candidates: u16,
-    pub in_flight_candidates: u16,
-    pub responded_candidates: u16,
-    pub failed_candidates: u16,
-    pub discovered_peers: u16,
-    pub closest_responded_prefix_bits: Option<u16>,
-    pub last_convergence_improvement_age_millis: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct DhtInspectionView {
-    pub lifecycle: DhtLifecycleView,
-    pub network_policy: DhtNetworkPolicyView,
-    pub local_node_id: String,
-    pub captured_millis: String,
-    pub routing_nodes_v4: u16,
-    pub occupied_buckets_v4: u16,
-    pub deepest_shared_prefix_bits_v4: Option<u16>,
-    pub active_transactions: u32,
-    pub active_lookups: u32,
-    pub queries_sent: String,
-    pub responses_received: String,
-    pub queries_received: String,
-    pub malformed_received: String,
-    pub rate_limited: String,
-    pub discovered_peers: String,
-    pub bootstrap_attempts: String,
-    pub routing_refreshes: String,
-    pub datagram_bytes_sent: String,
-    pub datagram_bytes_received: String,
-    pub buckets_v4: Vec<DhtBucketView>,
-    pub lookups: Vec<DhtLookupView>,
-}
-
-impl DhtInspectionView {
-    fn inactive() -> Self {
-        Self {
-            lifecycle: DhtLifecycleView::Inactive,
-            network_policy: DhtNetworkPolicyView::Offline,
-            local_node_id: "0000000000000000000000000000000000000000".to_owned(),
-            captured_millis: "0".to_owned(),
-            routing_nodes_v4: 0,
-            occupied_buckets_v4: 0,
-            deepest_shared_prefix_bits_v4: None,
-            active_transactions: 0,
-            active_lookups: 0,
-            queries_sent: "0".to_owned(),
-            responses_received: "0".to_owned(),
-            queries_received: "0".to_owned(),
-            malformed_received: "0".to_owned(),
-            rate_limited: "0".to_owned(),
-            discovered_peers: "0".to_owned(),
-            bootstrap_attempts: "0".to_owned(),
-            routing_refreshes: "0".to_owned(),
-            datagram_bytes_sent: "0".to_owned(),
-            datagram_bytes_received: "0".to_owned(),
-            buckets_v4: (0..160)
-                .map(|bucket_index| DhtBucketView {
-                    bucket_index,
-                    good_nodes: 0,
-                    questionable_nodes: 0,
-                    replacement_candidates: 0,
-                    oldest_live_response_age_millis: None,
-                })
-                .collect(),
-            lookups: Vec::new(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum ProgressDisposition {
-    Active,
-    Waiting,
-    Blocked,
-    Inactive,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum ProgressPhase {
-    Discovery,
-    Metadata,
-    Storage,
-    Transfer,
-    Verification,
-    Publication,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum ProgressReason {
-    NetworkDisabled,
-    DiscoveringPeers,
-    WaitingForDiscovery,
-    NoEnabledDiscoverySource,
-    AcquiringMetadata,
-    PreparingStorage,
-    WaitingForStorage,
-    TransferringPieces,
-    VerifyingPieces,
-    WaitingForPublication,
-    Paused,
-    Complete,
-    NeedsRepair,
-    Failed,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum ProgressAction {
-    EnableNetwork,
-    EnableDiscovery,
-    SelectStorage,
-    Resume,
-    RepairStorage,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct ProgressAssessment {
-    pub disposition: ProgressDisposition,
-    pub phase: ProgressPhase,
-    pub reason: ProgressReason,
-    pub actions: Vec<ProgressAction>,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct ProgressInputs {
-    pub task_active: bool,
-    pub network_disabled: bool,
-    pub discovery_exhausted: bool,
-    pub discovery_active: bool,
-    pub discovery_retry_scheduled: bool,
-    pub dht_enabled: bool,
-}
-
-pub fn assess_progress(snapshot: &TorrentSnapshot, inputs: ProgressInputs) -> ProgressAssessment {
-    use ProgressAction::{EnableDiscovery, EnableNetwork, RepairStorage, Resume, SelectStorage};
-    use ProgressDisposition::{Active, Blocked, Inactive, Waiting};
-    use ProgressPhase::{Discovery, Publication, Storage, Transfer, Verification};
-    use ProgressReason::{
-        AcquiringMetadata, Complete, DiscoveringPeers, Failed, NeedsRepair, NetworkDisabled,
-        NoEnabledDiscoverySource, Paused, PreparingStorage, TransferringPieces, VerifyingPieces,
-        WaitingForDiscovery, WaitingForPublication, WaitingForStorage,
-    };
-
-    match snapshot.state {
-        TorrentState::Paused => ProgressAssessment {
-            disposition: Inactive,
-            phase: phase_for(snapshot),
-            reason: Paused,
-            actions: vec![Resume],
-        },
-        TorrentState::Complete => ProgressAssessment {
-            disposition: Inactive,
-            phase: Publication,
-            reason: Complete,
-            actions: Vec::new(),
-        },
-        TorrentState::NeedsRepair => ProgressAssessment {
-            disposition: Blocked,
-            phase: Storage,
-            reason: NeedsRepair,
-            actions: vec![RepairStorage],
-        },
-        TorrentState::Error => ProgressAssessment {
-            disposition: Inactive,
-            phase: phase_for(snapshot),
-            reason: Failed,
-            actions: Vec::new(),
-        },
-        TorrentState::AwaitingStorage if inputs.task_active => ProgressAssessment {
-            disposition: Active,
-            phase: Storage,
-            reason: PreparingStorage,
-            actions: Vec::new(),
-        },
-        TorrentState::AwaitingStorage => ProgressAssessment {
-            disposition: Blocked,
-            phase: Storage,
-            reason: WaitingForStorage,
-            actions: vec![SelectStorage],
-        },
-        TorrentState::AwaitingPublication => ProgressAssessment {
-            disposition: Waiting,
-            phase: Publication,
-            reason: WaitingForPublication,
-            actions: Vec::new(),
-        },
-        TorrentState::Checking => ProgressAssessment {
-            disposition: if inputs.task_active { Active } else { Waiting },
-            phase: Verification,
-            reason: VerifyingPieces,
-            actions: Vec::new(),
-        },
-        TorrentState::Downloading => ProgressAssessment {
-            disposition: if inputs.task_active { Active } else { Waiting },
-            phase: Transfer,
-            reason: TransferringPieces,
-            actions: Vec::new(),
-        },
-        TorrentState::AwaitingMetadata if inputs.network_disabled => ProgressAssessment {
-            disposition: Blocked,
-            phase: Discovery,
-            reason: NetworkDisabled,
-            actions: vec![EnableNetwork],
-        },
-        TorrentState::AwaitingMetadata if inputs.task_active || inputs.discovery_active => {
-            ProgressAssessment {
-                disposition: Active,
-                phase: Discovery,
-                reason: if inputs.task_active {
-                    AcquiringMetadata
-                } else {
-                    DiscoveringPeers
-                },
-                actions: Vec::new(),
-            }
-        }
-        TorrentState::AwaitingMetadata
-            if inputs.discovery_retry_scheduled || inputs.dht_enabled =>
-        {
-            ProgressAssessment {
-                disposition: Waiting,
-                phase: Discovery,
-                reason: WaitingForDiscovery,
-                actions: Vec::new(),
-            }
-        }
-        TorrentState::AwaitingMetadata if inputs.discovery_exhausted => ProgressAssessment {
-            disposition: Blocked,
-            phase: Discovery,
-            reason: NoEnabledDiscoverySource,
-            actions: vec![EnableDiscovery],
-        },
-        TorrentState::AwaitingMetadata => ProgressAssessment {
-            disposition: Waiting,
-            phase: Discovery,
-            reason: WaitingForDiscovery,
-            actions: Vec::new(),
-        },
-    }
-}
-
-fn phase_for(snapshot: &TorrentSnapshot) -> ProgressPhase {
-    match snapshot.state {
-        TorrentState::AwaitingMetadata => ProgressPhase::Discovery,
-        TorrentState::AwaitingStorage | TorrentState::NeedsRepair => ProgressPhase::Storage,
-        TorrentState::Checking => ProgressPhase::Verification,
-        TorrentState::Downloading => ProgressPhase::Transfer,
-        TorrentState::AwaitingPublication | TorrentState::Complete => ProgressPhase::Publication,
-        TorrentState::Paused | TorrentState::Error if snapshot.metadata_available => {
-            ProgressPhase::Transfer
-        }
-        TorrentState::Paused | TorrentState::Error => ProgressPhase::Discovery,
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct DeliveryPolicy {
-    pub min_interval_millis: u32,
-    pub max_queue_bytes: u32,
-}
-
-impl Default for DeliveryPolicy {
-    fn default() -> Self {
-        Self {
-            min_interval_millis: 100,
-            max_queue_bytes: 256 * 1024,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct SubscriptionSpec {
-    pub selector: ViewSelector,
-    pub projection: ViewProjection,
-    pub delivery: DeliveryPolicy,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub diagnostics: Option<DiagnosticFilter>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct IndexRange {
-    pub start: u32,
-    pub end_exclusive: u32,
-}
-
-impl IndexRange {
-    pub fn new(start: u32, end_exclusive: u32) -> Option<Self> {
-        (start < end_exclusive).then_some(Self {
-            start,
-            end_exclusive,
-        })
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct ActivePiece {
-    pub piece_id: String,
-    pub piece_index: u32,
-    pub attempt: u32,
-    pub piece_length: u32,
-    pub stage: ActivePieceStageView,
-    pub requested: Vec<IndexRange>,
-    pub received: Vec<IndexRange>,
-    pub stored: Vec<IndexRange>,
-    pub age_millis: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum ActivePieceStageView {
-    Requested,
-    Received,
-    Stored,
-    Hashing,
-    CheckpointDirty,
-    CheckpointSyncing,
-    CheckpointCommitting,
-    Failed,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum DiskPressureView {
-    #[default]
-    Idle,
-    Normal,
-    Backpressured,
-    Draining,
-    Error,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum DiskPieceStageView {
-    Receiving,
-    Queued,
-    Writing,
-    Stored,
-    Hashing,
-    CheckpointDirty,
-    CheckpointSyncing,
-    CheckpointCommitting,
-    Failed,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum DiskCheckpointStageView {
-    Idle,
-    Syncing,
-    Committing,
-    Error,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct DiskPipelineView {
-    pub pressure: DiskPressureView,
-    pub checkpoint_stage: DiskCheckpointStageView,
-    pub intake_backpressured: bool,
-    pub sample_millis: String,
-    pub resident_limit_bytes: String,
-    pub resident_high_watermark_bytes: String,
-    pub resident_low_watermark_bytes: String,
-    pub requested_bytes: String,
-    pub resident_bytes: String,
-    pub queued_write_bytes: String,
-    pub writing_bytes: String,
-    pub hashing_bytes: String,
-    pub checkpoint_dirty_pieces: String,
-    pub checkpoint_dirty_bytes: String,
-    pub checkpoint_dirty_piece_high_water: String,
-    pub checkpoint_dirty_byte_high_water: String,
-    pub checkpoint_oldest_dirty_millis: String,
-    pub checkpoint_batches_started: String,
-    pub checkpoint_batches_completed: String,
-    pub checkpoint_pieces_completed: String,
-    pub checkpoint_sync_operations_completed: String,
-    pub checkpoint_sync_service_micros: String,
-    pub checkpoint_sync_service_max_micros: String,
-    pub checkpoint_commit_service_micros: String,
-    pub checkpoint_commit_service_max_micros: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub checkpoint_active_micros: Option<String>,
-    pub storage_jobs_pending: String,
-    pub received_bytes_total: String,
-    pub stored_bytes_total: String,
-    pub verified_bytes_total: String,
-    pub receive_rate_bytes: String,
-    pub write_rate_bytes: String,
-    pub hash_rate_bytes: String,
-    pub write_operations_started: String,
-    pub write_operations_completed: String,
-    pub hash_operations_started: String,
-    pub hash_operations_completed: String,
-    pub write_queue_wait_micros: String,
-    pub write_queue_wait_max_micros: String,
-    pub write_service_micros: String,
-    pub write_service_max_micros: String,
-    pub hash_queue_wait_micros: String,
-    pub hash_queue_wait_max_micros: String,
-    pub hash_service_micros: String,
-    pub hash_service_max_micros: String,
-    pub pressure_transition_count: String,
-    pub backpressured_millis_total: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_error: Option<String>,
-}
-
-impl Default for DiskPipelineView {
-    fn default() -> Self {
-        Self {
-            pressure: DiskPressureView::Idle,
-            checkpoint_stage: DiskCheckpointStageView::Idle,
-            intake_backpressured: false,
-            sample_millis: "0".to_owned(),
-            resident_limit_bytes: "0".to_owned(),
-            resident_high_watermark_bytes: "0".to_owned(),
-            resident_low_watermark_bytes: "0".to_owned(),
-            requested_bytes: "0".to_owned(),
-            resident_bytes: "0".to_owned(),
-            queued_write_bytes: "0".to_owned(),
-            writing_bytes: "0".to_owned(),
-            hashing_bytes: "0".to_owned(),
-            checkpoint_dirty_pieces: "0".to_owned(),
-            checkpoint_dirty_bytes: "0".to_owned(),
-            checkpoint_dirty_piece_high_water: "0".to_owned(),
-            checkpoint_dirty_byte_high_water: "0".to_owned(),
-            checkpoint_oldest_dirty_millis: "0".to_owned(),
-            checkpoint_batches_started: "0".to_owned(),
-            checkpoint_batches_completed: "0".to_owned(),
-            checkpoint_pieces_completed: "0".to_owned(),
-            checkpoint_sync_operations_completed: "0".to_owned(),
-            checkpoint_sync_service_micros: "0".to_owned(),
-            checkpoint_sync_service_max_micros: "0".to_owned(),
-            checkpoint_commit_service_micros: "0".to_owned(),
-            checkpoint_commit_service_max_micros: "0".to_owned(),
-            checkpoint_active_micros: None,
-            storage_jobs_pending: "0".to_owned(),
-            received_bytes_total: "0".to_owned(),
-            stored_bytes_total: "0".to_owned(),
-            verified_bytes_total: "0".to_owned(),
-            receive_rate_bytes: "0".to_owned(),
-            write_rate_bytes: "0".to_owned(),
-            hash_rate_bytes: "0".to_owned(),
-            write_operations_started: "0".to_owned(),
-            write_operations_completed: "0".to_owned(),
-            hash_operations_started: "0".to_owned(),
-            hash_operations_completed: "0".to_owned(),
-            write_queue_wait_micros: "0".to_owned(),
-            write_queue_wait_max_micros: "0".to_owned(),
-            write_service_micros: "0".to_owned(),
-            write_service_max_micros: "0".to_owned(),
-            hash_queue_wait_micros: "0".to_owned(),
-            hash_queue_wait_max_micros: "0".to_owned(),
-            hash_service_micros: "0".to_owned(),
-            hash_service_max_micros: "0".to_owned(),
-            pressure_transition_count: "0".to_owned(),
-            backpressured_millis_total: "0".to_owned(),
-            last_error: None,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct DiskPieceView {
-    pub row_id: String,
-    pub torrent_id: String,
-    pub torrent_name: String,
-    pub piece_index: u32,
-    pub piece_length: u32,
-    pub attempt: u32,
-    pub stage: DiskPieceStageView,
-    pub requested_bytes: String,
-    pub received_bytes: String,
-    pub stored_bytes: String,
-    pub age_millis: String,
-    pub stage_age_millis: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct TorrentView {
-    pub torrent_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub display_name: Option<String>,
-    pub state: TorrentState,
-    pub storage_state: StorageState,
-    pub metadata_available: bool,
-    pub piece_count: u32,
-    pub verified_piece_count: u32,
-    pub requested_bytes: String,
-    pub received_bytes: String,
-    pub stored_bytes: String,
-    pub active_peer_connections: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub configured_tracker_count: Option<u32>,
-    pub payload_download_rate_bytes: String,
-    pub progress: ProgressAssessment,
-    pub archived: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub removal_state: Option<RemovalState>,
-    pub delete_managed_data_supported: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum CapabilityStatus {
-    Available,
-    Unavailable,
-    Unsupported,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum PeerDirection {
-    Incoming,
-    Outgoing,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum PeerTransportKind {
-    Tcp,
-    Utp,
-}
-
-#[derive(
-    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, JsonSchema, TS,
-)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum PeerFlagView {
-    Incoming,
-    Encrypted,
-    DownloadAllowed,
-    DownloadChoked,
-    UploadAllowed,
-    UploadChoked,
-    ExtensionProtocol,
-    MetadataExtension,
-    Utp,
-    HolePunched,
-    OnParole,
-    OptimisticUnchoke,
-    Snubbed,
-    UploadOnly,
-    Endgame,
-    Seed,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum PeerLifecycle {
-    TransportConnecting,
-    ProtocolHandshaking,
-    Connected,
-    Disconnecting,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum PeerRole {
-    Metadata,
-    Content,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum PeerRequestPhase {
-    SlowStart,
-    Steady,
-    Stalled,
-}
-
-#[derive(
-    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, JsonSchema, TS,
-)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum PeerSourceView {
-    Tracker,
-    PeerExchange,
-    Dht,
-    LocalDiscovery,
-    Incoming,
-    Manual,
-    MagnetHint,
-    Cache,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum PeerDisconnectReason {
-    Connect,
-    Handshake,
-    Protocol,
-    RemoteClosed,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum SwarmCatalogState {
-    Active,
-    Inactive,
-    TorrentMissing,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum SwarmPeerState {
-    Eligible,
-    NotConnectable,
-    Dialing,
-    Connected,
-    BackedOff,
-    FailureLimited,
-    Banned,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct SwarmCountsView {
-    pub total: u32,
-    pub eligible: u32,
-    pub not_connectable: u32,
-    pub dialing: u32,
-    pub connected: u32,
-    pub backed_off: u32,
-    pub failure_limited: u32,
-    pub banned: u32,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct SwarmPeerView {
-    pub peer_record_id: String,
-    pub torrent_id: String,
-    pub endpoint: String,
-    pub sources: Vec<PeerSourceView>,
-    pub state: SwarmPeerState,
-    pub connectable: bool,
-    pub first_observed_age_millis: String,
-    pub last_observed_age_millis: String,
-    pub retry_in_millis: Option<String>,
-    pub dial_attempts: u32,
-    pub consecutive_failures: u32,
-    pub total_failures: u32,
-    pub last_dial_age_millis: Option<String>,
-    pub last_connected_age_millis: Option<String>,
-    pub last_failure: Option<PeerDisconnectReason>,
-    pub last_failure_age_millis: Option<String>,
-    pub trust_points: i8,
-    pub hash_failures: u8,
-    pub valid_pieces: u32,
-    pub on_parole: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct PeerFieldCapabilities {
-    pub local_endpoint: CapabilityStatus,
-    pub client_name: CapabilityStatus,
-    pub ut_metadata: CapabilityStatus,
-    pub interest_directions: CapabilityStatus,
-    pub local_choke: CapabilityStatus,
-    pub piece_availability: CapabilityStatus,
-    pub protocol_rates: CapabilityStatus,
-    pub upload: CapabilityStatus,
-    pub metadata_stage: CapabilityStatus,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct PeerView {
-    pub connection_id: String,
-    pub torrent_id: String,
-    pub peer_record_id: Option<String>,
-    pub direction: PeerDirection,
-    pub transport: PeerTransportKind,
-    pub lifecycle: PeerLifecycle,
-    pub role: PeerRole,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub peer_flags: Vec<PeerFlagView>,
-    pub lifecycle_age_millis: String,
-    pub remote_endpoint: String,
-    pub local_endpoint: Option<String>,
-    pub sources: Vec<PeerSourceView>,
-    pub peer_id: Option<String>,
-    pub client_name: Option<String>,
-    pub supports_extensions: Option<bool>,
-    pub supports_ut_metadata: Option<bool>,
-    pub local_interested: Option<bool>,
-    pub remote_interested: Option<bool>,
-    pub remote_choking: Option<bool>,
-    pub local_choking: Option<bool>,
-    pub available_piece_count: Option<u32>,
-    pub wanted_piece_count: Option<u32>,
-    pub payload_download_rate_bytes: Option<String>,
-    pub payload_downloaded_bytes: Option<String>,
-    pub protocol_download_rate_bytes: Option<String>,
-    pub protocol_downloaded_bytes: Option<String>,
-    pub payload_upload_rate_bytes: Option<String>,
-    pub payload_uploaded_bytes: Option<String>,
-    pub pending_requests: Option<u32>,
-    pub target_requests: Option<u32>,
-    pub queued_payload_bytes: Option<String>,
-    pub oldest_request_age_millis: Option<String>,
-    pub request_timeout_millis: Option<String>,
-    pub request_phase: Option<PeerRequestPhase>,
-    pub connected_age_millis: Option<String>,
-    pub last_useful_age_millis: Option<String>,
-    pub last_payload_age_millis: Option<String>,
-    pub disconnect_reason: Option<PeerDisconnectReason>,
-    pub capabilities: PeerFieldCapabilities,
-}
-
-impl PeerView {
-    fn from_observation(
-        torrent_id: &str,
-        captured_at: Duration,
-        peer: &PeerConnectionObservation,
-    ) -> Self {
-        let content = peer.content.as_ref();
-        let client_name = peer.peer_id.as_ref().and_then(identify_client);
-        let client_name_capability = if client_name.is_some() {
-            CapabilityStatus::Available
-        } else {
-            CapabilityStatus::Unavailable
-        };
-        let mut view = Self {
-            connection_id: peer.connection_id.get().to_string(),
-            torrent_id: torrent_id.to_owned(),
-            peer_record_id: peer.record_id.map(|id| id.get().to_string()),
-            direction: match peer.direction {
-                PeerConnectionDirection::Incoming => PeerDirection::Incoming,
-                PeerConnectionDirection::Outgoing => PeerDirection::Outgoing,
-            },
-            transport: match peer.transport {
-                PeerTransport::Tcp => PeerTransportKind::Tcp,
-                PeerTransport::Utp => PeerTransportKind::Utp,
-            },
-            lifecycle: match peer.lifecycle {
-                PeerConnectionLifecycle::TransportConnecting => PeerLifecycle::TransportConnecting,
-                PeerConnectionLifecycle::ProtocolHandshaking => PeerLifecycle::ProtocolHandshaking,
-                PeerConnectionLifecycle::Connected => PeerLifecycle::Connected,
-                PeerConnectionLifecycle::Disconnecting => PeerLifecycle::Disconnecting,
-            },
-            role: match peer.role {
-                PeerConnectionRole::Metadata => PeerRole::Metadata,
-                PeerConnectionRole::Content => PeerRole::Content,
-            },
-            peer_flags: Vec::new(),
-            lifecycle_age_millis: duration_millis_string(
-                captured_at.saturating_sub(peer.lifecycle_changed_at),
-            ),
-            remote_endpoint: peer.endpoint.to_string(),
-            local_endpoint: None,
-            sources: peer_sources(peer.sources),
-            peer_id: peer.peer_id.map(hex_peer_id),
-            client_name,
-            supports_extensions: peer.supports_extensions,
-            supports_ut_metadata: None,
-            local_interested: content.map(|_| true),
-            remote_interested: None,
-            remote_choking: content.map(|activity| activity.choking),
-            local_choking: None,
-            available_piece_count: None,
-            wanted_piece_count: content.map(|activity| bounded_u32(activity.wanted_piece_count)),
-            payload_download_rate_bytes: content
-                .map(|activity| activity.observed_payload_rate.to_string()),
-            payload_downloaded_bytes: content
-                .map(|activity| activity.useful_payload_bytes.to_string()),
-            protocol_download_rate_bytes: None,
-            protocol_downloaded_bytes: None,
-            payload_upload_rate_bytes: None,
-            payload_uploaded_bytes: None,
-            pending_requests: content.map(|activity| bounded_u32(activity.pending_requests)),
-            target_requests: content.map(|activity| bounded_u32(activity.target_requests)),
-            queued_payload_bytes: content.map(|activity| activity.queued_payload_bytes.to_string()),
-            oldest_request_age_millis: content
-                .and_then(|activity| activity.oldest_request_age)
-                .map(duration_millis_string),
-            request_timeout_millis: content
-                .map(|activity| duration_millis_string(activity.request_timeout)),
-            request_phase: content.map(|activity| match activity.request_window_phase {
-                PeerRequestWindowPhase::SlowStart => PeerRequestPhase::SlowStart,
-                PeerRequestWindowPhase::Steady => PeerRequestPhase::Steady,
-                PeerRequestWindowPhase::Stalled => PeerRequestPhase::Stalled,
-            }),
-            connected_age_millis: content
-                .map(|activity| duration_millis_string(activity.connected_age)),
-            last_useful_age_millis: content
-                .and_then(|activity| activity.last_useful_age)
-                .map(duration_millis_string),
-            last_payload_age_millis: content
-                .and_then(|activity| activity.last_payload_age)
-                .map(duration_millis_string),
-            disconnect_reason: peer.close_reason.map(|reason| match reason {
-                PeerFailure::Connect => PeerDisconnectReason::Connect,
-                PeerFailure::Handshake => PeerDisconnectReason::Handshake,
-                PeerFailure::Protocol => PeerDisconnectReason::Protocol,
-                PeerFailure::RemoteClosed => PeerDisconnectReason::RemoteClosed,
-            }),
-            capabilities: PeerFieldCapabilities {
-                local_endpoint: CapabilityStatus::Unsupported,
-                client_name: client_name_capability,
-                ut_metadata: CapabilityStatus::Unavailable,
-                interest_directions: CapabilityStatus::Unavailable,
-                local_choke: CapabilityStatus::Unsupported,
-                piece_availability: CapabilityStatus::Unavailable,
-                protocol_rates: CapabilityStatus::Unsupported,
-                upload: CapabilityStatus::Unsupported,
-                metadata_stage: CapabilityStatus::Unavailable,
-            },
-        };
-        view.peer_flags = derive_peer_flags(&view);
-        view
-    }
-}
-
-fn derive_peer_flags(peer: &PeerView) -> Vec<PeerFlagView> {
-    let mut flags = Vec::with_capacity(6);
-
-    if peer.direction == PeerDirection::Incoming {
-        flags.push(PeerFlagView::Incoming);
-    }
-    if peer.local_interested == Some(true) {
-        match peer.remote_choking {
-            Some(false) => flags.push(PeerFlagView::DownloadAllowed),
-            Some(true) => flags.push(PeerFlagView::DownloadChoked),
-            None => {}
-        }
-    }
-    if peer.remote_interested == Some(true) {
-        match peer.local_choking {
-            Some(false) => flags.push(PeerFlagView::UploadAllowed),
-            Some(true) => flags.push(PeerFlagView::UploadChoked),
-            None => {}
-        }
-    }
-    if peer.supports_extensions == Some(true) {
-        flags.push(PeerFlagView::ExtensionProtocol);
-    }
-    if peer.supports_ut_metadata == Some(true) {
-        flags.push(PeerFlagView::MetadataExtension);
-    }
-    if peer.transport == PeerTransportKind::Utp {
-        flags.push(PeerFlagView::Utp);
-    }
-
-    flags
-}
-
-fn bounded_u32(value: usize) -> u32 {
-    value.try_into().unwrap_or(u32::MAX)
-}
-
-fn duration_millis_string(value: Duration) -> String {
-    value.as_millis().to_string()
-}
-
-fn hex_peer_id(peer_id: [u8; 20]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut encoded = String::with_capacity(40);
-    for byte in peer_id {
-        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
-        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
-    }
-    encoded
-}
-
-fn peer_sources(sources: PeerSources) -> Vec<PeerSourceView> {
-    [
-        (PeerSource::Tracker, PeerSourceView::Tracker),
-        (PeerSource::PeerExchange, PeerSourceView::PeerExchange),
-        (PeerSource::Dht, PeerSourceView::Dht),
-        (PeerSource::LocalDiscovery, PeerSourceView::LocalDiscovery),
-        (PeerSource::Incoming, PeerSourceView::Incoming),
-        (PeerSource::Manual, PeerSourceView::Manual),
-        (PeerSource::MagnetHint, PeerSourceView::MagnetHint),
-        (PeerSource::Cache, PeerSourceView::Cache),
-    ]
-    .into_iter()
-    .filter_map(|(source, view)| sources.contains(source).then_some(view))
-    .collect()
-}
-
-const MAX_SWARM_RECORDS: usize = 1_000;
-
-fn peer_failure_view(failure: PeerFailure) -> PeerDisconnectReason {
-    match failure {
-        PeerFailure::Connect => PeerDisconnectReason::Connect,
-        PeerFailure::Handshake => PeerDisconnectReason::Handshake,
-        PeerFailure::Protocol => PeerDisconnectReason::Protocol,
-        PeerFailure::RemoteClosed => PeerDisconnectReason::RemoteClosed,
-    }
-}
-
-fn swarm_model(
-    torrent_id: &str,
-    active: bool,
-    snapshot: &PeerRegistrySnapshot,
-) -> Result<SwarmModel, SubscriptionError> {
-    if snapshot.maximum_records > MAX_SWARM_RECORDS
-        || snapshot.records.len() > snapshot.maximum_records
-        || snapshot.counts.total != snapshot.records.len()
-    {
-        return Err(SubscriptionError::Internal(
-            "peer registry snapshot exceeds its bounded contract".to_owned(),
-        ));
-    }
-    let counts_total = snapshot.counts.eligible
-        + snapshot.counts.not_connectable
-        + snapshot.counts.dialing
-        + snapshot.counts.connected
-        + snapshot.counts.banned
-        + snapshot.counts.backed_off
-        + snapshot.counts.failure_limited;
-    if counts_total != snapshot.counts.total {
-        return Err(SubscriptionError::Internal(
-            "peer registry snapshot counts are inconsistent".to_owned(),
-        ));
-    }
-    let captured_at = snapshot.captured_at;
-    let peers = if active {
-        snapshot
-            .records
-            .iter()
-            .map(|record| {
-                let (state, retry_in_millis) = match record.eligibility {
-                    DialEligibility::Eligible => (SwarmPeerState::Eligible, None),
-                    DialEligibility::NotConnectable => (SwarmPeerState::NotConnectable, None),
-                    DialEligibility::Dialing => (SwarmPeerState::Dialing, None),
-                    DialEligibility::Connected => (SwarmPeerState::Connected, None),
-                    DialEligibility::Backoff { retry_at } => (
-                        SwarmPeerState::BackedOff,
-                        Some(duration_millis_string(retry_at.saturating_sub(captured_at))),
-                    ),
-                    DialEligibility::FailureLimit { .. } => (SwarmPeerState::FailureLimited, None),
-                    DialEligibility::Banned => (SwarmPeerState::Banned, None),
-                };
-                let history = record.history;
-                let view = SwarmPeerView {
-                    peer_record_id: record.id.get().to_string(),
-                    torrent_id: torrent_id.to_owned(),
-                    endpoint: record.endpoint.to_string(),
-                    sources: peer_sources(record.sources),
-                    state,
-                    connectable: record.connectable,
-                    first_observed_age_millis: duration_millis_string(
-                        captured_at.saturating_sub(record.first_observed_at),
-                    ),
-                    last_observed_age_millis: duration_millis_string(
-                        captured_at.saturating_sub(record.last_observed_at),
-                    ),
-                    retry_in_millis,
-                    dial_attempts: history.dial_attempts,
-                    consecutive_failures: history.consecutive_failures,
-                    total_failures: history.total_failures,
-                    last_dial_age_millis: history
-                        .last_dial_at
-                        .map(|at| duration_millis_string(captured_at.saturating_sub(at))),
-                    last_connected_age_millis: history
-                        .last_connected_at
-                        .map(|at| duration_millis_string(captured_at.saturating_sub(at))),
-                    last_failure: history.last_failure.map(peer_failure_view),
-                    last_failure_age_millis: history.last_failure.and_then(|_| {
-                        history
-                            .last_disconnected_at
-                            .map(|at| duration_millis_string(captured_at.saturating_sub(at)))
-                    }),
-                    trust_points: record.integrity.trust_points,
-                    hash_failures: record.integrity.hash_failures,
-                    valid_pieces: record.integrity.valid_pieces,
-                    on_parole: record.integrity.on_parole,
-                };
-                (view.peer_record_id.clone(), view)
-            })
-            .collect()
-    } else {
-        BTreeMap::new()
-    };
-    Ok(SwarmModel {
-        state: if active {
-            SwarmCatalogState::Active
-        } else {
-            SwarmCatalogState::Inactive
-        },
-        captured_millis: duration_millis_string(captured_at),
-        maximum_records: bounded_u32(snapshot.maximum_records),
-        counts: if active {
-            SwarmCountsView {
-                total: bounded_u32(snapshot.counts.total),
-                eligible: bounded_u32(snapshot.counts.eligible),
-                not_connectable: bounded_u32(snapshot.counts.not_connectable),
-                dialing: bounded_u32(snapshot.counts.dialing),
-                connected: bounded_u32(snapshot.counts.connected),
-                backed_off: bounded_u32(snapshot.counts.backed_off),
-                failure_limited: bounded_u32(snapshot.counts.failure_limited),
-                banned: bounded_u32(snapshot.counts.banned),
-            }
-        } else {
-            SwarmCountsView::default()
-        },
-        peers,
-    })
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-// UniFFI does not lower boxed record fields. These DTO variants are bounded
-// transport values, not retained hot-path engine state.
-#[allow(clippy::large_enum_variant)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ViewSnapshot {
-    TorrentList {
-        torrents: Vec<TorrentView>,
-        storage: StorageSettingsSnapshot,
-    },
-    Torrent {
-        torrent: Option<TorrentView>,
-    },
-    PieceActivity {
-        torrent_id: String,
-        piece_count: u32,
-        verified: Vec<IndexRange>,
-        active: Vec<ActivePiece>,
-    },
-    SessionDisk {
-        pipeline: DiskPipelineView,
-        pieces: Vec<DiskPieceView>,
-    },
-    SessionDht {
-        inspection: DhtInspectionView,
-    },
-    SessionSpeed {
-        history: SpeedHistoryView,
-    },
-    Peers {
-        torrent_id: String,
-        peers: Vec<PeerView>,
-    },
-    Swarm {
-        torrent_id: String,
-        state: SwarmCatalogState,
-        captured_millis: String,
-        maximum_records: u32,
-        counts: SwarmCountsView,
-        peers: Vec<SwarmPeerView>,
-    },
-    Files {
-        torrent_id: String,
-        state: FileCatalogState,
-        filesystem_content_base: Option<String>,
-        files: Vec<FileView>,
-    },
-    Trackers {
-        torrent_id: String,
-        state: TrackerCatalogState,
-        trackers: Vec<TrackerView>,
-    },
-    Diagnostics {
-        events: Vec<DiagnosticEvent>,
-        retention: DiagnosticRetention,
-    },
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-// Keep this wire enum aligned with ViewSnapshot; UniFFI cannot lower a boxed
-// DiskPipelineView field.
-#[allow(clippy::large_enum_variant)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ViewPatch {
-    TorrentList {
-        upsert: Vec<TorrentView>,
-        removed: Vec<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        storage: Option<StorageSettingsSnapshot>,
-    },
-    Torrent {
-        torrent: Option<TorrentView>,
-    },
-    PieceActivity {
-        torrent_id: String,
-        piece_count: u32,
-        verified: Vec<IndexRange>,
-        cleared: Vec<IndexRange>,
-        active_upsert: Vec<ActivePiece>,
-        active_removed: Vec<String>,
-    },
-    SessionDisk {
-        pipeline: DiskPipelineView,
-        upsert: Vec<DiskPieceView>,
-        removed: Vec<String>,
-    },
-    SessionDht {
-        inspection: DhtInspectionView,
-    },
-    SessionSpeed {
-        history: SpeedHistoryView,
-    },
-    Peers {
-        torrent_id: String,
-        upsert: Vec<PeerView>,
-        removed: Vec<String>,
-    },
-    Swarm {
-        torrent_id: String,
-        state: SwarmCatalogState,
-        captured_millis: String,
-        maximum_records: u32,
-        counts: SwarmCountsView,
-        upsert: Vec<SwarmPeerView>,
-        removed: Vec<String>,
-    },
-    Files {
-        torrent_id: String,
-        upsert: Vec<FileView>,
-        removed: Vec<String>,
-    },
-    Trackers {
-        torrent_id: String,
-        upsert: Vec<TrackerView>,
-        removed: Vec<String>,
-    },
-    Diagnostics {
-        events: Vec<DiagnosticEvent>,
-        retention: DiagnosticRetention,
-    },
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ViewUpdatePayload {
-    Snapshot { snapshot: ViewSnapshot },
-    Patch { patch: ViewPatch },
-    ResetRequired { reason: ResetReason },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum ResetReason {
-    QueueOverflow,
-    CursorMismatch,
-    CursorExpired,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct ViewUpdate {
-    pub contract_version: u16,
-    pub stream_id: String,
-    pub epoch: String,
-    pub sequence: String,
-    pub base_revision: String,
-    pub revision: String,
-    #[serde(flatten)]
-    pub payload: ViewUpdatePayload,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct SubscriptionStats {
-    pub queued_bytes: usize,
-    pub queue_high_water: usize,
-    pub reset_count: u64,
-}
 
 #[derive(Clone, Debug)]
 pub struct ViewHub {
@@ -1351,147 +90,10 @@ pub(crate) struct HubState {
     pub(crate) view_set_lease: Duration,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct TorrentModel {
-    view: TorrentView,
-    snapshot: TorrentSnapshot,
-    progress_inputs: ProgressInputs,
-    verified: Vec<IndexRange>,
-    active: BTreeMap<u32, ActivePiece>,
-    peers: BTreeMap<String, PeerView>,
-    swarm: SwarmModel,
-    files: Option<FileProgressModel>,
-    trackers: TrackerViewModel,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct SwarmModel {
-    state: SwarmCatalogState,
-    captured_millis: String,
-    maximum_records: u32,
-    counts: SwarmCountsView,
-    peers: BTreeMap<String, SwarmPeerView>,
-}
-
-impl Default for SwarmModel {
-    fn default() -> Self {
-        Self {
-            state: SwarmCatalogState::Inactive,
-            captured_millis: "0".to_owned(),
-            maximum_records: 1_000,
-            counts: SwarmCountsView::default(),
-            peers: BTreeMap::new(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-struct DiskSessionModel {
-    torrents: BTreeMap<String, DiskTorrentRuntime>,
-}
-
-#[derive(Clone, Debug)]
-struct DiskTorrentRuntime {
-    snapshot: DiskRuntimeSnapshot,
-    sample_millis: u64,
-    receive_rate_bytes: u64,
-    write_rate_bytes: u64,
-    hash_rate_bytes: u64,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct DiskSessionView {
-    pipeline: DiskPipelineView,
-    pieces: BTreeMap<String, DiskPieceView>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct DurableTorrentViewState {
-    pub(crate) display_name: Option<String>,
-    pub(crate) verified: Vec<IndexRange>,
-    pub(crate) files: Option<FileProgressModel>,
-    pub(crate) trackers: TrackerViewModel,
-}
-
 #[derive(Clone, Debug)]
 pub struct ViewSubscription {
     inner: Arc<SubscriberInner>,
     hub: Weak<Mutex<HubState>>,
-}
-
-#[derive(Debug)]
-struct SubscriberInner {
-    stream_id: u64,
-    epoch: u64,
-    spec: SubscriptionSpec,
-    queue: Mutex<QueueState>,
-    notify: Notify,
-}
-
-#[derive(Debug)]
-struct QueueState {
-    entries: VecDeque<QueuedUpdate>,
-    queued_bytes: usize,
-    queue_high_water: usize,
-    reset_count: u64,
-    next_sequence: u64,
-    tail_revision: u64,
-    next_delivery: Instant,
-    needs_resync: bool,
-    closed: bool,
-}
-
-#[derive(Debug)]
-struct QueuedUpdate {
-    update: ViewUpdate,
-    encoded_bytes: usize,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum SubscriptionError {
-    InvalidInterval { maximum: u32 },
-    InvalidQueueBound { minimum: u32, maximum: u32 },
-    InvalidProjection,
-    SnapshotExceedsQueue { snapshot: usize, maximum: u32 },
-    Closed,
-    Internal(String),
-}
-
-impl fmt::Display for SubscriptionError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidInterval { maximum } => {
-                write!(
-                    formatter,
-                    "subscription interval exceeds {maximum} milliseconds"
-                )
-            }
-            Self::InvalidQueueBound { minimum, maximum } => write!(
-                formatter,
-                "subscription queue must be within {minimum}..={maximum} bytes"
-            ),
-            Self::InvalidProjection => {
-                write!(
-                    formatter,
-                    "the selected view does not support that projection"
-                )
-            }
-            Self::SnapshotExceedsQueue { snapshot, maximum } => write!(
-                formatter,
-                "initial snapshot is {snapshot} bytes and exceeds the {maximum}-byte queue"
-            ),
-            Self::Closed => write!(formatter, "subscription is closed"),
-            Self::Internal(message) => write!(formatter, "subscription internal error: {message}"),
-        }
-    }
-}
-
-impl Error for SubscriptionError {}
-
-impl From<crate::ViewSetError> for SubscriptionError {
-    fn from(error: crate::ViewSetError) -> Self {
-        Self::Internal(error.to_string())
-    }
 }
 
 impl ViewHub {
@@ -1588,7 +190,7 @@ impl ViewHub {
                 reset_count: 0,
                 next_sequence: 1,
                 tail_revision: hub.revision,
-                next_delivery: Instant::now(),
+                next_delivery: tokio::time::Instant::now(),
                 needs_resync: false,
                 closed: false,
             }),
@@ -2739,590 +1341,6 @@ impl HubState {
     }
 }
 
-impl TorrentModel {
-    fn from_snapshot(snapshot: &TorrentSnapshot) -> Self {
-        let progress_inputs = ProgressInputs::default();
-        Self {
-            view: TorrentView {
-                torrent_id: snapshot.torrent_id.clone(),
-                display_name: None,
-                state: snapshot.state,
-                storage_state: snapshot.storage_state,
-                metadata_available: snapshot.metadata_available,
-                piece_count: snapshot.piece_count,
-                verified_piece_count: snapshot.verified_piece_count,
-                requested_bytes: "0".to_owned(),
-                received_bytes: "0".to_owned(),
-                stored_bytes: "0".to_owned(),
-                active_peer_connections: 0,
-                configured_tracker_count: None,
-                payload_download_rate_bytes: "0".to_owned(),
-                progress: assess_progress(snapshot, progress_inputs),
-                archived: snapshot.archived,
-                removal_state: snapshot.removal_state,
-                delete_managed_data_supported: snapshot.delete_managed_data_supported,
-                error: snapshot.error.clone(),
-            },
-            snapshot: snapshot.clone(),
-            progress_inputs,
-            verified: Vec::new(),
-            active: BTreeMap::new(),
-            peers: BTreeMap::new(),
-            swarm: SwarmModel::default(),
-            files: None,
-            trackers: TrackerViewModel::default(),
-        }
-    }
-
-    fn apply_activity(
-        &mut self,
-        activity: TorrentActivity,
-    ) -> Result<Vec<FileView>, crate::file_views::FileProgressError> {
-        let mut file_upsert = Vec::new();
-        match activity {
-            TorrentActivity::PieceStarted {
-                piece_index,
-                piece_length,
-                attempt,
-            } => {
-                self.active
-                    .entry(piece_index)
-                    .or_insert_with(|| ActivePiece {
-                        piece_id: active_piece_id(piece_index, attempt),
-                        piece_index,
-                        attempt,
-                        piece_length,
-                        stage: ActivePieceStageView::Requested,
-                        requested: Vec::new(),
-                        received: Vec::new(),
-                        stored: Vec::new(),
-                        age_millis: "0".to_owned(),
-                        error: None,
-                    });
-            }
-            TorrentActivity::BlockRequested {
-                piece_index,
-                begin,
-                length,
-            } => {
-                add_counter(&mut self.view.requested_bytes, u64::from(length));
-                if let Some(active) = self.active.get_mut(&piece_index) {
-                    insert_range(&mut active.requested, begin, length);
-                    active.stage = ActivePieceStageView::Requested;
-                }
-            }
-            TorrentActivity::BlockReceived {
-                piece_index,
-                begin,
-                length,
-            } => {
-                add_counter(&mut self.view.received_bytes, u64::from(length));
-                if let Some(active) = self.active.get_mut(&piece_index) {
-                    remove_range(&mut active.requested, begin, length);
-                    insert_range(&mut active.received, begin, length);
-                    active.stage = ActivePieceStageView::Received;
-                }
-            }
-            TorrentActivity::BlockStored {
-                piece_index,
-                begin,
-                length,
-            } => {
-                add_counter(&mut self.view.stored_bytes, u64::from(length));
-                if let Some(active) = self.active.get_mut(&piece_index) {
-                    remove_range(&mut active.received, begin, length);
-                    insert_range(&mut active.stored, begin, length);
-                    active.stage =
-                        if range_cardinality(&active.stored) >= u64::from(active.piece_length) {
-                            ActivePieceStageView::Stored
-                        } else {
-                            ActivePieceStageView::Received
-                        };
-                }
-                if let Some(files) = &mut self.files {
-                    file_upsert = files.stored_block(piece_index, begin, length)?;
-                }
-            }
-            TorrentActivity::PieceVerified { piece_index } => {
-                insert_range(&mut self.verified, piece_index, 1);
-                self.view.verified_piece_count =
-                    range_cardinality(&self.verified).min(u64::from(u32::MAX)) as u32;
-                self.active.remove(&piece_index);
-                if let Some(files) = &mut self.files {
-                    file_upsert = files.piece_verified(piece_index)?;
-                }
-            }
-            TorrentActivity::PieceHashFailed { piece_index } => {
-                if let Some(active) = self.active.get_mut(&piece_index) {
-                    active.requested.clear();
-                    active.received.clear();
-                    active.stored.clear();
-                    active.stage = ActivePieceStageView::Failed;
-                    active.error = Some("Piece hash failed; retrying".to_owned());
-                }
-                if let Some(files) = &mut self.files {
-                    file_upsert = files.piece_hash_failed(piece_index)?;
-                }
-            }
-            TorrentActivity::PieceHashing { piece_index } => {
-                if let Some(active) = self.active.get_mut(&piece_index) {
-                    active.stage = ActivePieceStageView::Hashing;
-                }
-            }
-        }
-        Ok(file_upsert)
-    }
-
-    fn reconcile_piece_runtime(&mut self, pieces: &[DiskPieceRuntimeSnapshot]) {
-        let mut retained = BTreeSet::new();
-        for runtime in pieces {
-            if runtime.piece_index >= self.view.piece_count {
-                continue;
-            }
-            retained.insert(runtime.piece_index);
-            let active = self
-                .active
-                .entry(runtime.piece_index)
-                .or_insert_with(|| active_piece_from_runtime(runtime));
-            if active.attempt != runtime.attempt {
-                *active = active_piece_from_runtime(runtime);
-            } else {
-                active.piece_length = runtime.piece_length;
-                active.stage = active_stage_from_runtime(runtime);
-                active.age_millis = runtime.age_millis.to_string();
-                active.error = runtime.error.clone();
-            }
-        }
-        self.active
-            .retain(|piece_index, _| retained.contains(piece_index));
-    }
-}
-
-impl DiskSessionModel {
-    fn update(&mut self, torrent_id: &str, snapshot: &DiskRuntimeSnapshot) {
-        let (sample_millis, receive_rate_bytes, write_rate_bytes, hash_rate_bytes) = self
-            .torrents
-            .get(torrent_id)
-            .and_then(|previous| {
-                let elapsed = snapshot
-                    .captured_at_millis
-                    .checked_sub(previous.snapshot.captured_at_millis)?;
-                (elapsed != 0).then(|| {
-                    (
-                        elapsed,
-                        sampled_rate(
-                            snapshot.received_bytes_total,
-                            previous.snapshot.received_bytes_total,
-                            elapsed,
-                        ),
-                        sampled_rate(
-                            snapshot.stored_bytes_total,
-                            previous.snapshot.stored_bytes_total,
-                            elapsed,
-                        ),
-                        sampled_rate(
-                            snapshot.verified_bytes_total,
-                            previous.snapshot.verified_bytes_total,
-                            elapsed,
-                        ),
-                    )
-                })
-            })
-            .unwrap_or_default();
-        self.torrents.insert(
-            torrent_id.to_owned(),
-            DiskTorrentRuntime {
-                snapshot: snapshot.clone(),
-                sample_millis,
-                receive_rate_bytes,
-                write_rate_bytes,
-                hash_rate_bytes,
-            },
-        );
-    }
-
-    fn retain(&mut self, torrent_ids: &BTreeSet<String>) {
-        self.torrents
-            .retain(|torrent_id, _| torrent_ids.contains(torrent_id));
-    }
-
-    fn view(&self, torrents: &BTreeMap<String, TorrentModel>) -> DiskSessionView {
-        let mut view = DiskSessionView::default();
-        let mut pressure_rank = 0_u8;
-        let mut checkpoint_rank = 0_u8;
-        for (torrent_id, runtime) in &self.torrents {
-            let snapshot = &runtime.snapshot;
-            let rank = disk_pressure_rank(snapshot.pressure);
-            if rank >= pressure_rank {
-                pressure_rank = rank;
-                view.pipeline.pressure = map_disk_pressure(snapshot.pressure);
-            }
-            let rank = disk_checkpoint_rank(snapshot.checkpoint_stage);
-            if rank >= checkpoint_rank {
-                checkpoint_rank = rank;
-                view.pipeline.checkpoint_stage =
-                    map_disk_checkpoint_stage(snapshot.checkpoint_stage);
-            }
-            view.pipeline.intake_backpressured |= snapshot.intake_backpressured;
-            view.pipeline.sample_millis =
-                max_decimal(&view.pipeline.sample_millis, runtime.sample_millis);
-            add_decimal(
-                &mut view.pipeline.resident_limit_bytes,
-                usize_to_u64(snapshot.resident_limit_bytes),
-            );
-            add_decimal(
-                &mut view.pipeline.resident_high_watermark_bytes,
-                usize_to_u64(snapshot.resident_high_watermark_bytes),
-            );
-            add_decimal(
-                &mut view.pipeline.resident_low_watermark_bytes,
-                usize_to_u64(snapshot.resident_low_watermark_bytes),
-            );
-            add_decimal(
-                &mut view.pipeline.requested_bytes,
-                usize_to_u64(snapshot.requested_bytes),
-            );
-            add_decimal(
-                &mut view.pipeline.resident_bytes,
-                usize_to_u64(snapshot.resident_bytes),
-            );
-            add_decimal(
-                &mut view.pipeline.queued_write_bytes,
-                usize_to_u64(snapshot.queued_write_bytes),
-            );
-            add_decimal(
-                &mut view.pipeline.writing_bytes,
-                usize_to_u64(snapshot.writing_bytes),
-            );
-            add_decimal(
-                &mut view.pipeline.hashing_bytes,
-                usize_to_u64(snapshot.hashing_bytes),
-            );
-            add_decimal(
-                &mut view.pipeline.checkpoint_dirty_pieces,
-                usize_to_u64(snapshot.checkpoint_dirty_pieces),
-            );
-            add_decimal(
-                &mut view.pipeline.checkpoint_dirty_bytes,
-                usize_to_u64(snapshot.checkpoint_dirty_bytes),
-            );
-            add_decimal(
-                &mut view.pipeline.checkpoint_dirty_piece_high_water,
-                usize_to_u64(snapshot.checkpoint_dirty_piece_high_water),
-            );
-            add_decimal(
-                &mut view.pipeline.checkpoint_dirty_byte_high_water,
-                usize_to_u64(snapshot.checkpoint_dirty_byte_high_water),
-            );
-            view.pipeline.checkpoint_oldest_dirty_millis = max_decimal(
-                &view.pipeline.checkpoint_oldest_dirty_millis,
-                snapshot.checkpoint_oldest_dirty_millis,
-            );
-            add_decimal(
-                &mut view.pipeline.checkpoint_batches_started,
-                usize_to_u64(snapshot.checkpoint_batches_started),
-            );
-            add_decimal(
-                &mut view.pipeline.checkpoint_batches_completed,
-                usize_to_u64(snapshot.checkpoint_batches_completed),
-            );
-            add_decimal(
-                &mut view.pipeline.checkpoint_pieces_completed,
-                usize_to_u64(snapshot.checkpoint_pieces_completed),
-            );
-            add_decimal(
-                &mut view.pipeline.checkpoint_sync_operations_completed,
-                usize_to_u64(snapshot.checkpoint_sync_operations_completed),
-            );
-            add_decimal(
-                &mut view.pipeline.checkpoint_sync_service_micros,
-                snapshot.checkpoint_sync_service_micros,
-            );
-            view.pipeline.checkpoint_sync_service_max_micros = max_decimal(
-                &view.pipeline.checkpoint_sync_service_max_micros,
-                snapshot.checkpoint_sync_service_max_micros,
-            );
-            add_decimal(
-                &mut view.pipeline.checkpoint_commit_service_micros,
-                snapshot.checkpoint_commit_service_micros,
-            );
-            view.pipeline.checkpoint_commit_service_max_micros = max_decimal(
-                &view.pipeline.checkpoint_commit_service_max_micros,
-                snapshot.checkpoint_commit_service_max_micros,
-            );
-            if let Some(active) = snapshot.checkpoint_active_micros {
-                view.pipeline.checkpoint_active_micros = Some(max_decimal(
-                    view.pipeline
-                        .checkpoint_active_micros
-                        .as_deref()
-                        .unwrap_or("0"),
-                    active,
-                ));
-            }
-            add_decimal(
-                &mut view.pipeline.storage_jobs_pending,
-                usize_to_u64(snapshot.storage_jobs_pending),
-            );
-            add_decimal(
-                &mut view.pipeline.received_bytes_total,
-                usize_to_u64(snapshot.received_bytes_total),
-            );
-            add_decimal(
-                &mut view.pipeline.stored_bytes_total,
-                usize_to_u64(snapshot.stored_bytes_total),
-            );
-            add_decimal(
-                &mut view.pipeline.verified_bytes_total,
-                usize_to_u64(snapshot.verified_bytes_total),
-            );
-            add_decimal(
-                &mut view.pipeline.receive_rate_bytes,
-                runtime.receive_rate_bytes,
-            );
-            add_decimal(
-                &mut view.pipeline.write_rate_bytes,
-                runtime.write_rate_bytes,
-            );
-            add_decimal(&mut view.pipeline.hash_rate_bytes, runtime.hash_rate_bytes);
-            add_decimal(
-                &mut view.pipeline.write_operations_started,
-                usize_to_u64(snapshot.write_operations_started),
-            );
-            add_decimal(
-                &mut view.pipeline.write_operations_completed,
-                usize_to_u64(snapshot.write_operations_completed),
-            );
-            add_decimal(
-                &mut view.pipeline.hash_operations_started,
-                usize_to_u64(snapshot.hash_operations_started),
-            );
-            add_decimal(
-                &mut view.pipeline.hash_operations_completed,
-                usize_to_u64(snapshot.hash_operations_completed),
-            );
-            add_decimal(
-                &mut view.pipeline.write_queue_wait_micros,
-                snapshot.write_queue_wait_micros,
-            );
-            view.pipeline.write_queue_wait_max_micros = max_decimal(
-                &view.pipeline.write_queue_wait_max_micros,
-                snapshot.write_queue_wait_max_micros,
-            );
-            add_decimal(
-                &mut view.pipeline.write_service_micros,
-                snapshot.write_service_micros,
-            );
-            view.pipeline.write_service_max_micros = max_decimal(
-                &view.pipeline.write_service_max_micros,
-                snapshot.write_service_max_micros,
-            );
-            add_decimal(
-                &mut view.pipeline.hash_queue_wait_micros,
-                snapshot.hash_queue_wait_micros,
-            );
-            view.pipeline.hash_queue_wait_max_micros = max_decimal(
-                &view.pipeline.hash_queue_wait_max_micros,
-                snapshot.hash_queue_wait_max_micros,
-            );
-            add_decimal(
-                &mut view.pipeline.hash_service_micros,
-                snapshot.hash_service_micros,
-            );
-            view.pipeline.hash_service_max_micros = max_decimal(
-                &view.pipeline.hash_service_max_micros,
-                snapshot.hash_service_max_micros,
-            );
-            add_decimal(
-                &mut view.pipeline.pressure_transition_count,
-                snapshot.pressure_transition_count,
-            );
-            add_decimal(
-                &mut view.pipeline.backpressured_millis_total,
-                snapshot.backpressured_millis_total,
-            );
-            if snapshot.last_error.is_some() {
-                view.pipeline.last_error = snapshot.last_error.clone();
-            }
-
-            let torrent_name = torrents
-                .get(torrent_id)
-                .and_then(|torrent| torrent.view.display_name.clone())
-                .unwrap_or_else(|| format!("Torrent {}", &torrent_id[..torrent_id.len().min(12)]));
-            for piece in &snapshot.pieces {
-                let row_id = format!("{torrent_id}:{}:{}", piece.piece_index, piece.attempt);
-                view.pieces.insert(
-                    row_id.clone(),
-                    DiskPieceView {
-                        row_id,
-                        torrent_id: torrent_id.clone(),
-                        torrent_name: torrent_name.clone(),
-                        piece_index: piece.piece_index,
-                        piece_length: piece.piece_length,
-                        attempt: piece.attempt,
-                        stage: map_disk_piece_stage(piece.stage),
-                        requested_bytes: piece.requested_bytes.to_string(),
-                        received_bytes: piece.received_bytes.to_string(),
-                        stored_bytes: piece.stored_bytes.to_string(),
-                        age_millis: piece.age_millis.to_string(),
-                        stage_age_millis: piece.stage_age_millis.to_string(),
-                        error: piece.error.clone(),
-                    },
-                );
-            }
-        }
-        view
-    }
-}
-
-fn sampled_rate(current: usize, previous: usize, elapsed_millis: u64) -> u64 {
-    let bytes = current.saturating_sub(previous) as u128;
-    let rate = bytes
-        .saturating_mul(1_000)
-        .checked_div(u128::from(elapsed_millis))
-        .unwrap_or_default();
-    u64::try_from(rate).unwrap_or(u64::MAX)
-}
-
-fn usize_to_u64(value: usize) -> u64 {
-    u64::try_from(value).unwrap_or(u64::MAX)
-}
-
-fn add_decimal(value: &mut String, amount: u64) {
-    let current = value.parse::<u64>().unwrap_or_default();
-    *value = current.saturating_add(amount).to_string();
-}
-
-fn max_decimal(value: &str, candidate: u64) -> String {
-    value
-        .parse::<u64>()
-        .unwrap_or_default()
-        .max(candidate)
-        .to_string()
-}
-
-const fn disk_pressure_rank(pressure: DiskPressure) -> u8 {
-    match pressure {
-        DiskPressure::Idle => 0,
-        DiskPressure::Normal => 1,
-        DiskPressure::Draining => 2,
-        DiskPressure::Backpressured => 3,
-        DiskPressure::Error => 4,
-    }
-}
-
-const fn disk_checkpoint_rank(stage: DiskCheckpointStage) -> u8 {
-    match stage {
-        DiskCheckpointStage::Idle => 0,
-        DiskCheckpointStage::Syncing => 1,
-        DiskCheckpointStage::Committing => 2,
-        DiskCheckpointStage::Error => 3,
-    }
-}
-
-const fn map_disk_pressure(pressure: DiskPressure) -> DiskPressureView {
-    match pressure {
-        DiskPressure::Idle => DiskPressureView::Idle,
-        DiskPressure::Normal => DiskPressureView::Normal,
-        DiskPressure::Backpressured => DiskPressureView::Backpressured,
-        DiskPressure::Draining => DiskPressureView::Draining,
-        DiskPressure::Error => DiskPressureView::Error,
-    }
-}
-
-const fn map_disk_piece_stage(stage: DiskPieceStage) -> DiskPieceStageView {
-    match stage {
-        DiskPieceStage::Receiving => DiskPieceStageView::Receiving,
-        DiskPieceStage::Queued => DiskPieceStageView::Queued,
-        DiskPieceStage::Writing => DiskPieceStageView::Writing,
-        DiskPieceStage::Stored => DiskPieceStageView::Stored,
-        DiskPieceStage::Hashing => DiskPieceStageView::Hashing,
-        DiskPieceStage::CheckpointDirty => DiskPieceStageView::CheckpointDirty,
-        DiskPieceStage::CheckpointSyncing => DiskPieceStageView::CheckpointSyncing,
-        DiskPieceStage::CheckpointCommitting => DiskPieceStageView::CheckpointCommitting,
-        DiskPieceStage::Failed => DiskPieceStageView::Failed,
-    }
-}
-
-const fn map_disk_checkpoint_stage(stage: DiskCheckpointStage) -> DiskCheckpointStageView {
-    match stage {
-        DiskCheckpointStage::Idle => DiskCheckpointStageView::Idle,
-        DiskCheckpointStage::Syncing => DiskCheckpointStageView::Syncing,
-        DiskCheckpointStage::Committing => DiskCheckpointStageView::Committing,
-        DiskCheckpointStage::Error => DiskCheckpointStageView::Error,
-    }
-}
-
-fn active_piece_id(piece_index: u32, attempt: u32) -> String {
-    format!("{piece_index}:{attempt}")
-}
-
-fn active_piece_from_runtime(runtime: &DiskPieceRuntimeSnapshot) -> ActivePiece {
-    ActivePiece {
-        piece_id: active_piece_id(runtime.piece_index, runtime.attempt),
-        piece_index: runtime.piece_index,
-        attempt: runtime.attempt,
-        piece_length: runtime.piece_length,
-        stage: active_stage_from_runtime(runtime),
-        requested: Vec::new(),
-        received: Vec::new(),
-        stored: Vec::new(),
-        age_millis: runtime.age_millis.to_string(),
-        error: runtime.error.clone(),
-    }
-}
-
-const fn active_stage_from_runtime(runtime: &DiskPieceRuntimeSnapshot) -> ActivePieceStageView {
-    match runtime.stage {
-        DiskPieceStage::Receiving => {
-            if runtime.received_bytes > runtime.stored_bytes {
-                ActivePieceStageView::Received
-            } else {
-                ActivePieceStageView::Requested
-            }
-        }
-        DiskPieceStage::Queued | DiskPieceStage::Writing => ActivePieceStageView::Received,
-        DiskPieceStage::Stored => ActivePieceStageView::Stored,
-        DiskPieceStage::Hashing => ActivePieceStageView::Hashing,
-        DiskPieceStage::CheckpointDirty => ActivePieceStageView::CheckpointDirty,
-        DiskPieceStage::CheckpointSyncing => ActivePieceStageView::CheckpointSyncing,
-        DiskPieceStage::CheckpointCommitting => ActivePieceStageView::CheckpointCommitting,
-        DiskPieceStage::Failed => ActivePieceStageView::Failed,
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum TorrentActivity {
-    PieceStarted {
-        piece_index: u32,
-        piece_length: u32,
-        attempt: u32,
-    },
-    BlockRequested {
-        piece_index: u32,
-        begin: u32,
-        length: u32,
-    },
-    BlockReceived {
-        piece_index: u32,
-        begin: u32,
-        length: u32,
-    },
-    BlockStored {
-        piece_index: u32,
-        begin: u32,
-        length: u32,
-    },
-    PieceVerified {
-        piece_index: u32,
-    },
-    PieceHashFailed {
-        piece_index: u32,
-    },
-    PieceHashing {
-        piece_index: u32,
-    },
-}
-
 impl ViewSubscription {
     pub fn stream_id(&self) -> String {
         self.inner.stream_id.to_string()
@@ -3334,7 +1352,7 @@ impl ViewSubscription {
             let wait = {
                 let mut queue = self.inner.queue.lock().ok()?;
                 if !queue.entries.is_empty() {
-                    let now = Instant::now();
+                    let now = tokio::time::Instant::now();
                     if now >= queue.next_delivery {
                         let queued = queue.entries.pop_front().expect("front was present");
                         queue.queued_bytes -= queued.encoded_bytes;
@@ -3402,957 +1420,6 @@ impl Drop for ViewSubscription {
     }
 }
 
-impl SubscriberInner {
-    fn enqueue_snapshot(
-        &self,
-        revision: u64,
-        snapshot: ViewSnapshot,
-    ) -> Result<(), SubscriptionError> {
-        self.replace_with_snapshot(revision, snapshot)
-    }
-
-    fn enqueue_patch(&self, revision: u64, patch: ViewPatch) -> Result<(), SubscriptionError> {
-        self.enqueue(revision, ViewUpdatePayload::Patch { patch }, true)
-    }
-
-    fn enqueue_diagnostic_patch(
-        &self,
-        revision: u64,
-        patch: ViewPatch,
-    ) -> Result<(), SubscriptionError> {
-        self.enqueue(revision, ViewUpdatePayload::Patch { patch }, false)
-    }
-
-    fn replace_with_snapshot(
-        &self,
-        revision: u64,
-        snapshot: ViewSnapshot,
-    ) -> Result<(), SubscriptionError> {
-        let mut queue = self
-            .queue
-            .lock()
-            .map_err(|_| SubscriptionError::Internal("queue lock is poisoned".to_owned()))?;
-        if queue.closed {
-            return Err(SubscriptionError::Closed);
-        }
-        queue.entries.clear();
-        queue.queued_bytes = 0;
-        queue.needs_resync = false;
-        let update = make_update(
-            self,
-            &mut queue,
-            revision,
-            ViewUpdatePayload::Snapshot { snapshot },
-        );
-        let encoded_bytes = encoded_len(&update)?;
-        if encoded_bytes > self.spec.delivery.max_queue_bytes as usize {
-            return Err(SubscriptionError::SnapshotExceedsQueue {
-                snapshot: encoded_bytes,
-                maximum: self.spec.delivery.max_queue_bytes,
-            });
-        }
-        push_update(&mut queue, update, encoded_bytes);
-        drop(queue);
-        self.notify.notify_one();
-        Ok(())
-    }
-
-    fn enqueue(
-        &self,
-        revision: u64,
-        payload: ViewUpdatePayload,
-        allow_coalesce: bool,
-    ) -> Result<(), SubscriptionError> {
-        let mut queue = self
-            .queue
-            .lock()
-            .map_err(|_| SubscriptionError::Internal("queue lock is poisoned".to_owned()))?;
-        if queue.closed || queue.needs_resync {
-            return Ok(());
-        }
-        if allow_coalesce
-            && let Some(back) = queue.entries.back_mut()
-            && coalesce(&mut back.update, &payload)
-        {
-            let (previous_bytes, next_bytes) = {
-                let previous_bytes = back.encoded_bytes;
-                back.update.revision = revision.to_string();
-                back.encoded_bytes = encoded_len(&back.update)?;
-                (previous_bytes, back.encoded_bytes)
-            };
-            queue.tail_revision = revision;
-            queue.queued_bytes = queue.queued_bytes - previous_bytes + next_bytes;
-            if queue.queued_bytes <= self.spec.delivery.max_queue_bytes as usize {
-                queue.queue_high_water = queue.queue_high_water.max(queue.queued_bytes);
-                drop(queue);
-                self.notify.notify_one();
-                return Ok(());
-            }
-        } else {
-            let update = make_update(self, &mut queue, revision, payload);
-            let encoded_bytes = encoded_len(&update)?;
-            if encoded_bytes <= self.spec.delivery.max_queue_bytes as usize
-                && queue.queued_bytes + encoded_bytes <= self.spec.delivery.max_queue_bytes as usize
-            {
-                push_update(&mut queue, update, encoded_bytes);
-                drop(queue);
-                self.notify.notify_one();
-                return Ok(());
-            }
-        }
-
-        queue.entries.clear();
-        queue.queued_bytes = 0;
-        queue.needs_resync = true;
-        queue.reset_count = queue.reset_count.saturating_add(1);
-        let update = make_update(
-            self,
-            &mut queue,
-            revision,
-            ViewUpdatePayload::ResetRequired {
-                reason: ResetReason::QueueOverflow,
-            },
-        );
-        let encoded_bytes = encoded_len(&update)?;
-        push_update(&mut queue, update, encoded_bytes);
-        drop(queue);
-        self.notify.notify_one();
-        Ok(())
-    }
-}
-
-pub(crate) fn validate_spec(spec: &SubscriptionSpec) -> Result<(), SubscriptionError> {
-    if spec.delivery.min_interval_millis > MAX_SUBSCRIPTION_INTERVAL_MILLIS {
-        return Err(SubscriptionError::InvalidInterval {
-            maximum: MAX_SUBSCRIPTION_INTERVAL_MILLIS,
-        });
-    }
-    if !(MIN_SUBSCRIPTION_QUEUE_BYTES..=MAX_SUBSCRIPTION_QUEUE_BYTES)
-        .contains(&spec.delivery.max_queue_bytes)
-    {
-        return Err(SubscriptionError::InvalidQueueBound {
-            minimum: MIN_SUBSCRIPTION_QUEUE_BYTES,
-            maximum: MAX_SUBSCRIPTION_QUEUE_BYTES,
-        });
-    }
-    if matches!(spec.selector, ViewSelector::TorrentList)
-        && matches!(
-            spec.projection,
-            ViewProjection::PieceActivity
-                | ViewProjection::Dht
-                | ViewProjection::Peers
-                | ViewProjection::Swarm
-                | ViewProjection::Files
-                | ViewProjection::Trackers
-        )
-    {
-        return Err(SubscriptionError::InvalidProjection);
-    }
-    if matches!(spec.selector, ViewSelector::Torrent { .. })
-        && matches!(
-            spec.projection,
-            ViewProjection::Disk | ViewProjection::Dht | ViewProjection::Speed
-        )
-    {
-        return Err(SubscriptionError::InvalidProjection);
-    }
-    match (&spec.selector, spec.projection) {
-        (ViewSelector::SessionDht, ViewProjection::Dht) => {}
-        (ViewSelector::SessionDht, _) | (_, ViewProjection::Dht) => {
-            return Err(SubscriptionError::InvalidProjection);
-        }
-        (ViewSelector::SessionSpeed { metrics, .. }, ViewProjection::Speed)
-            if !metrics.is_empty()
-                && metrics.len() <= MAX_SPEED_SERIES
-                && metrics
-                    .iter()
-                    .all(|metric| SpeedMetric::AVAILABLE.contains(metric))
-                && metrics.iter().copied().collect::<BTreeSet<_>>().len() == metrics.len() => {}
-        (ViewSelector::SessionSpeed { .. }, _) | (_, ViewProjection::Speed) => {
-            return Err(SubscriptionError::InvalidProjection);
-        }
-        _ => {}
-    }
-    if spec.projection != ViewProjection::Diagnostics && spec.diagnostics.is_some() {
-        return Err(SubscriptionError::InvalidProjection);
-    }
-    if let Some(filter) = &spec.diagnostics
-        && !valid_filter(filter)
-    {
-        return Err(SubscriptionError::InvalidProjection);
-    }
-    Ok(())
-}
-
-fn parse_revision(value: &str) -> Result<u64, SubscriptionError> {
-    value
-        .parse()
-        .map_err(|_| SubscriptionError::Internal("invalid snapshot revision".to_owned()))
-}
-
-fn make_update(
-    subscriber: &SubscriberInner,
-    queue: &mut QueueState,
-    revision: u64,
-    payload: ViewUpdatePayload,
-) -> ViewUpdate {
-    let sequence = queue.next_sequence;
-    queue.next_sequence = queue.next_sequence.saturating_add(1);
-    let base_revision = queue.tail_revision;
-    queue.tail_revision = revision;
-    ViewUpdate {
-        contract_version: VIEW_CONTRACT_VERSION,
-        stream_id: subscriber.stream_id.to_string(),
-        epoch: subscriber.epoch.to_string(),
-        sequence: sequence.to_string(),
-        base_revision: base_revision.to_string(),
-        revision: revision.to_string(),
-        payload,
-    }
-}
-
-fn encoded_len(update: &ViewUpdate) -> Result<usize, SubscriptionError> {
-    serde_json::to_vec(update)
-        .map(|bytes| bytes.len())
-        .map_err(|error| SubscriptionError::Internal(error.to_string()))
-}
-
-fn push_update(queue: &mut QueueState, update: ViewUpdate, encoded_bytes: usize) {
-    queue.queued_bytes += encoded_bytes;
-    queue.queue_high_water = queue.queue_high_water.max(queue.queued_bytes);
-    queue.entries.push_back(QueuedUpdate {
-        update,
-        encoded_bytes,
-    });
-}
-
-fn patch_for(
-    spec: &SubscriptionSpec,
-    previous: &BTreeMap<String, TorrentModel>,
-    current: &BTreeMap<String, TorrentModel>,
-    previous_storage: Option<&StorageSettingsSnapshot>,
-    current_storage: &StorageSettingsSnapshot,
-) -> Option<ViewPatch> {
-    match (&spec.selector, spec.projection) {
-        (ViewSelector::TorrentList, ViewProjection::Summary) => {
-            let upsert = current
-                .iter()
-                .filter(|(id, model)| previous.get(*id).map(|old| &old.view) != Some(&model.view))
-                .map(|(_, model)| model.view.clone())
-                .collect::<Vec<_>>();
-            let removed = previous
-                .keys()
-                .filter(|id| !current.contains_key(*id))
-                .cloned()
-                .collect::<Vec<_>>();
-            let storage = previous_storage.map(|_| current_storage.clone());
-            (!upsert.is_empty() || !removed.is_empty() || storage.is_some()).then_some(
-                ViewPatch::TorrentList {
-                    upsert,
-                    removed,
-                    storage,
-                },
-            )
-        }
-        (ViewSelector::Torrent { torrent_id }, ViewProjection::Summary) => {
-            let old = previous.get(torrent_id).map(|model| &model.view);
-            let next = current.get(torrent_id).map(|model| &model.view);
-            (old != next).then(|| ViewPatch::Torrent {
-                torrent: next.cloned(),
-            })
-        }
-        (ViewSelector::Torrent { torrent_id }, ViewProjection::PieceActivity) => {
-            let old = previous.get(torrent_id);
-            let next = current.get(torrent_id);
-            if old == next {
-                return None;
-            }
-            let old_verified = old.map_or(&[][..], |model| model.verified.as_slice());
-            let next_verified = next.map_or(&[][..], |model| model.verified.as_slice());
-            let verified = difference(next_verified, old_verified);
-            let cleared = difference(old_verified, next_verified);
-            let empty = BTreeMap::new();
-            let old_active = old.map_or(&empty, |model| &model.active);
-            let next_active = next.map_or(&empty, |model| &model.active);
-            let (active_upsert, active_removed) = active_piece_patch(old_active, next_active);
-            Some(ViewPatch::PieceActivity {
-                torrent_id: torrent_id.clone(),
-                piece_count: next.map_or(0, |model| model.view.piece_count),
-                verified,
-                cleared,
-                active_upsert,
-                active_removed,
-            })
-        }
-        (ViewSelector::Torrent { torrent_id }, ViewProjection::Peers) => {
-            let empty = BTreeMap::new();
-            let old = previous
-                .get(torrent_id)
-                .map_or(&empty, |model| &model.peers);
-            let next = current.get(torrent_id).map_or(&empty, |model| &model.peers);
-            peer_collection_patch(torrent_id, old, next)
-        }
-        (ViewSelector::Torrent { torrent_id }, ViewProjection::Swarm) => {
-            match (previous.get(torrent_id), current.get(torrent_id)) {
-                (Some(old), Some(next)) => {
-                    swarm_collection_patch(torrent_id, &old.swarm, &next.swarm)
-                }
-                _ => None,
-            }
-        }
-        (ViewSelector::Torrent { torrent_id }, ViewProjection::Files) => {
-            let old = previous
-                .get(torrent_id)
-                .and_then(|model| model.files.as_ref());
-            let next = current
-                .get(torrent_id)
-                .and_then(|model| model.files.as_ref());
-            match (old, next) {
-                (Some(old), Some(next)) if old.catalog_matches(next) => {
-                    let upsert = next.rows_changed_since(old);
-                    (!upsert.is_empty()).then(|| ViewPatch::Files {
-                        torrent_id: torrent_id.clone(),
-                        upsert,
-                        removed: Vec::new(),
-                    })
-                }
-                _ => None,
-            }
-        }
-        (ViewSelector::Torrent { torrent_id }, ViewProjection::Trackers) => {
-            let empty = BTreeMap::new();
-            let old = previous
-                .get(torrent_id)
-                .map_or(&empty, |model| model.trackers.row_map());
-            let next = current
-                .get(torrent_id)
-                .map_or(&empty, |model| model.trackers.row_map());
-            tracker_collection_patch(torrent_id, old, next)
-        }
-        (
-            ViewSelector::TorrentList,
-            ViewProjection::PieceActivity
-            | ViewProjection::Peers
-            | ViewProjection::Swarm
-            | ViewProjection::Files
-            | ViewProjection::Trackers,
-        ) => None,
-        (
-            _,
-            ViewProjection::Disk
-            | ViewProjection::Dht
-            | ViewProjection::Speed
-            | ViewProjection::Diagnostics,
-        ) => None,
-        (ViewSelector::SessionDht, _) => None,
-        (ViewSelector::SessionSpeed { .. }, _) => None,
-    }
-}
-
-fn projection_requires_snapshot(
-    spec: &SubscriptionSpec,
-    previous: &BTreeMap<String, TorrentModel>,
-    current: &BTreeMap<String, TorrentModel>,
-) -> bool {
-    if let (ViewSelector::Torrent { torrent_id }, ViewProjection::Swarm) =
-        (&spec.selector, spec.projection)
-    {
-        return previous.contains_key(torrent_id) != current.contains_key(torrent_id);
-    }
-    if let (ViewSelector::Torrent { torrent_id }, ViewProjection::Trackers) =
-        (&spec.selector, spec.projection)
-    {
-        return previous.contains_key(torrent_id) != current.contains_key(torrent_id);
-    }
-    let (ViewSelector::Torrent { torrent_id }, ViewProjection::Files) =
-        (&spec.selector, spec.projection)
-    else {
-        return false;
-    };
-    match (previous.get(torrent_id), current.get(torrent_id)) {
-        (None, None) => false,
-        (Some(old), Some(next)) => match (&old.files, &next.files) {
-            (None, None) => false,
-            (Some(old), Some(next)) => !old.catalog_matches(next),
-            _ => true,
-        },
-        _ => true,
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn targeted_activity_patch(
-    spec: &SubscriptionSpec,
-    torrent_id: &str,
-    previous_view: &TorrentView,
-    next_view: &TorrentView,
-    previous_verified: &[IndexRange],
-    next_verified: &[IndexRange],
-    previous_active: &BTreeMap<u32, ActivePiece>,
-    next_active: &BTreeMap<u32, ActivePiece>,
-    file_upsert: &[FileView],
-) -> Option<ViewPatch> {
-    match (&spec.selector, spec.projection) {
-        (ViewSelector::TorrentList, ViewProjection::Summary) => {
-            (previous_view != next_view).then(|| ViewPatch::TorrentList {
-                upsert: vec![next_view.clone()],
-                removed: Vec::new(),
-                storage: None,
-            })
-        }
-        (
-            ViewSelector::Torrent {
-                torrent_id: selected,
-            },
-            ViewProjection::Summary,
-        ) if selected == torrent_id => (previous_view != next_view).then(|| ViewPatch::Torrent {
-            torrent: Some(next_view.clone()),
-        }),
-        (
-            ViewSelector::Torrent {
-                torrent_id: selected,
-            },
-            ViewProjection::PieceActivity,
-        ) if selected == torrent_id => {
-            let verified = difference(next_verified, previous_verified);
-            let cleared = difference(previous_verified, next_verified);
-            let (active_upsert, active_removed) = active_piece_patch(previous_active, next_active);
-            (!verified.is_empty()
-                || !cleared.is_empty()
-                || !active_upsert.is_empty()
-                || !active_removed.is_empty())
-            .then(|| ViewPatch::PieceActivity {
-                torrent_id: torrent_id.to_owned(),
-                piece_count: next_view.piece_count,
-                verified,
-                cleared,
-                active_upsert,
-                active_removed,
-            })
-        }
-        (
-            ViewSelector::Torrent {
-                torrent_id: selected,
-            },
-            ViewProjection::Files,
-        ) if selected == torrent_id && !file_upsert.is_empty() => Some(ViewPatch::Files {
-            torrent_id: torrent_id.to_owned(),
-            upsert: file_upsert.to_vec(),
-            removed: Vec::new(),
-        }),
-        _ => None,
-    }
-}
-
-fn targeted_peer_patch(
-    spec: &SubscriptionSpec,
-    torrent_id: &str,
-    previous_view: &TorrentView,
-    next_view: &TorrentView,
-    previous_peers: &BTreeMap<String, PeerView>,
-    next_peers: &BTreeMap<String, PeerView>,
-) -> Option<ViewPatch> {
-    match (&spec.selector, spec.projection) {
-        (ViewSelector::TorrentList, ViewProjection::Summary) => {
-            (previous_view != next_view).then(|| ViewPatch::TorrentList {
-                upsert: vec![next_view.clone()],
-                removed: Vec::new(),
-                storage: None,
-            })
-        }
-        (
-            ViewSelector::Torrent {
-                torrent_id: selected,
-            },
-            ViewProjection::Summary,
-        ) if selected == torrent_id => (previous_view != next_view).then(|| ViewPatch::Torrent {
-            torrent: Some(next_view.clone()),
-        }),
-        (
-            ViewSelector::Torrent {
-                torrent_id: selected,
-            },
-            ViewProjection::Peers,
-        ) if selected == torrent_id => {
-            peer_collection_patch(torrent_id, previous_peers, next_peers)
-        }
-        _ => None,
-    }
-}
-
-fn targeted_swarm_patch(
-    spec: &SubscriptionSpec,
-    torrent_id: &str,
-    previous: &SwarmModel,
-    current: &SwarmModel,
-) -> Option<ViewPatch> {
-    match (&spec.selector, spec.projection) {
-        (
-            ViewSelector::Torrent {
-                torrent_id: selected,
-            },
-            ViewProjection::Swarm,
-        ) if selected == torrent_id => swarm_collection_patch(torrent_id, previous, current),
-        _ => None,
-    }
-}
-
-fn targeted_tracker_patch(
-    spec: &SubscriptionSpec,
-    torrent_id: &str,
-    previous_view: &TorrentView,
-    next_view: &TorrentView,
-    previous_trackers: &BTreeMap<String, TrackerView>,
-    next_trackers: &BTreeMap<String, TrackerView>,
-) -> Option<ViewPatch> {
-    match (&spec.selector, spec.projection) {
-        (ViewSelector::TorrentList, ViewProjection::Summary) => {
-            (previous_view != next_view).then(|| ViewPatch::TorrentList {
-                upsert: vec![next_view.clone()],
-                removed: Vec::new(),
-                storage: None,
-            })
-        }
-        (
-            ViewSelector::Torrent {
-                torrent_id: selected,
-            },
-            ViewProjection::Summary,
-        ) if selected == torrent_id => (previous_view != next_view).then(|| ViewPatch::Torrent {
-            torrent: Some(next_view.clone()),
-        }),
-        (
-            ViewSelector::Torrent {
-                torrent_id: selected,
-            },
-            ViewProjection::Trackers,
-        ) if selected == torrent_id => {
-            tracker_collection_patch(torrent_id, previous_trackers, next_trackers)
-        }
-        _ => None,
-    }
-}
-
-fn peer_collection_patch(
-    torrent_id: &str,
-    previous: &BTreeMap<String, PeerView>,
-    current: &BTreeMap<String, PeerView>,
-) -> Option<ViewPatch> {
-    let upsert = current
-        .iter()
-        .filter(|(id, peer)| previous.get(*id) != Some(*peer))
-        .map(|(_, peer)| peer.clone())
-        .collect::<Vec<_>>();
-    let removed = previous
-        .keys()
-        .filter(|id| !current.contains_key(*id))
-        .cloned()
-        .collect::<Vec<_>>();
-    (!upsert.is_empty() || !removed.is_empty()).then(|| ViewPatch::Peers {
-        torrent_id: torrent_id.to_owned(),
-        upsert,
-        removed,
-    })
-}
-
-fn swarm_collection_patch(
-    torrent_id: &str,
-    previous: &SwarmModel,
-    current: &SwarmModel,
-) -> Option<ViewPatch> {
-    if previous == current {
-        return None;
-    }
-    let upsert = current
-        .peers
-        .iter()
-        .filter(|(id, peer)| previous.peers.get(*id) != Some(*peer))
-        .map(|(_, peer)| peer.clone())
-        .collect();
-    let removed = previous
-        .peers
-        .keys()
-        .filter(|id| !current.peers.contains_key(*id))
-        .cloned()
-        .collect();
-    Some(ViewPatch::Swarm {
-        torrent_id: torrent_id.to_owned(),
-        state: current.state,
-        captured_millis: current.captured_millis.clone(),
-        maximum_records: current.maximum_records,
-        counts: current.counts.clone(),
-        upsert,
-        removed,
-    })
-}
-
-fn tracker_collection_patch(
-    torrent_id: &str,
-    previous: &BTreeMap<String, TrackerView>,
-    current: &BTreeMap<String, TrackerView>,
-) -> Option<ViewPatch> {
-    let upsert = current
-        .iter()
-        .filter(|(id, tracker)| previous.get(*id) != Some(*tracker))
-        .map(|(_, tracker)| tracker.clone())
-        .collect::<Vec<_>>();
-    let removed = previous
-        .keys()
-        .filter(|id| !current.contains_key(*id))
-        .cloned()
-        .collect::<Vec<_>>();
-    (!upsert.is_empty() || !removed.is_empty()).then(|| ViewPatch::Trackers {
-        torrent_id: torrent_id.to_owned(),
-        upsert,
-        removed,
-    })
-}
-
-fn disk_patch(previous: &DiskSessionView, current: &DiskSessionView) -> Option<ViewPatch> {
-    let upsert = current
-        .pieces
-        .iter()
-        .filter(|(id, piece)| previous.pieces.get(*id) != Some(*piece))
-        .map(|(_, piece)| piece.clone())
-        .collect::<Vec<_>>();
-    let removed = previous
-        .pieces
-        .keys()
-        .filter(|id| !current.pieces.contains_key(*id))
-        .cloned()
-        .collect::<Vec<_>>();
-    (previous.pipeline != current.pipeline || !upsert.is_empty() || !removed.is_empty()).then(
-        || ViewPatch::SessionDisk {
-            pipeline: current.pipeline.clone(),
-            upsert,
-            removed,
-        },
-    )
-}
-
-fn active_piece_patch(
-    previous: &BTreeMap<u32, ActivePiece>,
-    current: &BTreeMap<u32, ActivePiece>,
-) -> (Vec<ActivePiece>, Vec<String>) {
-    let upsert = current
-        .iter()
-        .filter(|(piece_index, piece)| previous.get(*piece_index) != Some(*piece))
-        .map(|(_, piece)| piece.clone())
-        .collect();
-    let removed = previous
-        .iter()
-        .filter(|(piece_index, piece)| {
-            current
-                .get(*piece_index)
-                .is_none_or(|current| current.piece_id != piece.piece_id)
-        })
-        .map(|(_, piece)| piece.piece_id.clone())
-        .collect();
-    (upsert, removed)
-}
-
-fn coalesce(update: &mut ViewUpdate, next: &ViewUpdatePayload) -> bool {
-    let (ViewUpdatePayload::Patch { patch: current }, ViewUpdatePayload::Patch { patch: next }) =
-        (&mut update.payload, next)
-    else {
-        return false;
-    };
-    coalesce_patch(current, next)
-}
-
-pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool {
-    match (current, next) {
-        (
-            ViewPatch::TorrentList {
-                upsert,
-                removed,
-                storage,
-            },
-            ViewPatch::TorrentList {
-                upsert: next_upsert,
-                removed: next_removed,
-                storage: next_storage,
-            },
-        ) => {
-            let mut values = upsert
-                .drain(..)
-                .map(|torrent| (torrent.torrent_id.clone(), torrent))
-                .collect::<BTreeMap<_, _>>();
-            for id in next_removed {
-                values.remove(id);
-            }
-            for torrent in next_upsert {
-                values.insert(torrent.torrent_id.clone(), torrent.clone());
-            }
-            let mut removed_ids = removed.drain(..).collect::<std::collections::BTreeSet<_>>();
-            for torrent in next_upsert {
-                removed_ids.remove(&torrent.torrent_id);
-            }
-            removed_ids.extend(next_removed.iter().cloned());
-            *upsert = values.into_values().collect();
-            *removed = removed_ids.into_iter().collect();
-            if next_storage.is_some() {
-                *storage = next_storage.clone();
-            }
-            true
-        }
-        (ViewPatch::Torrent { torrent }, ViewPatch::Torrent { torrent: next }) => {
-            *torrent = next.clone();
-            true
-        }
-        (
-            ViewPatch::PieceActivity {
-                torrent_id,
-                piece_count,
-                verified,
-                cleared,
-                active_upsert,
-                active_removed,
-            },
-            ViewPatch::PieceActivity {
-                torrent_id: next_id,
-                piece_count: next_piece_count,
-                verified: next_verified,
-                cleared: next_cleared,
-                active_upsert: next_active_upsert,
-                active_removed: next_active_removed,
-            },
-        ) if torrent_id == next_id => {
-            for range in next_cleared {
-                remove_interval(verified, *range);
-                insert_interval(cleared, *range);
-            }
-            for range in next_verified {
-                remove_interval(cleared, *range);
-                insert_interval(verified, *range);
-            }
-            *piece_count = *next_piece_count;
-            let mut values = active_upsert
-                .drain(..)
-                .map(|piece| (piece.piece_id.clone(), piece))
-                .collect::<BTreeMap<_, _>>();
-            for id in next_active_removed {
-                values.remove(id);
-            }
-            for piece in next_active_upsert {
-                values.insert(piece.piece_id.clone(), piece.clone());
-            }
-            let mut removed_ids = active_removed.drain(..).collect::<BTreeSet<_>>();
-            for piece in next_active_upsert {
-                removed_ids.remove(&piece.piece_id);
-            }
-            removed_ids.extend(next_active_removed.iter().cloned());
-            *active_upsert = values.into_values().collect();
-            *active_removed = removed_ids.into_iter().collect();
-            true
-        }
-        (
-            ViewPatch::SessionDisk {
-                pipeline,
-                upsert,
-                removed,
-            },
-            ViewPatch::SessionDisk {
-                pipeline: next_pipeline,
-                upsert: next_upsert,
-                removed: next_removed,
-            },
-        ) => {
-            let mut values = upsert
-                .drain(..)
-                .map(|piece| (piece.row_id.clone(), piece))
-                .collect::<BTreeMap<_, _>>();
-            for id in next_removed {
-                values.remove(id);
-            }
-            for piece in next_upsert {
-                values.insert(piece.row_id.clone(), piece.clone());
-            }
-            let mut removed_ids = removed.drain(..).collect::<BTreeSet<_>>();
-            for piece in next_upsert {
-                removed_ids.remove(&piece.row_id);
-            }
-            removed_ids.extend(next_removed.iter().cloned());
-            *pipeline = next_pipeline.clone();
-            *upsert = values.into_values().collect();
-            *removed = removed_ids.into_iter().collect();
-            true
-        }
-        (
-            ViewPatch::SessionDht { inspection },
-            ViewPatch::SessionDht {
-                inspection: next_inspection,
-            },
-        ) => {
-            *inspection = next_inspection.clone();
-            true
-        }
-        (
-            ViewPatch::SessionSpeed { history },
-            ViewPatch::SessionSpeed {
-                history: next_history,
-            },
-        ) => {
-            *history = next_history.clone();
-            true
-        }
-        (
-            ViewPatch::Peers {
-                torrent_id,
-                upsert,
-                removed,
-            },
-            ViewPatch::Peers {
-                torrent_id: next_id,
-                upsert: next_upsert,
-                removed: next_removed,
-            },
-        ) if torrent_id == next_id => {
-            let mut values = upsert
-                .drain(..)
-                .map(|peer| (peer.connection_id.clone(), peer))
-                .collect::<BTreeMap<_, _>>();
-            for id in next_removed {
-                values.remove(id);
-            }
-            for peer in next_upsert {
-                values.insert(peer.connection_id.clone(), peer.clone());
-            }
-            let mut removed_ids = removed.drain(..).collect::<std::collections::BTreeSet<_>>();
-            for peer in next_upsert {
-                removed_ids.remove(&peer.connection_id);
-            }
-            removed_ids.extend(next_removed.iter().cloned());
-            *upsert = values.into_values().collect();
-            *removed = removed_ids.into_iter().collect();
-            true
-        }
-        (
-            ViewPatch::Swarm {
-                torrent_id,
-                state,
-                captured_millis,
-                maximum_records,
-                counts,
-                upsert,
-                removed,
-            },
-            ViewPatch::Swarm {
-                torrent_id: next_id,
-                state: next_state,
-                captured_millis: next_captured_millis,
-                maximum_records: next_maximum_records,
-                counts: next_counts,
-                upsert: next_upsert,
-                removed: next_removed,
-            },
-        ) if torrent_id == next_id => {
-            let mut values = upsert
-                .drain(..)
-                .map(|peer| (peer.peer_record_id.clone(), peer))
-                .collect::<BTreeMap<_, _>>();
-            for id in next_removed {
-                values.remove(id);
-            }
-            for peer in next_upsert {
-                values.insert(peer.peer_record_id.clone(), peer.clone());
-            }
-            let mut removed_ids = removed.drain(..).collect::<BTreeSet<_>>();
-            for peer in next_upsert {
-                removed_ids.remove(&peer.peer_record_id);
-            }
-            removed_ids.extend(next_removed.iter().cloned());
-            *state = *next_state;
-            *captured_millis = next_captured_millis.clone();
-            *maximum_records = *next_maximum_records;
-            *counts = next_counts.clone();
-            *upsert = values.into_values().collect();
-            *removed = removed_ids.into_iter().collect();
-            true
-        }
-        (
-            ViewPatch::Files {
-                torrent_id,
-                upsert,
-                removed,
-            },
-            ViewPatch::Files {
-                torrent_id: next_id,
-                upsert: next_upsert,
-                removed: next_removed,
-            },
-        ) if torrent_id == next_id => {
-            let mut values = upsert
-                .drain(..)
-                .map(|file| (file.file_id.clone(), file))
-                .collect::<BTreeMap<_, _>>();
-            for id in next_removed {
-                values.remove(id);
-            }
-            for file in next_upsert {
-                values.insert(file.file_id.clone(), file.clone());
-            }
-            let mut removed_ids = removed.drain(..).collect::<std::collections::BTreeSet<_>>();
-            for file in next_upsert {
-                removed_ids.remove(&file.file_id);
-            }
-            removed_ids.extend(next_removed.iter().cloned());
-            *upsert = values.into_values().collect();
-            *removed = removed_ids.into_iter().collect();
-            true
-        }
-        (
-            ViewPatch::Trackers {
-                torrent_id,
-                upsert,
-                removed,
-            },
-            ViewPatch::Trackers {
-                torrent_id: next_id,
-                upsert: next_upsert,
-                removed: next_removed,
-            },
-        ) if torrent_id == next_id => {
-            let mut values = upsert
-                .drain(..)
-                .map(|tracker| (tracker.tracker_id.clone(), tracker))
-                .collect::<BTreeMap<_, _>>();
-            for id in next_removed {
-                values.remove(id);
-            }
-            for tracker in next_upsert {
-                values.insert(tracker.tracker_id.clone(), tracker.clone());
-            }
-            let mut removed_ids = removed.drain(..).collect::<std::collections::BTreeSet<_>>();
-            for tracker in next_upsert {
-                removed_ids.remove(&tracker.tracker_id);
-            }
-            removed_ids.extend(next_removed.iter().cloned());
-            *upsert = values.into_values().collect();
-            *removed = removed_ids.into_iter().collect();
-            true
-        }
-        (
-            ViewPatch::Diagnostics { events, retention },
-            ViewPatch::Diagnostics {
-                events: next_events,
-                retention: next_retention,
-            },
-        ) => {
-            if events.len().saturating_add(next_events.len()) > MAX_DIAGNOSTIC_PATCH_EVENTS
-                || patch_encoded_len(events).saturating_add(patch_encoded_len(next_events))
-                    > MAX_DIAGNOSTIC_PATCH_BYTES
-            {
-                return false;
-            }
-            events.extend(next_events.iter().cloned());
-            *retention = next_retention.clone();
-            true
-        }
-        _ => false,
-    }
-}
-
 fn selector_torrent_id(selector: &ViewSelector) -> Option<&str> {
     match selector {
         ViewSelector::TorrentList
@@ -4362,116 +1429,302 @@ fn selector_torrent_id(selector: &ViewSelector) -> Option<&str> {
     }
 }
 
-fn add_counter(counter: &mut String, increment: u64) {
-    let value = counter
-        .parse::<u64>()
-        .unwrap_or(0)
-        .saturating_add(increment);
-    *counter = value.to_string();
+#[derive(Clone, Debug)]
+pub struct ViewSet {
+    pub(crate) inner: Arc<ViewSetInner>,
+    pub(crate) hub: Weak<Mutex<HubState>>,
 }
 
-fn insert_range(ranges: &mut Vec<IndexRange>, start: u32, length: u32) {
-    if let Some(end) = start.checked_add(length)
-        && let Some(range) = IndexRange::new(start, end)
-    {
-        insert_interval(ranges, range);
-    }
+#[derive(Debug)]
+pub(crate) struct ViewSetLeaseReaper {
+    cancellation: CancellationToken,
+    task: Option<JoinHandle<()>>,
 }
 
-fn insert_interval(ranges: &mut Vec<IndexRange>, mut inserted: IndexRange) {
-    let mut output = Vec::with_capacity(ranges.len() + 1);
-    let mut placed = false;
-    for range in ranges.drain(..) {
-        if range.end_exclusive < inserted.start {
-            output.push(range);
-        } else if inserted.end_exclusive < range.start {
-            if !placed {
-                output.push(inserted);
-                placed = true;
+impl ViewSetLeaseReaper {
+    pub(crate) fn start(hub: ViewHub, interval: Duration) -> Self {
+        let cancellation = CancellationToken::new();
+        let task_cancellation = cancellation.clone();
+        let task = tokio::spawn(async move {
+            let mut timer = tokio::time::interval(interval);
+            timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = task_cancellation.cancelled() => break,
+                    _ = timer.tick() => {
+                        hub.reap_expired_view_sets();
+                    }
+                }
             }
-            output.push(range);
-        } else {
-            inserted.start = inserted.start.min(range.start);
-            inserted.end_exclusive = inserted.end_exclusive.max(range.end_exclusive);
+        });
+        Self {
+            cancellation,
+            task: Some(task),
         }
     }
-    if !placed {
-        output.push(inserted);
-    }
-    *ranges = output;
-}
 
-fn remove_range(ranges: &mut Vec<IndexRange>, start: u32, length: u32) {
-    if let Some(end) = start.checked_add(length)
-        && let Some(range) = IndexRange::new(start, end)
-    {
-        remove_interval(ranges, range);
+    pub(crate) async fn shutdown(&mut self) -> Result<(), JoinError> {
+        self.cancellation.cancel();
+        if let Some(task) = self.task.take() {
+            task.await?;
+        }
+        Ok(())
     }
 }
 
-fn remove_interval(ranges: &mut Vec<IndexRange>, removed: IndexRange) {
-    let mut output = Vec::with_capacity(ranges.len() + 1);
-    for range in ranges.drain(..) {
-        if range.end_exclusive <= removed.start || range.start >= removed.end_exclusive {
-            output.push(range);
-            continue;
-        }
-        if range.start < removed.start {
-            output.push(IndexRange {
-                start: range.start,
-                end_exclusive: removed.start,
+impl Drop for ViewSetLeaseReaper {
+    fn drop(&mut self) {
+        self.cancellation.cancel();
+    }
+}
+
+impl ViewSet {
+    pub fn id(&self) -> &str {
+        &self.inner.id
+    }
+
+    pub async fn next_updates(
+        &self,
+        after: &str,
+        max_wait_millis: u32,
+    ) -> Result<UpdateBatch, ViewSetError> {
+        if max_wait_millis > MAX_VIEW_SET_WAIT_MILLIS {
+            return Err(ViewSetError::InvalidDeliveryInterval {
+                maximum: MAX_VIEW_SET_WAIT_MILLIS,
             });
         }
-        if range.end_exclusive > removed.end_exclusive {
-            output.push(IndexRange {
-                start: removed.end_exclusive,
-                end_exclusive: range.end_exclusive,
-            });
+        let after = parse_decimal(after)?;
+        let _poll = self.inner.start_poll()?;
+        self.inner.touch(Instant::now())?;
+        let deadline =
+            tokio::time::Instant::now() + Duration::from_millis(u64::from(max_wait_millis));
+        loop {
+            let notified = self.inner.notify.notified();
+            match self.inner.poll_state(after, Instant::now())? {
+                PollState::Ready(batch) => return Ok(batch),
+                PollState::Reset(reason) => return self.reset_from_hub(reason),
+                PollState::Closed => return Err(ViewSetError::Closed),
+                PollState::Wait(_) if max_wait_millis == 0 => {
+                    return self.inner.empty_batch(after, Instant::now());
+                }
+                PollState::Wait(ready_at) => {
+                    if tokio::time::Instant::now() >= deadline {
+                        return self.inner.empty_batch(after, Instant::now());
+                    }
+                    let wake_at = ready_at.map_or(deadline, |ready_at| {
+                        tokio::time::Instant::from_std(ready_at).min(deadline)
+                    });
+                    tokio::select! {
+                        () = notified => {}
+                        () = tokio::time::sleep_until(wake_at) => {
+                            if wake_at == deadline {
+                                return self.inner.empty_batch(after, Instant::now());
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
-    *ranges = output;
-}
 
-fn difference(left: &[IndexRange], right: &[IndexRange]) -> Vec<IndexRange> {
-    let mut output = left.to_vec();
-    for range in right {
-        remove_interval(&mut output, *range);
+    pub fn stats(&self) -> Result<ViewSetStats, ViewSetError> {
+        self.inner.stats()
     }
-    output
+
+    fn reset_from_hub(&self, reason: ResetReason) -> Result<UpdateBatch, ViewSetError> {
+        let hub = self.hub.upgrade().ok_or(ViewSetError::Closed)?;
+        let hub = hub
+            .lock()
+            .map_err(|_| ViewSetError::Internal("view hub lock is poisoned".to_owned()))?;
+        let (revision, snapshots) = hub.snapshots_for_view_set(&self.inner)?;
+        self.inner
+            .reset_with_snapshots(reason, revision, snapshots, Instant::now())
+    }
 }
 
-fn range_cardinality(ranges: &[IndexRange]) -> u64 {
-    ranges
+impl ViewHub {
+    pub fn open_view_set(
+        &self,
+        owner: ViewSetOwner,
+        request: OpenViewSetRequest,
+    ) -> Result<OpenViewSetResponse, ViewSetError> {
+        self.open_view_set_at(owner, request, Instant::now())
+    }
+
+    fn open_view_set_at(
+        &self,
+        owner: ViewSetOwner,
+        request: OpenViewSetRequest,
+        now: Instant,
+    ) -> Result<OpenViewSetResponse, ViewSetError> {
+        let (views, queue_bytes) = validated_open(&request)?;
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| ViewSetError::Internal("view hub lock is poisoned".to_owned()))?;
+        prune_expired(&mut hub, now);
+        if hub.view_sets.len() >= MAX_VIEW_SETS
+            || hub
+                .view_sets
+                .values()
+                .filter(|view_set| view_set.owner_matches(&owner))
+                .count()
+                >= MAX_VIEW_SETS_PER_OWNER
+        {
+            return Err(ViewSetError::ResourceLimit);
+        }
+        let snapshots = snapshots_for_specs(&hub, &views, queue_bytes);
+        let id = loop {
+            let candidate = generate_view_set_id()?;
+            if !hub.view_sets.contains_key(&candidate) {
+                break candidate;
+            }
+        };
+        let inner = ViewSetInner::new(
+            id.clone(),
+            owner,
+            ViewSetInitialState {
+                revision: hub.revision,
+                views,
+                queue_bytes_limit: queue_bytes,
+                snapshots,
+                now,
+                lease: hub.view_set_lease,
+            },
+        )?;
+        let response = inner.open_response()?;
+        hub.view_sets.insert(id, inner);
+        self.speed_interest.notify_one();
+        Ok(response)
+    }
+
+    pub fn update_view_set(
+        &self,
+        owner: &ViewSetOwner,
+        id: &str,
+        request: UpdateViewSetRequest,
+    ) -> Result<(), ViewSetError> {
+        let views = validated_update(&request)?;
+        let now = Instant::now();
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| ViewSetError::Internal("view hub lock is poisoned".to_owned()))?;
+        prune_expired(&mut hub, now);
+        let view_set = owned_view_set(&hub, owner, id)?;
+        let previous = view_set
+            .view_specs()?
+            .into_iter()
+            .map(|spec| (spec.view_id().to_owned(), spec))
+            .collect::<BTreeMap<_, _>>();
+        let queue_bytes = view_set.queue_bytes_limit()?;
+        let mut updates = previous
+            .keys()
+            .filter(|view_id| !views.contains_key(*view_id))
+            .map(|view_id| ViewSetUpdate::ViewRemoved {
+                view_id: view_id.clone(),
+            })
+            .collect::<Vec<_>>();
+        for (view_id, spec) in &views {
+            if previous.get(view_id) != Some(spec) {
+                updates.push(ViewSetUpdate::Snapshot {
+                    view_id: view_id.clone(),
+                    snapshot: hub.snapshot_for(&spec.subscription_spec(queue_bytes)),
+                });
+            }
+        }
+        view_set.replace_views(views, updates, hub.revision, now)?;
+        self.speed_interest.notify_one();
+        Ok(())
+    }
+
+    pub fn view_set(&self, owner: &ViewSetOwner, id: &str) -> Result<ViewSet, ViewSetError> {
+        let now = Instant::now();
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| ViewSetError::Internal("view hub lock is poisoned".to_owned()))?;
+        prune_expired(&mut hub, now);
+        let inner = owned_view_set(&hub, owner, id)?;
+        Ok(ViewSet {
+            inner,
+            hub: Arc::downgrade(&self.inner),
+        })
+    }
+
+    pub fn close_view_set(&self, owner: &ViewSetOwner, id: &str) -> Result<(), ViewSetError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| ViewSetError::Internal("view hub lock is poisoned".to_owned()))?;
+        let view_set = owned_view_set(&hub, owner, id)?;
+        hub.view_sets.remove(id);
+        view_set.close();
+        self.speed_interest.notify_one();
+        Ok(())
+    }
+
+    pub fn close_all_view_sets(&self) {
+        if let Ok(mut hub) = self.inner.lock() {
+            for (_, view_set) in std::mem::take(&mut hub.view_sets) {
+                view_set.close();
+            }
+        }
+        self.speed_interest.notify_one();
+    }
+
+    pub(crate) fn reap_expired_view_sets(&self) -> usize {
+        let Ok(mut hub) = self.inner.lock() else {
+            return 0;
+        };
+        let before = hub.view_sets.len();
+        prune_expired(&mut hub, Instant::now());
+        before.saturating_sub(hub.view_sets.len())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn expire_view_sets_at(&self, now: Instant) {
+        if let Ok(mut hub) = self.inner.lock() {
+            prune_expired(&mut hub, now);
+        }
+    }
+}
+
+fn owned_view_set(
+    hub: &HubState,
+    owner: &ViewSetOwner,
+    id: &str,
+) -> Result<Arc<ViewSetInner>, ViewSetError> {
+    hub.view_sets
+        .get(id)
+        .filter(|view_set| view_set.owner_matches(owner))
+        .cloned()
+        .ok_or(ViewSetError::UnknownViewSet)
+}
+
+fn prune_expired(hub: &mut HubState, now: Instant) {
+    hub.view_sets.retain(|_, view_set| {
+        let retain = !view_set.is_expired(now);
+        if !retain {
+            view_set.close();
+        }
+        retain
+    });
+}
+
+fn snapshots_for_specs(
+    hub: &HubState,
+    views: &BTreeMap<String, ViewSpec>,
+    queue_bytes: u32,
+) -> Vec<ViewSetUpdate> {
+    views
         .iter()
-        .map(|range| u64::from(range.end_exclusive - range.start))
-        .sum()
-}
-
-pub(crate) fn ranges_from_pieces(pieces: &[bool]) -> Vec<IndexRange> {
-    let mut ranges = Vec::new();
-    let mut start = None;
-    for (index, present) in pieces
-        .iter()
-        .copied()
-        .chain(std::iter::once(false))
-        .enumerate()
-    {
-        if present && start.is_none() {
-            start = Some(index);
-        } else if !present && let Some(range_start) = start.take() {
-            let Ok(range_start) = u32::try_from(range_start) else {
-                break;
-            };
-            let Ok(end_exclusive) = u32::try_from(index) else {
-                break;
-            };
-            ranges.push(IndexRange {
-                start: range_start,
-                end_exclusive,
-            });
-        }
-    }
-    ranges
+        .map(|(view_id, spec)| ViewSetUpdate::Snapshot {
+            view_id: view_id.clone(),
+            snapshot: hub.snapshot_for(&spec.subscription_spec(queue_bytes)),
+        })
+        .collect()
 }
 
 #[cfg(test)]

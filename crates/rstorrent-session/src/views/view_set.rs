@@ -1,506 +1,27 @@
 use std::collections::{BTreeMap, VecDeque};
-use std::error::Error;
-use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-use tokio::sync::Notify;
-use tokio::task::{JoinError, JoinHandle};
-use tokio_util::sync::CancellationToken;
-use ts_rs::TS;
-
-use super::{
-    DeliveryPolicy, HubState, ResetReason, SubscriptionSpec, ViewHub, ViewPatch, ViewProjection,
-    ViewSelector, ViewSnapshot, coalesce_patch,
+use super::contract::{
+    API_VERSION, DEFAULT_VIEW_SET_QUEUE_BYTES, MAX_VIEW_DELIVERY_INTERVAL_MILLIS,
+    MAX_VIEW_ID_BYTES, MAX_VIEW_SET_QUEUE_BYTES, MAX_VIEW_SET_SNAPSHOT_BYTES, MAX_VIEWS_PER_SET,
+    MIN_VIEW_SET_QUEUE_BYTES, OpenViewSetRequest, OpenViewSetResponse, UpdateBatch,
+    UpdateViewSetRequest, ViewSetError, ViewSetOwner, ViewSetStats, ViewSetUpdate, ViewSpec,
 };
-use crate::diagnostics::DiagnosticFilter;
-use crate::speed::{MAX_SPEED_SERIES, SpeedMetric, SpeedRange};
-
-pub const API_VERSION: u16 = 1;
-pub const MAX_VIEW_SETS: usize = 32;
-pub const MAX_VIEW_SETS_PER_OWNER: usize = 8;
-pub const MAX_VIEWS_PER_SET: usize = 16;
-pub const MAX_VIEW_ID_BYTES: usize = 64;
-pub const MIN_VIEW_SET_QUEUE_BYTES: u32 = 16 * 1024;
-pub const DEFAULT_VIEW_SET_QUEUE_BYTES: u32 = 256 * 1024;
-pub const MAX_VIEW_SET_QUEUE_BYTES: u32 = 512 * 1024;
-pub const MAX_VIEW_SET_SNAPSHOT_BYTES: u32 = 16 * 1024 * 1024;
-pub const MAX_VIEW_SET_WAIT_MILLIS: u32 = 20_000;
-pub const VIEW_SET_LEASE_MILLIS: u64 = 5 * 60 * 1_000;
-pub const VIEW_SET_REAPER_INTERVAL_MILLIS: u64 = 5_000;
-pub const MAX_VIEW_DELIVERY_INTERVAL_MILLIS: u32 = 60_000;
-
+use super::{ResetReason, ViewPatch, ViewSnapshot, coalesce_patch};
+use crate::speed::{MAX_SPEED_SERIES, SpeedMetric};
+use tokio::sync::Notify;
 static NEXT_VIEW_SET_EPOCH: AtomicU64 = AtomicU64::new(1);
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum ApiEncoding {
-    Json,
-    Cbor,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum DeliveryMode {
-    Poll,
-    LongPoll,
-    Stream,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-pub struct ApiVersion {
-    pub current: u16,
-    pub minimum: u16,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-pub struct ApiLimits {
-    pub max_view_sets_per_owner: u16,
-    pub max_views_per_set: u16,
-    pub max_view_id_bytes: u16,
-    pub min_queue_bytes: u32,
-    pub default_queue_bytes: u32,
-    pub max_queue_bytes: u32,
-    pub max_snapshot_bytes: u32,
-    pub max_wait_millis: u32,
-    pub lease_millis: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-pub struct ApiHello {
-    pub api: ApiVersion,
-    pub encodings: Vec<ApiEncoding>,
-    pub deliveries: Vec<DeliveryMode>,
-    pub capabilities: Vec<String>,
-    pub limits: ApiLimits,
-}
-
-impl Default for ApiHello {
-    fn default() -> Self {
-        Self {
-            api: ApiVersion {
-                current: API_VERSION,
-                minimum: API_VERSION,
-            },
-            encodings: vec![ApiEncoding::Json],
-            deliveries: vec![DeliveryMode::Poll, DeliveryMode::LongPoll],
-            capabilities: vec![
-                "torrent_list".to_owned(),
-                "torrent_summary".to_owned(),
-                "torrent_peers".to_owned(),
-                "torrent_swarm".to_owned(),
-                "torrent_files".to_owned(),
-                "torrent_trackers".to_owned(),
-                "session_disk".to_owned(),
-                "session_dht".to_owned(),
-                "session_speed".to_owned(),
-                "piece_activity".to_owned(),
-                "diagnostics".to_owned(),
-            ],
-            limits: ApiLimits {
-                max_view_sets_per_owner: MAX_VIEW_SETS_PER_OWNER as u16,
-                max_views_per_set: MAX_VIEWS_PER_SET as u16,
-                max_view_id_bytes: MAX_VIEW_ID_BYTES as u16,
-                min_queue_bytes: MIN_VIEW_SET_QUEUE_BYTES,
-                default_queue_bytes: DEFAULT_VIEW_SET_QUEUE_BYTES,
-                max_queue_bytes: MAX_VIEW_SET_QUEUE_BYTES,
-                max_snapshot_bytes: MAX_VIEW_SET_SNAPSHOT_BYTES,
-                max_wait_millis: MAX_VIEW_SET_WAIT_MILLIS,
-                lease_millis: VIEW_SET_LEASE_MILLIS.to_string(),
-            },
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-pub struct ViewDeliveryPolicy {
-    #[serde(default)]
-    pub min_interval_millis: u32,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ViewSpec {
-    TorrentList {
-        view_id: String,
-        #[serde(default)]
-        delivery: ViewDeliveryPolicy,
-    },
-    TorrentSummary {
-        view_id: String,
-        torrent_id: String,
-        #[serde(default)]
-        delivery: ViewDeliveryPolicy,
-    },
-    PieceActivity {
-        view_id: String,
-        torrent_id: String,
-        #[serde(default)]
-        delivery: ViewDeliveryPolicy,
-    },
-    SessionDisk {
-        view_id: String,
-        #[serde(default)]
-        delivery: ViewDeliveryPolicy,
-    },
-    SessionDht {
-        view_id: String,
-        #[serde(default)]
-        delivery: ViewDeliveryPolicy,
-    },
-    SessionSpeed {
-        view_id: String,
-        range: SpeedRange,
-        metrics: Vec<SpeedMetric>,
-        #[serde(default)]
-        delivery: ViewDeliveryPolicy,
-    },
-    TorrentPeers {
-        view_id: String,
-        torrent_id: String,
-        #[serde(default)]
-        delivery: ViewDeliveryPolicy,
-    },
-    TorrentSwarm {
-        view_id: String,
-        torrent_id: String,
-        #[serde(default)]
-        delivery: ViewDeliveryPolicy,
-    },
-    TorrentFiles {
-        view_id: String,
-        torrent_id: String,
-        #[serde(default)]
-        delivery: ViewDeliveryPolicy,
-    },
-    TorrentTrackers {
-        view_id: String,
-        torrent_id: String,
-        #[serde(default)]
-        delivery: ViewDeliveryPolicy,
-    },
-    Diagnostics {
-        view_id: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        torrent_id: Option<String>,
-        #[serde(default)]
-        filter: DiagnosticFilter,
-        #[serde(default)]
-        delivery: ViewDeliveryPolicy,
-    },
-}
-
-impl ViewSpec {
-    pub fn view_id(&self) -> &str {
-        match self {
-            Self::TorrentList { view_id, .. }
-            | Self::TorrentSummary { view_id, .. }
-            | Self::PieceActivity { view_id, .. }
-            | Self::SessionDisk { view_id, .. }
-            | Self::SessionDht { view_id, .. }
-            | Self::SessionSpeed { view_id, .. }
-            | Self::TorrentPeers { view_id, .. }
-            | Self::TorrentSwarm { view_id, .. }
-            | Self::TorrentFiles { view_id, .. }
-            | Self::TorrentTrackers { view_id, .. }
-            | Self::Diagnostics { view_id, .. } => view_id,
-        }
-    }
-
-    fn delivery(&self) -> ViewDeliveryPolicy {
-        match self {
-            Self::TorrentList { delivery, .. }
-            | Self::TorrentSummary { delivery, .. }
-            | Self::PieceActivity { delivery, .. }
-            | Self::SessionDisk { delivery, .. }
-            | Self::SessionDht { delivery, .. }
-            | Self::SessionSpeed { delivery, .. }
-            | Self::TorrentPeers { delivery, .. }
-            | Self::TorrentSwarm { delivery, .. }
-            | Self::TorrentFiles { delivery, .. }
-            | Self::TorrentTrackers { delivery, .. }
-            | Self::Diagnostics { delivery, .. } => *delivery,
-        }
-    }
-
-    pub(crate) fn subscription_spec(&self, queue_bytes: u32) -> SubscriptionSpec {
-        let (selector, projection, diagnostics) = match self {
-            Self::TorrentList { .. } => (ViewSelector::TorrentList, ViewProjection::Summary, None),
-            Self::TorrentSummary { torrent_id, .. } => (
-                ViewSelector::Torrent {
-                    torrent_id: torrent_id.clone(),
-                },
-                ViewProjection::Summary,
-                None,
-            ),
-            Self::PieceActivity { torrent_id, .. } => (
-                ViewSelector::Torrent {
-                    torrent_id: torrent_id.clone(),
-                },
-                ViewProjection::PieceActivity,
-                None,
-            ),
-            Self::SessionDisk { .. } => (ViewSelector::TorrentList, ViewProjection::Disk, None),
-            Self::SessionDht { .. } => (ViewSelector::SessionDht, ViewProjection::Dht, None),
-            Self::SessionSpeed { range, metrics, .. } => (
-                ViewSelector::SessionSpeed {
-                    range: *range,
-                    metrics: metrics.clone(),
-                },
-                ViewProjection::Speed,
-                None,
-            ),
-            Self::TorrentPeers { torrent_id, .. } => (
-                ViewSelector::Torrent {
-                    torrent_id: torrent_id.clone(),
-                },
-                ViewProjection::Peers,
-                None,
-            ),
-            Self::TorrentSwarm { torrent_id, .. } => (
-                ViewSelector::Torrent {
-                    torrent_id: torrent_id.clone(),
-                },
-                ViewProjection::Swarm,
-                None,
-            ),
-            Self::TorrentFiles { torrent_id, .. } => (
-                ViewSelector::Torrent {
-                    torrent_id: torrent_id.clone(),
-                },
-                ViewProjection::Files,
-                None,
-            ),
-            Self::TorrentTrackers { torrent_id, .. } => (
-                ViewSelector::Torrent {
-                    torrent_id: torrent_id.clone(),
-                },
-                ViewProjection::Trackers,
-                None,
-            ),
-            Self::Diagnostics {
-                torrent_id, filter, ..
-            } => (
-                torrent_id
-                    .as_ref()
-                    .map_or(ViewSelector::TorrentList, |id| ViewSelector::Torrent {
-                        torrent_id: id.clone(),
-                    }),
-                ViewProjection::Diagnostics,
-                Some(filter.clone()),
-            ),
-        };
-        SubscriptionSpec {
-            selector,
-            projection,
-            delivery: DeliveryPolicy {
-                min_interval_millis: self.delivery().min_interval_millis,
-                max_queue_bytes: queue_bytes,
-            },
-            diagnostics,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-pub struct OpenViewSetOptions {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub requested_queue_bytes: Option<u32>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-pub struct OpenViewSetRequest {
-    pub views: Vec<ViewSpec>,
-    #[serde(default)]
-    pub options: OpenViewSetOptions,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-pub struct UpdateViewSetRequest {
-    pub views: Vec<ViewSpec>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ViewSetUpdate {
-    Snapshot {
-        view_id: String,
-        snapshot: ViewSnapshot,
-    },
-    Patch {
-        view_id: String,
-        patch: ViewPatch,
-    },
-    ViewRemoved {
-        view_id: String,
-    },
-    ResetRequired {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        view_id: Option<String>,
-        reason: ResetReason,
-    },
-}
-
-impl ViewSetUpdate {
-    fn view_id(&self) -> Option<&str> {
-        match self {
-            Self::Snapshot { view_id, .. }
-            | Self::Patch { view_id, .. }
-            | Self::ViewRemoved { view_id } => Some(view_id),
-            Self::ResetRequired { view_id, .. } => view_id.as_deref(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-pub struct UpdateBatch {
-    pub api_version: u16,
-    pub view_set_id: String,
-    pub epoch: String,
-    pub base_cursor: String,
-    pub cursor: String,
-    pub durable_revision: String,
-    pub updates: Vec<ViewSetUpdate>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-pub struct OpenViewSetResponse {
-    pub view_set_id: String,
-    pub lease_millis: String,
-    pub effective_queue_bytes: u32,
-    pub effective_views: Vec<ViewSpec>,
-    pub initial: UpdateBatch,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ViewSetOwner(Arc<str>);
-
-impl ViewSetOwner {
-    pub fn trusted(value: impl Into<Arc<str>>) -> Self {
-        Self(value.into())
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct ViewSetStats {
-    pub queued_bytes: usize,
-    pub queue_high_water: usize,
-    pub reset_count: u64,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ViewSetError {
-    InvalidViewCount { maximum: usize },
-    InvalidViewId,
-    DuplicateViewId(String),
-    InvalidDeliveryInterval { maximum: u32 },
-    InvalidQueueBound { minimum: u32, maximum: u32 },
-    InvalidView(String),
-    ResourceLimit,
-    UnknownViewSet,
-    SnapshotExceedsQueue { snapshot: usize, maximum: u32 },
-    ConsumerBusy,
-    Closed,
-    Internal(String),
-}
-
-impl fmt::Display for ViewSetError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidViewCount { maximum } => {
-                write!(formatter, "view set must contain 1..={maximum} views")
-            }
-            Self::InvalidViewId => write!(formatter, "view ID is invalid"),
-            Self::DuplicateViewId(id) => write!(formatter, "view ID {id} is duplicated"),
-            Self::InvalidDeliveryInterval { maximum } => {
-                write!(
-                    formatter,
-                    "view delivery interval exceeds {maximum} milliseconds"
-                )
-            }
-            Self::InvalidQueueBound { minimum, maximum } => {
-                write!(
-                    formatter,
-                    "view-set queue must be within {minimum}..={maximum} bytes"
-                )
-            }
-            Self::InvalidView(message) => write!(formatter, "invalid view: {message}"),
-            Self::ResourceLimit => write!(formatter, "view-set resource limit reached"),
-            Self::UnknownViewSet => write!(formatter, "view set is unavailable"),
-            Self::SnapshotExceedsQueue { snapshot, maximum } => write!(
-                formatter,
-                "view-set snapshot is {snapshot} bytes and exceeds {maximum} bytes"
-            ),
-            Self::ConsumerBusy => write!(formatter, "view set already has an active consumer"),
-            Self::Closed => write!(formatter, "view set is closed"),
-            Self::Internal(message) => write!(formatter, "view set internal error: {message}"),
-        }
-    }
-}
-
-impl Error for ViewSetError {}
-
-#[derive(Clone, Debug)]
-pub struct ViewSet {
-    pub(crate) inner: Arc<ViewSetInner>,
-    pub(crate) hub: Weak<Mutex<HubState>>,
-}
 
 #[derive(Debug)]
 pub(crate) struct ViewSetInner {
-    id: String,
+    pub(super) id: String,
     owner: ViewSetOwner,
     state: Mutex<ViewSetState>,
-    notify: Notify,
+    pub(super) notify: Notify,
     polling: AtomicBool,
-    lease: Duration,
-}
-
-#[derive(Debug)]
-pub(crate) struct ViewSetLeaseReaper {
-    cancellation: CancellationToken,
-    task: Option<JoinHandle<()>>,
-}
-
-impl ViewSetLeaseReaper {
-    pub(crate) fn start(hub: ViewHub, interval: Duration) -> Self {
-        let cancellation = CancellationToken::new();
-        let task_cancellation = cancellation.clone();
-        let task = tokio::spawn(async move {
-            let mut timer = tokio::time::interval(interval);
-            timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            loop {
-                tokio::select! {
-                    biased;
-                    _ = task_cancellation.cancelled() => break,
-                    _ = timer.tick() => {
-                        hub.reap_expired_view_sets();
-                    }
-                }
-            }
-        });
-        Self {
-            cancellation,
-            task: Some(task),
-        }
-    }
-
-    pub(crate) async fn shutdown(&mut self) -> Result<(), JoinError> {
-        self.cancellation.cancel();
-        if let Some(task) = self.task.take() {
-            task.await?;
-        }
-        Ok(())
-    }
-}
-
-impl Drop for ViewSetLeaseReaper {
-    fn drop(&mut self) {
-        self.cancellation.cancel();
-    }
+    pub(super) lease: Duration,
 }
 
 #[derive(Debug)]
@@ -509,8 +30,8 @@ struct ViewSetState {
     acknowledged_cursor: u64,
     next_cursor: u64,
     durable_revision: u64,
-    views: BTreeMap<String, ViewSpec>,
-    queue_bytes_limit: u32,
+    pub(super) views: BTreeMap<String, ViewSpec>,
+    pub(super) queue_bytes_limit: u32,
     pending: VecDeque<QueuedViewSetUpdate>,
     pending_bytes: usize,
     last_delivered: BTreeMap<String, Instant>,
@@ -535,236 +56,24 @@ struct StoredBatch {
     encoded_bytes: usize,
 }
 
-struct ViewSetInitialState {
-    revision: u64,
-    views: BTreeMap<String, ViewSpec>,
-    queue_bytes_limit: u32,
-    snapshots: Vec<ViewSetUpdate>,
-    now: Instant,
-    lease: Duration,
+pub(super) struct ViewSetInitialState {
+    pub(super) revision: u64,
+    pub(super) views: BTreeMap<String, ViewSpec>,
+    pub(super) queue_bytes_limit: u32,
+    pub(super) snapshots: Vec<ViewSetUpdate>,
+    pub(super) now: Instant,
+    pub(super) lease: Duration,
 }
 
-enum PollState {
+pub(super) enum PollState {
     Ready(UpdateBatch),
     Wait(Option<Instant>),
     Reset(ResetReason),
     Closed,
 }
 
-impl ViewSet {
-    pub fn id(&self) -> &str {
-        &self.inner.id
-    }
-
-    pub async fn next_updates(
-        &self,
-        after: &str,
-        max_wait_millis: u32,
-    ) -> Result<UpdateBatch, ViewSetError> {
-        if max_wait_millis > MAX_VIEW_SET_WAIT_MILLIS {
-            return Err(ViewSetError::InvalidDeliveryInterval {
-                maximum: MAX_VIEW_SET_WAIT_MILLIS,
-            });
-        }
-        let after = parse_decimal(after)?;
-        let _poll = self.inner.start_poll()?;
-        self.inner.touch(Instant::now())?;
-        let deadline =
-            tokio::time::Instant::now() + Duration::from_millis(u64::from(max_wait_millis));
-        loop {
-            let notified = self.inner.notify.notified();
-            match self.inner.poll_state(after, Instant::now())? {
-                PollState::Ready(batch) => return Ok(batch),
-                PollState::Reset(reason) => return self.reset_from_hub(reason),
-                PollState::Closed => return Err(ViewSetError::Closed),
-                PollState::Wait(_) if max_wait_millis == 0 => {
-                    return self.inner.empty_batch(after, Instant::now());
-                }
-                PollState::Wait(ready_at) => {
-                    if tokio::time::Instant::now() >= deadline {
-                        return self.inner.empty_batch(after, Instant::now());
-                    }
-                    let wake_at = ready_at.map_or(deadline, |ready_at| {
-                        tokio::time::Instant::from_std(ready_at).min(deadline)
-                    });
-                    tokio::select! {
-                        () = notified => {}
-                        () = tokio::time::sleep_until(wake_at) => {
-                            if wake_at == deadline {
-                                return self.inner.empty_batch(after, Instant::now());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn stats(&self) -> Result<ViewSetStats, ViewSetError> {
-        self.inner.stats()
-    }
-
-    fn reset_from_hub(&self, reason: ResetReason) -> Result<UpdateBatch, ViewSetError> {
-        let hub = self.hub.upgrade().ok_or(ViewSetError::Closed)?;
-        let hub = hub
-            .lock()
-            .map_err(|_| ViewSetError::Internal("view hub lock is poisoned".to_owned()))?;
-        let (revision, snapshots) = hub.snapshots_for_view_set(&self.inner)?;
-        self.inner
-            .reset_with_snapshots(reason, revision, snapshots, Instant::now())
-    }
-}
-
-impl ViewHub {
-    pub fn open_view_set(
-        &self,
-        owner: ViewSetOwner,
-        request: OpenViewSetRequest,
-    ) -> Result<OpenViewSetResponse, ViewSetError> {
-        self.open_view_set_at(owner, request, Instant::now())
-    }
-
-    fn open_view_set_at(
-        &self,
-        owner: ViewSetOwner,
-        request: OpenViewSetRequest,
-        now: Instant,
-    ) -> Result<OpenViewSetResponse, ViewSetError> {
-        let (views, queue_bytes) = validated_open(&request)?;
-        let mut hub = self
-            .inner
-            .lock()
-            .map_err(|_| ViewSetError::Internal("view hub lock is poisoned".to_owned()))?;
-        prune_expired(&mut hub, now);
-        if hub.view_sets.len() >= MAX_VIEW_SETS
-            || hub
-                .view_sets
-                .values()
-                .filter(|view_set| view_set.owner_matches(&owner))
-                .count()
-                >= MAX_VIEW_SETS_PER_OWNER
-        {
-            return Err(ViewSetError::ResourceLimit);
-        }
-        let snapshots = snapshots_for_specs(&hub, &views, queue_bytes);
-        let id = loop {
-            let candidate = generate_view_set_id()?;
-            if !hub.view_sets.contains_key(&candidate) {
-                break candidate;
-            }
-        };
-        let inner = ViewSetInner::new(
-            id.clone(),
-            owner,
-            ViewSetInitialState {
-                revision: hub.revision,
-                views,
-                queue_bytes_limit: queue_bytes,
-                snapshots,
-                now,
-                lease: hub.view_set_lease,
-            },
-        )?;
-        let response = inner.open_response()?;
-        hub.view_sets.insert(id, inner);
-        self.speed_interest.notify_one();
-        Ok(response)
-    }
-
-    pub fn update_view_set(
-        &self,
-        owner: &ViewSetOwner,
-        id: &str,
-        request: UpdateViewSetRequest,
-    ) -> Result<(), ViewSetError> {
-        let views = validated_update(&request)?;
-        let now = Instant::now();
-        let mut hub = self
-            .inner
-            .lock()
-            .map_err(|_| ViewSetError::Internal("view hub lock is poisoned".to_owned()))?;
-        prune_expired(&mut hub, now);
-        let view_set = owned_view_set(&hub, owner, id)?;
-        let previous = view_set
-            .view_specs()?
-            .into_iter()
-            .map(|spec| (spec.view_id().to_owned(), spec))
-            .collect::<BTreeMap<_, _>>();
-        let queue_bytes = view_set.queue_bytes_limit()?;
-        let mut updates = previous
-            .keys()
-            .filter(|view_id| !views.contains_key(*view_id))
-            .map(|view_id| ViewSetUpdate::ViewRemoved {
-                view_id: view_id.clone(),
-            })
-            .collect::<Vec<_>>();
-        for (view_id, spec) in &views {
-            if previous.get(view_id) != Some(spec) {
-                updates.push(ViewSetUpdate::Snapshot {
-                    view_id: view_id.clone(),
-                    snapshot: hub.snapshot_for(&spec.subscription_spec(queue_bytes)),
-                });
-            }
-        }
-        view_set.replace_views(views, updates, hub.revision, now)?;
-        self.speed_interest.notify_one();
-        Ok(())
-    }
-
-    pub fn view_set(&self, owner: &ViewSetOwner, id: &str) -> Result<ViewSet, ViewSetError> {
-        let now = Instant::now();
-        let mut hub = self
-            .inner
-            .lock()
-            .map_err(|_| ViewSetError::Internal("view hub lock is poisoned".to_owned()))?;
-        prune_expired(&mut hub, now);
-        let inner = owned_view_set(&hub, owner, id)?;
-        Ok(ViewSet {
-            inner,
-            hub: Arc::downgrade(&self.inner),
-        })
-    }
-
-    pub fn close_view_set(&self, owner: &ViewSetOwner, id: &str) -> Result<(), ViewSetError> {
-        let mut hub = self
-            .inner
-            .lock()
-            .map_err(|_| ViewSetError::Internal("view hub lock is poisoned".to_owned()))?;
-        let view_set = owned_view_set(&hub, owner, id)?;
-        hub.view_sets.remove(id);
-        view_set.close();
-        self.speed_interest.notify_one();
-        Ok(())
-    }
-
-    pub fn close_all_view_sets(&self) {
-        if let Ok(mut hub) = self.inner.lock() {
-            for (_, view_set) in std::mem::take(&mut hub.view_sets) {
-                view_set.close();
-            }
-        }
-        self.speed_interest.notify_one();
-    }
-
-    pub(crate) fn reap_expired_view_sets(&self) -> usize {
-        let Ok(mut hub) = self.inner.lock() else {
-            return 0;
-        };
-        let before = hub.view_sets.len();
-        prune_expired(&mut hub, Instant::now());
-        before.saturating_sub(hub.view_sets.len())
-    }
-
-    #[cfg(test)]
-    pub(crate) fn expire_view_sets_at(&self, now: Instant) {
-        if let Ok(mut hub) = self.inner.lock() {
-            prune_expired(&mut hub, now);
-        }
-    }
-}
-
 impl ViewSetInner {
-    fn new(
+    pub(super) fn new(
         id: String,
         owner: ViewSetOwner,
         initial: ViewSetInitialState,
@@ -814,11 +123,11 @@ impl ViewSetInner {
         Ok(state.views.values().cloned().collect())
     }
 
-    fn queue_bytes_limit(&self) -> Result<u32, ViewSetError> {
+    pub(super) fn queue_bytes_limit(&self) -> Result<u32, ViewSetError> {
         Ok(self.state()?.queue_bytes_limit)
     }
 
-    fn open_response(&self) -> Result<OpenViewSetResponse, ViewSetError> {
+    pub(super) fn open_response(&self) -> Result<OpenViewSetResponse, ViewSetError> {
         let state = self.state()?;
         let initial = state
             .in_flight
@@ -971,7 +280,7 @@ impl ViewSetInner {
         Ok(())
     }
 
-    fn poll_state(&self, after: u64, now: Instant) -> Result<PollState, ViewSetError> {
+    pub(super) fn poll_state(&self, after: u64, now: Instant) -> Result<PollState, ViewSetError> {
         let mut state = self.state()?;
         if state.closed {
             return Ok(PollState::Closed);
@@ -1039,7 +348,11 @@ impl ViewSetInner {
         Ok(PollState::Ready(batch))
     }
 
-    fn empty_batch(&self, after: u64, _now: Instant) -> Result<UpdateBatch, ViewSetError> {
+    pub(super) fn empty_batch(
+        &self,
+        after: u64,
+        _now: Instant,
+    ) -> Result<UpdateBatch, ViewSetError> {
         let state = self.state()?;
         if state.closed {
             return Err(ViewSetError::Closed);
@@ -1055,7 +368,7 @@ impl ViewSetInner {
         })
     }
 
-    fn reset_with_snapshots(
+    pub(super) fn reset_with_snapshots(
         &self,
         reason: ResetReason,
         revision: u64,
@@ -1101,7 +414,7 @@ impl ViewSetInner {
         Ok(batch)
     }
 
-    fn stats(&self) -> Result<ViewSetStats, ViewSetError> {
+    pub(super) fn stats(&self) -> Result<ViewSetStats, ViewSetError> {
         let state = self.state()?;
         let in_flight = state
             .in_flight
@@ -1120,7 +433,7 @@ impl ViewSetInner {
             .map_err(|_| ViewSetError::Internal("view-set lock is poisoned".to_owned()))
     }
 
-    fn start_poll(&self) -> Result<ActivePoll<'_>, ViewSetError> {
+    pub(super) fn start_poll(&self) -> Result<ActivePoll<'_>, ViewSetError> {
         self.polling
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .map_err(|_| ViewSetError::ConsumerBusy)?;
@@ -1128,7 +441,7 @@ impl ViewSetInner {
     }
 }
 
-struct ActivePoll<'a> {
+pub(super) struct ActivePoll<'a> {
     inner: &'a ViewSetInner,
 }
 
@@ -1185,42 +498,6 @@ fn validate_specs(views: &[ViewSpec]) -> Result<BTreeMap<String, ViewSpec>, View
         }
     }
     Ok(output)
-}
-
-fn owned_view_set(
-    hub: &HubState,
-    owner: &ViewSetOwner,
-    id: &str,
-) -> Result<Arc<ViewSetInner>, ViewSetError> {
-    hub.view_sets
-        .get(id)
-        .filter(|view_set| view_set.owner_matches(owner))
-        .cloned()
-        .ok_or(ViewSetError::UnknownViewSet)
-}
-
-fn prune_expired(hub: &mut HubState, now: Instant) {
-    hub.view_sets.retain(|_, view_set| {
-        let retain = !view_set.is_expired(now);
-        if !retain {
-            view_set.close();
-        }
-        retain
-    });
-}
-
-fn snapshots_for_specs(
-    hub: &HubState,
-    views: &BTreeMap<String, ViewSpec>,
-    queue_bytes: u32,
-) -> Vec<ViewSetUpdate> {
-    views
-        .iter()
-        .map(|(view_id, spec)| ViewSetUpdate::Snapshot {
-            view_id: view_id.clone(),
-            snapshot: hub.snapshot_for(&spec.subscription_spec(queue_bytes)),
-        })
-        .collect()
 }
 
 pub(crate) fn validated_open(
@@ -1380,7 +657,7 @@ fn encoded_batch_len(batch: &UpdateBatch) -> Result<usize, ViewSetError> {
         .map_err(|error| ViewSetError::Internal(error.to_string()))
 }
 
-fn parse_decimal(value: &str) -> Result<u64, ViewSetError> {
+pub(super) fn parse_decimal(value: &str) -> Result<u64, ViewSetError> {
     if value.is_empty()
         || (value.len() > 1 && value.starts_with('0'))
         || !value.bytes().all(|byte| byte.is_ascii_digit())
