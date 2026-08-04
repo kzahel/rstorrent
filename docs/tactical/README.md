@@ -357,6 +357,10 @@ that scope and its cleanup or compatibility rules explicitly.
   explicit same-origin production bootstrap, joined terminate handling, and
   externally owned exact-push deployment evidence without recording host
   identity or credentials in this repository.
+- [`077-shared-overlay-menu-system.md`](077-shared-overlay-menu-system.md):
+  planned; replaces component-local menu and popover mechanics with one
+  portalled, collision-aware, accessible React Aria layer while reserving new
+  product context-menu bindings for a later policy decision.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

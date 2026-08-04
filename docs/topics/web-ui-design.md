@@ -480,6 +480,15 @@ and waits for the authoritative Files view to change the priority column. Demo
 scenarios retain disabled actions with an explicit reason rather than
 pretending to mutate engine state.
 
+Tactical `077` is planned to replace the component-local Files and torrent
+action menus, table Columns popover, and column-help overlay with one locally
+styled React Aria Components layer. The shared layer owns body-portalled
+rendering, collision-aware placement and sizing, focus, dismissal, nested-menu
+behavior, and portal-safe theme/interface metrics. It remains compatible with
+desktop context-menu triggering, but this slice does not attach right-click
+behavior to product rows or reassign the table's touch long-press selection
+gesture.
+
 The Add dialog now has one checked-by-default **Start downloading files when
 metadata is available** checkbox. Clearing it acquires metadata without
 creating content artifacts and directs the user to the Files tab; no file tree
