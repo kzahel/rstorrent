@@ -15,10 +15,36 @@ const authorization = `Basic ${Buffer.from(
   `${options.username}:${password}`,
   "utf8",
 ).toString("base64")}`;
+const headers = { Authorization: authorization };
+
+const indexUrl = new URL("/", options.url);
+const indexResponse = await fetchWithTimeout(indexUrl, { headers });
+if (!indexResponse.ok) {
+  throw new Error(`hosted index returned HTTP ${indexResponse.status}`);
+}
+if (!indexResponse.headers.get("content-type")?.startsWith("text/html")) {
+  throw new Error("hosted index did not return HTML");
+}
+const index = await indexResponse.text();
+const entrypoint = index.match(
+  /<script\b[^>]*\btype=["']module["'][^>]*\bsrc=["']([^"']+)["']/u,
+)?.[1];
+if (!entrypoint) {
+  throw new Error("hosted index did not name a module entrypoint");
+}
+const entrypointResponse = await fetchWithTimeout(
+  new URL(entrypoint, indexUrl),
+  { headers },
+);
+if (!entrypointResponse.ok) {
+  throw new Error(
+    `hosted module entrypoint returned HTTP ${entrypointResponse.status}`,
+  );
+}
 
 const healthUrl = new URL("/healthz", options.url);
 const healthResponse = await fetchWithTimeout(healthUrl, {
-  headers: { Authorization: authorization },
+  headers,
 });
 if (!healthResponse.ok) {
   throw new Error(`hosted health returned HTTP ${healthResponse.status}`);
@@ -87,7 +113,7 @@ await new Promise((resolve, reject) => {
 });
 
 process.stdout.write(
-  `verified hosted build ${options.buildId} over HTTP and WebSocket\n`,
+  `verified hosted build ${options.buildId} static assets, health, and WebSocket\n`,
 );
 
 async function fetchWithTimeout(url, init) {
@@ -124,14 +150,18 @@ function parseOptions(arguments_) {
   }
   const url = new URL(values.get("url"));
   const origin = new URL(values.get("origin")).origin;
+  const username = values.get("username");
   if (!/^https?:$/u.test(url.protocol)) throw new Error("URL must use HTTP(S)");
   if (!/^https:$/u.test(new URL(origin).protocol)) {
     throw new Error("Origin must use HTTPS");
   }
+  if (username.length > 64 || username.includes(":")) {
+    throw new Error("username must be bounded and contain no colon");
+  }
   return {
     url,
     origin,
-    username: values.get("username"),
+    username,
     passwordFile: values.get("password-file"),
     buildId: values.get("build-id"),
   };

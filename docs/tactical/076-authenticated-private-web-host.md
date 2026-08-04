@@ -1,6 +1,6 @@
 # Tactical 076: Authenticated Private Web Host
 
-Status: In progress from maintainer direction on 2026-08-04.
+Status: Complete on 2026-08-04.
 
 Topics: `application-connection-architecture`, `client-surfaces`,
 `download-roots`, `capability-readiness`
@@ -167,3 +167,57 @@ Client build polling, retained prior hashed assets, automatic reload notices,
 zero-downtime process handoff, and stronger authentication remain follow-up
 work. The initial deployment prefers a short explicit reload after a push over
 claiming compatibility across unreleased contract changes.
+
+## Implementation And Evidence
+
+The gateway now has an explicit bounded Basic-authentication mode and a
+`HostedAssets` configuration. Hosted mode applies one credential middleware
+before static, health, HTTP application, and WebSocket routes, requires an
+exact HTTPS Origin, disables native directory-picker authority, serves one
+validated production root with exact-file `404` behavior, and reports its
+build identity at `/healthz`. Bearer and ephemeral unauthenticated loopback
+behavior retain their previous bind, Origin, and frame-token rules.
+
+The executable reads the bounded password from a file, requires hosted web
+root and build identity together, accepts the existing explicit profile and
+storage roots, and handles both interrupt and terminate signals before joined
+application shutdown. The React entrypoint has one build-time-only
+`same-origin` default. Explicit demo, explicit live, and Tauri selection retain
+precedence, and ordinary builds still select the named demo.
+
+`scripts/verify-hosted-webui.mjs` checks the authenticated production index
+and module entrypoint, exact health/build identity, and one API-v1 WebSocket
+negotiation without placing the password in arguments, URLs, output, or an
+application frame.
+
+Repository validation passed:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace -- -D warnings`;
+- `cargo test --workspace`;
+- all web tests: 26 files passed, 2 skipped; 145 tests passed, 2 skipped;
+- `npm run typecheck --prefix clients/web`;
+- an explicit same-origin production Vite build and CSP check;
+- a locked release build of the gateway executable; and
+- an isolated release-process smoke with a temporary profile, storage root,
+  secret file, authenticated static/health/WebSocket requests, terminate,
+  connection metrics, and exact cleanup.
+
+Externally owned deployment evidence activated pushed revision
+`c3862864a85dfb1e5f8c446d5c7a9fe0ca9bedd8` from a clean detached deployment
+worktree while the primary checkout retained unrelated dirty work. The
+candidate passed before activation; an intentionally exposed activation-path
+fault and a protected-directory startup failure both left the desired revision
+pending and production unavailable rather than recording a false final
+success after the worker correction. The successful retry recorded the exact
+revision, and both the direct private listener and the TLS origin returned
+`401` without a credential and passed authenticated static, health/build, and
+WebSocket checks. A supervised restart changed the runner process, emitted
+joined gateway connection metrics during terminate handling, reopened the
+same external profile/root configuration, and passed the public verifier
+again.
+
+Host identity, address, domain, credential, credential hash, DNS, reverse
+proxy, service definitions, runtime paths, logs, release retention, deploy
+status, and rollback operation remain only in the externally owned private
+infrastructure source and local mode-0600 state.

@@ -352,6 +352,11 @@ that scope and its cleanup or compatibility rules explicitly.
   draft; removes the single-file storage fork, gives every v1 torrent one
   durable resume/publication path, and adds bounded full managed-storage and
   force recheck with controlled libtorrent fault evidence.
+- [`076-authenticated-private-web-host.md`](076-authenticated-private-web-host.md):
+  complete; adds bounded Basic-auth static, health, and application hosting,
+  explicit same-origin production bootstrap, joined terminate handling, and
+  externally owned exact-push deployment evidence without recording host
+  identity or credentials in this repository.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
