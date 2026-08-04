@@ -8,7 +8,7 @@ import {
   type PointerEvent,
 } from "react";
 
-import { applyColorTheme } from "../appearance";
+import { applyAppearancePreferences } from "../appearance";
 import { useInspectionCommand, useInspectionStore } from "../context";
 import { formatRate } from "../format";
 import type { ApplicationDestination } from "../model";
@@ -81,8 +81,8 @@ export function App() {
   const activeSplitterPointer = useRef<number | null>(null);
 
   useLayoutEffect(() => {
-    applyColorTheme(colorTheme);
-  }, [colorTheme]);
+    applyAppearancePreferences({ colorTheme, interfaceSize });
+  }, [colorTheme, interfaceSize]);
 
   useEffect(() => {
     const update = () => {

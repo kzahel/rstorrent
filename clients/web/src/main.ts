@@ -1,8 +1,8 @@
-import { applyStoredColorTheme } from "./inspection/appearance";
+import { applyStoredAppearance } from "./inspection/appearance";
 import { resolveInspectionBootstrapTarget } from "./inspection/bootstrap-target";
 
 const parameters = new URLSearchParams(window.location.search);
-const appearance = applyStoredColorTheme();
+const appearance = applyStoredAppearance();
 document
   .querySelector<HTMLMetaElement>('meta[name="color-scheme"]')
   ?.setAttribute(

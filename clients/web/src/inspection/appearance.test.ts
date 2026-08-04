@@ -4,8 +4,10 @@ import {
   APPEARANCE_STORAGE_KEY,
   DEFAULT_COLOR_THEME,
   DEFAULT_INTERFACE_SIZE,
+  applyAppearancePreferences,
   applyColorTheme,
-  applyStoredColorTheme,
+  applyInterfaceSize,
+  applyStoredAppearance,
   loadAppearancePreferences,
   saveAppearancePreferences,
 } from "./appearance";
@@ -100,12 +102,21 @@ describe("appearance preferences", () => {
     ).toEqual({ interfaceSize: "standard", colorTheme: "auto" });
   });
 
-  it("applies validated stored themes to a document root", () => {
+  it("applies validated appearance preferences to a document root", () => {
     const root = { dataset: {} } as Pick<HTMLElement, "dataset">;
     applyColorTheme("light", root);
+    applyInterfaceSize("compact", root);
     expect(root.dataset.colorTheme).toBe("light");
+    expect(root.dataset.interfaceSize).toBe("compact");
 
-    const preferences = applyStoredColorTheme(
+    applyAppearancePreferences(
+      { interfaceSize: "standard", colorTheme: "auto" },
+      root,
+    );
+    expect(root.dataset.colorTheme).toBe("auto");
+    expect(root.dataset.interfaceSize).toBe("standard");
+
+    const preferences = applyStoredAppearance(
       stored(
         JSON.stringify({
           version: 2,
@@ -120,6 +131,7 @@ describe("appearance preferences", () => {
       colorTheme: "dark",
     });
     expect(root.dataset.colorTheme).toBe("dark");
+    expect(root.dataset.interfaceSize).toBe("spacious");
   });
 
   it("tolerates denied browser storage", () => {

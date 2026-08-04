@@ -38,6 +38,57 @@
   --demo-control: #fffaf0;
   --demo-control-hover: #fff4d8;
   --demo-control-text: #4c3514;
+  --ui-font-caption: 0.75rem;
+  --ui-font-small: 0.8125rem;
+  --ui-font-body: 0.875rem;
+  --ui-font-heading: 1.125rem;
+  --ui-font-display: 1.375rem;
+  --ui-icon-size: 1.125rem;
+  --ui-control-height: 2.25rem;
+  --ui-header-height: 52px;
+  --ui-actionbar-height: 46px;
+  --ui-tab-height: 42px;
+  --ui-table-toolbar-height: 34px;
+  --ui-space-xs: 0.3rem;
+  --ui-space-sm: 0.5rem;
+  --ui-space-md: 0.85rem;
+  --ui-space-lg: 1.15rem;
+}
+
+:root[data-interface-size="compact"] {
+  --ui-font-caption: 0.6875rem;
+  --ui-font-small: 0.75rem;
+  --ui-font-body: 0.8125rem;
+  --ui-font-heading: 1rem;
+  --ui-font-display: 1.25rem;
+  --ui-icon-size: 1rem;
+  --ui-control-height: 1.875rem;
+  --ui-header-height: 48px;
+  --ui-actionbar-height: 40px;
+  --ui-tab-height: 38px;
+  --ui-table-toolbar-height: 30px;
+  --ui-space-xs: 0.22rem;
+  --ui-space-sm: 0.4rem;
+  --ui-space-md: 0.7rem;
+  --ui-space-lg: 1rem;
+}
+
+:root[data-interface-size="spacious"] {
+  --ui-font-caption: 0.8125rem;
+  --ui-font-small: 0.9375rem;
+  --ui-font-body: 1rem;
+  --ui-font-heading: 1.25rem;
+  --ui-font-display: 1.5rem;
+  --ui-icon-size: 1.25rem;
+  --ui-control-height: 2.75rem;
+  --ui-header-height: 60px;
+  --ui-actionbar-height: 56px;
+  --ui-tab-height: 48px;
+  --ui-table-toolbar-height: 40px;
+  --ui-space-xs: 0.4rem;
+  --ui-space-sm: 0.65rem;
+  --ui-space-md: 1rem;
+  --ui-space-lg: 1.35rem;
 }
 
 * {
@@ -152,5 +203,19 @@ input:focus-visible {
     --demo-control: #2a251c;
     --demo-control-hover: #393124;
     --demo-control-text: #f4e6ca;
+  }
+}
+
+@media (max-width: 760px) {
+  :root[data-interface-size] {
+    --ui-header-height: 100px;
+  }
+}
+
+@media (pointer: coarse) {
+  :root[data-interface-size] {
+    --ui-control-height: 44px;
+    --ui-actionbar-height: 54px;
+    --ui-tab-height: 44px;
   }
 }

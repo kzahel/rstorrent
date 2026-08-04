@@ -41,7 +41,7 @@ const LEGACY_APPEARANCE_VERSION = 1;
 
 type ReadableStorage = Pick<Storage, "getItem">;
 type WritableStorage = Pick<Storage, "setItem">;
-type ThemeRoot = Pick<HTMLElement, "dataset">;
+type AppearanceRoot = Pick<HTMLElement, "dataset">;
 
 export type AppearanceStorage = ReadableStorage & WritableStorage;
 
@@ -110,17 +110,32 @@ export function saveAppearancePreferences(
 
 export function applyColorTheme(
   colorTheme: ColorTheme,
-  root: ThemeRoot | null = browserDocumentRoot(),
+  root: AppearanceRoot | null = browserDocumentRoot(),
 ): void {
   if (root !== null) root.dataset.colorTheme = colorTheme;
 }
 
-export function applyStoredColorTheme(
+export function applyInterfaceSize(
+  interfaceSize: InterfaceSize,
+  root: AppearanceRoot | null = browserDocumentRoot(),
+): void {
+  if (root !== null) root.dataset.interfaceSize = interfaceSize;
+}
+
+export function applyAppearancePreferences(
+  preferences: AppearancePreferences,
+  root: AppearanceRoot | null = browserDocumentRoot(),
+): void {
+  applyColorTheme(preferences.colorTheme, root);
+  applyInterfaceSize(preferences.interfaceSize, root);
+}
+
+export function applyStoredAppearance(
   storage: ReadableStorage | null = browserStorage(),
-  root: ThemeRoot | null = browserDocumentRoot(),
+  root: AppearanceRoot | null = browserDocumentRoot(),
 ): AppearancePreferences {
   const preferences = loadAppearancePreferences(storage);
-  applyColorTheme(preferences.colorTheme, root);
+  applyAppearancePreferences(preferences, root);
   return preferences;
 }
 
