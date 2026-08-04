@@ -644,11 +644,6 @@ fn metric_catalog() -> Vec<SpeedMetricAvailability> {
             available: true,
             reason: None,
         })
-        .chain([SpeedMetricAvailability {
-            metric: SpeedMetric::PayloadUploaded,
-            available: false,
-            reason: Some("upload and seeding are not implemented".to_owned()),
-        }])
         .collect()
 }
 
@@ -1167,6 +1162,27 @@ impl From<rusqlite::Error> for MetricsStoreError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn metric_catalog_has_one_available_upload_entry() {
+        let catalog = metric_catalog();
+        let metrics = catalog
+            .iter()
+            .map(|entry| entry.metric)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(catalog.len(), SpeedMetric::AVAILABLE.len());
+        assert_eq!(metrics.len(), catalog.len());
+        assert_eq!(
+            catalog
+                .iter()
+                .find(|entry| entry.metric == SpeedMetric::PayloadUploaded),
+            Some(&SpeedMetricAvailability {
+                metric: SpeedMetric::PayloadUploaded,
+                available: true,
+                reason: None,
+            })
+        );
+    }
 
     #[test]
     fn retry_bytes_are_additive_and_failed_bytes_do_not_reduce_verified() {
