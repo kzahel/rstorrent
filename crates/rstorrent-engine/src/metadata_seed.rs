@@ -221,7 +221,8 @@ impl MetadataSeedServer {
 
         let metadata_size = self.metadata.len();
         let block_count = metadata_block_count(metadata_size);
-        let mut upload = MetadataUpload::new(self.metadata).map_err(MetadataSeedError::Metadata)?;
+        let mut upload =
+            MetadataUpload::new(&self.metadata).map_err(MetadataSeedError::Metadata)?;
         let mut remote_metadata_id = None;
         loop {
             match peer.next_message().await? {

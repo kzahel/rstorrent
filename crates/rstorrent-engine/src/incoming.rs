@@ -128,7 +128,7 @@ impl SeedRegistration {
             ));
         }
         let raw_info: Arc<[u8]> = raw_info.into();
-        MetadataUpload::from_shared(raw_info.clone()).map_err(|_| {
+        MetadataUpload::new(&raw_info).map_err(|_| {
             IncomingPeerError::InvalidRegistration("metadata exceeds upload limits")
         })?;
         let piece_lengths = content
@@ -1110,7 +1110,7 @@ async fn run_incoming_peer_loop(
     {
         return PeerTermination::Closed;
     }
-    let mut metadata = match MetadataUpload::from_shared(registration.raw_info.clone()) {
+    let mut metadata = match MetadataUpload::new(&registration.raw_info) {
         Ok(metadata) => metadata,
         Err(_) => return PeerTermination::Storage,
     };
@@ -1733,7 +1733,8 @@ mod tests {
             while client.read(&mut bytes).await.unwrap_or(0) != 0 {}
         });
         let mut io = PeerIo::new(server, Duration::from_secs(2), None);
-        let mut upload = MetadataUpload::new(vec![7; 16 * 1_024]).expect("local metadata");
+        let metadata = vec![7; 16 * 1_024];
+        let mut upload = MetadataUpload::new(&metadata).expect("local metadata");
         let mut remote_id = Some(7);
         let mut deferred = VecDeque::new();
         let request = PeerMessage::Extended {

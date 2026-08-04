@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
-use std::sync::Arc;
 
 use sha1::{Digest, Sha1};
 
@@ -960,18 +959,14 @@ pub enum MetadataUploadAction {
 }
 
 #[derive(Debug)]
-pub struct MetadataUpload {
-    bytes: Arc<[u8]>,
+pub struct MetadataUpload<'a> {
+    bytes: &'a [u8],
     served: Vec<bool>,
     request_count: usize,
 }
 
-impl MetadataUpload {
-    pub fn new(bytes: Vec<u8>) -> Result<Self, MetadataError> {
-        Self::from_shared(bytes.into())
-    }
-
-    pub fn from_shared(bytes: Arc<[u8]>) -> Result<Self, MetadataError> {
+impl<'a> MetadataUpload<'a> {
+    pub fn new(bytes: &'a [u8]) -> Result<Self, MetadataError> {
         let size = validate_local_size(i64::try_from(bytes.len()).map_err(|_| {
             MetadataError::InvalidSize {
                 size: i64::MAX,
@@ -1719,7 +1714,7 @@ mod tests {
     #[test]
     fn upload_serves_exact_blocks_and_has_no_lifetime_request_cap() {
         let bytes = vec![8; METADATA_BLOCK_LENGTH + 3];
-        let mut upload = MetadataUpload::new(bytes.clone()).expect("bounded metadata");
+        let mut upload = MetadataUpload::new(&bytes).expect("bounded metadata");
 
         assert_eq!(
             upload.on_request(-1).expect("reject negative"),
@@ -1744,7 +1739,8 @@ mod tests {
         ));
         assert!(upload.is_complete());
 
-        let mut flooded = MetadataUpload::new(vec![1]).expect("one block");
+        let flooded_bytes = [1];
+        let mut flooded = MetadataUpload::new(&flooded_bytes).expect("one block");
         for _ in 0..=4096 {
             flooded
                 .on_request(0)
@@ -1757,7 +1753,7 @@ mod tests {
     #[ignore = "allocates the complete 64 MiB local metadata upload profile"]
     fn upload_serves_every_block_of_maximum_local_metadata() {
         let bytes = vec![8; MAX_LOCAL_METADATA_LENGTH];
-        let mut upload = MetadataUpload::new(bytes).expect("maximum local metadata");
+        let mut upload = MetadataUpload::new(&bytes).expect("maximum local metadata");
 
         for piece in 0..4096 {
             let action = upload
