@@ -20,9 +20,10 @@ replaces the Android product's fixed startup descriptor manifest with lazy,
 bounded platform acquisition while preserving the same durable root,
 selection, checkpoint, publication, repair, and removal authority. Tactical
 `073` unifies BEP 3 file/tree storage and replaces claimed-bit-only restart
-with an atomic all-wanted managed full recheck. Tactical
-`075` records the accepted bounded ephemeral application-state mode; the
-current implementation remains filesystem-backed until that tactical lands.
+with an atomic all-wanted managed full recheck. Tactical `075` implements the
+accepted bounded ephemeral application-state mode with private session and
+metrics databases, explicit page maxima, no profile files, and unchanged
+external payload-root semantics.
 
 ## Scope
 
@@ -140,13 +141,23 @@ Failure to open, migrate, or write a durable profile must never silently fall
 back to ephemeral state. The two modes are an application configuration choice,
 not a corruption-recovery heuristic or a second persistence format.
 
+The implemented initial bounds are 128 MiB of session main-database page
+space and 32 MiB of metrics main-database page space, computed from and
+verified against each connection's actual page size. SQLite `FULL` is a typed
+application `resource_limit`; the current session transaction rolls back,
+while background metrics persistence degrades with one bounded diagnostic and
+live history remains available. In-memory SQL temporary storage is forced to
+memory, and `MEMORY` rollback journals preserve atomic transactions without a
+filesystem journal.
+
 Payload roots remain separate capabilities. Ephemeral application state does
 not claim that a started download writes no payload, staging, or part data; a
 fully memory-backed content store requires its own engine and resource design.
 Likewise, accepting this mode does not decide how a future original `.torrent`
 source is retained in durable mode. Tactical
-[`075`](../tactical/075-ephemeral-application-state.md) owns the bounded
-implementation and no-file evidence.
+[`075`](../tactical/075-ephemeral-application-state.md) records the bounded
+implementation, page/RSS measurements, controlled loopback lifecycle, and
+no-file evidence.
 
 ### Verified metadata is durable
 

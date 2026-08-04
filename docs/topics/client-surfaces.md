@@ -273,6 +273,13 @@ own correctness.
 - A remote WebSocket connection owns only its authenticated commands and
   subscriptions.
 
+The same detachment rule applies when the application service was explicitly
+opened with ephemeral state. The service retains its private session and
+speed-history databases until its application owner performs joined shutdown;
+closing the last tab, window, activity, connection, subscription, or view set
+does not clear them. No visible client mode selector is implemented by
+Tactical `075`.
+
 Every subscription and adapter task has explicit close, cancellation,
 termination observation, and bounded queued state.
 

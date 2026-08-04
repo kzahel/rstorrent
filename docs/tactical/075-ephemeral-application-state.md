@@ -1,7 +1,7 @@
 # Tactical 075: Ephemeral Application State
 
-Status: Accepted for implementation on 2026-08-04 after completion of
-Tactical `074`. Implementation has not started.
+Status: Complete on 2026-08-04. Planning landed in `9e076c6`; implementation
+landed in `db4a092`.
 
 Topics: `client-persistence`, `application-control`, `client-surfaces`,
 `capability-readiness`
@@ -276,6 +276,72 @@ contract.
 | Resource evidence | Record session/metrics page count, configured page maxima, process memory high water, and bounded exhaustion response. |
 | Entry point | Headless configuration selects ephemeral without a profile path; conflicting durable/ephemeral options fail before service open. |
 | Workspace | `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, `cargo test --workspace`, and `git diff --check`. |
+
+## Implementation And Evidence
+
+`ApplicationPersistence` now selects `Durable { profile_root }` or
+`Ephemeral`. The existing `ApplicationConfig::new` remains the durable
+constructor, while `ApplicationConfig::ephemeral` constructs the memory-only
+mode without manufacturing or accepting a profile path. `ApplicationService`
+routes the session store and separate speed-history store from that value and
+records the selected mode in the bounded `application_opened` diagnostic.
+
+Both ephemeral stores use private `Connection::open_in_memory` connections,
+the existing migrations and query/transaction code, and verified
+`foreign_keys=ON`, `journal_mode=MEMORY`, `synchronous=OFF`, and
+`temp_store=MEMORY` settings. The actual 4,096-byte SQLite page size produced
+these fresh-store measurements on the validation host:
+
+| Store | Fresh pages | Maximum pages | Fresh main-DB bytes | Maximum main-DB bytes |
+| --- | ---: | ---: | ---: | ---: |
+| Session | 21 | 32,768 | 86,016 | 134,217,728 |
+| Metrics | 3 | 8,192 | 12,288 | 33,554,432 |
+
+The session cap fixture used a test-only 512 KiB maximum and a valid bounded
+metadata write large enough to produce SQLite `FULL`. The metadata transaction
+rolled back its revision and state, the application response classified the
+failure as `resource_limit`, and a following snapshot remained available. A
+separate 128 KiB metrics fixture rolled back an oversized batch, kept live
+history serving in degraded-persistence state, and retained exactly one
+`speed_history_persistence_degraded` diagnostic across repeated failures.
+
+The controlled loopback lifecycle opened two private databases, acquired and
+verified multi-file metadata from a loopback BEP 9 peer, changed settings and
+file selection, recorded speed activity, opened and closed the last view set,
+saved the DHT snapshot during joined shutdown, and reopened the same
+`profile_id` at revision zero. Its separately pre-created payload root stayed
+empty and the never-configured profile path stayed absent throughout. The
+offline open/close case passed separately. Direct execution of the headless
+binary with `--ephemeral` and no `--profile-root` returned the revision-zero
+shutdown snapshot and left only the caller-created empty payload directory;
+the parser rejects specifying both options.
+
+Running the loopback lifecycle test binary under `/usr/bin/time -l` recorded a
+12,419,072-byte maximum resident set size on the validation host. This is a
+scenario high-water observation, not a process-wide memory contract; the page
+maxima remain the enforceable bounds.
+
+Validation completed:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace -- -D warnings`;
+- `cargo test --workspace` (all workspace rows passed; three pre-existing
+  ignored engine tests remained ignored);
+- `cargo test -p rstorrent-session` (119 library, two throughput-profile, and
+  four headless-parser tests passed);
+- `npm run generate`, with only the new `resource_limit` member changing the
+  checked TypeScript, JSON Schema, and generated validator; UniFFI's Kotlin
+  lowering compiled through the Android workspace crate without a checked
+  generated Kotlin source change;
+- web `npm test -- --run` (146 passed, two skipped), `npm run typecheck`, and
+  `npm run build` with the existing bundle-size warning; and
+- `git diff --check`.
+
+Durable WAL/`synchronous=FULL`, migration, warm-DHT, metrics restore, metadata,
+have-state, restart, Android UniFFI, desktop, and gateway regressions all ran
+through the unchanged durable constructor in the workspace gates. No public
+network, browser, visible desktop, Android runtime, emulator, physical device,
+schema migration, or new dependency was used.
 
 No network beyond loopback, public swarm, browser, visible desktop, Android
 build, emulator, physical device, schema migration, or new dependency is

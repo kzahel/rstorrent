@@ -31,6 +31,10 @@ Tactical `073` adds `force_recheck` as a semantic durable command with the
 same expected-revision and request-receipt rules. It joins an active matching
 generation, preserves durable run intent, and starts the common managed-
 storage check without exposing paths, handles, or engine tasks.
+Tactical `075` keeps that semantic contract and its request receipts intact in
+an explicitly selected, private, bounded in-memory application-state mode.
+SQLite `FULL` now has the typed `resource_limit` response classification in
+both persistence modes.
 
 ## Scope
 
@@ -158,8 +162,9 @@ optimization.
 
 ## Invariants
 
-- Every mutation has one application-service instance and one profile
-  database as its authority.
+- Every mutation has one application-service instance and one session
+  database as its authority, either its durable profile database or its
+  private ephemeral database.
 - Request correlation survives asynchronous execution and retry.
 - A rejected stale revision cannot partially change durable or engine state.
 - Snapshots are coherent at one service revision; events may later optimize
@@ -250,6 +255,13 @@ A later control slice must own safe runtime mutation, cancel active network
 resources promptly, preserve torrent intent, and restart eligible work when
 network prerequisites return. Android network binding and VPN leak prevention
 require separate platform evidence.
+
+[`../tactical/075-ephemeral-application-state.md`](../tactical/075-ephemeral-application-state.md)
+adds an immutable persistence-mode choice at the same service-lifetime
+boundary. Presentation and transport detachment do not close or clear an
+ephemeral service; joined service shutdown remains the owner of final DHT and
+speed-history flushes. Durable open or write failure never falls back to the
+ephemeral mode.
 
 [`../tactical/018-inspectable-metadata-acquisition.md`](../tactical/018-inspectable-metadata-acquisition.md)
 adds a coherent read-only engine diagnostic snapshot through `DownloadControl`.

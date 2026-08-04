@@ -83,22 +83,26 @@ existing 52,428-piece engine ceiling; deterministic, persistence, resource,
 and controlled bidirectional libtorrent evidence pass. Product `.torrent`
 intake remains absent.
 
+Tactical [`075`](../tactical/075-ephemeral-application-state.md) is complete.
+The application can now select private bounded in-memory session and metrics
+stores, preserve the ordinary semantic and owner lifecycle while open, report
+page exhaustion as a resource limit, and close without creating profile or
+payload artifacts in the metadata-only case. Durable persistence behavior is
+unchanged.
+
 ## Current Queue
 
 ### Now
 
-**Implement explicit ephemeral application state.** Tactical
-[`075`](../tactical/075-ephemeral-application-state.md) adds bounded in-memory
-session and metrics stores with no profile files. It leaves payload storage,
-durable-profile failure behavior, and future source-retention policy
-unchanged.
+**Decide the persistent source and `.torrent` intake boundary.** Resume/source
+metadata, session SQLite shape, original `.torrent` retention, transport and
+chunking, and the current magnet/BEP 9 retention model need one accepted
+boundary before another implementation tactical is authorized.
 
 ### Next
 
-- Resume/source metadata, session SQLite shape, original `.torrent` storage,
-  `.torrent` transport and chunking, and the current magnet/BEP 9 retention
-  model remain under maintainer discussion rather than being implied by
-  Tacticals `074` or `075`.
+- No implementation item is promoted until that persistence/source discussion
+  records its scope and stopping condition.
 
 ### Later
 
@@ -181,6 +185,7 @@ does not.
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
 | Durable semantic application control | Implemented | deterministic, runtime, web, AVD, physical | Archive, fenced keep/delete removal, metadata-only add, and joined live file selection are implemented; stable public compatibility and general multi-torrent scheduling remain absent. | [`application-control`](application-control.md) |
+| Ephemeral application state | Implemented | deterministic, runtime | Private bounded session and metrics SQLite stores preserve receipts, metadata, settings, views, DHT and speed state for one joined service lifetime, then disappear without profile files; payload storage remains an external capability and has no RAM backend. | [`client-persistence`](client-persistence.md), [`application-control`](application-control.md) |
 | Leased application view sets and delivery clients | Implemented | deterministic, runtime, interop, web, Tauri | Named summary, piece, structured diagnostic, active-peer, registry-backed Swarm, complete-file, tracker-lifecycle, global Disk, range-selected session Speed, and latest-value session DHT views have bounded replay/reset, independent lease expiry, fresh-snapshot recovery, diagnostic HTTP polling, acknowledged browser WebSocket streaming, and acknowledged in-process Tauri streaming. The retained observer matrices still expose Summary reset storms and trace/all-view serialization pressure; stable public compatibility remains unimplemented. | [`application-view-api`](application-view-api.md), [`application-connection-architecture`](application-connection-architecture.md) |
 | Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive surface now has Library, Transfers, and Workbench destinations, truthful bounded torrent-backed cards, shared multi-selection, magnet add and canonical copy, metadata-only add, live Normal/Skip file actions, archives, guarded removal, live peer/swarm/file/tracker inspection, global Disk pressure, bounded Canvas Pieces, a smooth exact session Speed history, and the exact routing-space DHT observatory; a real media catalog/playback and `.torrent` file intake remain incomplete. | [`client-surfaces`](client-surfaces.md), [`application-interface-direction`](application-interface-direction.md) |
 | Authenticated private web host | Implemented | deterministic, runtime, web, live | One explicitly configured maintainer host serves the production React bundle and multiplexed application WebSocket behind bounded Basic authentication and exact HTTPS Origin checks. Exact-push isolated build, candidate smoke, supervised restart, authenticated private-listener/public verification, and rollback-on-failure pass; this is not a relay, account, pairing, encryption, or stable public compatibility claim. | [`application-connection-architecture`](application-connection-architecture.md), [`client-surfaces`](client-surfaces.md) |
