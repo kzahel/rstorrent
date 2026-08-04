@@ -39,7 +39,6 @@ use crate::store::{
     SessionStore, StorageRootLocation, StoreError, StoredStorageRoot,
 };
 use crate::tracker_views::TrackerViewModel;
-use crate::view_sets::{VIEW_SET_REAPER_INTERVAL_MILLIS, ViewSetLeaseReaper};
 
 fn parse_durable_metainfo(raw_info: &[u8]) -> Result<Metainfo, MetainfoError> {
     Metainfo::from_info_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS)
@@ -50,7 +49,8 @@ fn parse_peer_metainfo(raw_info: &[u8]) -> Result<Metainfo, MetainfoError> {
 }
 use crate::views::{
     DurableTorrentViewState, ProgressInputs, SubscriptionError, SubscriptionSpec, TorrentActivity,
-    ViewHub, ViewSubscription, ranges_from_pieces,
+    VIEW_SET_REAPER_INTERVAL_MILLIS, ViewHub, ViewSetLeaseReaper, ViewSubscription,
+    ranges_from_pieces,
 };
 use crate::{
     OpenViewSetRequest, OpenViewSetResponse, UpdateViewSetRequest, ViewSet, ViewSetError,
@@ -153,7 +153,7 @@ impl ApplicationConfig {
             network,
             download_resource_limits: DownloadResourceLimits::DESKTOP,
             dht,
-            view_set_lease: Duration::from_millis(crate::view_sets::VIEW_SET_LEASE_MILLIS),
+            view_set_lease: Duration::from_millis(crate::views::VIEW_SET_LEASE_MILLIS),
             view_set_reaper_interval: Duration::from_millis(VIEW_SET_REAPER_INTERVAL_MILLIS),
             storage_write_delay_for_testing: Duration::ZERO,
             storage_write_concurrency_for_testing: 4,

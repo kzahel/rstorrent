@@ -37,7 +37,18 @@ use crate::speed::{
     MAX_SPEED_SERIES, SessionRateHistory, SpeedHistoryView, SpeedMetric, SpeedRange,
 };
 use crate::tracker_views::{TrackerCatalogState, TrackerView, TrackerViewModel};
-use crate::view_sets::{DEFAULT_VIEW_SET_QUEUE_BYTES, ViewSetInner, ViewSetUpdate};
+
+mod view_set;
+
+pub use view_set::{
+    API_VERSION, ApiEncoding, ApiHello, ApiLimits, ApiVersion, DeliveryMode, OpenViewSetOptions,
+    OpenViewSetRequest, OpenViewSetResponse, UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy,
+    ViewSet, ViewSetError, ViewSetOwner, ViewSetStats, ViewSetUpdate, ViewSpec,
+};
+pub(crate) use view_set::{
+    DEFAULT_VIEW_SET_QUEUE_BYTES, VIEW_SET_LEASE_MILLIS, VIEW_SET_REAPER_INTERVAL_MILLIS,
+    ViewSetInner, ViewSetLeaseReaper,
+};
 
 pub const VIEW_CONTRACT_VERSION: u16 = 2;
 pub const MIN_SUBSCRIPTION_QUEUE_BYTES: u32 = 4 * 1024;
@@ -1485,10 +1496,7 @@ impl From<crate::ViewSetError> for SubscriptionError {
 
 impl ViewHub {
     pub fn new(snapshot: &ServiceSnapshot) -> Result<Self, SubscriptionError> {
-        Self::new_with_view_set_lease(
-            snapshot,
-            Duration::from_millis(crate::view_sets::VIEW_SET_LEASE_MILLIS),
-        )
+        Self::new_with_view_set_lease(snapshot, Duration::from_millis(VIEW_SET_LEASE_MILLIS))
     }
 
     pub(crate) fn new_with_view_set_lease(

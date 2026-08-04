@@ -12,12 +12,12 @@ use tokio::task::{JoinError, JoinHandle};
 use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
 
-use crate::diagnostics::DiagnosticFilter;
-use crate::speed::{MAX_SPEED_SERIES, SpeedMetric, SpeedRange};
-use crate::views::{
+use super::{
     DeliveryPolicy, HubState, ResetReason, SubscriptionSpec, ViewHub, ViewPatch, ViewProjection,
     ViewSelector, ViewSnapshot, coalesce_patch,
 };
+use crate::diagnostics::DiagnosticFilter;
+use crate::speed::{MAX_SPEED_SERIES, SpeedMetric, SpeedRange};
 
 pub const API_VERSION: u16 = 1;
 pub const MAX_VIEW_SETS: usize = 32;
@@ -1178,7 +1178,7 @@ fn validate_specs(views: &[ViewSpec]) -> Result<BTreeMap<String, ViewSpec>, View
             }
         }
         let spec = view.subscription_spec(DEFAULT_VIEW_SET_QUEUE_BYTES);
-        super::views::validate_spec(&spec)
+        super::validate_spec(&spec)
             .map_err(|error| ViewSetError::InvalidView(error.to_string()))?;
         if output.insert(id.to_owned(), view.clone()).is_some() {
             return Err(ViewSetError::DuplicateViewId(id.to_owned()));
@@ -1399,5 +1399,5 @@ fn next_epoch() -> u64 {
 }
 
 #[cfg(test)]
-#[path = "views/tests/view_set.rs"]
+#[path = "tests/view_set.rs"]
 mod tests;
