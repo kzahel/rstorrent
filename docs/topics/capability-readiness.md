@@ -87,19 +87,18 @@ intake remains absent.
 
 ### Now
 
-**Choose the next authorized bounded slice.** Tacticals
-[`064`](../tactical/064-registry-backed-swarm-inspection.md) and
-[`066`](../tactical/066-smooth-session-speed-history.md) are complete, and
-Tactical [`065`](../tactical/065-dht-observatory.md) now completes the accepted
-Swarm, Speed, and DHT detail-tab sequence. The bounded peer registry reaches a
-live Swarm detail, exact session byte history reaches the smooth Speed surface,
-and endpoint-free actor observations reach the DHT observatory.
+**Implement explicit ephemeral application state.** Tactical
+[`075`](../tactical/075-ephemeral-application-state.md) adds bounded in-memory
+session and metrics stores with no profile files. It leaves payload storage,
+durable-profile failure behavior, and future source-retention policy
+unchanged.
 
 ### Next
 
-No protocol or product slice is implicitly authorized by completion of the
-detail-tab sequence. Select the next bounded tactical from current product and
-engine evidence.
+- Resume/source metadata, session SQLite shape, original `.torrent` storage,
+  `.torrent` transport and chunking, and the current magnet/BEP 9 retention
+  model remain under maintainer discussion rather than being implied by
+  Tacticals `074` or `075`.
 
 ### Later
 

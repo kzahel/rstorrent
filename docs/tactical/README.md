@@ -357,6 +357,10 @@ that scope and its cleanup or compatibility rules explicitly.
   and explicit-import parser limits, raises only the schema-owned durable
   piece/have checks, and records bounded allocation and unchanged controlled
   interoperability without adding `.torrent` product intake.
+- [`075-ephemeral-application-state.md`](075-ephemeral-application-state.md):
+  planned; adds an explicit bounded in-memory application-state mode with no
+  profile files while leaving external payload storage and persistent source
+  policy unchanged.
 - [`076-authenticated-private-web-host.md`](076-authenticated-private-web-host.md):
   complete; adds bounded Basic-auth static, health, and application hosting,
   explicit same-origin production bootstrap, joined terminate handling, and

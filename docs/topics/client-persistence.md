@@ -20,7 +20,9 @@ replaces the Android product's fixed startup descriptor manifest with lazy,
 bounded platform acquisition while preserving the same durable root,
 selection, checkpoint, publication, repair, and removal authority. Tactical
 `073` unifies BEP 3 file/tree storage and replaces claimed-bit-only restart
-with an atomic all-wanted managed full recheck.
+with an atomic all-wanted managed full recheck. Tactical
+`075` records the accepted bounded ephemeral application-state mode; the
+current implementation remains filesystem-backed until that tactical lands.
 
 ## Scope
 
@@ -121,6 +123,30 @@ database's persistent state. Backup, export, and migration must use
 [SQLite's backup facilities](https://sqlite.org/backup.html) or a controlled
 checkpoint and close; copying only the main file while the application runs is
 not a valid backup.
+
+### Ephemeral application state is explicit, not fallback
+
+An application service may explicitly select an ephemeral mode in which the
+same typed session and metrics schemas live in private, bounded SQLite
+in-memory databases for one service lifetime. The mode creates no profile
+directory or database auxiliary files, preserves transactions, request
+idempotency and the ordinary owner/task lifecycle while open, and restores
+nothing after the service shuts down, joins its owners, is dropped, and closes
+its private SQLite connections. Detaching the last presentation or transport
+connection does not stop the service or clear its state.
+
+Durable persistence remains the normal desktop and Android product mode.
+Failure to open, migrate, or write a durable profile must never silently fall
+back to ephemeral state. The two modes are an application configuration choice,
+not a corruption-recovery heuristic or a second persistence format.
+
+Payload roots remain separate capabilities. Ephemeral application state does
+not claim that a started download writes no payload, staging, or part data; a
+fully memory-backed content store requires its own engine and resource design.
+Likewise, accepting this mode does not decide how a future original `.torrent`
+source is retained in durable mode. Tactical
+[`075`](../tactical/075-ephemeral-application-state.md) owns the bounded
+implementation and no-file evidence.
 
 ### Verified metadata is durable
 
