@@ -25,8 +25,17 @@ pub(crate) struct PeerIo {
     pub(crate) stream: TcpStream,
     pub(crate) decoder: FrameDecoder,
     pub(crate) queued_messages: VecDeque<PeerMessage>,
+    queued_frames: VecDeque<QueuedFrame>,
     pub(crate) io_timeout: Duration,
     pub(crate) byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
+}
+
+#[derive(Debug)]
+struct QueuedFrame {
+    bytes: Vec<u8>,
+    written: usize,
+    payload_length: usize,
+    payload_metric: Option<ByteMetric>,
 }
 
 impl PeerIo {
@@ -39,6 +48,7 @@ impl PeerIo {
             stream,
             decoder: FrameDecoder::new(),
             queued_messages: VecDeque::new(),
+            queued_frames: VecDeque::new(),
             io_timeout,
             byte_metric_sink,
         }
@@ -50,19 +60,76 @@ impl PeerIo {
     }
 
     pub(crate) async fn next_message(&mut self) -> Result<PeerMessage, PeerIoError> {
+        loop {
+            if let Some(message) = self.next_message_or_send_ready(usize::MAX).await? {
+                return Ok(message);
+            }
+        }
+    }
+
+    pub(crate) async fn next_message_or_send_ready(
+        &mut self,
+        send_watermark: usize,
+    ) -> Result<Option<PeerMessage>, PeerIoError> {
         let deadline = Instant::now() + self.io_timeout;
-        while self.queued_messages.is_empty() {
+        loop {
+            if let Some(message) = self.queued_messages.pop_front() {
+                self.record_incoming_message(&message)?;
+                return Ok(Some(message));
+            }
+            let was_at_watermark = self.send_buffer_size() >= send_watermark;
+            self.flush_queued_frames()?;
+            if was_at_watermark && self.send_buffer_size() < send_watermark {
+                return Ok(None);
+            }
             let mut network_buffer = [0_u8; NETWORK_READ_LENGTH];
-            let read = timeout_at(deadline, self.stream.read(&mut network_buffer))
-                .await
-                .map_err(|_| PeerIoError::TimedOut {
-                    operation: "message read",
-                    timeout: self.io_timeout,
-                })?
-                .map_err(|source| PeerIoError::Io {
-                    operation: "read peer message",
-                    source,
-                })?;
+            let read = if self.queued_frames.is_empty() {
+                timeout_at(deadline, self.stream.read(&mut network_buffer))
+                    .await
+                    .map_err(|_| PeerIoError::TimedOut {
+                        operation: "message read",
+                        timeout: self.io_timeout,
+                    })?
+                    .map_err(|source| PeerIoError::Io {
+                        operation: "read peer message",
+                        source,
+                    })?
+            } else {
+                tokio::select! {
+                    biased;
+                    ready = self.stream.readable() => {
+                        ready.map_err(|source| PeerIoError::Io {
+                            operation: "wait for peer message",
+                            source,
+                        })?;
+                        match self.stream.try_read(&mut network_buffer) {
+                            Ok(read) => read,
+                            Err(source) if source.kind() == io::ErrorKind::WouldBlock => continue,
+                            Err(source) => return Err(PeerIoError::Io {
+                                operation: "read peer message",
+                                source,
+                            }),
+                        }
+                    }
+                    ready = self.stream.writable() => {
+                        ready.map_err(|source| PeerIoError::Io {
+                            operation: "wait to send peer message",
+                            source,
+                        })?;
+                        self.flush_queued_frames()?;
+                        if was_at_watermark && self.send_buffer_size() < send_watermark {
+                            return Ok(None);
+                        }
+                        continue;
+                    }
+                    _ = tokio::time::sleep_until(deadline) => {
+                        return Err(PeerIoError::TimedOut {
+                            operation: "message read or write",
+                            timeout: self.io_timeout,
+                        });
+                    }
+                }
+            };
             if read == 0 {
                 return Err(PeerIoError::Closed);
             }
@@ -77,12 +144,55 @@ impl PeerIo {
                     .map_err(PeerIoError::Frame)?,
             );
         }
-        let message = self
-            .queued_messages
-            .pop_front()
-            .expect("peer message queue is nonempty after receive loop");
-        self.record_incoming_message(&message)?;
-        Ok(message)
+    }
+
+    pub(crate) fn queue_message(&mut self, message: &PeerMessage) -> Result<(), PeerIoError> {
+        let bytes = encode_message(message).map_err(PeerIoError::Frame)?;
+        let (payload_length, payload_metric) = message_payload_metric(message);
+        self.queued_frames.push_back(QueuedFrame {
+            bytes,
+            written: 0,
+            payload_length,
+            payload_metric,
+        });
+        Ok(())
+    }
+
+    pub(crate) fn send_buffer_size(&self) -> usize {
+        self.queued_frames
+            .iter()
+            .map(|frame| frame.bytes.len().saturating_sub(frame.written))
+            .sum()
+    }
+
+    fn flush_queued_frames(&mut self) -> Result<(), PeerIoError> {
+        while let Some(frame) = self.queued_frames.front_mut() {
+            match self.stream.try_write(&frame.bytes[frame.written..]) {
+                Ok(0) => return Err(PeerIoError::Closed),
+                Ok(written) => frame.written += written,
+                Err(source) if source.kind() == io::ErrorKind::WouldBlock => return Ok(()),
+                Err(source) => {
+                    return Err(PeerIoError::Io {
+                        operation: "send peer message",
+                        source,
+                    });
+                }
+            }
+            if frame.written != frame.bytes.len() {
+                return Ok(());
+            }
+            let frame = self
+                .queued_frames
+                .pop_front()
+                .expect("completed queued frame is present");
+            record_sent_frame(
+                self.byte_metric_sink.as_ref(),
+                frame.bytes.len(),
+                frame.payload_length,
+                frame.payload_metric,
+            );
+        }
+        Ok(())
     }
 
     pub(crate) async fn send_message(&mut self, message: &PeerMessage) -> Result<(), PeerIoError> {
@@ -97,26 +207,13 @@ impl PeerIo {
                 operation: "send peer message",
                 source,
             })?;
-        record_bytes(
+        let (payload_length, payload_metric) = message_payload_metric(message);
+        record_sent_frame(
             self.byte_metric_sink.as_ref(),
-            ByteMetric::PeerWireSent,
             frame.len(),
+            payload_length,
+            payload_metric,
         );
-        let (payload_length, payload_metric) = match message {
-            PeerMessage::Piece { block, .. } => (block.len(), Some(ByteMetric::PayloadUploaded)),
-            PeerMessage::Extended { payload, .. } => {
-                (payload.len(), Some(ByteMetric::MetadataPayloadSent))
-            }
-            _ => (0, None),
-        };
-        record_bytes(
-            self.byte_metric_sink.as_ref(),
-            ByteMetric::PeerProtocolSent,
-            frame.len().saturating_sub(payload_length),
-        );
-        if let Some(metric) = payload_metric {
-            record_bytes(self.byte_metric_sink.as_ref(), metric, payload_length);
-        }
         Ok(())
     }
 
@@ -138,6 +235,33 @@ impl PeerIo {
             record_bytes(self.byte_metric_sink.as_ref(), metric, payload_length);
         }
         Ok(())
+    }
+}
+
+fn message_payload_metric(message: &PeerMessage) -> (usize, Option<ByteMetric>) {
+    match message {
+        PeerMessage::Piece { block, .. } => (block.len(), Some(ByteMetric::PayloadUploaded)),
+        PeerMessage::Extended { payload, .. } => {
+            (payload.len(), Some(ByteMetric::MetadataPayloadSent))
+        }
+        _ => (0, None),
+    }
+}
+
+fn record_sent_frame(
+    sink: Option<&Arc<dyn ByteMetricSink>>,
+    frame_length: usize,
+    payload_length: usize,
+    payload_metric: Option<ByteMetric>,
+) {
+    record_bytes(sink, ByteMetric::PeerWireSent, frame_length);
+    record_bytes(
+        sink,
+        ByteMetric::PeerProtocolSent,
+        frame_length.saturating_sub(payload_length),
+    );
+    if let Some(metric) = payload_metric {
+        record_bytes(sink, metric, payload_length);
     }
 }
 

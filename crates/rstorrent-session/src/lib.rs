@@ -27,10 +27,11 @@ pub use application_connection::{
     ApplicationCallResult,
 };
 pub use control::{
-    AddTorrentBytesRequest, CONTROL_VERSION, Command, ErrorCode, ErrorResponse, FilePriority,
-    RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope, ResponseOutcome,
-    ServiceSnapshot, StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot,
-    StorageState, TorrentSnapshot, TorrentState, validate_add_torrent_bytes_request,
+    AddTorrentBytesRequest, CONTROL_VERSION, Command, ErrorCode, ErrorResponse, FileIndexRange,
+    FilePriority, FileSelectionIntent, RemovalDataPolicy, RemovalState, RequestEnvelope,
+    ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageRootAvailability,
+    StorageRootSnapshot, StorageSettingsSnapshot, StorageState, TorrentSnapshot, TorrentState,
+    validate_add_torrent_bytes_request,
 };
 pub use diagnostics::{
     DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter, DiagnosticProfile,
@@ -48,7 +49,8 @@ pub use speed::{
 };
 pub use store::{
     ConfiguredStorageRoot, PreparedFileRecord, RemovalRecord, ResumeRecord, SessionStore,
-    StorageRootLocation, StoreError, StoredStorageRoot,
+    StorageRootLocation, StoreError, StoredStorageRoot, StoredTracker, StoredTrackerSource,
+    StoredTrackerTransport,
 };
 pub use tracker_views::{
     TrackerAnnounceEventView, TrackerCatalogState, TrackerNextActionView, TrackerSourceView,
@@ -56,10 +58,10 @@ pub use tracker_views::{
 };
 pub use views::{
     API_VERSION, ActivePiece, ActivePieceStageView, ApiEncoding, ApiHello, ApiLimits, ApiVersion,
-    CapabilityStatus, DeliveryMode, DeliveryPolicy, DhtBucketView, DhtInspectionView,
-    DhtLifecycleView, DhtLookupView, DhtNetworkPolicyView, DiskCheckpointStageView,
-    DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView, IndexRange,
-    OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
+    CapabilityStatus, CatalogPageRequest, CatalogPageView, DeliveryMode, DeliveryPolicy,
+    DhtBucketView, DhtInspectionView, DhtLifecycleView, DhtLookupView, DhtNetworkPolicyView,
+    DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
+    IndexRange, OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
     PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerRequestPhase,
     PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
     ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason, ResetReason,

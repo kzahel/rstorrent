@@ -87,7 +87,7 @@ pub enum DownloadActivityEvent {
     StorageState(Box<DiskRuntimeSnapshot>),
     TrackerAnnounceStarted {
         tracker: String,
-        tier: u8,
+        tier: u32,
         attempt: u32,
         event: AnnounceEvent,
     },
@@ -103,7 +103,7 @@ pub enum DownloadActivityEvent {
     },
     TrackerFallbackSelected {
         tracker: String,
-        tier: u8,
+        tier: u32,
     },
     TrackerRetryScheduled {
         tracker: String,

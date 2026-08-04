@@ -10,7 +10,7 @@ use crate::diagnostics::{
     MAX_DIAGNOSTIC_PATCH_BYTES, MAX_DIAGNOSTIC_PATCH_EVENTS, patch_encoded_len,
 };
 use crate::file_views::FileView;
-use crate::tracker_views::TrackerView;
+use crate::tracker_views::{TrackerView, TrackerViewModel};
 
 use super::ranges::{difference, insert_interval, remove_interval};
 use super::{
@@ -101,7 +101,14 @@ pub(super) fn patch_for(
                 .and_then(|model| model.files.as_ref());
             match (old, next) {
                 (Some(old), Some(next)) if old.catalog_matches(next) => {
-                    let upsert = next.rows_changed_since(old);
+                    let page = spec
+                        .catalog_page
+                        .expect("validated file projection has a catalog page");
+                    let upsert = next
+                        .rows_changed_since(old)
+                        .into_iter()
+                        .filter(|file| page.contains(file.file_index))
+                        .collect::<Vec<_>>();
                     (!upsert.is_empty()).then(|| ViewPatch::Files {
                         torrent_id: torrent_id.clone(),
                         upsert,
@@ -112,14 +119,22 @@ pub(super) fn patch_for(
             }
         }
         (ViewSelector::Torrent { torrent_id }, ViewProjection::Trackers) => {
-            let empty = BTreeMap::new();
+            let page = spec
+                .catalog_page
+                .expect("validated tracker projection has a catalog page");
             let old = previous
                 .get(torrent_id)
-                .map_or(&empty, |model| model.trackers.row_map());
-            let next = current
-                .get(torrent_id)
-                .map_or(&empty, |model| model.trackers.row_map());
-            tracker_collection_patch(torrent_id, old, next)
+                .map_or_else(BTreeMap::new, |model| {
+                    model
+                        .trackers
+                        .row_map_page(page.bounds(model.trackers.count_usize()))
+                });
+            let next = current.get(torrent_id).map_or_else(BTreeMap::new, |model| {
+                model
+                    .trackers
+                    .row_map_page(page.bounds(model.trackers.count_usize()))
+            });
+            tracker_collection_patch(torrent_id, &old, &next)
         }
         (
             ViewSelector::TorrentList,
@@ -227,11 +242,22 @@ pub(super) fn targeted_activity_patch(
                 torrent_id: selected,
             },
             ViewProjection::Files,
-        ) if selected == torrent_id && !file_upsert.is_empty() => Some(ViewPatch::Files {
-            torrent_id: torrent_id.to_owned(),
-            upsert: file_upsert.to_vec(),
-            removed: Vec::new(),
-        }),
+        ) if selected == torrent_id && !file_upsert.is_empty() => {
+            let upsert = file_upsert
+                .iter()
+                .filter(|file| {
+                    spec.catalog_page
+                        .expect("validated file projection has a catalog page")
+                        .contains(file.file_index)
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            (!upsert.is_empty()).then(|| ViewPatch::Files {
+                torrent_id: torrent_id.to_owned(),
+                upsert,
+                removed: Vec::new(),
+            })
+        }
         _ => None,
     }
 }
@@ -294,8 +320,8 @@ pub(super) fn targeted_tracker_patch(
     torrent_id: &str,
     previous_view: &TorrentView,
     next_view: &TorrentView,
-    previous_trackers: &BTreeMap<String, TrackerView>,
-    next_trackers: &BTreeMap<String, TrackerView>,
+    previous_trackers: &TrackerViewModel,
+    next_trackers: &TrackerViewModel,
 ) -> Option<ViewPatch> {
     match (&spec.selector, spec.projection) {
         (ViewSelector::TorrentList, ViewProjection::Summary) => {
@@ -319,7 +345,13 @@ pub(super) fn targeted_tracker_patch(
             },
             ViewProjection::Trackers,
         ) if selected == torrent_id => {
-            tracker_collection_patch(torrent_id, previous_trackers, next_trackers)
+            let page = spec
+                .catalog_page
+                .expect("validated tracker projection has a catalog page");
+            let previous =
+                previous_trackers.row_map_page(page.bounds(previous_trackers.count_usize()));
+            let next = next_trackers.row_map_page(page.bounds(next_trackers.count_usize()));
+            tracker_collection_patch(torrent_id, &previous, &next)
         }
         _ => None,
     }

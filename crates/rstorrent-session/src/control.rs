@@ -13,6 +13,25 @@ pub const MAX_ROOT_ID_LENGTH: usize = 128;
 pub const MAX_ROOT_LABEL_LENGTH: usize = 256;
 pub const MAX_ERROR_MESSAGE_LENGTH: usize = 1024;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct FileIndexRange {
+    pub start: u32,
+    pub end_exclusive: u32,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum FileSelectionIntent {
+    #[default]
+    All,
+    None,
+    WantedRanges {
+        ranges: Vec<FileIndexRange>,
+    },
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct RequestEnvelope {
@@ -33,7 +52,7 @@ pub struct AddTorrentBytesRequest {
     #[serde(default = "default_true")]
     pub start_content: bool,
     #[serde(default)]
-    pub skip_files: Vec<u32>,
+    pub selection: FileSelectionIntent,
     pub source_length: u32,
     pub source_sha256: String,
 }
@@ -53,6 +72,11 @@ pub enum Command {
     SetFilePriority {
         torrent_id: String,
         file_indices: Vec<u32>,
+        priority: FilePriority,
+    },
+    SetFilePriorityRanges {
+        torrent_id: String,
+        ranges: Vec<FileIndexRange>,
         priority: FilePriority,
     },
     SetDefaultStorageRoot {
@@ -99,6 +123,7 @@ impl Command {
                 | Self::Resume { .. }
                 | Self::ForceRecheck { .. }
                 | Self::SetFilePriority { .. }
+                | Self::SetFilePriorityRanges { .. }
                 | Self::Archive { .. }
                 | Self::RestoreArchive { .. }
                 | Self::RemoveTorrent { .. }
@@ -482,6 +507,14 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
                 previous = Some(*index);
             }
         }
+        Command::SetFilePriorityRanges {
+            torrent_id,
+            ranges,
+            priority: _,
+        } => {
+            validate_torrent_id(torrent_id)?;
+            validate_file_ranges(ranges, false)?;
+        }
         Command::Pause { torrent_id }
         | Command::Resume { torrent_id }
         | Command::ForceRecheck { torrent_id }
@@ -496,6 +529,40 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
         }
         Command::SetShowAddOptions { .. } => {}
         Command::Snapshot | Command::Shutdown => {}
+    }
+    Ok(())
+}
+
+fn validate_file_ranges(
+    ranges: &[FileIndexRange],
+    allow_empty: bool,
+) -> Result<(), (ErrorCode, String)> {
+    if (!allow_empty && ranges.is_empty()) || ranges.len() > MAX_FILE_SELECTION_ENTRIES {
+        return Err((
+            ErrorCode::InvalidRequest,
+            format!(
+                "file selection must contain between {} and {MAX_FILE_SELECTION_ENTRIES} ranges",
+                usize::from(!allow_empty)
+            ),
+        ));
+    }
+    let mut previous_end = None;
+    for range in ranges {
+        if range.start >= range.end_exclusive
+            || usize::try_from(range.end_exclusive).map_or(true, |end| end > MAX_FILE_INDEX)
+        {
+            return Err((
+                ErrorCode::InvalidRequest,
+                "file selection range is empty or exceeds the supported file bound".to_owned(),
+            ));
+        }
+        if previous_end.is_some_and(|end| end >= range.start) {
+            return Err((
+                ErrorCode::InvalidRequest,
+                "file selection ranges must be sorted, disjoint, and non-adjacent".to_owned(),
+            ));
+        }
+        previous_end = Some(range.end_exclusive);
     }
     Ok(())
 }
@@ -517,28 +584,16 @@ pub fn validate_add_torrent_bytes_request(
         parse_revision(revision)?;
     }
     validate_identifier(&request.storage_root, "storage root", MAX_ROOT_ID_LENGTH)?;
-    if request.skip_files.len() > MAX_FILE_SELECTION_ENTRIES {
-        return Err((
-            ErrorCode::InvalidRequest,
-            format!("file selection exceeds {MAX_FILE_SELECTION_ENTRIES} entries"),
-        ));
-    }
-    let mut previous = None;
-    for index in &request.skip_files {
-        if usize::try_from(*index).map_or(true, |index| index >= MAX_FILE_INDEX) {
-            return Err((
-                ErrorCode::InvalidRequest,
-                "file selection index exceeds the supported file bound".to_owned(),
-            ));
-        }
-        if previous.is_some_and(|previous| previous >= *index) {
-            return Err((
-                ErrorCode::InvalidRequest,
-                "file selection indices must be sorted and unique".to_owned(),
-            ));
-        }
-        previous = Some(*index);
-    }
+    let FileSelectionIntent::WantedRanges { ranges } = &request.selection else {
+        return validate_torrent_source_declaration(request);
+    };
+    validate_file_ranges(ranges, true)?;
+    validate_torrent_source_declaration(request)
+}
+
+fn validate_torrent_source_declaration(
+    request: &AddTorrentBytesRequest,
+) -> Result<(), (ErrorCode, String)> {
     if request.source_length == 0
         || request.source_length as usize
             > rstorrent_protocol::metainfo::MAX_EXPLICIT_METAINFO_LENGTH
@@ -645,8 +700,8 @@ fn hex_digit(byte: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CONTROL_VERSION, Command, ErrorCode, FilePriority, RequestEnvelope, encode_info_hash,
-        validate_request,
+        CONTROL_VERSION, Command, ErrorCode, FileIndexRange, FilePriority, RequestEnvelope,
+        encode_info_hash, validate_request,
     };
 
     #[test]
@@ -709,6 +764,39 @@ mod tests {
             file_indices.clear();
         }
         assert!(validate_request(&request).is_err());
+    }
+
+    #[test]
+    fn ranged_file_priority_requires_canonical_nonadjacent_ranges() {
+        let mut request = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "priority-ranges".to_owned(),
+            expected_revision: None,
+            command: Command::SetFilePriorityRanges {
+                torrent_id: "000102030405060708090a0b0c0d0e0f10111213".to_owned(),
+                ranges: vec![
+                    FileIndexRange {
+                        start: 1,
+                        end_exclusive: 3,
+                    },
+                    FileIndexRange {
+                        start: 5,
+                        end_exclusive: 374_998,
+                    },
+                ],
+                priority: FilePriority::Skip,
+            },
+        };
+        assert_eq!(validate_request(&request), Ok(()));
+
+        let Command::SetFilePriorityRanges { ranges, .. } = &mut request.command else {
+            unreachable!();
+        };
+        ranges[1].start = 3;
+        assert_eq!(
+            validate_request(&request).map_err(|error| error.0),
+            Err(ErrorCode::InvalidRequest)
+        );
     }
 
     #[test]

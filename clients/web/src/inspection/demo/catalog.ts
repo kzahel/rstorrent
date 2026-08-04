@@ -793,6 +793,12 @@ function demoFileSet(
   return {
     state: "available",
     filesystemContentBase: `/Users/demo/Downloads/${torrentId}`,
+    page: {
+      offset: 0,
+      limit: 1024,
+      total: rows.length,
+      nextOffset: null,
+    },
     order: rows.map((row) => row.id),
     rows: Object.fromEntries(rows.map((row) => [row.id, row])),
   };
@@ -926,6 +932,7 @@ function trackerRecovery(elapsedMs: number): ScenarioContent {
     trackers: {
       [BUNNY_ID]: {
         state: "available",
+        page: { offset: 0, limit: 1024, total: 2, nextOffset: null },
         order: [primary.id, fallback.id],
         rows: { [primary.id]: primary, [fallback.id]: fallback },
       },

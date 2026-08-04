@@ -206,6 +206,7 @@ async fn diagnostics_filter_before_queue_and_report_ring_drops() {
                 minimum_severity: DiagnosticSeverity::Trace,
                 categories: vec![DiagnosticCategory::from_static(category::PIECE_BLOCK)],
             }),
+            catalog_page: None,
         })
         .expect("subscribe");
     filtered.next_update().await.expect("snapshot");
@@ -260,6 +261,7 @@ async fn diagnostics_filter_before_queue_and_report_ring_drops() {
                 minimum_severity: DiagnosticSeverity::Info,
                 categories: Vec::new(),
             }),
+            catalog_page: None,
         })
         .expect("bounded subscription")
         .next_update()

@@ -325,6 +325,7 @@ function materializeDemoViews(
           [desired.torrentId]: source.filesByTorrent[desired.torrentId] ?? {
             state: "metadata_pending" as const,
             filesystemContentBase: null,
+            page: { offset: 0, limit: 1024, total: 0, nextOffset: null },
             order: [],
             rows: {},
           },
@@ -335,6 +336,7 @@ function materializeDemoViews(
       ? {
           [desired.torrentId]: source.trackersByTorrent[desired.torrentId] ?? {
             state: "available" as const,
+            page: { offset: 0, limit: 1024, total: 0, nextOffset: null },
             order: [],
             rows: {},
           },

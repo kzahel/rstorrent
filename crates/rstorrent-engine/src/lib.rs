@@ -38,8 +38,9 @@ pub use driver::{
 pub use incoming::{
     DEFAULT_INCOMING_HANDSHAKE_TIMEOUT, IncomingPeerError, IncomingPeerHandle, IncomingPeerService,
     IncomingPeerServiceConfig, IncomingPeerServiceSnapshot, IncomingRejection,
-    IncomingRejectionReason, IncomingTcpBootstrap, MAX_INCOMING_ESTABLISHED, MAX_INCOMING_PENDING,
-    MAX_SEED_REGISTRATIONS, SeedRegistration, SeedRegistrationToken,
+    IncomingRejectionReason, IncomingTcpBootstrap, MAX_DEFERRED_METADATA_REQUESTS,
+    MAX_INCOMING_ESTABLISHED, MAX_INCOMING_PENDING, MAX_SEED_REGISTRATIONS,
+    METADATA_SEND_BUFFER_WATERMARK, SeedRegistration, SeedRegistrationToken,
 };
 pub use metadata_seed::{
     MetadataSeedConfig, MetadataSeedError, MetadataSeedReport, MetadataSeedServer,
@@ -74,7 +75,7 @@ pub use storage_file_pool::{
 };
 pub use tracker::{
     TrackerAnnounceEvent, TrackerNextAction, TrackerRuntimeRecordSnapshot, TrackerRuntimeSnapshot,
-    TrackerRuntimeStatus, TrackerSource, TrackerTransport,
+    TrackerRuntimeStatus, TrackerSource, TrackerTransport, UdpTrackerConfig,
 };
 pub use upload::{
     MAX_QUEUED_UPLOAD_BYTES, MAX_QUEUED_UPLOAD_REQUESTS, UploadAction, UploadCloseReason,

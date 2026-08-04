@@ -14,7 +14,8 @@ use crate::diagnostics::valid_filter;
 use crate::speed::{MAX_SPEED_SERIES, SpeedMetric};
 
 use super::contract::{
-    MAX_SUBSCRIPTION_INTERVAL_MILLIS, MAX_SUBSCRIPTION_QUEUE_BYTES, MIN_SUBSCRIPTION_QUEUE_BYTES,
+    MAX_CATALOG_PAGE_ROWS, MAX_SUBSCRIPTION_INTERVAL_MILLIS, MAX_SUBSCRIPTION_QUEUE_BYTES,
+    MIN_SUBSCRIPTION_QUEUE_BYTES,
 };
 use super::diff::coalesce;
 use super::{
@@ -227,6 +228,20 @@ pub(crate) fn validate_spec(spec: &SubscriptionSpec) -> Result<(), SubscriptionE
     }
     if spec.projection != ViewProjection::Diagnostics && spec.diagnostics.is_some() {
         return Err(SubscriptionError::InvalidProjection);
+    }
+    let catalog_projection = matches!(
+        spec.projection,
+        ViewProjection::Files | ViewProjection::Trackers
+    );
+    if catalog_projection != spec.catalog_page.is_some() {
+        return Err(SubscriptionError::InvalidProjection);
+    }
+    if let Some(page) = spec.catalog_page
+        && !(1..=MAX_CATALOG_PAGE_ROWS).contains(&page.limit)
+    {
+        return Err(SubscriptionError::InvalidCatalogPage {
+            maximum: MAX_CATALOG_PAGE_ROWS,
+        });
     }
     if let Some(filter) = &spec.diagnostics
         && !valid_filter(filter)

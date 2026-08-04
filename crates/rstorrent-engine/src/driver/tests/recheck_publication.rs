@@ -205,6 +205,7 @@ async fn full_recheck_recovers_synced_single_file_with_empty_have() {
             artifact_state: ResumeArtifactState::Staging,
             download_missing: true,
             dht: None,
+            udp_trackers: None,
         },
         checkpoints.clone(),
     )
@@ -320,6 +321,7 @@ async fn full_recheck_clears_stale_have_and_redownloads_only_corrupt_piece() {
             artifact_state: ResumeArtifactState::Staging,
             download_missing: true,
             dht: None,
+            udp_trackers: None,
         },
         checkpoints.clone(),
     )
@@ -411,6 +413,7 @@ async fn cancelling_full_recheck_stops_admission_and_joins_bounded_hashes() {
             artifact_state: ResumeArtifactState::Staging,
             download_missing: true,
             dht: None,
+            udp_trackers: None,
         },
         checkpoints,
         task_control,
@@ -490,6 +493,7 @@ async fn publishing_intent_recovers_both_sides_of_atomic_rename() {
                 artifact_state: ResumeArtifactState::Staging,
                 download_missing: true,
                 dht: None,
+                udp_trackers: None,
             },
             failpoints.clone(),
         )
@@ -529,6 +533,7 @@ async fn publishing_intent_recovers_both_sides_of_atomic_rename() {
                 artifact_state: ResumeArtifactState::Publishing,
                 download_missing: true,
                 dht: None,
+                udp_trackers: None,
             },
             Arc::new(RecordingCheckpointSink::default()),
         )

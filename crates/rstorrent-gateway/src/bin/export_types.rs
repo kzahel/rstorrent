@@ -9,22 +9,22 @@ use rstorrent_gateway::{
 };
 use rstorrent_session::{
     ActivePiece, ActivePieceStageView, AddTorrentBytesRequest, ApiEncoding, ApiHello, ApiLimits,
-    ApiVersion, ApplicationCall, ApplicationCallResult, CapabilityStatus, Command, DeliveryMode,
-    DeliveryPolicy, DhtBucketView, DhtInspectionView, DhtLifecycleView, DhtLookupView,
-    DhtNetworkPolicyView, DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
-    DiagnosticProfile, DiagnosticRetention, DiagnosticSeverity, DiagnosticSubject, DiagnosticValue,
-    DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
-    ErrorCode, ErrorResponse, FileCatalogState, FilePriority, FileSelectionView, FileView,
-    IndexRange, OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
-    PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerRequestPhase,
-    PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
-    ProgressDisposition, ProgressPhase, ProgressReason, RemovalDataPolicy, RemovalState,
-    RequestEnvelope, ResetReason, ResponseEnvelope, ResponseOutcome, ServiceSnapshot,
-    SpeedCurrentRate, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,
-    SpeedPersistenceState, SpeedRange, SpeedSeriesView, StorageRootAvailability,
-    StorageRootSnapshot, StorageSettingsSnapshot, StorageState, SubscriptionSpec,
-    SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentSnapshot,
-    TorrentState, TorrentView, TrackerAnnounceEventView, TrackerCatalogState,
+    ApiVersion, ApplicationCall, ApplicationCallResult, CapabilityStatus, CatalogPageRequest,
+    CatalogPageView, Command, DeliveryMode, DeliveryPolicy, DhtBucketView, DhtInspectionView,
+    DhtLifecycleView, DhtLookupView, DhtNetworkPolicyView, DiagnosticCategory, DiagnosticEvent,
+    DiagnosticField, DiagnosticFilter, DiagnosticProfile, DiagnosticRetention, DiagnosticSeverity,
+    DiagnosticSubject, DiagnosticValue, DiskCheckpointStageView, DiskPieceStageView, DiskPieceView,
+    DiskPipelineView, DiskPressureView, ErrorCode, ErrorResponse, FileCatalogState, FileIndexRange,
+    FilePriority, FileSelectionIntent, FileSelectionView, FileView, IndexRange, OpenViewSetOptions,
+    OpenViewSetRequest, OpenViewSetResponse, PeerDirection, PeerDisconnectReason,
+    PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerRequestPhase, PeerRole, PeerSourceView,
+    PeerTransportKind, PeerView, ProgressAction, ProgressAssessment, ProgressDisposition,
+    ProgressPhase, ProgressReason, RemovalDataPolicy, RemovalState, RequestEnvelope, ResetReason,
+    ResponseEnvelope, ResponseOutcome, ServiceSnapshot, SpeedCurrentRate, SpeedHistoryView,
+    SpeedMetric, SpeedMetricAvailability, SpeedPersistenceState, SpeedRange, SpeedSeriesView,
+    StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot, StorageState,
+    SubscriptionSpec, SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView,
+    TorrentSnapshot, TorrentState, TorrentView, TrackerAnnounceEventView, TrackerCatalogState,
     TrackerNextActionView, TrackerSourceView, TrackerStatusView, TrackerTransportView, TrackerView,
     UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector,
     ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate, ViewUpdatePayload,
@@ -72,6 +72,8 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<RemovalState>(&mut declarations)?;
     append::<ErrorCode>(&mut declarations)?;
     append::<ErrorResponse>(&mut declarations)?;
+    append::<FileIndexRange>(&mut declarations)?;
+    append::<FileSelectionIntent>(&mut declarations)?;
     append::<AddTorrentBytesRequest>(&mut declarations)?;
     append::<RequestEnvelope>(&mut declarations)?;
     append::<ResponseOutcome>(&mut declarations)?;
@@ -102,6 +104,8 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<ProgressAssessment>(&mut declarations)?;
     append::<SubscriptionSpec>(&mut declarations)?;
     append::<IndexRange>(&mut declarations)?;
+    append::<CatalogPageRequest>(&mut declarations)?;
+    append::<CatalogPageView>(&mut declarations)?;
     append::<ActivePieceStageView>(&mut declarations)?;
     append::<ActivePiece>(&mut declarations)?;
     append::<DiskPressureView>(&mut declarations)?;

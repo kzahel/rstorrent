@@ -35,6 +35,8 @@ use crate::upload::{UploadAction, UploadCloseReason, UploadPeerState, UploadRead
 pub const MAX_SEED_REGISTRATIONS: usize = 1024;
 pub const MAX_INCOMING_PENDING: usize = 8;
 pub const MAX_INCOMING_ESTABLISHED: usize = 1;
+pub const MAX_DEFERRED_METADATA_REQUESTS: usize = 1_024;
+pub const METADATA_SEND_BUFFER_WATERMARK: usize = 160 * 1_024;
 pub const DEFAULT_INCOMING_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_RECENT_REJECTIONS: usize = 32;
 
@@ -142,6 +144,8 @@ pub struct IncomingPeerServiceSnapshot {
     pub read_bytes: usize,
     pub queued_requests_high_water: usize,
     pub queued_bytes_high_water: usize,
+    pub metadata_requests_high_water: usize,
+    pub metadata_send_buffer_high_water: usize,
     pub read_high_water: usize,
     pub read_bytes_high_water: usize,
     pub payload_bytes_sent: u64,
@@ -160,6 +164,8 @@ struct ObservationState {
     read_bytes: usize,
     queued_requests_high_water: usize,
     queued_bytes_high_water: usize,
+    metadata_requests_high_water: usize,
+    metadata_send_buffer_high_water: usize,
     read_high_water: usize,
     read_bytes_high_water: usize,
     payload_bytes_sent: u64,
@@ -503,6 +509,8 @@ impl Shared {
             read_bytes: observations.read_bytes,
             queued_requests_high_water: observations.queued_requests_high_water,
             queued_bytes_high_water: observations.queued_bytes_high_water,
+            metadata_requests_high_water: observations.metadata_requests_high_water,
+            metadata_send_buffer_high_water: observations.metadata_send_buffer_high_water,
             read_high_water: observations.read_high_water,
             read_bytes_high_water: observations.read_bytes_high_water,
             payload_bytes_sent: observations.payload_bytes_sent,
@@ -824,8 +832,20 @@ async fn run_incoming_peer(
         Err(_) => return PeerTermination::Storage,
     };
     let mut remote_metadata_id = None;
+    let mut deferred_metadata = VecDeque::new();
     let mut read: Option<ActiveRead> = None;
     loop {
+        if drain_metadata_requests(
+            &mut io,
+            &mut metadata,
+            remote_metadata_id,
+            &mut deferred_metadata,
+        )
+        .is_err()
+        {
+            join_read(read.take()).await;
+            return PeerTermination::Closed;
+        }
         let event = tokio::select! {
             biased;
             _ = cancellation.cancelled() => PeerEvent::Cancelled,
@@ -833,7 +853,9 @@ async fn run_incoming_peer(
                 let (_, task, _) = read.as_mut().expect("read branch is guarded");
                 task.await
             }, if read.is_some() => PeerEvent::Read(joined),
-            message = io.next_message() => PeerEvent::Message(message),
+            message = io.next_message_or_send_ready(METADATA_SEND_BUFFER_WATERMARK) => {
+                PeerEvent::Message(message)
+            },
         };
         let actions = match event {
             PeerEvent::Cancelled => {
@@ -848,6 +870,7 @@ async fn run_incoming_peer(
                 };
                 upload.on_read_complete(pending, result)
             }
+            PeerEvent::Message(Ok(None)) => Vec::new(),
             PeerEvent::Message(Err(crate::peer_io::PeerIoError::Frame(_))) => {
                 join_read(read.take()).await;
                 return PeerTermination::Protocol;
@@ -856,15 +879,14 @@ async fn run_incoming_peer(
                 join_read(read.take()).await;
                 return PeerTermination::Closed;
             }
-            PeerEvent::Message(Ok(message)) => {
+            PeerEvent::Message(Ok(Some(message))) => {
                 match handle_metadata_message(
                     &mut io,
                     &mut metadata,
                     &mut remote_metadata_id,
+                    &mut deferred_metadata,
                     &message,
-                )
-                .await
-                {
+                ) {
                     Ok(()) => upload.on_message(&message),
                     Err(()) => {
                         join_read(read.take()).await;
@@ -882,7 +904,7 @@ async fn run_incoming_peer(
                             .payload_bytes_sent
                             .saturating_add(block.len() as u64);
                     }
-                    if io.send_message(&message).await.is_err() {
+                    if io.queue_message(&message).is_err() {
                         join_read(read.take()).await;
                         return PeerTermination::Closed;
                     }
@@ -922,19 +944,26 @@ async fn run_incoming_peer(
         observations.queued_bytes_high_water = observations
             .queued_bytes_high_water
             .max(snapshot.queued_bytes_high_water);
+        observations.metadata_requests_high_water = observations
+            .metadata_requests_high_water
+            .max(deferred_metadata.len());
+        observations.metadata_send_buffer_high_water = observations
+            .metadata_send_buffer_high_water
+            .max(io.send_buffer_size());
     }
 }
 
 enum PeerEvent {
     Cancelled,
     Read(Result<Result<Vec<u8>, ()>, tokio::task::JoinError>),
-    Message(Result<PeerMessage, crate::peer_io::PeerIoError>),
+    Message(Result<Option<PeerMessage>, crate::peer_io::PeerIoError>),
 }
 
-async fn handle_metadata_message(
+fn handle_metadata_message(
     io: &mut PeerIo,
     upload: &mut MetadataUpload,
     remote_metadata_id: &mut Option<u8>,
+    deferred: &mut VecDeque<i64>,
     message: &PeerMessage,
 ) -> Result<(), ()> {
     match message {
@@ -942,7 +971,10 @@ async fn handle_metadata_message(
             let handshake = parse_extension_handshake(payload).map_err(|_| ())?;
             match handshake.metadata_extension {
                 MetadataExtensionUpdate::Unchanged => {}
-                MetadataExtensionUpdate::Disabled => *remote_metadata_id = None,
+                MetadataExtensionUpdate::Disabled => {
+                    *remote_metadata_id = None;
+                    deferred.clear();
+                }
                 MetadataExtensionUpdate::Enabled(id) => *remote_metadata_id = Some(id),
             }
         }
@@ -957,26 +989,61 @@ async fn handle_metadata_message(
                 MetadataMessage::Data { .. } | MetadataMessage::Reject { .. } => return Err(()),
             };
             let remote_id = remote_metadata_id.ok_or(())?;
-            let response = upload.on_request(piece).map_err(|_| ())?;
-            let payload = match response {
-                MetadataUploadAction::Data {
-                    piece,
-                    total_size,
-                    block,
-                } => encode_metadata_data(piece, total_size, &block).map_err(|_| ())?,
-                MetadataUploadAction::Reject { piece } => encode_metadata_reject(piece),
-            };
-            io.send_message(&PeerMessage::Extended {
-                id: remote_id,
-                payload,
-            })
-            .await
-            .map_err(|_| ())?;
+            if !upload.can_serve(piece) || io.send_buffer_size() < METADATA_SEND_BUFFER_WATERMARK {
+                queue_metadata_response(io, upload, remote_id, piece)?;
+            } else if deferred.len() < MAX_DEFERRED_METADATA_REQUESTS {
+                deferred.push_back(piece);
+            } else {
+                io.queue_message(&PeerMessage::Extended {
+                    id: remote_id,
+                    payload: encode_metadata_reject(piece),
+                })
+                .map_err(|_| ())?;
+            }
         }
         PeerMessage::Extended { .. } => {}
         _ => {}
     }
     Ok(())
+}
+
+fn drain_metadata_requests(
+    io: &mut PeerIo,
+    upload: &mut MetadataUpload,
+    remote_metadata_id: Option<u8>,
+    deferred: &mut VecDeque<i64>,
+) -> Result<(), ()> {
+    let Some(remote_metadata_id) = remote_metadata_id else {
+        return Ok(());
+    };
+    while io.send_buffer_size() < METADATA_SEND_BUFFER_WATERMARK {
+        let Some(piece) = deferred.pop_front() else {
+            break;
+        };
+        queue_metadata_response(io, upload, remote_metadata_id, piece)?;
+    }
+    Ok(())
+}
+
+fn queue_metadata_response(
+    io: &mut PeerIo,
+    upload: &mut MetadataUpload,
+    remote_metadata_id: u8,
+    piece: i64,
+) -> Result<(), ()> {
+    let payload = match upload.on_request(piece).map_err(|_| ())? {
+        MetadataUploadAction::Data {
+            piece,
+            total_size,
+            block,
+        } => encode_metadata_data(piece, total_size, &block).map_err(|_| ())?,
+        MetadataUploadAction::Reject { piece } => encode_metadata_reject(piece),
+    };
+    io.queue_message(&PeerMessage::Extended {
+        id: remote_metadata_id,
+        payload,
+    })
+    .map_err(|_| ())
 }
 
 async fn join_read(read: Option<ActiveRead>) {
@@ -1043,8 +1110,9 @@ mod tests {
     use std::time::Duration;
 
     use rstorrent_protocol::metadata::{
-        MetadataExtensionUpdate, MetadataMessage, encode_extension_handshake_with_id,
-        encode_metadata_request, parse_extension_handshake, parse_metadata_message,
+        MetadataExtensionUpdate, MetadataMessage, MetadataUpload,
+        encode_extension_handshake_with_id, encode_metadata_request, parse_extension_handshake,
+        parse_metadata_message,
     };
     use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
     use rstorrent_protocol::peer_wire::{
@@ -1059,8 +1127,10 @@ mod tests {
 
     use super::{
         IncomingPeerError, IncomingPeerService, IncomingPeerServiceConfig, IncomingRejectionReason,
-        IncomingTcpBootstrap, SeedRegistration,
+        IncomingTcpBootstrap, MAX_DEFERRED_METADATA_REQUESTS, METADATA_SEND_BUFFER_WATERMARK,
+        SeedRegistration, drain_metadata_requests, handle_metadata_message,
     };
+    use crate::peer_io::PeerIo;
     use crate::{DEFAULT_PEER_ID, SeedContent};
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -1115,6 +1185,77 @@ mod tests {
             peer_id: DEFAULT_PEER_ID,
             byte_metric_sink: None,
         }
+    }
+
+    #[tokio::test]
+    async fn metadata_upload_defers_by_occupancy_not_connection_lifetime() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("listen address");
+        let client = TcpStream::connect(address).await.expect("connect");
+        let (server, _) = listener.accept().await.expect("accept");
+        let drain = tokio::spawn(async move {
+            let mut client = client;
+            let mut bytes = [0_u8; 64 * 1_024];
+            while client.read(&mut bytes).await.unwrap_or(0) != 0 {}
+        });
+        let mut io = PeerIo::new(server, Duration::from_secs(2), None);
+        let mut upload = MetadataUpload::new(vec![7; 16 * 1_024]).expect("local metadata");
+        let mut remote_id = Some(7);
+        let mut deferred = VecDeque::new();
+        let request = PeerMessage::Extended {
+            id: rstorrent_protocol::metadata::UT_METADATA_LOCAL_ID,
+            payload: encode_metadata_request(0),
+        };
+
+        while io.send_buffer_size() < METADATA_SEND_BUFFER_WATERMARK {
+            handle_metadata_message(
+                &mut io,
+                &mut upload,
+                &mut remote_id,
+                &mut deferred,
+                &request,
+            )
+            .expect("queue immediate metadata response");
+        }
+        for _ in 0..MAX_DEFERRED_METADATA_REQUESTS {
+            handle_metadata_message(
+                &mut io,
+                &mut upload,
+                &mut remote_id,
+                &mut deferred,
+                &request,
+            )
+            .expect("defer metadata response");
+        }
+        assert_eq!(deferred.len(), MAX_DEFERRED_METADATA_REQUESTS);
+        let before_reject = io.send_buffer_size();
+        handle_metadata_message(
+            &mut io,
+            &mut upload,
+            &mut remote_id,
+            &mut deferred,
+            &request,
+        )
+        .expect("reject request above deferred occupancy bound");
+        assert!(io.send_buffer_size() > before_reject);
+
+        while !deferred.is_empty() {
+            assert!(
+                timeout(
+                    Duration::from_secs(2),
+                    io.next_message_or_send_ready(METADATA_SEND_BUFFER_WATERMARK),
+                )
+                .await
+                .expect("queued send drains")
+                .expect("queued send remains connected")
+                .is_none()
+            );
+            drain_metadata_requests(&mut io, &mut upload, remote_id, &mut deferred)
+                .expect("refill bounded send buffer");
+        }
+        assert!(upload.request_count() > MAX_DEFERRED_METADATA_REQUESTS);
+        drop(io);
+        drain.await.expect("reader task");
     }
 
     async fn send(stream: &mut TcpStream, message: &PeerMessage) {

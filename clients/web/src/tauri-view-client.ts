@@ -96,12 +96,18 @@ export class TauriApplicationViewClient implements ApplicationViewClient {
       "x-rstorrent-request-id": request.request_id,
       "x-rstorrent-storage-root": request.storage_root,
       "x-rstorrent-start-content": String(request.start_content),
+      "x-rstorrent-selection":
+        request.selection.type === "wanted_ranges"
+          ? "ranges"
+          : request.selection.type,
     };
     if (request.expected_revision != null) {
       headers["x-rstorrent-expected-revision"] = request.expected_revision;
     }
-    if (request.skip_files.length > 0) {
-      headers["x-rstorrent-skip-files"] = request.skip_files.join(",");
+    if (request.selection.type === "wanted_ranges") {
+      headers["x-rstorrent-wanted-ranges"] = request.selection.ranges
+        .map((range) => `${range.start}-${range.end_exclusive}`)
+        .join(",");
     }
     return decodeStructured(
       await this.invoke<unknown>(

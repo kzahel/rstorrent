@@ -16,11 +16,11 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use sha2::{Digest as Sha256Digest, Sha256};
 
 use crate::control::{
-    AddTorrentBytesRequest, Command, ErrorCode, FilePriority, RemovalDataPolicy, RemovalState,
-    RequestEnvelope, ResponseEnvelope, ServiceSnapshot, StorageRootAvailability,
-    StorageRootSnapshot, StorageSettingsSnapshot, StorageState, TorrentSnapshot, TorrentState,
-    decode_info_hash, encode_info_hash, parse_revision, validate_add_torrent_bytes_request,
-    validate_identifier, validate_request,
+    AddTorrentBytesRequest, Command, ErrorCode, FilePriority, FileSelectionIntent,
+    RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope, ServiceSnapshot,
+    StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot, StorageState,
+    TorrentSnapshot, TorrentState, decode_info_hash, encode_info_hash, parse_revision,
+    validate_add_torrent_bytes_request, validate_identifier, validate_request,
 };
 use crate::have::{HaveError, HaveState, MAX_DURABLE_HAVE_STATE_BYTES, MAX_DURABLE_PIECES};
 
@@ -178,12 +178,35 @@ pub struct PreparedFileRecord {
     pub sha1: [u8; 20],
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StoredTrackerTransport {
+    Udp,
+    Http,
+    Https,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StoredTrackerSource {
+    Magnet,
+    Metainfo,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StoredTracker {
+    pub tier: u32,
+    pub position: u32,
+    pub url: String,
+    pub transport: StoredTrackerTransport,
+    pub source: StoredTrackerSource,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResumeRecord {
     pub torrent_id: String,
     pub magnet: String,
     pub storage_root: String,
     pub skip_files: Vec<u32>,
+    pub trackers: Vec<StoredTracker>,
     pub state: TorrentState,
     pub storage_state: StorageState,
     pub desired_running: bool,
@@ -217,6 +240,7 @@ pub(crate) struct PreparedTorrentBytes {
     source: Vec<u8>,
     source_digest: [u8; 32],
     projection: MetainfoProjection,
+    skip_files: Vec<u32>,
 }
 
 impl PreparedTorrentBytes {
@@ -249,23 +273,62 @@ pub(crate) fn prepare_torrent_bytes(
     }
     let projection = Metainfo::project_bytes_with_limits(&source, EXPLICIT_IMPORT_METAINFO_LIMITS)
         .map_err(metainfo_intake_error)?;
-    if let Some(index) = request.skip_files.iter().copied().find(|index| {
-        projection
-            .metainfo
-            .files
-            .get(*index as usize)
-            .is_none_or(|file| file.padding)
-    }) {
-        return Err((
-            ErrorCode::InvalidRequest,
-            format!("file selection index {index} is not a selectable torrent file"),
-        ));
-    }
+    let skip_files = project_file_selection(&request.selection, &projection.metainfo.files)?;
     Ok(PreparedTorrentBytes {
         source,
         source_digest,
         projection,
+        skip_files,
     })
+}
+
+fn project_file_selection(
+    selection: &FileSelectionIntent,
+    files: &[rstorrent_protocol::metainfo::MetainfoFile],
+) -> Result<Vec<u32>, (ErrorCode, String)> {
+    if let FileSelectionIntent::WantedRanges { ranges } = selection
+        && ranges
+            .last()
+            .is_some_and(|range| range.end_exclusive as usize > files.len())
+    {
+        return Err((
+            ErrorCode::InvalidRequest,
+            "file selection range exceeds the torrent file catalog".to_owned(),
+        ));
+    }
+    let mut skipped = Vec::new();
+    let ranges = match selection {
+        FileSelectionIntent::All => return Ok(skipped),
+        FileSelectionIntent::None => None,
+        FileSelectionIntent::WantedRanges { ranges } => Some(ranges.as_slice()),
+    };
+    let mut range_index = 0;
+    for (index, file) in files.iter().enumerate() {
+        if file.padding {
+            continue;
+        }
+        let index_u32 = u32::try_from(index).map_err(|_| {
+            (
+                ErrorCode::InvalidRequest,
+                "torrent file index exceeds the supported range".to_owned(),
+            )
+        })?;
+        let wanted = ranges.is_some_and(|ranges| {
+            while ranges
+                .get(range_index)
+                .is_some_and(|range| range.end_exclusive <= index_u32)
+            {
+                range_index += 1;
+            }
+            ranges
+                .get(range_index)
+                .is_some_and(|range| range.start <= index_u32 && index_u32 < range.end_exclusive)
+        });
+        if !wanted {
+            skipped.push(index_u32);
+        }
+    }
+    Ok(skipped)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -772,6 +835,7 @@ impl SessionStore {
                 &prepared.source,
                 &prepared.source_digest,
                 &prepared.projection,
+                &prepared.skip_files,
                 current_revision,
             ) {
                 Ok(revision) => ResponseEnvelope::success(
@@ -828,6 +892,7 @@ impl SessionStore {
         let managed_artifacts = ManagedArtifactState::parse(&row.9)
             .ok_or_else(|| StoreError::DurableState("invalid managed artifact state".to_owned()))?;
         let skip_files = read_selection(&self.connection, &info_hash)?;
+        let trackers = read_trackers(&self.connection, &info_hash)?;
         let have = match (row.6, row.7) {
             (None, None) => None,
             (Some(piece_count), Some(bytes)) => {
@@ -848,6 +913,7 @@ impl SessionStore {
             magnet: operational_magnet,
             storage_root: row.1,
             skip_files,
+            trackers,
             state,
             storage_state,
             desired_running: match row.8.as_str() {
@@ -2652,6 +2718,19 @@ fn apply_mutation(
             *priority,
             current_revision,
         ),
+        Command::SetFilePriorityRanges {
+            torrent_id,
+            ranges,
+            priority,
+        } => set_file_priority_indices(
+            transaction,
+            torrent_id,
+            ranges
+                .iter()
+                .flat_map(|range| range.start..range.end_exclusive),
+            *priority,
+            current_revision,
+        ),
         Command::SetDefaultStorageRoot { storage_root } => {
             set_default_storage_root(transaction, storage_root, current_revision)
         }
@@ -2704,6 +2783,7 @@ fn add_torrent_bytes(
     source: &[u8],
     source_digest: &[u8],
     projection: &MetainfoProjection,
+    skip_files: &[u32],
     current_revision: u64,
 ) -> Result<u64, (ErrorCode, String)> {
     let root_exists = transaction
@@ -2820,7 +2900,7 @@ fn add_torrent_bytes(
             )
             .map_err(internal_error)?;
     }
-    for file_index in &request.skip_files {
+    for file_index in skip_files {
         transaction
             .execute(
                 "INSERT INTO file_selection(info_hash, file_index, wanted)
@@ -3136,6 +3216,25 @@ fn set_file_priority(
     priority: FilePriority,
     current_revision: u64,
 ) -> Result<u64, (ErrorCode, String)> {
+    set_file_priority_indices(
+        transaction,
+        torrent_id,
+        file_indices.iter().copied(),
+        priority,
+        current_revision,
+    )
+}
+
+fn set_file_priority_indices<I>(
+    transaction: &Transaction<'_>,
+    torrent_id: &str,
+    file_indices: I,
+    priority: FilePriority,
+    current_revision: u64,
+) -> Result<u64, (ErrorCode, String)>
+where
+    I: Iterator<Item = u32> + Clone,
+{
     let info_hash = decode_info_hash(torrent_id).ok_or_else(|| {
         (
             ErrorCode::InvalidRequest,
@@ -3187,7 +3286,7 @@ fn set_file_priority(
     })?;
     let metainfo = Metainfo::from_info_bytes_with_limits(&raw_info, DURABLE_METAINFO_LIMITS)
         .map_err(|error| (ErrorCode::InvalidDurableState, error.to_string()))?;
-    for &file_index in file_indices {
+    for file_index in file_indices.clone() {
         let file_index = usize::try_from(file_index).map_err(|_| {
             (
                 ErrorCode::InvalidRequest,
@@ -3210,7 +3309,7 @@ fn set_file_priority(
     let mut skipped = read_selection(transaction, &info_hash)
         .map_err(|error| internal_message(&error.to_string()))?;
     let initially_skipped = skipped.clone();
-    for &file_index in file_indices {
+    for file_index in file_indices {
         match priority {
             FilePriority::Normal => skipped.retain(|index| *index != file_index),
             FilePriority::Skip => {
@@ -3694,6 +3793,62 @@ fn read_selection(connection: &Connection, info_hash: &[u8; 20]) -> Result<Vec<u
     Ok(selection)
 }
 
+fn read_trackers(
+    connection: &Connection,
+    info_hash: &[u8; 20],
+) -> Result<Vec<StoredTracker>, StoreError> {
+    let mut statement = connection.prepare(
+        "SELECT tier, position, url, transport, source
+         FROM torrent_trackers
+         WHERE info_hash = ?1
+         ORDER BY tier, position",
+    )?;
+    let rows = statement.query_map([info_hash.as_slice()], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
+        ))
+    })?;
+    let mut trackers = Vec::new();
+    for row in rows {
+        let (tier, position, url, transport, source) = row?;
+        let tier = u32::try_from(tier)
+            .map_err(|_| StoreError::DurableState("tracker tier overflow".to_owned()))?;
+        let position = u32::try_from(position)
+            .map_err(|_| StoreError::DurableState("tracker position overflow".to_owned()))?;
+        let transport = match transport.as_str() {
+            "udp" => StoredTrackerTransport::Udp,
+            "http" => StoredTrackerTransport::Http,
+            "https" => StoredTrackerTransport::Https,
+            _ => {
+                return Err(StoreError::DurableState(
+                    "invalid tracker transport".to_owned(),
+                ));
+            }
+        };
+        let source = match source.as_str() {
+            "magnet" => StoredTrackerSource::Magnet,
+            "metainfo" => StoredTrackerSource::Metainfo,
+            _ => {
+                return Err(StoreError::DurableState(
+                    "invalid tracker source".to_owned(),
+                ));
+            }
+        };
+        trackers.push(StoredTracker {
+            tier,
+            position,
+            url,
+            transport,
+            source,
+        });
+    }
+    Ok(trackers)
+}
+
 fn read_revision(connection: &Connection) -> Result<u64, StoreError> {
     let revision: i64 = connection.query_row(
         "SELECT revision FROM profile_state WHERE singleton = 1",
@@ -3960,22 +4115,65 @@ mod tests {
     use rstorrent_engine::PreparedFileHash;
     use rstorrent_engine::dht::{DHT_SNAPSHOT_VERSION, DhtSnapshot};
     use rstorrent_protocol::dht::{DhtEndpoint, DhtIp, NodeContact, NodeId};
+    use rstorrent_protocol::metainfo::MetainfoFile;
     use rusqlite::Connection;
     use sha1::{Digest, Sha1};
     use sha2::Sha256;
 
     use super::{
         ConfiguredStorageRoot, ManagedArtifactState, PreparedFileRecord, SCHEMA_VERSION,
-        SessionStore, StoreError,
+        SessionStore, StoreError, StoredTrackerSource, StoredTrackerTransport,
     };
     use crate::have::{HaveState, MAX_DURABLE_HAVE_STATE_BYTES, MAX_DURABLE_PIECES};
     use crate::{
-        AddTorrentBytesRequest, CONTROL_VERSION, Command, ErrorCode, FilePriority,
-        RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseOutcome, StorageState,
-        TorrentState,
+        AddTorrentBytesRequest, CONTROL_VERSION, Command, ErrorCode, FileIndexRange, FilePriority,
+        FileSelectionIntent, RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseOutcome,
+        StorageState, TorrentState,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn compact_torrent_selection_projects_nonpadding_files() {
+        let files = (0..4)
+            .map(|index| MetainfoFile {
+                path: vec![index.to_string()],
+                length: 1,
+                offset: index,
+                padding: index == 1,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            super::project_file_selection(&FileSelectionIntent::None, &files)
+                .expect("select no payload files"),
+            [0, 2, 3]
+        );
+        assert_eq!(
+            super::project_file_selection(
+                &FileSelectionIntent::WantedRanges {
+                    ranges: vec![FileIndexRange {
+                        start: 2,
+                        end_exclusive: 4,
+                    }],
+                },
+                &files,
+            )
+            .expect("select a compact wanted range"),
+            [0]
+        );
+        assert!(
+            super::project_file_selection(
+                &FileSelectionIntent::WantedRanges {
+                    ranges: vec![FileIndexRange {
+                        start: 2,
+                        end_exclusive: 5,
+                    }],
+                },
+                &files,
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn canonical_magnet_preserves_supported_discovery_sources() {
@@ -4064,6 +4262,11 @@ mod tests {
         assert_eq!(resume.state, TorrentState::Paused);
         assert!(!resume.desired_running);
         assert_eq!(resume.magnet, format!("magnet:?xt=urn:btih:{torrent_id}"));
+        assert_eq!(resume.trackers.len(), 1);
+        assert_eq!(resume.trackers[0].tier, 0);
+        assert_eq!(resume.trackers[0].position, 0);
+        assert_eq!(resume.trackers[0].transport, StoredTrackerTransport::Udp);
+        assert_eq!(resume.trackers[0].source, StoredTrackerSource::Metainfo);
         let (kind, fidelity, exact_source, digest): (String, String, Vec<u8>, Vec<u8>) = store
             .connection
             .query_row(
@@ -4096,14 +4299,14 @@ mod tests {
         drop(store);
 
         let reopened = SessionStore::open(&root, "default", &[configured]).expect("reopen");
+        let reopened_resume = reopened
+            .load_resume(&torrent_id)
+            .expect("restart imported row");
         assert_eq!(
-            reopened
-                .load_resume(&torrent_id)
-                .expect("restart imported row")
-                .raw_info
-                .as_deref(),
+            reopened_resume.raw_info.as_deref(),
             Some(raw_info.as_slice())
         );
+        assert_eq!(reopened_resume.trackers, resume.trackers);
         drop(reopened);
         fs::remove_dir_all(root).expect("remove test profile");
     }
@@ -4240,10 +4443,76 @@ mod tests {
             expected_revision: None,
             storage_root: "downloads".to_owned(),
             start_content: false,
-            skip_files: Vec::new(),
+            selection: crate::FileSelectionIntent::All,
             source_length: source.len() as u32,
             source_sha256: super::encode_digest(&Sha256::digest(source)),
         }
+    }
+
+    fn multi_file_torrent_source(file_count: u32) -> Vec<u8> {
+        let mut info = b"d5:filesl".to_vec();
+        for index in 0..file_count {
+            let path = format!("f{index}");
+            info.extend_from_slice(
+                format!("d6:lengthi1e4:pathl{}:{path}ee", path.len()).as_bytes(),
+            );
+        }
+        info.extend_from_slice(
+            format!("e4:name4:root12:piece lengthi{file_count}e6:pieces20:aaaaaaaaaaaaaaaaaaaae")
+                .as_bytes(),
+        );
+        let mut source = b"d4:info".to_vec();
+        source.extend_from_slice(&info);
+        source.push(b'e');
+        source
+    }
+
+    #[test]
+    fn ranged_file_priority_mutates_without_an_enumerated_request() {
+        let root = test_root("ranged-file-priority");
+        let mut store = SessionStore::open(
+            &root,
+            "profile",
+            &[ConfiguredStorageRoot::path(
+                "downloads",
+                root.join("payload"),
+            )],
+        )
+        .expect("open store");
+        let source = multi_file_torrent_source(8);
+        store
+            .handle_torrent_bytes(&torrent_bytes_request("add-ranges", &source), source)
+            .expect("add multi-file torrent");
+        let torrent_id = store.snapshot().expect("snapshot").torrents[0]
+            .torrent_id
+            .clone();
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "set-ranges".to_owned(),
+                expected_revision: None,
+                command: Command::SetFilePriorityRanges {
+                    torrent_id: torrent_id.clone(),
+                    ranges: vec![
+                        FileIndexRange {
+                            start: 1,
+                            end_exclusive: 3,
+                        },
+                        FileIndexRange {
+                            start: 5,
+                            end_exclusive: 8,
+                        },
+                    ],
+                    priority: FilePriority::Skip,
+                },
+            })
+            .expect("apply range mutation");
+        assert_eq!(
+            store.load_resume(&torrent_id).expect("resume").skip_files,
+            [1, 2, 5, 6, 7]
+        );
+        drop(store);
+        fs::remove_dir_all(root).expect("remove test profile");
     }
 
     #[test]

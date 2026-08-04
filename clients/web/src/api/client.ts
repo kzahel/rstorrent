@@ -145,8 +145,19 @@ export class HttpApplicationClient implements ApplicationViewClient {
     if (request.expected_revision != null) {
       query.set("expected_revision", request.expected_revision);
     }
-    if (request.skip_files.length > 0) {
-      query.set("skip_files", request.skip_files.join(","));
+    query.set(
+      "selection",
+      request.selection.type === "wanted_ranges"
+        ? "ranges"
+        : request.selection.type,
+    );
+    if (request.selection.type === "wanted_ranges") {
+      query.set(
+        "wanted_ranges",
+        request.selection.ranges
+          .map((range) => `${range.start}-${range.end_exclusive}`)
+          .join(","),
+      );
     }
     const response = await this.sendRaw(
       "POST",

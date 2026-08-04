@@ -78,6 +78,7 @@ async fn session_disk_view_publishes_pipeline_rates_and_keyed_piece_changes() {
                 max_queue_bytes: 64 * 1024,
             },
             diagnostics: None,
+            catalog_page: None,
         })
         .expect("disk subscription");
     let initial = subscription.next_update().await.expect("initial disk");
@@ -165,6 +166,7 @@ async fn tracker_state_publishes_complete_keyed_rows_and_terminal_inactive_state
                 max_queue_bytes: 16 * 1024,
             },
             diagnostics: None,
+            catalog_page: Some(crate::CatalogPageRequest::default()),
         })
         .expect("tracker subscription");
     let summary = hub
@@ -178,6 +180,7 @@ async fn tracker_state_publishes_complete_keyed_rows_and_terminal_inactive_state
                 max_queue_bytes: 16 * 1024,
             },
             diagnostics: None,
+            catalog_page: None,
         })
         .expect("summary subscription");
     let initial = subscription.next_update().await.expect("initial snapshot");
@@ -246,6 +249,7 @@ async fn swarm_projection_keeps_registry_rows_after_connections_and_clears_termi
                 max_queue_bytes: 64 * 1024,
             },
             diagnostics: None,
+            catalog_page: None,
         })
         .expect("swarm subscription");
     let initial = subscription.next_update().await.expect("initial snapshot");
@@ -343,6 +347,7 @@ async fn swarm_projection_keeps_registry_rows_after_connections_and_clears_termi
             projection: ViewProjection::Swarm,
             delivery: DeliveryPolicy::default(),
             diagnostics: None,
+            catalog_page: None,
         });
     assert!(matches!(
         current,
@@ -514,6 +519,7 @@ async fn verified_metadata_name_patches_list_and_selected_summary() {
                 max_queue_bytes: 4096,
             },
             diagnostics: None,
+            catalog_page: None,
         })
         .expect("list subscription");
     let summary = hub
@@ -527,6 +533,7 @@ async fn verified_metadata_name_patches_list_and_selected_summary() {
                 max_queue_bytes: 4096,
             },
             diagnostics: None,
+            catalog_page: None,
         })
         .expect("summary subscription");
     list.next_update().await.expect("list snapshot");

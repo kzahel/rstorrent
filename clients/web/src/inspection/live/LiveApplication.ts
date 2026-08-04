@@ -591,10 +591,7 @@ function mapViewState(
     fileSet === null || desired.torrentId === null || files?.torrent_id !== desired.torrentId
       ? {}
       : { [desired.torrentId]: fileSet };
-  const trackerSet =
-    trackers === null
-      ? null
-      : mapTrackers(trackers.trackers, trackers.torrent_id);
+  const trackerSet = trackers === null ? null : mapTrackers(trackers);
   const trackersByTorrent =
     trackerSet === null ||
     desired.torrentId === null ||
@@ -986,6 +983,12 @@ function mapFiles(
   return {
     state: snapshot.state,
     filesystemContentBase: snapshot.filesystem_content_base,
+    page: {
+      offset: snapshot.page.offset,
+      limit: snapshot.page.limit,
+      total: snapshot.page.total,
+      nextOffset: snapshot.page.next_offset,
+    },
     order: rows.map((file) => file.id),
     rows: Object.fromEntries(rows.map((file) => [file.id, file])),
   };
@@ -1117,6 +1120,10 @@ function canPatchMappedFiles(
     previous.source.torrent_id !== snapshot.torrent_id ||
     previous.source.state !== snapshot.state ||
     previous.source.filesystem_content_base !== snapshot.filesystem_content_base ||
+    previous.source.page.offset !== snapshot.page.offset ||
+    previous.source.page.limit !== snapshot.page.limit ||
+    previous.source.page.total !== snapshot.page.total ||
+    previous.source.page.next_offset !== snapshot.page.next_offset ||
     previous.source.files.length !== snapshot.files.length
   ) {
     return false;
@@ -1160,15 +1167,20 @@ function mapFile(
 }
 
 function mapTrackers(
-  trackers: readonly TrackerView[],
-  torrentId: string,
+  snapshot: Extract<ViewSnapshot, { type: "trackers" }>,
 ): TrackerSet {
   const observedAtMs = Date.now();
-  const rows = trackers.map((tracker) =>
-    mapTracker(tracker, torrentId, observedAtMs),
+  const rows = snapshot.trackers.map((tracker) =>
+    mapTracker(tracker, snapshot.torrent_id, observedAtMs),
   );
   return {
     state: "available",
+    page: {
+      offset: snapshot.page.offset,
+      limit: snapshot.page.limit,
+      total: snapshot.page.total,
+      nextOffset: snapshot.page.next_offset,
+    },
     order: rows.map((tracker) => tracker.id),
     rows: Object.fromEntries(rows.map((tracker) => [tracker.id, tracker])),
   };

@@ -88,14 +88,11 @@
         "request_id": {
           "type": "string"
         },
-        "skip_files": {
-          "default": [],
-          "items": {
-            "format": "uint32",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "type": "array"
+        "selection": {
+          "$ref": "#/$defs/FileSelectionIntent",
+          "default": {
+            "type": "all"
+          }
         },
         "source_length": {
           "format": "uint32",
@@ -860,6 +857,58 @@
       ],
       "type": "string"
     },
+    "CatalogPageRequest": {
+      "properties": {
+        "limit": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "offset": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "offset",
+        "limit"
+      ],
+      "type": "object"
+    },
+    "CatalogPageView": {
+      "properties": {
+        "limit": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "next_offset": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "offset": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "offset",
+        "limit",
+        "total"
+      ],
+      "type": "object"
+    },
     "ChooseDownloadRootRequest": {
       "properties": {
         "repair_root": {
@@ -946,6 +995,33 @@
             "type",
             "torrent_id",
             "file_indices",
+            "priority"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "priority": {
+              "$ref": "#/$defs/FilePriority"
+            },
+            "ranges": {
+              "items": {
+                "$ref": "#/$defs/FileIndexRange"
+              },
+              "type": "array"
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "set_file_priority_ranges",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id",
+            "ranges",
             "priority"
           ],
           "type": "object"
@@ -2056,12 +2132,78 @@
       ],
       "type": "string"
     },
+    "FileIndexRange": {
+      "properties": {
+        "end_exclusive": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "start": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end_exclusive"
+      ],
+      "type": "object"
+    },
     "FilePriority": {
       "enum": [
         "normal",
         "skip"
       ],
       "type": "string"
+    },
+    "FileSelectionIntent": {
+      "oneOf": [
+        {
+          "properties": {
+            "type": {
+              "const": "all",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "none",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "ranges": {
+              "items": {
+                "$ref": "#/$defs/FileIndexRange"
+              },
+              "type": "array"
+            },
+            "type": {
+              "const": "wanted_ranges",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "ranges"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "FileSelectionView": {
       "enum": [
@@ -3433,12 +3575,14 @@
     },
     "TrackerSourceView": {
       "enum": [
-        "magnet"
+        "magnet",
+        "metainfo"
       ],
       "type": "string"
     },
     "TrackerStatusView": {
       "enum": [
+        "unsupported",
         "inactive",
         "idle",
         "announcing",
@@ -3449,7 +3593,9 @@
     },
     "TrackerTransportView": {
       "enum": [
-        "udp"
+        "udp",
+        "http",
+        "https"
       ],
       "type": "string"
     },
@@ -4273,6 +4419,9 @@
                 "null"
               ]
             },
+            "page": {
+              "$ref": "#/$defs/CatalogPageView"
+            },
             "state": {
               "$ref": "#/$defs/FileCatalogState"
             },
@@ -4288,12 +4437,16 @@
             "type",
             "torrent_id",
             "state",
+            "page",
             "files"
           ],
           "type": "object"
         },
         {
           "properties": {
+            "page": {
+              "$ref": "#/$defs/CatalogPageView"
+            },
             "state": {
               "$ref": "#/$defs/TrackerCatalogState"
             },
@@ -4315,6 +4468,7 @@
             "type",
             "torrent_id",
             "state",
+            "page",
             "trackers"
           ],
           "type": "object"
@@ -4557,6 +4711,16 @@
                 "min_interval_millis": 0
               }
             },
+            "page": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/CatalogPageRequest"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "torrent_id": {
               "type": "string"
             },
@@ -4582,6 +4746,16 @@
               "default": {
                 "min_interval_millis": 0
               }
+            },
+            "page": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/CatalogPageRequest"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "torrent_id": {
               "type": "string"

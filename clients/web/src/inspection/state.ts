@@ -682,6 +682,7 @@ export function reduceInspectionUpdate(
           patch.filesystemContentBase === undefined
             ? current.filesystemContentBase
             : patch.filesystemContentBase,
+        page: current.page,
         rows,
         order:
           patch.order ?? current.order.filter((id) => rows[id] !== undefined),
@@ -703,6 +704,7 @@ export function reduceInspectionUpdate(
       );
       nextTrackerSets[patch.torrentId] = {
         state: patch.state ?? current.state,
+        page: current.page,
         rows,
         order:
           patch.order ?? current.order.filter((id) => rows[id] !== undefined),
@@ -927,11 +929,13 @@ const EMPTY_SWARM_SET: SwarmSet = {
 const EMPTY_FILE_SET: FileSet = {
   state: "metadata_pending",
   filesystemContentBase: null,
+  page: { offset: 0, limit: 1024, total: 0, nextOffset: null },
   order: [],
   rows: {},
 };
 const EMPTY_TRACKER_SET: TrackerSet = {
   state: "available",
+  page: { offset: 0, limit: 1024, total: 0, nextOffset: null },
   order: [],
   rows: {},
 };

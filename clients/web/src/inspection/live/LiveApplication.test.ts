@@ -396,7 +396,7 @@ describe("LiveApplication", () => {
     });
     const tracker =
       snapshots.at(-1)?.trackersByTorrent[TORRENT_ID]?.rows[
-        "udp://tracker.example:6969"
+        "000000:000000"
       ];
     expect(tracker).toMatchObject({
       torrentId: TORRENT_ID,
@@ -568,6 +568,7 @@ function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
           torrent_id: TORRENT_ID,
           state: "available",
           filesystem_content_base: "/tmp/content",
+          page: { offset: 0, limit: 1024, total: 1, next_offset: null },
           files: [
             {
               file_id: "0",
@@ -593,9 +594,10 @@ function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
           type: "trackers",
           torrent_id: TORRENT_ID,
           state: "available",
+          page: { offset: 0, limit: 1024, total: 1, next_offset: null },
           trackers: [
             {
-              tracker_id: "udp://tracker.example:6969",
+              tracker_id: "000000:000000",
               url: "udp://tracker.example:6969",
               transport: "udp",
               source: "magnet",

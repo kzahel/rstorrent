@@ -13,11 +13,12 @@ const MAX_TRACKER_FAILURES: u8 = 127;
 pub(crate) const MAX_TRACKER_ERROR_LENGTH: usize = 256;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) struct TrackerId(u8);
+pub(crate) struct TrackerId(u32);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TrackerSource {
     Magnet,
+    Metainfo,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,7 +52,7 @@ pub enum TrackerAnnounceEvent {
 pub struct TrackerRuntimeRecordSnapshot {
     pub tracker_id: String,
     pub url: String,
-    pub tier: u8,
+    pub tier: u32,
     pub source: TrackerSource,
     pub transport: TrackerTransport,
     pub status: TrackerRuntimeStatus,
@@ -70,6 +71,15 @@ pub struct TrackerRuntimeRecordSnapshot {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UdpTrackerConfig {
+    pub url: String,
+    pub endpoint: UdpTrackerUrl,
+    pub tier: u32,
+    pub position: u32,
+    pub source: TrackerSource,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TrackerRuntimeSnapshot {
     pub captured_at: Duration,
     pub active: bool,
@@ -80,7 +90,9 @@ pub struct TrackerRuntimeSnapshot {
 pub(crate) struct TrackerRecord {
     id: TrackerId,
     url: UdpTrackerUrl,
-    tier: u8,
+    display_url: String,
+    tier: u32,
+    position: u32,
     source: TrackerSource,
     failures: u8,
     total_attempts: u32,
@@ -97,12 +109,14 @@ pub(crate) struct TrackerRecord {
 }
 
 impl TrackerRecord {
-    fn new(id: TrackerId, url: UdpTrackerUrl) -> Self {
+    fn new(id: TrackerId, config: UdpTrackerConfig) -> Self {
         Self {
             id,
-            url,
-            tier: 0,
-            source: TrackerSource::Magnet,
+            url: config.endpoint,
+            display_url: config.url,
+            tier: config.tier,
+            position: config.position,
+            source: config.source,
             failures: 0,
             total_attempts: 0,
             start_acknowledged: false,
@@ -129,7 +143,7 @@ pub(crate) enum TrackerAction {
     Announce {
         id: TrackerId,
         url: UdpTrackerUrl,
-        tier: u8,
+        tier: u32,
         source: TrackerSource,
         event: AnnounceEvent,
         attempt: u32,
@@ -171,13 +185,33 @@ pub(crate) struct TrackerSchedule {
 }
 
 impl TrackerSchedule {
+    #[cfg(test)]
     pub(crate) fn new(urls: Vec<UdpTrackerUrl>) -> Self {
-        debug_assert!(urls.len() <= usize::from(u8::MAX) + 1);
+        let configs = urls
+            .into_iter()
+            .enumerate()
+            .map(|(position, endpoint)| UdpTrackerConfig {
+                url: tracker_label(&endpoint),
+                endpoint,
+                tier: 0,
+                position: position.try_into().unwrap_or(u32::MAX),
+                source: TrackerSource::Magnet,
+            })
+            .collect();
+        Self::from_configs(configs)
+    }
+
+    pub(crate) fn from_configs(configs: Vec<UdpTrackerConfig>) -> Self {
         Self {
-            records: urls
+            records: configs
                 .into_iter()
                 .enumerate()
-                .map(|(index, url)| TrackerRecord::new(TrackerId(index as u8), url))
+                .map(|(index, config)| {
+                    TrackerRecord::new(
+                        TrackerId(index.try_into().expect("tracker count fits u32")),
+                        config,
+                    )
+                })
                 .collect(),
             attempted: BTreeSet::new(),
             round_not_before: Duration::ZERO,
@@ -364,9 +398,9 @@ impl TrackerRecord {
         } else {
             TrackerAnnounceEvent::Started
         });
-        let url = tracker_label(&self.url);
+        let url = self.display_url.clone();
         TrackerRuntimeRecordSnapshot {
-            tracker_id: url.clone(),
+            tracker_id: format!("{:06}:{:06}", self.tier, self.position),
             url,
             tier: self.tier,
             source: self.source,
@@ -399,6 +433,7 @@ fn bounded_tracker_error(detail: &str) -> String {
     bounded
 }
 
+#[cfg(test)]
 fn tracker_label(tracker: &UdpTrackerUrl) -> String {
     if tracker.host.contains(':') {
         format!("udp://[{}]:{}", tracker.host, tracker.port)
@@ -424,7 +459,7 @@ mod tests {
     use super::{
         MAX_TRACKER_ERROR_LENGTH, TRACKER_ANNOUNCE_MAX, TRACKER_ANNOUNCE_MIN, TRACKER_RETRY_MAX,
         TrackerAction, TrackerAnnounceEvent, TrackerNextAction, TrackerRuntimeStatus,
-        TrackerSchedule, TrackerWaitKind, tracker_failure_delay,
+        TrackerSchedule, TrackerSource, TrackerWaitKind, UdpTrackerConfig, tracker_failure_delay,
     };
     use rstorrent_protocol::magnet::UdpTrackerUrl;
     use rstorrent_protocol::udp_tracker::AnnounceEvent;
@@ -442,6 +477,32 @@ mod tests {
             panic!("tracker should be eligible");
         };
         id
+    }
+
+    #[test]
+    fn configured_schedule_preserves_large_tiers_without_u8_truncation() {
+        let configs = (0_u32..300)
+            .map(|position| {
+                let endpoint = tracker(
+                    &format!("tracker-{position}.example"),
+                    u16::try_from(1_000 + position).expect("fixture port"),
+                );
+                UdpTrackerConfig {
+                    url: format!("udp://tracker-{position}.example:{}", 1_000 + position),
+                    endpoint,
+                    tier: position / 100,
+                    position: position % 100,
+                    source: TrackerSource::Metainfo,
+                }
+            })
+            .collect();
+        let schedule = TrackerSchedule::from_configs(configs);
+        let snapshot = schedule.snapshot(Duration::ZERO, false);
+
+        assert_eq!(snapshot.records.len(), 300);
+        assert_eq!(snapshot.records[299].tier, 2);
+        assert_eq!(snapshot.records[299].source, TrackerSource::Metainfo);
+        assert_eq!(snapshot.records[299].tracker_id, "000002:000099");
     }
 
     #[test]

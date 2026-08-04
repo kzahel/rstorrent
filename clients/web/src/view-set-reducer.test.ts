@@ -194,6 +194,7 @@ describe("view-set reducer", () => {
             torrent_id: torrentId,
             state: "available",
             filesystem_content_base: "/tmp/content",
+            page: { offset: 0, limit: 1024, total: 1, next_offset: null },
             files: [first],
           },
         },

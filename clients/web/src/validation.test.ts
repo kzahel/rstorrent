@@ -116,7 +116,7 @@ describe("torrent tracker-count validation", () => {
   it("accepts the bounded summary count and rejects an oversized catalog", () => {
     const batch = torrentBatch("Verified torrent");
     expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
-    batch.updates[0]!.snapshot.torrents[0]!.configured_tracker_count = 33;
+    batch.updates[0]!.snapshot.torrents[0]!.configured_tracker_count = 999_995;
     expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
       /configured tracker count must be an integer in range/,
     );
@@ -440,9 +440,10 @@ function trackerBatch() {
           type: "trackers" as const,
           torrent_id: "0".repeat(40),
           state: "available",
+          page: { offset: 0, limit: 1024, total: 1, next_offset: null },
           trackers: [
             {
-              tracker_id: "udp://tracker.example:6969",
+              tracker_id: "000000:000000",
               url: "udp://tracker.example:6969",
               transport: "udp",
               source: "magnet",

@@ -30,6 +30,57 @@ pub const MAX_VIEW_SET_WAIT_MILLIS: u32 = 20_000;
 pub const VIEW_SET_LEASE_MILLIS: u64 = 5 * 60 * 1_000;
 pub const VIEW_SET_REAPER_INTERVAL_MILLIS: u64 = 5_000;
 pub const MAX_VIEW_DELIVERY_INTERVAL_MILLIS: u32 = 60_000;
+pub const MAX_CATALOG_PAGE_ROWS: u32 = 1_024;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct CatalogPageRequest {
+    pub offset: u32,
+    pub limit: u32,
+}
+
+impl Default for CatalogPageRequest {
+    fn default() -> Self {
+        Self {
+            offset: 0,
+            limit: MAX_CATALOG_PAGE_ROWS,
+        }
+    }
+}
+
+impl CatalogPageRequest {
+    pub(crate) fn bounds(self, total: usize) -> std::ops::Range<usize> {
+        let start = usize::try_from(self.offset)
+            .unwrap_or(usize::MAX)
+            .min(total);
+        let limit = usize::try_from(self.limit).unwrap_or(usize::MAX);
+        start..start.saturating_add(limit).min(total)
+    }
+
+    pub(crate) fn contains(self, index: u32) -> bool {
+        index >= self.offset && index < self.offset.saturating_add(self.limit)
+    }
+
+    pub(crate) fn view(self, total: usize) -> CatalogPageView {
+        let total = u32::try_from(total).unwrap_or(u32::MAX);
+        let end = self.offset.saturating_add(self.limit).min(total);
+        CatalogPageView {
+            offset: self.offset,
+            limit: self.limit,
+            total,
+            next_offset: (end < total).then_some(end),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct CatalogPageView {
+    pub offset: u32,
+    pub limit: u32,
+    pub total: u32,
+    pub next_offset: Option<u32>,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "snake_case")]
@@ -169,12 +220,16 @@ pub enum ViewSpec {
     TorrentFiles {
         view_id: String,
         torrent_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        page: Option<CatalogPageRequest>,
         #[serde(default)]
         delivery: ViewDeliveryPolicy,
     },
     TorrentTrackers {
         view_id: String,
         torrent_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        page: Option<CatalogPageRequest>,
         #[serde(default)]
         delivery: ViewDeliveryPolicy,
     },
@@ -223,13 +278,19 @@ impl ViewSpec {
     }
 
     pub(crate) fn subscription_spec(&self, queue_bytes: u32) -> SubscriptionSpec {
-        let (selector, projection, diagnostics) = match self {
-            Self::TorrentList { .. } => (ViewSelector::TorrentList, ViewProjection::Summary, None),
+        let (selector, projection, diagnostics, catalog_page) = match self {
+            Self::TorrentList { .. } => (
+                ViewSelector::TorrentList,
+                ViewProjection::Summary,
+                None,
+                None,
+            ),
             Self::TorrentSummary { torrent_id, .. } => (
                 ViewSelector::Torrent {
                     torrent_id: torrent_id.clone(),
                 },
                 ViewProjection::Summary,
+                None,
                 None,
             ),
             Self::PieceActivity { torrent_id, .. } => (
@@ -238,15 +299,19 @@ impl ViewSpec {
                 },
                 ViewProjection::PieceActivity,
                 None,
+                None,
             ),
-            Self::SessionDisk { .. } => (ViewSelector::TorrentList, ViewProjection::Disk, None),
-            Self::SessionDht { .. } => (ViewSelector::SessionDht, ViewProjection::Dht, None),
+            Self::SessionDisk { .. } => {
+                (ViewSelector::TorrentList, ViewProjection::Disk, None, None)
+            }
+            Self::SessionDht { .. } => (ViewSelector::SessionDht, ViewProjection::Dht, None, None),
             Self::SessionSpeed { range, metrics, .. } => (
                 ViewSelector::SessionSpeed {
                     range: *range,
                     metrics: metrics.clone(),
                 },
                 ViewProjection::Speed,
+                None,
                 None,
             ),
             Self::TorrentPeers { torrent_id, .. } => (
@@ -255,6 +320,7 @@ impl ViewSpec {
                 },
                 ViewProjection::Peers,
                 None,
+                None,
             ),
             Self::TorrentSwarm { torrent_id, .. } => (
                 ViewSelector::Torrent {
@@ -262,20 +328,27 @@ impl ViewSpec {
                 },
                 ViewProjection::Swarm,
                 None,
+                None,
             ),
-            Self::TorrentFiles { torrent_id, .. } => (
+            Self::TorrentFiles {
+                torrent_id, page, ..
+            } => (
                 ViewSelector::Torrent {
                     torrent_id: torrent_id.clone(),
                 },
                 ViewProjection::Files,
                 None,
+                Some(page.unwrap_or_default()),
             ),
-            Self::TorrentTrackers { torrent_id, .. } => (
+            Self::TorrentTrackers {
+                torrent_id, page, ..
+            } => (
                 ViewSelector::Torrent {
                     torrent_id: torrent_id.clone(),
                 },
                 ViewProjection::Trackers,
                 None,
+                Some(page.unwrap_or_default()),
             ),
             Self::Diagnostics {
                 torrent_id, filter, ..
@@ -287,6 +360,7 @@ impl ViewSpec {
                     }),
                 ViewProjection::Diagnostics,
                 Some(filter.clone()),
+                None,
             ),
         };
         SubscriptionSpec {
@@ -297,6 +371,7 @@ impl ViewSpec {
                 max_queue_bytes: queue_bytes,
             },
             diagnostics,
+            catalog_page,
         }
     }
 }
@@ -642,6 +717,8 @@ pub struct SubscriptionSpec {
     pub delivery: DeliveryPolicy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diagnostics: Option<DiagnosticFilter>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog_page: Option<CatalogPageRequest>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -1150,11 +1227,13 @@ pub enum ViewSnapshot {
         torrent_id: String,
         state: FileCatalogState,
         filesystem_content_base: Option<String>,
+        page: CatalogPageView,
         files: Vec<FileView>,
     },
     Trackers {
         torrent_id: String,
         state: TrackerCatalogState,
+        page: CatalogPageView,
         trackers: Vec<TrackerView>,
     },
     Diagnostics {
@@ -1271,6 +1350,7 @@ pub enum SubscriptionError {
     InvalidInterval { maximum: u32 },
     InvalidQueueBound { minimum: u32, maximum: u32 },
     InvalidProjection,
+    InvalidCatalogPage { maximum: u32 },
     SnapshotExceedsQueue { snapshot: usize, maximum: u32 },
     Closed,
     Internal(String),
@@ -1295,6 +1375,10 @@ impl fmt::Display for SubscriptionError {
                     "the selected view does not support that projection"
                 )
             }
+            Self::InvalidCatalogPage { maximum } => write!(
+                formatter,
+                "catalog page limit must be within 1..={maximum} rows"
+            ),
             Self::SnapshotExceedsQueue { snapshot, maximum } => write!(
                 formatter,
                 "initial snapshot is {snapshot} bytes and exceeds the {maximum}-byte queue"

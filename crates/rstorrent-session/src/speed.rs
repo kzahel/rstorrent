@@ -1360,6 +1360,7 @@ mod tests {
                     max_queue_bytes: 256 * 1024,
                 },
                 diagnostics: Some(crate::DiagnosticFilter::default()),
+                catalog_page: None,
             })
             .expect("subscribe diagnostics")
             .next_update()

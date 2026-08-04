@@ -30,9 +30,9 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use rstorrent_platform::{DownloadDirectoryPicker, NativeDownloadDirectoryPicker, PickerError};
 use rstorrent_session::{
-    AddTorrentBytesRequest, ApplicationService, CONTROL_VERSION, OpenViewSetRequest,
-    RequestEnvelope, StorageRootSnapshot, UpdateViewSetRequest, ViewSetError, ViewSetOwner,
-    application_error_response,
+    AddTorrentBytesRequest, ApplicationService, CONTROL_VERSION, FileIndexRange,
+    FileSelectionIntent, OpenViewSetRequest, RequestEnvelope, StorageRootSnapshot,
+    UpdateViewSetRequest, ViewSetError, ViewSetOwner, application_error_response,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -637,7 +637,8 @@ struct TorrentUploadQuery {
     #[serde(default = "default_true")]
     start_content: bool,
     #[serde(default)]
-    skip_files: Option<String>,
+    selection: Option<String>,
+    wanted_ranges: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -695,17 +696,18 @@ async fn api_torrent_upload(
         Ok(body) => body,
         Err(error) => return invalid_request(error.body_text()),
     };
-    let skip_files = match parse_upload_file_indices(query.skip_files.as_deref()) {
-        Ok(skip_files) => skip_files,
-        Err(message) => return invalid_request(message),
-    };
+    let selection =
+        match parse_upload_selection(query.selection.as_deref(), query.wanted_ranges.as_deref()) {
+            Ok(selection) => selection,
+            Err(message) => return invalid_request(message),
+        };
     let request = AddTorrentBytesRequest {
         version: CONTROL_VERSION,
         request_id: query.request_id,
         expected_revision: query.expected_revision,
         storage_root: query.storage_root,
         start_content: query.start_content,
-        skip_files,
+        selection,
         source_length: body.len() as u32,
         source_sha256: encode_sha256(&Sha256::digest(&body)),
     };
@@ -720,26 +722,49 @@ async fn api_torrent_upload(
     json_response(StatusCode::OK, &response)
 }
 
-fn parse_upload_file_indices(value: Option<&str>) -> Result<Vec<u32>, String> {
-    let Some(value) = value else {
-        return Ok(Vec::new());
-    };
+fn parse_upload_selection(
+    mode: Option<&str>,
+    ranges: Option<&str>,
+) -> Result<FileSelectionIntent, String> {
+    match mode.unwrap_or("all") {
+        "all" if ranges.is_none() => Ok(FileSelectionIntent::All),
+        "none" if ranges.is_none() => Ok(FileSelectionIntent::None),
+        "ranges" => Ok(FileSelectionIntent::WantedRanges {
+            ranges: parse_upload_file_ranges(ranges.unwrap_or(""))?,
+        }),
+        "all" | "none" => Err("wanted_ranges is only valid with selection=ranges".to_owned()),
+        _ => Err("selection must be all, none, or ranges".to_owned()),
+    }
+}
+
+fn parse_upload_file_ranges(value: &str) -> Result<Vec<FileIndexRange>, String> {
     if value.is_empty() {
         return Ok(Vec::new());
     }
     value
         .split(',')
         .map(|part| {
-            if part.is_empty()
-                || (part.len() > 1 && part.starts_with('0'))
-                || !part.bytes().all(|byte| byte.is_ascii_digit())
-            {
-                return Err("skip_files must be canonical comma-separated integers".to_owned());
-            }
-            part.parse::<u32>()
-                .map_err(|_| "skip_files index exceeds unsigned 32-bit range".to_owned())
+            let (start, end) = part
+                .split_once('-')
+                .ok_or_else(|| "wanted_ranges must use canonical start-end pairs".to_owned())?;
+            Ok(FileIndexRange {
+                start: parse_canonical_u32(start, "wanted range start")?,
+                end_exclusive: parse_canonical_u32(end, "wanted range end")?,
+            })
         })
         .collect()
+}
+
+fn parse_canonical_u32(value: &str, label: &str) -> Result<u32, String> {
+    if value.is_empty()
+        || (value.len() > 1 && value.starts_with('0'))
+        || !value.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err(format!("{label} must be a canonical integer"));
+    }
+    value
+        .parse()
+        .map_err(|_| format!("{label} exceeds unsigned 32-bit range"))
 }
 
 fn encode_sha256(bytes: &[u8]) -> String {
@@ -1088,10 +1113,10 @@ mod tests {
     use rstorrent_platform::DownloadDirectoryPicker;
     use rstorrent_session::{
         AddTorrentBytesRequest, ApplicationCall, ApplicationCallResult, ApplicationConfig,
-        ApplicationService, Command, ConfiguredStorageRoot, NetworkConfig, NetworkPolicy,
-        OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, RequestEnvelope,
-        ResponseOutcome, SessionStore, UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy,
-        ViewSetUpdate, ViewSnapshot, ViewSpec,
+        ApplicationService, Command, ConfiguredStorageRoot, FileSelectionIntent, NetworkConfig,
+        NetworkPolicy, OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse,
+        RequestEnvelope, ResponseOutcome, SessionStore, UpdateBatch, UpdateViewSetRequest,
+        ViewDeliveryPolicy, ViewSetUpdate, ViewSnapshot, ViewSpec,
     };
     use sha1::{Digest, Sha1};
     use sha2::Sha256;
@@ -1357,7 +1382,7 @@ mod tests {
             expected_revision: None,
             storage_root: "downloads".to_owned(),
             start_content: false,
-            skip_files: Vec::new(),
+            selection: FileSelectionIntent::All,
             source_length: source.len() as u32,
             source_sha256: super::encode_sha256(&Sha256::digest(source)),
         }
@@ -2117,6 +2142,7 @@ mod tests {
                         views: vec![ViewSpec::TorrentFiles {
                             view_id: "files".to_owned(),
                             torrent_id: torrent_id.clone(),
+                            page: None,
                             delivery: ViewDeliveryPolicy::default(),
                         }],
                         options: OpenViewSetOptions::default(),
@@ -2149,18 +2175,18 @@ mod tests {
                     call_id,
                     result: ApplicationCallResult::ViewSetOpened { response },
                 } if call_id == "large-open" => {
-                    let files = response
+                    let catalog = response
                         .initial
                         .updates
                         .iter()
                         .find_map(|update| match update {
                             ViewSetUpdate::Snapshot {
-                                snapshot: ViewSnapshot::Files { files, .. },
+                                snapshot: ViewSnapshot::Files { files, page, .. },
                                 ..
-                            } => Some(files.len()),
+                            } => Some((files.len(), page.total)),
                             _ => None,
                         });
-                    assert_eq!(files, Some(4_096));
+                    assert_eq!(catalog, Some((1_024, 4_096)));
                     large_bytes = Some(
                         serde_json::to_vec(&response)
                             .expect("encode large response")
@@ -2179,8 +2205,8 @@ mod tests {
         let large_bytes = large_bytes.expect("large response bytes");
         let command_latency = command_latency.expect("command latency");
         assert!(
-            large_bytes > 1_000_000,
-            "large response was {large_bytes} bytes"
+            large_bytes > 256 * 1_024,
+            "catalog page response was {large_bytes} bytes"
         );
         assert!(
             command_latency < Duration::from_secs(2),
@@ -2193,7 +2219,7 @@ mod tests {
             .expect("server join")
             .expect("server termination");
         let snapshot = metrics.snapshot();
-        assert!(snapshot.outbound_message_bytes_high_water > 1_000_000);
+        assert!(snapshot.outbound_message_bytes_high_water > 256 * 1_024);
         assert_eq!(snapshot.active_connections, 0);
         service.lock().await.shutdown().await.expect("shutdown");
         drop(service);

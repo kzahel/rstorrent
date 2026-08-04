@@ -998,6 +998,10 @@ impl MetadataUpload {
         })
     }
 
+    pub fn can_serve(&self, piece: i64) -> bool {
+        usize::try_from(piece).is_ok_and(|piece| piece < self.served.len())
+    }
+
     pub fn is_complete(&self) -> bool {
         self.served.iter().all(|served| *served)
     }

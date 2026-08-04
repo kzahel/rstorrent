@@ -1,14 +1,15 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::store::{StoredTracker, StoredTrackerSource, StoredTrackerTransport};
 use rstorrent_engine::{
     TrackerAnnounceEvent, TrackerNextAction, TrackerRuntimeRecordSnapshot, TrackerRuntimeSnapshot,
     TrackerRuntimeStatus, TrackerSource, TrackerTransport,
 };
-use rstorrent_protocol::magnet::Magnet;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -23,6 +24,8 @@ pub enum TrackerCatalogState {
 #[serde(rename_all = "snake_case")]
 pub enum TrackerTransportView {
     Udp,
+    Http,
+    Https,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -30,12 +33,14 @@ pub enum TrackerTransportView {
 #[serde(rename_all = "snake_case")]
 pub enum TrackerSourceView {
     Magnet,
+    Metainfo,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum TrackerStatusView {
+    Unsupported,
     Inactive,
     Idle,
     Announcing,
@@ -84,14 +89,25 @@ pub struct TrackerView {
 }
 
 impl TrackerView {
-    fn inactive(url: String) -> Self {
+    fn inactive(tracker: &StoredTracker) -> Self {
         Self {
-            tracker_id: url.clone(),
-            url,
-            transport: TrackerTransportView::Udp,
-            source: TrackerSourceView::Magnet,
-            tier: 0,
-            status: TrackerStatusView::Inactive,
+            tracker_id: tracker_id(tracker.tier, tracker.position),
+            url: redact_tracker_url(&tracker.url),
+            transport: match tracker.transport {
+                StoredTrackerTransport::Udp => TrackerTransportView::Udp,
+                StoredTrackerTransport::Http => TrackerTransportView::Http,
+                StoredTrackerTransport::Https => TrackerTransportView::Https,
+            },
+            source: match tracker.source {
+                StoredTrackerSource::Magnet => TrackerSourceView::Magnet,
+                StoredTrackerSource::Metainfo => TrackerSourceView::Metainfo,
+            },
+            tier: tracker.tier,
+            status: if tracker.transport == StoredTrackerTransport::Udp {
+                TrackerStatusView::Inactive
+            } else {
+                TrackerStatusView::Unsupported
+            },
             announce_event: None,
             total_attempts: 0,
             consecutive_failures: 0,
@@ -118,8 +134,9 @@ impl From<&TrackerRuntimeRecordSnapshot> for TrackerView {
             },
             source: match record.source {
                 TrackerSource::Magnet => TrackerSourceView::Magnet,
+                TrackerSource::Metainfo => TrackerSourceView::Metainfo,
             },
-            tier: u32::from(record.tier),
+            tier: record.tier,
             status: match record.status {
                 TrackerRuntimeStatus::Inactive => TrackerStatusView::Inactive,
                 TrackerRuntimeStatus::Idle => TrackerStatusView::Idle,
@@ -160,66 +177,113 @@ impl From<&TrackerRuntimeRecordSnapshot> for TrackerView {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct TrackerViewModel {
-    rows: BTreeMap<String, TrackerView>,
+    catalog: Arc<[StoredTracker]>,
+    runtime: BTreeMap<String, TrackerRuntimeRecordSnapshot>,
 }
 
 impl TrackerViewModel {
-    pub(crate) fn from_magnet(value: &str) -> Self {
-        let rows = Magnet::parse(value)
-            .map(|magnet| {
-                magnet
-                    .udp_trackers
-                    .into_iter()
-                    .map(|tracker| {
-                        let url = tracker_url(&tracker.host, tracker.port);
-                        (url.clone(), TrackerView::inactive(url))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        Self { rows }
+    pub(crate) fn from_trackers(trackers: &[StoredTracker]) -> Self {
+        Self {
+            catalog: Arc::from(trackers),
+            runtime: BTreeMap::new(),
+        }
     }
 
     pub(crate) fn catalog_matches(&self, other: &Self) -> bool {
-        self.rows.keys().eq(other.rows.keys())
+        self.catalog == other.catalog
     }
 
-    pub(crate) fn apply_snapshot(&mut self, snapshot: &TrackerRuntimeSnapshot) {
-        self.rows = snapshot
+    pub(crate) fn replace_snapshot(&mut self, snapshot: &TrackerRuntimeSnapshot) -> Self {
+        let previous = Self {
+            catalog: Arc::clone(&self.catalog),
+            runtime: std::mem::take(&mut self.runtime),
+        };
+        self.runtime = snapshot
             .records
             .iter()
-            .map(|record| {
-                let view = TrackerView::from(record);
-                (view.tracker_id.clone(), view)
-            })
+            .cloned()
+            .map(|record| (record.tracker_id.clone(), record))
             .collect();
+        previous
     }
 
+    #[cfg(test)]
     pub(crate) fn rows(&self) -> Vec<TrackerView> {
-        self.rows.values().cloned().collect()
+        self.rows_page(0..self.count_usize())
+    }
+
+    pub(crate) fn rows_page(&self, range: std::ops::Range<usize>) -> Vec<TrackerView> {
+        if self.catalog.is_empty() {
+            return self
+                .runtime
+                .values()
+                .skip(range.start)
+                .take(range.len())
+                .map(runtime_view)
+                .collect();
+        }
+        self.catalog
+            .iter()
+            .skip(range.start)
+            .take(range.len())
+            .map(|tracker| {
+                let id = tracker_id(tracker.tier, tracker.position);
+                self.runtime
+                    .get(&id)
+                    .map_or_else(|| TrackerView::inactive(tracker), runtime_view)
+            })
+            .collect()
+    }
+
+    pub(crate) fn count_usize(&self) -> usize {
+        if self.catalog.is_empty() {
+            self.runtime.len()
+        } else {
+            self.catalog.len()
+        }
     }
 
     pub(crate) fn count(&self) -> u32 {
-        self.rows.len().try_into().unwrap_or(u32::MAX)
+        self.count_usize().try_into().unwrap_or(u32::MAX)
     }
 
-    pub(crate) fn row_map(&self) -> &BTreeMap<String, TrackerView> {
-        &self.rows
+    pub(crate) fn row_map_page(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> BTreeMap<String, TrackerView> {
+        self.rows_page(range)
+            .into_iter()
+            .map(|view| (view.tracker_id.clone(), view))
+            .collect()
     }
 }
 
-fn tracker_url(host: &str, port: u16) -> String {
-    if host.contains(':') {
-        format!("udp://[{host}]:{port}")
-    } else {
-        format!("udp://{host}:{port}")
-    }
+fn runtime_view(record: &TrackerRuntimeRecordSnapshot) -> TrackerView {
+    let mut view = TrackerView::from(record);
+    view.url = redact_tracker_url(&view.url);
+    view
+}
+
+fn tracker_id(tier: u32, position: u32) -> String {
+    format!("{tier:06}:{position:06}")
+}
+
+fn redact_tracker_url(url: &str) -> String {
+    let Some((scheme, remainder)) = url.split_once("://") else {
+        return "invalid-tracker".to_owned();
+    };
+    let authority_end = remainder.find(['/', '?', '#']).unwrap_or(remainder.len());
+    let authority = remainder[..authority_end]
+        .rsplit_once('@')
+        .map_or(&remainder[..authority_end], |(_, authority)| authority);
+    format!("{}://{authority}", scheme.to_ascii_lowercase())
 }
 
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
+    use crate::store::{StoredTracker, StoredTrackerSource, StoredTrackerTransport};
     use rstorrent_engine::{
         TrackerNextAction, TrackerRuntimeRecordSnapshot, TrackerRuntimeSnapshot,
         TrackerRuntimeStatus, TrackerSource, TrackerTransport,
@@ -228,27 +292,40 @@ mod tests {
     use super::{TrackerNextActionView, TrackerStatusView, TrackerViewModel};
 
     #[test]
-    fn durable_magnet_builds_deduplicated_inactive_catalog() {
-        let model = TrackerViewModel::from_magnet(
-            "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213\
-             &tr=udp%3A%2F%2Ftracker.example%3A6969\
-             &tr=udp%3A%2F%2Ftracker.example%3A6969",
-        );
+    fn durable_catalog_redacts_credentials_and_marks_unsupported_transport() {
+        let model = TrackerViewModel::from_trackers(&[
+            StoredTracker {
+                tier: 0,
+                position: 0,
+                url: "udp://tracker.example:6969/private-key".to_owned(),
+                transport: StoredTrackerTransport::Udp,
+                source: StoredTrackerSource::Metainfo,
+            },
+            StoredTracker {
+                tier: 1,
+                position: 0,
+                url: "https://user:secret@tracker.example/announce?passkey=secret".to_owned(),
+                transport: StoredTrackerTransport::Https,
+                source: StoredTrackerSource::Metainfo,
+            },
+        ]);
         let rows = model.rows();
-        assert_eq!(rows.len(), 1);
+        assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].url, "udp://tracker.example:6969");
         assert_eq!(rows[0].status, TrackerStatusView::Inactive);
+        assert_eq!(rows[1].url, "https://tracker.example");
+        assert_eq!(rows[1].status, TrackerStatusView::Unsupported);
     }
 
     #[test]
     fn runtime_snapshot_replaces_catalog_and_maps_monotonic_values() {
         let mut model = TrackerViewModel::default();
-        model.apply_snapshot(&TrackerRuntimeSnapshot {
+        model.replace_snapshot(&TrackerRuntimeSnapshot {
             captured_at: Duration::from_secs(9),
             active: true,
             records: vec![TrackerRuntimeRecordSnapshot {
-                tracker_id: "udp://tracker.example:6969".to_owned(),
-                url: "udp://tracker.example:6969".to_owned(),
+                tracker_id: "000000:000000".to_owned(),
+                url: "udp://tracker.example:6969/private-key".to_owned(),
                 tier: 0,
                 source: TrackerSource::Magnet,
                 transport: TrackerTransport::Udp,
@@ -274,5 +351,36 @@ mod tests {
         assert_eq!(row.last_success_age_millis.as_deref(), Some("8000"));
         assert_eq!(row.last_failure_age_millis.as_deref(), Some("250"));
         assert_eq!(row.interval_seconds, Some(600));
+        assert_eq!(row.url, "udp://tracker.example:6969");
+    }
+
+    #[test]
+    fn large_catalog_pages_traverse_without_omissions_or_duplicates() {
+        let trackers = (0..2_050_u32)
+            .map(|position| StoredTracker {
+                tier: position / 700,
+                position,
+                url: format!("https://tracker-{position}.example/announce/private"),
+                transport: StoredTrackerTransport::Https,
+                source: StoredTrackerSource::Metainfo,
+            })
+            .collect::<Vec<_>>();
+        let model = TrackerViewModel::from_trackers(&trackers);
+        let rows = [0..1_024, 1_024..2_048, 2_048..2_050]
+            .into_iter()
+            .flat_map(|range| model.rows_page(range))
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), trackers.len());
+        let ids = rows
+            .iter()
+            .map(|row| row.tracker_id.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(ids.len(), trackers.len());
+        assert_eq!(rows[0].tracker_id, "000000:000000");
+        assert_eq!(rows[2_049].tracker_id, "000002:002049");
+        assert!(
+            rows.iter()
+                .all(|row| row.status == TrackerStatusView::Unsupported)
+        );
     }
 }

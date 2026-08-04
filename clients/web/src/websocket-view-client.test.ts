@@ -432,7 +432,7 @@ describe("multiplexed application WebSocket adapter", () => {
         expected_revision: null,
         storage_root: "root-a",
         start_content: true,
-        skip_files: [],
+        selection: { type: "all" },
         source_length: source.byteLength,
         source_sha256: "0".repeat(64),
       },

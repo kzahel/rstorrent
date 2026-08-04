@@ -134,9 +134,9 @@ fn validates_ids_counts_and_queue_bounds() {
 }
 
 #[test]
-fn full_legal_file_snapshot_is_separate_from_steady_queue_pressure() {
+fn maximum_file_page_is_separate_from_steady_queue_pressure() {
     let now = Instant::now();
-    let files = (0..4_096_u32)
+    let files = (0..1_024_u32)
         .map(|index| FileView {
             file_id: index.to_string(),
             file_index: index,
@@ -155,6 +155,12 @@ fn full_legal_file_snapshot_is_separate_from_steady_queue_pressure() {
         torrent_id: TORRENT_ID.to_owned(),
         state: FileCatalogState::Available,
         filesystem_content_base: Some("/tmp/rstorrent/content".to_owned()),
+        page: CatalogPageView {
+            offset: 0,
+            limit: 1_024,
+            total: 4_096,
+            next_offset: Some(1_024),
+        },
         files,
     };
     let encoded_snapshot = serde_json::to_vec(&snapshot)
@@ -165,6 +171,7 @@ fn full_legal_file_snapshot_is_separate_from_steady_queue_pressure() {
     let spec = ViewSpec::TorrentFiles {
         view_id: "files".to_owned(),
         torrent_id: TORRENT_ID.to_owned(),
+        page: Some(CatalogPageRequest::default()),
         delivery: ViewDeliveryPolicy::default(),
     };
     let inner = ViewSetInner::new(

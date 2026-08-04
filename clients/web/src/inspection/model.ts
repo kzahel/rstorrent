@@ -262,6 +262,7 @@ export interface FileRow {
 export interface FileSet {
   readonly state: "metadata_pending" | "available" | "torrent_missing";
   readonly filesystemContentBase: string | null;
+  readonly page: CatalogPage;
   readonly order: readonly string[];
   readonly rows: Readonly<Record<string, FileRow>>;
 }
@@ -270,10 +271,11 @@ export interface TrackerRow {
   readonly id: string;
   readonly torrentId: string;
   readonly url: string;
-  readonly transport: "udp";
-  readonly source: "magnet";
+  readonly transport: "udp" | "http" | "https";
+  readonly source: "magnet" | "metainfo";
   readonly tier: number;
   readonly status:
+    | "unsupported"
     | "inactive"
     | "idle"
     | "announcing"
@@ -296,8 +298,16 @@ export interface TrackerRow {
 
 export interface TrackerSet {
   readonly state: "available" | "torrent_missing";
+  readonly page: CatalogPage;
   readonly order: readonly string[];
   readonly rows: Readonly<Record<string, TrackerRow>>;
+}
+
+export interface CatalogPage {
+  readonly offset: number;
+  readonly limit: number;
+  readonly total: number;
+  readonly nextOffset: number | null;
 }
 
 export interface DiskPipeline {

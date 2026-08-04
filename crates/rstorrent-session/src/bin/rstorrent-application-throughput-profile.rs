@@ -522,6 +522,7 @@ fn torrent_files(torrent_id: &str) -> ViewSpec {
     ViewSpec::TorrentFiles {
         view_id: "torrent-files".to_owned(),
         torrent_id: torrent_id.to_owned(),
+        page: None,
         delivery: delivery(250),
     }
 }
@@ -530,6 +531,7 @@ fn torrent_trackers(torrent_id: &str) -> ViewSpec {
     ViewSpec::TorrentTrackers {
         view_id: "torrent-trackers".to_owned(),
         torrent_id: torrent_id.to_owned(),
+        page: None,
         delivery: delivery(250),
     }
 }

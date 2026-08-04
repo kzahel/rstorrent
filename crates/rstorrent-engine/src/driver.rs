@@ -61,7 +61,9 @@ use crate::swarm::{
     BlockKey, ConnectionId, ConnectionRemoval, ConnectionWindowPhaseSnapshot, PendingDialId,
     PieceHashFailure, PiecePlan, ReceiveDisposition, SwarmConfig, SwarmError, SwarmState,
 };
-use crate::tracker::{TrackerAction, TrackerId, TrackerSchedule, TrackerWaitKind};
+use crate::tracker::{
+    TrackerAction, TrackerId, TrackerSchedule, TrackerWaitKind, UdpTrackerConfig,
+};
 
 mod control;
 mod storage_pipeline;
@@ -183,6 +185,9 @@ pub struct ResumableMagnetDownloadConfig {
     pub artifact_state: ResumeArtifactState,
     pub download_missing: bool,
     pub dht: Option<DhtHandle>,
+    /// Authoritative operational UDP tracker catalog. `None` uses the
+    /// independently bounded trackers parsed from the magnet URI.
+    pub udp_trackers: Option<Vec<UdpTrackerConfig>>,
 }
 
 pub trait DownloadCheckpointSink: Send + Sync {
@@ -946,19 +951,34 @@ struct TrackerManager {
 }
 
 impl TrackerManager {
+    #[cfg(test)]
     fn start(
-        mut trackers: Vec<UdpTrackerUrl>,
+        trackers: Vec<UdpTrackerUrl>,
         info_hash: [u8; 20],
         network: NetworkConfig,
         control: DownloadControl,
     ) -> Result<Self, DownloadError> {
-        shuffle_tracker_urls(&mut trackers)?;
+        Self::start_with_configs(
+            configured_magnet_trackers(&trackers),
+            info_hash,
+            network,
+            control,
+        )
+    }
+
+    fn start_with_configs(
+        mut trackers: Vec<UdpTrackerConfig>,
+        info_hash: [u8; 20],
+        network: NetworkConfig,
+        control: DownloadControl,
+    ) -> Result<Self, DownloadError> {
+        shuffle_tracker_configs(&mut trackers)?;
         let tracker_key = random_nonzero_u32()?;
         let cancellation = CancellationToken::new();
         let task_cancellation = cancellation.clone();
         let (sender, receiver) = mpsc::channel(TRACKER_RESULT_QUEUE);
         let task = tokio::spawn(run_tracker_manager(
-            TrackerSchedule::new(trackers),
+            TrackerSchedule::from_configs(trackers),
             info_hash,
             tracker_key,
             network,
@@ -1444,7 +1464,21 @@ async fn shutdown_tracker_operations(operations: &mut JoinSet<TrackerOperationRe
     while operations.join_next().await.is_some() {}
 }
 
-fn shuffle_tracker_urls(trackers: &mut [UdpTrackerUrl]) -> Result<(), DownloadError> {
+fn shuffle_tracker_configs(trackers: &mut [UdpTrackerConfig]) -> Result<(), DownloadError> {
+    let mut first = 0;
+    while first < trackers.len() {
+        let tier = trackers[first].tier;
+        let mut end = first + 1;
+        while end < trackers.len() && trackers[end].tier == tier {
+            end += 1;
+        }
+        shuffle_tracker_tier(&mut trackers[first..end])?;
+        first = end;
+    }
+    Ok(())
+}
+
+fn shuffle_tracker_tier<T>(trackers: &mut [T]) -> Result<(), DownloadError> {
     for last in (1..trackers.len()).rev() {
         let selected = usize::try_from(random_nonzero_u32()?).unwrap_or(usize::MAX) % (last + 1);
         trackers.swap(last, selected);
@@ -1807,6 +1841,16 @@ impl TorrentPeerCoordinator {
         control: DownloadControl,
         dht: Option<DhtHandle>,
     ) -> Result<Self, DownloadError> {
+        Self::from_magnet_with_trackers(magnet, None, network, control, dht).await
+    }
+
+    async fn from_magnet_with_trackers(
+        magnet: &Magnet,
+        configured_trackers: Option<Vec<UdpTrackerConfig>>,
+        network: NetworkConfig,
+        control: DownloadControl,
+        dht: Option<DhtHandle>,
+    ) -> Result<Self, DownloadError> {
         let mut peers = Self::new(network, control)?;
         peers.publish_peer_registry(true);
         peers.dht = dht;
@@ -1820,9 +1864,11 @@ impl TorrentPeerCoordinator {
         if peers.control.is_cancelled() {
             return Err(DownloadError::Cancelled);
         }
-        if !magnet.udp_trackers.is_empty() {
-            peers.tracker = Some(TrackerManager::start(
-                magnet.udp_trackers.clone(),
+        let trackers =
+            configured_trackers.unwrap_or_else(|| configured_magnet_trackers(&magnet.udp_trackers));
+        if !trackers.is_empty() {
+            peers.tracker = Some(TrackerManager::start_with_configs(
+                trackers,
                 magnet.info_hash,
                 network,
                 peers.control.clone(),
@@ -2320,6 +2366,21 @@ impl TorrentPeerCoordinator {
     }
 }
 
+fn configured_magnet_trackers(trackers: &[UdpTrackerUrl]) -> Vec<UdpTrackerConfig> {
+    trackers
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(position, endpoint)| UdpTrackerConfig {
+            url: udp_tracker_label(&endpoint),
+            endpoint,
+            tier: 0,
+            position: position.try_into().unwrap_or(u32::MAX),
+            source: crate::tracker::TrackerSource::Magnet,
+        })
+        .collect()
+}
+
 async fn run_metadata_peer(
     mut connection: PeerConnection,
     handshake: Handshake,
@@ -2792,6 +2853,7 @@ async fn run_resumable_magnet_download(
 ) -> Result<DownloadReport, DownloadError> {
     let magnet = Magnet::parse(&config.magnet).map_err(DownloadError::Magnet)?;
     let dht = config.dht.clone();
+    let configured_trackers = config.udp_trackers.clone();
     let resume = ResumeContext {
         verified_pieces: config.verified_pieces,
         checkpoints: checkpoints.clone(),
@@ -2818,8 +2880,9 @@ async fn run_resumable_magnet_download(
         } else {
             dht.clone()
         };
-        let mut peers = TorrentPeerCoordinator::from_magnet(
+        let mut peers = TorrentPeerCoordinator::from_magnet_with_trackers(
             &magnet,
+            configured_trackers,
             config.network,
             control.clone(),
             content_dht,
@@ -2854,8 +2917,14 @@ async fn run_resumable_magnet_download(
             "descriptor storage requires verified metadata".to_owned(),
         ));
     }
-    let mut peers =
-        TorrentPeerCoordinator::from_magnet(&magnet, config.network, control.clone(), dht).await?;
+    let mut peers = TorrentPeerCoordinator::from_magnet_with_trackers(
+        &magnet,
+        configured_trackers,
+        config.network,
+        control.clone(),
+        dht,
+    )
+    .await?;
     let result = async {
         let (raw_info, metainfo) = peers.acquire_metadata(magnet.info_hash).await?;
         validate_publication_name(&metainfo.name).map_err(DownloadError::SelectiveStorage)?;
@@ -3892,6 +3961,9 @@ async fn cleanup_content_connections(
     }
 }
 
+// This stack-local event is consumed immediately; boxing every peer event would
+// add a heap allocation to the peer hot path solely to equalize enum variants.
+#[allow(clippy::large_enum_variant)]
 enum ContentSupervisorEvent {
     Peer(PeerSetEvent),
     Discovery(Option<ContentDiscoveryEvent>),

@@ -14,10 +14,10 @@ mod view_set;
 
 pub use contract::{
     API_VERSION, ActivePiece, ActivePieceStageView, ApiEncoding, ApiHello, ApiLimits, ApiVersion,
-    CapabilityStatus, DeliveryMode, DeliveryPolicy, DhtBucketView, DhtInspectionView,
-    DhtLifecycleView, DhtLookupView, DhtNetworkPolicyView, DiskCheckpointStageView,
-    DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView, IndexRange,
-    OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
+    CapabilityStatus, CatalogPageRequest, CatalogPageView, DeliveryMode, DeliveryPolicy,
+    DhtBucketView, DhtInspectionView, DhtLifecycleView, DhtLookupView, DhtNetworkPolicyView,
+    DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
+    IndexRange, OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
     PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerRequestPhase,
     PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
     ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason, ResetReason,

@@ -275,6 +275,7 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
         torrent_id: patch.torrent_id,
         state: snapshot.state,
         filesystem_content_base: snapshot.filesystem_content_base,
+        page: snapshot.page,
         files: [...files.values()],
       };
     }
@@ -291,6 +292,7 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
         type: "trackers",
         torrent_id: patch.torrent_id,
         state: snapshot.state,
+        page: snapshot.page,
         trackers: [...trackers.values()],
       };
     }

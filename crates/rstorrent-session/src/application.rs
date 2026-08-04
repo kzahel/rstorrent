@@ -15,10 +15,11 @@ use rstorrent_engine::{
     IncomingTcpBootstrap, NetworkConfig, PathPublicationStage, PlatformStorageClient,
     PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash, PublicationShape,
     ResumableMagnetDownloadConfig, ResumeArtifactState, ResumedStorage, StorageFilePool,
-    StorageFilePoolSnapshot, download_magnet_metadata_with_dht, plan_descriptor_storage,
-    resume_magnet_to_descriptors_with_control, resume_magnet_with_control, torrent_storage_paths,
-    verify_prepared_descriptors, verify_prepared_platform_files,
+    StorageFilePoolSnapshot, TrackerSource, UdpTrackerConfig, download_magnet_metadata_with_dht,
+    plan_descriptor_storage, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
+    torrent_storage_paths, verify_prepared_descriptors, verify_prepared_platform_files,
 };
+use rstorrent_protocol::magnet::UdpTrackerUrl;
 use rstorrent_protocol::metainfo::{
     BEP9_METAINFO_LIMITS, DURABLE_METAINFO_LIMITS, Metainfo, MetainfoError,
 };
@@ -40,7 +41,8 @@ use crate::incoming_seeding::{IncomingSeeding, IncomingSeedingError, SeedReconci
 use crate::speed::{PreparedSpeedHistory, SessionSpeedRecorder, SpeedHistoryRuntime};
 use crate::store::{
     ConfiguredStorageRoot, ManagedArtifactState, PreparedFileRecord, RemovalRecord, ResumeRecord,
-    SessionStore, StorageRootLocation, StoreError, StoredStorageRoot, prepare_torrent_bytes,
+    SessionStore, StorageRootLocation, StoreError, StoredStorageRoot, StoredTracker,
+    StoredTrackerSource, StoredTrackerTransport, prepare_torrent_bytes,
 };
 use crate::tracker_views::TrackerViewModel;
 
@@ -50,6 +52,33 @@ fn parse_durable_metainfo(raw_info: &[u8]) -> Result<Metainfo, MetainfoError> {
 
 fn parse_peer_metainfo(raw_info: &[u8]) -> Result<Metainfo, MetainfoError> {
     Metainfo::from_info_bytes_with_limits(raw_info, BEP9_METAINFO_LIMITS)
+}
+
+fn operational_udp_trackers(
+    trackers: &[StoredTracker],
+) -> Result<Vec<UdpTrackerConfig>, ApplicationError> {
+    trackers
+        .iter()
+        .filter(|tracker| tracker.transport == StoredTrackerTransport::Udp)
+        .map(|tracker| {
+            let endpoint = UdpTrackerUrl::from_metainfo_url(&tracker.url).ok_or_else(|| {
+                ApplicationError::Configuration(format!(
+                    "stored UDP tracker at tier {}, position {} is invalid",
+                    tracker.tier, tracker.position
+                ))
+            })?;
+            Ok(UdpTrackerConfig {
+                url: tracker.url.clone(),
+                endpoint,
+                tier: tracker.tier,
+                position: tracker.position,
+                source: match tracker.source {
+                    StoredTrackerSource::Magnet => TrackerSource::Magnet,
+                    StoredTrackerSource::Metainfo => TrackerSource::Metainfo,
+                },
+            })
+        })
+        .collect()
 }
 
 fn allocate_application_peer_id() -> Result<[u8; 20], ApplicationError> {
@@ -429,6 +458,7 @@ impl ApplicationService {
                     })
                 })
                 .unwrap_or(true),
+            Command::SetFilePriorityRanges { .. } => true,
             _ => false,
         };
         let selected_root = match &command {
@@ -469,7 +499,8 @@ impl ApplicationService {
                 }
                 Command::Resume { torrent_id } => Some(torrent_id.to_ascii_lowercase()),
                 Command::ForceRecheck { torrent_id } => Some(torrent_id.to_ascii_lowercase()),
-                Command::SetFilePriority { torrent_id, .. } => {
+                Command::SetFilePriority { torrent_id, .. }
+                | Command::SetFilePriorityRanges { torrent_id, .. } => {
                     Some(torrent_id.to_ascii_lowercase())
                 }
                 _ => None,
@@ -491,7 +522,10 @@ impl ApplicationService {
             | Command::ForceRecheck { torrent_id }
             | Command::Archive { torrent_id }
             | Command::RemoveTorrent { torrent_id, .. } => Some(torrent_id.to_ascii_lowercase()),
-            Command::SetFilePriority { torrent_id, .. } if file_priority_changed => {
+            Command::SetFilePriority { torrent_id, .. }
+            | Command::SetFilePriorityRanges { torrent_id, .. }
+                if file_priority_changed =>
+            {
                 Some(torrent_id.to_ascii_lowercase())
             }
             _ => None,
@@ -594,7 +628,8 @@ impl ApplicationService {
                 )?;
                 self.start_recheck_if_possible(&torrent_id).await?;
             }
-            Command::SetFilePriority { torrent_id, .. } => {
+            Command::SetFilePriority { torrent_id, .. }
+            | Command::SetFilePriorityRanges { torrent_id, .. } => {
                 let torrent_id = torrent_id.to_ascii_lowercase();
                 self.views.record_diagnostic(
                     DiagnosticSeverity::Info,
@@ -1039,6 +1074,7 @@ impl ApplicationService {
             .have
             .as_ref()
             .map_or_else(Vec::new, |have| have.pieces().to_vec());
+        let udp_trackers = operational_udp_trackers(&resume.trackers)?;
         let config = ResumableMagnetDownloadConfig {
             magnet: resume.magnet,
             storage_root: PathBuf::new(),
@@ -1050,6 +1086,7 @@ impl ApplicationService {
             artifact_state,
             download_missing: true,
             dht: self.dht.as_ref().map(DhtService::handle),
+            udp_trackers: Some(udp_trackers),
         };
         let checkpoints: Arc<dyn DownloadCheckpointSink> = Arc::new(StoreCheckpointSink {
             store: self.store.clone(),
@@ -1715,6 +1752,7 @@ impl ApplicationService {
                 let resource_limits = self.download_resource_limits;
                 let network = self.network;
                 let dht = self.dht.as_ref().map(DhtService::handle);
+                let udp_trackers = operational_udp_trackers(&resume.trackers)?;
                 let operation = async move {
                     let raw_info = download_magnet_metadata_with_dht(
                         magnet.clone(),
@@ -1753,6 +1791,7 @@ impl ApplicationService {
                             artifact_state: ResumeArtifactState::None,
                             download_missing: true,
                             dht,
+                            udp_trackers: Some(udp_trackers),
                         },
                         checkpoints,
                         task_control,
@@ -1839,6 +1878,7 @@ impl ApplicationService {
             .as_ref()
             .map_or_else(Vec::new, |have| have.pieces().to_vec());
         let artifact_state = resume_artifact_state(&resume)?;
+        let udp_trackers = operational_udp_trackers(&resume.trackers)?;
         let config = ResumableMagnetDownloadConfig {
             magnet: resume.magnet,
             storage_root: root_path,
@@ -1850,6 +1890,7 @@ impl ApplicationService {
             artifact_state,
             download_missing: resume.desired_running,
             dht: self.dht.as_ref().map(DhtService::handle),
+            udp_trackers: Some(udp_trackers),
         };
         let checkpoints: Arc<dyn DownloadCheckpointSink> = Arc::new(StoreCheckpointSink {
             store: self.store.clone(),
@@ -3406,7 +3447,7 @@ fn durable_view_state(
         } else {
             None
         };
-        let trackers = TrackerViewModel::from_magnet(&resume.magnet);
+        let trackers = TrackerViewModel::from_trackers(&resume.trackers);
         durable.insert(
             torrent.torrent_id.clone(),
             DurableTorrentViewState {
@@ -3724,7 +3765,7 @@ mod tests {
             expected_revision: None,
             storage_root: "downloads".to_owned(),
             start_content,
-            skip_files: Vec::new(),
+            selection: crate::FileSelectionIntent::All,
             source_length: source.len() as u32,
             source_sha256,
         }
@@ -4147,6 +4188,7 @@ mod tests {
                     max_queue_bytes: 256 * 1024,
                 },
                 diagnostics: Some(DiagnosticFilter::default()),
+                catalog_page: None,
             })
             .expect("diagnostic subscription")
             .next_update()
@@ -4428,6 +4470,7 @@ mod tests {
                     max_queue_bytes: 256 * 1024,
                 },
                 diagnostics: None,
+                catalog_page: None,
             })
             .expect("subscribe to DHT view");
         subscription
@@ -4477,6 +4520,7 @@ mod tests {
                     max_queue_bytes: 4096,
                 },
                 diagnostics: None,
+                catalog_page: None,
             })
             .expect("subscribe");
         assert!(matches!(
@@ -5929,6 +5973,7 @@ mod tests {
                     max_queue_bytes: 256 * 1024,
                 },
                 diagnostics: None,
+                catalog_page: None,
             })
             .expect("summary");
         summary.next_update().await.expect("summary snapshot");
@@ -5945,6 +5990,7 @@ mod tests {
                     minimum_severity: DiagnosticSeverity::Info,
                     categories: Vec::new(),
                 }),
+                catalog_page: None,
             })
             .expect("diagnostics");
         diagnostics
@@ -6043,6 +6089,7 @@ mod tests {
                     max_queue_bytes: 256 * 1024,
                 },
                 diagnostics: None,
+                catalog_page: None,
             })
             .expect("summary");
         summary.next_update().await.expect("initial summary");
@@ -6117,6 +6164,7 @@ mod tests {
                     max_queue_bytes: 256 * 1024,
                 },
                 diagnostics: None,
+                catalog_page: None,
             })
             .expect("summary");
         let update = summary.next_update().await.expect("summary snapshot");
@@ -6139,6 +6187,7 @@ mod tests {
                     max_queue_bytes: 256 * 1024,
                 },
                 diagnostics: None,
+                catalog_page: Some(crate::CatalogPageRequest::default()),
             })
             .expect("files");
         let update = files.next_update().await.expect("files snapshot");

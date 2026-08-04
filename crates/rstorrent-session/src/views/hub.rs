@@ -28,7 +28,7 @@ use crate::diagnostics::{
 };
 use crate::file_views::{FileCatalogState, FileProgressModel, FileView};
 use crate::speed::SessionRateHistory;
-use crate::tracker_views::{TrackerCatalogState, TrackerView};
+use crate::tracker_views::{TrackerCatalogState, TrackerViewModel};
 
 use super::contract::{MAX_VIEW_SET_WAIT_MILLIS, MAX_VIEW_SETS, MAX_VIEW_SETS_PER_OWNER};
 use super::diff::{
@@ -680,11 +680,10 @@ impl ViewHub {
             return Ok(());
         };
         let previous_view = model.view.clone();
-        let previous = model.trackers.row_map().clone();
-        model.trackers.apply_snapshot(snapshot);
+        let previous = model.trackers.replace_snapshot(snapshot);
         model.view.configured_tracker_count = Some(model.trackers.count());
         let next_view = model.view.clone();
-        let current = model.trackers.row_map().clone();
+        let current = model.trackers.clone();
         hub.publish_tracker_changes(torrent_id, &previous_view, &next_view, &previous, &current)
     }
 
@@ -886,6 +885,9 @@ impl HubState {
                 }
             }
             (ViewSelector::Torrent { torrent_id }, ViewProjection::Files) => {
+                let page = spec
+                    .catalog_page
+                    .expect("validated file projection has a catalog page");
                 match self.torrents.get(torrent_id) {
                     Some(torrent) => ViewSnapshot::Files {
                         torrent_id: torrent_id.clone(),
@@ -899,29 +901,37 @@ impl HubState {
                             .as_ref()
                             .and_then(FileProgressModel::filesystem_content_base)
                             .map(str::to_owned),
-                        files: torrent
-                            .files
-                            .as_ref()
-                            .map_or_else(Vec::new, FileProgressModel::rows),
+                        page: page.view(torrent.files.as_ref().map_or(0, FileProgressModel::count)),
+                        files: torrent.files.as_ref().map_or_else(Vec::new, |files| {
+                            files.rows_page(page.bounds(files.count()))
+                        }),
                     },
                     None => ViewSnapshot::Files {
                         torrent_id: torrent_id.clone(),
                         state: FileCatalogState::TorrentMissing,
                         filesystem_content_base: None,
+                        page: page.view(0),
                         files: Vec::new(),
                     },
                 }
             }
             (ViewSelector::Torrent { torrent_id }, ViewProjection::Trackers) => {
+                let page = spec
+                    .catalog_page
+                    .expect("validated tracker projection has a catalog page");
                 match self.torrents.get(torrent_id) {
                     Some(torrent) => ViewSnapshot::Trackers {
                         torrent_id: torrent_id.clone(),
                         state: TrackerCatalogState::Available,
-                        trackers: torrent.trackers.rows(),
+                        page: page.view(torrent.trackers.count_usize()),
+                        trackers: torrent
+                            .trackers
+                            .rows_page(page.bounds(torrent.trackers.count_usize())),
                     },
                     None => ViewSnapshot::Trackers {
                         torrent_id: torrent_id.clone(),
                         state: TrackerCatalogState::TorrentMissing,
+                        page: page.view(0),
                         trackers: Vec::new(),
                     },
                 }
@@ -1250,8 +1260,8 @@ impl HubState {
         torrent_id: &str,
         previous_view: &TorrentView,
         next_view: &TorrentView,
-        previous: &BTreeMap<String, TrackerView>,
-        current: &BTreeMap<String, TrackerView>,
+        previous: &TrackerViewModel,
+        current: &TrackerViewModel,
     ) -> Result<(), SubscriptionError> {
         let revision = self.revision;
         self.subscribers.retain(|_, weak| weak.strong_count() != 0);

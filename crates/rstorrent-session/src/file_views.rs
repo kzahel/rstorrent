@@ -44,24 +44,10 @@ pub struct FileView {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct FileGeometry {
-    file_id: String,
-    file_index: u32,
-    path: Vec<String>,
-    length: u64,
-    torrent_offset: u64,
-    first_piece: Option<u32>,
-    last_piece: Option<u32>,
-    selection: Option<FileSelectionView>,
-    padding: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 struct FileCatalog {
     layout: TorrentLayout,
     selection: FileSelection,
     filesystem_content_base: Option<String>,
-    files: Vec<FileGeometry>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -135,39 +121,13 @@ impl FileProgressModel {
             .map(|index| usize::try_from(*index).map_err(|_| FileProgressError::FileIndexOverflow))
             .collect::<Result<Vec<_>, _>>()?;
         let selection = FileSelection::new(&layout, &skipped)?;
-        let files = layout
-            .files()
-            .iter()
-            .enumerate()
-            .map(|(index, file)| {
-                let pieces = layout.file_pieces(index)?;
-                Ok(FileGeometry {
-                    file_id: index.to_string(),
-                    file_index: u32::try_from(index)
-                        .map_err(|_| FileProgressError::FileIndexOverflow)?,
-                    path: file.path.clone(),
-                    length: file.length,
-                    torrent_offset: file.offset,
-                    first_piece: pieces.first().copied(),
-                    last_piece: pieces.last().copied(),
-                    selection: (!file.padding).then(|| {
-                        if selection.is_wanted(index) {
-                            FileSelectionView::Wanted
-                        } else {
-                            FileSelectionView::Skipped
-                        }
-                    }),
-                    padding: file.padding,
-                })
-            })
-            .collect::<Result<Vec<_>, FileProgressError>>()?;
-        let file_count = files.len();
+        let file_count = layout.files().len();
+        u32::try_from(file_count).map_err(|_| FileProgressError::FileIndexOverflow)?;
         let mut model = Self {
             catalog: Arc::new(FileCatalog {
                 layout,
                 selection,
                 filesystem_content_base,
-                files,
             }),
             counters: vec![FileCounters::default(); file_count],
             verified_pieces: BTreeSet::new(),
@@ -199,27 +159,58 @@ impl FileProgressModel {
             .collect()
     }
 
+    #[cfg(test)]
     pub(crate) fn rows(&self) -> Vec<FileView> {
         self.catalog
-            .files
+            .layout
+            .files()
             .iter()
             .enumerate()
             .map(|(index, _)| self.row(index))
             .collect()
     }
 
+    pub(crate) fn rows_page(&self, range: std::ops::Range<usize>) -> Vec<FileView> {
+        range.map(|index| self.row(index)).collect()
+    }
+
+    pub(crate) fn count(&self) -> usize {
+        self.catalog.layout.files().len()
+    }
+
     pub(crate) fn row(&self, index: usize) -> FileView {
-        let file = &self.catalog.files[index];
+        let file = &self.catalog.layout.files()[index];
         let counters = self.counters[index];
+        let (first_piece, last_piece) = if file.length == 0 {
+            (None, None)
+        } else {
+            let piece_length = u64::from(self.catalog.layout.piece_length());
+            let first = file.offset / piece_length;
+            let last = file
+                .offset
+                .checked_add(file.length - 1)
+                .expect("validated metainfo file range does not overflow")
+                / piece_length;
+            (
+                Some(u32::try_from(first).expect("piece index fits the supported u32 geometry")),
+                Some(u32::try_from(last).expect("piece index fits the supported u32 geometry")),
+            )
+        };
         FileView {
-            file_id: file.file_id.clone(),
-            file_index: file.file_index,
+            file_id: index.to_string(),
+            file_index: u32::try_from(index).expect("file index was validated at construction"),
             path: file.path.clone(),
             length_bytes: file.length.to_string(),
-            torrent_offset_bytes: file.torrent_offset.to_string(),
-            first_piece: file.first_piece,
-            last_piece: file.last_piece,
-            selection: file.selection,
+            torrent_offset_bytes: file.offset.to_string(),
+            first_piece,
+            last_piece,
+            selection: (!file.padding).then(|| {
+                if self.catalog.selection.is_wanted(index) {
+                    FileSelectionView::Wanted
+                } else {
+                    FileSelectionView::Skipped
+                }
+            }),
             padding: file.padding,
             done_bytes: counters.done.to_string(),
             verified_bytes: counters.verified.to_string(),
@@ -387,7 +378,7 @@ impl FileProgressModel {
                     .checked_add(bytes)
                     .ok_or(FileProgressError::CounterOverflow)?;
             }
-            let length = self.catalog.files[segment.file_index].length;
+            let length = self.catalog.layout.files()[segment.file_index].length;
             if counters.done > length || counters.verified > counters.done {
                 return Err(FileProgressError::CounterOverflow);
             }
@@ -545,6 +536,40 @@ mod tests {
         assert_eq!(rows[3].selection, None);
         assert!(rows[3].padding);
         assert_eq!(model.filesystem_content_base(), Some("/tmp/content"));
+    }
+
+    #[test]
+    fn large_catalog_pages_traverse_without_duplicating_geometry() {
+        let files = (0..2_050_u64)
+            .map(|index| MetainfoFile {
+                path: vec![format!("file-{index}")],
+                length: 1,
+                offset: index,
+                padding: false,
+            })
+            .collect::<Vec<_>>();
+        let metainfo = Metainfo {
+            info_hash: [3; 20],
+            piece_hashes: vec![[4; 20]; files.len()],
+            piece_length: 1,
+            total_length: files.len() as u64,
+            name: "large".to_owned(),
+            private: false,
+            mode: MetainfoMode::MultiFile,
+            files,
+        };
+        let model = FileProgressModel::new(&metainfo, &[], &[], None).expect("large model");
+        let rows = [0..1_024, 1_024..2_048, 2_048..2_050]
+            .into_iter()
+            .flat_map(|range| model.rows_page(range))
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 2_050);
+        assert!(
+            rows.iter()
+                .enumerate()
+                .all(|(index, row)| row.file_index as usize == index)
+        );
+        assert_eq!(rows[2_049].path, ["file-2049"]);
     }
 
     #[test]

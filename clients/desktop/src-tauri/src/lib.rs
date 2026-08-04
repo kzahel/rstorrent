@@ -7,9 +7,10 @@ use std::time::Duration;
 
 use rstorrent_platform::{DownloadDirectoryPicker, NativeDownloadDirectoryPicker, PickerError};
 use rstorrent_session::{
-    AddTorrentBytesRequest, ApplicationConfig, ApplicationService, CONTROL_VERSION, NetworkConfig,
-    NetworkPolicy, RequestEnvelope, ResponseEnvelope, StorageRootSnapshot, SubscriptionSpec,
-    ViewSubscription, ViewUpdate, application_error_response,
+    AddTorrentBytesRequest, ApplicationConfig, ApplicationService, CONTROL_VERSION, FileIndexRange,
+    FileSelectionIntent, NetworkConfig, NetworkPolicy, RequestEnvelope, ResponseEnvelope,
+    StorageRootSnapshot, SubscriptionSpec, ViewSubscription, ViewUpdate,
+    application_error_response,
 };
 use sha2::{Digest, Sha256};
 #[cfg(target_os = "macos")]
@@ -36,7 +37,8 @@ const HEADER_REQUEST_ID: &str = "x-rstorrent-request-id";
 const HEADER_EXPECTED_REVISION: &str = "x-rstorrent-expected-revision";
 const HEADER_STORAGE_ROOT: &str = "x-rstorrent-storage-root";
 const HEADER_START_CONTENT: &str = "x-rstorrent-start-content";
-const HEADER_SKIP_FILES: &str = "x-rstorrent-skip-files";
+const HEADER_SELECTION: &str = "x-rstorrent-selection";
+const HEADER_WANTED_RANGES: &str = "x-rstorrent-wanted-ranges";
 
 struct DesktopState {
     service: Arc<Mutex<ApplicationService>>,
@@ -115,8 +117,10 @@ fn decode_torrent_ipc(
         Some("false") => false,
         Some(_) => return Err("x-rstorrent-start-content must be true or false".to_owned()),
     };
-    let skip_files =
-        parse_ipc_file_indices(optional_ipc_header(headers, HEADER_SKIP_FILES)?.as_deref())?;
+    let selection = parse_ipc_selection(
+        optional_ipc_header(headers, HEADER_SELECTION)?.as_deref(),
+        optional_ipc_header(headers, HEADER_WANTED_RANGES)?.as_deref(),
+    )?;
     let digest = Sha256::digest(&source);
     let request = AddTorrentBytesRequest {
         version: CONTROL_VERSION,
@@ -124,7 +128,7 @@ fn decode_torrent_ipc(
         expected_revision,
         storage_root,
         start_content,
-        skip_files,
+        selection,
         source_length: source.len() as u32,
         source_sha256: encode_sha256(&digest),
     };
@@ -155,26 +159,49 @@ fn optional_ipc_header(
         .transpose()
 }
 
-fn parse_ipc_file_indices(value: Option<&str>) -> Result<Vec<u32>, String> {
-    let Some(value) = value else {
-        return Ok(Vec::new());
-    };
+fn parse_ipc_selection(
+    mode: Option<&str>,
+    ranges: Option<&str>,
+) -> Result<FileSelectionIntent, String> {
+    match mode.unwrap_or("all") {
+        "all" if ranges.is_none() => Ok(FileSelectionIntent::All),
+        "none" if ranges.is_none() => Ok(FileSelectionIntent::None),
+        "ranges" => Ok(FileSelectionIntent::WantedRanges {
+            ranges: parse_ipc_file_ranges(ranges.unwrap_or(""))?,
+        }),
+        "all" | "none" => Err("x-rstorrent-wanted-ranges requires selection=ranges".to_owned()),
+        _ => Err("x-rstorrent-selection must be all, none, or ranges".to_owned()),
+    }
+}
+
+fn parse_ipc_file_ranges(value: &str) -> Result<Vec<FileIndexRange>, String> {
     if value.is_empty() {
         return Ok(Vec::new());
     }
     value
         .split(',')
         .map(|part| {
-            if part.is_empty()
-                || (part.len() > 1 && part.starts_with('0'))
-                || !part.bytes().all(|byte| byte.is_ascii_digit())
-            {
-                return Err("x-rstorrent-skip-files must contain canonical integers".to_owned());
-            }
-            part.parse::<u32>()
-                .map_err(|_| "x-rstorrent-skip-files index exceeds u32".to_owned())
+            let (start, end) = part.split_once('-').ok_or_else(|| {
+                "x-rstorrent-wanted-ranges must contain start-end pairs".to_owned()
+            })?;
+            Ok(FileIndexRange {
+                start: parse_ipc_u32(start)?,
+                end_exclusive: parse_ipc_u32(end)?,
+            })
         })
         .collect()
+}
+
+fn parse_ipc_u32(value: &str) -> Result<u32, String> {
+    if value.is_empty()
+        || (value.len() > 1 && value.starts_with('0'))
+        || !value.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err("x-rstorrent-wanted-ranges must contain canonical integers".to_owned());
+    }
+    value
+        .parse()
+        .map_err(|_| "x-rstorrent-wanted-ranges index exceeds u32".to_owned())
 }
 
 fn encode_sha256(bytes: &[u8]) -> String {

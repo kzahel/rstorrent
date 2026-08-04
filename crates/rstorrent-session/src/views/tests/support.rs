@@ -61,6 +61,7 @@ pub(super) fn piece_spec(queue: u32) -> SubscriptionSpec {
             max_queue_bytes: queue,
         },
         diagnostics: None,
+        catalog_page: None,
     }
 }
 
@@ -76,6 +77,7 @@ pub(super) fn speed_spec(range: SpeedRange) -> SubscriptionSpec {
             max_queue_bytes: 64 * 1024,
         },
         diagnostics: None,
+        catalog_page: None,
     }
 }
 
@@ -88,6 +90,7 @@ pub(super) fn dht_spec() -> SubscriptionSpec {
             max_queue_bytes: 256 * 1024,
         },
         diagnostics: None,
+        catalog_page: None,
     }
 }
 

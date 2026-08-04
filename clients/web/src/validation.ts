@@ -40,8 +40,9 @@ const PEER_FLAGS = [
   "endgame",
   "seed",
 ] as const;
-const MAX_FILES = 4_096;
-const MAX_TRACKERS = 32;
+const MAX_FILE_CATALOG = 374_998;
+const MAX_TRACKER_CATALOG = 999_994;
+const MAX_CATALOG_PAGE_ROWS = 1_024;
 const MAX_DISK_PIECES = 16_384;
 const MAX_ACTIVE_PIECES = 16_384;
 const DHT_BUCKETS = 160;
@@ -677,11 +678,30 @@ function validateViewSnapshot(value: unknown): void {
         "torrent_missing",
       ]);
       optionalString(snapshot.filesystem_content_base, "filesystem content base", 16_384);
+      const page = validateCatalogPage(snapshot.page, MAX_FILE_CATALOG);
       const files = array(snapshot.files, "torrent files");
-      if (files.length > MAX_FILES) {
-        throw new ContractError("file view exceeds its row bound");
+      if (
+        files.length !==
+        Math.min(page.limit, Math.max(0, page.total - page.offset))
+      ) {
+        throw new ContractError("file view does not match its declared page");
       }
       files.forEach(validateFileView);
+      files.forEach((value) => {
+        const file = asRecord(value, "file view");
+        const index = boundedInteger(
+          file.file_index,
+          "file index",
+          0,
+          MAX_FILE_CATALOG - 1,
+        );
+        if (
+          index < page.offset ||
+          index >= page.offset + page.limit
+        ) {
+          throw new ContractError("file view is outside its declared page");
+        }
+      });
       if (snapshot.state !== "available" && files.length !== 0) {
         throw new ContractError("unavailable file catalog contains rows");
       }
@@ -693,9 +713,13 @@ function validateViewSnapshot(value: unknown): void {
         "available",
         "torrent_missing",
       ]);
+      const page = validateCatalogPage(snapshot.page, MAX_TRACKER_CATALOG);
       const trackers = array(snapshot.trackers, "torrent trackers");
-      if (trackers.length > MAX_TRACKERS) {
-        throw new ContractError("tracker view exceeds its row bound");
+      if (
+        trackers.length !==
+        Math.min(page.limit, Math.max(0, page.total - page.offset))
+      ) {
+        throw new ContractError("tracker view does not match its declared page");
       }
       trackers.forEach(validateTrackerView);
       if (snapshot.state !== "available" && trackers.length !== 0) {
@@ -807,7 +831,7 @@ function validateViewPatch(value: unknown): void {
     case "files": {
       torrentId(patch.torrent_id);
       const upserts = array(patch.upsert, "file upserts");
-      if (upserts.length > MAX_FILES) {
+      if (upserts.length > MAX_CATALOG_PAGE_ROWS) {
         throw new ContractError("file patch exceeds its row bound");
       }
       upserts.forEach(validateFileView);
@@ -819,7 +843,7 @@ function validateViewPatch(value: unknown): void {
     case "trackers": {
       torrentId(patch.torrent_id);
       const upserts = array(patch.upsert, "tracker upserts");
-      if (upserts.length > MAX_TRACKERS) {
+      if (upserts.length > MAX_CATALOG_PAGE_ROWS) {
         throw new ContractError("tracker patch exceeds its row bound");
       }
       upserts.forEach(validateTrackerView);
@@ -983,7 +1007,7 @@ function validateTorrentView(value: unknown): asserts value is TorrentView {
   optionalInteger(
     torrent.configured_tracker_count,
     "configured tracker count",
-    MAX_TRACKERS,
+    MAX_TRACKER_CATALOG,
   );
   const progress = asRecord(torrent.progress, "progress assessment");
   oneOf(progress.disposition, "progress disposition", [
@@ -1010,12 +1034,19 @@ function validateTorrentView(value: unknown): asserts value is TorrentView {
 function validateFileView(value: unknown): void {
   const file = asRecord(value, "file view");
   decimal(file.file_id, "file ID");
-  boundedInteger(file.file_index, "file index", 0, MAX_FILES - 1);
+  boundedInteger(file.file_index, "file index", 0, MAX_FILE_CATALOG - 1);
   const path = array(file.path, "file path");
-  if (path.length === 0 || path.length > 64) {
+  if (path.length === 0 || path.length > 4_096) {
     throw new ContractError("file path component count is invalid");
   }
-  path.forEach((component) => boundedString(component, "file path component", 255));
+  let renderedPathBytes = 0;
+  path.forEach((component) => {
+    const value = boundedString(component, "file path component", 240);
+    renderedPathBytes += new TextEncoder().encode(value).byteLength + 1;
+  });
+  if (renderedPathBytes > 4_096) {
+    throw new ContractError("rendered file path exceeds its row bound");
+  }
   decimal(file.length_bytes, "file length");
   decimal(file.torrent_offset_bytes, "file torrent offset");
   optionalInteger(file.first_piece, "first file piece", MAX_U32);
@@ -1037,23 +1068,68 @@ function validateFileView(value: unknown): void {
   }
 }
 
+function validateCatalogPage(
+  value: unknown,
+  maximumTotal: number,
+): { offset: number; limit: number; total: number } {
+  const page = asRecord(value, "catalog page");
+  const offset = boundedInteger(
+    page.offset,
+    "catalog page offset",
+    0,
+    maximumTotal,
+  );
+  const limit = boundedInteger(
+    page.limit,
+    "catalog page limit",
+    1,
+    MAX_CATALOG_PAGE_ROWS,
+  );
+  const total = boundedInteger(
+    page.total,
+    "catalog total rows",
+    0,
+    maximumTotal,
+  );
+  if (page.next_offset !== null) {
+    const next = boundedInteger(
+      page.next_offset,
+      "next catalog page offset",
+      1,
+      maximumTotal,
+    );
+    if (next !== Math.min(offset + limit, total) || next >= total) {
+      throw new ContractError("next catalog page offset is inconsistent");
+    }
+  } else if (offset + limit < total) {
+    throw new ContractError("catalog page omitted its next offset");
+  }
+  return { offset, limit, total };
+}
+
 function validateTrackerView(value: unknown): void {
   const tracker = asRecord(value, "tracker view");
-  const id = boundedString(tracker.tracker_id, "tracker ID", 2_048);
-  const url = boundedString(tracker.url, "tracker URL", 2_048);
-  if (id !== url || !url.startsWith("udp://")) {
-    throw new ContractError("tracker identity is not its canonical UDP URL");
+  const id = boundedString(tracker.tracker_id, "tracker ID", 13);
+  const url = boundedString(tracker.url, "tracker URL", 4_096);
+  if (!/^\d{6}:\d{6}$/.test(id) || !/^(udp|http|https):\/\//.test(url)) {
+    throw new ContractError("tracker identity or redacted URL is invalid");
   }
-  oneOf(tracker.transport, "tracker transport", ["udp"]);
-  oneOf(tracker.source, "tracker source", ["magnet"]);
+  oneOf(tracker.transport, "tracker transport", ["udp", "http", "https"]);
+  oneOf(tracker.source, "tracker source", ["magnet", "metainfo"]);
   boundedInteger(tracker.tier, "tracker tier", 0, MAX_U32);
   oneOf(tracker.status, "tracker status", [
+    "unsupported",
     "inactive",
     "idle",
     "announcing",
     "retry_wait",
     "reannounce_wait",
   ]);
+  if (
+    (tracker.transport === "udp") === (tracker.status === "unsupported")
+  ) {
+    throw new ContractError("tracker transport and status are inconsistent");
+  }
   if (tracker.announce_event !== null) {
     oneOf(tracker.announce_event, "tracker announce event", ["started", "update"]);
   }
