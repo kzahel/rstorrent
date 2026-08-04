@@ -41,6 +41,7 @@ pub struct SeedContentSnapshot {
 
 #[derive(Clone, Debug)]
 pub struct SeedContent {
+    info_hash: [u8; 20],
     layout: TorrentLayout,
     files: Vec<Option<SeedFile>>,
     available: Vec<bool>,
@@ -120,6 +121,7 @@ impl SeedContent {
         }
 
         Ok(Self {
+            info_hash: metainfo.info_hash,
             layout,
             files,
             available,
@@ -129,6 +131,10 @@ impl SeedContent {
 
     pub fn availability(&self) -> &[bool] {
         &self.available
+    }
+
+    pub fn info_hash(&self) -> [u8; 20] {
+        self.info_hash
     }
 
     pub fn piece_lengths(&self) -> Result<Vec<u32>, SeedContentError> {

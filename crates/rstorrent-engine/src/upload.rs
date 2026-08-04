@@ -70,7 +70,7 @@ impl UploadPeerState {
         if piece_lengths.len() != available.len() {
             return Err("piece lengths and availability must have equal lengths");
         }
-        if piece_lengths.iter().any(|length| *length == 0) {
+        if piece_lengths.contains(&0) {
             return Err("piece lengths must be nonzero");
         }
         Ok(Self {

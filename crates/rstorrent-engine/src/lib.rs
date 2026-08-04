@@ -5,6 +5,7 @@
 mod checkpoint;
 pub mod dht;
 mod driver;
+mod incoming;
 mod metadata_seed;
 mod metrics;
 mod network;
@@ -33,6 +34,12 @@ pub use driver::{
     download_magnet_with_control, download_verified_piece,
     download_verified_piece_to_descriptors_with_control, download_verified_piece_with_control,
     resume_magnet, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
+};
+pub use incoming::{
+    DEFAULT_INCOMING_HANDSHAKE_TIMEOUT, IncomingPeerError, IncomingPeerHandle, IncomingPeerService,
+    IncomingPeerServiceConfig, IncomingPeerServiceSnapshot, IncomingRejection,
+    IncomingRejectionReason, IncomingTcpBootstrap, MAX_INCOMING_ESTABLISHED, MAX_INCOMING_PENDING,
+    MAX_SEED_REGISTRATIONS, SeedRegistration, SeedRegistrationToken,
 };
 pub use metadata_seed::{
     MetadataSeedConfig, MetadataSeedError, MetadataSeedReport, MetadataSeedServer,

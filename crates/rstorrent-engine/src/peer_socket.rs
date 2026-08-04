@@ -20,12 +20,11 @@ use tokio_util::sync::CancellationToken;
 
 use crate::network::NetworkConfig;
 use crate::peer::{DialAttempt, DialAttemptId, PeerFailure};
-use crate::peer_io::{NETWORK_READ_LENGTH, PeerIo, PeerIoError, record_bytes};
+use crate::peer_io::{CLIENT_PEER_ID, NETWORK_READ_LENGTH, PeerIo, PeerIoError, record_bytes};
 use crate::peer_runtime::connection_id;
 use crate::swarm::ConnectionId;
 use crate::{ByteMetric, ByteMetricSink};
 
-const CLIENT_PEER_ID: [u8; 20] = *b"-RS0001-000000000000";
 pub(crate) const PEER_COMMAND_QUEUE: usize = 16;
 pub(crate) const PEER_EVENT_QUEUE: usize = 64;
 
