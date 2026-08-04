@@ -1107,7 +1107,7 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use futures_util::{SinkExt, StreamExt};
     use rstorrent_platform::DownloadDirectoryPicker;
@@ -1128,8 +1128,8 @@ mod tests {
 
     use super::{
         ApplicationClientFrame, ApplicationConnectionErrorCode, ApplicationServerFrame,
-        ChooseDownloadRootResponse, GatewayAuthentication, GatewayConfig, HostedAssets, bind,
-        bind_hosted, bind_with_picker, constant_time_equal,
+        ChooseDownloadRootResponse, GatewayAuthentication, GatewayConfig, HostedAssets,
+        MAX_TORRENT_SOURCE_BYTES, bind, bind_hosted, bind_with_picker, constant_time_equal,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -1375,6 +1375,18 @@ mod tests {
         source
     }
 
+    fn torrent_source_with_exact_length(length: usize) -> Vec<u8> {
+        let mut ignored_bytes = length.saturating_sub(128);
+        loop {
+            let source = torrent_source(ignored_bytes);
+            match source.len().cmp(&length) {
+                std::cmp::Ordering::Equal => return source,
+                std::cmp::Ordering::Less => ignored_bytes += length - source.len(),
+                std::cmp::Ordering::Greater => ignored_bytes -= source.len() - length,
+            }
+        }
+    }
+
     fn torrent_upload_request(request_id: &str, source: &[u8]) -> AddTorrentBytesRequest {
         AddTorrentBytesRequest {
             version: rstorrent_session::CONTROL_VERSION,
@@ -1429,7 +1441,8 @@ mod tests {
         let address = server.local_addr();
         let shutdown = CancellationToken::new();
         let task = tokio::spawn(server.serve(shutdown.clone()));
-        let source = torrent_source(96 * 1024);
+        let source = torrent_source_with_exact_length(MAX_TORRENT_SOURCE_BYTES);
+        assert_eq!(source.len(), MAX_TORRENT_SOURCE_BYTES);
         let path =
             "/api/v1/torrents?request_id=http-upload&storage_root=downloads&start_content=false";
 
@@ -1454,7 +1467,7 @@ mod tests {
             "correct-token",
             origin,
             "application/octet-stream",
-            source,
+            torrent_source(1),
         )
         .await;
         assert_eq!(status, 400);
@@ -1517,7 +1530,8 @@ mod tests {
             read_application_message(&mut socket).await,
             ApplicationServerFrame::Connected { .. }
         ));
-        let source = torrent_source(96 * 1024);
+        let source = torrent_source_with_exact_length(MAX_TORRENT_SOURCE_BYTES);
+        assert_eq!(source.len(), MAX_TORRENT_SOURCE_BYTES);
         send_application_message(
             &mut socket,
             &ApplicationClientFrame::BeginTorrentUpload {
@@ -1534,20 +1548,52 @@ mod tests {
                 upload_id: "upload-body".to_owned(),
             }
         );
+        let upload_started = Instant::now();
         socket
             .send(Message::Binary(source.into()))
             .await
             .expect("send torrent bytes");
-        let ApplicationServerFrame::Result {
-            call_id,
-            result: ApplicationCallResult::CommandResponse { response },
-        } = read_application_message(&mut socket).await
-        else {
-            panic!("expected correlated torrent result");
-        };
+        socket
+            .send(Message::Ping(b"after-maximum-upload".to_vec().into()))
+            .await
+            .expect("queue post-upload control frame");
+        let mut upload_result = None;
+        let mut control_elapsed = None;
+        while upload_result.is_none() || control_elapsed.is_none() {
+            let message = tokio::time::timeout(Duration::from_secs(5), socket.next())
+                .await
+                .expect("maximum upload response timed out")
+                .expect("application connection closed")
+                .expect("maximum upload websocket response");
+            match message {
+                Message::Pong(payload) if payload.as_ref() == b"after-maximum-upload" => {
+                    control_elapsed = Some(upload_started.elapsed());
+                }
+                Message::Text(text) => {
+                    let frame: ApplicationServerFrame =
+                        serde_json::from_str(&text).expect("decode maximum upload result");
+                    let ApplicationServerFrame::Result {
+                        call_id,
+                        result: ApplicationCallResult::CommandResponse { response },
+                    } = frame
+                    else {
+                        panic!("expected correlated torrent result");
+                    };
+                    upload_result = Some((call_id, response, upload_started.elapsed()));
+                }
+                other => panic!("unexpected maximum upload response: {other:?}"),
+            }
+        }
+        let (call_id, response, result_elapsed) = upload_result.expect("upload result");
+        let control_elapsed = control_elapsed.expect("queued control response");
         assert_eq!(call_id, "upload-call");
         assert!(matches!(response.outcome, ResponseOutcome::Success { .. }));
         assert_eq!(response.revision, "1");
+        println!(
+            "maximum WebSocket torrent result: {} ms; queued control: {} ms",
+            result_elapsed.as_millis(),
+            control_elapsed.as_millis()
+        );
         socket.close(None).await.expect("close socket");
 
         shutdown.cancel();
