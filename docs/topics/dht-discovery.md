@@ -7,10 +7,10 @@ session-owned IPv4 Mainline DHT participant, controlled libtorrent completion,
 incoming-query participation, private-torrent gating, and revalidated warm
 restart. Tactical 065 added its bounded endpoint-free product observatory.
 Tactical 089 moved application DHT traffic behind the bounded session UDP
-receive owner and separately reports its actual endpoint. IPv6 socket
-operation and self-announcement remain absent. Planned Tactical
-[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) owns
-explicit TCP-port self-announcement and its long-lived scheduling boundary.
+receive owner and separately reports its actual endpoint. Completed Tactical
+[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) adds
+verified-public explicit-TCP-port self-announcement under the long-lived
+torrent/session scheduler. IPv6 socket operation remains absent.
 
 ## Why DHT Was Front-Loaded
 
@@ -50,6 +50,14 @@ composes that same owner for focused tests. DHT stages restored contacts before
 public routers, periodically rebootstraps or refreshes, rotates current/previous
 token secrets, bounds its peer store and source-rate state, and reclaims
 dropped lookup waiters.
+
+One session discovery/advertisement task now owns repeated application lookup
+and eligible self-announcement across download completion. It registers
+long-lived torrent generations rather than starting a timer per torrent. One
+announce traversal retains exactly correlated tokens only for its immediate
+phase, selects no more than the K=8 closest token-bearing responders, and
+sends the selected TCP peer port explicitly with `implied_port = 0`. The DHT
+UDP source endpoint remains transport state, never peer-port authority.
 
 Verified private metadata disables DHT and purges DHT-only peers before content
 scheduling. Verified private metadata restored from durable state prevents DHT
@@ -91,6 +99,18 @@ summaries whose convergence considers responded candidates with known IDs.
 The product presents shared-prefix depths `0..=31` plus an explicit deeper
 tail by default and can teach the transformation with the literal 160-slot
 engine order. Neither presentation changes DHT work or exposes endpoints.
+
+Tactical `092` adds deterministic exact-correlation, K=8 selection,
+explicit-port, eligibility, endpoint-correction, cancellation, and short-TTL
+expiry evidence. An independent libtorrent `2.0.13.0` DHT-only leecher queried
+the controlled node, discovered only the RSTorrent seed announcement,
+downloaded the complete fixture with no explicit peer hint, and hash-verified
+it. In the opt-in physical run, DHT wire traffic carried the independently
+queried mapped external TCP port while using a distinct UDP source; an off-LAN
+peer completed 4,195,035 bytes through that TCP endpoint and reconnect failed
+after joined cancellation and mapping deletion. The one-torrent scheduler
+records command-queue and DHT-operation high water `1` and terminates with
+zero tasks, registrations, tracker operations, and DHT operations.
 
 ## Scope And Protocol Baseline
 
@@ -193,17 +213,13 @@ endpoints, stale or colliding transactions, unsolicited responses, token
 abuse, invalid node IDs, self-addresses, duplicate nodes, and address-policy
 violations before mutating trusted state.
 
-RSTorrent should be a useful participant, not a write-only crawler. Incoming
-queries are part of the first useful capability. However, RSTorrent must not
-send `announce_peer` with port zero or claim reachability before an eligible
-peer listener, matching incoming torrent registration, and, where active, an
-authoritative external mapping produce a current advertisable port. Planned
-Tactical
-[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) waits
-for verified public metadata, sends the selected TCP port explicitly rather
-than implying the possibly different DHT UDP port, and treats remote peer
-entries as expiring soft state because BEP 5 defines no withdrawal query.
-Peer lookup remains useful without self-announcement.
+RSTorrent is a useful participant rather than a write-only crawler. Incoming
+queries and eligible self-announcement are implemented. Self-announcement
+waits for verified public metadata, desired-running state, a matching incoming
+registration, and the current eligible selected TCP endpoint. It sends that
+port explicitly rather than implying the possibly different DHT UDP port.
+Peer lookup remains useful without eligibility; remote peer entries are
+expiring soft state because BEP 5 defines no withdrawal query.
 
 BEP 43 read-only behavior is relevant to a future metered or uncontactable
 Android mode. It should fit the session policy model, but it is not a substitute
@@ -260,7 +276,7 @@ path; and support claims follow evidence rather than code existence.
 
 The completed DHT foundation does not imply:
 
-- `announce_peer` before incoming peer reachability exists;
+- `announce_peer` before verified public, incoming-routable eligibility;
 - BEP 11 PEX, BEP 14 LSD, uTP, NAT traversal, or hole punching;
 - DHT scrape, mutable/immutable items, or BEP 45 multi-address announce;
 - a product settings or log-window redesign;

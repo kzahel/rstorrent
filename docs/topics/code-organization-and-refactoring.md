@@ -11,8 +11,8 @@ and selection-action seam completed by Tactical
 concrete per-torrent lifetime seam now completed by Tactical
 [`086`](../tactical/086-long-lived-torrent-peer-runtime.md), and the session
 listen-socket/UDP waist completed by Tactical
-[`089`](../tactical/089-coordinated-session-listen-sockets.md), with the next
-feature-driven lifetime seam planned by Tactical
+[`089`](../tactical/089-coordinated-session-listen-sockets.md), and the next
+feature-driven lifetime seam completed by Tactical
 [`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md).
 
 Topic: `code-organization-and-refactoring`
@@ -120,14 +120,23 @@ send side. Incoming and DHT runtimes consume supplied transports, while
 shutdown. This is the concrete lifecycle split selected over an umbrella
 session coordinator or new crate.
 
-Planned Tactical
-[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) selects
-the next concrete seam exposed by that work. Tracker scheduling and repeated
-DHT discovery currently die with the active download driver while incoming
-seeding survives in `TorrentRuntime`. The tactical moves those schedules into
-one bounded session service registered by long-lived torrent generations,
-leaving protocol state inward and avoiding per-torrent timer/task
-proliferation or a new crate.
+Tactical
+[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md)
+completes the next concrete seam exposed by that work. One cohesive engine
+`advertisement` module owns the session command table, pure tracker schedules,
+bounded tracker operations, and DHT operation admission. The application
+composes it once and long-lived `TorrentRuntime` generations supply small
+registrations, counters, and peer-registry destinations. Application download
+drivers disable their nested tracker/DHT discovery paths, so completed seeding
+does not lose discovery or create a second product scheduler.
+
+The retained direct-engine tracker manager and DHT retry helper still support
+standalone engine APIs and their focused tests. They do not execute inside the
+application service. Removing that compatibility path would change the public
+engine entry points without improving the selected product lifetime, so it was
+not folded into this refactor. No new crate was justified: protocol values and
+deterministic tracker/DHT transitions remain inward, while the one session
+task, Tokio handles, and cancellation stay at the engine runtime boundary.
 
 ## Source-Organization Guidance
 

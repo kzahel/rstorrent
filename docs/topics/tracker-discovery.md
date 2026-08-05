@@ -10,10 +10,11 @@ schedule's retained lifecycle the authoritative inspectable state and proves
 it through the live browser surface. Tactical `081` adds persisted BEP 12
 metainfo tiers and source attribution. UDP rows enter the existing runtime;
 HTTP/HTTPS trackers remain truthfully visible unsupported configuration rather
-than implemented transports. Planned Tactical
+than implemented transports. Completed Tactical
 [`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) moves
-that runtime into the long-lived session/torrent lifetime and supplies its
-actual routable or explicit outbound-only port.
+application tracker ownership into the long-lived session/torrent lifetime,
+supplies its actual selected or explicit outbound-only port, exact current
+counters, and completed/stopped lifecycle.
 
 ## Scope
 
@@ -38,9 +39,10 @@ the peer registry remains the only owner of accumulated peer records.
 - A **tracker record** retains URL, synthetic tier, source, failure history,
   announce state, interval, and next eligible monotonic time independently
   from any one in-flight operation.
-- A **tracker manager** owns tracker records, selection, one in-flight UDP
-  operation, connection-token caching, retry timers, cancellation, and a
-  bounded result channel for one active torrent.
+- The **discovery advertisement service** owns retained tracker records,
+  selection, token caching, retry/lifecycle deadlines, cancellation, and an
+  eight-operation ceiling across long-lived application torrent generations.
+  It has one session task rather than one task or timer per torrent.
 
 ## Accepted Direction
 
@@ -69,14 +71,15 @@ a malformed packet correlated to the active transaction fails that tracker
 operation. Bounded tracker error text may be diagnostic context but never
 application state or an allocation authority.
 
-The magnet path starts its tracker manager after bounded peer-hint resolution
-and before peer selection or dialing, then keeps it alive while metadata or
-content work is active. Runtime policy is checked before DNS when offline,
-after tracker resolution, on every compact peer observation, and again before
-peer dialing. One successful response may add several observations; the
-torrent supervisor can dial them while other content peers remain active
-under its connection and pending-work bounds. The parent explicitly cancels
-and joins the manager on completion, failure, pause, or shutdown.
+The application registers tracker state before peer selection or dialing and
+retains it through download completion and ordinary seeding. Runtime policy is
+checked before DNS when offline, after tracker resolution, on every compact
+peer observation, and again before peer dialing. One successful response may
+add several observations through the same long-lived peer registry used by
+other discovery sources. Pause, archive, removal, generation replacement, and
+session shutdown explicitly stop and join the registration. Focused direct
+engine APIs retain their nested manager for standalone use, but application
+driver configurations disable it so the product has only the session owner.
 
 Magnet `tr` parameters do not encode BEP 12 tier structure, so retained UDP
 trackers form one initially shuffled synthetic tier. Failure falls through to
@@ -232,36 +235,41 @@ seeded hash-verified content. This is tracker state and interoperability
 evidence, not a claim that a response peer count is a cumulative unique-peer
 count or that any returned endpoint is reachable.
 
+Tactical `092` replaces the application's provisional port/counter lifetime.
+One generation-fenced session task now retains tracker schedules across
+download completion, draws exact current downloaded/uploaded/left counters
+from `TorrentRuntime`, uses port `1` only for outbound-only participation, and
+uses the mapped external or actual eligible TCP listener port for a matching
+incoming seed registration. Corrective `none`, exactly-once eligible
+`completed`, imported-complete, and five-second-bounded `stopped` transitions
+are deterministic; a correction arriving during the initial started request
+is retained.
+
+An independent libtorrent `2.0.13.0` tracker-only leecher announced to the
+controlled tracker, received only the decoded RSTorrent seed endpoint,
+downloaded the complete fixture, and passed the payload hash without an
+explicit peer hint. The opt-in physical run decoded the actual mapped TCP port
+from the tracker announce, used that port for an off-LAN 4,195,035-byte
+hash-verified transfer, observed stopped before mapping cleanup, and failed to
+reconnect afterward. The one-torrent controlled owner records command-queue
+and tracker-operation high water `1` under the session ceilings and terminates
+with zero tasks, registrations, and operations.
+
 ## Current Limits And Next Work
 
-The manager has volatile state and an eight-operation per-torrent ceiling. It
-does not support HTTP, HTTPS, WebSocket, authentication, proxying, or BEP 41
-URL-data, emit completed/stopped events, announce real transfer counters or an
-actually bound listening port, scrape, or share a session-wide tracker-
-operation budget. It reports 16 KiB left
-while magnet metadata is unknown and does not consume the application-owned
-loopback listener's actual port. Until the reachability coordinator can select
-a truthful endpoint from an eligible listener and any required external
-mapping, scheduled tracker announces explicitly carry the conventional port
-`6881` so trackers that reject port zero can still return endpoints for
-outbound dialing. This remains a compatibility placeholder rather than a
-public-reachability claim. The peer ID now matches the application lifetime's
-peer-handshake identity, but that identity consistency does not make the port
-reachable.
+The session owner remains volatile and IPv4/UDP-only. Current transfer
+counters are truthful for the application tracker session but are not durable
+lifetime accounting. Port mapping success remains distinct from observed
+incoming reachability, and the port-`1` tracker value remains an explicitly
+unconnectable compatibility sentinel rather than an endpoint.
 
-The DHT owner is a separately owned source using the same peer-observation
-boundary and session network policy. Tactical `017` now lets later tracker and
-DHT observations improve active-transfer reliability. Later tracker work
-should focus on transfer accounting, HTTP/HTTPS operation, and session-wide
-resource policy. The incoming-reachability campaign now places non-loopback
-listener ownership and observed-network UPnP mapping before tracker
-advertisement; tracker state will consume the resulting advertisable endpoint
-in planned Tactical
-[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md). That
-slice also adds current counters and completed/stopped lifecycle under one
-session-wide operation ceiling. The headless public-torrent comparator adds
-useful live evidence but cannot replace controlled protocol and libtorrent
-tests.
+HTTP/HTTPS/WebSocket transport, authentication, proxies, BEP 41 URL data,
+scrape, and a public-tracker reliability claim remain absent. Planned Tactical
+[`095`](../tactical/095-bounded-http-https-tracker-transport.md) owns the
+bounded HTTP/HTTPS transport slice over the retained session tracker catalog;
+it does not reopen the endpoint or lifecycle ownership settled here. The
+headless public-torrent comparator remains useful changing-network evidence
+but cannot replace controlled protocol and libtorrent tests.
 
 Tactical `081` parses and persists every valid unique
 `announce-list`/`announce` URL admitted by its

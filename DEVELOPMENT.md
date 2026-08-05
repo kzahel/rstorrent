@@ -331,6 +331,27 @@ uv run --project tests/interop --locked \
   python tests/interop/dht_magnet.py
 ```
 
+The advertisement profile independently discovers a completed RSTorrent seed
+through either a controlled UDP tracker or DHT and hash-verifies both
+libtorrent downloads without an explicit peer hint:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/advertised_seeding.py
+```
+
+Its opt-in physical mode additionally requires an operator-controlled off-LAN
+SSH destination. It verifies that tracker and DHT wire traffic carry the live
+mapped TCP port, transfers through that observed port, deletes the mapping,
+and proves the endpoint is then unreachable. The destination value and network
+identities are never printed or persisted:
+
+```bash
+RSTORRENT_OFF_LAN_SSH_TARGET=YOUR_TARGET \
+  uv run --project tests/interop --locked \
+  python tests/interop/advertised_seeding.py --mapped-external
+```
+
 The controlled mixed-peer profile keeps a scripted, valid, permanently choked
 peer in the content swarm while pinned libtorrent supplies and accounts for a
 16-piece single-file payload:

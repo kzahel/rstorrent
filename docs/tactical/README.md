@@ -417,6 +417,10 @@ that scope and its cleanup or compatibility rules explicitly.
   interface-size-specific footprint, and retains the torrent/session divider
   plus horizontal overflow on constrained widths.
 
+- [`092-truthful-tracker-and-dht-peer-advertisement.md`](092-truthful-tracker-and-dht-peer-advertisement.md):
+  complete; replaces provisional tracker/DHT peer-port claims with one
+  generation-fenced advertised endpoint and retains discovery plus
+  advertisement across the long-lived torrent runtime.
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
 checkpoint live in [`../topics/capability-readiness.md`](../topics/capability-readiness.md)

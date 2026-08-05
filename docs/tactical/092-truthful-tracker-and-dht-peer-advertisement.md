@@ -1,7 +1,8 @@
 # Tactical 092: Truthful Tracker And DHT Peer Advertisement
 
-Status: Planned on 2026-08-05. This tactical is the next executable slice in
-the incoming-reachability campaign; implementation has not started.
+Status: Completed on 2026-08-05. The selected TCP endpoint now drives the
+long-lived tracker and DHT advertisement lifetime, and both controlled and
+physical discovery-to-seeding evidence pass.
 
 Topics: `incoming-reachability-and-seeding`, `tracker-discovery`,
 `dht-discovery`, `application-view-api`, `protocol-support`,
@@ -556,4 +557,98 @@ beyond the already authorized controlled evidence pattern.
 
 ## Completion Evidence
 
-Not yet recorded.
+The implementation and vertical-evidence slices landed in commits `7c8b921`,
+`0a45235`, `1c0394a`, `83bb1d1`, and `d461c0a`; Android contract closure and
+explicit owner-count evidence landed in `b88c7f7` and `65bc53d`.
+
+### Endpoint and product contract
+
+- `AdvertisedPeerEndpointSelector` is task-free, publishes a latest-value
+  watch, increments its generation only on effective endpoint changes, and
+  distinguishes outbound-only, local, mapped, renewal-unhealthy, and stopping
+  state. Incoming observation remains a separate stronger fact.
+- Deterministic tests cover disabled and failed listeners, loopback versus
+  local-network scope, same-port renewal without a false generation, transient
+  renewal failure until the finite deadline, expiry fallback, stale mapping
+  generations, stopping, and the wire projection.
+- The generated Rust, JSON Schema, TypeScript, and UniFFI contracts carry the
+  complete status. The React connection/seeding section renders it without
+  deriving a port from settings or the UDP endpoint. The Android generated
+  contract and complete JVM fixture compile with the new field; no Compose
+  settings UI was added.
+
+### Long-lived tracker ownership
+
+- One `DiscoveryAdvertisementService` task owns a 256-command backpressured
+  queue, all retained torrent registrations, and the session-wide ceiling of
+  eight UDP tracker operations. `TorrentRuntime` supplies generation-fenced
+  registration, peer-registry destination, verified completion/privacy,
+  desired-running state, and exact current counters.
+- Application download and resume configurations no longer start their own
+  tracker manager. The direct engine driver retains its focused discovery
+  implementation for standalone engine APIs and tests, but it is disabled in
+  every application-owned driver generation, so product execution has one
+  scheduler and one tracker state authority.
+- The pure schedule now preserves acknowledged `started`, interval/failure
+  behavior, endpoint correction, exactly-once eligible `completed`, imported
+  seed behavior, and eligible best-effort `stopped`. A correction or completed
+  transition arriving while `started` is in flight is queued rather than lost.
+  Shutdown gives stopped work five seconds before cancellation.
+- Every tracker request captures one coherent endpoint generation and exact
+  downloaded/uploaded/left snapshot. No
+  `DEFAULT_ADVERTISED_PEER_PORT` remains. Unregistered or unroutable torrents
+  use port `1`; registered seeds use the mapped external or actual TCP
+  listener port.
+
+### DHT announcement and cancellation
+
+- `lookup_and_announce` retains tokens only from exactly correlated
+  `get_peers` responses and sends explicit-port, `implied_port = 0`
+  `announce_peer` queries to at most the K=8 closest token-bearing responders.
+  Tokens do not escape the traversal.
+- The long-lived scheduler looks up at the existing bounded cadence and
+  reannounces eligible verified public seeds every 15 minutes. Endpoint and
+  eligibility changes coalesce through registration and endpoint generations.
+  Verified private state cancels lookup/announce work and removes DHT-only
+  peer observations.
+- Controlled actor tests cover explicit TCP-port encoding, token/source/
+  transaction correlation, K=8 selection, endpoint correction, no query after
+  joined stop, and expiry of the stale peer from a short-TTL remote node.
+  BEP 5 still has no withdrawal claim.
+
+### Vertical and resource evidence
+
+- `tests/interop/advertised_seeding.py` uses independent libtorrent `2.0.13.0`
+  leechers. Tracker-only and DHT-only runs discover a completed RSTorrent seed
+  with no `x.pe` or other explicit peer hint, connect to its selected TCP
+  listener, download all content, and verify the payload SHA-256. The tracker
+  fixture decodes exact BEP 15 fields and observes bounded stopped; the DHT
+  fixture verifies token reuse and explicit TCP-port semantics.
+- The opt-in mapped run uses the network's observed IGD v2 mechanism. Both the
+  tracker announce and DHT `announce_peer` carried the independently queried
+  live external TCP port. An off-LAN verifier dialed the tracker-wire port,
+  downloaded and hash-verified all 257 pieces and 4,195,035 bytes, then failed
+  to reconnect after joined shutdown deleted the mapping. Repository artifacts
+  contain no private host alias, address, or device identity.
+- The one-torrent controlled tracker case records command-queue high water
+  `1`, tracker-operation high water `1`, and DHT-operation high water `1` once
+  completion makes the seed eligible. The DHT-only scheduler case records
+  queue high water `1`, tracker high water `0`, and DHT high water `1`.
+  Both finish with tasks, registrations, tracker operations, and DHT
+  operations exactly zero. The physical run finishes with mapping tasks and
+  mappings exactly zero.
+
+### Final validation
+
+- `cargo fmt --all -- --check`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and
+  `cargo test --workspace` pass. The only emitted warnings are the existing
+  `ts-rs` notices for ignored `deny_unknown_fields` attributes.
+- Type/schema/fixture regeneration has no drift. Web TypeScript checking,
+  `178` active Vitest cases with `2` existing skips, production build, and CSP
+  scan pass.
+- Android API-28 x86_64 and arm64-v8a release libraries, regenerated UniFFI
+  Kotlin, debug APK assembly, and the debug JVM suite pass.
+- Python compilation, the controlled tracker/DHT gate, the mapped off-LAN
+  gate, and `git diff --check` pass. No public tracker, public DHT, or
+  public-swarm reliability claim is derived from these controlled runs.

@@ -157,19 +157,20 @@ TCP failure retains independent DHT service and all tasks join terminally.
 
 ### Now
 
-**Implement Tactical
-[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md).** Feed
-the current eligible TCP listener or active external mapping into tracker
-announces and explicit-port DHT `announce_peer` only for incoming-routable
-torrents. Preserve outbound-only tracker discovery with the port-`1` sentinel,
-prove correction when the mapped external port changes, and order tracker
-stopping plus DHT cancellation before torrent, mapping, listener, or session
-shutdown. Do not derive the claim from the preferred setting, the DHT UDP
-endpoint, or a conventional port constant; BEP 5 remote entries expire rather
-than supporting immediate withdrawal.
+**Tactical
+[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) is
+complete.** Tracker and DHT advertisement now use the generation-fenced
+selected TCP endpoint across the long-lived torrent lifetime. Controlled
+tracker-only, DHT-only, and mapped off-LAN discovery-to-download gates pass.
+No successor is selected for implementation in this update.
 
 ### Next
 
+- Tactical
+  [`095`](../tactical/095-bounded-http-https-tracker-transport.md) is a
+  decision-complete candidate for bounded HTTP/HTTPS tracker transport over
+  the retained advertisement owner. Its planning record is not implementation
+  authorization.
 - Add PCP and NAT-PMP only with their own bounded tactical and suitable
   controlled or physical gateway evidence; pinned source inspection is not a
   support claim.
@@ -202,11 +203,11 @@ matrix choose BEP breadth; visible novelty alone does not.
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
 | Explicit magnet peer hints | Implemented | deterministic, runtime, interop | Hints are bounded and feed the registry, but are not a general discovery mechanism. | [`peer-lifecycle`](peer-lifecycle.md) |
-| Scheduled UDP tracker announces | Implemented | deterministic, runtime, interop, web, AVD, live | UDP connect/announce, fallback, backoff, retransmission, token reuse, reannounce, and bounded startup fan-out work; provisional port 6881 is not derived from the actual loopback listener. | [`tracker-discovery`](tracker-discovery.md) |
+| Scheduled UDP tracker announces | Implemented | deterministic, runtime, interop, web, AVD, live | One long-lived session owner provides UDP connect/announce, fallback, backoff, retransmission, token reuse, interval/corrective reannounce, exact counters, started/completed/stopped lifecycle, the selected TCP endpoint or port-`1` sentinel, and an eight-operation ceiling. Controlled tracker-only and mapped off-LAN discovery-to-seed evidence passes. | [`tracker-discovery`](tracker-discovery.md) |
 | Multiple magnet trackers | Partial | deterministic, runtime, interop, live | Up to eight startup operations contribute peers, but magnet trackers form one synthetic tier because magnets contain no BEP 12 tier structure. | [`tracker-discovery`](tracker-discovery.md) |
 | Metainfo tracker tiers | Implemented | deterministic, runtime, interop, web | Outer `announce-list`/`announce`, tier and source survive restart; UDP rows are scheduled under the eight-operation ceiling and the controlled imported tracker completes content. | [`tracker-discovery`](tracker-discovery.md) |
 | HTTP and HTTPS trackers | Absent | deterministic retention only | Configured rows survive and are visible with redacted credentials and unsupported transport state, but no request, response, authentication, redirect, or proxy owner exists. | [`tracker-discovery`](tracker-discovery.md) |
-| DHT | Partial | deterministic, runtime, interop, live | A bounded IPv4 participant supports lookup, incoming queries, private gating, revalidated warm restart, and repeated public metadata acquisition. Its application transport now uses one bounded session UDP receiver and reports the actual source endpoint independently from TCP. IPv6 UDP operation and self-announcement are absent. | [`dht-discovery`](dht-discovery.md) |
+| DHT | Partial | deterministic, runtime, interop, live | A bounded IPv4 participant supports lookup, incoming queries, private gating, revalidated warm restart, repeated public metadata acquisition, and verified-public self-announcement of the selected explicit TCP port to K=8 token-bearing nodes. One session scheduler survives download completion; controlled DHT-only and mapped off-LAN seed discovery pass. IPv6 UDP operation remains absent. | [`dht-discovery`](dht-discovery.md) |
 | Peer exchange | Absent | none | BEP 11 depends on a larger live-peer set, extension dispatch, and hostile-source bounds. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Local service discovery | Absent | none | Interface, multicast, and local-network policy are unimplemented. | [`protocol-support`](protocol-support.md) |
 
@@ -220,7 +221,7 @@ matrix choose BEP breadth; visible novelty alone does not.
 | Pre-content peer failover | Implemented | deterministic, runtime, interop, live | Bounded parallel metadata peers share one block owner; two tracker cohorts, 10/10 fresh-DHT owner runs, and 12/12 cross-catalog pairs pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Multiple simultaneous live peers | Implemented | deterministic, runtime, interop, live | Thirty established and thirty half-open attempts remain separate outbound torrent-local defaults beneath one shared session budget whose ordinary default is 200 after descriptor clamping and whose incoming-only slack is ten. Exact saturation, cancellation, mixed-direction release, and simultaneous incoming evidence pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Transfer request ownership and failover | Implemented | deterministic, runtime, interop, live | Ordinary blocks have one generation; strict endgame adds bounded duplicate attempts, first-response cancellation, and harmless losing payload. | [`download-correctness`](download-correctness.md) |
-| Incoming peer connections | Implemented | deterministic, runtime, interop, web | One joined IPv4 listener has a five-entry backlog, eight pending handshake slots, 1,024 generation-fenced registrations, and bounded multi-peer ownership under the shared effective-plus-ten-slack budget. Typed loopback/local-network disabled/automatic/fixed policy, explicit UPnP enablement, preferred port `1024..=65535`, 1--2,000 peers, and 0--50 slots persist atomically and apply across restart. Automatic TCP/UDP binding shares ten retries before system fallback, while fixed binding is exact and atomic; actual endpoints remain runtime facts. Tactical [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) proves ordinary Swarm/Peers ownership; Tactical [`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md) proves an independently queried finite IGD v2 mapping and exact 4,195,035-byte off-LAN TCP seed; Tactical [`089`](../tactical/089-coordinated-session-listen-sockets.md) proves coordinated loopback/local-network TCP and DHT UDP traffic plus terminal ownership. Tracker/DHT advertisement remains absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
+| Incoming peer connections | Implemented | deterministic, runtime, interop, web | One joined IPv4 listener has a five-entry backlog, eight pending handshake slots, 1,024 generation-fenced registrations, and bounded multi-peer ownership under the shared effective-plus-ten-slack budget. Typed loopback/local-network disabled/automatic/fixed policy, explicit UPnP enablement, preferred port `1024..=65535`, 1--2,000 peers, and 0--50 slots persist atomically and apply across restart. Automatic TCP/UDP binding shares ten retries before system fallback, while fixed binding is exact and atomic; actual endpoints remain runtime facts. Tacticals [`086`](../tactical/086-long-lived-torrent-peer-runtime.md), [`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md), and [`089`](../tactical/089-coordinated-session-listen-sockets.md) prove retained incoming ownership, exact mapped off-LAN seeding, and coordinated transport. Tactical [`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) proves tracker-only, DHT-only, and mapped wire-port discovery through that listener with joined terminal cleanup. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
 | Peer reputation and integrity attribution | Partial | deterministic, runtime, live | Exact connection generations receive bounded asymmetric trust; a sole corrupt source is banned and ambiguous sources are only suspected, while full parole selection and persistence are absent. | [`download-correctness`](download-correctness.md) |
 
 ### Content Transfer And Completion

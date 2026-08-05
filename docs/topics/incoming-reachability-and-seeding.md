@@ -25,19 +25,19 @@ Tactical
 [`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md) is complete. It
 adds explicitly eligible non-loopback IPv4 listeners, one session
 reachability coordinator, bounded UPnP IGD v2 mapping, and an exact off-LAN
-incoming transfer through the observed mechanism. Tracker/DHT advertisement
-and other mapping protocols remain later slices.
+incoming transfer through the observed mechanism. Other mapping protocols
+remain later slices.
 
 Tactical
 [`089`](../tactical/089-coordinated-session-listen-sockets.md) is complete.
 Schema version 11 persists a preferred listen port, default `6881`; one
 application-generation allocator resolves actual TCP and UDP endpoints under
 the shared ten-retry/system-fallback policy; and one bounded UDP receive owner
-serves DHT. Tracker and DHT peer advertisement remain the next slice.
+serves DHT. It provides the transport prerequisite consumed by Tactical `092`.
 
-Planned Tactical
-[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) now
-defines that slice. It selects mapped-external or actual local TCP ports only
+Completed Tactical
+[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md)
+selects mapped-external or actual local TCP ports only
 for incoming-routable torrent generations, retains tracker-only discovery on
 the explicit port-`1` sentinel otherwise, adds token-authenticated explicit-
 port DHT self-announcement, and moves discovery scheduling into the long-lived
@@ -130,10 +130,11 @@ endpoint:
   actual TCP, actual UDP plus coordination state, and mapped external TCP;
   controlled loopback and eligible local-network peers observed the reported
   TCP listener and exact DHT UDP source, with joined terminal ownership;
-- UDP tracker announces still carry provisional port `6881`, which is not yet
-  derived from the listener or mapped endpoint;
-- the IPv4 DHT uses the session UDP transport but RSTorrent does not treat its
-  endpoint as a TCP peer listener or send `announce_peer`; and
+- UDP tracker announces carry exact current counters plus the selected mapped
+  or listener TCP port for incoming-routable torrents and port `1` otherwise;
+- the IPv4 DHT uses the session UDP transport but does not treat that endpoint
+  as a TCP peer listener; eligible verified public seeds explicitly announce
+  the independently selected TCP port; and
 - PCP, NAT-PMP, IGD v1/WANPPP, IPv6 pinholes, and UDP mappings are absent.
 
 The implementation adds cohesive `peer_io`, `upload`, `seed_content`,
@@ -506,11 +507,10 @@ source equals the runtime UDP endpoint, and TCP connects to that generation's
 reported loopback and eligible local-network listeners. Fixed TCP failure
 leaves DHT available on an explicitly independent ephemeral UDP endpoint.
 
-### 8. [Truthful tracker and DHT peer advertisement](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) — planned
+### 8. [Truthful tracker and DHT peer advertisement](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) — complete
 
-Only after the reachability coordinator has a current eligible listener and,
-where required, an authoritative external mapping should public discovery
-replace the provisional tracker port:
+The reachability coordinator now supplies the current eligible listener and,
+where active, authoritative mapped endpoint to the long-lived discovery owner:
 
 - tracker announces consume the selected advertised peer port and react to
   listener or mapping changes without independent constants;
@@ -525,10 +525,13 @@ replace the provisional tracker port:
   shutdown, mapping invalidation, or torrent ineligibility; and
 - mapped external-port changes trigger bounded corrective announcements.
 
-Controlled tracker and DHT peers should discover and complete from RSTorrent
-without an explicit peer hint. BEP 10 listen-port advertisement and LSD may
-be added here only if their full bounds and private-policy behavior remain a
-coherent part of the slice; otherwise they stay separate.
+Controlled tracker-only and DHT-only libtorrent leechers now discover and
+complete from RSTorrent without an explicit peer hint. In the physical gate,
+both wire mechanisms carry the independently queried live mapped TCP port; an
+off-LAN verifier uses the tracker-decoded port for an exact 4,195,035-byte
+hash-verified transfer. Joined shutdown sends eligible tracker stopped,
+cancels DHT reannouncement, deletes the mapping, and leaves the endpoint
+unreachable. BEP 10 listen-port advertisement and LSD remain separate.
 
 BEP 5 has no immediate peer-withdrawal query. This slice proves cancellation
 of new announces, eventual controlled-node expiry, and failed connection to a
@@ -656,12 +659,11 @@ projection in the ordinary Swarm/Peers model. Tactical
 [`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md) completes the
 non-loopback listener, session reachability owner, UPnP IGD v2 mapping, and
 externally dialed exact TCP seeding proof. Tactical
-[`089`](../tactical/089-coordinated-session-listen-sockets.md) now completes
-the preferred-port, coordinated TCP/UDP allocation, bounded session UDP/DHT
-owner, and actual-endpoint prerequisite. Planned Tactical
-[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) is the
-next reachability slice. It replaces the provisional tracker port, adds
-eligible explicit-port DHT self-announcement, corrects mapping changes, and
-orders tracker stopping plus DHT cancellation before mapping or listener
-shutdown. PCP and NAT-PMP remain later independent slices until they have
-suitable runtime evidence.
+[`089`](../tactical/089-coordinated-session-listen-sockets.md) completes the
+preferred-port, coordinated TCP/UDP allocation, bounded session UDP/DHT
+owner, and actual-endpoint prerequisite. Tactical
+[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) now
+completes truthful UDP-tracker and explicit-port DHT advertisement across the
+long-lived torrent lifetime, mapping correction, and ordered stopping. PCP and
+NAT-PMP remain later independent slices until they have suitable runtime
+evidence.

@@ -422,10 +422,12 @@ multi-peer payload-upload ownership. Completed Tactical
 [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) owns ordinary
 incoming swarm/view integration and the per-torrent lifetime boundary it
 requires; both now pass controlled interoperability and resource closure.
-PEX, LSD, uTP, NAT traversal, persistent peer caches,
-mature peer-ID duplicate resolution, and dynamic VPN or metered policy remain
-separate tacticals. The provisional tracker announce port is still independent
-of the loopback listener and does not establish reachability.
+PEX, LSD, uTP, NAT traversal, persistent peer caches, mature peer-ID duplicate
+resolution, and dynamic VPN or metered policy remain separate tacticals.
+Completed Tactical [`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md)
+feeds the generation-fenced selected TCP endpoint into tracker and DHT
+discovery; endpoint selection remains distinct from observed incoming
+reachability.
 
 ## Current Evidence And Gaps
 
@@ -607,6 +609,8 @@ interoperability and terminal resource closure.
 Tactical `088` additionally proves those unchanged observations during an
 exact 4,195,035-byte externally dialed transfer through a verified mapping,
 followed by retained Swarm history and terminal resource closure.
-Advertised-port updates, finite upload bandwidth and seeding goals, measured
-performance selection, peer-ID duplicate resolution, full parole selection,
-PEX, and persisted peer caches remain later work.
+Tactical `092` additionally proves tracker-only, DHT-only, and mapped
+wire-port discovery into the same retained peer lifetime. Finite upload
+bandwidth, seeding goals, measured performance selection, peer-ID duplicate
+resolution, full parole selection, PEX, and persisted peer caches remain
+later work.
