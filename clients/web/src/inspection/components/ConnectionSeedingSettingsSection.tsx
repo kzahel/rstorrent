@@ -27,6 +27,7 @@ interface ConnectionSeedingSettingsSectionProps {
 
 interface DraftValidation {
   readonly settings: ClientSettings | null;
+  readonly preferredPortError: string | null;
   readonly fixedPortError: string | null;
   readonly peerLimitError: string | null;
   readonly uploadSlotsError: string | null;
@@ -45,6 +46,9 @@ export function ConnectionSeedingSettingsSection({
     isFixedListener(configured.listener)
       ? String(configured.listener.port)
       : "",
+  );
+  const [preferredPort, setPreferredPort] = useState(
+    String(configured.preferred_listen_port),
   );
   const [portMapping, setPortMapping] = useState<PortMappingPolicy>(
     configured.port_mapping,
@@ -68,6 +72,7 @@ export function ConnectionSeedingSettingsSection({
         : "",
     );
     setPortMapping(configured.port_mapping);
+    setPreferredPort(String(configured.preferred_listen_port));
     setPeerLimit(String(configured.peer_connection_limit));
     setUploadSlots(String(configured.upload_slots));
   }, [
@@ -76,14 +81,22 @@ export function ConnectionSeedingSettingsSection({
       ? configured.listener.port
       : null,
     configured.port_mapping,
+    configured.preferred_listen_port,
     configured.peer_connection_limit,
     configured.upload_slots,
   ]);
 
   const validation = useMemo(
     () =>
-      validateDraft(listenerMode, fixedPort, portMapping, peerLimit, uploadSlots),
-    [fixedPort, listenerMode, peerLimit, portMapping, uploadSlots],
+      validateDraft(
+        listenerMode,
+        preferredPort,
+        fixedPort,
+        portMapping,
+        peerLimit,
+        uploadSlots,
+      ),
+    [fixedPort, listenerMode, peerLimit, portMapping, preferredPort, uploadSlots],
   );
   const dirty =
     validation.settings !== null &&
@@ -102,6 +115,7 @@ export function ConnectionSeedingSettingsSection({
         : "",
     );
     setPortMapping(configured.port_mapping);
+    setPreferredPort(String(configured.preferred_listen_port));
     setPeerLimit(String(configured.peer_connection_limit));
     setUploadSlots(String(configured.upload_slots));
     setSaveStatus(null);
@@ -166,7 +180,7 @@ export function ConnectionSeedingSettingsSection({
             <ListenerOption
               mode="automatic_loopback"
               label="Automatic device-only port"
-              description="Let the operating system select a loopback port at startup."
+              description="Start with the preferred port, then use bounded fallback if it is occupied."
               selected={listenerMode === "automatic_loopback"}
               disabled={!manageable || pending}
               onSelect={() =>
@@ -204,6 +218,17 @@ export function ConnectionSeedingSettingsSection({
               }
             />
           </div>
+          <NumberField
+            id="preferred-listener-port"
+            label="Preferred automatic port"
+            description="First TCP and UDP candidate for automatic listening. The running ports may differ after bounded conflict fallback."
+            value={preferredPort}
+            minimum={FIXED_PORT_MINIMUM}
+            maximum={FIXED_PORT_MAXIMUM}
+            error={validation.preferredPortError}
+            disabled={!manageable || pending}
+            onChange={(value) => updateDraft(() => setPreferredPort(value))}
+          />
           {isFixedListenerMode(listenerMode) ? (
             <NumberField
               id="fixed-listener-port"
@@ -478,11 +503,17 @@ function PortMappingRuntime({ status }: { readonly status: PortMappingStatus }) 
 
 function validateDraft(
   listenerMode: ListenerMode,
+  preferredPort: string,
   fixedPort: string,
   portMapping: PortMappingPolicy,
   peerLimit: string,
   uploadSlots: string,
 ): DraftValidation {
+  const preferred = parseBoundedInteger(
+    preferredPort,
+    FIXED_PORT_MINIMUM,
+    FIXED_PORT_MAXIMUM,
+  );
   const port = parseBoundedInteger(
     fixedPort,
     FIXED_PORT_MINIMUM,
@@ -504,6 +535,10 @@ function validateDraft(
       : port === null
         ? `Enter a whole number from ${FIXED_PORT_MINIMUM} to ${FIXED_PORT_MAXIMUM}.`
         : null;
+  const preferredPortError =
+    preferred === null
+      ? `Enter a whole number from ${FIXED_PORT_MINIMUM} to ${FIXED_PORT_MAXIMUM}.`
+      : null;
   const peerLimitError =
     peers === null
       ? `Enter a whole number from ${PEER_LIMIT_MINIMUM} to ${PEER_LIMIT_MAXIMUM}.`
@@ -512,8 +547,19 @@ function validateDraft(
     slots === null
       ? `Enter a whole number from ${UPLOAD_SLOTS_MINIMUM} to ${UPLOAD_SLOTS_MAXIMUM}.`
       : null;
-  if (fixedPortError !== null || peerLimitError !== null || uploadSlotsError !== null) {
-    return { settings: null, fixedPortError, peerLimitError, uploadSlotsError };
+  if (
+    preferredPortError !== null ||
+    fixedPortError !== null ||
+    peerLimitError !== null ||
+    uploadSlotsError !== null
+  ) {
+    return {
+      settings: null,
+      preferredPortError,
+      fixedPortError,
+      peerLimitError,
+      uploadSlotsError,
+    };
   }
   const listener: ListenerPolicy =
     listenerMode === "disabled"
@@ -528,10 +574,12 @@ function validateDraft(
   return {
     settings: {
       listener,
+      preferred_listen_port: preferred as number,
       port_mapping: portMapping,
       peer_connection_limit: peers as number,
       upload_slots: slots as number,
     },
+    preferredPortError: null,
     fixedPortError: null,
     peerLimitError: null,
     uploadSlotsError: null,
@@ -557,6 +605,7 @@ function sameClientSettings(left: ClientSettings, right: ClientSettings): boolea
       (isFixedListener(right.listener) &&
         left.listener.port === right.listener.port)) &&
     left.port_mapping === right.port_mapping &&
+    left.preferred_listen_port === right.preferred_listen_port &&
     left.peer_connection_limit === right.peer_connection_limit &&
     left.upload_slots === right.upload_slots
   );

@@ -60,6 +60,7 @@
                 "listener": {
                   "type": "disabled"
                 },
+                "preferred_listen_port": 6881,
                 "port_mapping": "disabled",
                 "peer_connection_limit": 200,
                 "upload_slots": 8
@@ -68,6 +69,7 @@
                 "listener": {
                   "type": "disabled"
                 },
+                "preferred_listen_port": 6881,
                 "port_mapping": "disabled",
                 "peer_connection_limit": 200,
                 "upload_slots": 8
@@ -183,6 +185,7 @@
                 "listener": {
                   "type": "disabled"
                 },
+                "preferred_listen_port": 6881,
                 "port_mapping": "disabled",
                 "peer_connection_limit": 200,
                 "upload_slots": 8
@@ -191,6 +194,7 @@
                 "listener": {
                   "type": "disabled"
                 },
+                "preferred_listen_port": 6881,
                 "port_mapping": "disabled",
                 "peer_connection_limit": 200,
                 "upload_slots": 8

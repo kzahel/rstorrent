@@ -7,7 +7,7 @@ export type ListenerPolicy = { "type": "disabled" } | { "type": "automatic_loopb
 
 export type PortMappingPolicy = "disabled" | "upnp";
 
-export type ClientSettings = { listener: ListenerPolicy, port_mapping: PortMappingPolicy, peer_connection_limit: number, upload_slots: number, };
+export type ClientSettings = { listener: ListenerPolicy, preferred_listen_port: number, port_mapping: PortMappingPolicy, peer_connection_limit: number, upload_slots: number, };
 
 export type ListenerBindFailureReason = "address_in_use" | "permission_denied" | "address_unavailable" | "other";
 
@@ -21,9 +21,9 @@ export type PortMappingStatus = { "type": "disabled" } | { "type": "ineligible" 
 
 export type ClientSettingsRuntimeView = { configured: ClientSettings, active: ClientSettings, restart_required: boolean, effective_peer_connection_limit: number, listener_status: ListenerStatus, port_mapping_status: PortMappingStatus, };
 
-export const DEFAULT_CLIENT_SETTINGS: ClientSettings = {"listener":{"type":"disabled"},"port_mapping":"disabled","peer_connection_limit":200,"upload_slots":8};
+export const DEFAULT_CLIENT_SETTINGS: ClientSettings = {"listener":{"type":"disabled"},"preferred_listen_port":6881,"port_mapping":"disabled","peer_connection_limit":200,"upload_slots":8};
 
-export const DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW: ClientSettingsRuntimeView = {"configured":{"listener":{"type":"disabled"},"port_mapping":"disabled","peer_connection_limit":200,"upload_slots":8},"active":{"listener":{"type":"disabled"},"port_mapping":"disabled","peer_connection_limit":200,"upload_slots":8},"restart_required":false,"effective_peer_connection_limit":200,"listener_status":{"type":"disabled"},"port_mapping_status":{"type":"disabled"}};
+export const DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW: ClientSettingsRuntimeView = {"configured":{"listener":{"type":"disabled"},"preferred_listen_port":6881,"port_mapping":"disabled","peer_connection_limit":200,"upload_slots":8},"active":{"listener":{"type":"disabled"},"preferred_listen_port":6881,"port_mapping":"disabled","peer_connection_limit":200,"upload_slots":8},"restart_required":false,"effective_peer_connection_limit":200,"listener_status":{"type":"disabled"},"port_mapping_status":{"type":"disabled"}};
 
 export type FilePriority = "normal" | "skip";
 

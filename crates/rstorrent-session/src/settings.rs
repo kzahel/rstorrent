@@ -16,7 +16,7 @@ pub use contract::{
 };
 pub(crate) use persistence::{
     SettingsPersistenceError, create_client_settings, migrate_client_settings_to_v10,
-    read_client_settings, replace_client_settings,
+    migrate_client_settings_to_v11, read_client_settings, replace_client_settings,
 };
 pub(crate) use runtime::classify_listener_bind_failure;
 

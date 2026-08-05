@@ -5007,6 +5007,7 @@ mod tests {
 
         let configured = ClientSettings {
             listener: ListenerPolicy::AutomaticLoopback,
+            preferred_listen_port: 6_881,
             port_mapping: crate::PortMappingPolicy::Disabled,
             peer_connection_limit: 321,
             upload_slots: 3,
@@ -7029,6 +7030,7 @@ mod tests {
             &configuration,
             ClientSettings {
                 listener: ListenerPolicy::AutomaticLoopback,
+                preferred_listen_port: 6_881,
                 port_mapping: crate::PortMappingPolicy::Disabled,
                 peer_connection_limit: 1,
                 upload_slots: 1,
@@ -7230,6 +7232,7 @@ mod tests {
 
         let zero_slots = ClientSettings {
             listener: ListenerPolicy::AutomaticLoopback,
+            preferred_listen_port: 6_881,
             port_mapping: crate::PortMappingPolicy::Disabled,
             peer_connection_limit: 1,
             upload_slots: 0,
@@ -7528,6 +7531,7 @@ mod tests {
 
         let repaired = ClientSettings {
             listener: ListenerPolicy::AutomaticLoopback,
+            preferred_listen_port: 6_881,
             port_mapping: crate::PortMappingPolicy::Disabled,
             peer_connection_limit: 321,
             upload_slots: 0,

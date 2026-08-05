@@ -1420,6 +1420,12 @@ describe("inspection application", () => {
     expect(save).toBeDisabled();
     await user.clear(port);
     await user.type(port, "1024");
+    const preferredPort = within(dialog).getByRole("spinbutton", {
+      name: "Preferred automatic port",
+    });
+    expect(preferredPort).toHaveValue(6881);
+    await user.clear(preferredPort);
+    await user.type(preferredPort, "6882");
     const peers = within(dialog).getByRole("spinbutton", {
       name: "Peer connection limit",
     });
@@ -1442,6 +1448,7 @@ describe("inspection application", () => {
         type: "set_client_settings",
         settings: {
           listener: { type: "fixed_local_network", port: 1024 },
+          preferred_listen_port: 6882,
           port_mapping: "upnp",
           peer_connection_limit: 2000,
           upload_slots: 0,
@@ -1487,6 +1494,7 @@ describe("inspection application", () => {
     const user = userEvent.setup();
     const active = {
       listener: { type: "fixed_loopback" as const, port: 51_413 },
+      preferred_listen_port: 6_881,
       port_mapping: "disabled" as const,
       peer_connection_limit: 200,
       upload_slots: 8,

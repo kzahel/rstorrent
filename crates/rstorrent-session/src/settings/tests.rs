@@ -15,6 +15,7 @@ use super::{
 fn defaults_follow_engine_policy_without_enabling_the_listener() {
     let settings = ClientSettings::default();
     assert_eq!(settings.listener, ListenerPolicy::Disabled);
+    assert_eq!(settings.preferred_listen_port, 6_881);
     assert_eq!(settings.port_mapping, PortMappingPolicy::Disabled);
     assert_eq!(
         settings.peer_connection_limit,
@@ -40,6 +41,25 @@ fn defaults_follow_engine_policy_without_enabling_the_listener() {
 
 #[test]
 fn validates_exact_listener_connection_and_slot_boundaries() {
+    for port in [1_024, 6_881, 65_535] {
+        assert_eq!(
+            ClientSettings {
+                preferred_listen_port: port,
+                ..ClientSettings::default()
+            }
+            .validate(),
+            Ok(())
+        );
+    }
+    assert_eq!(
+        ClientSettings {
+            preferred_listen_port: 1_023,
+            ..ClientSettings::default()
+        }
+        .validate(),
+        Err(ClientSettingsError::PreferredListenerPort { port: 1_023 })
+    );
+
     for port in [1_024, 65_535] {
         assert_eq!(
             ClientSettings {
@@ -135,6 +155,7 @@ fn runtime_view_distinguishes_configured_active_effective_and_observed() {
     let active = ClientSettings::default();
     let configured = ClientSettings {
         listener: ListenerPolicy::AutomaticLoopback,
+        preferred_listen_port: 42_000,
         port_mapping: PortMappingPolicy::Disabled,
         peer_connection_limit: 500,
         upload_slots: 1,
@@ -212,6 +233,7 @@ fn typed_persistence_round_trips_one_atomic_group() {
     );
     let configured = ClientSettings {
         listener: ListenerPolicy::FixedLocalNetwork { port: 42_000 },
+        preferred_listen_port: 41_000,
         port_mapping: PortMappingPolicy::Upnp,
         peer_connection_limit: 1,
         upload_slots: 0,
@@ -240,14 +262,48 @@ fn version_nine_settings_migrate_without_enabling_mapping() {
         .unwrap();
     let transaction = connection.transaction().unwrap();
     super::migrate_client_settings_to_v10(&transaction).unwrap();
+    super::migrate_client_settings_to_v11(&transaction).unwrap();
     transaction.commit().unwrap();
     assert_eq!(
         read_client_settings(&connection).unwrap(),
         ClientSettings {
             listener: ListenerPolicy::FixedLoopback { port: 42_001 },
+            preferred_listen_port: 6_881,
             port_mapping: PortMappingPolicy::Disabled,
             peer_connection_limit: 321,
             upload_slots: 3,
+        }
+    );
+}
+
+#[test]
+fn version_ten_settings_migrate_with_the_preferred_port_default() {
+    let mut connection = Connection::open_in_memory().unwrap();
+    connection
+        .execute_batch(
+            "CREATE TABLE client_settings (
+                singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                listener_mode TEXT NOT NULL,
+                listener_port INTEGER,
+                port_mapping_mode TEXT NOT NULL,
+                peer_connection_limit INTEGER NOT NULL,
+                upload_slots INTEGER NOT NULL
+             );
+             INSERT INTO client_settings VALUES
+                (1, 'automatic_local_network', NULL, 'upnp', 444, 5);",
+        )
+        .unwrap();
+    let transaction = connection.transaction().unwrap();
+    super::migrate_client_settings_to_v11(&transaction).unwrap();
+    transaction.commit().unwrap();
+    assert_eq!(
+        read_client_settings(&connection).unwrap(),
+        ClientSettings {
+            listener: ListenerPolicy::AutomaticLocalNetwork,
+            preferred_listen_port: 6_881,
+            port_mapping: PortMappingPolicy::Upnp,
+            peer_connection_limit: 444,
+            upload_slots: 5,
         }
     );
 }
@@ -263,6 +319,14 @@ fn sqlite_constraints_and_decoder_reject_invalid_durable_shapes() {
         connection
             .execute(
                 "UPDATE client_settings SET peer_connection_limit = 0 WHERE singleton = 1",
+                [],
+            )
+            .is_err()
+    );
+    assert!(
+        connection
+            .execute(
+                "UPDATE client_settings SET preferred_listen_port = 1023 WHERE singleton = 1",
                 [],
             )
             .is_err()

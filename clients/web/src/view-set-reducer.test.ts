@@ -155,6 +155,7 @@ describe("view-set reducer", () => {
     );
     const configured = {
       listener: { type: "automatic_loopback" as const },
+      preferred_listen_port: 6_881,
       port_mapping: "disabled" as const,
       peer_connection_limit: 320,
       upload_slots: 12,

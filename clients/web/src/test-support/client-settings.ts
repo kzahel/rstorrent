@@ -3,6 +3,7 @@ import type { ClientSettings, ClientSettingsRuntimeView } from "../api";
 export function clientSettingsFixture(): ClientSettings {
   return {
     listener: { type: "disabled" },
+    preferred_listen_port: 6_881,
     port_mapping: "disabled",
     peer_connection_limit: 200,
     upload_slots: 8,

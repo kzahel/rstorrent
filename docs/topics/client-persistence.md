@@ -37,6 +37,9 @@ version `10` with automatic/fixed local-network listener variants and explicit
 disabled-or-UPnP mapping intent. New and migrated profiles remain mapping
 disabled; concrete local and external endpoints and mapping leases remain
 runtime facts rather than durable state.
+Tactical `089` advances the singleton to schema version `11` with a validated
+restart-applied preferred listen port. Fresh and version-10 profiles default
+to `6881`; actual TCP, UDP, and mapped external ports remain runtime facts.
 
 ## Scope
 

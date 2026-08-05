@@ -946,6 +946,12 @@
         "port_mapping": {
           "$ref": "#/$defs/PortMappingPolicy"
         },
+        "preferred_listen_port": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 1024,
+          "type": "integer"
+        },
         "upload_slots": {
           "format": "uint16",
           "maximum": 50,
@@ -955,6 +961,7 @@
       },
       "required": [
         "listener",
+        "preferred_listen_port",
         "port_mapping",
         "peer_connection_limit",
         "upload_slots"
@@ -3345,6 +3352,7 @@
             },
             "peer_connection_limit": 200,
             "port_mapping": "disabled",
+            "preferred_listen_port": 6881,
             "upload_slots": 8
           }
         },
@@ -4670,6 +4678,7 @@
                   },
                   "peer_connection_limit": 200,
                   "port_mapping": "disabled",
+                  "preferred_listen_port": 6881,
                   "upload_slots": 8
                 },
                 "configured": {
@@ -4678,6 +4687,7 @@
                   },
                   "peer_connection_limit": 200,
                   "port_mapping": "disabled",
+                  "preferred_listen_port": 6881,
                   "upload_slots": 8
                 },
                 "effective_peer_connection_limit": 200,

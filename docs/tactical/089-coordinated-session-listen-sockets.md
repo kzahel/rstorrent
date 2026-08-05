@@ -1,6 +1,7 @@
 # Tactical 089: Coordinated Session Listen Sockets
 
-Status: Planned.
+Status: In progress. The schema 11 preferred-port and product-contract slice
+is implemented; coordinated socket ownership remains.
 
 Topics: `incoming-reachability-and-seeding`, `client-persistence`,
 `dht-discovery`, `application-view-api`, `protocol-support`,
@@ -358,4 +359,12 @@ the same application generation.
 
 ## Completion Evidence
 
-Implementation and evidence are pending.
+- Schema version 11 adds the constrained `preferred_listen_port` column,
+  defaults fresh and version-10 profiles to `6881`, retains atomic group
+  replacement, and rejects corrupt values below `1024`.
+- The generated JSON Schema, TypeScript, validators, web form, runtime
+  equality checks, fixtures, and UniFFI Android constructor carry the same
+  setting. Web tests pass `178` tests with `2` skipped; Android debug unit
+  tests pass after regenerating the ignored UniFFI Kotlin source.
+- Focused Rust settings tests pass `9` cases and focused durable command tests
+  pass `2` cases. Socket ownership implementation and full validation remain.

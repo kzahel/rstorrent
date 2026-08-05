@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub const MIN_FIXED_LISTENER_PORT: u16 = 1_024;
+pub const DEFAULT_PREFERRED_LISTEN_PORT: u16 = 6_881;
+pub const MIN_PREFERRED_LISTEN_PORT: u16 = 1_024;
 pub const MIN_PEER_CONNECTION_LIMIT: u32 = 1;
 pub const MAX_PEER_CONNECTION_LIMIT: u32 = 2_000;
 pub const MAX_UPLOAD_SLOTS: u16 = 50;
@@ -43,6 +45,8 @@ pub enum PortMappingPolicy {
 #[serde(deny_unknown_fields)]
 pub struct ClientSettings {
     pub listener: ListenerPolicy,
+    #[schemars(range(min = 1_024))]
+    pub preferred_listen_port: u16,
     pub port_mapping: PortMappingPolicy,
     #[schemars(range(min = 1, max = 2_000))]
     pub peer_connection_limit: u32,
@@ -54,6 +58,7 @@ impl Default for ClientSettings {
     fn default() -> Self {
         Self {
             listener: ListenerPolicy::Disabled,
+            preferred_listen_port: DEFAULT_PREFERRED_LISTEN_PORT,
             port_mapping: PortMappingPolicy::Disabled,
             peer_connection_limit: u32::try_from(DEFAULT_CONNECTION_LIMIT)
                 .expect("engine connection default fits the settings contract"),
@@ -65,6 +70,11 @@ impl Default for ClientSettings {
 
 impl ClientSettings {
     pub fn validate(&self) -> Result<(), ClientSettingsError> {
+        if self.preferred_listen_port < MIN_PREFERRED_LISTEN_PORT {
+            return Err(ClientSettingsError::PreferredListenerPort {
+                port: self.preferred_listen_port,
+            });
+        }
         if let ListenerPolicy::FixedLoopback { port } | ListenerPolicy::FixedLocalNetwork { port } =
             self.listener
             && port < MIN_FIXED_LISTENER_PORT
@@ -89,6 +99,7 @@ impl ClientSettings {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ClientSettingsError {
+    PreferredListenerPort { port: u16 },
     FixedListenerPort { port: u16 },
     PeerConnectionLimit { value: u32 },
     UploadSlots { value: u16 },
@@ -97,6 +108,10 @@ pub enum ClientSettingsError {
 impl fmt::Display for ClientSettingsError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::PreferredListenerPort { .. } => write!(
+                formatter,
+                "preferred listener port must be {MIN_PREFERRED_LISTEN_PORT}..=65535"
+            ),
             Self::FixedListenerPort { .. } => write!(
                 formatter,
                 "fixed listener port must be {MIN_FIXED_LISTENER_PORT}..=65535"

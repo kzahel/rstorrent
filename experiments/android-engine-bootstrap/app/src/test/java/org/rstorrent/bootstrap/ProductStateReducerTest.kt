@@ -45,6 +45,7 @@ class ProductStateReducerTest {
         val settings =
             ClientSettings(
                 listener = ListenerPolicy.FixedLoopback(65_535U.toUShort()),
+                preferredListenPort = 6_881U.toUShort(),
                 portMapping = PortMappingPolicy.UPNP,
                 peerConnectionLimit = 2_000U,
                 uploadSlots = 50U.toUShort(),
@@ -301,6 +302,7 @@ class ProductStateReducerTest {
         configured: ClientSettings =
             ClientSettings(
                 listener = ListenerPolicy.Disabled,
+                preferredListenPort = 6_881U.toUShort(),
                 portMapping = PortMappingPolicy.DISABLED,
                 peerConnectionLimit = 200U,
                 uploadSlots = 8U.toUShort(),
@@ -310,6 +312,7 @@ class ProductStateReducerTest {
             configured,
             ClientSettings(
                 listener = ListenerPolicy.Disabled,
+                preferredListenPort = 6_881U.toUShort(),
                 portMapping = PortMappingPolicy.DISABLED,
                 peerConnectionLimit = 200U,
                 uploadSlots = 8U.toUShort(),

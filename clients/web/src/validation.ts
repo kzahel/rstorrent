@@ -1005,6 +1005,12 @@ function validateClientSettings(value: unknown): void {
   if (listenerType === "fixed_loopback" || listenerType === "fixed_local_network") {
     boundedInteger(listener.port, "fixed listener port", 1_024, 65_535);
   }
+  boundedInteger(
+    settings.preferred_listen_port,
+    "preferred listener port",
+    1_024,
+    65_535,
+  );
   oneOf(settings.port_mapping, "port mapping policy", ["disabled", "upnp"]);
   boundedInteger(
     settings.peer_connection_limit,
@@ -1159,6 +1165,7 @@ function clientSettingsEqual(left: unknown, right: unknown): boolean {
   const leftListener = asRecord(leftSettings.listener, "configured listener");
   const rightListener = asRecord(rightSettings.listener, "active listener");
   return (
+    leftSettings.preferred_listen_port === rightSettings.preferred_listen_port &&
     leftSettings.peer_connection_limit === rightSettings.peer_connection_limit &&
     leftSettings.upload_slots === rightSettings.upload_slots &&
     leftSettings.port_mapping === rightSettings.port_mapping &&
