@@ -24,10 +24,11 @@ use crate::control::{
 use crate::have::{HaveError, HaveState, MAX_DURABLE_HAVE_STATE_BYTES, MAX_DURABLE_PIECES};
 use crate::settings::{
     ClientSettings, SettingsPersistenceError, StorageRootAvailability, StorageRootSnapshot,
-    StorageSettingsSnapshot, create_client_settings, read_client_settings, replace_client_settings,
+    StorageSettingsSnapshot, create_client_settings, migrate_client_settings_to_v10,
+    read_client_settings, replace_client_settings,
 };
 
-const SCHEMA_VERSION: i64 = 9;
+const SCHEMA_VERSION: i64 = 10;
 const DATABASE_FILENAME: &str = "session.db";
 const MAX_RECEIPTS: i64 = 1024;
 pub(crate) const EPHEMERAL_SESSION_MAX_BYTES: u64 = 256 * 1024 * 1024;
@@ -2265,6 +2266,9 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
     if (1..=8).contains(&version) {
         migrate_client_settings_to_v9(connection)?;
     }
+    if (1..=9).contains(&version) {
+        migrate_client_settings_to_v10_store(connection)?;
+    }
     let stored_profile: String = connection.query_row(
         "SELECT profile_id FROM profile_state WHERE singleton = 1",
         [],
@@ -2555,6 +2559,14 @@ fn migrate_sources_and_intake_bounds_to_v8(connection: &mut Connection) -> Resul
 fn migrate_client_settings_to_v9(connection: &mut Connection) -> Result<(), StoreError> {
     let transaction = connection.transaction()?;
     create_client_settings(&transaction)?;
+    transaction.pragma_update(None, "user_version", 9)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn migrate_client_settings_to_v10_store(connection: &mut Connection) -> Result<(), StoreError> {
+    let transaction = connection.transaction()?;
+    migrate_client_settings_to_v10(&transaction)?;
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;
     Ok(())
@@ -6383,6 +6395,7 @@ mod tests {
                 .expect("open");
         let configured = ClientSettings {
             listener: ListenerPolicy::FixedLoopback { port: 42_001 },
+            port_mapping: crate::PortMappingPolicy::Disabled,
             peer_connection_limit: 321,
             upload_slots: 3,
         };

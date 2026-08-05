@@ -10,11 +10,13 @@ mod runtime;
 
 pub use contract::{
     ClientSettings, ClientSettingsError, ClientSettingsRuntimeView, ListenerBindFailureReason,
-    ListenerPolicy, ListenerStatus, StorageRootAvailability, StorageRootSnapshot,
+    ListenerPolicy, ListenerStatus, PortMappingFailureStage, PortMappingMechanism,
+    PortMappingPolicy, PortMappingStatus, StorageRootAvailability, StorageRootSnapshot,
     StorageSettingsSnapshot,
 };
 pub(crate) use persistence::{
-    SettingsPersistenceError, create_client_settings, read_client_settings, replace_client_settings,
+    SettingsPersistenceError, create_client_settings, migrate_client_settings_to_v10,
+    read_client_settings, replace_client_settings,
 };
 pub(crate) use runtime::classify_listener_bind_failure;
 

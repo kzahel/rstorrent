@@ -1,4 +1,4 @@
-//! One loopback listener with generation-fenced torrent routing.
+//! One session listener with generation-fenced torrent routing.
 
 mod peer_io;
 mod upload_runtime;
@@ -23,7 +23,7 @@ use rstorrent_protocol::peer_wire::{
 };
 use sha1::{Digest, Sha1};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpSocket, TcpStream};
+use tokio::net::{TcpListener, TcpSocket, TcpStream, UdpSocket};
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{Instant, timeout_at};
@@ -67,6 +67,8 @@ pub enum IncomingTcpBootstrap {
     Disabled,
     AutomaticLoopback,
     FixedLoopback(u16),
+    AutomaticLocalNetwork,
+    FixedLocalNetwork(u16),
 }
 
 #[derive(Clone, Debug)]
@@ -82,6 +84,7 @@ pub struct IncomingPeerServiceConfig {
     pub peer_budget: PeerBudget,
     pub upload_scheduler: UploadSchedulerConfig,
     pub upload_read_jobs: usize,
+    local_network_address_override: Option<Ipv4Addr>,
 }
 
 impl IncomingPeerServiceConfig {
@@ -98,6 +101,7 @@ impl IncomingPeerServiceConfig {
             peer_budget: PeerBudget::system_default(),
             upload_scheduler: UploadSchedulerConfig::default(),
             upload_read_jobs: DEFAULT_UPLOAD_READ_JOBS,
+            local_network_address_override: None,
         }
     }
 
@@ -715,18 +719,29 @@ impl IncomingPeerService {
             .upload_scheduler
             .unchoke_interval
             .min(config.upload_scheduler.optimistic_interval);
-        let port = match config.bootstrap {
+        let (bind_address, port) = match config.bootstrap {
             IncomingTcpBootstrap::Disabled => return Ok(None),
-            IncomingTcpBootstrap::AutomaticLoopback => 0,
+            IncomingTcpBootstrap::AutomaticLoopback => (Ipv4Addr::LOCALHOST, 0),
             IncomingTcpBootstrap::FixedLoopback(0) => {
                 return Err(IncomingPeerError::InvalidFixedPort);
             }
-            IncomingTcpBootstrap::FixedLoopback(port) => port,
+            IncomingTcpBootstrap::FixedLoopback(port) => (Ipv4Addr::LOCALHOST, port),
+            IncomingTcpBootstrap::AutomaticLocalNetwork => (
+                select_local_network_ipv4(config.local_network_address_override).await?,
+                0,
+            ),
+            IncomingTcpBootstrap::FixedLocalNetwork(0) => {
+                return Err(IncomingPeerError::InvalidFixedPort);
+            }
+            IncomingTcpBootstrap::FixedLocalNetwork(port) => (
+                select_local_network_ipv4(config.local_network_address_override).await?,
+                port,
+            ),
         };
         let socket =
             TcpSocket::new_v4().map_err(|source| IncomingPeerError::Bind { port, source })?;
         socket
-            .bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port).into())
+            .bind(SocketAddrV4::new(bind_address, port).into())
             .map_err(|source| IncomingPeerError::Bind { port, source })?;
         let listener = socket
             .listen(DEFAULT_LISTEN_BACKLOG)
@@ -818,6 +833,42 @@ impl IncomingPeerService {
         }
         Ok(self.handle.snapshot())
     }
+}
+
+async fn select_local_network_ipv4(
+    address_override: Option<Ipv4Addr>,
+) -> Result<Ipv4Addr, IncomingPeerError> {
+    let address = if let Some(address) = address_override {
+        address
+    } else {
+        let probe = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))
+            .await
+            .map_err(|source| IncomingPeerError::LocalNetworkAddress { source })?;
+        probe
+            .connect(SocketAddrV4::new(Ipv4Addr::new(239, 255, 255, 250), 1900))
+            .await
+            .map_err(|source| IncomingPeerError::LocalNetworkAddress { source })?;
+        match probe
+            .local_addr()
+            .map_err(|source| IncomingPeerError::LocalNetworkAddress { source })?
+        {
+            SocketAddr::V4(address) => *address.ip(),
+            SocketAddr::V6(_) => {
+                return Err(IncomingPeerError::InvalidLocalNetworkAddress);
+            }
+        }
+    };
+    if !eligible_local_network_ipv4(address) {
+        return Err(IncomingPeerError::InvalidLocalNetworkAddress);
+    }
+    Ok(address)
+}
+
+fn eligible_local_network_ipv4(address: Ipv4Addr) -> bool {
+    !address.is_unspecified()
+        && !address.is_loopback()
+        && !address.is_multicast()
+        && !address.is_broadcast()
 }
 
 impl Drop for IncomingPeerService {
@@ -1953,6 +2004,10 @@ async fn join_read(read: Option<ActiveRead>) {
 #[derive(Debug)]
 pub enum IncomingPeerError {
     InvalidFixedPort,
+    InvalidLocalNetworkAddress,
+    LocalNetworkAddress {
+        source: io::Error,
+    },
     InvalidTimeout,
     InvalidScheduler(&'static str),
     InvalidUploadReadJobs {
@@ -1978,6 +2033,11 @@ impl fmt::Display for IncomingPeerError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidFixedPort => formatter.write_str("fixed incoming port must be nonzero"),
+            Self::InvalidLocalNetworkAddress => formatter
+                .write_str("local-network listener requires a concrete non-loopback IPv4 address"),
+            Self::LocalNetworkAddress { source } => {
+                write!(formatter, "select local-network listener address: {source}")
+            }
             Self::InvalidTimeout => formatter.write_str("incoming peer timeouts must be nonzero"),
             Self::InvalidScheduler(reason) => {
                 write!(formatter, "invalid upload scheduler: {reason}")
@@ -1996,7 +2056,7 @@ impl fmt::Display for IncomingPeerError {
                 write!(formatter, "invalid seed registration: {reason}")
             }
             Self::Bind { port, source } => {
-                write!(formatter, "bind loopback incoming port {port}: {source}")
+                write!(formatter, "bind incoming port {port}: {source}")
             }
             Self::Io { operation, source } => write!(formatter, "{operation}: {source}"),
             Self::TaskJoin(error) => write!(formatter, "incoming task join: {error}"),
@@ -2007,7 +2067,9 @@ impl fmt::Display for IncomingPeerError {
 impl Error for IncomingPeerError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::Bind { source, .. } | Self::Io { source, .. } => Some(source),
+            Self::LocalNetworkAddress { source }
+            | Self::Bind { source, .. }
+            | Self::Io { source, .. } => Some(source),
             _ => None,
         }
     }
@@ -2016,6 +2078,7 @@ impl Error for IncomingPeerError {
 #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
+    use std::net::Ipv4Addr;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, Mutex};
@@ -2191,6 +2254,26 @@ mod tests {
             peer_budget: PeerBudget::system_default(),
             upload_scheduler: UploadSchedulerConfig::default(),
             upload_read_jobs: super::DEFAULT_UPLOAD_READ_JOBS,
+            local_network_address_override: None,
+        }
+    }
+
+    #[test]
+    fn local_network_address_eligibility_is_closed() {
+        for address in [
+            Ipv4Addr::UNSPECIFIED,
+            Ipv4Addr::LOCALHOST,
+            Ipv4Addr::BROADCAST,
+            Ipv4Addr::new(239, 255, 255, 250),
+        ] {
+            assert!(!super::eligible_local_network_ipv4(address));
+        }
+        for address in [
+            Ipv4Addr::new(10, 0, 0, 2),
+            Ipv4Addr::new(192, 168, 1, 2),
+            Ipv4Addr::new(203, 0, 113, 2),
+        ] {
+            assert!(super::eligible_local_network_ipv4(address));
         }
     }
 

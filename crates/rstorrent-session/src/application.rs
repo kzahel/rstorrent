@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 use std::future::Future;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -404,6 +405,20 @@ impl ApplicationService {
                 Err(IncomingPeerError::Bind { source, .. }) => {
                     (None, classify_listener_bind_failure(&source))
                 }
+                Err(IncomingPeerError::LocalNetworkAddress { source }) => (
+                    None,
+                    classify_listener_bind_failure(&io::Error::new(
+                        io::ErrorKind::AddrNotAvailable,
+                        source,
+                    )),
+                ),
+                Err(error @ IncomingPeerError::InvalidLocalNetworkAddress) => (
+                    None,
+                    classify_listener_bind_failure(&io::Error::new(
+                        io::ErrorKind::AddrNotAvailable,
+                        error,
+                    )),
+                ),
                 Err(error) => return Err(error.into()),
             };
         let mut dht_config = config.dht;
@@ -4965,6 +4980,7 @@ mod tests {
 
         let configured = ClientSettings {
             listener: ListenerPolicy::AutomaticLoopback,
+            port_mapping: crate::PortMappingPolicy::Disabled,
             peer_connection_limit: 321,
             upload_slots: 3,
         };
@@ -6986,6 +7002,7 @@ mod tests {
             &configuration,
             ClientSettings {
                 listener: ListenerPolicy::AutomaticLoopback,
+                port_mapping: crate::PortMappingPolicy::Disabled,
                 peer_connection_limit: 1,
                 upload_slots: 1,
             },
@@ -7186,6 +7203,7 @@ mod tests {
 
         let zero_slots = ClientSettings {
             listener: ListenerPolicy::AutomaticLoopback,
+            port_mapping: crate::PortMappingPolicy::Disabled,
             peer_connection_limit: 1,
             upload_slots: 0,
         };
@@ -7449,6 +7467,7 @@ mod tests {
 
         let repaired = ClientSettings {
             listener: ListenerPolicy::AutomaticLoopback,
+            port_mapping: crate::PortMappingPolicy::Disabled,
             peer_connection_limit: 321,
             upload_slots: 0,
         };

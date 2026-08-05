@@ -999,10 +999,13 @@ function validateClientSettings(value: unknown): void {
     "disabled",
     "automatic_loopback",
     "fixed_loopback",
+    "automatic_local_network",
+    "fixed_local_network",
   ]);
-  if (listenerType === "fixed_loopback") {
+  if (listenerType === "fixed_loopback" || listenerType === "fixed_local_network") {
     boundedInteger(listener.port, "fixed listener port", 1_024, 65_535);
   }
+  oneOf(settings.port_mapping, "port mapping policy", ["disabled", "upnp"]);
   boundedInteger(
     settings.peer_connection_limit,
     "peer connection limit",
@@ -1039,14 +1042,28 @@ function validateClientSettingsRuntime(value: unknown): void {
     "bind_failed",
   ]);
   if (statusType === "listening") {
-    if (boundedString(status.address, "listener address", 64) !== "127.0.0.1") {
-      throw new ContractError("listener address is not IPv4 loopback");
-    }
+    const address = boundedString(status.address, "listener address", 64);
     const port = boundedInteger(status.port, "listener port", 1, 65_535);
     if (listener.type === "disabled") {
       throw new ContractError("disabled listener reports a listening status");
     }
-    if (listener.type === "fixed_loopback" && listener.port !== port) {
+    if (
+      (listener.type === "automatic_loopback" || listener.type === "fixed_loopback") &&
+      address !== "127.0.0.1"
+    ) {
+      throw new ContractError("loopback listener reports another address");
+    }
+    if (
+      (listener.type === "automatic_local_network" ||
+        listener.type === "fixed_local_network") &&
+      !isConcreteNonLoopbackIpv4(address)
+    ) {
+      throw new ContractError("local-network listener address is invalid");
+    }
+    if (
+      (listener.type === "fixed_loopback" || listener.type === "fixed_local_network") &&
+      listener.port !== port
+    ) {
       throw new ContractError("fixed listener status reports another port");
     }
   } else if (statusType === "bind_failed") {
@@ -1063,6 +1080,77 @@ function validateClientSettingsRuntime(value: unknown): void {
   } else if (listener.type !== "disabled") {
     throw new ContractError("enabled listener reports a disabled status");
   }
+
+  const mappingStatus = asRecord(runtime.port_mapping_status, "port mapping status");
+  const mappingStatusType = oneOf(
+    mappingStatus.type,
+    "port mapping status type",
+    [
+      "disabled",
+      "ineligible",
+      "discovering",
+      "mapping",
+      "mapped",
+      "failed",
+      "renewal_failed",
+      "stopping",
+    ],
+  );
+  if (mappingStatusType === "disabled") {
+    if (active.port_mapping !== "disabled") {
+      throw new ContractError("enabled port mapping reports a disabled status");
+    }
+  } else if (active.port_mapping !== "upnp") {
+    throw new ContractError("disabled port mapping reports active runtime work");
+  }
+  if (mappingStatusType === "mapped") {
+    oneOf(mappingStatus.mechanism, "port mapping mechanism", ["upnp_igd_v2"]);
+    const localAddress = boundedString(
+      mappingStatus.local_address,
+      "mapped local address",
+      64,
+    );
+    const localPort = boundedInteger(
+      mappingStatus.local_port,
+      "mapped local port",
+      1,
+      65_535,
+    );
+    boundedString(mappingStatus.external_address, "mapped external address", 64);
+    boundedInteger(mappingStatus.external_port, "mapped external port", 1, 65_535);
+    boundedInteger(mappingStatus.lease_seconds, "mapping lease", 1, MAX_U32);
+    if (
+      statusType !== "listening" ||
+      status.address !== localAddress ||
+      status.port !== localPort
+    ) {
+      throw new ContractError("mapped endpoint differs from the active listener");
+    }
+  } else if (mappingStatusType === "failed") {
+    oneOf(mappingStatus.stage, "port mapping failure stage", [
+      "discovery",
+      "description",
+      "external_address",
+      "add",
+      "verify",
+      "renewal",
+      "delete",
+    ]);
+    boundedString(mappingStatus.detail, "port mapping failure detail", 512);
+  } else if (mappingStatusType === "renewal_failed") {
+    boundedString(
+      mappingStatus.external_address,
+      "renewal-failed external address",
+      64,
+    );
+    boundedInteger(
+      mappingStatus.external_port,
+      "renewal-failed external port",
+      1,
+      65_535,
+    );
+    boundedString(mappingStatus.detail, "mapping renewal failure detail", 512);
+  }
 }
 
 function clientSettingsEqual(left: unknown, right: unknown): boolean {
@@ -1073,8 +1161,27 @@ function clientSettingsEqual(left: unknown, right: unknown): boolean {
   return (
     leftSettings.peer_connection_limit === rightSettings.peer_connection_limit &&
     leftSettings.upload_slots === rightSettings.upload_slots &&
+    leftSettings.port_mapping === rightSettings.port_mapping &&
     leftListener.type === rightListener.type &&
     leftListener.port === rightListener.port
+  );
+}
+
+function isConcreteNonLoopbackIpv4(value: string): boolean {
+  const octets = value.split(".");
+  if (octets.length !== 4) return false;
+  const numbers = octets.map((octet) =>
+    /^\d{1,3}$/.test(octet) ? Number(octet) : Number.NaN,
+  );
+  if (numbers.some((octet) => !Number.isInteger(octet) || octet > 255)) {
+    return false;
+  }
+  return (
+    numbers[0] !== 0 &&
+    numbers[0] !== 127 &&
+    numbers[0] !== undefined &&
+    numbers[0] < 224 &&
+    !(numbers[0] === 255 && numbers.every((octet) => octet === 255))
   );
 }
 

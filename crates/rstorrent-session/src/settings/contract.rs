@@ -22,6 +22,20 @@ pub enum ListenerPolicy {
         #[schemars(range(min = 1_024))]
         port: u16,
     },
+    AutomaticLocalNetwork,
+    FixedLocalNetwork {
+        #[schemars(range(min = 1_024))]
+        port: u16,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PortMappingPolicy {
+    #[default]
+    Disabled,
+    Upnp,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -29,6 +43,7 @@ pub enum ListenerPolicy {
 #[serde(deny_unknown_fields)]
 pub struct ClientSettings {
     pub listener: ListenerPolicy,
+    pub port_mapping: PortMappingPolicy,
     #[schemars(range(min = 1, max = 2_000))]
     pub peer_connection_limit: u32,
     #[schemars(range(min = 0, max = 50))]
@@ -39,6 +54,7 @@ impl Default for ClientSettings {
     fn default() -> Self {
         Self {
             listener: ListenerPolicy::Disabled,
+            port_mapping: PortMappingPolicy::Disabled,
             peer_connection_limit: u32::try_from(DEFAULT_CONNECTION_LIMIT)
                 .expect("engine connection default fits the settings contract"),
             upload_slots: u16::try_from(DEFAULT_UNCHOKE_SLOTS)
@@ -49,7 +65,8 @@ impl Default for ClientSettings {
 
 impl ClientSettings {
     pub fn validate(&self) -> Result<(), ClientSettingsError> {
-        if let ListenerPolicy::FixedLoopback { port } = self.listener
+        if let ListenerPolicy::FixedLoopback { port } | ListenerPolicy::FixedLocalNetwork { port } =
+            self.listener
             && port < MIN_FIXED_LISTENER_PORT
         {
             return Err(ClientSettingsError::FixedListenerPort { port });
@@ -125,6 +142,60 @@ pub enum ListenerStatus {
     },
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PortMappingMechanism {
+    UpnpIgdV2,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PortMappingFailureStage {
+    Discovery,
+    Description,
+    ExternalAddress,
+    Add,
+    Verify,
+    Renewal,
+    Delete,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PortMappingStatus {
+    #[default]
+    Disabled,
+    Ineligible,
+    Discovering,
+    Mapping,
+    Mapped {
+        mechanism: PortMappingMechanism,
+        #[schemars(length(max = 64))]
+        local_address: String,
+        local_port: u16,
+        #[schemars(length(max = 64))]
+        external_address: String,
+        external_port: u16,
+        lease_seconds: u32,
+    },
+    Failed {
+        stage: PortMappingFailureStage,
+        #[schemars(length(max = 512))]
+        detail: String,
+    },
+    RenewalFailed {
+        #[schemars(length(max = 64))]
+        external_address: String,
+        external_port: u16,
+        #[schemars(length(max = 512))]
+        detail: String,
+    },
+    Stopping,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 #[serde(deny_unknown_fields)]
@@ -134,6 +205,7 @@ pub struct ClientSettingsRuntimeView {
     pub restart_required: bool,
     pub effective_peer_connection_limit: u32,
     pub listener_status: ListenerStatus,
+    pub port_mapping_status: PortMappingStatus,
 }
 
 impl Default for ClientSettingsRuntimeView {
@@ -145,6 +217,7 @@ impl Default for ClientSettingsRuntimeView {
             active: settings,
             restart_required: false,
             listener_status: ListenerStatus::Disabled,
+            port_mapping_status: PortMappingStatus::Disabled,
         }
     }
 }

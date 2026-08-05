@@ -19,7 +19,8 @@ use rstorrent_session::{
     FileSelectionView, FileView, IndexRange, ListenerBindFailureReason, ListenerPolicy,
     ListenerStatus, OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
     PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerRequestPhase,
-    PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
+    PeerRole, PeerSourceView, PeerTransportKind, PeerView, PortMappingFailureStage,
+    PortMappingMechanism, PortMappingPolicy, PortMappingStatus, ProgressAction, ProgressAssessment,
     ProgressDisposition, ProgressPhase, ProgressReason, RemovalDataPolicy, RemovalState,
     RequestEnvelope, ResetReason, ResponseEnvelope, ResponseOutcome, ServiceSnapshot,
     SpeedCurrentRate, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,
@@ -70,9 +71,13 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     );
     append::<Command>(&mut declarations)?;
     append::<ListenerPolicy>(&mut declarations)?;
+    append::<PortMappingPolicy>(&mut declarations)?;
     append::<ClientSettings>(&mut declarations)?;
     append::<ListenerBindFailureReason>(&mut declarations)?;
     append::<ListenerStatus>(&mut declarations)?;
+    append::<PortMappingMechanism>(&mut declarations)?;
+    append::<PortMappingFailureStage>(&mut declarations)?;
+    append::<PortMappingStatus>(&mut declarations)?;
     append::<ClientSettingsRuntimeView>(&mut declarations)?;
     append_default::<ClientSettings>(
         &mut declarations,

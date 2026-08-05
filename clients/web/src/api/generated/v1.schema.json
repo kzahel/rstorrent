@@ -943,6 +943,9 @@
           "minimum": 1,
           "type": "integer"
         },
+        "port_mapping": {
+          "$ref": "#/$defs/PortMappingPolicy"
+        },
         "upload_slots": {
           "format": "uint16",
           "maximum": 50,
@@ -952,6 +955,7 @@
       },
       "required": [
         "listener",
+        "port_mapping",
         "peer_connection_limit",
         "upload_slots"
       ],
@@ -974,6 +978,9 @@
         "listener_status": {
           "$ref": "#/$defs/ListenerStatus"
         },
+        "port_mapping_status": {
+          "$ref": "#/$defs/PortMappingStatus"
+        },
         "restart_required": {
           "type": "boolean"
         }
@@ -983,7 +990,8 @@
         "active",
         "restart_required",
         "effective_peer_connection_limit",
-        "listener_status"
+        "listener_status",
+        "port_mapping_status"
       ],
       "type": "object"
     },
@@ -2425,6 +2433,39 @@
             "port"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "automatic_local_network",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "port": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 1024,
+              "type": "integer"
+            },
+            "type": {
+              "const": "fixed_local_network",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "port"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -2919,6 +2960,199 @@
       ],
       "type": "object"
     },
+    "PortMappingFailureStage": {
+      "enum": [
+        "discovery",
+        "description",
+        "external_address",
+        "add",
+        "verify",
+        "renewal",
+        "delete"
+      ],
+      "type": "string"
+    },
+    "PortMappingMechanism": {
+      "enum": [
+        "upnp_igd_v2"
+      ],
+      "type": "string"
+    },
+    "PortMappingPolicy": {
+      "enum": [
+        "disabled",
+        "upnp"
+      ],
+      "type": "string"
+    },
+    "PortMappingStatus": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "disabled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "ineligible",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "discovering",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "mapping",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "external_address": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "external_port": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "lease_seconds": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "local_address": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "local_port": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "mechanism": {
+              "$ref": "#/$defs/PortMappingMechanism"
+            },
+            "type": {
+              "const": "mapped",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "mechanism",
+            "local_address",
+            "local_port",
+            "external_address",
+            "external_port",
+            "lease_seconds"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "detail": {
+              "maxLength": 512,
+              "type": "string"
+            },
+            "stage": {
+              "$ref": "#/$defs/PortMappingFailureStage"
+            },
+            "type": {
+              "const": "failed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "stage",
+            "detail"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "detail": {
+              "maxLength": 512,
+              "type": "string"
+            },
+            "external_address": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "external_port": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "renewal_failed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "external_address",
+            "external_port",
+            "detail"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "stopping",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "ProgressAction": {
       "enum": [
         "enable_network",
@@ -3110,6 +3344,7 @@
               "type": "disabled"
             },
             "peer_connection_limit": 200,
+            "port_mapping": "disabled",
             "upload_slots": 8
           }
         },
@@ -4434,6 +4669,7 @@
                     "type": "disabled"
                   },
                   "peer_connection_limit": 200,
+                  "port_mapping": "disabled",
                   "upload_slots": 8
                 },
                 "configured": {
@@ -4441,10 +4677,14 @@
                     "type": "disabled"
                   },
                   "peer_connection_limit": 200,
+                  "port_mapping": "disabled",
                   "upload_slots": 8
                 },
                 "effective_peer_connection_limit": 200,
                 "listener_status": {
+                  "type": "disabled"
+                },
+                "port_mapping_status": {
                   "type": "disabled"
                 },
                 "restart_required": false

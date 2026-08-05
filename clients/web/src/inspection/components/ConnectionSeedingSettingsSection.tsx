@@ -5,6 +5,8 @@ import type {
   ClientSettingsRuntimeView,
   ListenerBindFailureReason,
   ListenerPolicy,
+  PortMappingPolicy,
+  PortMappingStatus,
 } from "../../api";
 import styles from "./SettingsDialog.module.css";
 
@@ -40,9 +42,12 @@ export function ConnectionSeedingSettingsSection({
     configured.listener.type,
   );
   const [fixedPort, setFixedPort] = useState(
-    configured.listener.type === "fixed_loopback"
+    isFixedListener(configured.listener)
       ? String(configured.listener.port)
       : "",
+  );
+  const [portMapping, setPortMapping] = useState<PortMappingPolicy>(
+    configured.port_mapping,
   );
   const [peerLimit, setPeerLimit] = useState(
     String(configured.peer_connection_limit),
@@ -58,24 +63,27 @@ export function ConnectionSeedingSettingsSection({
   useEffect(() => {
     setListenerMode(configured.listener.type);
     setFixedPort(
-      configured.listener.type === "fixed_loopback"
+      isFixedListener(configured.listener)
         ? String(configured.listener.port)
         : "",
     );
+    setPortMapping(configured.port_mapping);
     setPeerLimit(String(configured.peer_connection_limit));
     setUploadSlots(String(configured.upload_slots));
   }, [
     configured.listener.type,
-    configured.listener.type === "fixed_loopback"
+    isFixedListener(configured.listener)
       ? configured.listener.port
       : null,
+    configured.port_mapping,
     configured.peer_connection_limit,
     configured.upload_slots,
   ]);
 
   const validation = useMemo(
-    () => validateDraft(listenerMode, fixedPort, peerLimit, uploadSlots),
-    [fixedPort, listenerMode, peerLimit, uploadSlots],
+    () =>
+      validateDraft(listenerMode, fixedPort, portMapping, peerLimit, uploadSlots),
+    [fixedPort, listenerMode, peerLimit, portMapping, uploadSlots],
   );
   const dirty =
     validation.settings !== null &&
@@ -89,10 +97,11 @@ export function ConnectionSeedingSettingsSection({
   const resetDraft = () => {
     setListenerMode(configured.listener.type);
     setFixedPort(
-      configured.listener.type === "fixed_loopback"
+      isFixedListener(configured.listener)
         ? String(configured.listener.port)
         : "",
     );
+    setPortMapping(configured.port_mapping);
     setPeerLimit(String(configured.peer_connection_limit));
     setUploadSlots(String(configured.upload_slots));
     setSaveStatus(null);
@@ -131,8 +140,9 @@ export function ConnectionSeedingSettingsSection({
         </p>
       ) : null}
       <p className={styles.sectionIntroduction}>
-        Incoming TCP is limited to this device&apos;s IPv4 loopback interface.
-        These settings do not enable LAN or public internet reachability.
+        Device-only listeners accept peers from this application host. Local
+        network listeners can also be mapped through a compatible gateway for
+        public incoming TCP.
       </p>
       <form className={styles.settingsForm} onSubmit={(event) => void submit(event)}>
         <div
@@ -155,7 +165,7 @@ export function ConnectionSeedingSettingsSection({
             />
             <ListenerOption
               mode="automatic_loopback"
-              label="Automatic local port"
+              label="Automatic device-only port"
               description="Let the operating system select a loopback port at startup."
               selected={listenerMode === "automatic_loopback"}
               disabled={!manageable || pending}
@@ -165,7 +175,7 @@ export function ConnectionSeedingSettingsSection({
             />
             <ListenerOption
               mode="fixed_loopback"
-              label="Fixed local port"
+              label="Fixed device-only port"
               description="Use the exact loopback port entered below at startup."
               selected={listenerMode === "fixed_loopback"}
               disabled={!manageable || pending}
@@ -173,11 +183,31 @@ export function ConnectionSeedingSettingsSection({
                 updateDraft(() => setListenerMode("fixed_loopback"))
               }
             />
+            <ListenerOption
+              mode="automatic_local_network"
+              label="Automatic local-network port"
+              description="Listen on the IPv4 address selected for this network at startup."
+              selected={listenerMode === "automatic_local_network"}
+              disabled={!manageable || pending}
+              onSelect={() =>
+                updateDraft(() => setListenerMode("automatic_local_network"))
+              }
+            />
+            <ListenerOption
+              mode="fixed_local_network"
+              label="Fixed local-network port"
+              description="Use the exact port on the selected local-network IPv4 address."
+              selected={listenerMode === "fixed_local_network"}
+              disabled={!manageable || pending}
+              onSelect={() =>
+                updateDraft(() => setListenerMode("fixed_local_network"))
+              }
+            />
           </div>
-          {listenerMode === "fixed_loopback" ? (
+          {isFixedListenerMode(listenerMode) ? (
             <NumberField
               id="fixed-listener-port"
-              label="Fixed local port"
+              label="Fixed listener port"
               value={fixedPort}
               minimum={FIXED_PORT_MINIMUM}
               maximum={FIXED_PORT_MAXIMUM}
@@ -187,6 +217,26 @@ export function ConnectionSeedingSettingsSection({
             />
           ) : null}
         </div>
+
+        <label className={styles.option}>
+          <input
+            type="checkbox"
+            checked={portMapping === "upnp"}
+            disabled={!manageable || pending}
+            onChange={(event) =>
+              updateDraft(() =>
+                setPortMapping(event.currentTarget.checked ? "upnp" : "disabled"),
+              )
+            }
+          />
+          <span>
+            <strong>Map incoming TCP with UPnP</strong>
+            <small>
+              Request a temporary IGD v2 gateway mapping at startup. This is
+              eligible only with a local-network listener and remains off by default.
+            </small>
+          </span>
+        </label>
 
         <NumberField
           id="peer-connection-limit"
@@ -356,8 +406,7 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
         <span>Incoming TCP is off for this application generation.</span>
       ) : listener.type === "listening" ? (
         <span>
-          Listening locally on {listener.address}:{listener.port}. This address
-          is available only on this device.
+          Listening on {listener.address}:{listener.port}.
         </span>
       ) : (
         <span className={styles.runtimeWarning}>
@@ -365,6 +414,7 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
           {listener.detail} Save a replacement and restart to try again.
         </span>
       )}
+      <PortMappingRuntime status={settings.port_mapping_status} />
       {settings.restart_required ? (
         <span className={styles.runtimeWarning}>
           Saved settings differ from the running application. Restart is
@@ -388,9 +438,48 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
   );
 }
 
+function PortMappingRuntime({ status }: { readonly status: PortMappingStatus }) {
+  switch (status.type) {
+    case "disabled":
+      return <span>Automatic gateway mapping is off.</span>;
+    case "ineligible":
+      return (
+        <span className={styles.runtimeWarning}>
+          Gateway mapping requires an active local-network listener.
+        </span>
+      );
+    case "discovering":
+      return <span>Discovering a compatible UPnP IGD v2 gateway…</span>;
+    case "mapping":
+      return <span>Requesting and verifying the temporary TCP mapping…</span>;
+    case "mapped":
+      return (
+        <span>
+          UPnP mapped {status.external_address}:{status.external_port} to{" "}
+          {status.local_address}:{status.local_port} for {status.lease_seconds} seconds.
+        </span>
+      );
+    case "failed":
+      return (
+        <span className={styles.runtimeWarning}>
+          Gateway mapping failed during {status.stage.replaceAll("_", " ")}: {status.detail}
+        </span>
+      );
+    case "renewal_failed":
+      return (
+        <span className={styles.runtimeWarning}>
+          The mapping at {status.external_address}:{status.external_port} could not be renewed: {status.detail}
+        </span>
+      );
+    case "stopping":
+      return <span>Removing the gateway mapping…</span>;
+  }
+}
+
 function validateDraft(
   listenerMode: ListenerMode,
   fixedPort: string,
+  portMapping: PortMappingPolicy,
   peerLimit: string,
   uploadSlots: string,
 ): DraftValidation {
@@ -410,7 +499,7 @@ function validateDraft(
     UPLOAD_SLOTS_MAXIMUM,
   );
   const fixedPortError =
-    listenerMode !== "fixed_loopback"
+    !isFixedListenerMode(listenerMode)
       ? null
       : port === null
         ? `Enter a whole number from ${FIXED_PORT_MINIMUM} to ${FIXED_PORT_MAXIMUM}.`
@@ -431,10 +520,15 @@ function validateDraft(
       ? { type: "disabled" }
       : listenerMode === "automatic_loopback"
         ? { type: "automatic_loopback" }
-        : { type: "fixed_loopback", port: port as number };
+        : listenerMode === "fixed_loopback"
+          ? { type: "fixed_loopback", port: port as number }
+          : listenerMode === "automatic_local_network"
+            ? { type: "automatic_local_network" }
+            : { type: "fixed_local_network", port: port as number };
   return {
     settings: {
       listener,
+      port_mapping: portMapping,
       peer_connection_limit: peers as number,
       upload_slots: slots as number,
     },
@@ -459,12 +553,26 @@ function parseBoundedInteger(
 function sameClientSettings(left: ClientSettings, right: ClientSettings): boolean {
   return (
     left.listener.type === right.listener.type &&
-    (left.listener.type !== "fixed_loopback" ||
-      (right.listener.type === "fixed_loopback" &&
+    (!isFixedListener(left.listener) ||
+      (isFixedListener(right.listener) &&
         left.listener.port === right.listener.port)) &&
+    left.port_mapping === right.port_mapping &&
     left.peer_connection_limit === right.peer_connection_limit &&
     left.upload_slots === right.upload_slots
   );
+}
+
+function isFixedListenerMode(mode: ListenerMode): boolean {
+  return mode === "fixed_loopback" || mode === "fixed_local_network";
+}
+
+function isFixedListener(
+  listener: ListenerPolicy,
+): listener is Extract<
+  ListenerPolicy,
+  { type: "fixed_loopback" | "fixed_local_network" }
+> {
+  return isFixedListenerMode(listener.type);
 }
 
 function bindFailureLabel(reason: ListenerBindFailureReason): string {

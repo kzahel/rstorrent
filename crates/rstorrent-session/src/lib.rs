@@ -13,6 +13,7 @@ mod diagnostics;
 mod file_views;
 mod have;
 mod incoming_seeding;
+mod reachability;
 mod settings;
 mod speed;
 mod store;
@@ -46,7 +47,8 @@ pub use rstorrent_engine::{
 };
 pub use settings::{
     ClientSettings, ClientSettingsError, ClientSettingsRuntimeView, ListenerBindFailureReason,
-    ListenerPolicy, ListenerStatus, StorageRootAvailability, StorageRootSnapshot,
+    ListenerPolicy, ListenerStatus, PortMappingFailureStage, PortMappingMechanism,
+    PortMappingPolicy, PortMappingStatus, StorageRootAvailability, StorageRootSnapshot,
     StorageSettingsSnapshot,
 };
 pub use speed::{

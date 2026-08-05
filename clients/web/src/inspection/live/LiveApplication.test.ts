@@ -223,6 +223,7 @@ describe("LiveApplication", () => {
     });
     const settings = {
       listener: { type: "fixed_loopback" as const, port: 51_413 },
+      port_mapping: "disabled" as const,
       peer_connection_limit: 2_000,
       upload_slots: 0,
     };

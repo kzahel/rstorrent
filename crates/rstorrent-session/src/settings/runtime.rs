@@ -4,8 +4,9 @@ use rstorrent_engine::{IncomingTcpBootstrap, PeerBudgetConfig, UploadSchedulerCo
 
 use super::contract::{
     ClientSettings, ClientSettingsRuntimeView, ListenerBindFailureReason, ListenerPolicy,
-    ListenerStatus, MAX_LISTENER_BIND_DETAIL_BYTES,
+    ListenerStatus, MAX_LISTENER_BIND_DETAIL_BYTES, PortMappingStatus,
 };
+use crate::reachability::ReachabilityState;
 
 impl ClientSettings {
     pub(crate) fn incoming_bootstrap(&self) -> IncomingTcpBootstrap {
@@ -13,6 +14,10 @@ impl ClientSettings {
             ListenerPolicy::Disabled => IncomingTcpBootstrap::Disabled,
             ListenerPolicy::AutomaticLoopback => IncomingTcpBootstrap::AutomaticLoopback,
             ListenerPolicy::FixedLoopback { port } => IncomingTcpBootstrap::FixedLoopback(port),
+            ListenerPolicy::AutomaticLocalNetwork => IncomingTcpBootstrap::AutomaticLocalNetwork,
+            ListenerPolicy::FixedLocalNetwork { port } => {
+                IncomingTcpBootstrap::FixedLocalNetwork(port)
+            }
         }
     }
 
@@ -40,6 +45,7 @@ impl ClientSettingsRuntimeView {
             active: settings,
             restart_required: false,
             listener_status: ListenerStatus::Disabled,
+            port_mapping_status: PortMappingStatus::Disabled,
         }
     }
 
@@ -54,13 +60,21 @@ impl ClientSettingsRuntimeView {
         effective_peer_connection_limit: u32,
         listener_status: ListenerStatus,
     ) -> Self {
+        let port_mapping_status = ReachabilityState::new(1, &active, &listener_status)
+            .status()
+            .clone();
         Self {
             restart_required: configured != active,
             configured,
             active,
             effective_peer_connection_limit,
             listener_status,
+            port_mapping_status,
         }
+    }
+
+    pub(crate) fn set_port_mapping_status(&mut self, status: PortMappingStatus) {
+        self.port_mapping_status = status;
     }
 }
 

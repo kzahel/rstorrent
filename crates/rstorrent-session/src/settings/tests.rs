@@ -7,14 +7,15 @@ use rusqlite::Connection;
 
 use super::{
     ClientSettings, ClientSettingsError, ClientSettingsRuntimeView, ListenerPolicy, ListenerStatus,
-    SettingsPersistenceError, classify_listener_bind_failure, create_client_settings,
-    read_client_settings, replace_client_settings,
+    PortMappingPolicy, PortMappingStatus, SettingsPersistenceError, classify_listener_bind_failure,
+    create_client_settings, read_client_settings, replace_client_settings,
 };
 
 #[test]
 fn defaults_follow_engine_policy_without_enabling_the_listener() {
     let settings = ClientSettings::default();
     assert_eq!(settings.listener, ListenerPolicy::Disabled);
+    assert_eq!(settings.port_mapping, PortMappingPolicy::Disabled);
     assert_eq!(
         settings.peer_connection_limit,
         u32::try_from(DEFAULT_CONNECTION_LIMIT).unwrap()
@@ -115,6 +116,18 @@ fn listener_json_is_closed_and_tagged() {
     assert!(
         serde_json::from_value::<ListenerPolicy>(serde_json::json!({"type": "public"})).is_err()
     );
+    assert_eq!(
+        serde_json::to_value(ListenerPolicy::AutomaticLocalNetwork).unwrap(),
+        serde_json::json!({"type": "automatic_local_network"})
+    );
+    assert_eq!(
+        serde_json::to_value(ListenerPolicy::FixedLocalNetwork { port: 6_882 }).unwrap(),
+        serde_json::json!({"type": "fixed_local_network", "port": 6882})
+    );
+    assert_eq!(
+        serde_json::to_value(PortMappingPolicy::Upnp).unwrap(),
+        serde_json::json!("upnp")
+    );
 }
 
 #[test]
@@ -122,6 +135,7 @@ fn runtime_view_distinguishes_configured_active_effective_and_observed() {
     let active = ClientSettings::default();
     let configured = ClientSettings {
         listener: ListenerPolicy::AutomaticLoopback,
+        port_mapping: PortMappingPolicy::Disabled,
         peer_connection_limit: 500,
         upload_slots: 1,
     };
@@ -134,6 +148,7 @@ fn runtime_view_distinguishes_configured_active_effective_and_observed() {
             address: "127.0.0.1".to_owned(),
             port: 41_000,
         },
+        port_mapping_status: PortMappingStatus::Disabled,
     };
     assert_eq!(view.configured, configured);
     assert_eq!(view.active, active);
@@ -196,7 +211,8 @@ fn typed_persistence_round_trips_one_atomic_group() {
         ClientSettings::default()
     );
     let configured = ClientSettings {
-        listener: ListenerPolicy::FixedLoopback { port: 42_000 },
+        listener: ListenerPolicy::FixedLocalNetwork { port: 42_000 },
+        port_mapping: PortMappingPolicy::Upnp,
         peer_connection_limit: 1,
         upload_slots: 0,
     };
@@ -204,6 +220,36 @@ fn typed_persistence_round_trips_one_atomic_group() {
     assert!(!replace_client_settings(&transaction, &configured).unwrap());
     transaction.commit().unwrap();
     assert_eq!(read_client_settings(&connection).unwrap(), configured);
+}
+
+#[test]
+fn version_nine_settings_migrate_without_enabling_mapping() {
+    let mut connection = Connection::open_in_memory().unwrap();
+    connection
+        .execute_batch(
+            "CREATE TABLE client_settings (
+                singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                listener_mode TEXT NOT NULL,
+                listener_port INTEGER,
+                peer_connection_limit INTEGER NOT NULL,
+                upload_slots INTEGER NOT NULL
+             );
+             INSERT INTO client_settings VALUES
+                (1, 'fixed_loopback', 42001, 321, 3);",
+        )
+        .unwrap();
+    let transaction = connection.transaction().unwrap();
+    super::migrate_client_settings_to_v10(&transaction).unwrap();
+    transaction.commit().unwrap();
+    assert_eq!(
+        read_client_settings(&connection).unwrap(),
+        ClientSettings {
+            listener: ListenerPolicy::FixedLoopback { port: 42_001 },
+            port_mapping: PortMappingPolicy::Disabled,
+            peer_connection_limit: 321,
+            upload_slots: 3,
+        }
+    );
 }
 
 #[test]
@@ -217,6 +263,14 @@ fn sqlite_constraints_and_decoder_reject_invalid_durable_shapes() {
         connection
             .execute(
                 "UPDATE client_settings SET peer_connection_limit = 0 WHERE singleton = 1",
+                [],
+            )
+            .is_err()
+    );
+    assert!(
+        connection
+            .execute(
+                "UPDATE client_settings SET port_mapping_mode = 'automatic' WHERE singleton = 1",
                 [],
             )
             .is_err()

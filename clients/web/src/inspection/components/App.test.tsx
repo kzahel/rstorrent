@@ -1398,16 +1398,16 @@ describe("inspection application", () => {
     expect(within(dialog).getByText("Appearance")).toBeVisible();
     expect(within(dialog).getByText("Downloads")).toBeVisible();
     expect(within(dialog).getByText("Connection & seeding")).toBeVisible();
-    expect(within(dialog).getByText(/do not enable LAN or public/i)).toBeVisible();
+    expect(within(dialog).getByText(/compatible gateway for public incoming/i)).toBeVisible();
     expect(
       within(dialog).getByText(/safely limited to 120 by available file descriptors/i),
     ).toBeVisible();
 
     await user.click(
-      within(dialog).getByRole("radio", { name: /Fixed local port/ }),
+      within(dialog).getByRole("radio", { name: /Fixed local-network port/ }),
     );
     const port = within(dialog).getByRole("spinbutton", {
-      name: "Fixed local port",
+      name: "Fixed listener port",
     });
     expect(port).toHaveValue(null);
     const save = within(dialog).getByRole("button", { name: "Save settings" });
@@ -1430,6 +1430,9 @@ describe("inspection application", () => {
     });
     await user.clear(slots);
     await user.type(slots, "0");
+    await user.click(
+      within(dialog).getByRole("checkbox", { name: /Map incoming TCP with UPnP/ }),
+    );
     expect(within(dialog).getByText(/keeps interested peers choked/i)).toBeVisible();
     expect(save).toBeEnabled();
 
@@ -1438,7 +1441,8 @@ describe("inspection application", () => {
       expect(application.commands.at(-1)).toEqual({
         type: "set_client_settings",
         settings: {
-          listener: { type: "fixed_loopback", port: 1024 },
+          listener: { type: "fixed_local_network", port: 1024 },
+          port_mapping: "upnp",
           peer_connection_limit: 2000,
           upload_slots: 0,
         },
@@ -1483,6 +1487,7 @@ describe("inspection application", () => {
     const user = userEvent.setup();
     const active = {
       listener: { type: "fixed_loopback" as const, port: 51_413 },
+      port_mapping: "disabled" as const,
       peer_connection_limit: 200,
       upload_slots: 8,
     };
@@ -1503,6 +1508,7 @@ describe("inspection application", () => {
             reason: "address_in_use",
             detail: "loopback port 51413 is already in use.",
           },
+          port_mapping_status: { type: "disabled" },
         },
       },
     });
@@ -1515,7 +1521,7 @@ describe("inspection application", () => {
     );
     expect(within(dialog).getByText(/Restart is required/i)).toBeVisible();
     expect(
-      within(dialog).getByRole("radio", { name: /Automatic local port/ }),
+      within(dialog).getByRole("radio", { name: /Automatic device-only port/ }),
     ).toBeChecked();
     expect(within(dialog).getByRole("button", { name: "Save settings" })).toBeDisabled();
   });

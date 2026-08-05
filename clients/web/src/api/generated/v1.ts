@@ -3,19 +3,27 @@
 
 export type Command = { "type": "add_magnet", magnet: string, storage_root: string, start_content: boolean, skip_files: Array<number>, } | { "type": "set_file_priority", torrent_id: string, file_indices: Array<number>, priority: FilePriority, } | { "type": "set_file_priority_ranges", torrent_id: string, ranges: Array<FileIndexRange>, priority: FilePriority, } | { "type": "set_default_storage_root", storage_root: string, } | { "type": "set_show_add_options", show: boolean, } | { "type": "set_client_settings", settings: ClientSettings, } | { "type": "remove_storage_root", storage_root: string, } | { "type": "snapshot" } | { "type": "pause", torrent_id: string, } | { "type": "resume", torrent_id: string, } | { "type": "force_recheck", torrent_id: string, } | { "type": "archive", torrent_id: string, } | { "type": "restore_archive", torrent_id: string, } | { "type": "remove_torrent", torrent_id: string, data: RemovalDataPolicy, } | { "type": "shutdown" };
 
-export type ListenerPolicy = { "type": "disabled" } | { "type": "automatic_loopback" } | { "type": "fixed_loopback", port: number, };
+export type ListenerPolicy = { "type": "disabled" } | { "type": "automatic_loopback" } | { "type": "fixed_loopback", port: number, } | { "type": "automatic_local_network" } | { "type": "fixed_local_network", port: number, };
 
-export type ClientSettings = { listener: ListenerPolicy, peer_connection_limit: number, upload_slots: number, };
+export type PortMappingPolicy = "disabled" | "upnp";
+
+export type ClientSettings = { listener: ListenerPolicy, port_mapping: PortMappingPolicy, peer_connection_limit: number, upload_slots: number, };
 
 export type ListenerBindFailureReason = "address_in_use" | "permission_denied" | "address_unavailable" | "other";
 
 export type ListenerStatus = { "type": "disabled" } | { "type": "listening", address: string, port: number, } | { "type": "bind_failed", reason: ListenerBindFailureReason, detail: string, };
 
-export type ClientSettingsRuntimeView = { configured: ClientSettings, active: ClientSettings, restart_required: boolean, effective_peer_connection_limit: number, listener_status: ListenerStatus, };
+export type PortMappingMechanism = "upnp_igd_v2";
 
-export const DEFAULT_CLIENT_SETTINGS: ClientSettings = {"listener":{"type":"disabled"},"peer_connection_limit":200,"upload_slots":8};
+export type PortMappingFailureStage = "discovery" | "description" | "external_address" | "add" | "verify" | "renewal" | "delete";
 
-export const DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW: ClientSettingsRuntimeView = {"configured":{"listener":{"type":"disabled"},"peer_connection_limit":200,"upload_slots":8},"active":{"listener":{"type":"disabled"},"peer_connection_limit":200,"upload_slots":8},"restart_required":false,"effective_peer_connection_limit":200,"listener_status":{"type":"disabled"}};
+export type PortMappingStatus = { "type": "disabled" } | { "type": "ineligible" } | { "type": "discovering" } | { "type": "mapping" } | { "type": "mapped", mechanism: PortMappingMechanism, local_address: string, local_port: number, external_address: string, external_port: number, lease_seconds: number, } | { "type": "failed", stage: PortMappingFailureStage, detail: string, } | { "type": "renewal_failed", external_address: string, external_port: number, detail: string, } | { "type": "stopping" };
+
+export type ClientSettingsRuntimeView = { configured: ClientSettings, active: ClientSettings, restart_required: boolean, effective_peer_connection_limit: number, listener_status: ListenerStatus, port_mapping_status: PortMappingStatus, };
+
+export const DEFAULT_CLIENT_SETTINGS: ClientSettings = {"listener":{"type":"disabled"},"port_mapping":"disabled","peer_connection_limit":200,"upload_slots":8};
+
+export const DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW: ClientSettingsRuntimeView = {"configured":{"listener":{"type":"disabled"},"port_mapping":"disabled","peer_connection_limit":200,"upload_slots":8},"active":{"listener":{"type":"disabled"},"port_mapping":"disabled","peer_connection_limit":200,"upload_slots":8},"restart_required":false,"effective_peer_connection_limit":200,"listener_status":{"type":"disabled"},"port_mapping_status":{"type":"disabled"}};
 
 export type FilePriority = "normal" | "skip";
 
