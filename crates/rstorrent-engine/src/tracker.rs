@@ -24,6 +24,39 @@ pub enum TrackerSource {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TrackerTransport {
     Udp,
+    Http,
+    Https,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TrackerEndpoint {
+    Udp(UdpTrackerUrl),
+    Http {
+        target: url::Url,
+        transport: TrackerTransport,
+    },
+}
+
+impl TrackerEndpoint {
+    pub fn from_http_url(value: &str) -> Option<Self> {
+        let target = url::Url::parse(value).ok()?;
+        if target.host().is_none() || target.fragment().is_some() {
+            return None;
+        }
+        let transport = match target.scheme() {
+            "http" => TrackerTransport::Http,
+            "https" => TrackerTransport::Https,
+            _ => return None,
+        };
+        Some(Self::Http { target, transport })
+    }
+
+    pub const fn transport(&self) -> TrackerTransport {
+        match self {
+            Self::Udp(_) => TrackerTransport::Udp,
+            Self::Http { transport, .. } => *transport,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -90,9 +123,9 @@ pub struct TrackerRuntimeRecordSnapshot {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UdpTrackerConfig {
+pub struct TrackerConfig {
     pub url: String,
-    pub endpoint: UdpTrackerUrl,
+    pub endpoint: TrackerEndpoint,
     pub tier: u32,
     pub position: u32,
     pub source: TrackerSource,
@@ -108,7 +141,7 @@ pub struct TrackerRuntimeSnapshot {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct TrackerRecord {
     id: TrackerId,
-    url: UdpTrackerUrl,
+    endpoint: TrackerEndpoint,
     display_url: String,
     tier: u32,
     position: u32,
@@ -131,10 +164,10 @@ pub(crate) struct TrackerRecord {
 }
 
 impl TrackerRecord {
-    fn new(id: TrackerId, config: UdpTrackerConfig) -> Self {
+    fn new(id: TrackerId, config: TrackerConfig) -> Self {
         Self {
             id,
-            url: config.endpoint,
+            endpoint: config.endpoint,
             display_url: config.url,
             tier: config.tier,
             position: config.position,
@@ -167,7 +200,8 @@ impl TrackerRecord {
 pub(crate) enum TrackerAction {
     Announce {
         id: TrackerId,
-        url: UdpTrackerUrl,
+        url: String,
+        endpoint: TrackerEndpoint,
         tier: u32,
         source: TrackerSource,
         event: AnnounceEvent,
@@ -176,7 +210,8 @@ pub(crate) enum TrackerAction {
     },
     Wait {
         delay: Duration,
-        url: UdpTrackerUrl,
+        url: String,
+        endpoint: TrackerEndpoint,
         kind: TrackerWaitKind,
     },
     Pending,
@@ -216,9 +251,9 @@ impl TrackerSchedule {
         let configs = urls
             .into_iter()
             .enumerate()
-            .map(|(position, endpoint)| UdpTrackerConfig {
+            .map(|(position, endpoint)| TrackerConfig {
                 url: tracker_label(&endpoint),
-                endpoint,
+                endpoint: TrackerEndpoint::Udp(endpoint),
                 tier: 0,
                 position: position.try_into().unwrap_or(u32::MAX),
                 source: TrackerSource::Magnet,
@@ -227,7 +262,7 @@ impl TrackerSchedule {
         Self::from_configs(configs)
     }
 
-    pub(crate) fn from_configs(configs: Vec<UdpTrackerConfig>) -> Self {
+    pub(crate) fn from_configs(configs: Vec<TrackerConfig>) -> Self {
         Self {
             records: configs
                 .into_iter()
@@ -320,7 +355,8 @@ impl TrackerSchedule {
                 record.inflight_event = Some(event);
                 return TrackerAction::Announce {
                     id: record.id,
-                    url: record.url.clone(),
+                    url: record.display_url.clone(),
+                    endpoint: record.endpoint.clone(),
                     tier: record.tier,
                     source: record.source,
                     event,
@@ -342,7 +378,8 @@ impl TrackerSchedule {
                     .expect("scheduled wait retains its tracker");
                 return TrackerAction::Wait {
                     delay: self.round_not_before - now,
-                    url: tracker.url.clone(),
+                    url: tracker.display_url.clone(),
+                    endpoint: tracker.endpoint.clone(),
                     kind: self
                         .round_wait_kind
                         .expect("scheduled wait retains its reason"),
@@ -365,7 +402,8 @@ impl TrackerSchedule {
                 record.inflight_event = Some(event);
                 return TrackerAction::Announce {
                     id: record.id,
-                    url: record.url.clone(),
+                    url: record.display_url.clone(),
+                    endpoint: record.endpoint.clone(),
                     tier: record.tier,
                     source: record.source,
                     event,
@@ -386,7 +424,8 @@ impl TrackerSchedule {
             {
                 return TrackerAction::Wait {
                     delay: record.next_announce.saturating_sub(now),
-                    url: record.url.clone(),
+                    url: record.display_url.clone(),
+                    endpoint: record.endpoint.clone(),
                     kind: TrackerWaitKind::FailureRetry,
                 };
             }
@@ -557,7 +596,7 @@ impl TrackerRecord {
             url,
             tier: self.tier,
             source: self.source,
-            transport: TrackerTransport::Udp,
+            transport: self.endpoint.transport(),
             status,
             announce_event,
             total_attempts: self.total_attempts,
@@ -611,8 +650,9 @@ fn tracker_failure_delay(failures: u8) -> Duration {
 mod tests {
     use super::{
         MAX_TRACKER_ERROR_LENGTH, TRACKER_ANNOUNCE_MAX, TRACKER_ANNOUNCE_MIN, TRACKER_RETRY_MAX,
-        TrackerAction, TrackerAnnounceEvent, TrackerNextAction, TrackerRuntimeStatus,
-        TrackerSchedule, TrackerSource, TrackerWaitKind, UdpTrackerConfig, tracker_failure_delay,
+        TrackerAction, TrackerAnnounceEvent, TrackerConfig, TrackerEndpoint, TrackerNextAction,
+        TrackerRuntimeStatus, TrackerSchedule, TrackerSource, TrackerWaitKind,
+        tracker_failure_delay,
     };
     use rstorrent_protocol::magnet::UdpTrackerUrl;
     use rstorrent_protocol::udp_tracker::AnnounceEvent;
@@ -640,9 +680,9 @@ mod tests {
                     &format!("tracker-{position}.example"),
                     u16::try_from(1_000 + position).expect("fixture port"),
                 );
-                UdpTrackerConfig {
+                TrackerConfig {
                     url: format!("udp://tracker-{position}.example:{}", 1_000 + position),
-                    endpoint,
+                    endpoint: TrackerEndpoint::Udp(endpoint),
                     tier: position / 100,
                     position: position % 100,
                     source: TrackerSource::Metainfo,
@@ -656,6 +696,60 @@ mod tests {
         assert_eq!(snapshot.records[299].tier, 2);
         assert_eq!(snapshot.records[299].source, TrackerSource::Metainfo);
         assert_eq!(snapshot.records[299].tracker_id, "000002:000099");
+    }
+
+    #[test]
+    fn mixed_transport_schedule_preserves_endpoint_and_projection() {
+        let configs = vec![
+            TrackerConfig {
+                url: "udp://tracker.example:6969".to_owned(),
+                endpoint: TrackerEndpoint::Udp(tracker("tracker.example", 6969)),
+                tier: 0,
+                position: 0,
+                source: TrackerSource::Metainfo,
+            },
+            TrackerConfig {
+                url: "http://tracker.example/announce?passkey=abc".to_owned(),
+                endpoint: TrackerEndpoint::from_http_url(
+                    "http://tracker.example/announce?passkey=abc",
+                )
+                .expect("HTTP tracker URL"),
+                tier: 0,
+                position: 1,
+                source: TrackerSource::Metainfo,
+            },
+            TrackerConfig {
+                url: "https://tracker.example/announce".to_owned(),
+                endpoint: TrackerEndpoint::from_http_url("https://tracker.example/announce")
+                    .expect("HTTPS tracker URL"),
+                tier: 1,
+                position: 0,
+                source: TrackerSource::Magnet,
+            },
+        ];
+        let mut schedule = TrackerSchedule::from_configs(configs);
+        let snapshot = schedule.snapshot(Duration::ZERO, false);
+        assert_eq!(
+            snapshot
+                .records
+                .iter()
+                .map(|record| record.transport)
+                .collect::<Vec<_>>(),
+            [
+                super::TrackerTransport::Udp,
+                super::TrackerTransport::Http,
+                super::TrackerTransport::Https,
+            ]
+        );
+
+        let first = announce(&mut schedule, Duration::ZERO);
+        schedule.failed(first, Duration::ZERO, "UDP unavailable");
+        let TrackerAction::Announce { url, endpoint, .. } = schedule.next_action(Duration::ZERO)
+        else {
+            panic!("HTTP fallback should be eligible");
+        };
+        assert_eq!(url, "http://tracker.example/announce?passkey=abc");
+        assert_eq!(endpoint.transport(), super::TrackerTransport::Http);
     }
 
     #[test]
@@ -688,7 +782,7 @@ mod tests {
 
         let TrackerAction::Announce {
             id: first_id,
-            url,
+            endpoint,
             event,
             fallback,
             ..
@@ -696,14 +790,14 @@ mod tests {
         else {
             panic!("first tracker should be eligible");
         };
-        assert_eq!(url, first);
+        assert_eq!(endpoint, TrackerEndpoint::Udp(first));
         assert_eq!(event, AnnounceEvent::Started);
         assert!(!fallback);
         schedule.failed(first_id, Duration::ZERO, "first unavailable");
 
         let TrackerAction::Announce {
             id: second_id,
-            url,
+            endpoint,
             event,
             fallback,
             ..
@@ -711,7 +805,7 @@ mod tests {
         else {
             panic!("second tracker should be the fallback");
         };
-        assert_eq!(url, second);
+        assert_eq!(endpoint, TrackerEndpoint::Udp(second.clone()));
         assert_eq!(event, AnnounceEvent::Started);
         assert!(fallback);
         let success = schedule.succeeded(second_id, Duration::ZERO, 1, 12, 7, 5);
@@ -721,18 +815,19 @@ mod tests {
             schedule.next_action(TRACKER_ANNOUNCE_MIN - Duration::from_secs(1)),
             TrackerAction::Wait {
                 delay: Duration::from_secs(1),
-                url: second.clone(),
+                url: "udp://second.example:81".to_owned(),
+                endpoint: TrackerEndpoint::Udp(second.clone()),
                 kind: TrackerWaitKind::Reannounce,
             }
         );
         assert!(matches!(
             schedule.next_action(TRACKER_ANNOUNCE_MIN),
             TrackerAction::Announce {
-                url,
+                endpoint,
                 event: AnnounceEvent::None,
                 fallback: false,
                 ..
-            } if url == second
+            } if endpoint == TrackerEndpoint::Udp(second)
         ));
     }
 
@@ -788,7 +883,8 @@ mod tests {
             schedule.next_action(Duration::from_secs(10)),
             TrackerAction::Wait {
                 delay: Duration::from_secs(590),
-                url: first,
+                url: "udp://first.example:80".to_owned(),
+                endpoint: TrackerEndpoint::Udp(first),
                 kind: TrackerWaitKind::Reannounce,
             }
         );
@@ -810,7 +906,8 @@ mod tests {
             schedule.next_action(Duration::ZERO),
             TrackerAction::Wait {
                 delay: Duration::from_secs(17),
-                url: fast,
+                url: "udp://fast.example:81".to_owned(),
+                endpoint: TrackerEndpoint::Udp(fast),
                 kind: TrackerWaitKind::FailureRetry,
             }
         );

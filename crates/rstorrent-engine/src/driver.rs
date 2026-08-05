@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use rstorrent_protocol::magnet::{Magnet, MagnetError, PeerHint, UdpTrackerUrl};
+use rstorrent_protocol::magnet::{Magnet, MagnetError, PeerHint, TrackerUrl, UdpTrackerUrl};
 use rstorrent_protocol::metadata::{
     MetadataError, MetadataExtensionUpdate, MetadataInstant, MetadataMessage,
     TorrentMetadataDownload, TorrentMetadataEvent, UT_METADATA_LOCAL_ID,
@@ -65,7 +65,7 @@ use crate::swarm::{
 };
 use crate::torrent_peer::{TorrentPeerError, TorrentPeerHandle};
 use crate::tracker::{
-    TrackerAction, TrackerId, TrackerSchedule, TrackerWaitKind, UdpTrackerConfig,
+    TrackerAction, TrackerConfig, TrackerEndpoint, TrackerId, TrackerSchedule, TrackerWaitKind,
 };
 
 mod control;
@@ -204,7 +204,7 @@ pub struct ResumableMagnetDownloadConfig {
     pub dht: Option<DhtHandle>,
     /// Authoritative operational UDP tracker catalog. `None` uses the
     /// independently bounded trackers parsed from the magnet URI.
-    pub udp_trackers: Option<Vec<UdpTrackerConfig>>,
+    pub udp_trackers: Option<Vec<TrackerConfig>>,
 }
 
 pub trait DownloadCheckpointSink: Send + Sync {
@@ -1039,7 +1039,7 @@ impl TrackerManager {
         control: DownloadControl,
     ) -> Result<Self, DownloadError> {
         Self::start_with_configs(
-            configured_magnet_trackers(&trackers),
+            configured_udp_trackers(&trackers),
             info_hash,
             network,
             control,
@@ -1047,7 +1047,7 @@ impl TrackerManager {
     }
 
     fn start_with_configs(
-        mut trackers: Vec<UdpTrackerConfig>,
+        mut trackers: Vec<TrackerConfig>,
         info_hash: [u8; 20],
         network: NetworkConfig,
         control: DownloadControl,
@@ -1369,13 +1369,22 @@ async fn run_active_tracker_manager(
                 TrackerAction::Announce {
                     id,
                     url,
+                    endpoint,
                     tier,
                     source: _,
                     event,
                     attempt,
                     fallback,
                 } => {
-                    let tracker = udp_tracker_label(&url);
+                    let tracker = url;
+                    let TrackerEndpoint::Udp(url) = endpoint else {
+                        let _ = schedule.failed(
+                            id,
+                            started_at.elapsed(),
+                            "HTTP tracker transport is unavailable in the direct engine manager",
+                        );
+                        continue;
+                    };
                     if fallback {
                         control.emit(DownloadActivityEvent::TrackerFallbackSelected {
                             tracker: tracker.clone(),
@@ -1505,8 +1514,10 @@ async fn run_active_tracker_manager(
         }
 
         match pending_action.unwrap_or_else(|| schedule.next_action(started_at.elapsed())) {
-            TrackerAction::Wait { delay, url, kind } => {
-                let tracker = udp_tracker_label(&url);
+            TrackerAction::Wait {
+                delay, url, kind, ..
+            } => {
+                let tracker = url;
                 emit_tracker_wait(control, tracker, kind, delay);
                 tokio::select! {
                     biased;
@@ -1548,7 +1559,7 @@ async fn shutdown_tracker_operations(operations: &mut JoinSet<TrackerOperationRe
     while operations.join_next().await.is_some() {}
 }
 
-fn shuffle_tracker_configs(trackers: &mut [UdpTrackerConfig]) -> Result<(), DownloadError> {
+fn shuffle_tracker_configs(trackers: &mut [TrackerConfig]) -> Result<(), DownloadError> {
     let mut first = 0;
     while first < trackers.len() {
         let tier = trackers[first].tier;
@@ -1991,7 +2002,7 @@ impl TorrentPeerCoordinator {
 
     async fn from_magnet_with_trackers(
         magnet: &Magnet,
-        configured_trackers: Option<Vec<UdpTrackerConfig>>,
+        configured_trackers: Option<Vec<TrackerConfig>>,
         network: NetworkConfig,
         control: DownloadControl,
         dht: Option<DhtHandle>,
@@ -2012,7 +2023,7 @@ impl TorrentPeerCoordinator {
             return Err(DownloadError::Cancelled);
         }
         let trackers =
-            configured_trackers.unwrap_or_else(|| configured_magnet_trackers(&magnet.udp_trackers));
+            configured_trackers.unwrap_or_else(|| configured_magnet_trackers(&magnet.trackers));
         if !trackers.is_empty() {
             peers.tracker = Some(TrackerManager::start_with_configs(
                 trackers,
@@ -2545,19 +2556,28 @@ impl TorrentPeerCoordinator {
     }
 }
 
-fn configured_magnet_trackers(trackers: &[UdpTrackerUrl]) -> Vec<UdpTrackerConfig> {
+fn configured_udp_trackers(trackers: &[UdpTrackerUrl]) -> Vec<TrackerConfig> {
     trackers
         .iter()
         .cloned()
         .enumerate()
-        .map(|(position, endpoint)| UdpTrackerConfig {
+        .map(|(position, endpoint)| TrackerConfig {
             url: udp_tracker_label(&endpoint),
-            endpoint,
+            endpoint: TrackerEndpoint::Udp(endpoint),
             tier: 0,
             position: position.try_into().unwrap_or(u32::MAX),
             source: crate::tracker::TrackerSource::Magnet,
         })
         .collect()
+}
+
+fn configured_magnet_trackers(trackers: &[TrackerUrl]) -> Vec<TrackerConfig> {
+    configured_udp_trackers(
+        &trackers
+            .iter()
+            .filter_map(|tracker| tracker.udp_endpoint().cloned())
+            .collect::<Vec<_>>(),
+    )
 }
 
 async fn run_metadata_peer(
@@ -2989,7 +3009,7 @@ async fn run_magnet_metadata(
     network: NetworkConfig,
     control: DownloadControl,
     dht: Option<DhtHandle>,
-    configured_trackers: Option<Vec<UdpTrackerConfig>>,
+    configured_trackers: Option<Vec<TrackerConfig>>,
     peer_budget: PeerBudget,
     torrent_peers: Option<TorrentPeerHandle>,
 ) -> Result<Vec<u8>, DownloadError> {

@@ -133,6 +133,8 @@ impl From<&TrackerRuntimeRecordSnapshot> for TrackerView {
             url: record.url.clone(),
             transport: match record.transport {
                 TrackerTransport::Udp => TrackerTransportView::Udp,
+                TrackerTransport::Http => TrackerTransportView::Http,
+                TrackerTransport::Https => TrackerTransportView::Https,
             },
             source: match record.source {
                 TrackerSource::Magnet => TrackerSourceView::Magnet,

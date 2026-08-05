@@ -350,7 +350,7 @@ async fn tracker_only_magnet_discovers_registry_peers_and_downloads() {
     );
     let parsed = Magnet::parse(&magnet).expect("parse tracker magnet");
     assert!(parsed.peer_hints.is_empty());
-    assert_eq!(parsed.udp_trackers.len(), 2);
+    assert_eq!(parsed.trackers.len(), 2);
     let network = loopback_network(Duration::from_secs(2));
     let control = DownloadControl::new();
     let mut peers = TorrentPeerCoordinator::from_magnet(&parsed, network, control.clone(), None)
@@ -598,7 +598,11 @@ async fn concurrent_tracker_cancellation_joins_and_releases_every_socket() {
     let activity = Arc::new(RecordingActivitySink::default());
     control.set_activity_sink(activity.clone());
     let manager = TrackerManager::start(
-        magnet.udp_trackers,
+        magnet
+            .trackers
+            .iter()
+            .filter_map(|tracker| tracker.udp_endpoint().cloned())
+            .collect(),
         magnet.info_hash,
         loopback_network(Duration::from_secs(1)),
         control,

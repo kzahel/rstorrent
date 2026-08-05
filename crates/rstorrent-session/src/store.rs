@@ -7,7 +7,7 @@ use rstorrent_engine::dht::DhtSnapshot;
 use rstorrent_engine::{PreparedFileHash, plan_descriptor_storage, validate_publication_name};
 use rstorrent_protocol::bencode::ParseError;
 use rstorrent_protocol::dht::{DhtEndpoint, DhtIp, NodeContact, NodeId};
-use rstorrent_protocol::magnet::Magnet;
+use rstorrent_protocol::magnet::{Magnet, TrackerUrlTransport};
 use rstorrent_protocol::metainfo::{
     DURABLE_METAINFO_LIMITS, EXPLICIT_IMPORT_METAINFO_LIMITS, Metainfo, MetainfoError,
     MetainfoProjection, MetainfoTrackerTransport,
@@ -2528,15 +2528,16 @@ fn migrate_sources_and_intake_bounds_to_v8(connection: &mut Connection) -> Resul
         )?;
         let magnet =
             Magnet::parse(&source).map_err(|error| StoreError::DurableState(error.to_string()))?;
-        for (position, tracker) in magnet.udp_trackers.iter().enumerate() {
+        for (position, tracker) in magnet.trackers.iter().enumerate() {
             transaction.execute(
                 "INSERT INTO torrent_trackers(
                     info_hash, tier, position, url, transport, source
-                 ) VALUES (?1, 0, ?2, ?3, 'udp', 'magnet')",
+                 ) VALUES (?1, 0, ?2, ?3, ?4, 'magnet')",
                 params![
                     info_hash.as_slice(),
                     i64::try_from(position).expect("magnet tracker count is bounded"),
-                    udp_tracker_url(tracker),
+                    tracker.url(),
+                    tracker_transport_name(tracker.transport()),
                 ],
             )?;
         }
@@ -3274,17 +3275,18 @@ fn add_magnet(
             ],
         )
         .map_err(internal_error)?;
-    for (position, tracker) in magnet.udp_trackers.iter().enumerate() {
+    for (position, tracker) in magnet.trackers.iter().enumerate() {
         transaction
             .execute(
                 "INSERT INTO torrent_trackers(
                     info_hash, tier, position, url, transport, source
-                 ) VALUES (?1, 0, ?2, ?3, 'udp', 'magnet')",
+                 ) VALUES (?1, 0, ?2, ?3, ?4, 'magnet')",
                 params![
                     magnet.info_hash.as_slice(),
                     i64::try_from(position)
                         .map_err(|_| internal_message("tracker position overflows i64"))?,
-                    udp_tracker_url(tracker),
+                    tracker.url(),
+                    tracker_transport_name(tracker.transport()),
                 ],
             )
             .map_err(internal_error)?;
@@ -4203,26 +4205,31 @@ fn canonical_magnet(magnet: &Magnet) -> String {
         output.push(':');
         output.push_str(&hint.port.to_string());
     }
-    for tracker in &magnet.udp_trackers {
-        output.push_str("&tr=udp://");
-        if tracker.host.contains(':') {
-            output.push('[');
-            output.push_str(&tracker.host);
-            output.push(']');
-        } else {
-            output.push_str(&tracker.host);
-        }
-        output.push(':');
-        output.push_str(&tracker.port.to_string());
+    for tracker in &magnet.trackers {
+        output.push_str("&tr=");
+        percent_encode_query_value(&mut output, tracker.url().as_bytes());
     }
     output
 }
 
-fn udp_tracker_url(tracker: &rstorrent_protocol::magnet::UdpTrackerUrl) -> String {
-    if tracker.host.contains(':') {
-        format!("udp://[{}]:{}", tracker.host, tracker.port)
-    } else {
-        format!("udp://{}:{}", tracker.host, tracker.port)
+fn tracker_transport_name(transport: TrackerUrlTransport) -> &'static str {
+    match transport {
+        TrackerUrlTransport::Udp => "udp",
+        TrackerUrlTransport::Http => "http",
+        TrackerUrlTransport::Https => "https",
+    }
+}
+
+fn percent_encode_query_value(output: &mut String, value: &[u8]) {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    for byte in value {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            output.push(char::from(*byte));
+        } else {
+            output.push('%');
+            output.push(char::from(HEX[usize::from(byte >> 4)]));
+            output.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
     }
 }
 
@@ -4321,7 +4328,8 @@ mod tests {
             "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213\
              &x.pe=[::1]:6881\
              &tr=UDP%3A%2F%2FTRACKER.EXAMPLE%3A6969%2Fannounce\
-             &tr=udp%3A%2F%2F%5B2001%3Adb8%3A%3A1%5D%3A80",
+             &tr=udp%3A%2F%2F%5B2001%3Adb8%3A%3A1%5D%3A80\
+             &tr=https%3A%2F%2Ftracker.example%2Fsecret%3Fpasskey%3Dabc%26x%3D1",
         )
         .expect("parse magnet");
 
@@ -4329,8 +4337,9 @@ mod tests {
             super::canonical_magnet(&parsed),
             "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213\
              &x.pe=[::1]:6881\
-             &tr=udp://tracker.example:6969\
-             &tr=udp://[2001:db8::1]:80"
+             &tr=UDP%3A%2F%2FTRACKER.EXAMPLE%3A6969%2Fannounce\
+             &tr=udp%3A%2F%2F%5B2001%3Adb8%3A%3A1%5D%3A80\
+             &tr=https%3A%2F%2Ftracker.example%2Fsecret%3Fpasskey%3Dabc%26x%3D1"
         );
     }
 
@@ -4339,7 +4348,8 @@ mod tests {
         let root = test_root("tracker-magnet");
         let configured = configured_root(&root);
         let source = "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213\
-             &tr=UDP%3A%2F%2FTRACKER.EXAMPLE%3A6969%2Fannounce";
+             &tr=UDP%3A%2F%2FTRACKER.EXAMPLE%3A6969%2Fannounce\
+             &tr=https%3A%2F%2Ftracker.example%2Fannounce%3Fpasskey%3Dabc";
         let mut store =
             SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
         store
@@ -4358,13 +4368,21 @@ mod tests {
         drop(store);
 
         let reopened = SessionStore::open(&root, "default", &[configured]).expect("reopen");
+        let resume = reopened
+            .load_resume("000102030405060708090a0b0c0d0e0f10111213")
+            .expect("load resumed source");
         assert_eq!(
-            reopened
-                .load_resume("000102030405060708090a0b0c0d0e0f10111213")
-                .expect("load resumed source")
-                .magnet,
+            resume.magnet,
             "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213\
-             &tr=udp://tracker.example:6969"
+             &tr=UDP%3A%2F%2FTRACKER.EXAMPLE%3A6969%2Fannounce\
+             &tr=https%3A%2F%2Ftracker.example%2Fannounce%3Fpasskey%3Dabc"
+        );
+        assert_eq!(resume.trackers.len(), 2);
+        assert_eq!(resume.trackers[0].transport, StoredTrackerTransport::Udp);
+        assert_eq!(resume.trackers[1].transport, StoredTrackerTransport::Https);
+        assert_eq!(
+            resume.trackers[1].url,
+            "https://tracker.example/announce?passkey=abc"
         );
         drop(reopened);
         fs::remove_dir_all(root).expect("remove test profile");

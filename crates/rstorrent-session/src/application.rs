@@ -21,8 +21,8 @@ use rstorrent_engine::{
     PlatformStorageClient, PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash,
     PublicationShape, ResumableMagnetDownloadConfig, ResumeArtifactState, ResumedStorage,
     SessionSocketConfig, SessionSocketError, SessionSocketSet, SessionUdpError, SessionUdpService,
-    StorageFilePool, StorageFilePoolSnapshot, TorrentPrivacy, TrackerSource, UdpTrackerConfig,
-    download_magnet_metadata_with_external_discovery, plan_descriptor_storage,
+    StorageFilePool, StorageFilePoolSnapshot, TorrentPrivacy, TrackerConfig, TrackerEndpoint,
+    TrackerSource, download_magnet_metadata_with_external_discovery, plan_descriptor_storage,
     resume_magnet_to_descriptors_with_control, resume_magnet_with_control, torrent_storage_paths,
     verify_prepared_descriptors, verify_prepared_platform_files,
 };
@@ -85,7 +85,7 @@ fn classify_session_socket_bind_failure(error: &SessionSocketError) -> Option<Li
 
 fn operational_udp_trackers(
     trackers: &[StoredTracker],
-) -> Result<Vec<UdpTrackerConfig>, ApplicationError> {
+) -> Result<Vec<TrackerConfig>, ApplicationError> {
     trackers
         .iter()
         .filter(|tracker| tracker.transport == StoredTrackerTransport::Udp)
@@ -96,9 +96,9 @@ fn operational_udp_trackers(
                     tracker.tier, tracker.position
                 ))
             })?;
-            Ok(UdpTrackerConfig {
+            Ok(TrackerConfig {
                 url: tracker.url.clone(),
-                endpoint,
+                endpoint: TrackerEndpoint::Udp(endpoint),
                 tier: tracker.tier,
                 position: tracker.position,
                 source: match tracker.source {

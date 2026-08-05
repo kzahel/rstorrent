@@ -22,7 +22,7 @@ use crate::network::{NetworkConfig, NetworkPolicy};
 use crate::peer::{PeerEndpoint, PeerObservation, PeerSource};
 use crate::torrent_peer::TorrentPeerHandle;
 use crate::tracker::{
-    TrackerAction, TrackerId, TrackerSchedule, TrackerWaitKind, UdpTrackerConfig,
+    TrackerAction, TrackerConfig, TrackerEndpoint, TrackerId, TrackerSchedule, TrackerWaitKind,
 };
 
 pub const OUTBOUND_ONLY_TRACKER_PORT: u16 = 1;
@@ -135,7 +135,7 @@ fn atomic_saturating_add(value: &AtomicU64, increment: u64) {
 pub struct DiscoveryAdvertisementRegistration {
     pub generation: u64,
     pub info_hash: [u8; 20],
-    pub trackers: Vec<UdpTrackerConfig>,
+    pub trackers: Vec<TrackerConfig>,
     pub desired_running: bool,
     pub complete: bool,
     pub incoming_registered: bool,
@@ -752,13 +752,23 @@ fn fill_tracker_operations(
                 TrackerAction::Announce {
                     id,
                     url,
+                    endpoint: tracker_endpoint,
                     tier,
                     event,
                     attempt,
                     fallback,
                     ..
                 } => {
-                    let tracker = tracker_label(&url);
+                    let tracker = url;
+                    let TrackerEndpoint::Udp(url) = tracker_endpoint else {
+                        let _ = entry.schedule.failed(
+                            id,
+                            entry.control.diagnostic_elapsed(),
+                            "HTTP tracker transport is not active",
+                        );
+                        entry.emit_snapshot(true);
+                        continue;
+                    };
                     if fallback {
                         entry
                             .control
@@ -829,8 +839,10 @@ fn fill_tracker_operations(
                     });
                     spawned = true;
                 }
-                TrackerAction::Wait { delay, url, kind } => {
-                    let tracker = tracker_label(&url);
+                TrackerAction::Wait {
+                    delay, url, kind, ..
+                } => {
+                    let tracker = url;
                     match kind {
                         TrackerWaitKind::FailureRetry => {
                             entry
@@ -1133,7 +1145,7 @@ fn tracker_port(
     }
 }
 
-fn shuffle_tracker_configs(trackers: &mut [UdpTrackerConfig]) -> Result<(), DownloadError> {
+fn shuffle_tracker_configs(trackers: &mut [TrackerConfig]) -> Result<(), DownloadError> {
     let mut first = 0;
     while first < trackers.len() {
         let tier = trackers[first].tier;
@@ -1149,14 +1161,6 @@ fn shuffle_tracker_configs(trackers: &mut [UdpTrackerConfig]) -> Result<(), Down
         first = end;
     }
     Ok(())
-}
-
-fn tracker_label(tracker: &rstorrent_protocol::magnet::UdpTrackerUrl) -> String {
-    if tracker.host.contains(':') {
-        format!("udp://[{}]:{}", tracker.host, tracker.port)
-    } else {
-        format!("udp://{}:{}", tracker.host, tracker.port)
-    }
 }
 
 #[cfg(test)]
@@ -1402,12 +1406,12 @@ mod tests {
         DiscoveryAdvertisementRegistration {
             generation,
             info_hash: [4; 20],
-            trackers: vec![UdpTrackerConfig {
+            trackers: vec![TrackerConfig {
                 url: format!("udp://127.0.0.1:{tracker_port}"),
-                endpoint: rstorrent_protocol::magnet::UdpTrackerUrl {
+                endpoint: TrackerEndpoint::Udp(rstorrent_protocol::magnet::UdpTrackerUrl {
                     host: "127.0.0.1".to_owned(),
                     port: tracker_port,
-                },
+                }),
                 tier: 0,
                 position: 0,
                 source: crate::TrackerSource::Metainfo,
@@ -1492,12 +1496,12 @@ mod tests {
         let registration = DiscoveryAdvertisementRegistration {
             generation: 3,
             info_hash: [4; 20],
-            trackers: vec![UdpTrackerConfig {
+            trackers: vec![TrackerConfig {
                 url: format!("udp://{tracker_address}"),
-                endpoint: rstorrent_protocol::magnet::UdpTrackerUrl {
+                endpoint: TrackerEndpoint::Udp(rstorrent_protocol::magnet::UdpTrackerUrl {
                     host: tracker_address.ip().to_string(),
                     port: tracker_address.port(),
-                },
+                }),
                 tier: 0,
                 position: 0,
                 source: crate::TrackerSource::Metainfo,
