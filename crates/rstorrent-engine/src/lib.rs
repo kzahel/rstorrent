@@ -2,6 +2,7 @@
 
 //! Runtime ownership for the first verified-piece diagnostic.
 
+mod advertisement;
 mod checkpoint;
 pub mod dht;
 mod driver;
@@ -28,6 +29,14 @@ mod tracker;
 mod upload;
 mod upload_scheduler;
 
+pub use advertisement::{
+    DISCOVERY_ADVERTISEMENT_COMMAND_CAPACITY, DiscoveryAdvertisementError,
+    DiscoveryAdvertisementHandle, DiscoveryAdvertisementOwnerCounts,
+    DiscoveryAdvertisementRegistration, DiscoveryAdvertisementService, MAX_TRACKER_OPERATIONS,
+    OUTBOUND_ONLY_TRACKER_PORT, PeerAdvertisementEndpoint, PeerAdvertisementEndpointScope,
+    TRACKER_STOP_TIMEOUT, TorrentPrivacy, TrackerCounterSnapshot, TrackerCounters,
+    UNKNOWN_METADATA_LEFT_BYTES,
+};
 pub use driver::{
     ContentPeerActivitySnapshot, ContentRequestWindowPhase, DiskCheckpointStage,
     DiskPieceRuntimeSnapshot, DiskPieceStage, DiskPressure, DiskRuntimeSnapshot,
@@ -37,10 +46,10 @@ pub use driver::{
     MetadataAcquisitionSnapshot, MetadataPeerSnapshot, MetadataPeerStage, PathPublicationStage,
     ResumableMagnetDownloadConfig, SwarmActivitySnapshot, download_magnet,
     download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
-    download_magnet_metadata_with_dht_and_peers, download_magnet_with_control,
-    download_verified_piece, download_verified_piece_to_descriptors_with_control,
-    download_verified_piece_with_control, resume_magnet, resume_magnet_to_descriptors_with_control,
-    resume_magnet_with_control,
+    download_magnet_metadata_with_dht_and_peers, download_magnet_metadata_with_external_discovery,
+    download_magnet_with_control, download_verified_piece,
+    download_verified_piece_to_descriptors_with_control, download_verified_piece_with_control,
+    resume_magnet, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
 };
 pub use incoming::{
     DEFAULT_INCOMING_HANDSHAKE_TIMEOUT, DEFAULT_INCOMING_INACTIVITY_TIMEOUT,

@@ -6,6 +6,8 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::watch;
 
+use rstorrent_engine::{PeerAdvertisementEndpoint, PeerAdvertisementEndpointScope};
+
 use crate::settings::{
     AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
     AdvertisedPeerEndpointUnavailableReason, ListenerStatus,
@@ -84,12 +86,14 @@ struct SelectorState {
 pub(crate) struct AdvertisedPeerEndpointSelector {
     state: Arc<Mutex<SelectorState>>,
     sender: watch::Sender<AdvertisedPeerEndpointState>,
+    wire_sender: watch::Sender<PeerAdvertisementEndpoint>,
 }
 
 impl AdvertisedPeerEndpointSelector {
     pub(crate) fn new(listener_status: &ListenerStatus) -> Self {
         let (local_endpoint, endpoint) = initial_endpoint(listener_status);
         let (sender, _) = watch::channel(endpoint.clone());
+        let (wire_sender, _) = watch::channel(project_wire_endpoint(&endpoint));
         Self {
             state: Arc::new(Mutex::new(SelectorState {
                 endpoint,
@@ -98,12 +102,17 @@ impl AdvertisedPeerEndpointSelector {
                 latest_mapping_generation: 0,
             })),
             sender,
+            wire_sender,
         }
     }
 
     #[allow(dead_code)]
     pub(crate) fn subscribe(&self) -> watch::Receiver<AdvertisedPeerEndpointState> {
         self.sender.subscribe()
+    }
+
+    pub(crate) fn subscribe_wire(&self) -> watch::Receiver<PeerAdvertisementEndpoint> {
+        self.wire_sender.subscribe()
     }
 
     #[cfg(test)]
@@ -157,7 +166,7 @@ impl AdvertisedPeerEndpointSelector {
             valid_until,
             renewal_health: RenewalHealth::Healthy,
         };
-        self.sender.send_replace(state.endpoint.clone());
+        self.publish(&state.endpoint);
         endpoint_changed
     }
 
@@ -195,7 +204,7 @@ impl AdvertisedPeerEndpointSelector {
             return false;
         }
         state.endpoint = next;
-        self.sender.send_replace(state.endpoint.clone());
+        self.publish(&state.endpoint);
         true
     }
 
@@ -215,7 +224,7 @@ impl AdvertisedPeerEndpointSelector {
             local_endpoint,
             scope,
         };
-        self.sender.send_replace(state.endpoint.clone());
+        self.publish(&state.endpoint);
         true
     }
 
@@ -239,14 +248,54 @@ impl AdvertisedPeerEndpointSelector {
             generation: next_generation(state.endpoint.generation()),
             last_endpoint,
         };
-        self.sender.send_replace(state.endpoint.clone());
+        self.publish(&state.endpoint);
         true
+    }
+
+    fn publish(&self, endpoint: &AdvertisedPeerEndpointState) {
+        self.sender.send_replace(endpoint.clone());
+        self.wire_sender
+            .send_replace(project_wire_endpoint(endpoint));
     }
 
     fn selector_state(&self) -> MutexGuard<'_, SelectorState> {
         self.state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+fn project_wire_endpoint(endpoint: &AdvertisedPeerEndpointState) -> PeerAdvertisementEndpoint {
+    match endpoint {
+        AdvertisedPeerEndpointState::OutboundOnly { generation, .. } => {
+            PeerAdvertisementEndpoint::outbound_only(*generation)
+        }
+        AdvertisedPeerEndpointState::Local {
+            generation,
+            local_endpoint,
+            scope,
+        } => PeerAdvertisementEndpoint {
+            generation: *generation,
+            endpoint: Some(*local_endpoint),
+            scope: Some(match scope {
+                EndpointScope::Loopback => PeerAdvertisementEndpointScope::Loopback,
+                EndpointScope::LocalNetwork => PeerAdvertisementEndpointScope::LocalNetwork,
+            }),
+            stopping: false,
+        },
+        AdvertisedPeerEndpointState::Mapped {
+            generation,
+            external_endpoint,
+            ..
+        } => PeerAdvertisementEndpoint {
+            generation: *generation,
+            endpoint: Some(*external_endpoint),
+            scope: Some(PeerAdvertisementEndpointScope::Mapped),
+            stopping: false,
+        },
+        AdvertisedPeerEndpointState::Stopping { generation, .. } => {
+            PeerAdvertisementEndpoint::stopping(*generation)
+        }
     }
 }
 

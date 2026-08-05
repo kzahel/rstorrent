@@ -34,22 +34,21 @@ use super::{
     CONTENT_STORAGE_WRITE_BATCH_BLOCKS, CONTENT_STORAGE_WRITE_BATCH_BYTES,
     CONTENT_STORAGE_WRITE_CONCURRENCY, CoalescedContentWrite, ContentCheckpointPipeline,
     ContentDownloadConfig, ContentStorage, ContentStorageCommand, ContentStorageCompletion,
-    ContentStoragePipeline, ContentSupervisorOwner, ContentWriteStats,
-    DEFAULT_ADVERTISED_PEER_PORT, DhtRetryTiming, DiskPressure, DownloadActivityEvent,
-    DownloadActivitySink, DownloadConfig, DownloadControl, DownloadError, DownloadResourceLimits,
-    MAX_CONCURRENT_TRACKER_OPERATIONS, MAX_DIAGNOSTIC_ERROR_LENGTH, MAX_METADATA_PEERS,
-    MAX_RECENT_METADATA_ATTEMPTS, MagnetDownloadConfig, MetadataAcquisitionPhase,
-    MetadataPeerStage, PeerConnection, PreparedContentWrite, QueuedContentStorageCommand,
-    ResumableMagnetDownloadConfig, ResumeArtifactState, SwarmConfig, TorrentPeerCoordinator,
-    TrackerManager, UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache,
-    announce_udp_tracker_address, atomic_saturating_add, atomic_saturating_increment,
-    build_content_plan_window, coalesce_content_writes, collect_content_write_batch,
-    content_dial_slot_available, content_storage_job_limit, download_magnet,
-    download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
-    download_magnet_with_control, download_verified_piece, download_verified_piece_with_control,
-    execute_content_storage_verification, execute_content_storage_writes, next_peer_message,
-    resume_magnet, resume_magnet_with_control, retrying_dht_lookup, run_content_download,
-    run_magnet_download_with_peers, send_message,
+    ContentStoragePipeline, ContentSupervisorOwner, ContentWriteStats, DhtRetryTiming,
+    DiskPressure, DownloadActivityEvent, DownloadActivitySink, DownloadConfig, DownloadControl,
+    DownloadError, DownloadResourceLimits, MAX_CONCURRENT_TRACKER_OPERATIONS,
+    MAX_DIAGNOSTIC_ERROR_LENGTH, MAX_METADATA_PEERS, MAX_RECENT_METADATA_ATTEMPTS,
+    MagnetDownloadConfig, MetadataAcquisitionPhase, MetadataPeerStage, PeerConnection,
+    PreparedContentWrite, QueuedContentStorageCommand, ResumableMagnetDownloadConfig,
+    ResumeArtifactState, SwarmConfig, TorrentPeerCoordinator, TrackerManager, UdpTrackerAnnounce,
+    UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache, announce_udp_tracker_address,
+    atomic_saturating_add, atomic_saturating_increment, build_content_plan_window,
+    coalesce_content_writes, collect_content_write_batch, content_dial_slot_available,
+    content_storage_job_limit, download_magnet, download_magnet_metadata_with_control,
+    download_magnet_metadata_with_dht, download_magnet_with_control, download_verified_piece,
+    download_verified_piece_with_control, execute_content_storage_verification,
+    execute_content_storage_writes, next_peer_message, resume_magnet, resume_magnet_with_control,
+    retrying_dht_lookup, run_content_download, run_magnet_download_with_peers, send_message,
 };
 
 trait TestMetainfoParse: Sized {
@@ -1921,7 +1920,7 @@ async fn serve_one_shot_udp_tracker(
     );
     assert_eq!(
         u16::from_be_bytes(request[96..98].try_into().expect("listen port")),
-        DEFAULT_ADVERTISED_PEER_PORT
+        1
     );
 
     let mut response = Vec::new();

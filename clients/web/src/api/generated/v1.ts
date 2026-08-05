@@ -195,7 +195,7 @@ export type TrackerSourceView = "magnet" | "metainfo";
 
 export type TrackerStatusView = "unsupported" | "inactive" | "idle" | "announcing" | "retry_wait" | "reannounce_wait";
 
-export type TrackerAnnounceEventView = "started" | "update";
+export type TrackerAnnounceEventView = "started" | "update" | "completed" | "stopped";
 
 export type TrackerNextActionView = "announce" | "retry" | "reannounce";
 

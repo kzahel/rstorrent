@@ -46,6 +46,25 @@ pub enum TrackerNextAction {
 pub enum TrackerAnnounceEvent {
     Started,
     Update,
+    Completed,
+    Stopped,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TrackerPriorityEvent {
+    Update,
+    Completed,
+    Stopped,
+}
+
+impl TrackerPriorityEvent {
+    const fn wire_event(self) -> AnnounceEvent {
+        match self {
+            Self::Update => AnnounceEvent::None,
+            Self::Completed => AnnounceEvent::Completed,
+            Self::Stopped => AnnounceEvent::Stopped,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -97,6 +116,9 @@ pub(crate) struct TrackerRecord {
     failures: u8,
     total_attempts: u32,
     start_acknowledged: bool,
+    pending_event: Option<TrackerPriorityEvent>,
+    inflight_event: Option<AnnounceEvent>,
+    stopped: bool,
     updating: bool,
     last_success: Option<Duration>,
     last_failure: Option<Duration>,
@@ -120,6 +142,9 @@ impl TrackerRecord {
             failures: 0,
             total_attempts: 0,
             start_acknowledged: false,
+            pending_event: None,
+            inflight_event: None,
+            stopped: false,
             updating: false,
             last_success: None,
             last_failure: None,
@@ -182,6 +207,7 @@ pub(crate) struct TrackerSchedule {
     round_not_before: Duration,
     round_tracker: Option<TrackerId>,
     round_wait_kind: Option<TrackerWaitKind>,
+    stopping: bool,
 }
 
 impl TrackerSchedule {
@@ -217,12 +243,89 @@ impl TrackerSchedule {
             round_not_before: Duration::ZERO,
             round_tracker: None,
             round_wait_kind: None,
+            stopping: false,
         }
+    }
+
+    pub(crate) fn request_update(&mut self) {
+        if self.stopping {
+            return;
+        }
+        for record in &mut self.records {
+            if record.start_acknowledged && !record.stopped {
+                record.pending_event = Some(TrackerPriorityEvent::Update);
+                record.next_announce = Duration::ZERO;
+            }
+        }
+        self.reset_round();
+    }
+
+    pub(crate) fn request_completed(&mut self) {
+        if self.stopping {
+            return;
+        }
+        for record in &mut self.records {
+            if record.start_acknowledged && !record.stopped {
+                record.pending_event = Some(TrackerPriorityEvent::Completed);
+                record.next_announce = Duration::ZERO;
+            }
+        }
+        self.reset_round();
+    }
+
+    pub(crate) fn request_stop(&mut self) {
+        self.stopping = true;
+        for record in &mut self.records {
+            record.pending_event = record
+                .start_acknowledged
+                .then_some(TrackerPriorityEvent::Stopped);
+            record.next_announce = Duration::ZERO;
+        }
+        self.reset_round();
+    }
+
+    pub(crate) fn stop_complete(&self) -> bool {
+        self.stopping
+            && self
+                .records
+                .iter()
+                .all(|record| !record.updating && record.pending_event.is_none())
     }
 
     pub(crate) fn next_action(&mut self, now: Duration) -> TrackerAction {
         loop {
             if self.records.is_empty() {
+                return TrackerAction::Exhausted;
+            }
+            if let Some(record) = self.records.iter_mut().find(|record| {
+                !record.updating
+                    && !record.stopped
+                    && record.pending_event.is_some()
+                    && !self.attempted.contains(&record.id)
+            }) {
+                let fallback = !self.attempted.is_empty();
+                self.attempted.insert(record.id);
+                record.total_attempts = record.total_attempts.saturating_add(1);
+                record.updating = true;
+                let event = record
+                    .pending_event
+                    .expect("priority selection retains its event")
+                    .wire_event();
+                record.inflight_event = Some(event);
+                return TrackerAction::Announce {
+                    id: record.id,
+                    url: record.url.clone(),
+                    tier: record.tier,
+                    source: record.source,
+                    event,
+                    attempt: record.total_attempts,
+                    fallback,
+                };
+            }
+            if self.stopping {
+                if self.records.iter().any(|record| record.updating) {
+                    return TrackerAction::Pending;
+                }
                 return TrackerAction::Exhausted;
             }
             if now < self.round_not_before {
@@ -248,16 +351,18 @@ impl TrackerSchedule {
                 self.attempted.insert(record.id);
                 record.total_attempts = record.total_attempts.saturating_add(1);
                 record.updating = true;
+                let event = if record.start_acknowledged {
+                    AnnounceEvent::None
+                } else {
+                    AnnounceEvent::Started
+                };
+                record.inflight_event = Some(event);
                 return TrackerAction::Announce {
                     id: record.id,
                     url: record.url.clone(),
                     tier: record.tier,
                     source: record.source,
-                    event: if record.start_acknowledged {
-                        AnnounceEvent::None
-                    } else {
-                        AnnounceEvent::Started
-                    },
+                    event,
                     attempt: record.total_attempts,
                     fallback,
                 };
@@ -295,6 +400,7 @@ impl TrackerSchedule {
     pub(crate) fn failed(&mut self, id: TrackerId, now: Duration, detail: &str) -> TrackerFailure {
         let record = self.record_mut(id);
         record.updating = false;
+        record.inflight_event = None;
         record.failures = record.failures.saturating_add(1).min(MAX_TRACKER_FAILURES);
         record.last_failure = Some(now);
         record.last_error = Some(bounded_tracker_error(detail));
@@ -304,6 +410,18 @@ impl TrackerSchedule {
             failures: record.failures,
             retry_in,
         }
+    }
+
+    pub(crate) fn supersede(&mut self, id: TrackerId) {
+        let stopping = self.stopping;
+        let record = self.record_mut(id);
+        record.updating = false;
+        record.inflight_event = None;
+        record.next_announce = Duration::ZERO;
+        if record.start_acknowledged && !stopping {
+            record.pending_event = Some(TrackerPriorityEvent::Update);
+        }
+        self.reset_round();
     }
 
     pub(crate) fn succeeded(
@@ -326,7 +444,28 @@ impl TrackerSchedule {
             let record = &mut self.records[position];
             record.updating = false;
             record.failures = 0;
-            record.start_acknowledged = true;
+            match record.inflight_event.take() {
+                Some(AnnounceEvent::Started) => {
+                    record.start_acknowledged = true;
+                    if self.stopping {
+                        record.pending_event = Some(TrackerPriorityEvent::Stopped);
+                    }
+                }
+                Some(event @ (AnnounceEvent::Completed | AnnounceEvent::None)) => {
+                    if record
+                        .pending_event
+                        .is_some_and(|pending| pending.wire_event() == event)
+                    {
+                        record.pending_event = None;
+                    }
+                }
+                Some(AnnounceEvent::Stopped) => {
+                    record.pending_event = None;
+                    record.start_acknowledged = false;
+                    record.stopped = true;
+                }
+                None => {}
+            }
             record.last_success = Some(now);
             record.interval = Some(interval);
             record.last_peer_count = Some(peer_count);
@@ -364,6 +503,13 @@ impl TrackerSchedule {
             .find(|record| record.id == id)
             .expect("selected tracker record remains installed")
     }
+
+    fn reset_round(&mut self) {
+        self.attempted.clear();
+        self.round_not_before = Duration::ZERO;
+        self.round_tracker = None;
+        self.round_wait_kind = None;
+    }
 }
 
 impl TrackerRecord {
@@ -393,10 +539,11 @@ impl TrackerRecord {
                 Some(Duration::ZERO),
             )
         };
-        let announce_event = (active && self.updating).then_some(if self.start_acknowledged {
-            TrackerAnnounceEvent::Update
-        } else {
-            TrackerAnnounceEvent::Started
+        let announce_event = (active && self.updating).then_some(match self.inflight_event {
+            Some(AnnounceEvent::Started) => TrackerAnnounceEvent::Started,
+            Some(AnnounceEvent::Completed) => TrackerAnnounceEvent::Completed,
+            Some(AnnounceEvent::Stopped) => TrackerAnnounceEvent::Stopped,
+            Some(AnnounceEvent::None) | None => TrackerAnnounceEvent::Update,
         });
         let url = self.display_url.clone();
         TrackerRuntimeRecordSnapshot {
@@ -743,5 +890,72 @@ mod tests {
         assert_eq!(terminal.records[0].announce_event, None);
         assert_eq!(terminal.records[0].next_action, None);
         assert_eq!(terminal.records[0].last_peer_count, Some(4));
+    }
+
+    #[test]
+    fn lifecycle_priorities_order_completed_correction_and_stopped() {
+        let mut schedule = TrackerSchedule::new(vec![tracker("tracker.example", 80)]);
+        let started = announce(&mut schedule, Duration::ZERO);
+        schedule.succeeded(started, Duration::from_secs(1), 900, 0, 0, 0);
+
+        schedule.request_completed();
+        let TrackerAction::Announce {
+            id,
+            event: AnnounceEvent::Completed,
+            ..
+        } = schedule.next_action(Duration::from_secs(2))
+        else {
+            panic!("completion transition must preempt the interval");
+        };
+        schedule.succeeded(id, Duration::from_secs(3), 900, 0, 0, 0);
+
+        schedule.request_update();
+        let TrackerAction::Announce {
+            id,
+            event: AnnounceEvent::None,
+            ..
+        } = schedule.next_action(Duration::from_secs(4))
+        else {
+            panic!("endpoint correction must preempt the interval");
+        };
+        schedule.succeeded(id, Duration::from_secs(5), 900, 0, 0, 0);
+
+        schedule.request_stop();
+        let TrackerAction::Announce {
+            id,
+            event: AnnounceEvent::Stopped,
+            ..
+        } = schedule.next_action(Duration::from_secs(6))
+        else {
+            panic!("stopped must supersede periodic work");
+        };
+        schedule.succeeded(id, Duration::from_secs(7), 900, 0, 0, 0);
+        assert_eq!(
+            schedule.next_action(Duration::from_secs(8)),
+            TrackerAction::Exhausted
+        );
+    }
+
+    #[test]
+    fn imported_complete_start_does_not_fabricate_completed() {
+        let mut schedule = TrackerSchedule::new(vec![tracker("tracker.example", 80)]);
+        schedule.request_completed();
+        assert!(matches!(
+            schedule.next_action(Duration::ZERO),
+            TrackerAction::Announce {
+                event: AnnounceEvent::Started,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn stopped_is_only_due_after_a_successful_start() {
+        let mut schedule = TrackerSchedule::new(vec![tracker("tracker.example", 80)]);
+        schedule.request_stop();
+        assert_eq!(
+            schedule.next_action(Duration::ZERO),
+            TrackerAction::Exhausted
+        );
     }
 }

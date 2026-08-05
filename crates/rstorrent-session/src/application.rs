@@ -13,14 +13,16 @@ use rstorrent_engine::{
     DEFAULT_INCOMING_KEEPALIVE_INTERVAL, DEFAULT_INCOMING_NO_REQUEST_TIMEOUT,
     DEFAULT_INCOMING_PEER_ACTIVITY_TIMEOUT, DEFAULT_PEER_ID, DEFAULT_STORAGE_FILE_LIMIT,
     DEFAULT_UPLOAD_READ_JOBS, DescriptorFile, DescriptorStorage, DescriptorStoragePlan,
-    DiskCheckpointStage, DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink,
-    DownloadControl, DownloadError, DownloadResourceLimits, IncomingPeerError, IncomingPeerService,
-    IncomingPeerServiceConfig, IncomingPeerServiceSnapshot, NetworkConfig, PathPublicationStage,
-    PeerBudget, PlatformStorageClient, PlatformStorageFailureKind, PlatformStorageSpec,
-    PreparedFileHash, PublicationShape, ResumableMagnetDownloadConfig, ResumeArtifactState,
-    ResumedStorage, SessionSocketConfig, SessionSocketError, SessionSocketSet, SessionUdpError,
-    SessionUdpService, StorageFilePool, StorageFilePoolSnapshot, TrackerSource, UdpTrackerConfig,
-    download_magnet_metadata_with_dht_and_peers, plan_descriptor_storage,
+    DiscoveryAdvertisementError, DiscoveryAdvertisementHandle, DiscoveryAdvertisementRegistration,
+    DiscoveryAdvertisementService, DiskCheckpointStage, DownloadActivityEvent,
+    DownloadActivitySink, DownloadCheckpointSink, DownloadControl, DownloadError,
+    DownloadResourceLimits, IncomingPeerError, IncomingPeerService, IncomingPeerServiceConfig,
+    IncomingPeerServiceSnapshot, NetworkConfig, PathPublicationStage, PeerBudget,
+    PlatformStorageClient, PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash,
+    PublicationShape, ResumableMagnetDownloadConfig, ResumeArtifactState, ResumedStorage,
+    SessionSocketConfig, SessionSocketError, SessionSocketSet, SessionUdpError, SessionUdpService,
+    StorageFilePool, StorageFilePoolSnapshot, TorrentPrivacy, TrackerSource, UdpTrackerConfig,
+    download_magnet_metadata_with_external_discovery, plan_descriptor_storage,
     resume_magnet_to_descriptors_with_control, resume_magnet_with_control, torrent_storage_paths,
     verify_prepared_descriptors, verify_prepared_platform_files,
 };
@@ -28,6 +30,7 @@ use rstorrent_protocol::magnet::UdpTrackerUrl;
 use rstorrent_protocol::metainfo::{
     BEP9_METAINFO_LIMITS, DURABLE_METAINFO_LIMITS, Metainfo, MetainfoError,
 };
+use rstorrent_protocol::storage_layout::{FileSelection, TorrentLayout};
 use tokio::task::JoinHandle;
 
 use crate::advertised_endpoint::AdvertisedPeerEndpointSelector;
@@ -287,6 +290,8 @@ pub struct ApplicationService {
     peer_budget: PeerBudget,
     incoming_seeding: Option<IncomingSeeding>,
     advertised_endpoint: AdvertisedPeerEndpointSelector,
+    discovery_advertisement: Option<DiscoveryAdvertisementService>,
+    discovery_handle: DiscoveryAdvertisementHandle,
     reachability: Option<ReachabilityCoordinator>,
     incoming_service: Option<IncomingPeerService>,
     session_udp: Option<SessionUdpService>,
@@ -489,6 +494,9 @@ impl ApplicationService {
         let dht_observation_receiver = dht.subscribe_observations();
         let initial_dht_view = inspection_view(&dht_observation_receiver.borrow());
         let advertised_endpoint = AdvertisedPeerEndpointSelector::new(&listener_status);
+        let discovery_advertisement =
+            DiscoveryAdvertisementService::start(network, advertised_endpoint.subscribe_wire());
+        let discovery_handle = discovery_advertisement.handle();
         let runtime_client_settings = ClientSettingsRuntimeView::from_started(
             snapshot.client_settings.clone(),
             active_client_settings.clone(),
@@ -546,6 +554,8 @@ impl ApplicationService {
             peer_budget,
             incoming_seeding,
             advertised_endpoint,
+            discovery_advertisement: Some(discovery_advertisement),
+            discovery_handle,
             reachability: None,
             incoming_service,
             session_udp,
@@ -619,6 +629,7 @@ impl ApplicationService {
         service.restore_removals().await?;
         service.restore_running().await?;
         service.reconcile_incoming_catalog().await?;
+        service.reconcile_discovery_catalog().await?;
         service.refresh_views()?;
         service.reachability = Some(ReachabilityCoordinator::start(
             &active_client_settings,
@@ -793,6 +804,7 @@ impl ApplicationService {
             _ => None,
         };
         if let Some(torrent_id) = incoming_fence.as_deref() {
+            self.stop_discovery_torrent(torrent_id).await?;
             self.unregister_incoming(torrent_id).await?;
         }
         let revision_before = self.store_mut()?.revision()?;
@@ -815,6 +827,7 @@ impl ApplicationService {
                 }
                 if let Some(torrent_id) = incoming_fence.as_deref() {
                     self.reconcile_incoming_torrent(torrent_id).await?;
+                    self.reconcile_discovery_torrent(torrent_id).await?;
                 }
                 return Err(error.into());
             }
@@ -822,6 +835,7 @@ impl ApplicationService {
         if !matches!(response.outcome, ResponseOutcome::Success { .. }) {
             if let Some(torrent_id) = incoming_fence.as_deref() {
                 self.reconcile_incoming_torrent(torrent_id).await?;
+                self.reconcile_discovery_torrent(torrent_id).await?;
             }
             return Ok(response);
         }
@@ -831,7 +845,9 @@ impl ApplicationService {
             )
         })? > revision_before;
         self.refresh_views()?;
+        self.reconcile_discovery_catalog().await?;
 
+        let shutting_down = matches!(&command, Command::Shutdown);
         match command {
             Command::AddMagnet { magnet, .. } => {
                 let torrent_id = rstorrent_protocol::magnet::Magnet::parse(&magnet)
@@ -874,6 +890,8 @@ impl ApplicationService {
             Command::ForceRecheck { torrent_id } => {
                 if !durable_mutation_applied {
                     self.reconcile_incoming_torrent(&torrent_id.to_ascii_lowercase())
+                        .await?;
+                    self.reconcile_discovery_torrent(&torrent_id.to_ascii_lowercase())
                         .await?;
                     return Ok(response);
                 }
@@ -953,6 +971,9 @@ impl ApplicationService {
                 self.shutdown().await?;
             }
             Command::Snapshot => {}
+        }
+        if !shutting_down {
+            self.reconcile_discovery_catalog().await?;
         }
         Ok(response)
     }
@@ -1042,6 +1063,7 @@ impl ApplicationService {
             return Ok(response);
         }
         self.refresh_views()?;
+        self.reconcile_discovery_catalog().await?;
         self.views.record_diagnostic(
             DiagnosticSeverity::Info,
             category::LIFECYCLE_TORRENT,
@@ -1051,6 +1073,7 @@ impl ApplicationService {
             &[],
         )?;
         self.start_if_possible(&torrent_id).await?;
+        self.reconcile_discovery_torrent(&torrent_id).await?;
         Ok(response)
     }
 
@@ -1339,7 +1362,6 @@ impl ApplicationService {
             .have
             .as_ref()
             .map_or_else(Vec::new, |have| have.pieces().to_vec());
-        let udp_trackers = operational_udp_trackers(&resume.trackers)?;
         let torrent_peers = self.torrent_peers(&torrent_id)?;
         let config = ResumableMagnetDownloadConfig {
             magnet: resume.magnet,
@@ -1354,7 +1376,7 @@ impl ApplicationService {
             artifact_state,
             download_missing: true,
             dht: self.dht.as_ref().map(DhtService::handle),
-            udp_trackers: Some(udp_trackers),
+            udp_trackers: Some(Vec::new()),
         };
         let checkpoints: Arc<dyn DownloadCheckpointSink> = Arc::new(StoreCheckpointSink {
             store: self.store.clone(),
@@ -1664,6 +1686,31 @@ impl ApplicationService {
     pub async fn shutdown(&mut self) -> Result<(), ApplicationError> {
         let mut active_join_error = None;
         let mut shutdown_error = None;
+        if let Some(discovery) = self.discovery_advertisement.take() {
+            match discovery.shutdown().await {
+                Ok(terminal) => {
+                    let terminal_counts = format!(
+                        "tasks={},registrations={},tracker_operations={},tracker_high_water={},queue_high_water={}",
+                        terminal.tasks,
+                        terminal.registrations,
+                        terminal.tracker_operations,
+                        terminal.tracker_operations_high_water,
+                        terminal.command_queue_high_water,
+                    );
+                    let _ = self.views.record_diagnostic(
+                        DiagnosticSeverity::Info,
+                        category::DISCOVERY_PEER,
+                        "discovery_advertisement_service_stopped",
+                        None,
+                        "Discovery and advertisement service stopped with joined owners",
+                        &[("terminal_counts", &terminal_counts)],
+                    );
+                }
+                Err(error) => {
+                    active_join_error = Some(format!("discovery advertisement: {error}"));
+                }
+            }
+        }
         if let Some(reachability) = self.reachability.take() {
             match reachability.shutdown().await {
                 Ok(terminal) => {
@@ -2099,15 +2146,13 @@ impl ApplicationService {
                 let network = self.network;
                 let peer_budget = self.peer_budget.clone();
                 let dht = self.dht.as_ref().map(DhtService::handle);
-                let udp_trackers = operational_udp_trackers(&resume.trackers)?;
                 let operation = async move {
-                    let raw_info = download_magnet_metadata_with_dht_and_peers(
+                    let raw_info = download_magnet_metadata_with_external_discovery(
                         magnet.clone(),
                         network,
                         task_control.clone(),
-                        dht.clone(),
                         peer_budget.clone(),
-                        Some(torrent_peers.clone()),
+                        torrent_peers.clone(),
                     )
                     .await?;
                     checkpoints
@@ -2142,7 +2187,7 @@ impl ApplicationService {
                             artifact_state: ResumeArtifactState::None,
                             download_missing: true,
                             dht,
-                            udp_trackers: Some(udp_trackers),
+                            udp_trackers: Some(Vec::new()),
                         },
                         checkpoints,
                         task_control,
@@ -2195,15 +2240,13 @@ impl ApplicationService {
             let magnet = resume.magnet;
             let network = self.network;
             let peer_budget = self.peer_budget.clone();
-            let dht = self.dht.as_ref().map(DhtService::handle);
             let operation = async move {
-                let raw_info = download_magnet_metadata_with_dht_and_peers(
+                let raw_info = download_magnet_metadata_with_external_discovery(
                     magnet,
                     network,
                     task_control,
-                    dht,
                     peer_budget,
-                    Some(torrent_peers),
+                    torrent_peers,
                 )
                 .await?;
                 checkpoints
@@ -2229,7 +2272,6 @@ impl ApplicationService {
             .as_ref()
             .map_or_else(Vec::new, |have| have.pieces().to_vec());
         let artifact_state = resume_artifact_state(&resume)?;
-        let udp_trackers = operational_udp_trackers(&resume.trackers)?;
         let config = ResumableMagnetDownloadConfig {
             magnet: resume.magnet,
             storage_root: root_path,
@@ -2243,7 +2285,7 @@ impl ApplicationService {
             artifact_state,
             download_missing: resume.desired_running,
             dht: self.dht.as_ref().map(DhtService::handle),
-            udp_trackers: Some(udp_trackers),
+            udp_trackers: Some(Vec::new()),
         };
         let checkpoints: Arc<dyn DownloadCheckpointSink> = Arc::new(StoreCheckpointSink {
             store: self.store.clone(),
@@ -2293,15 +2335,7 @@ impl ApplicationService {
             .expect("application configuration validated diagnostic storage limits");
         control.set_checkpoint_sync_delay_for_testing(self.checkpoint_sync_delay_for_testing);
         control.set_checkpoint_commit_delay_for_testing(self.checkpoint_commit_delay_for_testing);
-        control.set_activity_sink(Arc::new(ViewActivitySink {
-            torrent_id: torrent_id.to_owned(),
-            views: self.views.clone(),
-            trace_checkpoint_stages: self.checkpoint_stage_trace_for_testing,
-            trace_publication_stages: self.publication_stage_trace_for_testing,
-            publication_delay_stage: self.publication_delay_stage_for_testing,
-            publication_delay: self.publication_delay_for_testing,
-            last_checkpoint_stage: Mutex::new(None),
-        }));
+        control.set_activity_sink(self.view_activity_sink(torrent_id));
         control.set_byte_metric_sink(self.speed_recorder.clone());
         control
     }
@@ -2338,6 +2372,7 @@ impl ApplicationService {
             .get(torrent_id)
             .expect("torrent runtime exists before its operation starts")
             .handle();
+        let discovery_handle = self.discovery_handle.clone();
         let views = self.views.clone();
         let torrent_id = torrent_id.to_owned();
         Ok(tokio::spawn(async move {
@@ -2353,9 +2388,19 @@ impl ApplicationService {
                 &torrent_id,
             )
             .await;
-            match (result, reconcile) {
-                (Ok(()), Ok(())) => Ok(()),
-                (Err(error), _) | (Ok(()), Err(error)) => Err(error),
+            let advertise = reconcile_completed_advertisement(
+                &store,
+                &views,
+                &discovery_handle,
+                &torrent_runtime,
+                &torrent_id,
+            )
+            .await;
+            match (result, reconcile, advertise) {
+                (Ok(()), Ok(()), Ok(())) => Ok(()),
+                (Err(error), _, _) | (Ok(()), Err(error), _) | (Ok(()), Ok(()), Err(error)) => {
+                    Err(error)
+                }
             }
         }))
     }
@@ -2490,6 +2535,88 @@ impl ApplicationService {
         Ok(())
     }
 
+    async fn reconcile_discovery_torrent(
+        &mut self,
+        torrent_id: &str,
+    ) -> Result<(), ApplicationError> {
+        self.ensure_torrent_runtime(torrent_id)?;
+        let (resume, catalog_eligible) = {
+            let store = self.store_mut()?;
+            let resume = match store.load_resume(torrent_id) {
+                Ok(resume) => resume,
+                Err(StoreError::UnknownTorrent(_)) => return Ok(()),
+                Err(error) => return Err(error.into()),
+            };
+            let snapshot = store.snapshot()?;
+            let eligible = snapshot.torrents.iter().any(|torrent| {
+                torrent.torrent_id == torrent_id
+                    && !torrent.archived
+                    && torrent.removal_state.is_none()
+            });
+            (resume, eligible)
+        };
+        let runtime = self
+            .torrent_runtimes
+            .get(torrent_id)
+            .expect("torrent runtime exists during discovery reconciliation");
+        if !catalog_eligible {
+            return self.stop_discovery_torrent(torrent_id).await;
+        }
+        let handle = runtime.handle();
+        let counters = handle.tracker_counters();
+        let (privacy, left) = tracker_metadata_state(&resume)?;
+        counters.set_left(left);
+        let registration = DiscoveryAdvertisementRegistration {
+            generation: runtime.generation(),
+            info_hash: crate::control::decode_info_hash(torrent_id).ok_or_else(|| {
+                ApplicationError::Configuration("invalid torrent identity".to_owned())
+            })?,
+            trackers: operational_udp_trackers(&resume.trackers)?,
+            desired_running: resume.desired_running,
+            complete: resume.state == TorrentState::Complete,
+            incoming_registered: handle.has_seed_registration(),
+            privacy,
+            counters,
+            peers: runtime.peers(),
+            activity_sink: self.view_activity_sink(torrent_id),
+        };
+        self.discovery_handle
+            .upsert(registration)
+            .await
+            .map_err(|error| {
+                ApplicationError::Configuration(format!("discovery advertisement: {error}"))
+            })
+    }
+
+    async fn reconcile_discovery_catalog(&mut self) -> Result<(), ApplicationError> {
+        let torrent_ids = self
+            .store_mut()?
+            .snapshot()?
+            .torrents
+            .into_iter()
+            .map(|torrent| torrent.torrent_id)
+            .collect::<Vec<_>>();
+        for torrent_id in torrent_ids {
+            self.reconcile_discovery_torrent(&torrent_id).await?;
+        }
+        Ok(())
+    }
+
+    async fn stop_discovery_torrent(&self, torrent_id: &str) -> Result<(), ApplicationError> {
+        let Some(runtime) = self.torrent_runtimes.get(torrent_id) else {
+            return Ok(());
+        };
+        let info_hash = crate::control::decode_info_hash(torrent_id).ok_or_else(|| {
+            ApplicationError::Configuration("invalid torrent identity".to_owned())
+        })?;
+        self.discovery_handle
+            .remove(info_hash, runtime.generation())
+            .await
+            .map_err(|error| {
+                ApplicationError::Configuration(format!("discovery advertisement: {error}"))
+            })
+    }
+
     fn refresh_views(&self) -> Result<(), ApplicationError> {
         let (snapshot, durable) = {
             let store = self.store_mut()?;
@@ -2498,6 +2625,71 @@ impl ApplicationService {
         self.views.replace_durable(&snapshot, &durable)?;
         Ok(())
     }
+
+    fn view_activity_sink(&self, torrent_id: &str) -> Arc<dyn DownloadActivitySink> {
+        Arc::new(ViewActivitySink {
+            torrent_id: torrent_id.to_owned(),
+            views: self.views.clone(),
+            trace_checkpoint_stages: self.checkpoint_stage_trace_for_testing,
+            trace_publication_stages: self.publication_stage_trace_for_testing,
+            publication_delay_stage: self.publication_delay_stage_for_testing,
+            publication_delay: self.publication_delay_for_testing,
+            last_checkpoint_stage: Mutex::new(None),
+        })
+    }
+}
+
+fn tracker_metadata_state(
+    resume: &ResumeRecord,
+) -> Result<(TorrentPrivacy, u64), ApplicationError> {
+    let Some(raw_info) = &resume.raw_info else {
+        return Ok((
+            TorrentPrivacy::Unknown,
+            rstorrent_engine::UNKNOWN_METADATA_LEFT_BYTES,
+        ));
+    };
+    let Ok(metainfo) = parse_durable_metainfo(raw_info) else {
+        // Discovery must not make startup less conservative than the storage
+        // recovery path. Corrupt metadata has no trustworthy privacy or size
+        // state, so retain tracker-only premetadata behavior and suppress DHT.
+        return Ok((
+            TorrentPrivacy::Unknown,
+            rstorrent_engine::UNKNOWN_METADATA_LEFT_BYTES,
+        ));
+    };
+    let privacy = if metainfo.private {
+        TorrentPrivacy::Private
+    } else {
+        TorrentPrivacy::Public
+    };
+    if resume.state == TorrentState::Complete {
+        return Ok((privacy, 0));
+    }
+    let layout = TorrentLayout::from_metainfo(&metainfo);
+    let skipped = resume
+        .skip_files
+        .iter()
+        .map(|index| usize::try_from(*index))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| ApplicationError::Configuration("file index overflow".to_owned()))?;
+    let selection = FileSelection::new(&layout, &skipped)
+        .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+    let verified = resume.have.as_ref().map(HaveState::pieces);
+    let mut left = 0_u64;
+    for piece_index in 0..layout.piece_count() {
+        if verified.is_some_and(|pieces| pieces.get(piece_index).copied().unwrap_or(false)) {
+            continue;
+        }
+        let piece_index = u32::try_from(piece_index)
+            .map_err(|_| ApplicationError::Configuration("piece index overflow".to_owned()))?;
+        for range in layout
+            .request_ranges(piece_index, &selection)
+            .map_err(|error| ApplicationError::Configuration(error.to_string()))?
+        {
+            left = left.saturating_add(u64::from(range.length));
+        }
+    }
+    Ok((privacy, left))
 }
 
 impl Drop for ApplicationService {
@@ -2692,6 +2884,80 @@ async fn reconcile_completed_seed(
         record_seed_reconcile(views, torrent_id, &outcome).map_err(|error| error.to_string())?;
     }
     Ok(())
+}
+
+async fn reconcile_completed_advertisement(
+    store: &Arc<Mutex<SessionStore>>,
+    views: &ViewHub,
+    discovery: &DiscoveryAdvertisementHandle,
+    runtime: &TorrentRuntimeHandle,
+    torrent_id: &str,
+) -> Result<(), String> {
+    let (resume, catalog_eligible) = {
+        let store = store
+            .lock()
+            .map_err(|_| "session store lock is poisoned".to_owned())?;
+        let resume = match store.load_resume(torrent_id) {
+            Ok(resume) => resume,
+            Err(StoreError::UnknownTorrent(_)) => return Ok(()),
+            Err(error) => return Err(error.to_string()),
+        };
+        let snapshot = store.snapshot().map_err(|error| error.to_string())?;
+        let eligible = snapshot.torrents.iter().any(|torrent| {
+            torrent.torrent_id == torrent_id && !torrent.archived && torrent.removal_state.is_none()
+        });
+        (resume, eligible)
+    };
+    if !catalog_eligible {
+        return discovery
+            .remove(
+                crate::control::decode_info_hash(torrent_id)
+                    .ok_or_else(|| "invalid torrent identity".to_owned())?,
+                runtime.generation(),
+            )
+            .await
+            .or_else(|error| match error {
+                DiscoveryAdvertisementError::OwnerStopped => Ok(()),
+                error => Err(error),
+            })
+            .map_err(|error| error.to_string());
+    }
+    let counters = runtime.tracker_counters();
+    let (privacy, left) = tracker_metadata_state(&resume).map_err(|error| error.to_string())?;
+    counters.set_left(left);
+    discovery
+        .upsert(DiscoveryAdvertisementRegistration {
+            generation: runtime.generation(),
+            info_hash: crate::control::decode_info_hash(torrent_id)
+                .ok_or_else(|| "invalid torrent identity".to_owned())?,
+            trackers: operational_udp_trackers(&resume.trackers)
+                .map_err(|error| error.to_string())?,
+            desired_running: resume.desired_running,
+            complete: resume.state == TorrentState::Complete,
+            incoming_registered: runtime.has_seed_registration(),
+            privacy,
+            counters,
+            peers: runtime.peers(),
+            activity_sink: tracker_activity_sink(torrent_id, views),
+        })
+        .await
+        .or_else(|error| match error {
+            DiscoveryAdvertisementError::OwnerStopped => Ok(()),
+            error => Err(error),
+        })
+        .map_err(|error| error.to_string())
+}
+
+fn tracker_activity_sink(torrent_id: &str, views: &ViewHub) -> Arc<dyn DownloadActivitySink> {
+    Arc::new(ViewActivitySink {
+        torrent_id: torrent_id.to_owned(),
+        views: views.clone(),
+        trace_checkpoint_stages: false,
+        trace_publication_stages: false,
+        publication_delay_stage: None,
+        publication_delay: Duration::ZERO,
+        last_checkpoint_stage: Mutex::new(None),
+    })
 }
 
 type SeedReconcileInputs = (ResumeRecord, bool, Option<StorageRootLocation>);

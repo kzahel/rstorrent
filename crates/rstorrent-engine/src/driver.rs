@@ -71,7 +71,6 @@ mod storage_pipeline;
 
 #[cfg(test)]
 const CLIENT_PEER_ID: [u8; 20] = DEFAULT_PEER_ID;
-const DEFAULT_ADVERTISED_PEER_PORT: u16 = 6881;
 const NETWORK_RESOLUTION_TIMEOUT: Duration = Duration::from_secs(10);
 const UDP_TRACKER_RETRANSMIT_AFTER: Duration = Duration::from_secs(15);
 const UDP_TRACKER_COMPLETION_TIMEOUT: Duration = Duration::from_secs(30);
@@ -574,8 +573,35 @@ pub async fn download_magnet_metadata_with_dht_and_peers(
         network,
         control.clone(),
         dht,
+        None,
         peer_budget,
         torrent_peers,
+    )
+    .await;
+    let result = require_terminal_owner_cleanup(&control, result);
+    control.clear_buffered_payload();
+    result
+}
+
+pub async fn download_magnet_metadata_with_external_discovery(
+    magnet: String,
+    network: NetworkConfig,
+    control: DownloadControl,
+    peer_budget: PeerBudget,
+    torrent_peers: TorrentPeerHandle,
+) -> Result<Vec<u8>, DownloadError> {
+    validate_network_config(network)?;
+    if control.is_cancelled() {
+        return Err(DownloadError::Cancelled);
+    }
+    let result = run_magnet_metadata(
+        magnet,
+        network,
+        control.clone(),
+        None,
+        Some(Vec::new()),
+        peer_budget,
+        Some(torrent_peers),
     )
     .await;
     let result = require_terminal_owner_cleanup(&control, result);
@@ -891,32 +917,36 @@ impl PremetadataPeerState {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct UdpTrackerTiming {
-    retransmit_after: Duration,
-    completion_timeout: Duration,
+pub(crate) struct UdpTrackerTiming {
+    pub(crate) retransmit_after: Duration,
+    pub(crate) completion_timeout: Duration,
 }
 
 impl UdpTrackerTiming {
-    const PRODUCTION: Self = Self {
+    pub(crate) const PRODUCTION: Self = Self {
         retransmit_after: UDP_TRACKER_RETRANSMIT_AFTER,
         completion_timeout: UDP_TRACKER_COMPLETION_TIMEOUT,
     };
 }
 
 #[derive(Clone, Copy, Debug)]
-struct UdpTrackerAnnounce {
-    info_hash: [u8; 20],
-    peer_id: [u8; 20],
-    key: u32,
-    event: AnnounceEvent,
-    port: u16,
+pub(crate) struct UdpTrackerAnnounce {
+    pub(crate) info_hash: [u8; 20],
+    pub(crate) peer_id: [u8; 20],
+    pub(crate) key: u32,
+    pub(crate) downloaded: u64,
+    pub(crate) left: u64,
+    pub(crate) uploaded: u64,
+    pub(crate) event: AnnounceEvent,
+    pub(crate) num_want: i32,
+    pub(crate) port: u16,
 }
 
 #[derive(Clone, Copy, Debug)]
-struct UdpTrackerExchange<'a> {
-    timing: UdpTrackerTiming,
-    control: &'a DownloadControl,
-    tracker_label: &'a str,
+pub(crate) struct UdpTrackerExchange<'a> {
+    pub(crate) timing: UdpTrackerTiming,
+    pub(crate) control: &'a DownloadControl,
+    pub(crate) tracker_label: &'a str,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -926,7 +956,7 @@ struct UdpTrackerToken {
 }
 
 #[derive(Debug, Default)]
-struct UdpTrackerTokenCache {
+pub(crate) struct UdpTrackerTokenCache {
     tokens: BTreeMap<SocketAddr, UdpTrackerToken>,
 }
 
@@ -1360,8 +1390,12 @@ async fn run_active_tracker_manager(
                                 info_hash,
                                 peer_id: network.peer_id,
                                 key: tracker_key,
+                                downloaded: 0,
+                                left: UNKNOWN_MAGNET_LEFT,
+                                uploaded: 0,
                                 event,
-                                port: DEFAULT_ADVERTISED_PEER_PORT,
+                                num_want: MAX_COMPACT_PEERS as i32,
+                                port: 1,
                             },
                             UdpTrackerExchange {
                                 timing: UdpTrackerTiming::PRODUCTION,
@@ -1536,6 +1570,7 @@ fn udp_tracker_label(tracker: &UdpTrackerUrl) -> String {
 struct TorrentPeerCoordinator {
     peers: TorrentPeerHandle,
     owns_peer_sink: bool,
+    external_discovery: bool,
     selector: PeerSelector,
     network: NetworkConfig,
     peer_budget: PeerBudget,
@@ -1676,6 +1711,7 @@ impl TorrentPeerCoordinator {
     ) -> Result<Self, DownloadError> {
         validate_network_config(network)?;
         let owns_peer_sink = peers.is_none();
+        let external_discovery = peers.is_some();
         let peers = match peers {
             Some(peers) => peers,
             None => {
@@ -1685,6 +1721,7 @@ impl TorrentPeerCoordinator {
         Ok(Self {
             peers,
             owns_peer_sink,
+            external_discovery,
             selector: PeerSelector,
             network,
             peer_budget,
@@ -1972,7 +2009,11 @@ impl TorrentPeerCoordinator {
                 peers.control.clone(),
             )?);
         }
-        if peers.registry_is_empty() && peers.tracker.is_none() && peers.dht.is_none() {
+        if peers.registry_is_empty()
+            && peers.tracker.is_none()
+            && peers.dht.is_none()
+            && !peers.external_discovery
+        {
             return Err(peers
                 .last_error
                 .take()
@@ -2152,6 +2193,12 @@ impl TorrentPeerCoordinator {
             }
             (true, false) => self.receive_tracker_peers().await,
             (false, true) => self.receive_dht_peers(info_hash).await,
+            (false, false) if self.external_discovery => {
+                tokio::select! {
+                    _ = self.control.cancelled() => Err(DownloadError::Cancelled),
+                    _ = tokio::time::sleep(Duration::from_millis(100)) => Ok(()),
+                }
+            }
             (false, false) => Err(self
                 .last_error
                 .take()
@@ -2616,13 +2663,13 @@ async fn cleanup_metadata_attempts(
     }
 }
 
-fn random_nonzero_u32() -> Result<u32, DownloadError> {
+pub(crate) fn random_nonzero_u32() -> Result<u32, DownloadError> {
     let mut bytes = [0; 4];
     getrandom::fill(&mut bytes).map_err(DownloadError::Entropy)?;
     Ok(u32::from_ne_bytes(bytes).max(1))
 }
 
-fn compact_peer_address(peer: CompactPeer) -> SocketAddr {
+pub(crate) fn compact_peer_address(peer: CompactPeer) -> SocketAddr {
     match peer {
         CompactPeer::Ipv4 { address, port } => SocketAddr::from((Ipv4Addr::from(address), port)),
         CompactPeer::Ipv6 { address, port } => SocketAddr::from((Ipv6Addr::from(address), port)),
@@ -2644,7 +2691,7 @@ async fn resolve_host(
         .map_err(|source| DownloadError::Io { operation, source })
 }
 
-async fn announce_udp_tracker(
+pub(crate) async fn announce_udp_tracker(
     tracker: &UdpTrackerUrl,
     network_policy: NetworkPolicy,
     token_cache: &mut UdpTrackerTokenCache,
@@ -2726,13 +2773,13 @@ async fn announce_udp_tracker_address(
         transaction_id: announce_transaction,
         info_hash: announce.info_hash,
         peer_id: announce.peer_id,
-        downloaded: 0,
-        left: UNKNOWN_MAGNET_LEFT,
-        uploaded: 0,
+        downloaded: announce.downloaded,
+        left: announce.left,
+        uploaded: announce.uploaded,
         event: announce.event,
         ip_address: 0,
         key: announce.key,
-        num_want: MAX_COMPACT_PEERS as i32,
+        num_want: announce.num_want,
         port: announce.port,
     });
     let family = match address {
@@ -2930,13 +2977,14 @@ async fn run_magnet_metadata(
     network: NetworkConfig,
     control: DownloadControl,
     dht: Option<DhtHandle>,
+    configured_trackers: Option<Vec<UdpTrackerConfig>>,
     peer_budget: PeerBudget,
     torrent_peers: Option<TorrentPeerHandle>,
 ) -> Result<Vec<u8>, DownloadError> {
     let magnet = Magnet::parse(&magnet).map_err(DownloadError::Magnet)?;
     let mut peers = TorrentPeerCoordinator::from_magnet_with_trackers(
         &magnet,
-        None,
+        configured_trackers,
         network,
         control,
         dht,

@@ -54,6 +54,8 @@ pub enum TrackerStatusView {
 pub enum TrackerAnnounceEventView {
     Started,
     Update,
+    Completed,
+    Stopped,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -147,6 +149,8 @@ impl From<&TrackerRuntimeRecordSnapshot> for TrackerView {
             announce_event: record.announce_event.map(|event| match event {
                 TrackerAnnounceEvent::Started => TrackerAnnounceEventView::Started,
                 TrackerAnnounceEvent::Update => TrackerAnnounceEventView::Update,
+                TrackerAnnounceEvent::Completed => TrackerAnnounceEventView::Completed,
+                TrackerAnnounceEvent::Stopped => TrackerAnnounceEventView::Stopped,
             }),
             total_attempts: record.total_attempts,
             consecutive_failures: u32::from(record.consecutive_failures),

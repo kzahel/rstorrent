@@ -381,6 +381,15 @@ impl TorrentPeerHandle {
         self.with_state(|state| state.runtime.snapshot())
     }
 
+    pub fn observe_discovered_peer(
+        &self,
+        observation: PeerObservation,
+    ) -> Result<(), TorrentPeerError> {
+        let now = self.elapsed();
+        self.with_state(|state| state.registry.observe(observation, now))?;
+        self.publish(true, true)
+    }
+
     pub fn registry_snapshot(&self, active: bool) -> PeerRegistrySnapshot {
         let now = self.elapsed();
         self.with_state(|state| registry_snapshot(&state.registry, now, active))

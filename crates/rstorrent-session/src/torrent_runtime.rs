@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use rstorrent_engine::peer::PeerRegistrySnapshot;
 use rstorrent_engine::{
     DownloadControl, PeerConnectionDirection, PeerConnectionObservation, SeedRegistrationToken,
-    StorageFilePool, TorrentPeerActivitySink, TorrentPeerError, TorrentPeerHandle,
+    StorageFilePool, TorrentPeerActivitySink, TorrentPeerError, TorrentPeerHandle, TrackerCounters,
 };
 use tokio::task::JoinHandle;
 
@@ -25,6 +25,8 @@ struct TorrentPeerViewSink {
     accepting: Arc<AtomicBool>,
     views: ViewHub,
     advertised_endpoint: AdvertisedPeerEndpointSelector,
+    tracker_counters: TrackerCounters,
+    traffic: Mutex<std::collections::BTreeMap<u64, (u64, u64)>>,
 }
 
 impl TorrentPeerActivitySink for TorrentPeerViewSink {
@@ -37,6 +39,27 @@ impl TorrentPeerActivitySink for TorrentPeerViewSink {
             let incoming_observed = peers
                 .iter()
                 .any(|peer| peer.direction == PeerConnectionDirection::Incoming);
+            let mut traffic = self
+                .traffic
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut active = std::collections::BTreeSet::new();
+            for peer in &peers {
+                let connection_id = peer.connection_id.get();
+                active.insert(connection_id);
+                let downloaded = peer.content.map_or(0, |content| {
+                    content.useful_payload_bytes.try_into().unwrap_or(u64::MAX)
+                });
+                let uploaded = peer.upload.map_or(0, |upload| upload.payload_bytes);
+                let previous = traffic.entry(connection_id).or_default();
+                self.tracker_counters
+                    .add_downloaded(downloaded.saturating_sub(previous.0));
+                self.tracker_counters
+                    .add_uploaded(uploaded.saturating_sub(previous.1));
+                *previous = (downloaded, uploaded);
+            }
+            traffic.retain(|connection_id, _| active.contains(connection_id));
+            drop(traffic);
             let _ =
                 self.views
                     .record_peer_connections(&self.torrent_id, captured_at, peers.as_slice());
@@ -71,11 +94,21 @@ struct SeedRegistrationState {
 
 #[derive(Clone, Debug)]
 pub(crate) struct TorrentRuntimeHandle {
+    generation: u64,
     peers: TorrentPeerHandle,
     seed_registration: Arc<Mutex<SeedRegistrationState>>,
+    tracker_counters: TrackerCounters,
 }
 
 impl TorrentRuntimeHandle {
+    pub(crate) fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    pub(crate) fn peers(&self) -> TorrentPeerHandle {
+        self.peers.clone()
+    }
+
     pub(crate) async fn reconcile_seed(
         &self,
         incoming: &IncomingSeeding,
@@ -130,6 +163,10 @@ impl TorrentRuntimeHandle {
 
     pub(crate) fn has_seed_registration(&self) -> bool {
         self.seed_state().token.is_some()
+    }
+
+    pub(crate) fn tracker_counters(&self) -> TrackerCounters {
+        self.tracker_counters.clone()
     }
 
     pub(crate) fn forget_seed_registration(&self) -> Result<(), TorrentRuntimeError> {
@@ -269,16 +306,21 @@ impl TorrentRuntime {
         advertised_endpoint: AdvertisedPeerEndpointSelector,
     ) -> Result<Self, TorrentPeerError> {
         let accepting_peer_events = Arc::new(AtomicBool::new(true));
+        let tracker_counters = TrackerCounters::unknown_metadata();
         let sink = Arc::new(TorrentPeerViewSink {
             torrent_id: torrent_id.clone(),
             accepting: accepting_peer_events.clone(),
             views,
             advertised_endpoint,
+            tracker_counters: tracker_counters.clone(),
+            traffic: Mutex::new(std::collections::BTreeMap::new()),
         });
         let peers = TorrentPeerHandle::new(sink)?;
         let handle = TorrentRuntimeHandle {
+            generation,
             peers: peers.clone(),
             seed_registration: Arc::new(Mutex::new(SeedRegistrationState::default())),
+            tracker_counters,
         };
         Ok(Self {
             torrent_id,
@@ -294,7 +336,6 @@ impl TorrentRuntime {
         &self.torrent_id
     }
 
-    #[cfg(test)]
     pub(crate) fn generation(&self) -> u64 {
         self.generation
     }

@@ -865,7 +865,11 @@ async fn udp_tracker_retransmits_reuses_token_and_cancels_cleanly() {
             info_hash: [7; 20],
             peer_id: CLIENT_PEER_ID,
             key: 1,
+            downloaded: 0,
+            left: 16 * 1024,
+            uploaded: 0,
             event: AnnounceEvent::Started,
+            num_want: 200,
             port: announced_port,
         },
         UdpTrackerExchange {
@@ -884,7 +888,11 @@ async fn udp_tracker_retransmits_reuses_token_and_cancels_cleanly() {
             info_hash: [7; 20],
             peer_id: CLIENT_PEER_ID,
             key: 1,
+            downloaded: 0,
+            left: 16 * 1024,
+            uploaded: 0,
             event: AnnounceEvent::None,
+            num_want: 200,
             port: announced_port,
         },
         UdpTrackerExchange {

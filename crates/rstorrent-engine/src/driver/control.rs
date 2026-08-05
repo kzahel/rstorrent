@@ -1135,7 +1135,7 @@ impl DownloadControl {
         }
     }
 
-    pub(super) fn emit(&self, event: DownloadActivityEvent) {
+    pub(crate) fn emit(&self, event: DownloadActivityEvent) {
         let sink = self
             .inner
             .activity_sink
@@ -1147,7 +1147,7 @@ impl DownloadControl {
         }
     }
 
-    pub(super) fn diagnostic_elapsed(&self) -> Duration {
+    pub(crate) fn diagnostic_elapsed(&self) -> Duration {
         self.inner.started_at.elapsed()
     }
 

@@ -284,7 +284,7 @@ export interface TrackerRow {
     | "announcing"
     | "retry_wait"
     | "reannounce_wait";
-  readonly announceEvent: "started" | "update" | null;
+  readonly announceEvent: "started" | "update" | "completed" | "stopped" | null;
   readonly totalAttempts: number;
   readonly consecutiveFailures: number;
   readonly lastPeerCount: number | null;
