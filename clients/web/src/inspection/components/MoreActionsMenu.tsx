@@ -22,6 +22,7 @@ export interface MoreActionsMenuProps {
   readonly disabled: boolean;
   readonly actions: readonly ResolvedTorrentAction[];
   readonly showTestTorrents: boolean;
+  readonly addTestDisabled: boolean;
   readonly onAction: (actionId: TorrentActionId) => void;
   readonly onAddTestTorrent: (torrent: TestTorrentShortcut) => Promise<void>;
 }
@@ -30,6 +31,7 @@ export function MoreActionsMenu({
   disabled,
   actions,
   showTestTorrents,
+  addTestDisabled,
   onAction,
   onAddTestTorrent,
 }: MoreActionsMenuProps) {
@@ -54,6 +56,7 @@ export function MoreActionsMenu({
           <>
             {actions.length === 0 ? null : <ActionMenuSeparator />}
             <ActionSubmenu
+              isDisabled={addTestDisabled}
               trigger={
                 <>
                   <Icon name="plus" />

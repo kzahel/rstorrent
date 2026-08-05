@@ -1,5 +1,4 @@
 import {
-  Fragment,
   useEffect,
   useMemo,
   useRef,
@@ -60,6 +59,7 @@ export interface VirtualTableProps<Row> {
 }
 
 export interface VirtualTableContextMenu<Row> {
+  readonly label: string;
   readonly render: (
     row: Row,
     targetIds: readonly string[],
@@ -105,6 +105,7 @@ export function VirtualTable<Row>({
     "--ui-table-row-height": `${tableRowHeight}px`,
   } as CSSProperties;
   const viewportRef = useRef<HTMLDivElement>(null);
+  const contextTriggerRef = useRef<HTMLButtonElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportSize, setViewportSize] = useState({ width: 960, height: 360 });
   const [focusIndex, setFocusIndex] = useState(0);
@@ -210,25 +211,6 @@ export function VirtualTable<Row>({
   }, [columns, frozenOrder, getRowId, liveSort, rows, sort]);
 
   useEffect(() => {
-    const target = contextTargetRef.current;
-    if (target === null || contextOpenRowId === null) return;
-    const originExists = sortedRows.some(
-      (row) => getRowId(row) === target.rowId,
-    );
-    const currentTargetIds =
-      selection?.selectedIds.has(target.rowId) === true
-        ? [...selection.selectedIds]
-        : [target.rowId];
-    if (
-      !originExists ||
-      !sameStringSet(target.targetIds, currentTargetIds)
-    ) {
-      contextTargetRef.current = null;
-      setContextOpenRowId(null);
-    }
-  }, [contextOpenRowId, getRowId, selection, sortedRows]);
-
-  useEffect(() => {
     const currentIndex =
       currentRowId === null
         ? -1
@@ -258,6 +240,25 @@ export function VirtualTable<Row>({
     Math.ceil(viewportSize.height / tableRowHeight) + overscan * 2;
   const lastIndex = Math.min(sortedRows.length, firstIndex + visibleCount);
   const renderedRows = sortedRows.slice(firstIndex, lastIndex);
+
+  useEffect(() => {
+    const target = contextTargetRef.current;
+    if (target === null || contextOpenRowId === null) return;
+    const originIsRendered = renderedRows.some(
+      (row) => getRowId(row) === target.rowId,
+    );
+    const currentTargetIds =
+      selection?.selectedIds.has(target.rowId) === true
+        ? [...selection.selectedIds]
+        : [target.rowId];
+    if (
+      !originIsRendered ||
+      !sameStringSet(target.targetIds, currentTargetIds)
+    ) {
+      contextTargetRef.current = null;
+      setContextOpenRowId(null);
+    }
+  }, [contextOpenRowId, getRowId, renderedRows, selection]);
   const selectionAvailable = selection !== undefined;
   const selectionColumnWidth = selectionAvailable ? 44 : 0;
   const gridTemplateColumns = [
@@ -927,7 +928,7 @@ export function VirtualTable<Row>({
                         contextTargetRef.current = { rowId, targetIds };
                         prepareContextTarget(event.currentTarget);
                         dispatchContextMenu(
-                          event.currentTarget,
+                          contextTriggerRef.current,
                           event.clientX,
                           event.clientY,
                         );
@@ -949,7 +950,7 @@ export function VirtualTable<Row>({
                         prepareContextTarget(event.currentTarget);
                         const bounds = event.currentTarget.getBoundingClientRect();
                         dispatchContextMenu(
-                          event.currentTarget,
+                          contextTriggerRef.current,
                           bounds.left + Math.min(bounds.width / 2, 160),
                           bounds.top + bounds.height / 2,
                         );
@@ -992,9 +993,6 @@ export function VirtualTable<Row>({
                 ))}
               </div>
             );
-            if (contextMenu === undefined) {
-              return renderedRow;
-            }
             const targetIds =
               checked && selection !== undefined
                 ? [...selection.selectedIds]
@@ -1007,51 +1005,56 @@ export function VirtualTable<Row>({
                 selection.onChange([rowId], rowId);
               }
             };
-            return (
-              <Fragment key={rowId}>
-                {renderedRow}
-                <ActionMenuTrigger
-                  trigger="contextMenu"
-                  isOpen={contextOpenRowId === rowId}
-                  onOpenChange={(open) => {
-                    setContextOpenRowId(open ? rowId : null);
-                    if (open) return;
-                    contextTargetRef.current = null;
-                    requestAnimationFrame(() => {
-                      if (
-                        document.querySelector(
-                          '[role="dialog"][aria-modal="true"]',
-                        ) === null
-                      ) {
-                        focusContextRow(tableId, rowId);
-                      }
-                    });
-                  }}
-                >
-                  <OverlayButton
-                    className={styles.contextMenuTrigger!}
-                    aria-hidden="true"
-                    excludeFromTabOrder
-                  />
-                  {contextMenu.render(row, targetIds)}
-                </ActionMenuTrigger>
-              </Fragment>
-            );
+            return renderedRow;
           })}
         </div>
       )}
       </div>
+      {contextMenu === undefined || sortedRows.length === 0 ? null : (
+        <ActionMenuTrigger
+          trigger="contextMenu"
+          isOpen={contextOpenRowId !== null}
+          onOpenChange={(open) => {
+            const target = contextTargetRef.current;
+            setContextOpenRowId(open ? (target?.rowId ?? null) : null);
+            if (open) return;
+            contextTargetRef.current = null;
+            if (target === null) return;
+            requestAnimationFrame(() => {
+              if (
+                document.querySelector(
+                  '[role="dialog"][aria-modal="true"]',
+                ) === null
+              ) {
+                focusContextRow(tableId, target.rowId);
+              }
+            });
+          }}
+        >
+          <OverlayButton
+            ref={contextTriggerRef}
+            className={styles.contextMenuTrigger!}
+            aria-label={contextMenu.label}
+            excludeFromTabOrder
+          />
+          {renderContextMenu(
+            contextMenu,
+            sortedRows,
+            getRowId,
+            contextTargetRef.current,
+          )}
+        </ActionMenuTrigger>
+      )}
     </div>
   );
 }
 
 function dispatchContextMenu(
-  row: HTMLElement,
+  trigger: HTMLElement | null,
   clientX: number,
   clientY: number,
 ): void {
-  const trigger = row.nextElementSibling;
-  if (!(trigger instanceof HTMLElement)) return;
+  if (trigger === null) return;
   trigger.dispatchEvent(
     new MouseEvent("contextmenu", {
       bubbles: true,
@@ -1059,6 +1062,24 @@ function dispatchContextMenu(
       clientX,
       clientY,
     }),
+  );
+}
+
+function renderContextMenu<Row>(
+  contextMenu: VirtualTableContextMenu<Row>,
+  rows: readonly Row[],
+  getRowId: (row: Row) => string,
+  target: {
+    readonly rowId: string;
+    readonly targetIds: readonly string[];
+  } | null,
+): ReactNode {
+  const row =
+    rows.find((candidate) => getRowId(candidate) === target?.rowId) ?? rows[0];
+  if (row === undefined) return null;
+  return contextMenu.render(
+    row,
+    target?.targetIds ?? [getRowId(row)],
   );
 }
 

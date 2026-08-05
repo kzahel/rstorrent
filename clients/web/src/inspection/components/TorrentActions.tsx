@@ -303,9 +303,10 @@ export function TorrentActions() {
           ))}
         {demo === null || selectedTargetIds.length > 0 ? (
           <MoreActionsMenu
-            disabled={adding || pendingAction !== null}
+            disabled={adding}
             actions={overflowActions}
             showTestTorrents={demo === null}
+            addTestDisabled={pendingAction !== null}
             onAction={(actionId) => void runAction(actionId)}
             onAddTestTorrent={addTestTorrent}
           />

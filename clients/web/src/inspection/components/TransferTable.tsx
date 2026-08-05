@@ -135,6 +135,7 @@ export function TransferTable() {
         onChange: setTorrentSelection,
       }}
       contextMenu={{
+        label: "Torrent actions",
         render: (row, targetIds) => (
           <TorrentContextMenu
             row={row}

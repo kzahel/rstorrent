@@ -73,7 +73,7 @@ test("primary destinations preserve shared source state", async ({ page }) => {
   await capture(page, "rstorrent-destinations-wide.png");
 });
 
-test("More copies one selected torrent's canonical magnet", async ({
+test("More copies selected torrents' canonical magnets", async ({
   context,
   page,
 }) => {
@@ -81,10 +81,14 @@ test("More copies one selected torrent's canonical magnet", async ({
   await page.setViewportSize({ width: 1024, height: 720 });
   await page.goto("/?demo=healthy-download&at=42000&autoplay=0");
 
+  await page
+    .getByRole("checkbox", { name: "Select Sintel 4K open movie" })
+    .click();
+
   const more = page.getByRole("button", { name: "More" });
   await more.click();
   const menu = page.getByRole("menu", { name: "More" });
-  const copy = menu.getByRole("menuitem", { name: "Copy magnet link" });
+  const copy = menu.getByRole("menuitem", { name: "Copy magnet links" });
   await expect(copy).toBeEnabled();
 
   const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
@@ -93,20 +97,126 @@ test("More copies one selected torrent's canonical magnet", async ({
   expect(violations).toEqual([]);
   await copy.click();
 
-  await expect(page.getByText("Magnet link copied", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("2 magnet links copied", { exact: true }),
+  ).toBeVisible();
   await expect(menu).toHaveCount(0);
   await expect(more).toBeFocused();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-    "magnet:?xt=urn:btih:a962f460b83861cfb5faa1d7ad7da9c3f3cc2fc4",
+    [
+      "magnet:?xt=urn:btih:a962f460b83861cfb5faa1d7ad7da9c3f3cc2fc4",
+      "magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10",
+    ].join("\n"),
   );
+});
+
+test("torrent and file rows expose exact accessible context actions", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 720 });
+  await page.goto("/?demo=healthy-download&at=42000&autoplay=0");
+  const transferGrid = page.getByRole("grid", { name: "Transfer queue" });
+  const sintelRow = transferGrid.getByRole("row").filter({
+    hasText: "Sintel 4K open movie",
+  });
+
+  await sintelRow.click({ button: "right", position: { x: 300, y: 18 } });
+  let menu = page.getByRole("menu", { name: "Torrent actions" });
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("menuitem")).toHaveCount(7);
+  await expect(
+    menu.getByRole("menuitem", { name: "Copy magnet link" }),
+  ).toBeVisible();
+  await expect(menu.getByRole("group", { name: "Transfer" })).toBeVisible();
+  await expect(menu.getByRole("group", { name: "Sharing" })).toBeVisible();
+  await expect(
+    menu.getByRole("group", { name: "Organization" }),
+  ).toBeVisible();
+  await expect(
+    menu.getByRole("group", { name: "Destructive" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(
+    transferGrid.getByRole("checkbox", {
+      name: "Deselect Sintel 4K open movie",
+    }),
+  ).toBeChecked();
+  await expect(sintelRow).toBeFocused();
+
+  await transferGrid
+    .getByRole("checkbox", { name: "Select Big Buck Bunny 1080p surround" })
+    .click();
+  await sintelRow.click({ button: "right", position: { x: 1, y: 18 } });
+  menu = page.getByRole("menu", { name: "Torrent actions" });
+  await expect(
+    menu.getByRole("menuitem", { name: "Copy magnet links" }),
+  ).toBeVisible();
+  const menuBounds = await menu.boundingBox();
+  expect(menuBounds).not.toBeNull();
+  expect(menuBounds!.x).toBeGreaterThanOrEqual(0);
+  expect(menuBounds!.x + menuBounds!.width).toBeLessThanOrEqual(1024);
+  const menuViolations = (
+    await new AxeBuilder({ page }).include('[role="menu"]').analyze()
+  ).violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(menuViolations).toEqual([]);
+  await menu.getByRole("menuitem", { name: "Remove" }).click();
+  const removal = page.getByRole("dialog", { name: "Remove 2 torrents?" });
+  await expect(
+    removal.getByRole("checkbox", { name: "Also delete downloaded data" }),
+  ).not.toBeChecked();
+  await expect(
+    removal.getByRole("list", { name: "Torrents to remove" }),
+  ).toBeVisible();
+  await removal.getByRole("button", { name: "Cancel" }).click();
+  await expect(sintelRow).toBeFocused();
+
+  await sintelRow.focus();
+  await page.keyboard.press("Shift+F10");
+  await expect(
+    page
+      .getByRole("menu", { name: "Torrent actions" })
+      .getByRole("menuitem", { name: "Copy magnet links" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
 
   await page
-    .getByRole("checkbox", { name: "Select Sintel 4K open movie" })
+    .getByRole("navigation", { name: "Primary" })
+    .getByRole("button", { name: "Workbench" })
     .click();
-  await more.click();
+  const workbenchGrid = page.getByRole("grid", { name: "Torrent library" });
+  const workbenchSintel = workbenchGrid.getByRole("row").filter({
+    hasText: "Sintel 4K open movie",
+  });
+  await workbenchSintel.click({ button: "right" });
   await expect(
-    page.getByRole("menuitem", { name: "Copy magnet link" }),
-  ).toBeDisabled();
+    page.getByRole("menu", { name: "Torrent actions" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await page.goto("/?demo=file-progress&at=24000&autoplay=0");
+  await page
+    .getByRole("navigation", { name: "Primary" })
+    .getByRole("button", { name: "Workbench" })
+    .click();
+  await page.getByRole("tab", { name: "Files" }).click();
+  const files = page.getByRole("grid", { name: "Torrent files" });
+  await expect(files).toHaveAttribute("aria-rowcount", "4096");
+  const fileRow = files.getByRole("row").filter({ hasText: "asset-001.mkv" });
+  await fileRow.click({ button: "right" });
+  const fileMenu = page.getByRole("menu", { name: "File actions" });
+  await expect(fileMenu.getByRole("menuitem", { name: "Normal" })).toBeDisabled();
+  await expect(fileMenu.getByRole("menuitem", { name: "Skip" })).toBeDisabled();
+  expect(await files.getByRole("row").count()).toBeLessThanOrEqual(100);
+  const fileViolations = (
+    await new AxeBuilder({ page }).include('[role="menu"]').analyze()
+  ).violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(fileViolations).toEqual([]);
 });
 
 test("phone destinations and contextual filters remain reachable", async ({ page }) => {
@@ -342,13 +452,13 @@ test("interface size settings persist and keep geometry coherent", async ({
   const app = page.locator("#app > [data-interface-size]");
   const library = page.getByRole("grid", { name: "Torrent library" });
   const firstRow = library.locator("[data-row-id]").first();
-  const archive = page.getByRole("button", { name: "Archive", exact: true });
+  const more = page.getByRole("button", { name: "More", exact: true });
   await expect(app).toHaveAttribute("data-interface-size", "standard");
   await expect.poll(() => elementHeight(firstRow)).toBe(36);
-  await expect.poll(() => elementHeight(archive)).toBe(36);
+  await expect.poll(() => elementHeight(more)).toBe(36);
   await expect
     .poll(async () =>
-      Math.round((await archive.locator("svg").boundingBox())?.width ?? 0),
+      Math.round((await more.locator("svg").boundingBox())?.width ?? 0),
     )
     .toBeGreaterThanOrEqual(17);
 
@@ -370,10 +480,10 @@ test("interface size settings persist and keep geometry coherent", async ({
   await dialog.getByRole("radio", { name: /Compact/ }).check();
   await expect(app).toHaveAttribute("data-interface-size", "compact");
   await expect.poll(() => elementHeight(firstRow)).toBe(32);
-  await expect.poll(() => elementHeight(archive)).toBe(30);
+  await expect.poll(() => elementHeight(more)).toBe(30);
   await expect
     .poll(async () =>
-      Math.round((await archive.locator("svg").boundingBox())?.width ?? 0),
+      Math.round((await more.locator("svg").boundingBox())?.width ?? 0),
     )
     .toBeGreaterThanOrEqual(16);
   await capture(page, "rstorrent-settings-compact.png");
@@ -381,7 +491,7 @@ test("interface size settings persist and keep geometry coherent", async ({
   await dialog.getByRole("radio", { name: /Spacious/ }).check();
   await expect(app).toHaveAttribute("data-interface-size", "spacious");
   await expect.poll(() => elementHeight(firstRow)).toBe(42);
-  await expect.poll(() => elementHeight(archive)).toBe(44);
+  await expect.poll(() => elementHeight(more)).toBe(44);
   await capture(page, "rstorrent-settings-spacious.png");
   await page.keyboard.press("Escape");
   await expect(dialog).not.toBeVisible();
@@ -796,7 +906,9 @@ test("removal keeps data by default and exposes destructive intent", async ({
   await expect(retained.getByRole("checkbox")).not.toBeChecked();
   await retained.getByRole("button", { name: "Remove", exact: true }).click();
   await expect(retained).not.toBeVisible();
-  await expect(page.getByText("Torrent removed", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Removed Big Buck Bunny 1080p surround", { exact: true }),
+  ).toBeVisible();
 });
 
 test("diagnostic console stays ordered, filtered, and virtualized", async ({

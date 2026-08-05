@@ -351,6 +351,7 @@ class ProductStateReducerTest {
             archived = false,
             removalState = null,
             deleteManagedDataSupported = true,
+            forceRecheckAvailable = true,
             error = null,
         )
 

@@ -193,15 +193,18 @@ export function ActionMenuSeparator(): ReactElement {
 export function ActionSubmenu({
   trigger,
   children,
+  isDisabled = false,
 }: {
   readonly trigger: ReactNode;
   readonly children: ReactNode;
+  readonly isDisabled?: boolean;
 }): ReactElement {
   const submenuRef = useRef<HTMLDivElement>(null);
   return (
     <SubmenuTrigger delay={200}>
       <MenuItem
         className={styles.menuItem!}
+        isDisabled={isDisabled}
         onPress={() =>
           requestAnimationFrame(() => submenuRef.current?.focus())
         }

@@ -296,6 +296,7 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
           onChange: changeSelection,
         }}
         contextMenu={{
+          label: "File actions",
           render: (_row, targetIds) => {
             const actions = resolveFileActions(
               targetIds.length,
