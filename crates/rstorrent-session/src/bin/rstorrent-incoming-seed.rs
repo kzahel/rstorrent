@@ -6,6 +6,7 @@ use std::fmt;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use rstorrent_engine::dht::BootstrapNode;
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_session::{
     ApplicationConfig, ApplicationService, CONTROL_VERSION, ClientSettings, Command,
@@ -59,18 +60,27 @@ async fn run() -> Result<(), SeedHarnessError> {
         &metainfo,
         &raw_info,
         arguments.upnp,
+        arguments.tracker.as_deref(),
     )?;
 
-    let config = ApplicationConfig::new(
+    let network_policy = if arguments.upnp {
+        NetworkPolicy::Online
+    } else {
+        NetworkPolicy::LoopbackOnly
+    };
+    let mut config = ApplicationConfig::new(
         arguments.profile_root,
         PROFILE_ID.to_owned(),
         storage_roots,
         NetworkConfig::new(
-            NetworkPolicy::LoopbackOnly,
+            network_policy,
             Duration::from_secs(5),
             Duration::from_secs(5),
         ),
     );
+    if let Some(bootstrap) = arguments.dht_bootstrap {
+        config.dht.bootstrap_nodes = vec![BootstrapNode::Address(bootstrap)];
+    }
     let mut service = ApplicationService::open(config).await?;
     let ready = timeout(READY_TIMEOUT, async {
         loop {
@@ -224,6 +234,7 @@ fn initialize_catalog(
     metainfo: &Metainfo,
     raw_info: &[u8],
     upnp: bool,
+    tracker: Option<&str>,
 ) -> Result<(), SeedHarnessError> {
     let torrent_id = hex(metainfo.info_hash);
     let mut store = SessionStore::open(profile_root, PROFILE_ID, storage_roots)?;
@@ -275,7 +286,10 @@ fn initialize_catalog(
         request_id: "initialize-incoming-seed".to_owned(),
         expected_revision: None,
         command: Command::AddMagnet {
-            magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
+            magnet: tracker.map_or_else(
+                || format!("magnet:?xt=urn:btih:{torrent_id}"),
+                |tracker| format!("magnet:?xt=urn:btih:{torrent_id}&tr={tracker}"),
+            ),
             storage_root: "downloads".to_owned(),
             start_content: true,
             skip_files: Vec::new(),
@@ -302,6 +316,8 @@ struct Arguments {
     storage_root: PathBuf,
     metainfo: PathBuf,
     upnp: bool,
+    tracker: Option<String>,
+    dht_bootstrap: Option<std::net::SocketAddr>,
 }
 
 impl Arguments {
@@ -313,6 +329,8 @@ impl Arguments {
         let mut storage_root = None;
         let mut metainfo = None;
         let mut upnp = false;
+        let mut tracker = None;
+        let mut dht_bootstrap = None;
         let mut index = 0;
         while index < arguments.len() {
             let flag = arguments[index]
@@ -329,7 +347,36 @@ impl Arguments {
             }
             let value = arguments
                 .get(index + 1)
-                .ok_or_else(|| SeedHarnessError::Arguments(format!("{flag} requires a path")))?;
+                .ok_or_else(|| SeedHarnessError::Arguments(format!("{flag} requires a value")))?;
+            if flag == "--tracker" {
+                let value = value.to_str().ok_or_else(|| {
+                    SeedHarnessError::Arguments("--tracker must be UTF-8".to_owned())
+                })?;
+                if tracker.replace(value.to_owned()).is_some() {
+                    return Err(SeedHarnessError::Arguments(
+                        "--tracker may appear only once".to_owned(),
+                    ));
+                }
+                index += 2;
+                continue;
+            }
+            if flag == "--dht-bootstrap" {
+                let value = value.to_str().ok_or_else(|| {
+                    SeedHarnessError::Arguments("--dht-bootstrap must be UTF-8".to_owned())
+                })?;
+                let value = value.parse().map_err(|_| {
+                    SeedHarnessError::Arguments(
+                        "--dht-bootstrap must be a socket address".to_owned(),
+                    )
+                })?;
+                if dht_bootstrap.replace(value).is_some() {
+                    return Err(SeedHarnessError::Arguments(
+                        "--dht-bootstrap may appear only once".to_owned(),
+                    ));
+                }
+                index += 2;
+                continue;
+            }
             let target = match flag {
                 "--profile-root" => &mut profile_root,
                 "--storage-root" => &mut storage_root,
@@ -357,6 +404,8 @@ impl Arguments {
             metainfo: metainfo
                 .ok_or_else(|| SeedHarnessError::Arguments("--metainfo is required".to_owned()))?,
             upnp,
+            tracker,
+            dht_bootstrap,
         })
     }
 }

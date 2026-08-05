@@ -1189,9 +1189,11 @@ mod tests {
     #[derive(Debug, Default)]
     struct RecordingActivity {
         successes: Mutex<usize>,
-        dht_announces: Mutex<Vec<(u16, u8, u8, u8, u8)>>,
+        dht_announces: Mutex<Vec<DhtAnnounceReport>>,
         changed: Notify,
     }
+
+    type DhtAnnounceReport = (u16, u8, u8, u8, u8);
 
     impl RecordingActivity {
         async fn wait_for_successes(&self, expected: usize) {
@@ -1208,7 +1210,7 @@ mod tests {
             }
         }
 
-        async fn wait_for_dht_announces(&self, expected: usize) -> (u16, u8, u8, u8, u8) {
+        async fn wait_for_dht_announces(&self, expected: usize) -> DhtAnnounceReport {
             loop {
                 {
                     let reports = self

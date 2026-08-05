@@ -2150,7 +2150,6 @@ impl ApplicationService {
                 let resource_limits = self.download_resource_limits;
                 let network = self.network;
                 let peer_budget = self.peer_budget.clone();
-                let dht = self.dht.as_ref().map(DhtService::handle);
                 let operation = async move {
                     let raw_info = download_magnet_metadata_with_external_discovery(
                         magnet.clone(),
@@ -2191,7 +2190,7 @@ impl ApplicationService {
                             verified_pieces: Vec::new(),
                             artifact_state: ResumeArtifactState::None,
                             download_missing: true,
-                            dht,
+                            dht: None,
                             udp_trackers: Some(Vec::new()),
                         },
                         checkpoints,

@@ -252,7 +252,10 @@ impl TrackerSchedule {
             return;
         }
         for record in &mut self.records {
-            if record.start_acknowledged && !record.stopped {
+            if !record.stopped
+                && (record.start_acknowledged
+                    || record.inflight_event == Some(AnnounceEvent::Started))
+            {
                 record.pending_event = Some(TrackerPriorityEvent::Update);
                 record.next_announce = Duration::ZERO;
             }
@@ -265,7 +268,10 @@ impl TrackerSchedule {
             return;
         }
         for record in &mut self.records {
-            if record.start_acknowledged && !record.stopped {
+            if !record.stopped
+                && (record.start_acknowledged
+                    || record.inflight_event == Some(AnnounceEvent::Started))
+            {
                 record.pending_event = Some(TrackerPriorityEvent::Completed);
                 record.next_announce = Duration::ZERO;
             }
@@ -934,6 +940,22 @@ mod tests {
             schedule.next_action(Duration::from_secs(8)),
             TrackerAction::Exhausted
         );
+    }
+
+    #[test]
+    fn correction_requested_during_started_is_not_lost() {
+        let mut schedule = TrackerSchedule::new(vec![tracker("tracker.example", 80)]);
+        let started = announce(&mut schedule, Duration::ZERO);
+        schedule.request_update();
+        schedule.succeeded(started, Duration::from_secs(1), 900, 0, 0, 0);
+
+        assert!(matches!(
+            schedule.next_action(Duration::from_secs(2)),
+            TrackerAction::Announce {
+                event: AnnounceEvent::None,
+                ..
+            }
+        ));
     }
 
     #[test]
