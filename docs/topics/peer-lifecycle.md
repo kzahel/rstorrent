@@ -43,8 +43,9 @@ and persistent peer records remain later work. Tactical
 [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) has moved the
 registry and active-connection observation out of the download-operation
 lifetime into one task-free engine state and application-generation torrent
-runtime. Routed incoming attachment and ordinary view projection remain in
-its next gates.
+runtime. Routed incoming connections now attach to that state and detach only
+after their joined upload cleanup; ordinary view projection remains in its
+next gate.
 
 ## Scope
 

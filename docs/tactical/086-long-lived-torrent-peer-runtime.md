@@ -1,6 +1,6 @@
 # Tactical 086: Long-Lived Torrent Peer Runtime
 
-Status: In progress on 2026-08-05. Gates 1 and 2 are complete; Gates 3--5
+Status: In progress on 2026-08-05. Gates 1--3 are complete; Gates 4 and 5
 remain.
 
 Topics: `incoming-reachability-and-seeding`, `peer-lifecycle`,
@@ -539,6 +539,32 @@ Exercise malformed/unknown/self/stale handshakes, handshake-response failure,
 budget and registry saturation, two directions, optimistic rotation, slow
 read/write, timeouts, registration replacement, task failure, and final zero
 state with scripted peers.
+
+Completed on 2026-08-05. Every seed registration now carries its retained
+torrent peer handle. A validated non-self handshake attaches a non-connectable
+incoming record after info-hash routing and before the local handshake write;
+global or registration cancellation and write failure synchronously clean that
+exact generation. Successful response advances the row to connected and the
+existing upload loop publishes the remote endpoint and peer ID, local
+endpoint, BEP 10 and `ut_metadata` negotiation, interest/choke and exact
+regular/optimistic grant, queued request and writer state, in-flight read,
+exact physical payload total, and sampled payload rate.
+
+Terminal paths enter `disconnecting` before writer shutdown. The joined peer
+owner then clears request/read work, scheduler and counter membership, the
+budget permit, and established accounting before exact row removal. A
+generation-scoped drop guard provides synchronous cleanup on unexpected task
+unwind. Unknown, invalid, self, stale, and pre-routing budget rejections still
+create no torrent row; peer-state admission failure is separately counted.
+
+The existing scripted single-peer test now observes the connected incoming
+generation and truthful upload facts, verifies exact metadata and payload,
+and records `disconnecting` before the final empty snapshot. The ten-peer test
+observes ten distinct torrent connection generations under the existing eight
+upload slots and final zero state. The complete 237-test engine library suite
+passes with three opt-in live cases ignored, both engine and session
+all-target clippy pass with warnings denied, and the complete-seed application
+lifecycle remains green.
 
 ### Gate 4: Ordinary application and product projection
 

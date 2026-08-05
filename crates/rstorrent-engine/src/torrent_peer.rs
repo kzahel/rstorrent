@@ -181,10 +181,19 @@ impl TorrentPeerState {
         &mut self,
         attachment: IncomingPeerAttachment,
         activity: PeerUploadActivity,
-    ) -> Result<(), TorrentPeerError> {
+    ) -> Result<bool, TorrentPeerError> {
+        let peer = self.runtime.observation(attachment.connection_id).ok_or(
+            PeerRuntimeError::UnknownConnection(attachment.connection_id),
+        )?;
+        if peer.record_id != Some(attachment.record_id) {
+            return Err(PeerRuntimeError::UnknownConnection(attachment.connection_id).into());
+        }
+        let publish_immediately = peer.upload.is_none_or(|previous| {
+            previous.interested != activity.interested || previous.grant != activity.grant
+        });
         self.runtime
             .set_upload_activity(attachment.connection_id, activity)?;
-        Ok(())
+        Ok(publish_immediately)
     }
 
     fn set_incoming_metadata_extension(
@@ -335,8 +344,8 @@ impl TorrentPeerHandle {
         attachment: IncomingPeerAttachment,
         activity: PeerUploadActivity,
     ) -> Result<(), TorrentPeerError> {
-        self.with_state(|state| state.set_incoming_upload(attachment, activity))?;
-        self.publish(true, false)
+        let force = self.with_state(|state| state.set_incoming_upload(attachment, activity))?;
+        self.publish(true, force)
     }
 
     pub fn set_incoming_metadata_extension(

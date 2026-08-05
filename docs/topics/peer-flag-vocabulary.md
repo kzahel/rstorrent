@@ -160,7 +160,7 @@ references. Rust emits only states it currently owns.
 
 | Semantic flag | Provisional glyph | Meaning | Initial RSTorrent state |
 | --- | --- | --- | --- |
-| `incoming` | `I` | Remote peer initiated this connection | Direction is represented; live intake joins ordinary peer observation in Tactical `086` Gate 3 |
+| `incoming` | `I` | Remote peer initiated this connection | Live intake now joins ordinary peer observation; compact projection lands in Tactical `086` Gate 4 |
 | `encrypted` | `E` | Peer transport is encrypted or obfuscated | Reserved; no application-view fact yet |
 | `download_allowed` | `D` | We are interested and the peer is not choking us | Derivable for current content peers |
 | `download_choked` | `d` | We are interested but the peer is choking us | Derivable for current content peers |

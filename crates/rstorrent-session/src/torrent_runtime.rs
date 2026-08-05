@@ -12,7 +12,8 @@ use rstorrent_engine::{
 use tokio::task::JoinHandle;
 
 use crate::incoming_seeding::{
-    IncomingSeeding, IncomingSeedingError, SeedReconcileOutcome, SeedReconcileResult,
+    IncomingSeeding, IncomingSeedingError, SeedReconcileInput, SeedReconcileOutcome,
+    SeedReconcileResult,
 };
 use crate::store::{ResumeRecord, StorageRootLocation};
 use crate::views::ViewHub;
@@ -76,14 +77,15 @@ impl TorrentRuntimeHandle {
     ) -> Result<Option<SeedReconcileOutcome>, TorrentRuntimeError> {
         let (generation, current) = self.begin_seed_transition()?;
         let result = incoming
-            .reconcile(
+            .reconcile(SeedReconcileInput {
                 resume,
                 catalog_eligible,
                 root,
                 active_download,
                 current,
+                torrent_peers: self.peers.clone(),
                 storage_file_pool,
-            )
+            })
             .await;
         match result {
             Ok(result) => {

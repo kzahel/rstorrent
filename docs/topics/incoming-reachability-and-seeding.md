@@ -13,8 +13,9 @@ settings slice through the shared product surface and restarted controlled
 seeding. Tactical
 [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) is in progress.
 Its task-free engine peer state and session per-torrent lifetime owner now
-survive download-to-seed transitions; routed incoming attachment and ordinary
-Peers/Swarm projection remain in its next gates. Actual-port
+survive download-to-seed transitions, and routed incoming connections attach
+to that owner with complete upload observations. Ordinary Peers/Swarm mapping
+and controlled product/interoperability evidence remain in its next gates. Actual-port
 advertisement, non-loopback binding, finite bandwidth, seeding goals, and NAT
 mapping remain future slices.
 
@@ -76,9 +77,9 @@ multiple controlled incoming peers through the application service:
 - the generated application contract and shared browser/Tauri Settings
   surface expose that group, the actual loopback port, descriptor-derived
   effective limit, restart requirement, and typed recoverable bind failure;
-- incoming peer tasks still publish only aggregate service/upload snapshots;
-  ordinary Peer/Swarm state now has one retained application-generation
-  torrent owner, but routed incoming generations do not attach to it yet;
+- incoming peer tasks now attach routed generations to the retained ordinary
+  torrent peer owner and publish complete connection/upload observations;
+  existing Peers/Swarm mapping does not yet project all of those upload facts;
 - UDP tracker announces still carry provisional port `6881`, which is not
   derived from or guaranteed to match this listener;
 - the IPv4 DHT has a real ephemeral UDP query socket, but RSTorrent does not

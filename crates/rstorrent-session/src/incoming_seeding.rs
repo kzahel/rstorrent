@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use rstorrent_engine::{
     IncomingPeerError, IncomingPeerHandle, SeedContent, SeedRegistration, SeedRegistrationToken,
-    StorageFilePool,
+    StorageFilePool, TorrentPeerHandle,
 };
 use rstorrent_protocol::metainfo::{DURABLE_METAINFO_LIMITS, Metainfo};
 
@@ -29,6 +29,16 @@ pub(crate) struct SeedReconcileResult {
     pub(crate) token: Option<SeedRegistrationToken>,
 }
 
+pub(crate) struct SeedReconcileInput<'a> {
+    pub(crate) resume: &'a ResumeRecord,
+    pub(crate) catalog_eligible: bool,
+    pub(crate) root: Option<&'a StorageRootLocation>,
+    pub(crate) active_download: bool,
+    pub(crate) current: Option<SeedRegistrationToken>,
+    pub(crate) torrent_peers: TorrentPeerHandle,
+    pub(crate) storage_file_pool: &'a StorageFilePool,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct IncomingSeeding {
     handle: IncomingPeerHandle,
@@ -45,13 +55,17 @@ impl IncomingSeeding {
 
     pub(crate) async fn reconcile(
         &self,
-        resume: &ResumeRecord,
-        catalog_eligible: bool,
-        root: Option<&StorageRootLocation>,
-        active_download: bool,
-        current: Option<SeedRegistrationToken>,
-        storage_file_pool: &StorageFilePool,
+        input: SeedReconcileInput<'_>,
     ) -> Result<SeedReconcileResult, IncomingSeedingError> {
+        let SeedReconcileInput {
+            resume,
+            catalog_eligible,
+            root,
+            active_download,
+            current,
+            torrent_peers,
+            storage_file_pool,
+        } = input;
         if !self.enabled.load(Ordering::Acquire) {
             return Ok(SeedReconcileResult {
                 outcome: SeedReconcileOutcome::Ineligible("incoming peer service is stopping"),
@@ -157,7 +171,7 @@ impl IncomingSeeding {
                 });
             }
         };
-        let registration = match SeedRegistration::new(raw_info.clone(), content) {
+        let registration = match SeedRegistration::new(raw_info.clone(), content, torrent_peers) {
             Ok(registration) => registration,
             Err(error) => {
                 return Ok(SeedReconcileResult {
