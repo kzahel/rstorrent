@@ -97,6 +97,16 @@ retains catalog, global service, and single-active-torrent policy. This is
 concrete ownership and deterministic-test pressure, not a file-size extraction
 or an umbrella session rewrite.
 
+Tactical [`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md) follows
+the same feature-driven split. Focused `rstorrent-engine::port_mapping::upnp`
+owns bounded SSDP/HTTP/XML/SOAP protocol and gateway runtime without importing
+session views or persistence. Private session `reachability` owns eligibility,
+generation fencing, one task and mapping, renewal, status publication, and
+joined cleanup. `ApplicationService` retains only construction and shutdown
+order, while the existing view hub remains a task-free projection. The
+physical gate did not expose a reason for a new crate or an umbrella session
+coordinator refactor.
+
 ## Source-Organization Guidance
 
 These are review prompts, not mechanical rules:
@@ -328,6 +338,11 @@ lifecycle, or navigation problem remains.
 
 ## History
 
+- **2026-08-05:** Completed Tactical `088`. The feature established a focused
+  engine UPnP boundary and private session reachability coordinator with one-
+  way dependencies, explicit cancellation/join, task-free projection, and
+  exact terminal ownership; no new crate or broader application refactor was
+  required.
 - **2026-08-05:** Planned Tactical `086` after incoming projection exposed a
   real lifetime mismatch: download-scoped ordinary peer state terminates while
   registration-owned completed seeding continues. The selected feature-driven

@@ -61,6 +61,10 @@ owner and now populates the existing Peers/Swarm contract from routed incoming
 seed connections. Authenticated gateway interoperability follows pinned
 libtorrent and RSTorrent rows through transfer, exact removal, pause, and
 joined terminal cleanup.
+Tactical [`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md) extends
+the same complete client-settings value with typed port-mapping policy and
+runtime status. Status changes publish ordinary torrent-list settings patches;
+the view owner retains no socket, gateway, mapping, renewal, or task authority.
 
 ## Purpose And Scope
 
@@ -842,6 +846,11 @@ fresh initial active/effective/listener observation after durable reopen. Four
 production-browser generations converge through the existing torrent-list
 view across disabled mismatch, automatic listening, fixed bind failure, and
 repaired automatic listening without another view owner or transport path.
+Tactical `088` preserves that replacement contract for local-network and
+mapping states. Its off-LAN gate consumes the same summary plus ordinary
+Peers/Swarm snapshots and observes mapped readiness, incoming TCP activity,
+exact transfer, stopping, and terminal resource closure without a diagnostic-
+only state path.
 
 Tactical `040` now supplies actual torrent lifecycle evidence in addition to
 the earlier synthetic `removed` diffs. Archive, removal stage, and managed-data

@@ -72,6 +72,7 @@ describe("client settings validation", () => {
     if (response.status === "success") {
       expect(response.snapshot.client_settings).toEqual({
         listener: { type: "disabled" },
+        port_mapping: "disabled",
         peer_connection_limit: 200,
         upload_slots: 8,
       });

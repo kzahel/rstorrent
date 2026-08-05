@@ -32,7 +32,11 @@ hash-authorized `raw_info`, normalized trackers and hints, and ordinary resume
 state remain operational SQLite authority. Tactical `084` advances the store
 to schema version `9` with one constrained typed client-settings singleton and
 atomic durable full-group mutation for restart-applied listener, connection,
-and upload-slot intent.
+and upload-slot intent. Tactical `088` advances that singleton to schema
+version `10` with automatic/fixed local-network listener variants and explicit
+disabled-or-UPnP mapping intent. New and migrated profiles remain mapping
+disabled; concrete local and external endpoints and mapping leases remain
+runtime facts rather than durable state.
 
 ## Scope
 
@@ -537,9 +541,12 @@ successful mutation unreadable after upgrade.
 - Tactical
   [`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
   implements a typed SQLite singleton and atomic full-group mutation for
-  loopback listener policy, the ordinary global peer ceiling, and payload
-  upload slots. Finite bandwidth, durable upload totals, ratio/time seeding
-  goals, and live setting application remain later boundaries.
+  listener policy, explicit port-mapping policy, the ordinary global peer
+  ceiling, and payload upload slots. Tactical `088` adds the version-10
+  local-network and UPnP values without persisting observed interfaces,
+  gateway identity, mappings, or public addresses. Finite bandwidth, durable
+  upload totals, ratio/time seeding goals, and live setting application remain
+  later boundaries.
 - JSTorrent migration is accepted as an explicit user-initiated semantic
   import into one selected backend, not in-place reuse of the legacy database
   or live synchronization between backends. The exact supported source
@@ -635,6 +642,13 @@ rejection, reopen, and configured-versus-active evidence pass. A temporary
 durable profile preserves automatic/37/one through ordinary gateway shutdown
 and reopen, then seeds verified content before a second fixed-bind failure and
 command-path repair cycle.
+
+[`../tactical/088-upnp-mapped-external-tcp-seeding.md`](../tactical/088-upnp-mapped-external-tcp-seeding.md)
+adds schema version `10`, closed local-network listener variants, and explicit
+disabled-or-UPnP intent to the same atomic group. Version-9 and older profiles
+migrate to mapping disabled. Constraint, corrupt-row, no-op, replay, restart,
+generated-contract, and browser-setting evidence pass; observed endpoints,
+leases, gateway state, and diagnostics remain deliberately ephemeral.
 
 This evidence does not broaden into a general multi-torrent scheduler, stable
 public wire protocol, UI settings catalog, remote listener,

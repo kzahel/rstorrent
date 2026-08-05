@@ -21,6 +21,8 @@ import org.rstorrent.session.uniffi.FilePriority
 import org.rstorrent.session.uniffi.IndexRange
 import org.rstorrent.session.uniffi.ListenerPolicy
 import org.rstorrent.session.uniffi.ListenerStatus
+import org.rstorrent.session.uniffi.PortMappingPolicy
+import org.rstorrent.session.uniffi.PortMappingStatus
 import org.rstorrent.session.uniffi.ProgressAssessment
 import org.rstorrent.session.uniffi.ProgressDisposition
 import org.rstorrent.session.uniffi.ProgressPhase
@@ -42,9 +44,10 @@ class ProductStateReducerTest {
     fun clientSettingsRemainTypedAcrossTheKotlinContract() {
         val settings =
             ClientSettings(
-                ListenerPolicy.FixedLoopback(65_535U.toUShort()),
-                2_000U,
-                50U.toUShort(),
+                listener = ListenerPolicy.FixedLoopback(65_535U.toUShort()),
+                portMapping = PortMappingPolicy.UPNP,
+                peerConnectionLimit = 2_000U,
+                uploadSlots = 50U.toUShort(),
             )
 
         assertEquals(settings, Command.SetClientSettings(settings).settings)
@@ -296,16 +299,28 @@ class ProductStateReducerTest {
 
     private fun clientSettings(
         configured: ClientSettings =
-            ClientSettings(ListenerPolicy.Disabled, 200U, 8U.toUShort()),
+            ClientSettings(
+                listener = ListenerPolicy.Disabled,
+                portMapping = PortMappingPolicy.DISABLED,
+                peerConnectionLimit = 200U,
+                uploadSlots = 8U.toUShort(),
+            ),
     ): ClientSettingsRuntimeView =
         ClientSettingsRuntimeView(
             configured,
-            ClientSettings(ListenerPolicy.Disabled, 200U, 8U.toUShort()),
+            ClientSettings(
+                listener = ListenerPolicy.Disabled,
+                portMapping = PortMappingPolicy.DISABLED,
+                peerConnectionLimit = 200U,
+                uploadSlots = 8U.toUShort(),
+            ),
             configured.listener != ListenerPolicy.Disabled ||
+                configured.portMapping != PortMappingPolicy.DISABLED ||
                 configured.peerConnectionLimit != 200U ||
                 configured.uploadSlots != 8U.toUShort(),
             200U,
             ListenerStatus.Disabled,
+            PortMappingStatus.Disabled,
         )
 
     private fun update(

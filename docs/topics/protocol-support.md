@@ -5,9 +5,10 @@ Topic: `protocol-support`
 Status: RSTorrent implements a bounded subset of the v1 protocol sufficient
 for controlled verified downloads, BEP 9 metadata exchange, scheduled BEP 15
 UDP tracker announces, an IPv4 Mainline DHT foundation, and bounded
-multi-peer loopback payload seeding. It does not claim complete BEP 3 or BEP 5
-support, externally reachable seeding, incomplete-torrent upload policy, HTTP
-trackers, uTP, or v2 support.
+multi-peer payload seeding including one externally verified UPnP-mapped TCP
+path. It does not claim complete BEP 3 or BEP 5 support, public
+self-announcement, incomplete-torrent upload policy, HTTP trackers, uTP, or v2
+support.
 
 Tactical [`074`](../tactical/074-context-specific-metainfo-limits.md) replaced
 the former global one-MiB relationship with context-specific metainfo limits.
@@ -25,9 +26,9 @@ socket. Tactical
 connection budget, eight fixed upload slots with one optimistic slot, bounded
 request/read/writer pipelines, and exact physical payload accounting. Scripted
 ten-peer tests and simultaneous two-RSTorrent/two-libtorrent transfers pass.
-The claim remains loopback and complete-torrent only and does not include
-public binding, listener advertisement, NAT traversal, finite bandwidth, or
-ratio/time policy.
+That tactical's claim remains loopback and complete-torrent only; Tactical
+`088` expands the binding and reachability evidence without changing upload
+content or scheduling policy.
 
 Tactical [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) retains
 one ordinary peer authority across download and completed-seed lifetimes and
@@ -36,6 +37,13 @@ evidence observes simultaneous pinned libtorrent and RSTorrent Peers/Swarm
 rows while both independently verify exact content, then observes exact row
 removal, pause, and terminal zero ownership. This expands inspection and
 lifecycle evidence without expanding the claimed network scope.
+
+Tactical [`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md) adds a
+bounded IPv4 UPnP IGD v2 `WANIPConnection:2` control-point subset and proves
+one exact 4,195,035-byte payload transfer from an independent off-LAN peer
+through the queried public TCP mapping. Mapping deletion, absent-query,
+failed-reconnect, and terminal-zero evidence pass. Tracker/DHT
+self-announcement and other gateway protocols remain absent.
 
 Tactical [`081`](../tactical/081-v1-torrent-byte-intake.md) implements bounded
 v1 outer-metainfo intake, libtorrent-aligned large-v1 limits, and BEP 12 tier
@@ -76,11 +84,11 @@ BEP is external protocol metadata, not RSTorrent readiness.
 
 | Specification | Claim | Implemented subset and evidence | Deliberate limits and dependencies |
 | --- | --- | --- | --- |
-| [BEP 3: The BitTorrent Protocol Specification](https://www.bittorrent.org/beps/bep_0003.html) | Partial | Strict bounded bencoding; distinct `length` and `files` publication shapes over one v1 storage/resume pipeline; raw-info SHA-1 identity; outgoing and bounded multi-peer loopback incoming TCP handshakes; keepalive, choke, unchoke, interested, not-interested, have, bitfield, request, cancel, and piece messages; bounded multi-peer download scheduling; bounded verified metadata/payload upload from completed published storage under eight fixed seed slots with exact physical accounting; and ordinary routed-incoming Peers/Swarm observation. Deterministic, scripted adverse, simultaneous controlled libtorrent/RSTorrent, restart, crash, and live publication evidence cover the implemented subset. | Advertised/public incoming reachability, upload from incomplete torrents, tit-for-tat and finite-bandwidth/goal policy, HTTP trackers, and comparable ordinary-swarm completion performance remain absent. |
+| [BEP 3: The BitTorrent Protocol Specification](https://www.bittorrent.org/beps/bep_0003.html) | Partial | Strict bounded bencoding; distinct `length` and `files` publication shapes over one v1 storage/resume pipeline; raw-info SHA-1 identity; outgoing and bounded multi-peer incoming TCP handshakes; keepalive, choke, unchoke, interested, not-interested, have, bitfield, request, cancel, and piece messages; bounded multi-peer download scheduling; bounded verified metadata/payload upload from completed published storage under eight fixed seed slots with exact physical accounting; and ordinary routed-incoming Peers/Swarm observation. Deterministic, scripted adverse, simultaneous controlled libtorrent/RSTorrent, restart, crash, live publication, and one direct off-LAN mapped transfer cover the implemented subset. | Tracker/DHT public self-announcement, upload from incomplete torrents, tit-for-tat and finite-bandwidth/goal policy, HTTP trackers, and comparable ordinary-swarm completion performance remain absent. |
 | [BEP 5: DHT Protocol](https://www.bittorrent.org/beps/bep_0005.html) | Partial | Bounded KRPC, fixed-distance K=8 routing and replacements, alpha-3 iterative lookup, exact transaction/source correlation, incoming query handling, token-authenticated peer announcements, bootstrap/refresh, warm persistence, network-policy integration, and ordinary peer-registry delivery. Deterministic, scripted runtime, controlled libtorrent, repeated public metadata acquisition, and public-bootstrap evidence pass. | The runtime operates one IPv4 UDP socket. IPv6 participation and self-announcement remain absent until their socket and real incoming peer-port owners exist. |
 | [BEP 6: Fast Extension](https://www.bittorrent.org/beps/bep_0006.html) | Unsupported | None. | Have-all, have-none, suggest, reject-request, and allowed-fast negotiation and state are absent. |
 | [BEP 7: IPv6 Tracker Extension](https://www.bittorrent.org/beps/bep_0007.html) | Unsupported | None. | HTTP trackers are absent. BEP 15 UDP response parsing can represent bounded IPv6 compact peers, which is not a BEP 7 support claim. |
-| [BEP 9: Extension for Peers to Send Metadata Files](https://www.bittorrent.org/beps/bep_0009.html) | Supported | Bounded v1 `btih` magnets, extension negotiation, metadata size and block bounds, at most two acquisition requests per download peer, request/data/reject messages, duplicate and ordering validation, cross-peer block assembly, assembled info-hash verification and generation recovery, up to eight simultaneous dial/metadata work items, an independent progress deadline, inspectable acquisition state, and bounded diagnostic plus shared multi-peer application-listener metadata upload. Controlled libtorrent runs pass in both directions; the maximum receive proof transfers an exact 31,457,280-byte info dictionary in 1,920 blocks and requests, and local upload serves every block of valid metadata up to 64 MiB. | The first complete hash-verified download generation wins. V2 identities and BEP 53 selection are outside the claim; public reachability is separately unimplemented. |
+| [BEP 9: Extension for Peers to Send Metadata Files](https://www.bittorrent.org/beps/bep_0009.html) | Supported | Bounded v1 `btih` magnets, extension negotiation, metadata size and block bounds, at most two acquisition requests per download peer, request/data/reject messages, duplicate and ordering validation, cross-peer block assembly, assembled info-hash verification and generation recovery, up to eight simultaneous dial/metadata work items, an independent progress deadline, inspectable acquisition state, and bounded diagnostic plus shared multi-peer application-listener metadata upload. Controlled libtorrent runs pass in both directions; the maximum receive proof transfers an exact 31,457,280-byte info dictionary in 1,920 blocks and requests, and local upload serves every block of valid metadata up to 64 MiB. | The first complete hash-verified download generation wins. V2 identities and BEP 53 selection are outside the claim; public peer discovery remains unimplemented. |
 | [BEP 10: Extension Protocol](https://www.bittorrent.org/beps/bep_0010.html) | Partial | Reserved-bit negotiation, extended message framing, directional extension IDs, and bounded extended handshake fields needed for `ut_metadata`; deterministic and controlled libtorrent evidence covers outgoing and application-listener directions, including metadata-to-payload continuity. | There is no general extension registry or support for PEX, hole punching, upload-only, client-version fields, or arbitrary extensions. |
 | [BEP 11: Peer Exchange](https://www.bittorrent.org/beps/bep_0011.html) | Unsupported | None. | Requires BEP 10 extension growth, multiple live peers, source diversity limits, deduplication, rate bounds, private-torrent gating, and connection lifecycle evidence. |
 | [BEP 12: Multitracker Metadata Extension](https://www.bittorrent.org/beps/bep_0012.html) | Supported | Bounded outer `announce-list` parsing preserves tier order and falls back to `announce`; exact tiers, URL source and unsupported transport state survive restart. UDP rows use deterministic tier scheduling, while pure tests retain 300 trackers in three tiers and controlled byte intake completes through the imported tracker. | HTTP and HTTPS tracker rows are retained and visible but their wire transports are absent. Magnet `tr` values still form one synthetic tier because magnets carry no BEP 12 structure. |
@@ -101,6 +109,12 @@ BEP is external protocol metadata, not RSTorrent readiness.
 | [BEP 52: The BitTorrent Protocol Specification v2](https://www.bittorrent.org/beps/bep_0052.html) | Unsupported | Metainfo and magnet parsers explicitly reject v2 and hybrid identities. | SHA-256 identities, file trees, piece layers, aligned storage, hybrid validation, and v2 peer behavior require a separate correctness design. |
 | [BEP 53: Magnet URI extension - Select specific file indices for download](https://www.bittorrent.org/beps/bep_0053.html) | Unsupported | The product has an explicit `skip_files` command field after metadata, but does not parse magnet `so`. | Adding `so` requires canonicalization, conflict/idempotency behavior, bounds, and UI intent rules. |
 | [BEP 55: Holepunch extension](https://www.bittorrent.org/beps/bep_0055.html) | Unsupported | None. | Depends on PEX, uTP, extension negotiation, incoming reachability, address policy, and NAT behavior. |
+
+## Gateway Control Protocols
+
+| Specification | Claim | Implemented subset and evidence | Deliberate limits and dependencies |
+| --- | --- | --- | --- |
+| UPnP Device Architecture 2.0 and Internet Gateway Device v2 | Supported subset | Source-bound SSDP root-device discovery, bounded same-host IPv4 HTTP/XML/SOAP, complete `WANIPConnection:2` selection, external-address lookup, exact specific-entry query, finite TCP add/verify/renew/delete, typed faults, cancellation, and joined ownership. Deterministic and scripted gateway tests pass; a physical IGD v2 mapping was independently queried while an off-LAN peer hash-verified 4,195,035 bytes through it, then independent absence and failed reconnect proved cleanup. | Only IPv4 HTTP `WANIPConnection:2`, one TCP mapping, a 3,600-second finite lease, and the observed mechanism are claimed. IGD v1, WANPPP, HTTPS, multi-device policy, UDP, PCP, NAT-PMP, IPv6 pinholes, and tracker/DHT advertisement remain absent. |
 
 ## Non-BEP Interoperability Responsibilities
 

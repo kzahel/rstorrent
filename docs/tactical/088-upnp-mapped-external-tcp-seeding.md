@@ -1,6 +1,7 @@
 # Tactical 088: UPnP-Mapped External TCP Seeding
 
-Status: Planned and authorized for autonomous implementation on 2026-08-05.
+Status: Complete on 2026-08-05. The observed-network IGD v2 path and an
+independent off-LAN exact-payload transfer satisfy the stopping condition.
 
 Topics: `incoming-reachability-and-seeding`, `client-persistence`,
 `application-control`, `application-view-api`, `protocol-support`,
@@ -399,4 +400,64 @@ architecture.
 
 ## Implementation Progress
 
-- Not started.
+- Commit `3d94693` records the bounded design, observed-mechanism selection,
+  normative/reference dossier, ownership map, and external evidence gate.
+- Commit `ff0bb37` adds restart-applied automatic/fixed local-network listener
+  policy, mapping-disabled-by-default schema version 10 persistence, generated
+  product contracts, browser settings, and task-free generation-fenced
+  reachability state.
+- Commit `246d1fc` adds the focused engine UPnP boundary. It source-binds SSDP,
+  validates same-host IPv4 HTTP device/control URLs, bounds HTTP and XML work,
+  selects only a complete `WANIPConnection:2` service, queries before add,
+  installs and verifies one finite TCP mapping, renews it, and deletes then
+  queries absence. The scripted gateway covers the exact lifecycle and the
+  typed permanent-lease hard stop.
+- Commit `483d0b5` puts that lifecycle beneath one application-generation
+  `ReachabilityCoordinator`, publishes state and bounded diagnostics through
+  the existing client-settings view, and joins deletion before incoming
+  listener shutdown. Closed gateway HTTP connections plus exact state
+  reconciliation handle an observed embedded-gateway reset after applying
+  `AddPortMapping`; a scripted regression test proves that case.
+- The generic opt-in physical gate creates a deterministic 4,195,035-byte,
+  257-piece torrent and streams a standard-library peer-wire verifier to an
+  operator-selected machine on another network. The SSH channel carries only
+  verifier control; payload traffic connects directly to the mapped public
+  TCP endpoint. No verifier file or package is installed remotely.
+
+## Recorded Evidence
+
+- Eleven focused engine UPnP tests pass, including bounded parsing and URL
+  policy, cancellation, finite-lease rejection, exact add/query/renew/delete,
+  and add-response transport-failure reconciliation.
+- The session suite passes with 145 tests and one documented maximum-allocation
+  test ignored. Focused engine/session warning-denying all-target Clippy,
+  formatting, Python compilation, and unconfigured-gate skip behavior pass.
+- One sanitized physical run returned `status=passed`: the independent query
+  matched the exact enabled finite mapping; the off-LAN peer downloaded and
+  hash-verified all 257 pieces and the whole 4,195,035-byte payload; ordinary
+  Peers/Swarm state observed incoming TCP direction and activity; physical
+  upload accounting was exact; joined shutdown removed the mapping; an
+  independent query found it absent; a post-delete off-LAN connection failed;
+  and terminal mapping-task and mapping-owner counts were both zero.
+- The run's mapping high-water mark was one. Its reachability-task high-water
+  mark was one. Discovery considered at most eight locations, mapping tried at
+  most four high ports, and the transfer retained the existing upload bounds.
+- Environment-specific hostnames, aliases, addresses, device identifiers,
+  paths, and external endpoints were excluded from repository artifacts and
+  retained evidence.
+
+The final baseline passes:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace --all-targets -- -D warnings`;
+- `cargo test --workspace`: 521 passed and five documented live or
+  maximum-allocation tests ignored;
+- generated TypeScript/schema/fixture regeneration with no drift;
+- 178 web tests with two existing skips, TypeScript checking, production
+  build, and CSP scan;
+- desktop and Android Rust all-target compilation through the workspace gate;
+- Android x86_64 and arm64-v8a release libraries, regenerated UniFFI Kotlin,
+  debug APK assembly, and the debug JVM suite;
+- Python syntax and unconfigured opt-in skip behavior; and
+- `git diff --check` plus a repository scan for prohibited private verifier
+  identity strings.

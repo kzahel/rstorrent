@@ -46,6 +46,11 @@ lifetime into one task-free engine state and application-generation torrent
 runtime. Routed incoming connections now attach to that state and detach only
 after their joined upload cleanup; ordinary Peers and Swarm projections now
 carry their typed upload facts and exact removal.
+Tactical [`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md) changes
+no peer-state owner or flag vocabulary. It proves the same routed generation
+through a direct off-LAN TCP connection: Peers reports incoming direction,
+TCP transport, interest/choke and exact upload activity while Swarm retains
+the incoming source as a bounded non-connectable endpoint after disconnect.
 
 ## Scope
 
@@ -599,6 +604,9 @@ service. The source-first write owner now precedes another lifecycle change.
 Tactical `086` is complete; its retained torrent peer owner and routed
 incoming Peers/Swarm observation pass controlled libtorrent/RSTorrent gateway
 interoperability and terminal resource closure.
+Tactical `088` additionally proves those unchanged observations during an
+exact 4,195,035-byte externally dialed transfer through a verified mapping,
+followed by retained Swarm history and terminal resource closure.
 Advertised-port updates, finite upload bandwidth and seeding goals, measured
 performance selection, peer-ID duplicate resolution, full parole selection,
 PEX, and persisted peer caches remain later work.

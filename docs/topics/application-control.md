@@ -47,6 +47,11 @@ Tactical `084` adds one atomic typed `set_client_settings` command through the
 same generic HTTP, WebSocket, Tauri, and UniFFI dispatch. Durable configured
 intent changes immediately, while listener, connection budget, and upload
 slots remain truthfully restart-applied.
+Tactical `088` extends that same closed command group with local-network
+listener and explicit UPnP mapping intent. The existing torrent-list summary
+projects disabled, ineligible, discovering, mapping, mapped,
+renewal-failed/failed, and stopping runtime state; gateway work and mapped
+addresses do not become commands or durable authority.
 Tactical `085` adds the minimal projected `force_recheck_available` capability
 and composes existing per-torrent commands sequentially in the React action
 owner. It does not add a batch command, atomic multi-torrent semantics, or a
@@ -281,6 +286,13 @@ fresh ordinary request at a time, continues after per-target failure, and
 bounds presentation diagnostics. Multi-remove similarly confirms one policy
 but dispatches durable removals individually, so it promises neither atomicity
 nor rollback of an earlier successful deletion.
+
+Tactical `088` extends the existing client-settings command rather than
+adding a gateway command surface. Restart applies the local-network listener
+and mapping policy, while the current generation publishes mapping progress
+through the existing view owner. Mapping failure is recoverable application
+state and a structured diagnostic; it neither rewrites durable intent nor
+stops the local listener.
 
 Later work must define multi-torrent scheduling, stable product error
 taxonomy, capability installation, production remote

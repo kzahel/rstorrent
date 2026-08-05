@@ -18,16 +18,15 @@ to that owner with complete upload observations. Ordinary Peers/Swarm mapping
 and the unchanged headless product adapter consume those facts; the
 authenticated gateway proof follows pinned libtorrent and RSTorrent peers
 through exact transfer, removal, pause, and terminal zero ownership.
-Non-loopback binding, gateway mapping, mapped-endpoint advertisement, finite
-bandwidth, and seeding goals remain future slices.
+Mapped-endpoint advertisement, finite bandwidth, and seeding goals remain
+future slices.
 
 Tactical
-[`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md) is planned and
-authorized. It owns the next bounded outcome: an explicitly eligible
-non-loopback IPv4 listener, one session reachability coordinator, generic UPnP
-IGD v2 mapping, and an exact off-LAN incoming transfer through the observed
-mapping mechanism. Tracker/DHT advertisement and other mapping protocols stay
-outside that tactical.
+[`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md) is complete. It
+adds explicitly eligible non-loopback IPv4 listeners, one session
+reachability coordinator, bounded UPnP IGD v2 mapping, and an exact off-LAN
+incoming transfer through the observed mechanism. Tracker/DHT advertisement
+and other mapping protocols remain later slices.
 
 ## Purpose And Scope
 
@@ -51,12 +50,13 @@ their own protocol, ownership, security, and evidence requirements.
 
 ## Current Truth
 
-RSTorrent can download real v1 torrents through outgoing TCP and can now seed
-multiple controlled incoming peers through the application service:
+RSTorrent can download real v1 torrents through outgoing TCP and can seed
+controlled incoming peers locally or through one proven UPnP-mapped public TCP
+endpoint:
 
-- immutable bootstrap is `Disabled`, `AutomaticLoopback`, or a nonzero
-  `FixedLoopback` port; successful bind exposes the actual `127.0.0.1` port
-  and fixed bind failure is typed;
+- immutable bootstrap includes disabled, automatic/fixed loopback, and
+  automatic/fixed local-network IPv4 listener policy; successful bind exposes
+  the exact address and port and fixed bind failure is typed;
 - one joined session listener uses a five-entry backlog, bounds eight
   pre-handshake tasks, routes exact v1 info hashes through up to 1,024
   generation-fenced registrations, and admits peers under one session budget
@@ -80,10 +80,11 @@ multiple controlled incoming peers through the application service:
   two-RSTorrent/two-libtorrent evidence passes for single-file and cross-file
   content, with all four clients independently verifying 67,109,595 bytes and
   the seed recording the exact 268,438,380 uploaded payload bytes;
-- one schema-version-9 atomic settings group now persists disabled,
-  automatic-loopback, or fixed-loopback listener intent, 1--2,000 ordinary
-  peer connections, and 0--50 upload slots; active/effective/bound state stays
-  distinct from configured intent and applies on restart;
+- one schema-version-10 atomic settings group persists listener intent,
+  explicit disabled-or-UPnP mapping policy, 1--2,000 ordinary peer
+  connections, and 0--50 upload slots; new and migrated profiles keep mapping
+  disabled, while active/effective/bound/mapped state stays distinct from
+  configured intent and applies on restart;
 - the generated application contract and shared browser/Tauri Settings
   surface expose that group, the actual loopback port, descriptor-derived
   effective limit, restart requirement, and typed recoverable bind failure;
@@ -93,11 +94,19 @@ multiple controlled incoming peers through the application service:
   accepted non-connectable endpoint, identity and negotiated extensions,
   interest/choke/grant, queues, exact upload total/rate, compact flags, and
   exact post-cleanup removal;
-- UDP tracker announces still carry provisional port `6881`, which is not
-  derived from or guaranteed to match this listener;
+- one generation-fenced coordinator owns at most one IGD v2
+  `WANIPConnection:2` mapping and one task, requests a 3,600-second finite TCP
+  lease, renews at 75 percent, publishes bounded state and diagnostics, and
+  deletes before listener shutdown;
+- a controlled external peer directly downloaded and hash-verified all 257
+  pieces and 4,195,035 payload bytes through the mapped endpoint; ordinary
+  Peers/Swarm views observed incoming TCP state, exact physical upload passed,
+  independent query proved deletion, and a post-delete connect failed;
+- UDP tracker announces still carry provisional port `6881`, which is not yet
+  derived from the listener or mapped endpoint;
 - the IPv4 DHT has a real ephemeral UDP query socket, but RSTorrent does not
   use it as a peer listener or send `announce_peer`; and
-- UPnP IGD, PCP, and NAT-PMP port mapping are absent.
+- PCP, NAT-PMP, IGD v1/WANPPP, IPv6 pinholes, and UDP mappings are absent.
 
 The implementation adds cohesive `peer_io`, `upload`, `seed_content`,
 `incoming`, and session `incoming_seeding` owners instead of extending the
@@ -384,7 +393,7 @@ This slice does not add concurrent multi-torrent work, change any listener or
 upload limit, implement mature duplicate-peer policy, or add advertisement,
 mapping, protocol, settings, or UI breadth.
 
-### 5. Non-loopback listener and reachability ownership
+### 5. Non-loopback listener and reachability ownership — complete
 
 Extend listener policy only far enough to bind an explicitly eligible local
 IPv4 interface, and introduce one session reachability coordinator that
@@ -397,7 +406,7 @@ interface, infer that a private address is publicly reachable, or feed the
 local port directly to public tracker or DHT advertisement. The bound endpoint
 is authoritative input to mapping, not yet an externally usable endpoint.
 
-### 6. Observed-network UPnP IGD mapping
+### 6. Observed-network UPnP IGD mapping — complete
 
 Implement the mapping mechanism available on the real validation network
 before adding unobserved alternatives. A non-mutating inspection on
@@ -415,7 +424,7 @@ before adding unobserved alternatives. A non-mutating inspection on
 - three bounded NAT-PMP external-address requests and three PCP `ANNOUNCE`
   requests received no response.
 
-The first mapping tactical should therefore implement a generic, bounded UPnP
+Tactical `088` implements a generic, bounded UPnP
 IGD v2 path against the observed `WANIPConnection:2` service: SSDP discovery,
 device and service-description parsing, URL resolution, external-address
 lookup, TCP add/query/renew/delete behavior, typed SOAP faults, replacement on
@@ -424,13 +433,11 @@ must rediscover devices and services; the observed gateway address, UUID,
 model, control URL, and external address are evidence, not configuration or
 hard-coded product knowledge.
 
-Validation is not complete at a successful SOAP response. The tactical must
-create a temporary mapping for a real non-loopback RSTorrent TCP listener,
-verify the installed mapping, have a controlled peer outside the local network
-dial the mapped external endpoint and verify exact torrent payload, then stop
-using the mapped endpoint, delete the mapping, and prove terminal zero
-ownership. A dial through gateway hairpinning from the same LAN is useful
-diagnostics but is not external-reachability evidence.
+Validation did not stop at a successful SOAP response. A temporary finite
+mapping for the real non-loopback listener was independently queried, a
+controlled peer outside the LAN dialed the public endpoint and verified exact
+torrent payload, and shutdown proved mapping absence, failed reconnect, and
+terminal zero ownership. Same-LAN hairpinning was not used as evidence.
 
 PCP and NAT-PMP remain later independent additions. Their specifications and
 pinned libtorrent implementations may guide future designs, but source
@@ -585,11 +592,11 @@ now complete bounded multi-peer upload ownership and the restart-applied
 product settings boundary. Tactical
 [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) now completes the
 long-lived per-torrent peer owner and proves it through truthful incoming
-projection in the ordinary Swarm/Peers model. Actual-port tracker/DHT
-advertisement no longer precedes the mapping evidence needed to select a
-truthful public endpoint. The next reachability slice is an explicitly
-eligible non-loopback IPv4 listener plus the session reachability owner and
-UPnP IGD v2 mapping path needed to prove externally dialed TCP seeding on the
-observed network. Tracker/DHT advertisement follows the mapped-endpoint proof.
-PCP and NAT-PMP remain later independent slices until they have suitable
-runtime evidence.
+projection in the ordinary Swarm/Peers model. Tactical
+[`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md) completes the
+non-loopback listener, session reachability owner, UPnP IGD v2 mapping, and
+externally dialed exact TCP seeding proof. The next reachability slice should
+replace provisional tracker port `6881` with the current advertised endpoint
+and add eligible DHT self-announcement, including mapping-change correction
+and advertisement-before-mapping/listener shutdown. PCP and NAT-PMP remain
+later independent slices until they have suitable runtime evidence.
