@@ -297,7 +297,7 @@ pub(crate) enum PeerSetEvent {
     },
     DialCompleted {
         attempt: DialAttempt,
-        result: ConnectedPeerResult,
+        result: Box<ConnectedPeerResult>,
     },
     Peer(PeerTaskEvent),
 }
@@ -496,7 +496,10 @@ impl PeerSocketSet {
                     .expect("pending dial set is nonempty")
                     .map_err(PeerSetError::TaskJoin)?;
                 self.pending_attempts.remove(&attempt.id());
-                Ok(PeerSetEvent::DialCompleted { attempt, result })
+                Ok(PeerSetEvent::DialCompleted {
+                    attempt,
+                    result: Box::new(result),
+                })
             }
         }
     }
@@ -732,9 +735,12 @@ mod tests {
         {
             PeerSetEvent::DialCompleted {
                 attempt: actual,
-                result: Ok((connection, _)),
+                result,
             } => {
                 assert_eq!(actual, attempt);
+                let Ok((connection, _)) = *result else {
+                    panic!("dial unexpectedly failed");
+                };
                 connection
             }
             event => panic!("unexpected event {event:?}"),

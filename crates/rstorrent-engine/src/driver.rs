@@ -1578,7 +1578,7 @@ enum MetadataSupervisorEvent {
     Cancelled,
     Discovery(Result<(), DownloadError>),
     Socket(Result<PeerSetEvent, PeerSetError>),
-    Worker(Option<Result<MetadataPeerResult, tokio::task::JoinError>>),
+    Worker(Box<Option<Result<MetadataPeerResult, tokio::task::JoinError>>>),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -2294,7 +2294,7 @@ impl TorrentPeerCoordinator {
                 }
                 event = sockets.next_event() => MetadataSupervisorEvent::Socket(event),
                 joined = workers.join_next(), if !workers.is_empty() => {
-                    MetadataSupervisorEvent::Worker(joined)
+                    MetadataSupervisorEvent::Worker(Box::new(joined))
                 }
             };
             match event {
@@ -2320,42 +2320,47 @@ impl TorrentPeerCoordinator {
                 }
                 MetadataSupervisorEvent::Socket(Ok(PeerSetEvent::DialCompleted {
                     attempt,
-                    result: Ok((connection, handshake)),
-                })) => {
-                    self.dial_succeeded(attempt, &handshake)?;
-                    self.control
-                        .metadata_peer_connected(attempt, handshake.supports_extensions());
-                    let cancellation = CancellationToken::new();
-                    worker_cancellations.insert(attempt.id(), (attempt, cancellation.clone()));
-                    let control = self.control.clone();
-                    let metadata = metadata.clone();
-                    workers.spawn(async move {
-                        run_metadata_peer(connection, handshake, cancellation, control, metadata)
+                    result,
+                })) => match *result {
+                    Ok((connection, handshake)) => {
+                        self.dial_succeeded(attempt, &handshake)?;
+                        self.control
+                            .metadata_peer_connected(attempt, handshake.supports_extensions());
+                        let cancellation = CancellationToken::new();
+                        worker_cancellations.insert(attempt.id(), (attempt, cancellation.clone()));
+                        let control = self.control.clone();
+                        let metadata = metadata.clone();
+                        workers.spawn(async move {
+                            run_metadata_peer(
+                                connection,
+                                handshake,
+                                cancellation,
+                                control,
+                                metadata,
+                            )
                             .await
-                    });
-                }
-                MetadataSupervisorEvent::Socket(Ok(PeerSetEvent::DialCompleted {
-                    attempt,
-                    result: Err(error),
-                })) => {
-                    if matches!(&error, PeerSocketError::Cancelled) {
-                        self.dial_cancelled(attempt)?;
-                        self.control.metadata_peer_finished(
-                            attempt.id(),
-                            MetadataPeerStage::Cancelled,
-                            Some("metadata dial cancelled"),
-                        );
-                    } else {
-                        let detail = error.to_string();
-                        self.dial_failed(attempt, error.peer_failure())?;
-                        self.last_error = Some(download_peer_socket_error(error));
-                        self.control.metadata_peer_finished(
-                            attempt.id(),
-                            MetadataPeerStage::Failed,
-                            Some(&detail),
-                        );
+                        });
                     }
-                }
+                    Err(error) => {
+                        if matches!(&error, PeerSocketError::Cancelled) {
+                            self.dial_cancelled(attempt)?;
+                            self.control.metadata_peer_finished(
+                                attempt.id(),
+                                MetadataPeerStage::Cancelled,
+                                Some("metadata dial cancelled"),
+                            );
+                        } else {
+                            let detail = error.to_string();
+                            self.dial_failed(attempt, error.peer_failure())?;
+                            self.last_error = Some(download_peer_socket_error(error));
+                            self.control.metadata_peer_finished(
+                                attempt.id(),
+                                MetadataPeerStage::Failed,
+                                Some(&detail),
+                            );
+                        }
+                    }
+                },
                 MetadataSupervisorEvent::Socket(Ok(PeerSetEvent::Peer(_))) => {
                     cleanup_metadata_attempts(
                         self,
@@ -2378,62 +2383,59 @@ impl TorrentPeerCoordinator {
                     .await?;
                     return Err(download_peer_set_error(error));
                 }
-                MetadataSupervisorEvent::Worker(Some(Ok(MetadataPeerResult::Complete {
-                    connection,
-                    raw_info,
-                    metainfo,
-                }))) => {
-                    worker_cancellations.remove(&connection.attempt().id());
-                    cleanup_metadata_attempts(
-                        self,
-                        &mut sockets,
-                        &mut workers,
-                        &mut worker_cancellations,
-                    )
-                    .await?;
-                    self.connection = Some(connection);
-                    if metainfo.private {
-                        self.disable_dht_for_private(info_hash).await?;
+                MetadataSupervisorEvent::Worker(joined) => match *joined {
+                    Some(Ok(MetadataPeerResult::Complete {
+                        connection,
+                        raw_info,
+                        metainfo,
+                    })) => {
+                        worker_cancellations.remove(&connection.attempt().id());
+                        cleanup_metadata_attempts(
+                            self,
+                            &mut sockets,
+                            &mut workers,
+                            &mut worker_cancellations,
+                        )
+                        .await?;
+                        self.connection = Some(connection);
+                        if metainfo.private {
+                            self.disable_dht_for_private(info_hash).await?;
+                        }
+                        return Ok((raw_info, metainfo));
                     }
-                    return Ok((raw_info, metainfo));
-                }
-                MetadataSupervisorEvent::Worker(Some(Ok(MetadataPeerResult::Failed {
-                    connection,
-                    error,
-                }))) => {
-                    worker_cancellations.remove(&connection.attempt().id());
-                    let failure = peer_failure(&error);
-                    self.connection_closed(connection.attempt(), Some(failure))?;
-                    self.last_error = Some(error);
-                }
-                MetadataSupervisorEvent::Worker(Some(Ok(MetadataPeerResult::Cancelled {
-                    connection,
-                }))) => {
-                    worker_cancellations.remove(&connection.attempt().id());
-                    self.connection_closed(connection.attempt(), None)?;
-                }
-                MetadataSupervisorEvent::Worker(Some(Err(error))) => {
-                    cleanup_metadata_attempts(
-                        self,
-                        &mut sockets,
-                        &mut workers,
-                        &mut worker_cancellations,
-                    )
-                    .await?;
-                    return Err(DownloadError::PeerTask(error.to_string()));
-                }
-                MetadataSupervisorEvent::Worker(None) => {
-                    cleanup_metadata_attempts(
-                        self,
-                        &mut sockets,
-                        &mut workers,
-                        &mut worker_cancellations,
-                    )
-                    .await?;
-                    return Err(DownloadError::PeerTask(
-                        "metadata worker set ended unexpectedly".to_owned(),
-                    ));
-                }
+                    Some(Ok(MetadataPeerResult::Failed { connection, error })) => {
+                        worker_cancellations.remove(&connection.attempt().id());
+                        let failure = peer_failure(&error);
+                        self.connection_closed(connection.attempt(), Some(failure))?;
+                        self.last_error = Some(error);
+                    }
+                    Some(Ok(MetadataPeerResult::Cancelled { connection })) => {
+                        worker_cancellations.remove(&connection.attempt().id());
+                        self.connection_closed(connection.attempt(), None)?;
+                    }
+                    Some(Err(error)) => {
+                        cleanup_metadata_attempts(
+                            self,
+                            &mut sockets,
+                            &mut workers,
+                            &mut worker_cancellations,
+                        )
+                        .await?;
+                        return Err(DownloadError::PeerTask(error.to_string()));
+                    }
+                    None => {
+                        cleanup_metadata_attempts(
+                            self,
+                            &mut sockets,
+                            &mut workers,
+                            &mut worker_cancellations,
+                        )
+                        .await?;
+                        return Err(DownloadError::PeerTask(
+                            "metadata worker set ended unexpectedly".to_owned(),
+                        ));
+                    }
+                },
             }
         }
     }
@@ -4458,7 +4460,7 @@ async fn run_selective_swarm_loop(
                     .state
                     .finish_dial(pending_dial_id(attempt))
                     .map_err(DownloadError::Swarm)?;
-                match result {
+                match *result {
                     Ok((connection, handshake)) => {
                         if sockets.established_len()
                             >= download.state.config().max_established_connections
