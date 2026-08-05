@@ -23,3 +23,7 @@ tokio = { workspace = true, features = ["io-std", "io-util", "macros", "rt", "sy
 tokio-util = { workspace = true, features = ["rt"] }
 ts-rs = { workspace = true }
 uniffi = { version = "=0.31.0", default-features = false, optional = true }
+
+[dev-dependencies]
+base64 = { workspace = true }
+tokio-rustls = "0.26.4"

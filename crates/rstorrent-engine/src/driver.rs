@@ -1155,6 +1155,12 @@ impl ContentDiscovery {
                 cancellation.clone(),
             )));
         }
+        if peers.external_discovery {
+            tasks.push(tokio::spawn(keep_content_external_discovery_alive(
+                sender.clone(),
+                cancellation.clone(),
+            )));
+        }
         drop(sender);
         Self {
             receiver,
@@ -1180,6 +1186,14 @@ impl ContentDiscovery {
         }
         Ok(())
     }
+}
+
+async fn keep_content_external_discovery_alive(
+    _sender: mpsc::Sender<ContentDiscoveryEvent>,
+    cancellation: CancellationToken,
+) -> Result<(), DownloadError> {
+    cancellation.cancelled().await;
+    Ok(())
 }
 
 async fn run_content_tracker_discovery(

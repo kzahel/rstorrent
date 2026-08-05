@@ -4412,15 +4412,16 @@ mod tests {
         handle_task_outcome,
     };
     use crate::{
-        AddTorrentBytesRequest, CONTROL_VERSION, ClientSettings, Command, ConfiguredStorageRoot,
-        DeliveryPolicy, DhtLifecycleView, DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity,
-        FilePriority, ListenerBindFailureReason, ListenerPolicy, ListenerStatus,
-        OpenViewSetOptions, OpenViewSetRequest, PeerDirection, PeerFlagView, PeerLifecycle,
-        PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressDisposition, ProgressReason,
-        RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseOutcome, SessionStore,
-        StorageState, SubscriptionSpec, SwarmCatalogState, SwarmPeerState, SwarmPeerView,
-        TorrentState, ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetError,
-        ViewSetOwner, ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdatePayload,
+        AddTorrentBytesRequest, CONTROL_VERSION, CatalogPageRequest, ClientSettings, Command,
+        ConfiguredStorageRoot, DeliveryPolicy, DhtLifecycleView, DiagnosticFilter,
+        DiagnosticProfile, DiagnosticSeverity, FilePriority, ListenerBindFailureReason,
+        ListenerPolicy, ListenerStatus, OpenViewSetOptions, OpenViewSetRequest, PeerDirection,
+        PeerFlagView, PeerLifecycle, PeerRole, PeerSourceView, PeerTransportKind, PeerView,
+        ProgressDisposition, ProgressReason, RemovalDataPolicy, RemovalState, RequestEnvelope,
+        ResponseOutcome, SessionStore, StorageState, SubscriptionSpec, SwarmCatalogState,
+        SwarmPeerState, SwarmPeerView, TorrentState, TrackerSecurityView, TrackerView,
+        ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetError, ViewSetOwner,
+        ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdatePayload,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -4616,6 +4617,37 @@ mod tests {
         peers
     }
 
+    async fn torrent_tracker_views(
+        service: &ApplicationService,
+        torrent_id: &str,
+    ) -> Vec<TrackerView> {
+        let subscription = service
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::Torrent {
+                    torrent_id: torrent_id.to_owned(),
+                },
+                projection: ViewProjection::Trackers,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 4096,
+                },
+                diagnostics: None,
+                catalog_page: Some(CatalogPageRequest::default()),
+            })
+            .expect("subscribe to torrent trackers");
+        let update = subscription
+            .next_update()
+            .await
+            .expect("initial torrent tracker snapshot");
+        let ViewUpdatePayload::Snapshot {
+            snapshot: ViewSnapshot::Trackers { trackers, .. },
+        } = update.payload
+        else {
+            panic!("expected torrent tracker snapshot");
+        };
+        trackers
+    }
+
     async fn torrent_swarm_view(
         service: &ApplicationService,
         torrent_id: &str,
@@ -4781,12 +4813,377 @@ mod tests {
         (address, task)
     }
 
+    async fn serve_single_piece_peer(listener: TcpListener, info_hash: [u8; 20], payload: Vec<u8>) {
+        let (mut stream, _) = listener.accept().await.expect("accept content peer");
+        let mut handshake = [0; HANDSHAKE_LENGTH];
+        stream
+            .read_exact(&mut handshake)
+            .await
+            .expect("read content handshake");
+        decode_handshake(&handshake, info_hash).expect("content handshake identity");
+        stream
+            .write_all(&encode_handshake(info_hash, *b"-RS-HTTP-IPV6-000000"))
+            .await
+            .expect("send content handshake");
+        stream
+            .write_all(&encode_message(&PeerMessage::Bitfield(vec![0x80])).expect("bitfield"))
+            .await
+            .expect("send content bitfield");
+        let mut decoder = FrameDecoder::new();
+        let mut pending = std::collections::VecDeque::new();
+        loop {
+            match read_peer_message(&mut stream, &mut decoder, &mut pending).await {
+                PeerMessage::Interested => {
+                    stream
+                        .write_all(&encode_message(&PeerMessage::Unchoke).expect("unchoke"))
+                        .await
+                        .expect("send unchoke");
+                }
+                PeerMessage::Request(request) => {
+                    assert_eq!(request.index, 0);
+                    let begin = usize::try_from(request.begin).expect("request begin");
+                    let length = usize::try_from(request.length).expect("request length");
+                    let end = begin.checked_add(length).expect("request end");
+                    stream
+                        .write_all(
+                            &encode_message(&PeerMessage::Piece {
+                                index: 0,
+                                begin: request.begin,
+                                block: payload[begin..end].to_vec(),
+                            })
+                            .expect("piece"),
+                        )
+                        .await
+                        .expect("send piece");
+                    if end == payload.len() {
+                        return;
+                    }
+                }
+                PeerMessage::KeepAlive | PeerMessage::NotInterested => {}
+                message => panic!("unexpected content message: {message:?}"),
+            }
+        }
+    }
+
+    async fn read_http_request<S>(stream: &mut S) -> String
+    where
+        S: tokio::io::AsyncRead + Unpin,
+    {
+        let mut request = Vec::new();
+        while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+            let mut chunk = [0_u8; 1_024];
+            let length = stream.read(&mut chunk).await.expect("read HTTP request");
+            assert_ne!(length, 0, "HTTP request ended before headers");
+            request.extend_from_slice(&chunk[..length]);
+            assert!(request.len() <= 16 * 1_024, "HTTP request is bounded");
+        }
+        String::from_utf8(request).expect("HTTP request is ASCII")
+    }
+
+    fn untrusted_tls_acceptor() -> tokio_rustls::TlsAcceptor {
+        use base64::Engine as _;
+        use std::sync::Arc;
+        use tokio_rustls::rustls::ServerConfig;
+        use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+
+        const CERT: &str = concat!(
+            "MIIDETCCAfmgAwIBAgIUaGe1xp9QWaOq2j9MBVoYJQHxQjUwDQYJKoZIhvcNAQELBQAwGDEW",
+            "MBQGA1UEAwwNd3JvbmcuZXhhbXBsZTAeFw0yNjA4MDUxODMxMDNaFw0zNjA4MDIxODMxMDNa",
+            "MBgxFjAUBgNVBAMMDXdyb25nLmV4YW1wbGUwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEK",
+            "AoIBAQDfQV9T9lOopJtynnl+v0lzgusiA5zeYE20tSlD04EtdJ8SakjrEC1cbfGQN9azRSNA",
+            "oVKdazKOQpGib+cwbXd4snw/CE2qKVZ6j5grp8QZvSqm8gjHwp3WwlfVbmOJPXLsSjvCU36j",
+            "qI5s5VWfWiPAxDYklfUn4hz4aR5oabP+poMgsXxq411UEclqr+s6fv1TVPO95hT9CeTyNXtN",
+            "1T1Wq1tVMLm3ULI7oGVLhdZJGEyLLdricnIda+YOZEeoUslfzuV3rQMQJyDRWdajNdpbPJL/",
+            "nBzVTAaGpe+O+JIj0hP1jdDNzdODTJ6b0JfrngB9mDYKGw4tnaLz8i0Tcpc/AgMBAAGjUzBR",
+            "MB0GA1UdDgQWBBQ5BQU9ptEzvoQqvmi6fnGKh3GdMDAfBgNVHSMEGDAWgBQ5BQU9ptEzvoQq",
+            "vmi6fnGKh3GdMDAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQBfpwTOEGer",
+            "XsgIPC5kVDTdQI0d5XmVuAbxCWQZCsRbrn65hW3E+uaWr2W7SMUAczYpWi3W/Q+YWXz/F19",
+            "3IBVLUL7zohyQP06vYIsQUAgKpWDwPMHTtzLKAy2wtn50Y83CR/FMEXQpSFsFxZEO7rupEAL",
+            "E3oA/jzaApcIuqMOJbGFcrsuRy3HVS6g+T1wabFZGts9XdXmHoXc6zXL8fxUVvdI4Sdl39co",
+            "nd7TayWPpdy+pD//z0qsoTkHEuKwd9dgiIU2bg7kh7AilXQM9ncze4IxkZyQfM87YAb3bMG",
+            "Nwrd/DjbA2yWPWUmGV4+laMESgYDrXRFemNrNgif1v4eM5"
+        );
+        const KEY: &str = concat!(
+            "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDfQV9T9lOopJtynnl+v0lz",
+            "gusiA5zeYE20tSlD04EtdJ8SakjrEC1cbfGQN9azRSNAoVKdazKOQpGib+cwbXd4snw/CE2q",
+            "KVZ6j5grp8QZvSqm8gjHwp3WwlfVbmOJPXLsSjvCU36jqI5s5VWfWiPAxDYklfUn4hz4aR5",
+            "oabP+poMgsXxq411UEclqr+s6fv1TVPO95hT9CeTyNXtN1T1Wq1tVMLm3ULI7oGVLhdZJGE",
+            "yLLdricnIda+YOZEeoUslfzuV3rQMQJyDRWdajNdpbPJL/nBzVTAaGpe+O+JIj0hP1jdDNzd",
+            "ODTJ6b0JfrngB9mDYKGw4tnaLz8i0Tcpc/AgMBAAECggEASQLPgp1diZrfbVIPSJiVFE4d",
+            "yF9nF0BmWTEfwBs0tSFc/kA8/YaqVv5rj+7662CyYSoA4xNSEr0JdJZlBGzgM9wnDtQP1hSz",
+            "v9wi9y/jzUkUYElp/q4SQVAIOnfh3Fl4snaqaWg1057FiS5M3JK1e46PaFKUPIlRURnLhHkB",
+            "EMdWNcCozrzihkLoJ5rTBQSGdmMFThGoF5MaK0MN4AxU1o0rWbI8GVnua4Cm4FuR3Eaqqsb",
+            "b0mUl1JWykLo7FoO60tWCiD6mv5bhKNtkFpMMHBSWj9W9jX0n5pprsnfSYh0I8WHQKRBwqF",
+            "KAxz3RDpo7LKS9RM1eqmos4FsW+L68IQKBgQD6TB/LeQa6kk45T5lJ6coABm1x66bves1L/",
+            "8/PSE8XV3gBobSs4jG00bd9Mh1ulmEzd1oey62F5Dky/z4o6Fs/uj03dZjynsc0I9D3oykKB",
+            "w7XkKdb7F5UYCVxAR818/bKZM1gbWqkWoo6pRA9bj8pNzvrRhbb8Rj959ZJtxOf4QKBgQDk",
+            "V4Yg0u3pCtvlEp0x8+v4WbiQIrqgaJ6UwAAwpt4XS2yW6YU2x813McUXsqf3CiYCUurhxtZP",
+            "q50llvXFZXKpzO8fekR5q7vgSFu9UrplCsDqkTcWqyGaGNuFBfr8TzSyc2zKkhrpWLn36sy/",
+            "jxMgprk+uaQV2+CVdyHBQuWbHwKBgBLugRUl0VF5UXtaPvDtQv8ffVW5ikXg1vhhn/lAseL",
+            "FFemhroXJEhNoLWXFzZ4Yt79pzqI3q6dN7NmjnrL/aC94ybqRJYFsawrRjrO8XpVIlWHOqi",
+            "n0xenB3/MdL5woGMmUOEiL3h4STxRCeej7lsFqURjpkz8NjGNgDsBCnbRhAoGBALA0bje0LY",
+            "0xKQE7fPyIO2bZbZgkhJm2QfGNvFfO3QFi3bgTGg5s3rwFNw+TeRQky7HtZH2337d5OfpA5",
+            "QVfxL0NfNVwl5jAkml/zPNq/JVuV/Jq/vTKOFLerb+YHtdHE+ZFNgWX+5ZoNpH+qeOEuADx",
+            "R3AE9386vrL4TJ8DTYWH AoGAb7l64MdxbuMZnzRpYMOg4n8aUQOD9QxX9WKtVwbcCfBskW",
+            "p44v/NxFnLaJjqdg9zioAL8hL1PO1z0ya5mvAYkCV6ti80T8JZi144iV7yaciKXorCcvNqX",
+            "ljY3cEmel5PhjJTLCn1+cVe/seZJwrrd5zP5Jlb+jvZxUQIzUmkAXw="
+        );
+        let cert = base64::engine::general_purpose::STANDARD
+            .decode(CERT)
+            .expect("certificate DER");
+        let key = base64::engine::general_purpose::STANDARD
+            .decode(KEY.replace(' ', ""))
+            .expect("private key DER");
+        let config = ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(
+                vec![CertificateDer::from(cert)],
+                PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key)),
+            )
+            .expect("TLS server config");
+        tokio_rustls::TlsAcceptor::from(Arc::new(config))
+    }
+
+    fn only_peers6_http_response(peer: SocketAddr) -> Vec<u8> {
+        let IpAddr::V6(address) = peer.ip() else {
+            panic!("fixture peer must be IPv6");
+        };
+        let mut body = b"d8:intervali900e6:peers618:".to_vec();
+        body.extend_from_slice(&address.octets());
+        body.extend_from_slice(&peer.port().to_be_bytes());
+        body.push(b'e');
+        let mut response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        )
+        .into_bytes();
+        response.extend_from_slice(&body);
+        response
+    }
+
+    async fn serve_tracker_stream<S>(mut stream: S, peer: SocketAddr) -> (String, bool)
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    {
+        let request = read_http_request(&mut stream).await;
+        let stopped = request.contains("&event=stopped ");
+        stream
+            .write_all(&only_peers6_http_response(peer))
+            .await
+            .expect("write tracker response");
+        stream.shutdown().await.expect("close tracker response");
+        (request, stopped)
+    }
+
+    fn percent_encode_magnet_value(value: &str) -> String {
+        let mut encoded = String::with_capacity(value.len() * 3);
+        const HEX: &[u8; 16] = b"0123456789ABCDEF";
+        for byte in value.bytes() {
+            if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+                encoded.push(char::from(byte));
+            } else {
+                encoded.push('%');
+                encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+                encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+            }
+        }
+        encoded
+    }
+
     fn dht_endpoint(address: SocketAddr) -> DhtEndpoint {
         let port = address.port();
         match address.ip() {
             IpAddr::V4(address) => DhtEndpoint::new(DhtIp::V4(address.octets()), port),
             IpAddr::V6(address) => DhtEndpoint::new(DhtIp::V6(address.octets()), port),
         }
+    }
+
+    async fn run_tracker_only_peers6_application_transfer(https: bool) {
+        let root = test_root(if https {
+            "https-tracker-ipv6-transfer"
+        } else {
+            "http-tracker-ipv6-transfer"
+        });
+        let payload = b"hash verified HTTP tracker IPv6 payload".to_vec();
+        let raw_info = single_file_info("tracker-ipv6.bin", &payload, payload.len());
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+
+        let peer_listener = match TcpListener::bind("[::1]:0").await {
+            Ok(listener) => listener,
+            Err(_) => return,
+        };
+        let peer_address = peer_listener.local_addr().expect("IPv6 peer address");
+        let peer_task = tokio::spawn(serve_single_piece_peer(
+            peer_listener,
+            info_hash,
+            payload.clone(),
+        ));
+
+        let tracker = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind HTTP tracker");
+        let scheme = if https { "https" } else { "http" };
+        let tracker_url = format!(
+            "{scheme}://{}/announce?passkey=fixture",
+            tracker.local_addr().expect("tracker address")
+        );
+        let tls_acceptor = https.then(untrusted_tls_acceptor);
+        let (announce_sender, mut announce_receiver) =
+            tokio::sync::mpsc::unbounded_channel::<String>();
+        let tracker_task = tokio::spawn(async move {
+            let mut requests = Vec::new();
+            loop {
+                let (stream, _) = tracker.accept().await.expect("accept tracker announce");
+                let (request, stopped) = if let Some(acceptor) = tls_acceptor.as_ref() {
+                    let stream = acceptor.accept(stream).await.expect("TLS handshake");
+                    serve_tracker_stream(stream, peer_address).await
+                } else {
+                    serve_tracker_stream(stream, peer_address).await
+                };
+                announce_sender
+                    .send(request.clone())
+                    .expect("report tracker request");
+                requests.push(request);
+                if stopped {
+                    return requests;
+                }
+            }
+        });
+
+        let configuration = config(&root);
+        let mut store = SessionStore::open(
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open fixture store");
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-http-tracker-ipv6".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!(
+                        "magnet:?xt=urn:btih:{torrent_id}&tr={}",
+                        percent_encode_magnet_value(&tracker_url)
+                    ),
+                    storage_root: "downloads".to_owned(),
+                    start_content: true,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add tracker-only magnet");
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record verified metadata");
+        drop(store);
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open application");
+        let first_announce = tokio::time::timeout(Duration::from_secs(2), announce_receiver.recv())
+            .await
+            .expect("first tracker announce deadline")
+            .expect("tracker server ended before first announce");
+        assert!(first_announce.contains("&event=started "));
+        let snapshot = tokio::time::timeout(Duration::from_secs(5), async {
+            let mut sequence = 0_u64;
+            loop {
+                let response = service
+                    .dispatch(RequestEnvelope {
+                        version: CONTROL_VERSION,
+                        request_id: format!("tracker-transfer-{sequence}"),
+                        expected_revision: None,
+                        command: Command::Snapshot,
+                    })
+                    .await
+                    .expect("snapshot transfer");
+                let ResponseOutcome::Success { snapshot } = response.outcome else {
+                    panic!("snapshot should succeed");
+                };
+                if snapshot.torrents[0].state == TorrentState::Complete {
+                    return snapshot;
+                }
+                sequence = sequence.saturating_add(1);
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+        let snapshot = match snapshot {
+            Ok(snapshot) => snapshot,
+            Err(_) => {
+                let response = service
+                    .dispatch(RequestEnvelope {
+                        version: CONTROL_VERSION,
+                        request_id: "tracker-transfer-timeout".to_owned(),
+                        expected_revision: None,
+                        command: Command::Snapshot,
+                    })
+                    .await
+                    .expect("timeout snapshot");
+                let ResponseOutcome::Success { snapshot } = response.outcome else {
+                    panic!("timeout snapshot should succeed");
+                };
+                let peers = torrent_peer_views(&service, &torrent_id).await;
+                let trackers = torrent_tracker_views(&service, &torrent_id).await;
+                panic!(
+                    "tracker IPv6 transfer deadline; torrent={:?}; peers={peers:?}; trackers={trackers:?}; peer_finished={}; tracker_finished={}",
+                    snapshot.torrents[0],
+                    peer_task.is_finished(),
+                    tracker_task.is_finished()
+                );
+            }
+        };
+        assert_eq!(snapshot.torrents[0].verified_piece_count, 1);
+        assert_eq!(
+            fs::read(root.join("payload/tracker-ipv6.bin")).expect("published payload"),
+            payload
+        );
+        let trackers = torrent_tracker_views(&service, &torrent_id).await;
+        assert_eq!(trackers.len(), 1);
+        assert_eq!(trackers[0].last_peer_count, Some(1));
+        assert_eq!(
+            trackers[0].security,
+            if https {
+                TrackerSecurityView::EncryptedUnauthenticated
+            } else {
+                TrackerSecurityView::Unencrypted
+            }
+        );
+
+        service.shutdown().await.expect("shutdown application");
+        drop(service);
+        peer_task.await.expect("IPv6 peer task");
+        let requests = tracker_task.await.expect("HTTP tracker task");
+        assert!(
+            requests
+                .iter()
+                .any(|request| request.contains("&event=started "))
+        );
+        assert!(
+            requests
+                .iter()
+                .any(|request| request.contains("&event=stopped "))
+        );
+        assert!(
+            requests
+                .iter()
+                .all(|request| request.starts_with("GET /announce?passkey=fixture&"))
+        );
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn http_tracker_only_peers6_completes_hash_verified_application_transfer() {
+        run_tracker_only_peers6_application_transfer(false).await;
+    }
+
+    #[tokio::test]
+    async fn unauthenticated_https_tracker_completes_hash_verified_application_transfer() {
+        run_tracker_only_peers6_application_transfer(true).await;
     }
 
     #[tokio::test]
