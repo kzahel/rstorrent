@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Sequence
+from urllib.parse import quote
 
 
 PACKAGE = "org.rstorrent.bootstrap"
@@ -40,6 +41,7 @@ RESULT_TIMEOUT_SECONDS = 45
 PROFILE_CHOICES = (
     "success",
     "product-dynamic-saf",
+    "product-https-tracker",
     "slow-storage",
     "cancellation",
     "peer-failure",
@@ -93,7 +95,10 @@ def ensure_interop_environment() -> None:
         os.execvpe(command[0], command, environment)
 
 
-def load_support() -> tuple[ModuleType, ModuleType]:
+def load_support() -> tuple[ModuleType, ModuleType, ModuleType]:
+    interop_root = repository_root() / "tests" / "interop"
+    if str(interop_root) not in sys.path:
+        sys.path.insert(0, str(interop_root))
     probe = load_module(
         "rstorrent_storage_probe_support",
         repository_root() / "experiments" / "android-storage-probe" / "run_probe.py",
@@ -102,7 +107,11 @@ def load_support() -> tuple[ModuleType, ModuleType]:
         "rstorrent_interop_support",
         repository_root() / "tests" / "interop" / "first_verified_piece.py",
     )
-    return probe, interop
+    tracker = load_module(
+        "rstorrent_http_tracker_support",
+        interop_root / "http_tracker_application.py",
+    )
+    return probe, interop, tracker
 
 
 def build_apk() -> Path:
@@ -307,8 +316,11 @@ class ReverseTransport:
         target_kind: str,
         host_port: int,
         ordinal: int,
+        slot: int = 0,
     ) -> "ReverseTransport":
-        device_port = 39_000 + (ordinal % 1_000)
+        if slot not in (0, 1):
+            raise BootstrapFailure("reverse transport slot must be zero or one")
+        device_port = 39_000 + (ordinal % 500) * 2 + slot
         chrome_tunnel: subprocess.Popen[str] | None = None
         if target_kind == "chromeos":
             chrome_tunnel = subprocess.Popen(
@@ -1334,12 +1346,20 @@ def run_product_dynamic_saf_profile(
     interop: ModuleType,
     ordinal: int,
     storage: str,
+    tracker_support: ModuleType | None = None,
 ) -> dict[str, Any]:
+    profile = (
+        "product-https-tracker"
+        if tracker_support is not None
+        else "product-dynamic-saf"
+    )
     if not storage.startswith("saf-"):
-        raise BootstrapFailure("product-dynamic-saf requires a SAF storage mode")
+        raise BootstrapFailure(f"{profile} requires a SAF storage mode")
     grant_storage = "sdcard" if storage == "saf-sdcard" else "internal"
-    fixture = SeedFixture.create(interop, f"{target_kind}-product-dynamic-saf-{ordinal}")
-    transport: ReverseTransport | None = None
+    fixture = SeedFixture.create(interop, f"{target_kind}-{profile}-{ordinal}")
+    peer_transport: ReverseTransport | None = None
+    tracker_transport: ReverseTransport | None = None
+    controlled_tracker: Any | None = None
     output_root = f"{probe.grant_path(grant_storage)}/{fixture.name}"
     staging_root = f"{probe.grant_path(grant_storage)}/.{fixture.name}.rstorrent-staging"
     part_path = f"{probe.grant_path(grant_storage)}/.{fixture.name}.rstorrent-parts"
@@ -1393,16 +1413,39 @@ def run_product_dynamic_saf_profile(
             raise BootstrapFailure("product service did not activate the persisted SAF tree")
 
         baseline_fds = product_fd_count(target)
-        transport = ReverseTransport.create(
+        peer_transport = ReverseTransport.create(
             target,
             target_kind,
             fixture.host_port,
             ordinal,
         )
-        magnet = (
-            f"magnet:?xt=urn:btih:{fixture.info_hash}"
-            f"&dn={fixture.name}&x.pe=127.0.0.1:{transport.device_port}"
-        )
+        if tracker_support is None:
+            magnet = (
+                f"magnet:?xt=urn:btih:{fixture.info_hash}"
+                f"&dn={fixture.name}&x.pe=127.0.0.1:{peer_transport.device_port}"
+            )
+        else:
+            controlled_tracker = tracker_support.ControlledHttpTracker(
+                fixture.info_hash,
+                peer_transport.device_port,
+                https=True,
+                certificate_root=fixture.run_path / "tracker-certificate",
+            )
+            controlled_tracker.start()
+            tracker_transport = ReverseTransport.create(
+                target,
+                target_kind,
+                controlled_tracker.port,
+                ordinal,
+                slot=1,
+            )
+            tracker_url = controlled_tracker.url_for_port(
+                tracker_transport.device_port
+            )
+            magnet = (
+                f"magnet:?xt=urn:btih:{fixture.info_hash}"
+                f"&dn={fixture.name}&tr={quote(tracker_url, safe='')}"
+            )
         started = target.shell(
             [
                 "am",
@@ -1428,6 +1471,8 @@ def run_product_dynamic_saf_profile(
             fixture.info_hash,
             baseline_fds,
         )
+        if controlled_tracker is not None:
+            controlled_tracker.wait_for_event("started")
         if metrics["limit"] != 40:
             raise BootstrapFailure(f"unexpected storage handle limit: {metrics}")
         if metrics["owned_high_water"] > metrics["limit"]:
@@ -1458,7 +1503,7 @@ def run_product_dynamic_saf_profile(
 
         return {
             "target": target_kind,
-            "profile": "product-dynamic-saf",
+            "profile": profile,
             "run": ordinal,
             "identity": identity,
             "torrent_id": fixture.info_hash,
@@ -1470,14 +1515,28 @@ def run_product_dynamic_saf_profile(
                 "final": product_fd_count(target),
             },
             "peer_connections": peer_count(fixture),
+            "tracker_security": (
+                "encrypted_unauthenticated"
+                if controlled_tracker is not None
+                else None
+            ),
+            "tracker_requests": (
+                len(controlled_tracker.requests)
+                if controlled_tracker is not None
+                else 0
+            ),
         }
     finally:
         target.shell(["am", "force-stop", PACKAGE], check=False)
         for exact_path in (output_root, staging_root, part_path):
             target.shell(["rm", "-rf", exact_path], check=False)
         probe.remove_grant_folder(target, grant_storage)
-        if transport is not None:
-            transport.close()
+        if tracker_transport is not None:
+            tracker_transport.close()
+        if controlled_tracker is not None:
+            controlled_tracker.close()
+        if peer_transport is not None:
+            peer_transport.close()
         fixture.close()
 
 
@@ -1511,7 +1570,7 @@ def main() -> int:
         print("SAF removable storage is available only on motox4", file=sys.stderr)
         return 1
     ensure_interop_environment()
-    probe, interop = load_support()
+    probe, interop, tracker_support = load_support()
     apk = (
         bootstrap_root() / "app" / "build" / "outputs" / "apk" / "debug" /
         "app-debug.apk"
@@ -1551,7 +1610,12 @@ def main() -> int:
         probe.install_apk(target, arguments.target, apk)
 
         for profile in profiles:
-            repetitions = arguments.runs if profile in ("success", "product-dynamic-saf") else 1
+            repetitions = (
+                arguments.runs
+                if profile
+                in ("success", "product-dynamic-saf", "product-https-tracker")
+                else 1
+            )
             for ordinal in range(1, repetitions + 1):
                 if profile == "cancellation":
                     result = run_cancellation_profile(
@@ -1580,6 +1644,17 @@ def main() -> int:
                         interop,
                         ordinal,
                         arguments.storage,
+                    )
+                elif profile == "product-https-tracker":
+                    result = run_product_dynamic_saf_profile(
+                        target,
+                        arguments.target,
+                        identity,
+                        probe,
+                        interop,
+                        ordinal,
+                        arguments.storage,
+                        tracker_support,
                     )
                 else:
                     result = run_standard_profile(

@@ -6,6 +6,7 @@ from __future__ import annotations
 import gc
 import shutil
 import socket
+import ssl
 import struct
 import subprocess
 import sys
@@ -41,9 +42,17 @@ TRANSFER_TIMEOUT_SECONDS = 45
 
 
 class ControlledHttpTracker:
-    def __init__(self, info_hash: str, peer_port: int) -> None:
+    def __init__(
+        self,
+        info_hash: str,
+        peer_port: int,
+        *,
+        https: bool = False,
+        certificate_root: Path | None = None,
+    ) -> None:
         self.info_hash = bytes.fromhex(info_hash)
         self.peer_port = peer_port
+        self.https = https
         self.events: list[str] = []
         self.requests: list[str] = []
         self.failure: BaseException | None = None
@@ -67,6 +76,45 @@ class ControlledHttpTracker:
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.server.daemon_threads = True
+        if https:
+            if certificate_root is None:
+                raise ScenarioFailure("HTTPS tracker requires a certificate directory")
+            certificate_root.mkdir(parents=True, exist_ok=True)
+            certificate = certificate_root / "controlled-tracker-cert.pem"
+            private_key = certificate_root / "controlled-tracker-key.pem"
+            generated = subprocess.run(
+                [
+                    "openssl",
+                    "req",
+                    "-x509",
+                    "-newkey",
+                    "rsa:2048",
+                    "-keyout",
+                    str(private_key),
+                    "-out",
+                    str(certificate),
+                    "-days",
+                    "1",
+                    "-nodes",
+                    "-subj",
+                    "/CN=wrong.example",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            if generated.returncode != 0:
+                raise ScenarioFailure(
+                    "could not create controlled untrusted certificate\n"
+                    f"stdout:\n{generated.stdout}\nstderr:\n{generated.stderr}"
+                )
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(certificate, private_key)
+            self.server.socket = context.wrap_socket(
+                self.server.socket,
+                server_side=True,
+            )
         self.port = int(self.server.server_address[1])
         self.thread = threading.Thread(
             target=self.server.serve_forever,
@@ -75,7 +123,12 @@ class ControlledHttpTracker:
 
     @property
     def url(self) -> str:
-        return f"http://127.0.0.1:{self.port}/announce/private-token?passkey=fixture"
+        scheme = "https" if self.https else "http"
+        return f"{scheme}://127.0.0.1:{self.port}/announce/private-token?passkey=fixture"
+
+    def url_for_port(self, port: int) -> str:
+        scheme = "https" if self.https else "http"
+        return f"{scheme}://127.0.0.1:{port}/announce/private-token?passkey=fixture"
 
     def start(self) -> None:
         self.thread.start()

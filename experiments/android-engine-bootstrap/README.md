@@ -42,6 +42,9 @@ python3 experiments/android-engine-bootstrap/run_bootstrap.py \
   --target avd --storage saf-internal --runs 3 \
   --profile product-dynamic-saf
 python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target avd --storage saf-internal \
+  --profile product-https-tracker
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
   --target motox4 --storage saf-sdcard --runs 3 --profile success
 ```
 
@@ -64,3 +67,9 @@ whole-process descriptor high water.
 Every device command is addressed through the exact verified target
 controller. The runner owns and removes its reverse port, controlled seed,
 grant child, app-private run IDs, application, and fresh AVD session.
+
+The `product-https-tracker` profile uses the same dynamic product storage path
+but omits an explicit peer hint. It reaches a host-owned HTTPS tracker through
+an owned reverse transport, accepts its deliberately untrusted wrong-host
+certificate under the tracker-only unauthenticated TLS policy, consumes the
+returned libtorrent seed, and verifies the published files.
