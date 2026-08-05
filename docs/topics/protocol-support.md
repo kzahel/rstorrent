@@ -178,8 +178,8 @@ Protocol breadth follows the current ownership campaign:
    full-reference deltas to select missing protocol breadth;
 3. close measured DHT gaps, beginning with IPv6 runtime participation and
    incoming listen-port/self-announcement only when their owners exist;
-4. execute availability-ranked activation in Tactical
-   [`091`](../tactical/091-availability-ranked-piece-activation.md), then
+4. retain completed availability-ranked activation from Tactical
+   [`091`](../tactical/091-availability-ranked-piece-activation.md), execute
    peer-ID duplicate resolution in Tactical
    [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md), and then
    evaluate the complete BEP 6 and BEP 11 slices in Tacticals

@@ -429,10 +429,10 @@ that scope and its cleanup or compatibility rules explicitly.
   deterministic cross-direction winner and generation-fenced exact cleanup,
   without treating peer ID as durable identity or merging endpoint records.
 - [`091-availability-ranked-piece-activation.md`](091-availability-ranked-piece-activation.md):
-  planned and first after the current **Now** item; retains partial-first work
-  and unique-piece protection, then adds an active-piece count ceiling and an
-  incrementally indexed rarest-first default with an in-order baseline, naive
-  test oracle, and adversarial maximum-geometry CPU/memory gates.
+  complete; retains partial-first work and unique-piece protection, adds exact
+  live availability accounting and an independent active-piece count ceiling,
+  and graduates an incrementally indexed rarest-first default through naive
+  differential, maximum-geometry CPU/memory, and controlled libtorrent gates.
 - [`092-truthful-tracker-and-dht-peer-advertisement.md`](092-truthful-tracker-and-dht-peer-advertisement.md):
   complete; replaces provisional tracker/DHT peer-port claims with one
   generation-fenced advertised endpoint and retains discovery plus

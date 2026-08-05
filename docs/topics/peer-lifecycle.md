@@ -617,8 +617,9 @@ wire-port discovery into the same retained peer lifetime. Finite upload
 bandwidth and seeding goals remain later work. Planned Tactical
 [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) records the
 post-handshake duplicate-connection boundary, Tactical
-[`091`](../tactical/091-availability-ranked-piece-activation.md) records the
-measured picker refinement, and Tactical
+[`091`](../tactical/091-availability-ranked-piece-activation.md) completes the
+measured picker refinement with exact availability accounting and preserves
+unique unplanned-piece retention across replacement. Tactical
 [`094`](../tactical/094-bounded-bep11-peer-exchange.md) records PEX's bounded
 discovery path. Full parole selection still requires adversarial evidence that
 the existing retry and suspicion policy cannot recover; persisted peer caches

@@ -14,10 +14,10 @@ Dependencies: completed Tacticals
 [`082`](082-bounded-multi-peer-upload-ownership.md), and
 [`086`](086-long-lived-torrent-peer-runtime.md) establish exact request
 attempts, cancel/late-response handling, bounded incoming upload, and shared
-connection observations. Planned Tacticals
-[`090`](090-peer-id-duplicate-connection-resolution.md) and
-[`091`](091-availability-ranked-piece-activation.md) precede this slice in the
-recorded campaign sequence but are not wire-protocol dependencies.
+connection observations. Completed Tactical
+[`091`](091-availability-ranked-piece-activation.md) and planned Tactical
+[`090`](090-peer-id-duplicate-connection-resolution.md) precede this slice in
+the recorded campaign sequence but are not wire-protocol dependencies.
 
 ## Decision And Motivation
 

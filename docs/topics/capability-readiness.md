@@ -185,9 +185,9 @@ and production remote access remain important. After core parity,
 common-denominator versus full-reference deltas and the protocol evidence
 matrix choose BEP breadth; visible novelty alone does not.
 
-Four planned post-**Now** download-liveness slices record the current default
-order without authorizing execution: availability-ranked activation in
-Tactical [`091`](../tactical/091-availability-ranked-piece-activation.md),
+Availability-ranked activation is complete in Tactical
+[`091`](../tactical/091-availability-ranked-piece-activation.md). The remaining
+three planned post-**Now** download-liveness slices retain this default order:
 peer-ID duplicate resolution in Tactical
 [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md), the complete
 BEP 6 request lifecycle in Tactical
@@ -240,7 +240,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | --- | --- | --- | --- | --- |
 | Bounded 16 KiB block pipeline | Implemented | deterministic, runtime, interop, live | Per-connection depth adapts under distinct torrent request and resident-payload limits; desktop uses 256 MiB/32 MiB and Android 128 MiB/16 MiB, with no session-wide multi-torrent budget yet. | [`download-correctness`](download-correctness.md) |
 | Sequential multi-piece download | Implemented | deterministic, runtime, interop | BEP 3 `length`, one-entry `files`, and ordinary multi-file torrents share one download, durable resume, repair, and publication pipeline. | [`download-correctness`](download-correctness.md) |
-| Availability-aware piece selection | Partial | deterministic, runtime, interop | Per-connection availability, partial-first work, fairness, and unique-piece retention exist; aggregate rarest-first ranking and measured scoring are absent. Planned Tactical [`091`](../tactical/091-availability-ranked-piece-activation.md) adds bounded live counts, an independent active-piece count ceiling, incrementally indexed rarity, a naive differential oracle, and maximum-geometry CPU/memory gates. | [`download-correctness`](download-correctness.md) |
+| Availability-aware piece selection | Implemented | deterministic, runtime, interop, performance | Requestable active work remains first; exact live nonseed counts plus a separate seed count feed a compact incrementally indexed rarest-first default with an in-order baseline. Independent count, byte, peer-ratio, and block-pressure limits pass hostile maximum-geometry and release CPU/memory gates, unique unplanned pieces remain protected, and controlled libtorrent verifies the sole scarce piece first. Streaming urgency, user picker controls, reverse rarity for snubbed peers, and parole remain absent. | [`download-correctness`](download-correctness.md) |
 | Choke recovery | Implemented | deterministic, runtime, interop | Requests move to another peer and full choked sets are replaceable; mature choking/reputation policy is absent. | [`download-correctness`](download-correctness.md) |
 | Per-request timeout and slow-peer handling | Implemented | deterministic, runtime | Useful response samples derive a bounded inactivity deadline and reduce a stalled peer to one probe; broader snub reputation remains absent. | [`download-correctness`](download-correctness.md) |
 | Endgame | Implemented | deterministic, runtime, live | Strict duplicates, core cancels, late-loss safety, exact accounting, and public verified publication pass; throughput parity remains open. | [`download-correctness`](download-correctness.md) |

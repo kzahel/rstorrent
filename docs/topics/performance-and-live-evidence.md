@@ -1154,6 +1154,33 @@ runs both comparators and uploads only JSON evidence. Its initial 20 MiB/s,
 detectors, not hosted-hardware performance claims; calibration requires a
 retained CI cohort.
 
+## Availability-Ranked Activation: 2026-08-05
+
+Tactical [`091`](../tactical/091-availability-ranked-piece-activation.md)
+graduates rarest-first through deterministic operation counts, release CPU and
+memory profiles, and a controlled skewed-availability transfer. The picker
+retains ten bytes per piece: the 2,097,152-piece maximum uses 20,971,520 bytes.
+Build/rebuild profiles remained linear from 131,072 through 2,097,152 pieces;
+the maximum built in 28 ms and rebuilt an alternating dense update in 17 ms.
+Four maximum states retained 83,886,080 bytes, built and queried in 92 ms, and
+produced 101,367,808 bytes maximum RSS under `/usr/bin/time -l` with no swaps.
+
+The hostile active trace places the only usable block after all 2,048 active
+pieces. One hundred thousand selections make exactly 204,800,000 active
+visits with zero inactive visits, picker comparisons, rebuilds, mutations, or
+candidate inspections. Five release samples measured rarest-first at `0.995x`
+the in-order median and `1.001x` p95, below the tactical's `1.10x` and `1.20x`
+ceilings. Connection filtering separately stops at 256 ranked candidates per
+maintenance pass and advances its sweep in the same heap allocation, avoiding
+both a one-tick full scan and repeated-prefix starvation.
+
+The controlled libtorrent `2.0.13.0` run used eight 64-KiB pieces. A choked
+scripted metadata peer advertised pieces 0--6 before gated libtorrent exposed
+all eight, making piece 7 the sole availability-one candidate and its only
+useful source. RSTorrent verified piece 7 first, then published all 524,288
+exact bytes with 65,536 resident payload bytes under the 262,144-byte limit.
+The retained mixed-peer gate also repassed its exact 1-MiB publication.
+
 ## Maintenance Contract
 
 Feature tacticals add measurements only when their owner can report them

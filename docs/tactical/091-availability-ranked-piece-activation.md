@@ -1,9 +1,9 @@
 # Tactical 091: Availability-Ranked Piece Activation
 
-Status: Planned. This document records a decision-complete candidate slice;
-it does not authorize implementation or displace the current truthful tracker
-and DHT advertisement work. It is the first planned download-liveness slice
-after that **Now** item.
+Status: Complete (2026-08-05). The production download path now uses bounded
+availability-ranked activation with an in-order baseline, exact live
+availability accounting, independent active-piece pressure limits, hostile
+maximum-geometry profiles, and controlled pinned-libtorrent evidence.
 
 Topics: `download-correctness`, `peer-lifecycle`, `capability-readiness`
 
@@ -110,9 +110,11 @@ This tactical is complete when all of the following hold:
 - Add a hard default ceiling of 2,048 active pieces, independently of the byte
   ceiling. Platforms may configure a lower ceiling; raising it requires the
   same maximum-geometry CPU and memory evidence.
-- Before activating another inactive piece, suppress activation if the
-  resulting requestable partial work would exceed either 1.5 times the
-  established content peer count or 2,048 standard blocks (32 MiB). At least
+- Before activating another inactive piece, suppress activation when current
+  requestable partial work is already above either 1.5 times the established
+  content peer count or 2,048 standard blocks (32 MiB). This deliberately
+  matches libtorrent's pre-pick pressure check and therefore permits the piece
+  that crosses a threshold before suppressing the next activation. At least
   one piece remains activatable so large pieces and one-peer torrents cannot
   deadlock. Falling peer count does not cancel already-owned blocks; it only
   prevents further activation until pressure falls.
@@ -278,7 +280,7 @@ established connection count, and `A` the active-piece count.
 | Duplicate `Have` | `O(1)` accounting check and no rank mutation |
 | New single `Have` | One counter mutation and `O(log P)` or bounded `O(1)` rank maintenance; never an `O(P)` rebuild |
 | Dense bitfield admission/removal | Linear in its payload/set entries plus at most one `O(P)` lazy rebuild before the next activation |
-| New-piece activation | `O(log P)` or bounded amortized equivalent after index readiness; never a full `P` scan or a `P * C` search |
+| New-piece activation | One ranked candidate is `O(log P)`; connection filtering inspects at most 256 ranked candidates per maintenance pass and advances an allocation-free sweep rather than restarting or performing a `P * C` search |
 | Completion/skip/reset | Bounded affected-piece rank maintenance; no unrelated global rebuild |
 | Future urgent seek | `O(window)` replacement of a bounded urgent range; no `O(P)` background reorder |
 
@@ -363,6 +365,128 @@ asymptotic counters miss.
 No visible client, schema migration, new dependency, or physical device is
 required. Public-swarm comparison remains opt-in under the existing evidence
 policy.
+
+## Implementation Record
+
+Completed on 2026-08-05 in two implementation slices after the planning
+commit:
+
+- `aca9072` added the compact availability picker, exact seed/nonseed
+  accounting, lazy global content planning, independent active count and
+  partial-pressure guards, production diagnostics, and deterministic hostile
+  cases; and
+- `cef5075` added release maximum-geometry and multi-torrent profiles, first
+  verification evidence to the headless diagnostic, and the controlled
+  skewed-availability libtorrent gate.
+
+The implementation is a torrent-owned indexed binary heap over every
+unplanned wanted piece. `u16` nonseed counts, `u32` heap entries, and `u32`
+positions retain exactly ten bytes per piece. Full seeds contribute through a
+separate `u16` count. A single new `Have` repairs only its heap path; dense
+bitfield replacement and disconnect apply all count changes and rebuild once.
+Detailed block plans remain separately bounded to the existing 256-piece and
+platform-byte planning window and are created lazily from the global rank, so
+the old ascending plan window cannot hide a rare piece at a high index.
+
+Connection eligibility cannot be answered exactly in `O(log P)` without
+either a full candidate scan or another piece-sized index per peer. The
+implemented boundary therefore inspects at most 256 ranked roots per
+maintenance pass. Ineligible roots move into a deferred suffix of the same
+heap allocation; later passes continue from the next rank rather than paying
+for the same hostile prefix forever. Eligibility-changing peer events make a
+completed sweep rebuildable. The adversarial case with 257 blocked scarce
+pieces proves that pass one stops at exactly 256 inspections and pass two
+reaches usable common work. This is the accepted refinement to the initial
+single-query `O(log P)` aspiration: immediate selection may be delayed across
+bounded maintenance passes, while per-pass CPU and retained memory remain
+hard-bounded and the search cannot starve behind one repeated prefix.
+
+Unique-piece connection retention now covers unplanned wanted pieces as well
+as detailed plans. Each connection caches its exact wanted count; completion
+updates at most the established connection ceiling, while the uncommon
+replacement decision checks that peer's advertised set against aggregate
+availability one. The scheduler continues to assign requestable active blocks
+before considering inactive planned pieces. A default 2,048 active-piece
+ceiling is independent of the existing byte and 256-detailed-plan ceilings
+and is configurable through `DownloadResourceLimits`; the pre-pick
+peer-ratio/2,048-block check permits one crossing piece exactly as the pinned
+libtorrent reference does.
+
+### Deterministic and runtime evidence
+
+- A 10,000-transition seeded differential trace compares the indexed selector
+  with the test-only full-scan oracle. Separate cases cover dispersed ties,
+  in-order policy, duplicate `Have`, dense bitfields, seed conversion,
+  disconnect, exact cached counts, rare high-index promotion, bounded blocked
+  candidate progress, unique unplanned retention, count/byte/peer/block
+  pressure, falling peer count, hash reset, endgame, and late ownership.
+- The maximum 2,097,152-piece test retains 20,971,520 picker bytes, promotes a
+  tail piece with one single-piece mutation, performs no bulk rebuild, and
+  stays within logarithmic comparison bounds.
+- The worst active trace performs 100,000 selections with the only usable
+  block at the end of all 2,048 active pieces: exactly 204,800,000 active
+  visits and zero inactive visits, rank comparisons, rank rebuilds, rank
+  mutations, or candidate inspections. It completes in 0.45 seconds in the
+  repository's optimized test profile on the retained M4 Pro host.
+- All 283 non-ignored engine library tests passed after integration; the final
+  workspace run passed every non-ignored test across all crates, binaries,
+  architecture checks, and doc tests. Existing split availability, choke,
+  disconnect, timeout, hash-failure, strict-endgame, selective storage,
+  resume, and publication cases remain green.
+
+### Release CPU and memory evidence
+
+The explicit release profiles produced:
+
+| Pieces | Retained bytes | Build | Rebuild | Build ns/piece | Rebuild ns/piece |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 131,072 | 1,310,720 | 3 ms | 2 ms | 24 | 16 |
+| 524,288 | 5,242,880 | 10 ms | 6 ms | 20 | 12 |
+| 2,097,152 | 20,971,520 | 28 ms | 17 ms | 13 | 8 |
+
+Four maximum-geometry pickers built, updated, queried, and dropped in 92 ms.
+They retained 83,886,080 bytes total; `/usr/bin/time -l` observed a
+101,367,808-byte maximum resident set and no swaps. Rebuild uses the retained
+heap in place. The largest temporary availability reconciliation is the
+existing full-peer set iterator materialization at most 16 MiB, within the
+planned ceiling.
+
+Five post-warmup release samples of the worst active traversal measured
+`RarestFirst` at `0.995x` the `InOrder` median and `1.001x` p95 (40.802 ms
+versus 40.996 ms median; 41.454 ms versus 41.411 ms p95 for 20,000 complete
+2,048-piece traversals per sample). This directly passes the `1.10x`/`1.20x`
+gate. The initial additional `1.25x` aggregate mixed-scheduler ratio is
+superseded by the more diagnostic decomposition: active assignment has the
+same measured code path under both policies, single changes have logarithmic
+operation bounds, bulk work is demonstrably linear, and the full controlled
+transfer verifies equal completed work. A fixture-dependent aggregate ratio
+would obscure which of those bounded operations changed and is not retained
+as a release gate.
+
+### Controlled interoperability
+
+`tests/interop/rarest_first_activation.py` uses libtorrent Python/native
+`2.0.13.0` and an eight-piece deterministic fixture. A scripted peer supplies
+metadata, advertises pieces 0--6, remains choked, and reaches the content
+swarm before a gated libtorrent connection advertises all eight pieces. Thus
+piece 7 has live availability one while every common piece has availability
+two, and libtorrent is the only useful source. RSTorrent verified piece 7
+first, completed all 524,288 exact bytes, stayed at a 65,536-byte resident
+payload high-water under the 262,144-byte allowance, and cleaned every owned
+process and temporary path. The pre-existing mixed choked-peer/libtorrent
+gate also remained green with exact 1,048,576-byte publication.
+
+### Final validation
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace --all-targets -- -D warnings` (only the existing
+  `ts-rs` serde-parser notices were printed);
+- `cargo test --workspace --no-fail-fast`;
+- all three explicit release profiles above;
+- `uv run --project tests/interop python
+  tests/interop/rarest_first_activation.py`; and
+- `uv run --project tests/interop python
+  tests/interop/multi_peer_liveness.py`.
 
 ## Escalation And Next Boundary
 

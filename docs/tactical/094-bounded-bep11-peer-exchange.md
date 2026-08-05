@@ -17,11 +17,11 @@ Dependencies: completed Tacticals
 [`089`](089-coordinated-session-listen-sockets.md) establish bounded source-
 attributed peer records, private-metadata transitions, multiple handshaken
 connections, verified metainfo privacy, retained peer ownership, and truthful
-listen-socket facts. Planned Tacticals
-[`090`](090-peer-id-duplicate-connection-resolution.md) and
-[`092`](092-truthful-tracker-and-dht-peer-advertisement.md) are hard
-prerequisites. Planned Tacticals `091` and `093` precede PEX in the recorded
-completeness sequence but are not wire dependencies.
+listen-socket facts. Completed Tactical
+[`092`](092-truthful-tracker-and-dht-peer-advertisement.md) and planned
+Tactical [`090`](090-peer-id-duplicate-connection-resolution.md) are hard
+prerequisites. Completed Tactical `091` and planned Tactical `093` precede PEX
+in the recorded completeness sequence but are not wire dependencies.
 
 ## Decision And Motivation
 
