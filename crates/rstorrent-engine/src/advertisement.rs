@@ -1551,7 +1551,12 @@ mod tests {
             0
         );
         assert_eq!(terminal.registrations, 0);
-        assert!(terminal.tracker_operations_high_water <= MAX_TRACKER_OPERATIONS);
+        assert_eq!(terminal.tasks, 0);
+        assert_eq!(terminal.tracker_operations, 0);
+        assert_eq!(terminal.tracker_operations_high_water, 1);
+        assert_eq!(terminal.command_queue_high_water, 1);
+        assert_eq!(terminal.dht_operations, 0);
+        assert_eq!(terminal.dht_operations_high_water, 1);
     }
 
     #[tokio::test]
@@ -1644,7 +1649,14 @@ mod tests {
             .expect("lookup announced seed");
         assert!(discovered.iter().any(|peer| peer.port() == 55_002));
 
-        service.shutdown().await.expect("shutdown scheduler");
+        let terminal = service.shutdown().await.expect("shutdown scheduler");
+        assert_eq!(terminal.tasks, 0);
+        assert_eq!(terminal.registrations, 0);
+        assert_eq!(terminal.tracker_operations, 0);
+        assert_eq!(terminal.tracker_operations_high_water, 0);
+        assert_eq!(terminal.command_queue_high_water, 1);
+        assert_eq!(terminal.dht_operations, 0);
+        assert_eq!(terminal.dht_operations_high_water, 1);
         let queries_after_shutdown = server
             .handle()
             .stats()
