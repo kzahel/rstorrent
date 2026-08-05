@@ -1,19 +1,21 @@
-import type {
-  AddTorrentBytesRequest,
-  ApiHello,
-  DiagnosticEvent,
-  FileView,
-  PeerSourceView,
-  PeerView,
-  RequestEnvelope,
-  StorageRootSnapshot,
-  StorageSettingsSnapshot,
-  SwarmPeerView,
-  TorrentState,
-  TorrentView,
-  TrackerView,
-  ViewSnapshot,
-  ViewSpec,
+import {
+  DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW,
+  type AddTorrentBytesRequest,
+  type ApiHello,
+  type ClientSettingsRuntimeView,
+  type DiagnosticEvent,
+  type FileView,
+  type PeerSourceView,
+  type PeerView,
+  type RequestEnvelope,
+  type StorageRootSnapshot,
+  type StorageSettingsSnapshot,
+  type SwarmPeerView,
+  type TorrentState,
+  type TorrentView,
+  type TrackerView,
+  type ViewSnapshot,
+  type ViewSpec,
 } from "../../api";
 import type { ApplicationViewClient } from "../../api/client";
 import { ViewController, type ViewControllerOptions } from "../../view-controller";
@@ -214,6 +216,7 @@ export class LiveApplication implements InspectionApplication {
       command.type !== "set_file_priority" &&
       command.type !== "set_default_download_root" &&
       command.type !== "set_show_add_options" &&
+      command.type !== "set_client_settings" &&
       command.type !== "remove_download_root" &&
       command.type !== "pause" &&
       command.type !== "resume" &&
@@ -253,6 +256,8 @@ export class LiveApplication implements InspectionApplication {
               }
             : command.type === "set_show_add_options"
               ? { type: "set_show_add_options", show: command.show }
+              : command.type === "set_client_settings"
+                ? { type: "set_client_settings", settings: command.settings }
               : command.type === "remove_download_root"
                 ? {
                     type: "remove_storage_root",
@@ -279,6 +284,9 @@ export class LiveApplication implements InspectionApplication {
     if (response.status === "error") {
       return { accepted: false, message: response.error.message };
     }
+    if (command.type === "set_client_settings") {
+      this.controller?.requestImmediatePoll();
+    }
     this.snapshot = {
       ...this.snapshot,
       storage: mapStorage(response.snapshot.storage),
@@ -299,6 +307,8 @@ export class LiveApplication implements InspectionApplication {
               ? command.show
                 ? "Add options will be shown"
                 : "Add options will be skipped when a default is available"
+              : command.type === "set_client_settings"
+                ? "Connection and seeding settings saved"
               : command.type === "remove_download_root"
                 ? "Download folder removed"
                 : command.type === "pause"
@@ -362,6 +372,7 @@ export class LiveApplication implements InspectionApplication {
       fileSet,
       pieceSet,
       this.snapshot.storage,
+      this.snapshot.clientSettings,
     );
     this.emit({ type: "snapshot", snapshot: this.snapshot });
   }
@@ -587,6 +598,7 @@ function mapViewState(
   fileSet: FileSet | null,
   pieceSet: PieceMapSet | null,
   previousStorage: DownloadStorageSettings,
+  previousClientSettings: ClientSettingsRuntimeView,
 ): InspectionSnapshot {
   const library = projection(state, LIBRARY_VIEW_ID, "torrent_list");
   const summary = projection(state, SUMMARY_VIEW_ID, "torrent");
@@ -660,6 +672,8 @@ function mapViewState(
     },
     demo: null,
     storage: library === null ? previousStorage : mapStorage(library.storage),
+    clientSettings:
+      library === null ? previousClientSettings : library.client_settings,
     torrentOrder,
     torrents,
     peersByTorrent,
@@ -1364,6 +1378,7 @@ function emptyLiveSnapshot(
     },
     demo: null,
     storage: { roots: [], defaultRoot: null, showAddOptions: true },
+    clientSettings: structuredClone(DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW),
     torrentOrder: [],
     torrents: {},
     peersByTorrent: {},

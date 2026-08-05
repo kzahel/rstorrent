@@ -7,6 +7,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createRef } from "react";
 
+import type { ClientSettingsRuntimeView } from "../../api";
+import { clientSettingsRuntimeFixture } from "../../test-support/client-settings";
 import {
   APPEARANCE_STORAGE_KEY,
   type AppearanceStorage,
@@ -250,8 +252,11 @@ describe("inspection application", () => {
       name: "Close settings",
     });
     expect(close).toHaveFocus();
+    const colorThemeGroup = within(dialog).getByRole("group", {
+      name: "Color theme",
+    });
     expect(
-      within(dialog).getByRole("radio", { name: /Auto/ }),
+      within(colorThemeGroup).getByRole("radio", { name: /Auto/ }),
     ).toBeChecked();
 
     await user.tab({ shift: true });
@@ -1170,6 +1175,147 @@ describe("inspection application", () => {
     expect(within(dialog).getByText(/future torrents only/i)).toBeVisible();
   });
 
+  it("validates and atomically saves connection and seeding settings", async () => {
+    const user = userEvent.setup();
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: {
+        ...liveSnapshot({ roots: [], defaultRoot: null, showAddOptions: true }),
+        clientSettings: {
+          ...clientSettingsRuntimeFixture(),
+          effective_peer_connection_limit: 120,
+        },
+      },
+    });
+    renderApplication(application);
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const dialog = screen.getByRole("dialog", { name: "Settings" });
+
+    expect(within(dialog).getByText("Appearance")).toBeVisible();
+    expect(within(dialog).getByText("Downloads")).toBeVisible();
+    expect(within(dialog).getByText("Connection & seeding")).toBeVisible();
+    expect(within(dialog).getByText(/do not enable LAN or public/i)).toBeVisible();
+    expect(
+      within(dialog).getByText(/safely limited to 120 by available file descriptors/i),
+    ).toBeVisible();
+
+    await user.click(
+      within(dialog).getByRole("radio", { name: /Fixed local port/ }),
+    );
+    const port = within(dialog).getByRole("spinbutton", {
+      name: "Fixed local port",
+    });
+    expect(port).toHaveValue(null);
+    const save = within(dialog).getByRole("button", { name: "Save settings" });
+    expect(save).toBeDisabled();
+
+    await user.type(port, "1023");
+    expect(
+      within(dialog).getByText(/whole number from 1024 to 65535/i),
+    ).toBeVisible();
+    expect(save).toBeDisabled();
+    await user.clear(port);
+    await user.type(port, "1024");
+    const peers = within(dialog).getByRole("spinbutton", {
+      name: "Peer connection limit",
+    });
+    await user.clear(peers);
+    await user.type(peers, "2000");
+    const slots = within(dialog).getByRole("spinbutton", {
+      name: "Payload upload slots",
+    });
+    await user.clear(slots);
+    await user.type(slots, "0");
+    expect(within(dialog).getByText(/keeps interested peers choked/i)).toBeVisible();
+    expect(save).toBeEnabled();
+
+    await user.click(save);
+    await waitFor(() =>
+      expect(application.commands.at(-1)).toEqual({
+        type: "set_client_settings",
+        settings: {
+          listener: { type: "fixed_loopback", port: 1024 },
+          peer_connection_limit: 2000,
+          upload_slots: 0,
+        },
+      }),
+    );
+    expect(
+      within(dialog).getByText(/Restart the application to apply these changes/i),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByText(/Saved settings differ from the running application/i),
+    ).toBeVisible();
+
+    await user.clear(peers);
+    await user.type(peers, "1999");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Cancel changes" }),
+    );
+    expect(peers).toHaveValue(2000);
+
+    application.rejectNextClientSettings = true;
+    await user.clear(slots);
+    await user.type(slots, "1");
+    await user.click(save);
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "settings save rejected",
+    );
+    expect(slots).toHaveValue(1);
+    expect(save).toBeEnabled();
+
+    await user.click(save);
+    await waitFor(() =>
+      expect(
+        application.commands.filter(
+          (command) => command.type === "set_client_settings",
+        ),
+      ).toHaveLength(3),
+    );
+    expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("reports a recoverable listener bind failure without hiding settings", async () => {
+    const user = userEvent.setup();
+    const active = {
+      listener: { type: "fixed_loopback" as const, port: 51_413 },
+      peer_connection_limit: 200,
+      upload_slots: 8,
+    };
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: {
+        ...liveSnapshot({ roots: [], defaultRoot: null, showAddOptions: true }),
+        clientSettings: {
+          configured: {
+            ...active,
+            listener: { type: "automatic_loopback" },
+          },
+          active,
+          restart_required: true,
+          effective_peer_connection_limit: 200,
+          listener_status: {
+            type: "bind_failed",
+            reason: "address_in_use",
+            detail: "loopback port 51413 is already in use.",
+          },
+        },
+      },
+    });
+    renderApplication(application);
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const dialog = screen.getByRole("dialog", { name: "Settings" });
+
+    expect(within(dialog).getByText(/port already in use/i)).toHaveTextContent(
+      "loopback port 51413 is already in use",
+    );
+    expect(within(dialog).getByText(/Restart is required/i)).toBeVisible();
+    expect(
+      within(dialog).getByRole("radio", { name: /Automatic local port/ }),
+    ).toBeChecked();
+    expect(within(dialog).getByRole("button", { name: "Save settings" })).toBeDisabled();
+  });
+
   it("copies one selected torrent's canonical magnet with truthful feedback", async () => {
     const user = userEvent.setup();
     const writeText = vi.fn<(value: string) => Promise<void>>();
@@ -1357,8 +1503,10 @@ class RecordingLiveApplication implements InspectionApplication {
   readonly scenarios = [];
   readonly commands: InspectionCommand[] = [];
   readonly views: DesiredInspectionViews[] = [];
+  rejectNextClientSettings = false;
   private listener: ((update: InspectionUpdate) => void) | null = null;
   private storage: DownloadStorageSettings;
+  private clientSettings: ClientSettingsRuntimeView;
 
   constructor(
     private readonly initialSnapshot?: InspectionUpdate & {
@@ -1371,6 +1519,8 @@ class RecordingLiveApplication implements InspectionApplication {
       defaultRoot: null,
       showAddOptions: true,
     };
+    this.clientSettings =
+      initialSnapshot?.snapshot.clientSettings ?? clientSettingsRuntimeFixture();
   }
 
   subscribe(listener: (update: InspectionUpdate) => void): () => void {
@@ -1434,6 +1584,25 @@ class RecordingLiveApplication implements InspectionApplication {
       };
       this.emitStorage();
       return { accepted: true, message: "Folder removed" };
+    }
+    if (command.type === "set_client_settings") {
+      if (this.rejectNextClientSettings) {
+        this.rejectNextClientSettings = false;
+        return { accepted: false, message: "settings save rejected" };
+      }
+      this.clientSettings = {
+        ...this.clientSettings,
+        configured: command.settings,
+        restart_required:
+          JSON.stringify(command.settings) !==
+          JSON.stringify(this.clientSettings.active),
+      };
+      this.listener?.({
+        type: "patch",
+        revision: 2,
+        clientSettings: this.clientSettings,
+      });
+      return { accepted: true, message: "Settings saved" };
     }
     return { accepted: true, message: "Torrent added" };
   }

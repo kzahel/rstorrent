@@ -1,5 +1,7 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
 
+import { DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW } from "../api";
+
 import {
   DEFAULT_COLOR_THEME,
   DEFAULT_INTERFACE_SIZE,
@@ -137,6 +139,7 @@ const EMPTY_SNAPSHOT: InspectionSnapshot = {
   },
   demo: null,
   storage: { roots: [], defaultRoot: null, showAddOptions: true },
+  clientSettings: structuredClone(DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW),
   torrentOrder: [],
   torrents: {},
   peersByTorrent: {},
@@ -751,6 +754,7 @@ export function reduceInspectionUpdate(
     session: update.session ?? state.session,
     demo: update.demo ?? state.demo,
     storage: update.storage ?? state.storage,
+    clientSettings: update.clientSettings ?? state.clientSettings,
     torrents,
     torrentOrder,
     peersByTorrent,

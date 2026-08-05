@@ -429,7 +429,11 @@ test("color themes follow or override system appearance and persist", async ({
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Settings" });
-  await expect(dialog.getByRole("radio", { name: /Auto/ })).toBeChecked();
+  await expect(
+    dialog
+      .getByRole("group", { name: "Color theme" })
+      .getByRole("radio", { name: /Auto/ }),
+  ).toBeChecked();
   await capture(page, "rstorrent-settings-auto-dark.png");
 
   await dialog.getByRole("radio", { name: /Light/ }).check();
@@ -463,7 +467,10 @@ test("color themes follow or override system appearance and persist", async ({
   expect(darkViolations).toEqual([]);
   await capture(page, "rstorrent-settings-explicit-dark.png");
 
-  await dialog.getByRole("radio", { name: /Auto/ }).check();
+  await dialog
+    .getByRole("group", { name: "Color theme" })
+    .getByRole("radio", { name: /Auto/ })
+    .check();
   await expect.poll(() => themeMetrics(page)).toEqual({
     colorScheme: "light",
     background: "rgb(255, 255, 255)",

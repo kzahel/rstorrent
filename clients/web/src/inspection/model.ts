@@ -1,4 +1,6 @@
 import type {
+  ClientSettings,
+  ClientSettingsRuntimeView,
   DiagnosticField,
   DiagnosticSubject,
   DhtInspectionView,
@@ -428,6 +430,7 @@ export interface InspectionSnapshot {
   readonly session: SessionSummary;
   readonly demo: DemoState | null;
   readonly storage: DownloadStorageSettings;
+  readonly clientSettings: ClientSettingsRuntimeView;
   readonly torrentOrder: readonly string[];
   readonly torrents: Readonly<Record<string, TorrentRow>>;
   readonly peersByTorrent: Readonly<Record<string, PeerSet>>;
@@ -456,6 +459,7 @@ export type InspectionUpdate =
       readonly session?: SessionSummary;
       readonly demo?: DemoState;
       readonly storage?: DownloadStorageSettings;
+      readonly clientSettings?: ClientSettingsRuntimeView;
       readonly torrents?: KeyedPatch<TorrentRow> & {
         readonly order?: readonly string[];
       };
@@ -516,6 +520,7 @@ export type InspectionCommand =
   | { readonly type: "choose_download_root"; readonly repairRoot?: string }
   | { readonly type: "set_default_download_root"; readonly rootId: string }
   | { readonly type: "set_show_add_options"; readonly show: boolean }
+  | { readonly type: "set_client_settings"; readonly settings: ClientSettings }
   | { readonly type: "remove_download_root"; readonly rootId: string }
   | { readonly type: "pause"; readonly torrentId: string }
   | { readonly type: "resume"; readonly torrentId: string }

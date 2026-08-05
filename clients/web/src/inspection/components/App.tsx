@@ -41,6 +41,7 @@ export function App() {
   const session = useInspectionStore((state) => state.session);
   const demo = useInspectionStore((state) => state.demo);
   const storage = useInspectionStore((state) => state.storage);
+  const clientSettings = useInspectionStore((state) => state.clientSettings);
   const execute = useInspectionCommand();
   const destination = useInspectionStore(
     (state) => state.presentation.destination,
@@ -285,7 +286,9 @@ export function App() {
           colorTheme={colorTheme}
           interfaceSize={interfaceSize}
           storage={storage}
+          clientSettings={clientSettings}
           downloadsManageable={demo === null}
+          clientSettingsManageable={demo === null}
           returnFocus={settingsButtonRef}
           onColorThemeChange={setColorTheme}
           onInterfaceSizeChange={setInterfaceSize}
@@ -304,6 +307,9 @@ export function App() {
           }}
           onRemoveRoot={async (rootId) => {
             await execute({ type: "remove_download_root", rootId });
+          }}
+          onClientSettingsSave={async (settings) => {
+            await execute({ type: "set_client_settings", settings });
           }}
           onClose={() => setSettingsOpen(false)}
         />

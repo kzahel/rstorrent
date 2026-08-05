@@ -7,6 +7,8 @@ import org.rstorrent.session.uniffi.ActivePiece
 import org.rstorrent.session.uniffi.ActivePieceStageView
 import org.rstorrent.session.uniffi.CatalogPageRequest
 import org.rstorrent.session.uniffi.CatalogPageView
+import org.rstorrent.session.uniffi.ClientSettings
+import org.rstorrent.session.uniffi.ClientSettingsRuntimeView
 import org.rstorrent.session.uniffi.Command
 import org.rstorrent.session.uniffi.DiagnosticCategory
 import org.rstorrent.session.uniffi.DiagnosticEvent
@@ -17,6 +19,8 @@ import org.rstorrent.session.uniffi.FileCatalogState
 import org.rstorrent.session.uniffi.FileIndexRange
 import org.rstorrent.session.uniffi.FilePriority
 import org.rstorrent.session.uniffi.IndexRange
+import org.rstorrent.session.uniffi.ListenerPolicy
+import org.rstorrent.session.uniffi.ListenerStatus
 import org.rstorrent.session.uniffi.ProgressAssessment
 import org.rstorrent.session.uniffi.ProgressDisposition
 import org.rstorrent.session.uniffi.ProgressPhase
@@ -34,6 +38,19 @@ import org.rstorrent.session.uniffi.ViewUpdate
 import org.rstorrent.session.uniffi.ViewUpdatePayload
 
 class ProductStateReducerTest {
+    @Test
+    fun clientSettingsRemainTypedAcrossTheKotlinContract() {
+        val settings =
+            ClientSettings(
+                ListenerPolicy.FixedLoopback(65_535U.toUShort()),
+                2_000U,
+                50U.toUShort(),
+            )
+
+        assertEquals(settings, Command.SetClientSettings(settings).settings)
+        assertEquals(settings, clientSettings(settings).configured)
+    }
+
     @Test
     fun highCardinalityCatalogUsesRangesAndPagesInTheKotlinContract() {
         val fileCount = 374_998U
@@ -233,6 +250,7 @@ class ProductStateReducerTest {
                             ViewSnapshot.TorrentList(
                                 listOf(torrent("first", TorrentState.DOWNLOADING)),
                                 storage(),
+                                clientSettings(),
                             ),
                         ),
                 ),
@@ -250,6 +268,7 @@ class ProductStateReducerTest {
                                 listOf(torrent("second", TorrentState.PAUSED)),
                                 listOf("first"),
                                 null,
+                                null,
                             ),
                         ),
                 ),
@@ -265,7 +284,7 @@ class ProductStateReducerTest {
                     revision = "9",
                     payload =
                         ViewUpdatePayload.Patch(
-                            ViewPatch.TorrentList(emptyList(), emptyList(), null),
+                            ViewPatch.TorrentList(emptyList(), emptyList(), null, null),
                         ),
                 ),
             )
@@ -274,6 +293,20 @@ class ProductStateReducerTest {
 
     private fun storage(): StorageSettingsSnapshot =
         StorageSettingsSnapshot(emptyList(), null, false)
+
+    private fun clientSettings(
+        configured: ClientSettings =
+            ClientSettings(ListenerPolicy.Disabled, 200U, 8U.toUShort()),
+    ): ClientSettingsRuntimeView =
+        ClientSettingsRuntimeView(
+            configured,
+            ClientSettings(ListenerPolicy.Disabled, 200U, 8U.toUShort()),
+            configured.listener != ListenerPolicy.Disabled ||
+                configured.peerConnectionLimit != 200U ||
+                configured.uploadSlots != 8U.toUShort(),
+            200U,
+            ListenerStatus.Disabled,
+        )
 
     private fun update(
         sequence: String,

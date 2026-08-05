@@ -7,6 +7,7 @@ const distributionRoot = resolve(scriptDirectory, "../dist");
 const forbiddenPatterns = [
   ["Function constructor", /\b(?:new\s+)?Function\s*\(/],
   ["direct eval", /\beval\s*\(/],
+  ["CommonJS require", /\brequire\s*\(/],
 ];
 
 export function dynamicCodeViolations(source) {
@@ -43,12 +44,12 @@ async function checkDistribution() {
 
   if (violations.length > 0) {
     throw new Error(
-      `production bundle requires CSP-blocked dynamic code:\n${violations.join("\n")}`,
+      `production bundle contains browser-unsafe code:\n${violations.join("\n")}`,
     );
   }
 
   console.log(
-    `CSP check passed: ${files.length} JavaScript bundles use no eval or Function constructor.`,
+    `Browser bundle check passed: ${files.length} JavaScript bundles use no eval, Function constructor, or CommonJS require.`,
   );
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW } from "../api";
 import type { InspectionSnapshot, TorrentRow } from "./model";
 import { createInspectionStore, emptyDiskSet } from "./state";
 
@@ -265,6 +266,7 @@ function snapshot(rows: readonly TorrentRow[]): InspectionSnapshot {
     },
     demo: null,
     storage: { roots: [], defaultRoot: null, showAddOptions: true },
+    clientSettings: structuredClone(DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW),
     torrentOrder: rows.map((item) => item.id),
     torrents: Object.fromEntries(rows.map((item) => [item.id, item])),
     peersByTorrent: {},

@@ -15,7 +15,11 @@ import type {
   TrackerRow,
   TrackerSet,
 } from "../model";
-import type { DhtInspectionView, SpeedHistoryView } from "../../api";
+import {
+  DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW,
+  type DhtInspectionView,
+  type SpeedHistoryView,
+} from "../../api";
 import { emptyDiskSet } from "../state";
 
 const BASE_TIME_MS = Date.UTC(2026, 7, 1, 8, 0, 0);
@@ -233,6 +237,7 @@ export function buildScenarioSnapshot(
       durationMs: scenario.durationMs,
     },
     storage: { roots: [], defaultRoot: null, showAddOptions: true },
+    clientSettings: structuredClone(DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW),
     torrentOrder: content.torrents.map((torrent) => torrent.id),
     torrents,
     peersByTorrent,

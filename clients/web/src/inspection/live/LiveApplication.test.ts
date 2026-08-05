@@ -214,6 +214,36 @@ describe("LiveApplication", () => {
     await application.close();
   });
 
+  it("maps one typed client-settings group through the generic command path", async () => {
+    const client = new FakeLiveClient();
+    const application = await LiveApplication.open(client);
+    const snapshots: InspectionSnapshot[] = [];
+    application.subscribe((update) => {
+      if (update.type === "snapshot") snapshots.push(update.snapshot);
+    });
+    const settings = {
+      listener: { type: "fixed_loopback" as const, port: 51_413 },
+      peer_connection_limit: 2_000,
+      upload_slots: 0,
+    };
+
+    expect(snapshots.at(-1)?.clientSettings).toEqual(
+      clientSettingsRuntimeFixture(),
+    );
+    await expect(
+      application.dispatch({ type: "set_client_settings", settings }),
+    ).resolves.toEqual({
+      accepted: true,
+      message: "Connection and seeding settings saved",
+    });
+    expect(client.requests).toHaveLength(1);
+    expect(client.requests[0]?.command).toEqual({
+      type: "set_client_settings",
+      settings,
+    });
+    await application.close();
+  });
+
   it("maps torrent bytes to one all-files upload without a caller digest", async () => {
     const client = new FakeLiveClient();
     const application = await LiveApplication.open(client);

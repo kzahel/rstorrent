@@ -22,4 +22,12 @@ describe("production CSP check", () => {
       dynamicCodeViolations("function validate(value) { return value !== null; }"),
     ).toEqual([]);
   });
+
+  it("rejects CommonJS require in browser bundles", () => {
+    expect(
+      dynamicCodeViolations(
+        'const length = require("ajv/dist/runtime/ucs2length").default;',
+      ),
+    ).toEqual(["CommonJS require"]);
+  });
 });

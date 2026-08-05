@@ -80,7 +80,7 @@
   padding: 0;
 }
 
-.downloads {
+.section + .section {
   margin-top: calc(var(--ui-space-lg) * 1.25);
 }
 
@@ -263,6 +263,133 @@
   margin-top: var(--ui-space-sm);
 }
 
+.sectionIntroduction {
+  margin: var(--ui-space-md) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--ui-font-small);
+  line-height: 1.45;
+}
+
+.settingsForm {
+  display: grid;
+  gap: var(--ui-space-lg);
+}
+
+.numberField {
+  display: grid;
+  gap: var(--ui-space-xs);
+}
+
+.numberField > span {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.numberField strong {
+  font-size: var(--ui-font-body);
+}
+
+.numberField small {
+  color: var(--text-muted);
+  font-size: var(--ui-font-small);
+  line-height: 1.4;
+}
+
+.numberField input {
+  width: 100%;
+  min-height: var(--ui-control-height);
+  box-sizing: border-box;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.48rem;
+  padding: 0 var(--ui-space-sm);
+  color: var(--text-primary);
+  background: var(--surface-primary);
+  font: inherit;
+}
+
+.numberField input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.numberField input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.numberField .fieldError {
+  color: var(--danger);
+}
+
+.runtimeState {
+  display: grid;
+  gap: var(--ui-space-xs);
+  border: 1px solid var(--border-soft);
+  border-radius: 0.55rem;
+  padding: var(--ui-space-sm) var(--ui-space-md);
+  color: var(--text-secondary);
+  background: var(--surface-secondary);
+  font-size: var(--ui-font-small);
+  line-height: 1.45;
+}
+
+.runtimeState > strong {
+  color: var(--text-primary);
+}
+
+.runtimeWarning {
+  color: var(--danger);
+}
+
+.formActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-space-xs);
+}
+
+.primaryAction,
+.secondaryAction {
+  min-height: var(--ui-control-height);
+  border: 1px solid var(--border-strong);
+  border-radius: 0.48rem;
+  padding: 0 var(--ui-space-md);
+  font: inherit;
+  font-size: var(--ui-font-small);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primaryAction {
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+}
+
+.secondaryAction {
+  color: var(--text-primary);
+  background: var(--surface-secondary);
+}
+
+.primaryAction:disabled,
+.secondaryAction:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.successStatus,
+.errorStatus {
+  display: block;
+  font-size: var(--ui-font-small);
+  line-height: 1.45;
+}
+
+.successStatus {
+  color: var(--text-secondary);
+}
+
+.errorStatus {
+  color: var(--danger);
+}
+
 @media (max-width: 520px) {
   .sheet {
     width: 100%;
@@ -272,7 +399,10 @@
 
 @media (pointer: coarse) {
   .close,
-  .option {
+  .option,
+  .numberField input,
+  .primaryAction,
+  .secondaryAction {
     min-height: 44px;
   }
 

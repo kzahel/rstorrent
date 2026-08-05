@@ -1,8 +1,7 @@
 # Tactical 084: Persisted Client Connection And Seeding Settings
 
 Status: In progress. Planned on 2026-08-04 and authorized for autonomous
-implementation on 2026-08-05. Gates 1 through 3 are complete; Gates 4 and 5
-remain.
+implementation on 2026-08-05. Gates 1 through 4 are complete; Gate 5 remains.
 
 Topics: `incoming-reachability-and-seeding`, `client-persistence`,
 `application-control`, `application-view-api`, `client-surfaces`,
@@ -82,8 +81,46 @@ ignored session library tests, two throughput-profile tests, the incoming-seed
 test, four session CLI tests, session clippy with warnings denied, 164 non-
 skipped web tests, and TypeScript type checking passed.
 
-The shared UI and restarted headless product evidence remain for Gates 4 and
-5.
+The restarted headless product evidence remains for Gate 5.
+
+Gate 4 carries the generated runtime view through the live, demo, and Zustand
+state boundary and maps one semantic `set_client_settings` command through
+`LiveApplication`'s existing generic controller. An accepted mutation requests
+an immediate view poll; configured intent is not substituted for the
+authoritative active, effective, and listener observations. Browser and Tauri
+therefore share the same React command and transport-independent state model
+without a settings route or client-side shadow persistence.
+
+The former Settings-dialog god component now owns only overlay focus,
+keyboard, backdrop, and section composition. Focused appearance, download,
+and connection/seeding sections own their local concerns. The new atomic form
+keeps an unsaved draft, exposes no invented fixed port, validates exact whole-
+number bounds, cancels back to configured state, retains a rejected draft for
+retry, and disables duplicate submission. It explains loopback-only scope,
+zero-slot payload choking, restart-required intent, descriptor-derived
+effective limits, the actual bound local endpoint, and typed recoverable bind
+failures. Existing focus return, Escape and Tab behavior, full-width phone
+layout, and appearance behavior remain intact; demo controls are present but
+disabled as live-application-managed state.
+
+Regenerating the contract exposed the first schema `maxLength` in the browser
+validator set. AJV's otherwise-ESM standalone output emitted a CommonJS
+Unicode-length `require`, which caused a real headless browser startup failure
+despite a successful bundle. The generator now replaces that helper with a
+standalone code-point count and rejects any remaining CommonJS dependency;
+the production browser-safety check also rejects `require` alongside `eval`
+and the `Function` constructor.
+
+Focused React/live/reducer evidence passed 54 tests. The complete web baseline
+passed 168 tests with two existing skips, TypeScript checking, production
+build, and the strengthened browser-bundle check. Two existing Playwright
+Settings journeys passed at wide and 390-pixel phone widths with zero serious
+or critical Axe findings. Desktop compiled across all targets without opening
+a window. Android generated the exact typed `ClientSettings`, listener policy,
+runtime view, status, command, snapshot, and patch Kotlin values; native API-28
+release builds passed for x86_64 and arm64-v8a, and `assembleDebug` plus the
+debug JVM unit suite passed after its explicit torrent-list fixtures adopted
+the new generated field. No Compose settings UI was added.
 
 ## Decision And Motivation
 
