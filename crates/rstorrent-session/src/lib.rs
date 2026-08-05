@@ -13,6 +13,7 @@ mod diagnostics;
 mod file_views;
 mod have;
 mod incoming_seeding;
+mod settings;
 mod speed;
 mod store;
 mod tracker_views;
@@ -29,9 +30,8 @@ pub use application_connection::{
 pub use control::{
     AddTorrentBytesRequest, CONTROL_VERSION, Command, ErrorCode, ErrorResponse, FileIndexRange,
     FilePriority, FileSelectionIntent, RemovalDataPolicy, RemovalState, RequestEnvelope,
-    ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageRootAvailability,
-    StorageRootSnapshot, StorageSettingsSnapshot, StorageState, TorrentSnapshot, TorrentState,
-    validate_add_torrent_bytes_request,
+    ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState, TorrentSnapshot,
+    TorrentState, validate_add_torrent_bytes_request,
 };
 pub use diagnostics::{
     DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter, DiagnosticProfile,
@@ -42,6 +42,11 @@ pub use have::{HaveError, HaveState};
 pub use rstorrent_engine::{
     DownloadResourceLimits, IncomingPeerServiceSnapshot, IncomingTcpBootstrap, NetworkConfig,
     NetworkPolicy,
+};
+pub use settings::{
+    ClientSettings, ClientSettingsError, ClientSettingsRuntimeView, ListenerBindFailureReason,
+    ListenerPolicy, ListenerStatus, StorageRootAvailability, StorageRootSnapshot,
+    StorageSettingsSnapshot,
 };
 pub use speed::{
     SpeedCurrentRate, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,

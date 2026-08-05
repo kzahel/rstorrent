@@ -21,12 +21,13 @@ use rstorrent_engine::{
     TrackerRuntimeSnapshot,
 };
 
-use crate::control::{ServiceSnapshot, StorageSettingsSnapshot, StorageState, TorrentState};
+use crate::control::{ServiceSnapshot, StorageState, TorrentState};
 use crate::diagnostics::{
     DiagnosticCategory, DiagnosticDraft, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
     DiagnosticSeverity, DiagnosticStore, diagnostic_matches, interest_matches,
 };
 use crate::file_views::{FileCatalogState, FileProgressModel, FileView};
+use crate::settings::StorageSettingsSnapshot;
 use crate::speed::SessionRateHistory;
 use crate::tracker_views::{TrackerCatalogState, TrackerViewModel};
 

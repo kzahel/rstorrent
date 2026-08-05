@@ -31,8 +31,7 @@ use tokio::task::JoinHandle;
 
 use crate::control::{
     AddTorrentBytesRequest, Command, ErrorCode, FilePriority, RemovalDataPolicy, RemovalState,
-    RequestEnvelope, ResponseEnvelope, ResponseOutcome, StorageRootSnapshot, StorageState,
-    TorrentState,
+    RequestEnvelope, ResponseEnvelope, ResponseOutcome, StorageState, TorrentState,
 };
 use crate::dht_views::{DhtObservationRuntime, inspection_view};
 use crate::diagnostics::{
@@ -42,6 +41,7 @@ use crate::diagnostics::{
 use crate::file_views::FileProgressModel;
 use crate::have::HaveState;
 use crate::incoming_seeding::{IncomingSeeding, IncomingSeedingError, SeedReconcileOutcome};
+use crate::settings::{ClientSettings, StorageRootSnapshot};
 use crate::speed::{PreparedSpeedHistory, SessionSpeedRecorder, SpeedHistoryRuntime};
 use crate::store::{
     ConfiguredStorageRoot, ManagedArtifactState, PreparedFileRecord, RemovalRecord, ResumeRecord,
@@ -199,6 +199,7 @@ impl ApplicationConfig {
         network: NetworkConfig,
     ) -> Self {
         let dht = DhtConfig::for_network(network.policy);
+        let client_settings = ClientSettings::default();
         Self {
             persistence,
             profile_id,
@@ -206,9 +207,9 @@ impl ApplicationConfig {
             network,
             download_resource_limits: DownloadResourceLimits::DESKTOP,
             dht,
-            incoming_tcp: IncomingTcpBootstrap::Disabled,
-            peer_budget: PeerBudgetConfig::system_default(),
-            upload_scheduler: UploadSchedulerConfig::default(),
+            incoming_tcp: client_settings.incoming_bootstrap(),
+            peer_budget: client_settings.peer_budget_config(),
+            upload_scheduler: client_settings.upload_scheduler_config(),
             upload_read_jobs: DEFAULT_UPLOAD_READ_JOBS,
             incoming_handshake_timeout: DEFAULT_INCOMING_HANDSHAKE_TIMEOUT,
             incoming_peer_activity_timeout: DEFAULT_INCOMING_PEER_ACTIVITY_TIMEOUT,

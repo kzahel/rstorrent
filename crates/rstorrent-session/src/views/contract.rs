@@ -11,9 +11,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::control::{RemovalState, StorageSettingsSnapshot, StorageState, TorrentState};
+use crate::control::{RemovalState, StorageState, TorrentState};
 use crate::diagnostics::{DiagnosticEvent, DiagnosticFilter, DiagnosticRetention};
 use crate::file_views::{FileCatalogState, FileView};
+use crate::settings::StorageSettingsSnapshot;
 use crate::speed::{SpeedHistoryView, SpeedMetric, SpeedRange};
 use crate::tracker_views::{TrackerCatalogState, TrackerView};
 

@@ -18,11 +18,11 @@ use sha2::{Digest as Sha256Digest, Sha256};
 use crate::control::{
     AddTorrentBytesRequest, Command, ErrorCode, FilePriority, FileSelectionIntent,
     RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope, ServiceSnapshot,
-    StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot, StorageState,
-    TorrentSnapshot, TorrentState, decode_info_hash, encode_info_hash, parse_revision,
-    validate_add_torrent_bytes_request, validate_identifier, validate_request,
+    StorageState, TorrentSnapshot, TorrentState, decode_info_hash, encode_info_hash,
+    parse_revision, validate_add_torrent_bytes_request, validate_identifier, validate_request,
 };
 use crate::have::{HaveError, HaveState, MAX_DURABLE_HAVE_STATE_BYTES, MAX_DURABLE_PIECES};
+use crate::settings::{StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot};
 
 const SCHEMA_VERSION: i64 = 8;
 const DATABASE_FILENAME: &str = "session.db";

@@ -6,6 +6,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::settings::StorageSettingsSnapshot;
+
 pub const CONTROL_VERSION: u16 = 1;
 pub const MAX_REQUEST_ID_LENGTH: usize = 128;
 pub const MAX_PROFILE_ID_LENGTH: usize = 128;
@@ -282,43 +284,6 @@ pub struct ServiceSnapshot {
     #[serde(default)]
     pub storage: StorageSettingsSnapshot,
     pub torrents: Vec<TorrentSnapshot>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct StorageSettingsSnapshot {
-    pub roots: Vec<StorageRootSnapshot>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default_root: Option<String>,
-    pub show_add_options: bool,
-}
-
-impl Default for StorageSettingsSnapshot {
-    fn default() -> Self {
-        Self {
-            roots: Vec::new(),
-            default_root: None,
-            show_add_options: true,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct StorageRootSnapshot {
-    pub root_id: String,
-    pub label: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub display_path: Option<String>,
-    pub availability: StorageRootAvailability,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum StorageRootAvailability {
-    Available,
-    Unavailable,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
