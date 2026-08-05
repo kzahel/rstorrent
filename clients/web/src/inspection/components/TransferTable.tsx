@@ -13,6 +13,7 @@ import {
   type VirtualColumn,
 } from "./VirtualTable";
 import { TorrentStatus } from "./TorrentStatus";
+import { TorrentContextMenu } from "./TorrentContextMenu";
 import tableStyles from "./TorrentTable.module.css";
 
 const COLUMNS: readonly VirtualColumn<TorrentRow>[] = [
@@ -132,6 +133,15 @@ export function TransferTable() {
         selectedIds: selectedIdSet,
         getRowLabel: (row) => row.name,
         onChange: setTorrentSelection,
+      }}
+      contextMenu={{
+        render: (row, targetIds) => (
+          <TorrentContextMenu
+            row={row}
+            tableId="transfers"
+            targetIds={targetIds}
+          />
+        ),
       }}
       emptyMessage={
         materialization.status !== "ready"

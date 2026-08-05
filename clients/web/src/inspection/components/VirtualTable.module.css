@@ -6,6 +6,15 @@
   min-height: 9rem;
 }
 
+.contextMenuTrigger {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .viewport {
   position: relative;
   height: auto;

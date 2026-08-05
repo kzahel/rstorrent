@@ -39,6 +39,16 @@
   font-weight: 650;
 }
 
+.targetList {
+  max-height: 10rem;
+  overflow: auto;
+  margin: 0.75rem 0;
+  padding-left: 1.35rem;
+  color: var(--text-secondary);
+  font-size: var(--ui-font-small);
+  line-height: 1.45;
+}
+
 .warning,
 .error {
   border-left: 3px solid var(--danger);

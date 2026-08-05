@@ -1,6 +1,7 @@
 import { Icon } from "./Icon";
+import type { FileActionId, ResolvedFileAction } from "../file-actions";
+import { FileActionMenuItems } from "./FileActionMenuItems";
 import {
-  ActionMenuItem,
   ActionMenuPopover,
   ActionMenuTrigger,
   OverlayButton,
@@ -8,21 +9,15 @@ import {
 import styles from "./FileActionsMenu.module.css";
 
 export function FileActionsMenu({
-  targetCount,
   pending,
-  unavailableReason,
-  onPriority,
+  actions,
+  onAction,
 }: {
-  readonly targetCount: number;
   readonly pending: boolean;
-  readonly unavailableReason?: string;
-  readonly onPriority: (priority: "normal" | "skip") => Promise<void>;
+  readonly actions: readonly ResolvedFileAction[];
+  readonly onAction: (actionId: FileActionId) => void;
 }) {
-  const reason =
-    targetCount === 0
-      ? "Select a file to use these actions."
-      : unavailableReason;
-  const disabled = pending || reason !== undefined;
+  const description = actions.find((action) => action.disabledReason)?.disabledReason;
 
   return (
     <ActionMenuTrigger isDisabled={pending}>
@@ -33,19 +28,8 @@ export function FileActionsMenu({
       >
         More <Icon name="chevronDown" />
       </OverlayButton>
-      <ActionMenuPopover description={reason}>
-        <ActionMenuItem
-          isDisabled={disabled}
-          onAction={() => void onPriority("normal")}
-        >
-          Normal
-        </ActionMenuItem>
-        <ActionMenuItem
-          isDisabled={disabled}
-          onAction={() => void onPriority("skip")}
-        >
-          Skip
-        </ActionMenuItem>
+      <ActionMenuPopover description={description}>
+        <FileActionMenuItems actions={actions} onAction={onAction} />
       </ActionMenuPopover>
     </ActionMenuTrigger>
   );

@@ -23,6 +23,7 @@ import { ScenarioBar } from "./ScenarioBar";
 import { SettingsDialog } from "./SettingsDialog";
 import { Sidebar } from "./Sidebar";
 import { TorrentActions } from "./TorrentActions";
+import { TorrentActionProvider } from "./TorrentActionContext";
 import { TorrentTable } from "./TorrentTable";
 import { TransfersView } from "./TransfersView";
 import styles from "./App.module.css";
@@ -38,6 +39,14 @@ const DESTINATIONS: readonly {
 ];
 
 export function App() {
+  return (
+    <TorrentActionProvider>
+      <AppContent />
+    </TorrentActionProvider>
+  );
+}
+
+function AppContent() {
   const session = useInspectionStore((state) => state.session);
   const demo = useInspectionStore((state) => state.demo);
   const storage = useInspectionStore((state) => state.storage);

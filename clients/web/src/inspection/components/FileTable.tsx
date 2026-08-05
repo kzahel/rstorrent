@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { useInspectionCommand, useInspectionStore } from "../context";
+import {
+  resolveFileActions,
+  type FileActionId,
+} from "../file-actions";
 import { formatDecimalBytes, formatDecimalProgress } from "../format";
 import type { FileRow, ViewMaterialization } from "../model";
 import { FileActionsMenu } from "./FileActionsMenu";
+import { FileActionMenuItems } from "./FileActionMenuItems";
 import { VirtualTable, type VirtualColumn } from "./VirtualTable";
+import { ActionMenuPopover } from "./overlays/AnchoredOverlay";
 import styles from "./FileTable.module.css";
 
 const COLUMNS: readonly VirtualColumn<FileRow>[] = [
@@ -206,17 +212,39 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
     setCurrentFileId(nextCurrentId);
   };
 
-  const targetCount = selectedFileIds.size;
-  const targetRows = useMemo(
-    () =>
-      rows
-        .filter((row) => selectedFileIds.has(row.id))
-        .sort((left, right) => left.index - right.index),
-    [rows, selectedFileIds],
+  const unavailableReason =
+    demo === null
+      ? undefined
+      : "File priority changes are unavailable in demo scenarios.";
+  const toolbarActions = resolveFileActions(
+    selectedFileIds.size,
+    priorityPending,
+    unavailableReason,
   );
 
-  const setPriority = async (priority: "normal" | "skip") => {
-    if (targetRows.length === 0 || priorityPending || demo !== null) return;
+  const setPriority = async (
+    actionId: FileActionId,
+    requestedIds: readonly string[] = [...selectedFileIds],
+  ) => {
+    const requested = new Set(requestedIds);
+    const targetRows = rows
+      .filter((row) => requested.has(row.id))
+      .sort((left, right) => left.index - right.index);
+    if (targetRows.length !== requested.size) {
+      setPriorityStatus("A selected file is no longer available.");
+      return;
+    }
+    const action = resolveFileActions(
+      targetRows.length,
+      priorityPending,
+      unavailableReason,
+    ).find((candidate) => candidate.id === actionId);
+    if (action === undefined || action.disabled) {
+      if (action?.disabledReason !== undefined) {
+        setPriorityStatus(action.disabledReason);
+      }
+      return;
+    }
     setPriorityPending(true);
     setPriorityStatus("");
     try {
@@ -224,7 +252,7 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
         type: "set_file_priority",
         torrentId,
         fileIndices: targetRows.map((row) => row.index),
-        priority,
+        priority: action.priority,
       });
       setPriorityStatus(result.message);
     } catch (error) {
@@ -249,15 +277,9 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
           {priorityStatus}
         </output>
         <FileActionsMenu
-          targetCount={targetCount}
           pending={priorityPending}
-          {...(demo === null
-            ? {}
-            : {
-                unavailableReason:
-                  "File priority changes are unavailable in demo scenarios.",
-              })}
-          onPriority={setPriority}
+          actions={toolbarActions}
+          onAction={(actionId) => void setPriority(actionId)}
         />
       </div>
       <VirtualTable
@@ -272,6 +294,25 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
           selectedIds: selectedFileIds,
           getRowLabel: (row) => row.name,
           onChange: changeSelection,
+        }}
+        contextMenu={{
+          render: (_row, targetIds) => {
+            const actions = resolveFileActions(
+              targetIds.length,
+              priorityPending,
+              unavailableReason,
+            );
+            return (
+              <ActionMenuPopover label="File actions">
+                <FileActionMenuItems
+                  actions={actions}
+                  onAction={(actionId) =>
+                    void setPriority(actionId, targetIds)
+                  }
+                />
+              </ActionMenuPopover>
+            );
+          },
         }}
         emptyMessage={fileEmptyMessage(materialization, fileSet?.state)}
         initialSort={{ columnId: "index", direction: "asc" }}

@@ -4,21 +4,22 @@ import {
   useState,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
-  type RefObject,
 } from "react";
+
+import type { TorrentRow } from "../model";
 
 import styles from "./RemoveTorrentDialog.module.css";
 
 export interface RemoveTorrentDialogProps {
-  readonly torrentName: string;
+  readonly targets: readonly TorrentRow[];
   readonly deleteDataSupported: boolean;
-  readonly returnFocus: RefObject<HTMLButtonElement | null>;
+  readonly returnFocus: () => void;
   readonly onCancel: () => void;
   readonly onConfirm: (deleteData: boolean) => Promise<void>;
 }
 
 export function RemoveTorrentDialog({
-  torrentName,
+  targets,
   deleteDataSupported,
   returnFocus,
   onCancel,
@@ -31,10 +32,13 @@ export function RemoveTorrentDialog({
   const cancelRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLFormElement>(null);
+  const unsupportedDeleteCount = targets.filter(
+    (target) => !target.deleteManagedDataSupported,
+  ).length;
 
   useEffect(() => {
     cancelRef.current?.focus();
-    return () => returnFocus.current?.focus();
+    return returnFocus;
   }, [returnFocus]);
 
   useEffect(() => {
@@ -44,6 +48,10 @@ export function RemoveTorrentDialog({
   useEffect(() => {
     if (!pending && error !== "") confirmRef.current?.focus();
   }, [error, pending]);
+
+  useEffect(() => {
+    if (!deleteDataSupported) setDeleteData(false);
+  }, [deleteDataSupported]);
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLFormElement>) => {
     if (event.key === "Escape" && !pending) {
@@ -92,10 +100,31 @@ export function RemoveTorrentDialog({
         onKeyDown={handleKeyDown}
         onSubmit={(event) => void submit(event)}
       >
-        <h2 id="remove-torrent-title">Remove torrent?</h2>
+        <h2 id="remove-torrent-title">
+          {targets.length === 1
+            ? "Remove torrent?"
+            : `Remove ${targets.length.toLocaleString()} torrents?`}
+        </h2>
         <p id="remove-torrent-description">
-          Remove <strong>{torrentName}</strong> from RSTorrent. Downloaded data is kept by default.
+          {targets.length === 1 ? (
+            <>
+              Remove <strong>{targets[0]?.name}</strong> from RSTorrent.
+            </>
+          ) : (
+            <>Remove the selected torrents from RSTorrent.</>
+          )}{" "}
+          Downloaded data is kept by default.
         </p>
+        {targets.length <= 1 ? null : (
+          <ul className={styles.targetList} aria-label="Torrents to remove">
+            {targets.slice(0, 5).map((target) => (
+              <li key={target.id}>{target.name}</li>
+            ))}
+            {targets.length <= 5 ? null : (
+              <li>and {(targets.length - 5).toLocaleString()} more</li>
+            )}
+          </ul>
+        )}
         <label className={styles.option}>
           <input
             ref={deleteDataRef}
@@ -107,7 +136,12 @@ export function RemoveTorrentDialog({
           Also delete downloaded data
         </label>
         {!deleteDataSupported ? (
-          <p className={styles.note}>Managed data deletion is unavailable for this storage.</p>
+          <p className={styles.note}>
+            {unsupportedDeleteCount.toLocaleString()} selected{" "}
+            {unsupportedDeleteCount === 1 ? "torrent does" : "torrents do"}
+            {" "}not support managed data deletion. Keep downloaded data to
+            remove the complete selection.
+          </p>
         ) : null}
         {deleteData ? (
           <p className={styles.warning} role="alert">
@@ -127,7 +161,13 @@ export function RemoveTorrentDialog({
             type="submit"
             disabled={pending}
           >
-            {pending ? "Removing…" : deleteData ? "Remove and delete data" : "Remove"}
+          {pending
+            ? `Removing ${targets.length.toLocaleString()}…`
+            : error === ""
+              ? deleteData
+                ? "Remove and delete data"
+                : "Remove"
+              : "Retry failed"}
           </button>
         </div>
       </form>

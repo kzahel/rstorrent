@@ -72,10 +72,12 @@ export function ActionMenuTrigger({
 }
 
 export function ActionMenuPopover({
+  label,
   description,
   children,
   placement = "bottom end",
 }: {
+  readonly label?: string;
   readonly description?: ReactNode;
   readonly children: ReactNode;
   readonly placement?: PopoverProps["placement"];
@@ -105,6 +107,7 @@ export function ActionMenuPopover({
       >
         <Menu
           className={styles.menu!}
+          {...(label === undefined ? {} : { "aria-label": label })}
           {...(description === undefined
             ? {}
             : { "aria-describedby": descriptionId })}

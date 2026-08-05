@@ -10,6 +10,7 @@ import {
 import type { TorrentRow, ViewMaterialization } from "../model";
 import { torrentMatchesCategory } from "../state";
 import { TorrentStatus } from "./TorrentStatus";
+import { TorrentContextMenu } from "./TorrentContextMenu";
 import { VirtualTable, type VirtualColumn } from "./VirtualTable";
 import styles from "./TorrentTable.module.css";
 
@@ -156,6 +157,15 @@ export function TorrentTable() {
         selectedIds: selectedIdSet,
         getRowLabel: (row) => row.name,
         onChange: setTorrentSelection,
+      }}
+      contextMenu={{
+        render: (row, targetIds) => (
+          <TorrentContextMenu
+            row={row}
+            tableId="torrents"
+            targetIds={targetIds}
+          />
+        ),
       }}
       onActivate={(row) => openTorrentDetail(row.id)}
       emptyMessage={

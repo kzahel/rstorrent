@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useEffect,
   useMemo,
   useRef,
@@ -16,6 +17,7 @@ import {
   type InterfaceSize,
 } from "../appearance";
 import {
+  ActionMenuTrigger,
   AnchoredDialog,
   AnchoredDialogTrigger,
   OverlayButton,
@@ -50,10 +52,18 @@ export interface VirtualTableProps<Row> {
   readonly overscan?: number;
   readonly currentRowId?: string | null;
   readonly selection?: VirtualTableSelection<Row>;
+  readonly contextMenu?: VirtualTableContextMenu<Row>;
   readonly onActivate?: (row: Row) => void;
   readonly onClearCurrent?: () => void;
   readonly emptyMessage: string;
   readonly initialSort?: { readonly columnId: string; readonly direction: "asc" | "desc" };
+}
+
+export interface VirtualTableContextMenu<Row> {
+  readonly render: (
+    row: Row,
+    targetIds: readonly string[],
+  ) => ReactNode;
 }
 
 export interface VirtualTableSelection<Row> {
@@ -82,6 +92,7 @@ export function VirtualTable<Row>({
   overscan = 8,
   currentRowId = null,
   selection,
+  contextMenu,
   onActivate,
   onClearCurrent,
   emptyMessage,
@@ -99,6 +110,7 @@ export function VirtualTable<Row>({
   const [focusIndex, setFocusIndex] = useState(0);
   const [sort, setSort] = useState<SortState | null>(initialSort ?? null);
   const [liveSort, setLiveSort] = useState(false);
+  const [contextOpenRowId, setContextOpenRowId] = useState<string | null>(null);
   const [frozenOrder, setFrozenOrder] = useState<readonly string[] | null>(null);
   const [hiddenColumns, setHiddenColumns] = useState<ReadonlySet<string>>(
     () => loadTableConfig(tableId, columns)?.hiddenColumns ?? defaultHiddenColumns(columns),
@@ -121,6 +133,10 @@ export function VirtualTable<Row>({
   } | null>(null);
   const suppressClickRowRef = useRef<string | null>(null);
   const selectionAnchorIdRef = useRef<string | null>(null);
+  const contextTargetRef = useRef<{
+    readonly rowId: string;
+    readonly targetIds: readonly string[];
+  } | null>(null);
 
   useEffect(
     () => () => {
@@ -192,6 +208,25 @@ export function VirtualTable<Row>({
     const retainedIds = new Set(retained.map(getRowId));
     return [...retained, ...rows.filter((row) => !retainedIds.has(getRowId(row)))];
   }, [columns, frozenOrder, getRowId, liveSort, rows, sort]);
+
+  useEffect(() => {
+    const target = contextTargetRef.current;
+    if (target === null || contextOpenRowId === null) return;
+    const originExists = sortedRows.some(
+      (row) => getRowId(row) === target.rowId,
+    );
+    const currentTargetIds =
+      selection?.selectedIds.has(target.rowId) === true
+        ? [...selection.selectedIds]
+        : [target.rowId];
+    if (
+      !originExists ||
+      !sameStringSet(target.targetIds, currentTargetIds)
+    ) {
+      contextTargetRef.current = null;
+      setContextOpenRowId(null);
+    }
+  }, [contextOpenRowId, getRowId, selection, sortedRows]);
 
   useEffect(() => {
     const currentIndex =
@@ -649,6 +684,7 @@ export function VirtualTable<Row>({
       </div>
       <div
         ref={viewportRef}
+        data-table-id={tableId}
         className={styles.viewport}
         role="grid"
         aria-label={label}
@@ -847,7 +883,7 @@ export function VirtualTable<Row>({
             const rowId = getRowId(row);
             const checked = selection?.selectedIds.has(rowId) ?? false;
             const current = rowId === currentRowId;
-            return (
+            const renderedRow = (
               <div
                 key={rowId}
                 className={styles.row}
@@ -883,6 +919,42 @@ export function VirtualTable<Row>({
                   setFocusIndex(index);
                   activateRow(event, row, rowId);
                 }}
+                onContextMenu={
+                  contextMenu === undefined
+                    ? undefined
+                    : (event) => {
+                        event.preventDefault();
+                        contextTargetRef.current = { rowId, targetIds };
+                        prepareContextTarget(event.currentTarget);
+                        dispatchContextMenu(
+                          event.currentTarget,
+                          event.clientX,
+                          event.clientY,
+                        );
+                      }
+                }
+                onKeyDown={
+                  contextMenu === undefined
+                    ? undefined
+                    : (event) => {
+                        if (
+                          event.key !== "ContextMenu" &&
+                          !(event.key === "F10" && event.shiftKey)
+                        ) {
+                          return;
+                        }
+                        event.preventDefault();
+                        event.stopPropagation();
+                        contextTargetRef.current = { rowId, targetIds };
+                        prepareContextTarget(event.currentTarget);
+                        const bounds = event.currentTarget.getBoundingClientRect();
+                        dispatchContextMenu(
+                          event.currentTarget,
+                          bounds.left + Math.min(bounds.width / 2, 160),
+                          bounds.top + bounds.height / 2,
+                        );
+                      }
+                }
               >
                 {selection === undefined ? null : (
                   <div
@@ -920,12 +992,94 @@ export function VirtualTable<Row>({
                 ))}
               </div>
             );
+            if (contextMenu === undefined) {
+              return renderedRow;
+            }
+            const targetIds =
+              checked && selection !== undefined
+                ? [...selection.selectedIds]
+                : [rowId];
+            const prepareContextTarget = (target: HTMLDivElement) => {
+              setFocusIndex(index);
+              target.focus();
+              if (!checked && selection !== undefined) {
+                selectionAnchorIdRef.current = rowId;
+                selection.onChange([rowId], rowId);
+              }
+            };
+            return (
+              <Fragment key={rowId}>
+                {renderedRow}
+                <ActionMenuTrigger
+                  trigger="contextMenu"
+                  isOpen={contextOpenRowId === rowId}
+                  onOpenChange={(open) => {
+                    setContextOpenRowId(open ? rowId : null);
+                    if (open) return;
+                    contextTargetRef.current = null;
+                    requestAnimationFrame(() => {
+                      if (
+                        document.querySelector(
+                          '[role="dialog"][aria-modal="true"]',
+                        ) === null
+                      ) {
+                        focusContextRow(tableId, rowId);
+                      }
+                    });
+                  }}
+                >
+                  <OverlayButton
+                    className={styles.contextMenuTrigger!}
+                    aria-hidden="true"
+                    excludeFromTabOrder
+                  />
+                  {contextMenu.render(row, targetIds)}
+                </ActionMenuTrigger>
+              </Fragment>
+            );
           })}
         </div>
       )}
       </div>
     </div>
   );
+}
+
+function dispatchContextMenu(
+  row: HTMLElement,
+  clientX: number,
+  clientY: number,
+): void {
+  const trigger = row.nextElementSibling;
+  if (!(trigger instanceof HTMLElement)) return;
+  trigger.dispatchEvent(
+    new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX,
+      clientY,
+    }),
+  );
+}
+
+function focusContextRow(tableId: string, rowId: string): void {
+  const table = Array.from(
+    document.querySelectorAll<HTMLElement>("[data-table-id]"),
+  ).find((candidate) => candidate.dataset.tableId === tableId);
+  const row = Array.from(
+    table?.querySelectorAll<HTMLElement>("[data-row-id]") ?? [],
+  ).find((candidate) => candidate.dataset.rowId === rowId);
+  const current = table?.querySelector<HTMLElement>('[data-current="true"]');
+  (row ?? current ?? table)?.focus();
+}
+
+function sameStringSet(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every((value) => rightSet.has(value));
 }
 
 function SelectionCheckbox({

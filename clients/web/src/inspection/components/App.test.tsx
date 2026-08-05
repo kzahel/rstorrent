@@ -237,11 +237,16 @@ describe("inspection application", () => {
       "auto",
     );
 
-    for (const name of ["Start", "Pause", "Archive", "Remove"]) {
+    for (const name of ["Start", "Pause", "Remove"]) {
       expect(
         screen.getByRole("button", { name }).querySelector("svg"),
       ).not.toBeNull();
     }
+    await user.click(screen.getByRole("button", { name: "More" }));
+    expect(
+      screen.getByRole("menuitem", { name: "Archive" }).querySelector("svg"),
+    ).not.toBeNull();
+    await user.keyboard("{Escape}");
 
     const settings = screen.getByRole("button", {
       name: "Settings",
@@ -438,6 +443,56 @@ describe("inspection application", () => {
     );
   });
 
+  it("shares file priority actions between context and More menus", async () => {
+    const user = userEvent.setup();
+    const snapshot = buildScenarioSnapshot("file-progress", 24_000, false, 1);
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: { ...snapshot, demo: null },
+    });
+    const fileSet = snapshot.filesByTorrent[DEMO_PRIMARY_TORRENT_ID]!;
+    const ordinaryFiles = fileSet.order
+      .map((id) => fileSet.rows[id])
+      .filter((row) => row?.padding === false)
+      .slice(0, 2);
+    renderApplication(application);
+
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(screen.getByRole("tab", { name: "Files" }));
+    const grid = screen.getByRole("grid", { name: "Torrent files" });
+    const firstRow = within(grid).getAllByRole("row")[1]!;
+    fireEvent.contextMenu(firstRow, { clientX: 120, clientY: 160 });
+    const contextMenu = await screen.findByRole("menu");
+    expect(
+      within(contextMenu).getByRole("group", { name: "Priority" }),
+    ).toBeVisible();
+    await user.click(within(contextMenu).getByRole("menuitem", { name: "Skip" }));
+    await waitFor(() =>
+      expect(application.commands.at(-1)).toEqual({
+        type: "set_file_priority",
+        torrentId: DEMO_PRIMARY_TORRENT_ID,
+        fileIndices: [ordinaryFiles[0]!.index],
+        priority: "skip",
+      }),
+    );
+
+    await user.click(
+      within(grid).getByRole("checkbox", {
+        name: `Select ${ordinaryFiles[1]!.name}`,
+      }),
+    );
+    fireEvent.contextMenu(firstRow, { clientX: 120, clientY: 160 });
+    await user.click(screen.getByRole("menuitem", { name: "Normal" }));
+    await waitFor(() =>
+      expect(application.commands.at(-1)).toEqual({
+        type: "set_file_priority",
+        torrentId: DEMO_PRIMARY_TORRENT_ID,
+        fileIndices: ordinaryFiles.map((file) => file!.index),
+        priority: "normal",
+      }),
+    );
+  });
+
   it("materializes the global disk pipeline only on the Disk tab", async () => {
     const user = userEvent.setup();
     renderScenario("slow-disk-pressure", 20_000);
@@ -561,19 +616,25 @@ describe("inspection application", () => {
     expect(within(reopened).getByRole("checkbox")).not.toBeChecked();
     await user.click(within(reopened).getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(screen.getByText("Torrent removed", { exact: true })).toBeVisible();
+    expect(screen.getByText(/Removed Big Buck Bunny/, { exact: true })).toBeVisible();
   });
 
   it("keeps a failed removal dialog actionable", async () => {
     const user = userEvent.setup();
     const returnFocus = createRef<HTMLButtonElement>();
+    const target = buildScenarioSnapshot(
+      "healthy-download",
+      42_000,
+      false,
+      1,
+    ).torrents[DEMO_PRIMARY_TORRENT_ID]!;
     render(
       <>
         <button ref={returnFocus}>Remove trigger</button>
         <RemoveTorrentDialog
-          torrentName="Test transfer"
+          targets={[target]}
           deleteDataSupported={true}
-          returnFocus={returnFocus}
+          returnFocus={() => returnFocus.current?.focus()}
           onCancel={() => {}}
           onConfirm={async () => {
             throw new Error("Provider permission was revoked");
@@ -583,11 +644,15 @@ describe("inspection application", () => {
     );
     const dialog = screen.getByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "Remove" }));
-    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+    expect(within(dialog).getAllByRole("alert").at(-1)).toHaveTextContent(
       "Provider permission was revoked",
     );
-    expect(within(dialog).getByRole("button", { name: "Remove" })).toBeEnabled();
-    expect(within(dialog).getByRole("button", { name: "Remove" })).toHaveFocus();
+    expect(
+      within(dialog).getByRole("button", { name: "Retry failed" }),
+    ).toBeEnabled();
+    expect(
+      within(dialog).getByRole("button", { name: "Retry failed" }),
+    ).toHaveFocus();
   });
 
   it("renders truthful empty states without fabricating media details", async () => {
@@ -611,7 +676,7 @@ describe("inspection application", () => {
       shiftKey: true,
     });
     expect(screen.getByText("2 selected for actions")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Remove" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: /Paused/ }));
     expect(
       screen.getByText("2 selected for actions (1 outside this view)"),
@@ -627,6 +692,87 @@ describe("inspection application", () => {
       screen.getByRole("checkbox", { name: "Deselect Sintel 4K open movie" }),
     ).toBeChecked();
     expect(screen.getByText("2 selected for actions")).toBeVisible();
+  });
+
+  it("uses exact torrent context targets and the shared grouped action set", async () => {
+    const user = userEvent.setup();
+    const snapshot = {
+      ...buildScenarioSnapshot("healthy-download", 42_000, false, 1),
+      demo: null,
+    };
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot,
+    });
+    renderApplication(application);
+    const grid = screen.getByRole("grid", { name: "Transfer queue" });
+    const sintelRow = within(grid).getByRole("row", {
+      name: /Sintel 4K open movie/,
+    });
+
+    fireEvent.contextMenu(sintelRow, { clientX: 180, clientY: 220 });
+    const singletonMenu = await screen.findByRole("menu");
+    expect(sintelRow).toHaveAttribute("aria-current", "true");
+    expect(within(singletonMenu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "Start",
+      "Pause",
+      "Force recheck",
+      "Copy magnet link",
+      "Archive",
+      "Restore",
+      "Remove",
+    ]);
+    for (const group of [
+      "Transfer",
+      "Sharing",
+      "Organization",
+      "Destructive",
+    ]) {
+      expect(
+        within(singletonMenu).getByRole("group", { name: group }),
+      ).toBeVisible();
+    }
+    await user.keyboard("{Escape}");
+    expect(
+      within(grid).getByRole("checkbox", {
+        name: "Deselect Sintel 4K open movie",
+      }),
+    ).toBeChecked();
+
+    await user.click(
+      within(grid).getByRole("checkbox", {
+        name: "Select Big Buck Bunny 1080p surround",
+      }),
+    );
+    fireEvent.contextMenu(sintelRow, { clientX: 180, clientY: 220 });
+    expect(
+      await screen.findByRole("menuitem", { name: "Copy magnet links" }),
+    ).toBeVisible();
+    await user.click(screen.getByRole("menuitem", { name: "Remove" }));
+    const dialog = screen.getByRole("dialog", { name: "Remove 2 torrents?" });
+    expect(
+      within(dialog).getByRole("list", { name: "Torrents to remove" }),
+    ).toBeVisible();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(sintelRow).toHaveFocus();
+    expect(application.commands).toEqual([]);
+  });
+
+  it("opens a torrent context menu from the keyboard for the checked selection", async () => {
+    const user = userEvent.setup();
+    renderScenario("healthy-download", 42_000);
+    const grid = screen.getByRole("grid", { name: "Transfer queue" });
+    await user.click(
+      within(grid).getByRole("checkbox", { name: "Select Sintel 4K open movie" }),
+    );
+    const currentRow = within(grid).getByRole("row", {
+      name: /Big Buck Bunny 1080p surround/,
+    });
+    currentRow.focus();
+    await user.keyboard("{Shift>}{F10}{/Shift}");
+    expect(
+      await screen.findByRole("menuitem", { name: "Copy magnet links" }),
+    ).toBeVisible();
   });
 
   it("keeps the detail row within the checked selection", async () => {
@@ -741,7 +887,8 @@ describe("inspection application", () => {
     await user.click(
       screen.getByRole("checkbox", { name: "Select Sintel 4K open movie" }),
     );
-    await user.click(screen.getByRole("button", { name: "Archive" }));
+    await user.click(screen.getByRole("button", { name: "More" }));
+    await user.click(screen.getByRole("menuitem", { name: "Archive" }));
 
     await waitFor(() =>
       expect(application.commands).toEqual([
@@ -750,8 +897,63 @@ describe("inspection application", () => {
       ]),
     );
     expect(
-      screen.getByText(/Archived 1 of 2; Sintel 4K open movie: rejected for test/),
+      screen.getByText(/Archived 1 of 2; 1 failed: Sintel 4K open movie: rejected for test/),
     ).toBeVisible();
+  });
+
+  it("removes multiple torrents and retries only failed targets", async () => {
+    const user = userEvent.setup();
+    const snapshot = {
+      ...buildScenarioSnapshot("healthy-download", 42_000, false, 1),
+      demo: null,
+    };
+    const sintel = Object.values(snapshot.torrents).find(
+      (torrent) => torrent.name === "Sintel 4K open movie",
+    )!;
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot,
+    });
+    application.rejectNextTorrentId = sintel.id;
+    renderApplication(application);
+    await user.click(
+      screen.getByRole("checkbox", { name: "Select Sintel 4K open movie" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Remove" }));
+    let dialog = screen.getByRole("dialog", { name: "Remove 2 torrents?" });
+    await user.click(
+      within(dialog).getByRole("checkbox", {
+        name: "Also delete downloaded data",
+      }),
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Remove and delete data" }),
+    );
+
+    dialog = await screen.findByRole("dialog", { name: "Remove torrent?" });
+    expect(within(dialog).getAllByRole("alert").at(-1)).toHaveTextContent(
+      /Removed 1 of 2; 1 failed: Sintel 4K open movie: rejected for test/,
+    );
+    expect(
+      within(dialog).getByRole("button", { name: "Retry failed" }),
+    ).toBeEnabled();
+    await user.click(
+      within(dialog).getByRole("button", { name: "Retry failed" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(
+      application.commands.filter((command) => command.type === "remove"),
+    ).toEqual([
+      {
+        type: "remove",
+        torrentId: DEMO_PRIMARY_TORRENT_ID,
+        deleteData: true,
+      },
+      { type: "remove", torrentId: sintel.id, deleteData: true },
+      { type: "remove", torrentId: sintel.id, deleteData: true },
+    ]);
   });
 
   it("selects truthful Library cards and hands their source to Workbench", async () => {
@@ -1316,7 +1518,7 @@ describe("inspection application", () => {
     expect(within(dialog).getByRole("button", { name: "Save settings" })).toBeDisabled();
   });
 
-  it("copies one selected torrent's canonical magnet with truthful feedback", async () => {
+  it("copies selected torrents' canonical magnets with truthful feedback", async () => {
     const user = userEvent.setup();
     const writeText = vi.fn<(value: string) => Promise<void>>();
     writeText.mockResolvedValue(undefined);
@@ -1355,7 +1557,7 @@ describe("inspection application", () => {
     await user.click(screen.getByRole("menuitem", { name: "Copy magnet link" }));
     expect(
       await screen.findByText(
-        "Could not copy magnet link: permission denied",
+        "Could not copy magnet links: permission denied",
         { exact: true },
       ),
     ).toBeVisible();
@@ -1365,15 +1567,28 @@ describe("inspection application", () => {
       screen.getByRole("checkbox", { name: "Select Sintel 4K open movie" }),
     );
     await user.click(more);
-    expect(
-      screen.getByRole("menuitem", { name: "Copy magnet link" }),
-    ).toHaveAttribute("aria-disabled", "true");
-    await user.keyboard("{Escape}");
+    const copyMultiple = screen.getByRole("menuitem", {
+      name: "Copy magnet links",
+    });
+    expect(copyMultiple).not.toHaveAttribute("aria-disabled");
+    await user.click(copyMultiple);
+    const selectedMagnets = snapshot.torrentOrder
+      .map((id) => snapshot.torrents[id]!)
+      .filter(
+        (torrent) =>
+          torrent.id === current.id || torrent.name === "Sintel 4K open movie",
+      )
+      .map((torrent) => `magnet:?xt=urn:btih:${torrent.infoHash}`)
+      .join("\n");
+    await waitFor(() =>
+      expect(writeText).toHaveBeenLastCalledWith(selectedMagnets),
+    );
+    expect(screen.getByText("2 magnet links copied", { exact: true })).toBeVisible();
 
     fireEvent.click(screen.getByRole("grid", { name: "Transfer queue" }));
     await user.click(more);
     expect(
-      screen.getByRole("menuitem", { name: "Copy magnet link" }),
+      screen.getByRole("menuitem", { name: "Copy magnet links" }),
     ).toHaveAttribute("aria-disabled", "true");
   });
 
@@ -1400,7 +1615,7 @@ describe("inspection application", () => {
       name: "Add test torrent",
     });
     expect(
-      screen.getByRole("menuitem", { name: "Copy magnet link" }),
+      screen.getByRole("menuitem", { name: "Copy magnet links" }),
     ).toHaveAttribute("aria-disabled", "true");
     expect(more).toHaveAttribute("aria-expanded", "true");
     expect(addTestTorrent).toHaveAttribute("data-focused");
@@ -1504,6 +1719,7 @@ class RecordingLiveApplication implements InspectionApplication {
   readonly commands: InspectionCommand[] = [];
   readonly views: DesiredInspectionViews[] = [];
   rejectNextClientSettings = false;
+  rejectNextTorrentId: string | undefined;
   private listener: ((update: InspectionUpdate) => void) | null = null;
   private storage: DownloadStorageSettings;
   private clientSettings: ClientSettingsRuntimeView;
@@ -1537,6 +1753,13 @@ class RecordingLiveApplication implements InspectionApplication {
 
   async dispatch(command: InspectionCommand): Promise<CommandResult> {
     this.commands.push(command);
+    if (
+      "torrentId" in command &&
+      command.torrentId === this.rejectNextTorrentId
+    ) {
+      this.rejectNextTorrentId = undefined;
+      throw new Error("rejected for test");
+    }
     if (
       "torrentId" in command &&
       command.torrentId === this.rejectTorrentId

@@ -4,11 +4,15 @@ import {
   WEBTORRENT_TEST_TORRENTS,
   type TestTorrentShortcut,
 } from "../testTorrents";
+import type { TorrentActionId } from "../torrent-actions";
 import { Icon } from "./Icon";
+import type { ResolvedTorrentAction } from "./TorrentActionContext";
+import { TorrentActionMenuItems } from "./TorrentActionMenuItems";
 import {
-  ActionMenuItem,
   ActionMenuPopover,
+  ActionMenuSeparator,
   ActionMenuTrigger,
+  ActionMenuItem,
   ActionSubmenu,
   OverlayButton,
 } from "./overlays/AnchoredOverlay";
@@ -16,17 +20,17 @@ import styles from "./MoreActionsMenu.module.css";
 
 export interface MoreActionsMenuProps {
   readonly disabled: boolean;
-  readonly copyMagnetDisabled: boolean;
+  readonly actions: readonly ResolvedTorrentAction[];
   readonly showTestTorrents: boolean;
-  readonly onCopyMagnet: () => Promise<void>;
+  readonly onAction: (actionId: TorrentActionId) => void;
   readonly onAddTestTorrent: (torrent: TestTorrentShortcut) => Promise<void>;
 }
 
 export function MoreActionsMenu({
   disabled,
-  copyMagnetDisabled,
+  actions,
   showTestTorrents,
-  onCopyMagnet,
+  onAction,
   onAddTestTorrent,
 }: MoreActionsMenuProps) {
   const [open, setOpen] = useState(false);
@@ -45,31 +49,28 @@ export function MoreActionsMenu({
         More <Icon name="chevronDown" />
       </OverlayButton>
       <ActionMenuPopover>
-        <ActionMenuItem
-          isDisabled={copyMagnetDisabled}
-          onAction={() => void onCopyMagnet()}
-        >
-          <Icon name="copy" />
-          <span>Copy magnet link</span>
-        </ActionMenuItem>
+        <TorrentActionMenuItems actions={actions} onAction={onAction} />
         {showTestTorrents ? (
-          <ActionSubmenu
-            trigger={
-              <>
-                <Icon name="plus" />
-                <span>Add test torrent</span>
-              </>
-            }
-          >
-            {WEBTORRENT_TEST_TORRENTS.map((torrent) => (
-              <ActionMenuItem
-                key={torrent.id}
-                onAction={() => void onAddTestTorrent(torrent)}
-              >
-                {torrent.menuLabel}
-              </ActionMenuItem>
-            ))}
-          </ActionSubmenu>
+          <>
+            {actions.length === 0 ? null : <ActionMenuSeparator />}
+            <ActionSubmenu
+              trigger={
+                <>
+                  <Icon name="plus" />
+                  <span>Add test torrent</span>
+                </>
+              }
+            >
+              {WEBTORRENT_TEST_TORRENTS.map((torrent) => (
+                <ActionMenuItem
+                  key={torrent.id}
+                  onAction={() => void onAddTestTorrent(torrent)}
+                >
+                  {torrent.menuLabel}
+                </ActionMenuItem>
+              ))}
+            </ActionSubmenu>
+          </>
         ) : null}
       </ActionMenuPopover>
     </ActionMenuTrigger>
