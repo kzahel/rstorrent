@@ -130,14 +130,14 @@ payload artifacts.
 
 ### Now
 
-**Plan one bounded incoming-peer projection slice.** Tactical
-[`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md) is
-complete: the typed atomic loopback-listener/global-peer/upload-slot group now
-persists through SQLite, generic application transports and views, enforcing
-restart owners, and the shared browser/Tauri Settings surface. The next slice
-should reconcile accepted incoming generations with the ordinary bounded
-Swarm/Peers presentation without widening listener scope or retaining a
-second peer authority.
+**Implement the long-lived torrent peer runtime when authorized.** Tactical
+[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) is planned. It
+extracts peer records, active connection generations, collision-free IDs, and
+ordinary snapshot publication from the download-operation lifetime into one
+application-generation per-torrent owner. Incoming seed connections then
+attach to that same bounded state and appear truthfully in existing
+Swarm/Peers views without widening listener scope, changing limits, or
+retaining a second peer authority.
 
 ### Next
 
@@ -190,7 +190,7 @@ matrix choose BEP breadth; visible novelty alone does not.
 | Pre-content peer failover | Implemented | deterministic, runtime, interop, live | Bounded parallel metadata peers share one block owner; two tracker cohorts, 10/10 fresh-DHT owner runs, and 12/12 cross-catalog pairs pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Multiple simultaneous live peers | Implemented | deterministic, runtime, interop, live | Thirty established and thirty half-open attempts remain separate outbound torrent-local defaults beneath one shared session budget whose ordinary default is 200 after descriptor clamping and whose incoming-only slack is ten. Exact saturation, cancellation, mixed-direction release, and simultaneous incoming evidence pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Transfer request ownership and failover | Implemented | deterministic, runtime, interop, live | Ordinary blocks have one generation; strict endgame adds bounded duplicate attempts, first-response cancellation, and harmless losing payload. | [`download-correctness`](download-correctness.md) |
-| Incoming peer connections | Implemented | deterministic, runtime, interop, web | One joined IPv4 loopback listener has a five-entry backlog, eight pending handshake slots, 1,024 generation-fenced registrations, and bounded multi-peer ownership under the shared effective-plus-ten-slack budget. Typed disabled/automatic/fixed policy, 1--2,000 peers, and 0--50 slots persist atomically and apply across restart; the production browser proof seeds exact content and repairs a held fixed-port conflict. Incoming peers are not yet integrated into ordinary Swarm/Peers views; non-loopback binding, advertisement, and NAT mapping are absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
+| Incoming peer connections | Implemented | deterministic, runtime, interop, web | One joined IPv4 loopback listener has a five-entry backlog, eight pending handshake slots, 1,024 generation-fenced registrations, and bounded multi-peer ownership under the shared effective-plus-ten-slack budget. Typed disabled/automatic/fixed policy, 1--2,000 peers, and 0--50 slots persist atomically and apply across restart; the production browser proof seeds exact content and repairs a held fixed-port conflict. Planned Tactical [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) owns the missing ordinary Swarm/Peers integration and long-lived torrent peer boundary; non-loopback binding, advertisement, and NAT mapping remain absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
 | Peer reputation and integrity attribution | Partial | deterministic, runtime, live | Exact connection generations receive bounded asymmetric trust; a sole corrupt source is banned and ambiguous sources are only suspected, while full parole selection and persistence are absent. | [`download-correctness`](download-correctness.md) |
 
 ### Content Transfer And Completion

@@ -6,7 +6,10 @@ Status: Implemented by Tactical `051` on 2026-08-02. Rust now projects the
 typed semantic set, generated v1 bindings carry it additively, and React uses
 one exhaustive definition table for compact cells and the accessible legend.
 The compact glyph mapping remains explicitly revisable as broader client
-comparison and real inspection use provide evidence.
+comparison and real inspection use provide evidence. Planned Tactical
+[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) will make the
+existing incoming, upload-relationship, metadata, and optimistic-unchoke
+variants truthful for routed incoming seed connections.
 
 Related topics: [`peer-lifecycle`](peer-lifecycle.md),
 [`application-view-api`](application-view-api.md), and
@@ -157,18 +160,18 @@ references. Rust emits only states it currently owns.
 
 | Semantic flag | Provisional glyph | Meaning | Initial RSTorrent state |
 | --- | --- | --- | --- |
-| `incoming` | `I` | Remote peer initiated this connection | Direction already represented; runtime incoming intake remains test-only |
+| `incoming` | `I` | Remote peer initiated this connection | Direction is represented; live intake is separate from ordinary peer observation until planned Tactical `086` |
 | `encrypted` | `E` | Peer transport is encrypted or obfuscated | Reserved; no application-view fact yet |
 | `download_allowed` | `D` | We are interested and the peer is not choking us | Derivable for current content peers |
 | `download_choked` | `d` | We are interested but the peer is choking us | Derivable for current content peers |
-| `upload_allowed` | `U` | Peer is interested and we are not choking it | Contract fields exist; current engine marks them unavailable |
-| `upload_choked` | `u` | Peer is interested but we are choking it | Contract fields exist; current engine marks them unavailable |
+| `upload_allowed` | `U` | Peer is interested and we are not choking it | Upload owner implements the fact; ordinary connection projection is planned in Tactical `086` |
+| `upload_choked` | `u` | Peer is interested but we are choking it | Upload owner implements the fact; ordinary connection projection is planned in Tactical `086` |
 | `extension_protocol` | `x` | Peer supports the BEP 10 extension protocol | Negotiated and represented |
-| `metadata_extension` | `m` | Peer advertised the BEP 9 `ut_metadata` extension | Contract field exists; current projection is unavailable |
+| `metadata_extension` | `m` | Peer advertised the BEP 9 `ut_metadata` extension | Contract field exists; incoming negotiation projection is planned in Tactical `086` |
 | `utp` | `T` | Connection uses uTP transport | Transport vocabulary exists; runtime uTP remains test-only |
 | `hole_punched` | `h` | Connection succeeded through NAT hole punching | Reserved; not implemented |
 | `on_parole` | `p` | Integrity policy restricts this peer after suspect data | Reserved; current connection view has no full parole fact |
-| `optimistic_unchoke` | `O` | Peer occupies an optimistic unchoke slot | Reserved; upload policy not implemented |
+| `optimistic_unchoke` | `O` | Peer occupies an optimistic unchoke slot | Upload scheduler implements the grant; connection projection is planned in Tactical `086` |
 | `snubbed` | `S` | Peer is under degraded request policy after timeout | Reserved; current `stalled` phase is not silently equated with libtorrent snubbing |
 | `upload_only` | `L` | Peer reports it will not download from us | Reserved; not implemented |
 | `endgame` | `e` | This connection is participating in endgame requests | Reserved; no connection-scoped view fact yet |
@@ -286,15 +289,20 @@ counts remain in Tactical `051`.
 ## Current Gaps
 
 - The engine does not yet project encryption, hole-punch, seed, upload-only,
-  optimistic-unchoke, connection parole, or connection-scoped endgame facts.
-- Incoming and uTP are representable and tested vocabulary but not ordinary
-  runtime capabilities.
-- Upload interest/choke and metadata-extension fields exist but are currently
-  unavailable or unsupported.
+  connection parole, or connection-scoped endgame facts. Optimistic upload
+  grants exist but are not yet attached to ordinary connection observations.
+- Incoming and uTP are representable and tested vocabulary. Incoming TCP is a
+  live capability but is not yet attached to the ordinary peer owner; uTP
+  remains vocabulary only.
+- Upload interest/choke and incoming metadata-extension facts exist in their
+  runtime owners but are currently unavailable or unsupported in Peers rows.
 - Per-peer source presentation collapses accumulated sources to one label.
 - Per-peer disk/rate/network block reasons are not projected.
 - The eventual Swarm view will need record-state flags distinct from this
   active connection-generation vocabulary.
 
 These gaps are documented future work, not permission to show placeholders as
-observed peer state.
+observed peer state. Planned Tactical
+[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) owns the incoming,
+upload relationship, metadata, and optimistic-grant subset; the other reserved
+flags remain outside that slice.

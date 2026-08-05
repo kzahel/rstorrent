@@ -10,8 +10,12 @@ physical-payload accounting. Tactical
 [`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
 completes the first persisted listener, connection-limit, and upload-slot
 settings slice through the shared product surface and restarted controlled
-seeding. Actual-port advertisement, non-loopback binding, finite bandwidth,
-seeding goals, and NAT mapping remain future slices.
+seeding. Tactical
+[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) is planned to move
+ordinary peer state out of the download-operation lifetime and attach incoming
+seed generations to the same bounded Peers/Swarm owner. Actual-port
+advertisement, non-loopback binding, finite bandwidth, seeding goals, and NAT
+mapping remain future slices.
 
 ## Purpose And Scope
 
@@ -71,6 +75,9 @@ multiple controlled incoming peers through the application service:
 - the generated application contract and shared browser/Tauri Settings
   surface expose that group, the actual loopback port, descriptor-derived
   effective limit, restart requirement, and typed recoverable bind failure;
+- incoming peer tasks still publish only aggregate service/upload snapshots;
+  ordinary Peer/Swarm observations remain owned by the active download task
+  and therefore disappear before completed seeding continues;
 - UDP tracker announces still carry provisional port `6881`, which is not
   derived from or guaranteed to match this listener;
 - the IPv4 DHT has a real ephemeral UDP query socket, but RSTorrent does not
@@ -333,7 +340,29 @@ connection, slot, request, read, writer, and 40-handle limits; every joined
 generation ends with zero incoming, gateway-connection, storage, cache, and
 platform-request owners.
 
-### 4. Truthful tracker and DHT reachability
+### 4. [Long-lived torrent peer runtime](../tactical/086-long-lived-torrent-peer-runtime.md) — planned
+
+Move ordinary peer state from the active download operation into one
+application-generation per-torrent runtime, then use incoming integration as
+the vertical proof:
+
+- preserve the current one-active-download policy while making the peer
+  registry, connection generations, IDs, and snapshot sink survive download
+  completion;
+- attach a routed incoming socket to that state after its info hash is known;
+- project upload lifecycle, exact totals/rates, endpoints, identity,
+  capabilities, choke/interest, and optimistic grant through the existing
+  Peers model and compact flags;
+- add one bounded non-connectable `incoming` Swarm observation for the remote
+  ephemeral endpoint; and
+- prove download-to-seed continuity, restart, lifecycle fencing, keyed row
+  removal, and joined shutdown with RSTorrent and pinned libtorrent peers.
+
+This slice does not add concurrent multi-torrent work, change any listener or
+upload limit, implement mature duplicate-peer policy, or add advertisement,
+mapping, protocol, settings, or UI breadth.
+
+### 5. Truthful tracker and DHT reachability
 
 Replace the provisional tracker port with state derived from the real
 listener and any authoritative external mapping:
@@ -351,7 +380,7 @@ without an explicit peer hint. BEP 10 listen-port advertisement and LSD may
 be added here only if their full bounds and private-policy behavior remain a
 coherent part of the slice; otherwise they stay separate.
 
-### 5. Gateway mapping and reachability coordination
+### 6. Gateway mapping and reachability coordination
 
 Add mapping only after listener and advertised-port ownership are proven:
 
@@ -372,7 +401,7 @@ Controlled LAN or namespace evidence precedes any opt-in physical-router or
 public reachability smoke. Router mapping success alone is not an external
 incoming-connectivity claim.
 
-### 6. Product settings, status, and platform evidence
+### 7. Product settings, status, and platform evidence
 
 Expose the proven semantic settings and reachability states through the
 appropriate product surfaces. Desktop/web and Android may present different
@@ -487,7 +516,9 @@ Tacticals
 [`082`](../tactical/082-bounded-multi-peer-upload-ownership.md) and
 [`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
 now complete bounded multi-peer upload ownership and the restart-applied
-product settings boundary. The next coherent local slice is truthful
-projection of incoming peers into the ordinary Swarm/Peers model; actual-port
-tracker/DHT advertisement and gateway mapping remain later independent
-slices.
+product settings boundary. Planned Tactical
+[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) is the next coherent
+local slice: it establishes one long-lived per-torrent peer owner and proves it
+through truthful incoming projection in the ordinary Swarm/Peers model.
+Actual-port tracker/DHT advertisement and gateway mapping remain later
+independent slices.

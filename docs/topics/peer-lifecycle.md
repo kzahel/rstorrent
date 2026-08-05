@@ -39,8 +39,11 @@ descriptor-aware session connection budget with outgoing sockets, schedules
 eight bounded upload grants, isolates peer readers and writers, and records
 exact physical upload at peer, torrent, and session scope. Full parole
 selection, persistent integrity reputation, measured picker policy,
-integration of incoming peers into the ordinary registry/scheduler/view owner,
-and persistent peer records remain later work.
+and persistent peer records remain later work. Tactical
+[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) is planned to move
+the registry and active-connection observation out of the download-operation
+lifetime and attach routed incoming seed generations to that same per-torrent
+owner.
 
 ## Scope
 
@@ -190,15 +193,18 @@ inactive empty snapshot follows joined terminal cleanup. No view interest,
 application state, or browser timer can mutate registry lifecycle.
 
 The current `PeerRegistry`, `PeerSocketSet`, and `SwarmState` remain valid
-subowners with distinct invariants. `TorrentPeerCoordinator` now coordinates
-their cross-owner membership transitions and owns one shared task-free
-current-connection observation in `peer_runtime`. This removes overlapping
-diagnostic snapshot nouns without folding socket tasks into deterministic
-registry or scheduler state. Tacticals `078` and `082` now own a bounded,
-multi-peer incoming TCP runtime beside that outbound swarm owner; it does not
-yet create registry or application peer-view rows. Folding those incoming
-generations into the ordinary observation owners and adding uTP execution
-remain separate work, but both fit the existing identity and lifecycle
+subowners with distinct invariants. `TorrentPeerCoordinator` currently
+coordinates their cross-owner membership transitions and owns one shared
+task-free current-connection observation in `peer_runtime`. Tacticals `078`
+and `082` added a bounded multi-peer incoming TCP runtime beside that outbound
+swarm owner, exposing the concrete lifetime defect: the coordinator and its
+ordinary peer state terminate with the download operation while completed
+incoming seeding continues. Planned Tactical
+[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) extracts one
+task-free torrent peer-state owner plus a session per-torrent lifetime owner;
+both outgoing work and routed incoming connections use that state without
+folding socket tasks into deterministic registry or scheduler logic. uTP
+execution remains separate work but fits the same identity and lifecycle
 vocabulary.
 
 Outgoing observation begins before TCP work, advances through transport and
@@ -411,11 +417,13 @@ The preferred sequence is:
    budgets, CPU, memory, and throughput before adding protocol breadth.
 
 Tacticals `078` and `082` complete local incoming connection and bounded
-multi-peer payload-upload ownership. Ordinary swarm/view integration, PEX,
-LSD, uTP, NAT traversal, persistent peer caches, mature peer-ID duplicate
-resolution, and dynamic VPN or metered policy remain separate tacticals. The
-provisional tracker announce port is still independent of the loopback
-listener and does not establish reachability.
+multi-peer payload-upload ownership. Planned Tactical
+[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) owns ordinary
+incoming swarm/view integration and the per-torrent lifetime boundary it
+requires. PEX, LSD, uTP, NAT traversal, persistent peer caches, mature peer-ID
+duplicate resolution, and dynamic VPN or metered policy remain separate
+tacticals. The provisional tracker announce port is still independent of the
+loopback listener and does not establish reachability.
 
 ## Current Evidence And Gaps
 
@@ -591,7 +599,8 @@ blocking boundary, but controlled timing stayed neutral and the public queue
 remained full. Tactical `031` measures queue wait and per-kind service before
 connection policy and attributes about 88% of public wall time to 16 KiB write
 service. The source-first write owner now precedes another lifecycle change.
-Incoming integration with ordinary swarm observation, advertised-port
-updates, finite upload bandwidth and seeding goals, measured performance
-selection, peer-ID duplicate resolution, full parole selection, PEX, and
-persisted peer caches remain later work.
+Tactical `086` is planned for incoming integration with ordinary swarm
+observation and the long-lived torrent peer owner. Advertised-port updates,
+finite upload bandwidth and seeding goals, measured performance selection,
+peer-ID duplicate resolution, full parole selection, PEX, and persisted peer
+caches remain later work.

@@ -408,6 +408,10 @@ that scope and its cleanup or compatibility rules explicitly.
   planned; unifies torrent and file action policy across visible toolbars,
   More, and row context menus, including whole-selection magnet copy, recheck,
   archive/restore, and confirmed sequential multi-torrent removal.
+- [`086-long-lived-torrent-peer-runtime.md`](086-long-lived-torrent-peer-runtime.md):
+  planned; extracts one application-generation per-torrent runtime and one
+  shared engine peer-state owner, then proves the boundary by attaching
+  incoming seed connections to the ordinary bounded Peers/Swarm lifecycle.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

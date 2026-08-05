@@ -7,7 +7,9 @@ after completed Tacticals
 feature-driven settings seam completed by Tactical
 [`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
 and selection-action seam completed by Tactical
-[`085`](../tactical/085-unified-contextual-selection-actions.md).
+[`085`](../tactical/085-unified-contextual-selection-actions.md), with the
+concrete per-torrent lifetime seam selected by planned Tactical
+[`086`](../tactical/086-long-lived-torrent-peer-runtime.md).
 
 Topic: `code-organization-and-refactoring`
 
@@ -81,6 +83,15 @@ owner; toolbar and row-context presentations consume them. `VirtualTable`
 retains only generic invocation, focus, selection, and virtualization
 mechanics, while the existing overlay layer retains positioning and menu
 semantics.
+
+Planned Tactical
+[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) records the next
+feature-driven seam. The ordinary `PeerRegistry` and `PeerRuntime` currently
+die with `TorrentPeerCoordinator` while independently owned incoming seeding
+continues after completion. A private session `TorrentRuntime` child and a
+task-free engine torrent-peer state will give those facts one lifetime and
+publication owner. This is concrete ownership and deterministic-test pressure,
+not a file-size extraction or an umbrella session rewrite.
 
 ## Source-Organization Guidance
 
@@ -210,6 +221,13 @@ lifecycle reconciliation such as incoming seeding. Likely store seams are
 connection policy, schema/migrations, row decoding, and domain mutation
 families expressed as private functions over the one owned connection.
 
+Tactical `086` selects the incoming-seeding seam narrowly: active-download
+membership, seed registration, and the shared torrent peer handle become one
+private per-torrent lifetime owner while `ApplicationService` retains global
+admission and session services. It does not move persistence, DHT, tracker,
+storage, settings, or view-set ownership merely because they also meet in the
+application root.
+
 These should normally be extracted by the feature that changes them. Incoming
 seeding will test application lifecycle placement; future `.torrent` source
 retention or schema work will test the store boundary. If independent churn
@@ -276,12 +294,14 @@ first seeding slice deliberately excludes Android product work.
 There should not be one umbrella refactor tactical. Tactical `084` confirms
 that the private-child-module default works: settings contract, SQL helpers,
 and runtime conversion became independently testable while the store and
-application retained their real owners. The next incoming-peer projection
-slice should use the existing incoming and view facades and extract another
-boundary only if concrete ownership or deterministic-test pressure appears.
-Selective storage remains the leading engine-only refactor candidate when a
-feature next changes its large coordinator; size alone does not authorize the
-work.
+application retained their real owners. The incoming-peer projection
+investigation has now found the concrete pressure that guidance required: the
+only ordinary peer-state owner terminates before incoming seeding. Planned
+Tactical `086` therefore extracts the per-torrent lifetime waist and proves it
+through one incoming Peers/Swarm vertical slice while preserving the global
+session root and current single-active-download policy. Selective storage
+remains the leading engine-only refactor candidate when a feature next changes
+its large coordinator; size alone does not authorize the work.
 
 ## Maintenance Contract
 
@@ -304,6 +324,11 @@ lifecycle, or navigation problem remains.
 
 ## History
 
+- **2026-08-05:** Planned Tactical `086` after incoming projection exposed a
+  real lifetime mismatch: download-scoped ordinary peer state terminates while
+  registration-owned completed seeding continues. The selected feature-driven
+  seam is a private session per-torrent runtime plus a task-free engine peer
+  owner, not a new crate or umbrella session rewrite.
 - **2026-08-05:** Completed Tactical `085`. Pure action policy, shared
   renderers, and an application-lifetime sequential runner now sit outside
   `VirtualTable`; the table retains generic exact-target context invocation.

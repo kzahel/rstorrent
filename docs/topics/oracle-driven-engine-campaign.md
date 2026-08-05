@@ -644,8 +644,11 @@ and exact cleanup. The API 34 product path passes provider-rename death and
 fresh published-piece recheck at the established 40-handle/one-pending-request
 high waters.
 
-Next executable action: follow the single authorized **Now** item in
-`capability-readiness.md`. No pending-write read-through, performance, or BEP
-breadth slice is implied by Tactical `073` completion.
+Next executable action: after explicit implementation authorization, begin
+Gate 1 of planned Tactical
+[`086`](../tactical/086-long-lived-torrent-peer-runtime.md): extract the
+task-free torrent peer-state lifetime waist while preserving exact outgoing
+behavior and generated contracts. No concurrent multi-torrent scheduling,
+pending-write read-through, performance, or BEP breadth slice is implied.
 
-Human blocker: **none**.
+Human blocker: **implementation of Tactical `086` is not yet authorized**.

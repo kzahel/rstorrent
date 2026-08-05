@@ -54,6 +54,11 @@ adds one small complete-replacement client-settings projection to the existing
 always-present torrent-list view. It distinguishes configured intent from
 active/effective listener and limit state without adding a named view, lease,
 queue, task, or persisted runtime observation.
+Planned Tactical
+[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) changes no public
+view kind: it moves ordinary peer publication into a long-lived per-torrent
+owner and populates the existing Peers/Swarm contract from routed incoming seed
+connections.
 
 ## Purpose And Scope
 
@@ -693,6 +698,18 @@ specified legacy fingerprints. A recognized value is `available`; missing or
 unrecognized evidence is `unavailable`, not `unsupported`. The peer-controlled
 fingerprint is a display hint only and cannot affect peer identity, trust, or
 scheduling. The existing nullable field and consumer shape do not change.
+
+Planned Tactical
+[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) uses this existing
+contract as the proof of a corrected engine/session lifetime. A routed
+incoming connection will be one ordinary keyed active generation, and its
+current endpoint, peer identity, extension/metadata negotiation,
+interest/choke, upload queue, exact payload total/rate, and optimistic grant
+will populate already-defined nullable fields and flags. Its accepted remote
+ephemeral endpoint will also appear as a bounded non-connectable `incoming`
+Swarm record. Unknown pre-routing sockets remain session diagnostics rather
+than torrent rows, and disconnect removes the Peers row only after joined
+connection cleanup.
 
 `InspectionApplication` now accepts semantic desired views. The live adapter
 maps them to Rust specifications while responsive navigation can retain only a
