@@ -186,8 +186,9 @@ violations before mutating trusted state.
 
 RSTorrent should be a useful participant, not a write-only crawler. Incoming
 queries are part of the first useful capability. However, RSTorrent must not
-send `announce_peer` with port zero or claim reachability before a real
-incoming peer listener and advertised port exist. Peer lookup is still useful
+send `announce_peer` with port zero or claim reachability before an eligible
+non-loopback peer listener and, where needed, an authoritative external
+mapping produce a current advertisable port. Peer lookup is still useful
 without self-announcement, so the BEP 5 protocol claim will initially remain
 Partial.
 

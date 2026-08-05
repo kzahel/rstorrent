@@ -18,8 +18,8 @@ to that owner with complete upload observations. Ordinary Peers/Swarm mapping
 and the unchanged headless product adapter consume those facts; the
 authenticated gateway proof follows pinned libtorrent and RSTorrent peers
 through exact transfer, removal, pause, and terminal zero ownership.
-Actual-port advertisement, non-loopback binding, finite bandwidth, seeding
-goals, and NAT mapping remain future slices.
+Non-loopback binding, gateway mapping, mapped-endpoint advertisement, finite
+bandwidth, and seeding goals remain future slices.
 
 ## Purpose And Scope
 
@@ -112,13 +112,16 @@ The completed campaign should let one first-party in-process engine:
 3. serve only verified metadata and payload under bounded upload policy;
 4. retain a supervised seeding owner after download completion and across
    supported restart paths;
-5. advertise the actual usable port through trackers, DHT, and later local
-   discovery mechanisms;
-6. map that real port through supported gateway mechanisms when mapping is
-   enabled and useful;
-7. expose configured, bound, mapped, failed, and observed-incoming state
+5. bind a deliberately eligible non-loopback interface before requesting
+   Internet exposure;
+6. map that real local endpoint through a supported gateway mechanism when
+   mapping is enabled and useful;
+7. derive an advertisable endpoint from current listener, interface, and
+   mapping state, then supply it to trackers, DHT, and later local discovery;
+8. expose configured, bound, mapped, advertised, failed, and
+   observed-incoming state
    without conflating them; and
-8. stop advertising, accepting, uploading, and mapping through an observable
+9. stop advertising, accepting, uploading, and mapping through an observable
    joined shutdown path.
 
 Local seeding, LAN reachability, mapped Internet reachability, and observed
@@ -138,6 +141,10 @@ No port is mapped or advertised as reachable before the corresponding
 listener is accepting. If a fixed-port bind fails, the product reports that
 failure; it does not silently choose another port unless the selected policy
 explicitly permits automatic fallback.
+
+A loopback-only listener is not eligible for gateway mapping. Internet
+reachability first requires an intentionally selected non-loopback local
+interface and a listener that can accept packets forwarded to that address.
 
 A gateway may assign an external port different from the requested local
 port. The advertised external port is therefore derived runtime state, not
@@ -369,17 +376,82 @@ This slice does not add concurrent multi-torrent work, change any listener or
 upload limit, implement mature duplicate-peer policy, or add advertisement,
 mapping, protocol, settings, or UI breadth.
 
-### 5. Truthful tracker and DHT reachability
+### 5. Non-loopback listener and reachability ownership
 
-Replace the provisional tracker port with state derived from the real
-listener and any authoritative external mapping:
+Extend listener policy only far enough to bind an explicitly eligible local
+IPv4 interface, and introduce one session reachability coordinator that
+consumes the resulting bound endpoint and listener generation. Interface
+replacement, rebind, cancellation, bind failure, and shutdown must invalidate
+dependent work before a stale mapping or advertisement can survive.
 
-- tracker announces consume the current advertised peer port and react to
-  listener changes without independent constants;
-- DHT `announce_peer` begins only when the torrent and listener are eligible
-  and the port claim is truthful;
+This slice must not treat wildcard binding as permission to expose every
+interface, infer that a private address is publicly reachable, or feed the
+local port directly to public tracker or DHT advertisement. The bound endpoint
+is authoritative input to mapping, not yet an externally usable endpoint.
+
+### 6. Observed-network UPnP IGD mapping
+
+Implement the mapping mechanism available on the real validation network
+before adding unobserved alternatives. A non-mutating inspection on
+2026-08-05 established the first target:
+
+- the default IPv4 gateway answered SSDP as an Internet Gateway Device v2 and
+  advertised `WANIPConnection:2`;
+- its device description and service schema advertised external-address,
+  specific/generic mapping lookup, `AddPortMapping`, `AddAnyPortMapping`,
+  delete, and mapping-range operations;
+- a read-only `GetExternalIPAddress` SOAP action completed successfully;
+- the returned globally routable IPv4 address matched an independent
+  Internet-side address observation, with no additional IPv4 CGNAT layer
+  observed; and
+- three bounded NAT-PMP external-address requests and three PCP `ANNOUNCE`
+  requests received no response.
+
+The first mapping tactical should therefore implement a generic, bounded UPnP
+IGD v2 path against the observed `WANIPConnection:2` service: SSDP discovery,
+device and service-description parsing, URL resolution, external-address
+lookup, TCP add/query/renew/delete behavior, typed SOAP faults, replacement on
+listener or interface change, explicit disable, and joined cleanup. The code
+must rediscover devices and services; the observed gateway address, UUID,
+model, control URL, and external address are evidence, not configuration or
+hard-coded product knowledge.
+
+Validation is not complete at a successful SOAP response. The tactical must
+create a temporary mapping for a real non-loopback RSTorrent TCP listener,
+verify the installed mapping, have a controlled peer outside the local network
+dial the mapped external endpoint and verify exact torrent payload, then stop
+using the mapped endpoint, delete the mapping, and prove terminal zero
+ownership. A dial through gateway hairpinning from the same LAN is useful
+diagnostics but is not external-reachability evidence.
+
+PCP and NAT-PMP remain later independent additions. Their specifications and
+pinned libtorrent implementations may guide future designs, but source
+inspection alone is neither runtime validation nor a protocol-support claim.
+They should not precede the UPnP mechanism present on this network. When a
+controlled or physical gateway is available, add PCP MAP with nonce, lease,
+external endpoint, renewal, and PCP-to-NAT-PMP unsupported-version fallback,
+then NAT-PMP external-address and TCP mapping with bounded serial requests and
+lease recovery.
+
+One reachability projection must eventually represent multiple successful
+mechanisms without treating them as independent listener ports. Deterministic
+codecs and state transitions precede scripted gateway servers. Physical-router
+evidence remains environment-scoped, and mapping success alone is not an
+external incoming-connectivity claim.
+
+### 7. Truthful tracker and DHT reachability
+
+Only after the reachability coordinator has a current eligible listener and,
+where required, an authoritative external mapping should public discovery
+replace the provisional tracker port:
+
+- tracker announces consume the selected advertised peer port and react to
+  listener or mapping changes without independent constants;
+- DHT `announce_peer` begins only when the torrent and advertisable endpoint
+  are eligible and the port claim is truthful;
 - private-torrent gating remains exact;
-- advertisement stops before listener shutdown or torrent ineligibility; and
+- advertisement stops before listener shutdown, mapping invalidation, or
+  torrent ineligibility; and
 - mapped external-port changes trigger bounded corrective announcements.
 
 Controlled tracker and DHT peers should discover and complete from RSTorrent
@@ -387,28 +459,7 @@ without an explicit peer hint. BEP 10 listen-port advertisement and LSD may
 be added here only if their full bounds and private-policy behavior remain a
 coherent part of the slice; otherwise they stay separate.
 
-### 6. Gateway mapping and reachability coordination
-
-Add mapping only after listener and advertised-port ownership are proven:
-
-- PCP MAP with nonce, lease, external endpoint, renewal, and PCP-to-NAT-PMP
-  unsupported-version fallback;
-- NAT-PMP external-address and TCP mapping behavior with bounded serial
-  requests and lease recovery;
-- UPnP IGD discovery, bounded device-description parsing, WAN IP/PPP service
-  selection, external-address lookup, add/delete, lease renewal, and IGD v1/v2
-  behavior selected from the pinned oracle audit;
-- per-interface ownership, network-change replacement, explicit disable, and
-  joined clean shutdown; and
-- one reachability projection that can represent multiple mechanisms without
-  treating duplicate successes as independent listener ports.
-
-Deterministic codecs and state transitions precede scripted gateway servers.
-Controlled LAN or namespace evidence precedes any opt-in physical-router or
-public reachability smoke. Router mapping success alone is not an external
-incoming-connectivity claim.
-
-### 7. Product settings, status, and platform evidence
+### 8. Product settings, status, and platform evidence
 
 Expose the proven semantic settings and reachability states through the
 appropriate product surfaces. Desktop/web and Android may present different
@@ -527,5 +578,10 @@ product settings boundary. Tactical
 [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) now completes the
 long-lived per-torrent peer owner and proves it through truthful incoming
 projection in the ordinary Swarm/Peers model. Actual-port tracker/DHT
-advertisement is the next reachability slice. Gateway mapping remains a later
-independent slice.
+advertisement no longer precedes the mapping evidence needed to select a
+truthful public endpoint. The next reachability slice is an explicitly
+eligible non-loopback IPv4 listener plus the session reachability owner and
+UPnP IGD v2 mapping path needed to prove externally dialed TCP seeding on the
+observed network. Tracker/DHT advertisement follows the mapped-endpoint proof.
+PCP and NAT-PMP remain later independent slices until they have suitable
+runtime evidence.

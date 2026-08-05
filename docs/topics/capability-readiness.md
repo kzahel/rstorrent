@@ -140,15 +140,21 @@ physical upload, and terminal zero ownership.
 
 ### Now
 
-**Advertise the authoritative usable peer-listener port.** Derive UDP tracker
-and DHT self-announcement inputs from actual listener state without claiming
-public reachability, changing loopback-only binding, or implying gateway
-mapping. Create the bounded tactical and source dossier before implementation.
+**Prove one UPnP IGD v2-mapped incoming TCP path end to end.** Create the
+bounded tactical and source dossier for an explicitly eligible non-loopback
+IPv4 listener, one session reachability coordinator, and generic UPnP IGD v2
+mapping against the mechanism observed on the current validation network.
+Require installed-mapping inspection, an exact transfer dialed by a controlled
+off-LAN peer, mapping removal, and terminal zero ownership. Do not add or claim
+PCP, NAT-PMP, tracker advertisement, or DHT self-announcement in this slice.
 
 ### Next
 
-- Define the next reachability boundary after actual-port advertisement,
-  keeping non-loopback binding and gateway mapping separate decisions.
+- Feed the proven advertisable endpoint into UDP tracker announces and DHT
+  self-announcement, including mapping-change correction and shutdown order.
+- Add PCP and NAT-PMP only with their own bounded tactical and suitable
+  controlled or physical gateway evidence; pinned source inspection is not a
+  support claim.
 
 ### Later
 
