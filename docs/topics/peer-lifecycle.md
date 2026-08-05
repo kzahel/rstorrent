@@ -44,8 +44,8 @@ and persistent peer records remain later work. Tactical
 registry and active-connection observation out of the download-operation
 lifetime into one task-free engine state and application-generation torrent
 runtime. Routed incoming connections now attach to that state and detach only
-after their joined upload cleanup; ordinary view projection remains in its
-next gate.
+after their joined upload cleanup; ordinary Peers and Swarm projections now
+carry their typed upload facts and exact removal.
 
 ## Scope
 
@@ -195,19 +195,13 @@ inactive empty snapshot follows joined terminal cleanup. No view interest,
 application state, or browser timer can mutate registry lifecycle.
 
 The current `PeerRegistry`, `PeerSocketSet`, and `SwarmState` remain valid
-subowners with distinct invariants. `TorrentPeerCoordinator` currently
-coordinates their cross-owner membership transitions and owns one shared
-task-free current-connection observation in `peer_runtime`. Tacticals `078`
-and `082` added a bounded multi-peer incoming TCP runtime beside that outbound
-swarm owner, exposing the concrete lifetime defect: the coordinator and its
-ordinary peer state terminate with the download operation while completed
-incoming seeding continues. Planned Tactical
-[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) extracts one
-task-free torrent peer-state owner plus a session per-torrent lifetime owner;
-both outgoing work and routed incoming connections use that state without
-folding socket tasks into deterministic registry or scheduler logic. uTP
-execution remains separate work but fits the same identity and lifecycle
-vocabulary.
+subowners with distinct invariants. Tactical
+[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) extracted their
+cross-owner membership and current-connection observation into one task-free
+torrent peer state retained by a session per-torrent lifetime owner. Both
+outgoing work and routed incoming connections use that state without folding
+socket tasks into deterministic registry or scheduler logic. uTP execution
+remains separate work but fits the same identity and lifecycle vocabulary.
 
 Outgoing observation begins before TCP work, advances through transport and
 BitTorrent handshake, keeps one connection generation through metadata-to-
@@ -419,13 +413,14 @@ The preferred sequence is:
    budgets, CPU, memory, and throughput before adding protocol breadth.
 
 Tacticals `078` and `082` complete local incoming connection and bounded
-multi-peer payload-upload ownership. Planned Tactical
+multi-peer payload-upload ownership. In-progress Tactical
 [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) owns ordinary
 incoming swarm/view integration and the per-torrent lifetime boundary it
-requires. PEX, LSD, uTP, NAT traversal, persistent peer caches, mature peer-ID
-duplicate resolution, and dynamic VPN or metered policy remain separate
-tacticals. The provisional tracker announce port is still independent of the
-loopback listener and does not establish reachability.
+requires; both have landed, with controlled interoperability and resource
+closure remaining. PEX, LSD, uTP, NAT traversal, persistent peer caches,
+mature peer-ID duplicate resolution, and dynamic VPN or metered policy remain
+separate tacticals. The provisional tracker announce port is still independent
+of the loopback listener and does not establish reachability.
 
 ## Current Evidence And Gaps
 
@@ -602,7 +597,8 @@ remained full. Tactical `031` measures queue wait and per-kind service before
 connection policy and attributes about 88% of public wall time to 16 KiB write
 service. The source-first write owner now precedes another lifecycle change.
 Tactical `086` is in progress; its retained torrent peer owner has landed and
-incoming integration with ordinary swarm observation remains. Advertised-port updates,
-finite upload bandwidth and seeding goals, measured performance selection,
-peer-ID duplicate resolution, full parole selection, PEX, and persisted peer
-caches remain later work.
+routed incoming peers now use ordinary Peers and Swarm observation. Controlled
+interoperability and terminal resource closure remain in its final gate.
+Advertised-port updates, finite upload bandwidth and seeding goals, measured
+performance selection, peer-ID duplicate resolution, full parole selection,
+PEX, and persisted peer caches remain later work.

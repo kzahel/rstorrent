@@ -3923,11 +3923,12 @@ mod tests {
         AddTorrentBytesRequest, CONTROL_VERSION, ClientSettings, Command, ConfiguredStorageRoot,
         DeliveryPolicy, DhtLifecycleView, DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity,
         FilePriority, ListenerBindFailureReason, ListenerPolicy, ListenerStatus,
-        OpenViewSetOptions, OpenViewSetRequest, ProgressDisposition, ProgressReason,
+        OpenViewSetOptions, OpenViewSetRequest, PeerDirection, PeerFlagView, PeerLifecycle,
+        PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressDisposition, ProgressReason,
         RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseOutcome, SessionStore,
-        StorageState, SubscriptionSpec, TorrentState, ViewDeliveryPolicy, ViewPatch,
-        ViewProjection, ViewSelector, ViewSetError, ViewSetOwner, ViewSetUpdate, ViewSnapshot,
-        ViewSpec, ViewUpdatePayload,
+        StorageState, SubscriptionSpec, SwarmCatalogState, SwarmPeerState, SwarmPeerView,
+        TorrentState, ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetError,
+        ViewSetOwner, ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdatePayload,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -4095,10 +4096,82 @@ mod tests {
         client_settings
     }
 
+    async fn torrent_peer_views(service: &ApplicationService, torrent_id: &str) -> Vec<PeerView> {
+        let subscription = service
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::Torrent {
+                    torrent_id: torrent_id.to_owned(),
+                },
+                projection: ViewProjection::Peers,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 4096,
+                },
+                diagnostics: None,
+                catalog_page: None,
+            })
+            .expect("subscribe to torrent peers");
+        let update = subscription
+            .next_update()
+            .await
+            .expect("initial torrent peer snapshot");
+        let ViewUpdatePayload::Snapshot {
+            snapshot: ViewSnapshot::Peers { peers, .. },
+        } = update.payload
+        else {
+            panic!("expected torrent peer snapshot");
+        };
+        peers
+    }
+
+    async fn torrent_swarm_view(
+        service: &ApplicationService,
+        torrent_id: &str,
+    ) -> (SwarmCatalogState, Vec<SwarmPeerView>) {
+        let subscription = service
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::Torrent {
+                    torrent_id: torrent_id.to_owned(),
+                },
+                projection: ViewProjection::Swarm,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 4096,
+                },
+                diagnostics: None,
+                catalog_page: None,
+            })
+            .expect("subscribe to torrent swarm");
+        let update = subscription
+            .next_update()
+            .await
+            .expect("initial torrent swarm snapshot");
+        let ViewUpdatePayload::Snapshot {
+            snapshot: ViewSnapshot::Swarm { state, peers, .. },
+        } = update.payload
+        else {
+            panic!("expected torrent swarm snapshot");
+        };
+        (state, peers)
+    }
+
     async fn connect_application_seed(
         service: &ApplicationService,
         info_hash: [u8; 20],
         peer_id: [u8; 20],
+    ) -> (
+        tokio::net::TcpStream,
+        FrameDecoder,
+        std::collections::VecDeque<PeerMessage>,
+    ) {
+        connect_application_seed_with_extensions(service, info_hash, peer_id, false).await
+    }
+
+    async fn connect_application_seed_with_extensions(
+        service: &ApplicationService,
+        info_hash: [u8; 20],
+        peer_id: [u8; 20],
+        supports_extensions: bool,
     ) -> (
         tokio::net::TcpStream,
         FrameDecoder,
@@ -4111,8 +4184,14 @@ mod tests {
         let mut stream = tokio::net::TcpStream::connect(address)
             .await
             .expect("connect application seed");
+        let mut reserved = [0; 8];
+        if supports_extensions {
+            reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+        }
         stream
-            .write_all(&encode_handshake(info_hash, peer_id))
+            .write_all(&encode_handshake_with_reserved(
+                info_hash, peer_id, reserved,
+            ))
             .await
             .expect("send seed handshake");
         let mut handshake = [0; HANDSHAKE_LENGTH];
@@ -4127,6 +4206,12 @@ mod tests {
             read_peer_message(&mut stream, &mut decoder, &mut pending).await,
             PeerMessage::Bitfield(vec![0b1100_0000])
         );
+        if supports_extensions {
+            assert!(matches!(
+                read_peer_message(&mut stream, &mut decoder, &mut pending).await,
+                PeerMessage::Extended { id: 0, .. }
+            ));
+        }
         (stream, decoder, pending)
     }
 
@@ -6945,7 +7030,19 @@ mod tests {
         assert_eq!(first_incoming.peer_budget.effective_limit, 1);
         wait_for_seed_registrations(&first, 1).await;
         let (mut peer, mut decoder, mut pending) =
-            connect_application_seed(&first, info_hash, DEFAULT_PEER_ID).await;
+            connect_application_seed_with_extensions(&first, info_hash, DEFAULT_PEER_ID, true)
+                .await;
+        let peer_endpoint = peer.local_addr().expect("incoming peer endpoint");
+        let listener_endpoint = peer.peer_addr().expect("listener endpoint");
+        peer.write_all(
+            &encode_message(&PeerMessage::Extended {
+                id: 0,
+                payload: encode_extension_handshake(None),
+            })
+            .expect("encode remote extension handshake"),
+        )
+        .await
+        .expect("send remote extension handshake");
         peer.write_all(&encode_message(&PeerMessage::Interested).expect("encode interested"))
             .await
             .expect("send interest");
@@ -6973,7 +7070,120 @@ mod tests {
                 block: b"efg".to_vec(),
             }
         );
+
+        let incoming_peer = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if let Some(peer) = torrent_peer_views(&first, &torrent_id)
+                    .await
+                    .into_iter()
+                    .find(|peer| {
+                        peer.remote_interested == Some(true)
+                            && peer.supports_ut_metadata == Some(true)
+                            && peer.payload_uploaded_bytes.as_deref() == Some("3")
+                    })
+                {
+                    break peer;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("incoming upload reaches the Peers projection");
+        assert_eq!(incoming_peer.direction, PeerDirection::Incoming);
+        assert_eq!(incoming_peer.transport, PeerTransportKind::Tcp);
+        assert_eq!(incoming_peer.lifecycle, PeerLifecycle::Connected);
+        assert_eq!(incoming_peer.role, PeerRole::Content);
+        assert_eq!(incoming_peer.remote_endpoint, peer_endpoint.to_string());
+        assert_eq!(
+            incoming_peer.local_endpoint.as_deref(),
+            Some(listener_endpoint.to_string().as_str())
+        );
+        assert_eq!(incoming_peer.sources, [PeerSourceView::Incoming]);
+        assert_eq!(incoming_peer.supports_extensions, Some(true));
+        assert_eq!(incoming_peer.remote_interested, Some(true));
+        assert_eq!(incoming_peer.local_choking, Some(false));
+        assert!(incoming_peer.peer_record_id.is_some());
+        assert!(incoming_peer.peer_id.is_some());
+        assert!(incoming_peer.client_name.is_some());
+        assert!(incoming_peer.payload_upload_rate_bytes.is_some());
+        assert_eq!(
+            incoming_peer.peer_flags,
+            [
+                PeerFlagView::Incoming,
+                PeerFlagView::UploadAllowed,
+                PeerFlagView::ExtensionProtocol,
+                PeerFlagView::MetadataExtension,
+                PeerFlagView::OptimisticUnchoke,
+            ]
+        );
+        assert_eq!(
+            incoming_peer.capabilities.local_endpoint,
+            crate::CapabilityStatus::Available
+        );
+        assert_eq!(
+            incoming_peer.capabilities.ut_metadata,
+            crate::CapabilityStatus::Available
+        );
+        assert_eq!(
+            incoming_peer.capabilities.interest_directions,
+            crate::CapabilityStatus::Available
+        );
+        assert_eq!(
+            incoming_peer.capabilities.local_choke,
+            crate::CapabilityStatus::Available
+        );
+        assert_eq!(
+            incoming_peer.capabilities.upload,
+            crate::CapabilityStatus::Available
+        );
+
+        let connected_swarm_peer = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let (state, peers) = torrent_swarm_view(&first, &torrent_id).await;
+                assert_eq!(state, SwarmCatalogState::Active);
+                if let Some(peer) = peers
+                    .into_iter()
+                    .find(|peer| peer.endpoint == peer_endpoint.to_string())
+                {
+                    break peer;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("incoming peer reaches the Swarm projection");
+        assert_eq!(connected_swarm_peer.sources, [PeerSourceView::Incoming]);
+        assert_eq!(connected_swarm_peer.state, SwarmPeerState::Connected);
+        assert!(!connected_swarm_peer.connectable);
+
         drop(peer);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if torrent_peer_views(&first, &torrent_id).await.is_empty() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("closed incoming peer leaves the Peers projection");
+        let closed_swarm_peer = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let (_, peers) = torrent_swarm_view(&first, &torrent_id).await;
+                if let Some(peer) = peers.into_iter().find(|peer| {
+                    peer.endpoint == peer_endpoint.to_string()
+                        && peer.state == SwarmPeerState::NotConnectable
+                }) {
+                    break peer;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("closed incoming peer remains as non-connectable swarm history");
+        assert_eq!(closed_swarm_peer.sources, [PeerSourceView::Incoming]);
+        assert!(!closed_swarm_peer.connectable);
+
         let zero_slots = ClientSettings {
             listener: ListenerPolicy::AutomaticLoopback,
             peer_connection_limit: 1,

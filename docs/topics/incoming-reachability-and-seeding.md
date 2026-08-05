@@ -15,9 +15,10 @@ seeding. Tactical
 Its task-free engine peer state and session per-torrent lifetime owner now
 survive download-to-seed transitions, and routed incoming connections attach
 to that owner with complete upload observations. Ordinary Peers/Swarm mapping
-and controlled product/interoperability evidence remain in its next gates. Actual-port
-advertisement, non-loopback binding, finite bandwidth, seeding goals, and NAT
-mapping remain future slices.
+and the unchanged headless product adapter now consume those facts; controlled
+interoperability and terminal resource evidence remain in its final gate.
+Actual-port advertisement, non-loopback binding, finite bandwidth, seeding
+goals, and NAT mapping remain future slices.
 
 ## Purpose And Scope
 
@@ -79,7 +80,10 @@ multiple controlled incoming peers through the application service:
   effective limit, restart requirement, and typed recoverable bind failure;
 - incoming peer tasks now attach routed generations to the retained ordinary
   torrent peer owner and publish complete connection/upload observations;
-  existing Peers/Swarm mapping does not yet project all of those upload facts;
+- existing Peers/Swarm mapping projects the connected incoming generation,
+  accepted non-connectable endpoint, identity and negotiated extensions,
+  interest/choke/grant, queues, exact upload total/rate, compact flags, and
+  exact post-cleanup removal;
 - UDP tracker announces still carry provisional port `6881`, which is not
   derived from or guaranteed to match this listener;
 - the IPv4 DHT has a real ephemeral UDP query socket, but RSTorrent does not

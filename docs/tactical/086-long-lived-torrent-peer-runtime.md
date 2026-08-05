@@ -1,7 +1,6 @@
 # Tactical 086: Long-Lived Torrent Peer Runtime
 
-Status: In progress on 2026-08-05. Gates 1--3 are complete; Gates 4 and 5
-remain.
+Status: In progress on 2026-08-05. Gates 1--4 are complete; Gate 5 remains.
 
 Topics: `incoming-reachability-and-seeding`, `peer-lifecycle`,
 `code-organization-and-refactoring`, `application-view-api`,
@@ -577,6 +576,35 @@ No new page, table, route, command, setting, or browser timer is added. Existing
 React peer-table components consume the generated contract unchanged. Focused
 Rust, TypeScript mapping, reducer, and headless product tests cover the full
 incoming row and flags. This is a useful commit boundary.
+
+Completed on 2026-08-05. The existing `PeerView` mapper now projects the
+incoming connection's local and remote endpoints, remote identity/client
+hint, BEP 10 and `ut_metadata` observations, remote interest, local choke and
+regular/optimistic grant, queued requests and bytes including the writer
+buffer, connected age, exact physical upload total, and sampled upload rate.
+Capabilities distinguish measured, unavailable, and directionally
+unsupported facts. Compact flags remain enum-ordered and now derive
+`incoming`, `upload_allowed`/`upload_choked`, `extension_protocol`,
+`metadata_extension`, and `optimistic_unchoke` directly from those typed
+facts.
+
+The complete restarted-seed application test now connects one extension-
+capable incoming peer through the production listener, negotiates metadata,
+receives an exact payload block, and observes the same generation through
+ordinary Peers and Swarm subscriptions. Peers reports a connected incoming
+TCP row with exact endpoints, identity, upload facts, field capabilities, and
+flags; Swarm reports the accepted ephemeral endpoint as connected,
+`incoming`, and non-connectable. After socket close, Peers becomes empty and
+Swarm retains the bounded record as non-connectable history. The existing
+leased-view test independently proves keyed upload upsert, disconnecting, and
+exact removal. The live TypeScript adapter test consumes the unchanged
+generated contract and preserves incoming source, upload total/rate, pending
+requests, and all five compact flags after view-set epoch recovery.
+
+All 143 session library tests pass with one allocation-profile case ignored;
+focused session all-target clippy passes with warnings denied; and the 15
+focused live-adapter/flag tests plus TypeScript typecheck pass. Generated
+contract artifacts remain unchanged.
 
 ### Gate 5: Controlled interoperability and closure
 

@@ -12,6 +12,7 @@ use rstorrent_engine::swarm::ConnectionId;
 use rstorrent_engine::{
     PeerConnectionDirection, PeerConnectionLifecycle, PeerConnectionObservation,
     PeerConnectionRole, PeerContentActivity, PeerRequestWindowPhase, PeerTransport,
+    PeerUploadActivity, PeerUploadGrant,
 };
 
 const TORRENT_ID: &str = "000102030405060708090a0b0c0d0e0f10111213";
@@ -697,13 +698,62 @@ async fn peer_view_upserts_generations_and_removes_only_on_cleanup() {
             && removed.is_empty()
     ));
 
+    peer.content = None;
+    peer.local_endpoint = Some("127.0.0.1:6882".parse().expect("local endpoint"));
+    peer.supports_ut_metadata = Some(true);
+    peer.upload = Some(PeerUploadActivity {
+        interested: true,
+        grant: PeerUploadGrant::Optimistic,
+        queued_requests: 3,
+        queued_bytes: 4_096,
+        read_active: true,
+        writer_bytes: 512,
+        payload_bytes: 16_384,
+        payload_rate: 8_192,
+    });
+    hub.record_peer_connections(TORRENT_ID, Duration::from_millis(18), &[peer.clone()])
+        .expect("upload row");
+    let uploading = view_set
+        .next_updates(&connected.cursor, 0)
+        .await
+        .expect("upload patch");
+    assert!(matches!(
+        uploading.updates.as_slice(),
+        [ViewSetUpdate::Patch {
+            patch: ViewPatch::Peers { upsert, removed, .. },
+            ..
+        }] if upsert.len() == 1
+            && upsert[0].local_endpoint.as_deref() == Some("127.0.0.1:6882")
+            && upsert[0].supports_ut_metadata == Some(true)
+            && upsert[0].remote_interested == Some(true)
+            && upsert[0].local_choking == Some(false)
+            && upsert[0].payload_upload_rate_bytes.as_deref() == Some("8192")
+            && upsert[0].payload_uploaded_bytes.as_deref() == Some("16384")
+            && upsert[0].pending_requests == Some(3)
+            && upsert[0].queued_payload_bytes.as_deref() == Some("4608")
+            && upsert[0].connected_age_millis.as_deref() == Some("13")
+            && upsert[0].capabilities.local_endpoint == crate::CapabilityStatus::Available
+            && upsert[0].capabilities.ut_metadata == crate::CapabilityStatus::Available
+            && upsert[0].capabilities.interest_directions == crate::CapabilityStatus::Available
+            && upsert[0].capabilities.local_choke == crate::CapabilityStatus::Available
+            && upsert[0].capabilities.upload == crate::CapabilityStatus::Available
+            && upsert[0].peer_flags == [
+                crate::PeerFlagView::Incoming,
+                crate::PeerFlagView::UploadAllowed,
+                crate::PeerFlagView::ExtensionProtocol,
+                crate::PeerFlagView::MetadataExtension,
+                crate::PeerFlagView::Utp,
+                crate::PeerFlagView::OptimisticUnchoke,
+            ]
+            && removed.is_empty()
+    ));
+
     peer.lifecycle = PeerConnectionLifecycle::Disconnecting;
     peer.lifecycle_changed_at = Duration::from_millis(20);
-    peer.content.as_mut().expect("content activity").choking = false;
     hub.record_peer_connections(TORRENT_ID, Duration::from_millis(25), &[peer])
         .expect("disconnecting row");
     let disconnecting = view_set
-        .next_updates(&connected.cursor, 0)
+        .next_updates(&uploading.cursor, 0)
         .await
         .expect("disconnecting patch");
     assert!(matches!(
@@ -713,7 +763,7 @@ async fn peer_view_upserts_generations_and_removes_only_on_cleanup() {
             ..
         }] if upsert.len() == 1
             && upsert[0].lifecycle == crate::PeerLifecycle::Disconnecting
-            && upsert[0].peer_flags.contains(&crate::PeerFlagView::DownloadAllowed)
+            && upsert[0].peer_flags.contains(&crate::PeerFlagView::UploadAllowed)
             && removed.is_empty()
     ));
 

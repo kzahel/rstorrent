@@ -13,6 +13,7 @@ use rstorrent_engine::{
     DiskCheckpointStage, DiskPieceRuntimeSnapshot, DiskPieceStage, DiskPressure,
     DiskRuntimeSnapshot, PeerConnectionDirection, PeerConnectionLifecycle,
     PeerConnectionObservation, PeerConnectionRole, PeerRequestWindowPhase, PeerTransport,
+    PeerUploadGrant,
 };
 use rstorrent_protocol::peer_id::identify_client;
 
@@ -196,6 +197,7 @@ impl PeerView {
         peer: &PeerConnectionObservation,
     ) -> Self {
         let content = peer.content.as_ref();
+        let upload = peer.upload.as_ref();
         let client_name = peer.peer_id.as_ref().and_then(identify_client);
         let client_name_capability = if client_name.is_some() {
             CapabilityStatus::Available
@@ -229,16 +231,16 @@ impl PeerView {
                 captured_at.saturating_sub(peer.lifecycle_changed_at),
             ),
             remote_endpoint: peer.endpoint.to_string(),
-            local_endpoint: None,
+            local_endpoint: peer.local_endpoint.map(|endpoint| endpoint.to_string()),
             sources: peer_sources(peer.sources),
             peer_id: peer.peer_id.map(hex_peer_id),
             client_name,
             supports_extensions: peer.supports_extensions,
-            supports_ut_metadata: None,
+            supports_ut_metadata: peer.supports_ut_metadata,
             local_interested: content.map(|_| true),
-            remote_interested: None,
+            remote_interested: upload.map(|activity| activity.interested),
             remote_choking: content.map(|activity| activity.choking),
-            local_choking: None,
+            local_choking: upload.map(|activity| activity.grant == PeerUploadGrant::Choked),
             available_piece_count: None,
             wanted_piece_count: content.map(|activity| bounded_u32(activity.wanted_piece_count)),
             payload_download_rate_bytes: content
@@ -247,11 +249,22 @@ impl PeerView {
                 .map(|activity| activity.useful_payload_bytes.to_string()),
             protocol_download_rate_bytes: None,
             protocol_downloaded_bytes: None,
-            payload_upload_rate_bytes: None,
-            payload_uploaded_bytes: None,
-            pending_requests: content.map(|activity| bounded_u32(activity.pending_requests)),
+            payload_upload_rate_bytes: upload.map(|activity| activity.payload_rate.to_string()),
+            payload_uploaded_bytes: upload.map(|activity| activity.payload_bytes.to_string()),
+            pending_requests: content
+                .map(|activity| bounded_u32(activity.pending_requests))
+                .or_else(|| upload.map(|activity| bounded_u32(activity.queued_requests))),
             target_requests: content.map(|activity| bounded_u32(activity.target_requests)),
-            queued_payload_bytes: content.map(|activity| activity.queued_payload_bytes.to_string()),
+            queued_payload_bytes: content
+                .map(|activity| activity.queued_payload_bytes.to_string())
+                .or_else(|| {
+                    upload.map(|activity| {
+                        activity
+                            .queued_bytes
+                            .saturating_add(activity.writer_bytes)
+                            .to_string()
+                    })
+                }),
             oldest_request_age_millis: content
                 .and_then(|activity| activity.oldest_request_age)
                 .map(duration_millis_string),
@@ -263,7 +276,12 @@ impl PeerView {
                 PeerRequestWindowPhase::Stalled => PeerRequestPhase::Stalled,
             }),
             connected_age_millis: content
-                .map(|activity| duration_millis_string(activity.connected_age)),
+                .map(|activity| duration_millis_string(activity.connected_age))
+                .or_else(|| {
+                    upload.map(|_| {
+                        duration_millis_string(captured_at.saturating_sub(peer.started_at))
+                    })
+                }),
             last_useful_age_millis: content
                 .and_then(|activity| activity.last_useful_age)
                 .map(duration_millis_string),
@@ -277,23 +295,46 @@ impl PeerView {
                 PeerFailure::RemoteClosed => PeerDisconnectReason::RemoteClosed,
             }),
             capabilities: PeerFieldCapabilities {
-                local_endpoint: CapabilityStatus::Unsupported,
+                local_endpoint: if peer.local_endpoint.is_some() {
+                    CapabilityStatus::Available
+                } else {
+                    CapabilityStatus::Unavailable
+                },
                 client_name: client_name_capability,
-                ut_metadata: CapabilityStatus::Unavailable,
-                interest_directions: CapabilityStatus::Unavailable,
-                local_choke: CapabilityStatus::Unsupported,
+                ut_metadata: if peer.supports_ut_metadata.is_some() {
+                    CapabilityStatus::Available
+                } else {
+                    CapabilityStatus::Unavailable
+                },
+                interest_directions: if content.is_some() || upload.is_some() {
+                    CapabilityStatus::Available
+                } else {
+                    CapabilityStatus::Unavailable
+                },
+                local_choke: if upload.is_some() {
+                    CapabilityStatus::Available
+                } else {
+                    CapabilityStatus::Unsupported
+                },
                 piece_availability: CapabilityStatus::Unavailable,
                 protocol_rates: CapabilityStatus::Unsupported,
-                upload: CapabilityStatus::Unsupported,
+                upload: if upload.is_some() {
+                    CapabilityStatus::Available
+                } else {
+                    CapabilityStatus::Unsupported
+                },
                 metadata_stage: CapabilityStatus::Unavailable,
             },
         };
-        view.peer_flags = derive_peer_flags(&view);
+        view.peer_flags = derive_peer_flags(
+            &view,
+            upload.is_some_and(|activity| activity.grant == PeerUploadGrant::Optimistic),
+        );
         view
     }
 }
 
-fn derive_peer_flags(peer: &PeerView) -> Vec<PeerFlagView> {
+fn derive_peer_flags(peer: &PeerView, optimistic_unchoke: bool) -> Vec<PeerFlagView> {
     let mut flags = Vec::with_capacity(6);
 
     if peer.direction == PeerDirection::Incoming {
@@ -322,6 +363,11 @@ fn derive_peer_flags(peer: &PeerView) -> Vec<PeerFlagView> {
     if peer.transport == PeerTransportKind::Utp {
         flags.push(PeerFlagView::Utp);
     }
+    if optimistic_unchoke {
+        flags.push(PeerFlagView::OptimisticUnchoke);
+    }
+
+    flags.sort_unstable();
 
     flags
 }

@@ -552,13 +552,20 @@ describe("LiveApplication", () => {
       recovered.peersByTorrent[TORRENT_ID]?.rows["connection-2"]?.flags,
     ).toEqual([
       "incoming",
-      "download_allowed",
+      "upload_allowed",
       "extension_protocol",
-      "utp",
+      "metadata_extension",
+      "optimistic_unchoke",
     ]);
-    expect(
-      recovered.peersByTorrent[TORRENT_ID]?.rows["connection-2"]?.client,
-    ).toBe("µTorrent 3.5.5");
+    expect(recovered.peersByTorrent[TORRENT_ID]?.rows["connection-2"]).toMatchObject({
+      state: "connected",
+      endpoint: "127.0.0.1:6881",
+      client: "µTorrent 3.5.5",
+      source: "incoming",
+      uploadRate: 2048,
+      uploadedBytes: 8192,
+      requestsPending: 2,
+    });
     await application.close();
   });
 
@@ -913,12 +920,13 @@ function torrent(): TorrentView {
 }
 
 function peer(generation: number): PeerView {
+  const uploading = generation !== 1;
   return {
     connection_id: `connection-${generation}`,
     torrent_id: TORRENT_ID,
     peer_record_id: "peer-1",
     direction: "incoming",
-    transport: "utp",
+    transport: uploading ? "tcp" : "utp",
     lifecycle: generation === 1 ? "protocol_handshaking" : "connected",
     role: "content",
     ...(generation === 1
@@ -926,50 +934,51 @@ function peer(generation: number): PeerView {
       : {
           peer_flags: [
             "incoming",
-            "download_allowed",
+            "upload_allowed",
             "extension_protocol",
-            "utp",
+            "metadata_extension",
+            "optimistic_unchoke",
           ] satisfies NonNullable<PeerView["peer_flags"]>,
         }),
     lifecycle_age_millis: "12",
     remote_endpoint: "127.0.0.1:6881",
-    local_endpoint: null,
-    sources: ["manual"],
+    local_endpoint: uploading ? "127.0.0.1:51413" : null,
+    sources: uploading ? ["incoming"] : ["manual"],
     peer_id: null,
     client_name: generation === 1 ? null : "µTorrent 3.5.5",
     supports_extensions: true,
     supports_ut_metadata: true,
-    local_interested: true,
-    remote_interested: null,
-    remote_choking: true,
-    local_choking: null,
+    local_interested: uploading ? null : true,
+    remote_interested: uploading ? true : null,
+    remote_choking: uploading ? null : true,
+    local_choking: uploading ? false : null,
     available_piece_count: null,
     wanted_piece_count: null,
     payload_download_rate_bytes: null,
     payload_downloaded_bytes: null,
     protocol_download_rate_bytes: null,
     protocol_downloaded_bytes: null,
-    payload_upload_rate_bytes: null,
-    payload_uploaded_bytes: null,
-    pending_requests: null,
+    payload_upload_rate_bytes: uploading ? "2048" : null,
+    payload_uploaded_bytes: uploading ? "8192" : null,
+    pending_requests: uploading ? 2 : null,
     target_requests: null,
-    queued_payload_bytes: null,
+    queued_payload_bytes: uploading ? "4096" : null,
     oldest_request_age_millis: null,
     request_timeout_millis: null,
     request_phase: null,
-    connected_age_millis: null,
+    connected_age_millis: uploading ? "2000" : null,
     last_useful_age_millis: null,
     last_payload_age_millis: null,
     disconnect_reason: null,
     capabilities: {
-      local_endpoint: "unavailable",
+      local_endpoint: uploading ? "available" : "unavailable",
       client_name: generation === 1 ? "unavailable" : "available",
-      ut_metadata: "unavailable",
-      interest_directions: "unavailable",
-      local_choke: "unavailable",
+      ut_metadata: uploading ? "available" : "unavailable",
+      interest_directions: uploading ? "available" : "unavailable",
+      local_choke: uploading ? "available" : "unavailable",
       piece_availability: "unavailable",
       protocol_rates: "unavailable",
-      upload: "unsupported",
+      upload: uploading ? "available" : "unsupported",
       metadata_stage: "unavailable",
     },
   };

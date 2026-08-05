@@ -85,15 +85,17 @@ mechanics, while the existing overlay layer retains positioning and menu
 semantics.
 
 Tactical [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) has landed
-the selected feature-driven seam through its first two gates. A task-free
+the selected feature-driven seam through its first four gates. A task-free
 engine torrent-peer state now retains the ordinary `PeerRegistry`,
 `PeerRuntime`, checked connection IDs, and publication state. A private
 session `TorrentRuntime` owns that handle, active-operation membership, and a
 generation-fenced seed-registration slot across download completion and later
-seeding. `ApplicationService` retains catalog, global service, and
-single-active-torrent policy. This is concrete ownership and
-deterministic-test pressure, not a file-size extraction or an umbrella session
-rewrite; routed incoming task attachment remains in the tactical's next gate.
+seeding. Routed incoming tasks attach to that state after handshake routing,
+and the existing Peers/Swarm mapper consumes immutable observations rather
+than reaching into their socket or scheduler owners. `ApplicationService`
+retains catalog, global service, and single-active-torrent policy. This is
+concrete ownership and deterministic-test pressure, not a file-size extraction
+or an umbrella session rewrite.
 
 ## Source-Organization Guidance
 
