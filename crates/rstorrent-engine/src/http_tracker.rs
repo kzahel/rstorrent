@@ -950,7 +950,7 @@ fn parse_compact_peers(
     if !compact.is_empty() && compact.len() < stride {
         return Err(HttpTrackerError::MalformedPeers(field));
     }
-    if compact.len() % stride != 0 {
+    if !compact.len().is_multiple_of(stride) {
         diagnostics.push(format!("{field} had a short trailing compact suffix"));
     }
     for entry in compact.chunks_exact(stride) {

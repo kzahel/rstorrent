@@ -1374,6 +1374,7 @@ mod tests {
     use crate::{PeerConnectionObservation, TorrentPeerActivitySink};
     use std::net::Ipv4Addr;
     use std::sync::Mutex;
+    use std::sync::atomic::AtomicUsize;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream, UdpSocket};
     use tokio::sync::Notify;
@@ -1659,6 +1660,10 @@ mod tests {
         response
     }
 
+    fn empty_http_tracker_response() -> &'static [u8] {
+        b"HTTP/1.1 200 OK\r\nContent-Length: 27\r\nConnection: close\r\n\r\nd8:intervali900e5:peers0:e"
+    }
+
     #[tokio::test]
     async fn session_http_tracker_carries_lifecycle_id_and_peers_through_common_owner() {
         let tracker = TcpListener::bind("127.0.0.1:0")
@@ -1769,6 +1774,313 @@ mod tests {
         assert_eq!(terminal.registrations, 0);
         assert_eq!(terminal.tracker_operations, 0);
         assert_eq!(terminal.tracker_operations_high_water, 1);
+        assert_eq!(terminal.tasks, 0);
+    }
+
+    #[tokio::test]
+    async fn removal_cancels_a_stalled_http_announce_before_sending_stopped() {
+        let tracker = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind stalled HTTP tracker");
+        let tracker_address = tracker.local_addr().expect("HTTP tracker address");
+        let (started_sender, started_receiver) = oneshot::channel();
+        let (closed_sender, closed_receiver) = oneshot::channel();
+        let tracker_task = tokio::spawn(async move {
+            let (mut started_stream, _) = tracker.accept().await.expect("accept started announce");
+            let started = read_http_tracker_request(&mut started_stream).await;
+            started_sender
+                .send(started)
+                .expect("report started announce");
+            let mut byte = [0_u8; 1];
+            let closed = tokio::time::timeout(Duration::from_secs(1), async {
+                loop {
+                    if started_stream
+                        .read(&mut byte)
+                        .await
+                        .expect("read cancelled stream")
+                        == 0
+                    {
+                        break;
+                    }
+                }
+            })
+            .await
+            .is_ok();
+            closed_sender
+                .send(closed)
+                .expect("report cancelled connection");
+
+            match tokio::time::timeout(Duration::from_millis(200), tracker.accept()).await {
+                Ok(Ok((mut stopped_stream, _))) => {
+                    let stopped = read_http_tracker_request(&mut stopped_stream).await;
+                    stopped_stream
+                        .write_all(empty_http_tracker_response())
+                        .await
+                        .expect("write stopped response");
+                    Some(stopped)
+                }
+                Ok(Err(error)) => panic!("accept stopped announce: {error}"),
+                Err(_) => None,
+            }
+        });
+
+        let endpoint = PeerAdvertisementEndpoint {
+            generation: 1,
+            endpoint: None,
+            scope: None,
+            stopping: false,
+        };
+        let (_endpoint_sender, endpoint_receiver) = watch::channel(endpoint);
+        let network = NetworkConfig::new(
+            NetworkPolicy::LoopbackOnly,
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+        );
+        let mut dht_config = crate::dht::DhtConfig::for_network(NetworkPolicy::Offline);
+        dht_config.bootstrap_nodes.clear();
+        let dht = crate::dht::DhtService::start(dht_config)
+            .await
+            .expect("start offline DHT");
+        let service =
+            DiscoveryAdvertisementService::start(network, endpoint_receiver, dht.handle());
+        let handle = service.handle();
+        let tracker_url = format!("http://{tracker_address}/announce?passkey=redacted");
+        handle
+            .upsert(DiscoveryAdvertisementRegistration {
+                generation: 9,
+                info_hash: [9; 20],
+                trackers: vec![TrackerConfig {
+                    endpoint: TrackerEndpoint::from_http_url(&tracker_url)
+                        .expect("HTTP tracker endpoint"),
+                    url: tracker_url,
+                    tier: 0,
+                    position: 0,
+                    source: crate::TrackerSource::Metainfo,
+                }],
+                desired_running: true,
+                complete: false,
+                incoming_registered: false,
+                privacy: TorrentPrivacy::Private,
+                counters: TrackerCounters::default(),
+                peers: TorrentPeerHandle::new(Arc::new(NoopSink)).expect("peer registry"),
+                activity_sink: Arc::new(NoopSink),
+            })
+            .await
+            .expect("register stalled tracker");
+        let started = tokio::time::timeout(Duration::from_secs(2), started_receiver)
+            .await
+            .expect("started announce deadline")
+            .expect("started announce report");
+        assert!(started.contains("&event=started "));
+
+        let remove = tokio::spawn(async move { handle.remove([9; 20], 9).await });
+        assert!(
+            closed_receiver
+                .await
+                .expect("cancelled connection observation"),
+            "removal must drop the stalled request before its ordinary timeout"
+        );
+        remove
+            .await
+            .expect("remove task")
+            .expect("remove registration");
+        let stopped = tracker_task.await.expect("stalled tracker task");
+        if let Some(stopped) = stopped {
+            assert!(stopped.contains("&numwant=0&event=stopped "));
+        }
+
+        let terminal = service.shutdown().await.expect("shutdown service");
+        dht.shutdown().await.expect("shutdown DHT");
+        assert_eq!(terminal.registrations, 0);
+        assert_eq!(terminal.tracker_operations, 0);
+        assert_eq!(terminal.tasks, 0);
+    }
+
+    #[tokio::test]
+    async fn mixed_http_and_udp_trackers_share_exact_eight_operation_ceiling() {
+        let http_tracker = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind HTTP tracker");
+        let http_address = http_tracker.local_addr().expect("HTTP tracker address");
+        let udp_tracker = Arc::new(
+            UdpSocket::bind("127.0.0.1:0")
+                .await
+                .expect("bind UDP tracker"),
+        );
+        let udp_address = udp_tracker.local_addr().expect("UDP tracker address");
+        let observed = Arc::new(AtomicUsize::new(0));
+        let observed_changed = Arc::new(Notify::new());
+        let (release_sender, release_receiver) = watch::channel(false);
+
+        let http_observed = observed.clone();
+        let http_changed = observed_changed.clone();
+        let http_release = release_receiver.clone();
+        let http_task = tokio::spawn(async move {
+            let mut handlers = JoinSet::new();
+            loop {
+                tokio::select! {
+                    accepted = http_tracker.accept() => {
+                        let (mut stream, _) = accepted.expect("accept HTTP operation");
+                        let mut release = http_release.clone();
+                        let observed = http_observed.clone();
+                        let changed = http_changed.clone();
+                        handlers.spawn(async move {
+                            let _request = read_http_tracker_request(&mut stream).await;
+                            if !*release.borrow() {
+                                observed.fetch_add(1, Ordering::AcqRel);
+                                changed.notify_waiters();
+                                release.changed().await.expect("release HTTP operation");
+                            }
+                            stream
+                                .write_all(empty_http_tracker_response())
+                                .await
+                                .expect("write HTTP response");
+                        });
+                    }
+                    joined = handlers.join_next(), if !handlers.is_empty() => {
+                        joined.expect("HTTP handler join").expect("HTTP handler");
+                    }
+                }
+            }
+        });
+
+        let udp_socket = udp_tracker.clone();
+        let udp_observed = observed.clone();
+        let udp_changed = observed_changed.clone();
+        let udp_task = tokio::spawn(async move {
+            let mut packet = [0_u8; 2_048];
+            let mut handlers = JoinSet::new();
+            loop {
+                tokio::select! {
+                    received = udp_socket.recv_from(&mut packet) => {
+                        let (length, client) = received.expect("receive UDP operation");
+                        let request = packet[..length].to_vec();
+                        let socket = udp_socket.clone();
+                        let mut release = release_receiver.clone();
+                        let observed = udp_observed.clone();
+                        let changed = udp_changed.clone();
+                        handlers.spawn(async move {
+                            if !*release.borrow() {
+                                observed.fetch_add(1, Ordering::AcqRel);
+                                changed.notify_waiters();
+                                release.changed().await.expect("release UDP operation");
+                            }
+                            let mut response = if request.len() == 16 {
+                                let mut response = Vec::from(0_u32.to_be_bytes());
+                                response.extend_from_slice(&request[12..16]);
+                                response.extend_from_slice(&0x0102_0304_0506_0708_u64.to_be_bytes());
+                                response
+                            } else {
+                                assert_eq!(request.len(), 98);
+                                let mut response = Vec::from(1_u32.to_be_bytes());
+                                response.extend_from_slice(&request[12..16]);
+                                response.extend_from_slice(&900_u32.to_be_bytes());
+                                response.extend_from_slice(&0_u32.to_be_bytes());
+                                response.extend_from_slice(&0_u32.to_be_bytes());
+                                response
+                            };
+                            socket
+                                .send_to(&response, client)
+                                .await
+                                .expect("send UDP response");
+                            response.clear();
+                        });
+                    }
+                    joined = handlers.join_next(), if !handlers.is_empty() => {
+                        joined.expect("UDP handler join").expect("UDP handler");
+                    }
+                }
+            }
+        });
+
+        let endpoint = PeerAdvertisementEndpoint {
+            generation: 1,
+            endpoint: None,
+            scope: None,
+            stopping: false,
+        };
+        let (_endpoint_sender, endpoint_receiver) = watch::channel(endpoint);
+        let network = NetworkConfig::new(
+            NetworkPolicy::LoopbackOnly,
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+        );
+        let mut dht_config = crate::dht::DhtConfig::for_network(NetworkPolicy::Offline);
+        dht_config.bootstrap_nodes.clear();
+        let dht = crate::dht::DhtService::start(dht_config)
+            .await
+            .expect("start offline DHT");
+        let service =
+            DiscoveryAdvertisementService::start(network, endpoint_receiver, dht.handle());
+        let handle = service.handle();
+        for index in 0_u8..12 {
+            let (url, endpoint) = if index % 2 == 0 {
+                let url = format!("http://{http_address}/announce/{index}");
+                let endpoint = TrackerEndpoint::from_http_url(&url).expect("HTTP tracker endpoint");
+                (url, endpoint)
+            } else {
+                (
+                    format!("udp://{udp_address}"),
+                    TrackerEndpoint::Udp(rstorrent_protocol::magnet::UdpTrackerUrl {
+                        host: udp_address.ip().to_string(),
+                        port: udp_address.port(),
+                    }),
+                )
+            };
+            handle
+                .upsert(DiscoveryAdvertisementRegistration {
+                    generation: 1,
+                    info_hash: [index; 20],
+                    trackers: vec![TrackerConfig {
+                        endpoint,
+                        url,
+                        tier: 0,
+                        position: 0,
+                        source: crate::TrackerSource::Metainfo,
+                    }],
+                    desired_running: true,
+                    complete: false,
+                    incoming_registered: false,
+                    privacy: TorrentPrivacy::Private,
+                    counters: TrackerCounters::default(),
+                    peers: TorrentPeerHandle::new(Arc::new(NoopSink)).expect("peer registry"),
+                    activity_sink: Arc::new(NoopSink),
+                })
+                .await
+                .expect("register mixed tracker");
+        }
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if observed.load(Ordering::Acquire) == MAX_TRACKER_OPERATIONS {
+                    break;
+                }
+                observed_changed.notified().await;
+            }
+        })
+        .await
+        .expect("fill shared tracker operation ceiling");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(observed.load(Ordering::Acquire), MAX_TRACKER_OPERATIONS);
+        release_sender
+            .send(true)
+            .expect("release tracker operations");
+
+        let terminal = tokio::time::timeout(Duration::from_secs(3), service.shutdown())
+            .await
+            .expect("bounded mixed tracker shutdown")
+            .expect("shutdown service");
+        dht.shutdown().await.expect("shutdown DHT");
+        http_task.abort();
+        udp_task.abort();
+        let _ = http_task.await;
+        let _ = udp_task.await;
+        assert_eq!(
+            terminal.tracker_operations_high_water,
+            MAX_TRACKER_OPERATIONS
+        );
+        assert_eq!(terminal.tracker_operations, 0);
+        assert_eq!(terminal.registrations, 0);
         assert_eq!(terminal.tasks, 0);
     }
 
