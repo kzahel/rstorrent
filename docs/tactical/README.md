@@ -445,6 +445,10 @@ that scope and its cleanup or compatibility rules explicitly.
   planned; adds a bounded general BEP 10 negotiation map and bidirectional PEX
   with exact live add/drop events, private gating, source diversity, hostile
   input limits, and controlled two-hop evidence.
+- [`095-bounded-http-https-tracker-transport.md`](095-bounded-http-https-tracker-transport.md):
+  complete; adds bounded HTTP and encrypted-but-unauthenticated HTTPS tracker
+  transport, compact/noncompact IPv4/IPv6 peer intake, family-correct
+  advertisement, and controlled libtorrent plus Android product evidence.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

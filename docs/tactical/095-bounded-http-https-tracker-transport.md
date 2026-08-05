@@ -1,15 +1,15 @@
 # Tactical 095: Bounded HTTP And HTTPS Tracker Transport
 
-Status: Planned on 2026-08-05. This is a decision-complete candidate tactical.
-Creating and committing this planning record is authorized; implementation has
-not started. It becomes executable only after Tactical
-[`092`](092-truthful-tracker-and-dht-peer-advertisement.md) is complete and the
-living capability queue explicitly selects it. It may then be prioritized
-ahead of planned Tacticals `093` and `094`, which are not wire dependencies.
+Status: Completed on 2026-08-05. Tactical
+[`092`](092-truthful-tracker-and-dht-peer-advertisement.md) supplied the
+required long-lived owner, the maintainer selected this slice, and all declared
+initial unauthenticated-HTTPS stopping conditions now pass. Authenticated
+certificate and hostname validation remains the immediate next security
+boundary rather than part of this support claim.
 
 Topics: `tracker-discovery`, `protocol-support`, `capability-readiness`,
 `incoming-reachability-and-seeding`, `application-control`,
-`code-organization-and-refactoring`
+`application-view-api`, `code-organization-and-refactoring`
 
 Dependencies: completed Tacticals
 [`081`](081-v1-torrent-byte-intake.md),
@@ -674,6 +674,91 @@ Each slice must leave the workspace formatted and its focused tests passing.
 Logical commits are allowed after each gate. A partial implementation must
 continue showing unlanded HTTP/HTTPS rows as unsupported and may not infer
 support from a parser, reqwest client, or one successful public announce.
+
+## Landed Outcome And Evidence
+
+The implementation follows the declared five slices without adding a tracker
+framework or changing the workspace crate graph:
+
+- `rstorrent-protocol::magnet` now retains one bounded UDP/HTTP/HTTPS tracker
+  catalog and implements its operational authority validation and normalized
+  identity with pure values and parsing. It deliberately does not depend on
+  `url`, reqwest, Tokio, DNS, or sockets.
+- `rstorrent-engine::tracker` owns the transport-neutral schedule, accepted
+  outcome, tracker ID, optional swarm values, and BEP 31 transitions.
+  `rstorrent-engine::http_tracker` owns exact requests, Basic authentication,
+  policy- and family-aware resolution, redirects, the focused reqwest client
+  set, gzip, permissive bounded bencode, and compact/noncompact peer parsing.
+  `rstorrent-engine::advertisement` retains explicit UDP versus HTTP(S)
+  dispatch beneath one operation budget.
+- One stable per-torrent peer handle receives all accepted observations.
+  `rstorrent-engine::driver` now keeps the external discovery sender alive
+  through content startup, closing a race in which session-owned tracker peers
+  could otherwise arrive after the download supervisor had mistaken the
+  channel for terminal exhaustion.
+- Session tracker projection now reports `Unencrypted` for HTTP and
+  `EncryptedUnauthenticated` for HTTPS through generated JSON Schema,
+  TypeScript, React, UniFFI, and Kotlin contracts. No presentation infers
+  certificate verification from the URL scheme or a successful announce.
+
+The resolved focused dependencies are reqwest `0.13.4` with only `rustls` and
+`stream`, and async-compression `0.4.43` with only `gzip` and `tokio`; both are
+dual MIT/Apache-2.0 licensed. Reqwest automatic content decoding, default TLS,
+proxies, HTTP/2, cookies, and the other deferred features remain disabled.
+
+Deterministic and scripted evidence covers exact binary query construction,
+existing queries and Basic credentials, tracker-ID continuation, optional
+fields and BEP 31, compact `peers`/`peers6`, noncompact numeric and hostname
+peers, partial compact suffixes, malformed and oversized structures, chunked
+`x-gzip`, truncated/concatenated/over-limit gzip, status and encoding
+rejection, cross-origin credential stripping, downgrade rejection, IPv6
+literal and AAAA-only origins, family-correct port `1`, and untrusted
+hostname-mismatched TLS. The controlled certificate simultaneously exercises
+the untrusted-chain and wrong-host bypasses; once reqwest selects its
+`NoVerifier` path, certificate date and chain variants do not select another
+RSTorrent branch. Malformed TLS remains a transport failure.
+
+Lifecycle and resource evidence includes:
+
+- twelve mixed UDP/HTTP registrations reached an exact session-wide tracker
+  operation high water of eight and terminal active-operation count zero;
+- removal of a row with a response stalled after request intake cancelled and
+  joined the in-flight HTTP operation promptly, with no late transition;
+- application-owned HTTP and HTTPS `peers6` fixtures completed and published
+  hash-verified content through an outbound IPv6 loopback peer, observed
+  started and stopped, and projected the exact security classification;
+- the one-MiB encoded and decoded ceilings, 4,096-token/512-collection parser
+  bounds, 200-peer cap, 16-address/hostname caps, four concurrent hostname
+  resolutions, five redirects, and request/credential ceilings all have
+  boundary or over-limit fixtures; and
+- the API 34 arm64 AVD performed one wrong-host, self-signed HTTPS announce,
+  received only `peers6`, completed and published through dynamic SAF, and
+  retained the established 40-handle storage limit with owned high water six
+  and pending high water three before clean shutdown.
+
+The independent controlled interoperability gate introduced the ordinary
+application to a pinned libtorrent `2.0.13.0` seed solely through an HTTP
+tracker. Metadata, payload SHA-1, publication, and started/completed/stopped
+announces passed; the tracker observed three requests and no explicit peer
+hint. This is controlled HTTP tracker interoperability, not a private- or
+public-tracker reliability claim.
+
+The closure validation run on 2026-08-05 passed:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace --all-targets -- -D warnings`;
+- `cargo test --workspace`, including the architecture dependency gate;
+- generated web-contract drift checking, TypeScript checking, 178 passing web
+  tests with two skipped, and the production Vite/CSP build;
+- Android API 28 x86_64 and arm64-v8a Rust cross-builds, UniFFI Kotlin
+  generation, release APK assembly, and the debug JVM suite;
+- the owned API 34 arm64 no-window AVD HTTPS product profile; and
+- `tests/interop/http_tracker_application.py` against pinned libtorrent.
+
+The optional live Ubuntu/public-tracker row did not run because no live-smoke
+opt-in was granted. It is supporting changing-network evidence and was not a
+stopping condition substitute for the deterministic, controlled, and AVD
+gates above.
 
 ## Deliberate Deferrals And Next Boundary
 

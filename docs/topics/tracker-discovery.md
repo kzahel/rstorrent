@@ -9,12 +9,16 @@ admission rather than tracker intake. Tactical `043` makes the deterministic
 schedule's retained lifecycle the authoritative inspectable state and proves
 it through the live browser surface. Tactical `081` adds persisted BEP 12
 metainfo tiers and source attribution. UDP rows enter the existing runtime;
-HTTP/HTTPS trackers remain truthfully visible unsupported configuration rather
-than implemented transports. Completed Tactical
+HTTP/HTTPS rows originally remained truthfully visible unsupported
+configuration. Completed Tactical
 [`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) moves
 application tracker ownership into the long-lived session/torrent lifetime,
 supplies its actual selected or explicit outbound-only port, exact current
-counters, and completed/stopped lifecycle.
+counters, and completed/stopped lifecycle. Completed Tactical
+[`095`](../tactical/095-bounded-http-https-tracker-transport.md) now runs HTTP
+and encrypted-but-unauthenticated HTTPS through that same owner, including
+IPv4/IPv6 tracker connectivity and IPv6 peer discovery. Authenticated HTTPS
+certificate and hostname validation remains the next security boundary.
 
 ## Scope
 
@@ -34,8 +38,10 @@ the peer registry remains the only owner of accumulated peer records.
 - A **tracker announce** is one identified operation carrying torrent
   identity, client identity, transfer counters, event, listening port, key,
   and requested peer count.
-- A **tracker response** is untrusted interval, swarm-count, and compact-peer
-  data correlated to one announce transaction.
+- A **tracker response** is untrusted interval, optional swarm counts, peer
+  endpoints, warning, and transport continuation data correlated to one
+  announce operation. HTTP may return compact IPv4/IPv6 or noncompact peers;
+  UDP retains its address-family-specific compact response.
 - A **tracker record** retains URL, synthetic tier, source, failure history,
   announce state, interval, and next eligible monotonic time independently
   from any one in-flight operation.
@@ -46,11 +52,15 @@ the peer registry remains the only owner of accumulated peer records.
 
 ## Accepted Direction
 
-Tracker protocol values, binary codecs, and response validation remain
-independent from Tokio, DNS, sockets, clocks, and random-number generation.
-The runtime supplies transaction IDs and the announce key, resolves URLs,
-owns one socket, enforces a deadline, and translates accepted compact
-endpoints into `PeerObservation` values with `PeerSource::Tracker`.
+Tracker protocol values, binary codecs, URL authority validation, and schedule
+transitions remain independent from Tokio, DNS, sockets, clocks, reqwest, and
+random-number generation. The runtime supplies transaction IDs and the
+announce key, resolves URLs, owns transport resources, enforces deadlines, and
+translates accepted endpoints into `PeerObservation` values with
+`PeerSource::Tracker`. Explicit enum dispatch shares lifecycle and outcomes
+between UDP and HTTP(S); their sockets, token/ID continuation, framing, TLS,
+and response mechanics remain cohesive transport-specific implementations
+rather than a general trait or plugin framework.
 
 Tracker failure and tracker exhaustion are mechanism outcomes, not necessarily
 torrent errors. Application progress assessment must combine tracker status
@@ -81,10 +91,10 @@ session shutdown explicitly stop and join the registration. Focused direct
 engine APIs retain their nested manager for standalone use, but application
 driver configurations disable it so the product has only the session owner.
 
-Magnet `tr` parameters do not encode BEP 12 tier structure, so retained UDP
-trackers form one initially shuffled synthetic tier. Failure falls through to
-another eligible record in the same round. After all records fail, the
-manager waits for the earliest retry; each record remains eligible
+Magnet `tr` parameters do not encode BEP 12 tier structure, so retained UDP,
+HTTP, and HTTPS trackers form one initially shuffled synthetic tier. Failure
+falls through to another eligible record in the same round. After all records
+fail, the manager waits for the earliest retry; each record remains eligible
 indefinitely under the libtorrent-style quadratic delay
 `5 + 12.5 * failures²` seconds, capped at 60 minutes. A valid response,
 including a zero-peer response, ends the round, resets that record's failure
@@ -255,30 +265,53 @@ reconnect afterward. The one-torrent controlled owner records command-queue
 and tracker-operation high water `1` under the session ceilings and terminates
 with zero tasks, registrations, and operations.
 
+Tactical `095` generalizes the retained catalog and schedule without reopening
+that lifetime owner. One session-owned reqwest client set performs HTTP/1.1
+and HTTPS announces with exact binary query encoding, bounded Basic auth,
+policy/family-aware DNS, five-hop redirect policy, connection reuse, explicit
+encoded and decoded body caps, and focused streaming gzip/`x-gzip` support.
+Bounded permissive tracker bencode accepts common out-of-order dictionaries,
+tracker failures/warnings and IDs, BEP 31 retry advice, optional swarm values,
+compact `peers`/`peers6`, and noncompact numeric or hostname peers. HTTPS
+deliberately disables certificate and hostname verification only for tracker
+clients and is projected as encrypted and unauthenticated.
+
+Scripted evidence covers hostile request/response shapes, redirect credential
+stripping and downgrade rejection, cancellation, an AAAA-only tracker,
+family-correct port `1`, only-`peers6`, and a wrong-host self-signed HTTPS
+tracker. Twelve mixed UDP/HTTP registrations reached the exact shared high
+water of eight operations and terminal zero. Application HTTP and HTTPS
+verticals hash-verified content from an IPv6 loopback peer; a controlled HTTP
+tracker independently introduced the application to pinned libtorrent
+`2.0.13.0` for verified metadata, payload, publication, and all lifecycle
+events. An owned API 34 arm64 AVD repeated the unauthenticated HTTPS/only-
+`peers6` product path through dynamic SAF. Public live evidence was not run.
+
 ## Current Limits And Next Work
 
-The session owner remains volatile and IPv4/UDP-only. Current transfer
+The session owner remains volatile. Current transfer
 counters are truthful for the application tracker session but are not durable
 lifetime accounting. Port mapping success remains distinct from observed
 incoming reachability, and the port-`1` tracker value remains an explicitly
 unconnectable compatibility sentinel rather than an endpoint.
 
-HTTP/HTTPS/WebSocket transport, authentication, proxies, BEP 41 URL data,
-scrape, and a public-tracker reliability claim remain absent. Planned Tactical
-[`095`](../tactical/095-bounded-http-https-tracker-transport.md) owns the
-bounded HTTP/HTTPS transport slice over the retained session tracker catalog;
-it does not reopen the endpoint or lifecycle ownership settled here. The
-headless public-torrent comparator remains useful changing-network evidence
-but cannot replace controlled protocol and libtorrent tests.
+HTTPS server authentication, WebSocket transport, proxies, non-Basic
+authentication, BEP 41 URL data, scrape, and a public-tracker reliability claim
+remain absent. IPv6 tracker connectivity and outbound IPv6 peers are usable,
+but the listener, mapping, and advertised reachable endpoint remain IPv4-only;
+full BEP 7 multi-address announcing is therefore absent. The headless public-
+torrent comparator remains useful changing-network evidence but cannot
+replace controlled protocol and libtorrent tests.
 
 Tactical `081` parses and persists every valid unique
 `announce-list`/`announce` URL admitted by its
 outer byte and calibrated decode-work profiles, preserves compact tier
-grouping and metainfo source, feeds only UDP rows into the existing manager,
-and projects retained HTTP/HTTPS rows through a bounded paged view as
-unsupported. The full catalog no longer has a 32-record ceiling, while the
-existing limit of eight concurrently active UDP operations remains. It does
-not implement other tracker wire protocols or broaden tracker authentication.
+grouping and metainfo source, and now feeds every operational UDP/HTTP/HTTPS
+row into the shared schedule. The bounded paged view projects ordinary
+lifecycle plus plaintext or encrypted-unauthenticated security. The full
+catalog has no 32-record ceiling, while at most eight tracker operations run
+concurrently across every transport. Other tracker wire protocols and
+authenticated HTTPS remain outside this slice.
 
 The controlled byte-intake proof uploads an exact 26,765-byte metainfo source
 whose 40,000-byte payload spans three pieces, observes the expected UDP

@@ -78,6 +78,13 @@ authoritative; clients do not infer reachability from configured or UDP ports.
 Generated TypeScript/schema and UniFFI/Kotlin compile checks pass. The React
 connection/seeding settings section renders every state, while Android carries
 the typed value without adding Compose settings UI.
+Completed Tactical
+[`095`](../tactical/095-bounded-http-https-tracker-transport.md) adds a closed
+tracker-security value to the existing paged tracker row. HTTP is
+`unencrypted`; HTTPS is `encrypted_unauthenticated` until certificate and
+hostname validation lands. Generated TypeScript/schema, React, UniFFI, and
+Kotlin consumers carry that distinction without adding a view kind, task,
+queue, inferred security rule, or contract-version change.
 
 ## Purpose And Scope
 
@@ -805,10 +812,13 @@ monotonic outcome ages and deadline, and bounded failure context. It does not
 derive state from diagnostics or retain a second tracker state machine.
 
 Tactical `081` makes this a paged projection and adds metainfo versus magnet
-source, original tier, and configured transport/capability state. UDP rows may
-be active; retained HTTP and HTTPS rows remain visible as unsupported and
-credentials are redacted. The full retained tracker catalog is not constrained
-by the manager's independent eight-operation UDP concurrency ceiling.
+source, original tier, and configured transport/capability state. At that
+checkpoint UDP rows could be active while retained HTTP and HTTPS rows remained
+visible as unsupported; credentials were redacted. Tactical `095` now admits
+operational UDP/HTTP/HTTPS rows to one shared eight-operation ceiling and
+projects their ordinary lifecycle. The row's new security field separates
+plaintext HTTP from encrypted-but-unauthenticated HTTPS; it does not infer
+certificate verification from scheme, announce success, or transport status.
 
 Same-catalog durable updates preserve live tracker state. Restart reconstructs
 configured inactive rows from the magnet without pretending volatile response
@@ -868,6 +878,14 @@ Tactical `089` preserves the complete-value replacement contract while
 separating configured preferred, active preferred, actual TCP, actual UDP, and
 mapped external TCP facts. Web validation, fixtures, settings presentation,
 generated schema/TypeScript, and regenerated UniFFI Kotlin consumers pass.
+
+Tactical `095` preserves the existing paged keyed tracker projection while
+adding the closed security field and activating HTTP/HTTPS lifecycle rows.
+Generated-contract drift, semantic TypeScript validation, 178 web tests, the
+production React build, Android cross-builds, and the API 34 arm64 AVD HTTPS
+profile pass. The AVD observed `encrypted_unauthenticated` for a wrong-host
+self-signed tracker that returned only `peers6`; this is evidence of the
+declared temporary policy, not authenticated HTTPS.
 
 Tactical `040` now supplies actual torrent lifecycle evidence in addition to
 the earlier synthetic `removed` diffs. Archive, removal stage, and managed-data

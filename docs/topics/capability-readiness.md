@@ -153,24 +153,32 @@ UDP route feeds DHT. Controlled loopback and eligible local-network traffic
 matches the separately reported TCP listener and DHT UDP source, while fixed
 TCP failure retains independent DHT service and all tasks join terminally.
 
+Tactical
+[`095`](../tactical/095-bounded-http-https-tracker-transport.md) is complete.
+UDP, HTTP, and HTTPS rows now share the long-lived tracker schedule and exact
+session-wide eight-operation ceiling. Bounded HTTP/1.1, gzip, redirects,
+Basic authentication, compact/noncompact IPv4/IPv6 peers, AAAA-only tracker
+connectivity, only-`peers6` outbound transfer, controlled libtorrent
+introduction, and Android HTTPS product evidence pass. HTTPS is deliberately
+encrypted but unauthenticated; certificate and hostname validation is the
+next security boundary.
+
 ## Current Queue
 
 ### Now
 
 **Tactical
-[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) is
-complete.** Tracker and DHT advertisement now use the generation-fenced
-selected TCP endpoint across the long-lived torrent lifetime. Controlled
-tracker-only, DHT-only, and mapped off-LAN discovery-to-download gates pass.
+[`095`](../tactical/095-bounded-http-https-tracker-transport.md) is
+complete.** The retained advertisement owner now runs bounded UDP, HTTP, and
+encrypted-but-unauthenticated HTTPS trackers with family-correct ports and
+IPv6 peer intake. Deterministic, controlled, cross-surface, and AVD gates pass.
 No successor is selected for implementation in this update.
 
 ### Next
 
-- Tactical
-  [`095`](../tactical/095-bounded-http-https-tracker-transport.md) is a
-  decision-complete candidate for bounded HTTP/HTTPS tracker transport over
-  the retained advertisement owner. Its planning record is not implementation
-  authorization.
+- Add authenticated tracker HTTPS certificate and hostname validation through
+  desktop and Android platform trust, with explicit failure and projection
+  evidence, before making a secure-HTTPS claim.
 - Add PCP and NAT-PMP only with their own bounded tactical and suitable
   controlled or physical gateway evidence; pinned source inspection is not a
   support claim.
@@ -213,10 +221,10 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
 | Explicit magnet peer hints | Implemented | deterministic, runtime, interop | Hints are bounded and feed the registry, but are not a general discovery mechanism. | [`peer-lifecycle`](peer-lifecycle.md) |
-| Scheduled UDP tracker announces | Implemented | deterministic, runtime, interop, web, AVD, live | One long-lived session owner provides UDP connect/announce, fallback, backoff, retransmission, token reuse, interval/corrective reannounce, exact counters, started/completed/stopped lifecycle, the selected TCP endpoint or port-`1` sentinel, and an eight-operation ceiling. Controlled tracker-only and mapped off-LAN discovery-to-seed evidence passes. | [`tracker-discovery`](tracker-discovery.md) |
+| Scheduled UDP tracker announces | Implemented | deterministic, runtime, interop, web, AVD, live | One long-lived session owner provides UDP connect/announce, fallback, backoff, retransmission, token reuse, interval/corrective reannounce, exact counters, started/completed/stopped lifecycle, the selected TCP endpoint or port-`1` sentinel, and an eight-operation ceiling shared with HTTP/HTTPS. Controlled tracker-only and mapped off-LAN discovery-to-seed evidence passes. | [`tracker-discovery`](tracker-discovery.md) |
 | Multiple magnet trackers | Partial | deterministic, runtime, interop, live | Up to eight startup operations contribute peers, but magnet trackers form one synthetic tier because magnets contain no BEP 12 tier structure. | [`tracker-discovery`](tracker-discovery.md) |
-| Metainfo tracker tiers | Implemented | deterministic, runtime, interop, web | Outer `announce-list`/`announce`, tier and source survive restart; UDP rows are scheduled under the eight-operation ceiling and the controlled imported tracker completes content. | [`tracker-discovery`](tracker-discovery.md) |
-| HTTP and HTTPS trackers | Absent | deterministic retention only | Configured rows survive and are visible with redacted credentials and unsupported transport state, but no request, response, authentication, redirect, or proxy owner exists. | [`tracker-discovery`](tracker-discovery.md) |
+| Metainfo tracker tiers | Implemented | deterministic, runtime, interop, web | Outer `announce-list`/`announce`, tier and source survive restart; UDP/HTTP/HTTPS rows share tier scheduling and the eight-operation ceiling, and controlled imported trackers complete content. | [`tracker-discovery`](tracker-discovery.md) |
+| HTTP and HTTPS trackers | Implemented | deterministic, runtime, interop, web, AVD | Bounded HTTP/1.1 requests, Basic auth, five redirects, gzip/`x-gzip`, permissive hostile bencode, tracker IDs and BEP 31, compact/noncompact IPv4/IPv6 peers, policy/family DNS, lifecycle/cancellation, and controlled libtorrent discovery pass. HTTPS encrypts transport but deliberately does not validate certificates or hostnames; proxies, scrape, other authentication, and a public reliability claim are absent. | [`tracker-discovery`](tracker-discovery.md) |
 | DHT | Partial | deterministic, runtime, interop, live | A bounded IPv4 participant supports lookup, incoming queries, private gating, revalidated warm restart, repeated public metadata acquisition, and verified-public self-announcement of the selected explicit TCP port to K=8 token-bearing nodes. One session scheduler survives download completion; controlled DHT-only and mapped off-LAN seed discovery pass. IPv6 UDP operation remains absent. | [`dht-discovery`](dht-discovery.md) |
 | Peer exchange | Absent | none | BEP 11 depends on peer-ID duplicate resolution, truthful advertisement, bounded extension dispatch, and hostile-source controls recorded in planned Tactical [`094`](../tactical/094-bounded-bep11-peer-exchange.md). | [`peer-lifecycle`](peer-lifecycle.md), [`protocol-support`](protocol-support.md) |
 | Local service discovery | Absent | none | Interface, multicast, and local-network policy are unimplemented. | [`protocol-support`](protocol-support.md) |

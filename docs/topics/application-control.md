@@ -55,7 +55,10 @@ addresses do not become commands or durable authority.
 Tactical `085` adds the minimal projected `force_recheck_available` capability
 and composes existing per-torrent commands sequentially in the React action
 owner. It does not add a batch command, atomic multi-torrent semantics, or a
-new application task owner.
+new application task owner. Tactical `095` adds no command: the existing
+paged tracker view now projects plaintext HTTP versus encrypted-but-
+unauthenticated HTTPS, while the application composes the same long-lived
+discovery owner for every supported tracker transport.
 
 ## Scope
 
@@ -293,6 +296,24 @@ and mapping policy, while the current generation publishes mapping progress
 through the existing view owner. Mapping failure is recoverable application
 state and a structured diagnostic; it neither rewrites durable intent nor
 stops the local listener.
+
+Tactical `095` keeps HTTP and HTTPS below this semantic boundary. The
+application retains tracker URL, tier, source, lifecycle, redaction, and the
+new closed `TrackerSecurityView`; reqwest clients, DNS, redirects, TLS, gzip,
+and response parsing remain engine-owned infrastructure. Generated JSON
+Schema, TypeScript, React, UniFFI, and Kotlin consumers distinguish
+`unencrypted` from `encrypted_unauthenticated` without adding a certificate
+override, tracker credential command, or presentation-owned success rule.
+
+The application-owned content supervisor also retains a cancellation-owned
+external discovery sender from metadata transition through content startup.
+That small lifecycle fence prevents a temporarily empty session tracker stream
+from terminating content discovery before a late HTTP/HTTPS observation. Hash-
+verified HTTP and HTTPS only-`peers6` application transfers, shutdown stopped
+events, generated web validation, Android cross-builds, and an owned AVD HTTPS
+run cover the boundary. Certificate and hostname validation remains a later
+platform-trust slice and must change the projected security value when it
+lands.
 
 Later work must define multi-torrent scheduling, stable product error
 taxonomy, capability installation, production remote

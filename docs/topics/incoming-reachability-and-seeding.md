@@ -18,8 +18,7 @@ to that owner with complete upload observations. Ordinary Peers/Swarm mapping
 and the unchanged headless product adapter consume those facts; the
 authenticated gateway proof follows pinned libtorrent and RSTorrent peers
 through exact transfer, removal, pause, and terminal zero ownership.
-Mapped-endpoint advertisement, finite bandwidth, and seeding goals remain
-future slices.
+Finite bandwidth and seeding goals remain future slices.
 
 Tactical
 [`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md) is complete. It
@@ -41,7 +40,12 @@ selects mapped-external or actual local TCP ports only
 for incoming-routable torrent generations, retains tracker-only discovery on
 the explicit port-`1` sentinel otherwise, adds token-authenticated explicit-
 port DHT self-announcement, and moves discovery scheduling into the long-lived
-torrent/session lifetime.
+torrent/session lifetime. Completed Tactical
+[`095`](../tactical/095-bounded-http-https-tracker-transport.md) applies the
+same truth to HTTP and HTTPS: IPv4 tracker requests may advertise the eligible
+IPv4 endpoint, while every IPv6 tracker request uses port `1`. Returned
+`peers6` can drive outbound IPv6 TCP transfers, but no IPv6 listener,
+reachable endpoint, mapping, or full BEP 7 support is implied.
 
 ## Purpose And Scope
 
@@ -135,8 +139,13 @@ endpoint:
   actual TCP, actual UDP plus coordination state, and mapped external TCP;
   controlled loopback and eligible local-network peers observed the reported
   TCP listener and exact DHT UDP source, with joined terminal ownership;
-- UDP tracker announces carry exact current counters plus the selected mapped
-  or listener TCP port for incoming-routable torrents and port `1` otherwise;
+- UDP, HTTP, and HTTPS tracker announces carry exact current counters plus the
+  selected mapped or listener TCP port for incoming-routable IPv4 requests and
+  port `1` otherwise;
+- tracker address-family selection happens before query construction. An
+  IPv6-literal or AAAA-only tracker therefore receives port `1` even when the
+  same session owns an eligible IPv4 listener; compact `peers6` remains useful
+  for outbound IPv6 dialing without being reachability evidence;
 - the IPv4 DHT uses the session UDP transport but does not treat that endpoint
   as a TCP peer listener; eligible verified public seeds explicitly announce
   the independently selected TCP port; and
@@ -673,4 +682,9 @@ owner, and actual-endpoint prerequisite. Tactical
 completes truthful UDP-tracker and explicit-port DHT advertisement across the
 long-lived torrent lifetime, mapping correction, and ordered stopping. PCP and
 NAT-PMP remain later independent slices until they have suitable runtime
-evidence.
+evidence. Tactical
+[`095`](../tactical/095-bounded-http-https-tracker-transport.md) now extends the
+same port selector and ordering to HTTP/HTTPS and proves the outbound-only IPv6
+case through controlled hash-verified transfers and Android product evidence.
+Dual-stack listen sockets, per-family reachable endpoints, IPv6 pinholes and
+physical IPv6 reachability remain a separate future campaign slice.

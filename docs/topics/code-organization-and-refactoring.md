@@ -13,7 +13,9 @@ concrete per-torrent lifetime seam now completed by Tactical
 listen-socket/UDP waist completed by Tactical
 [`089`](../tactical/089-coordinated-session-listen-sockets.md), and the next
 feature-driven lifetime seam completed by Tactical
-[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md).
+[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md), with
+the transport-specific HTTP runtime boundary completed by Tactical
+[`095`](../tactical/095-bounded-http-https-tracker-transport.md).
 
 Topic: `code-organization-and-refactoring`
 
@@ -137,6 +139,25 @@ engine entry points without improving the selected product lifetime, so it was
 not folded into this refactor. No new crate was justified: protocol values and
 deterministic tracker/DHT transitions remain inward, while the one session
 task, Tokio handles, and cancellation stay at the engine runtime boundary.
+
+Tactical
+[`095`](../tactical/095-bounded-http-https-tracker-transport.md) extends that
+boundary without turning it into a tracker framework. Pure magnet/catalog URL
+authority validation stays in `rstorrent-protocol` without a `url`, reqwest,
+Tokio, DNS, or socket dependency. The existing engine `tracker` module owns
+transport-neutral schedules and outcomes; a cohesive private `http_tracker`
+module owns reqwest clients, DNS, HTTP/TLS, redirects, gzip, request encoding,
+and hostile response parsing. `advertisement` uses explicit endpoint-enum
+dispatch under its existing task and operation budget. UDP token caching and
+HTTP tracker-ID continuation remain transport-specific state.
+
+The architecture dependency test caught and rejected an intermediate `url`
+dependency from protocol before closure. The landed pure bounded parser keeps
+dependency direction inward while reqwest and async-compression remain at the
+engine runtime boundary. The content driver gained only a cancellation-owned
+external-discovery lifetime fence needed to keep session observations live
+through content startup. No new crate, generic transport trait, separate HTTP
+manager, application socket owner, or product-control task was justified.
 
 ## Source-Organization Guidance
 
@@ -365,6 +386,13 @@ lifecycle, or navigation problem remains.
 
 ## History
 
+- **2026-08-05:** Completed Tactical `095`. A private engine HTTP tracker
+  owner now meets the existing transport-neutral schedule through explicit
+  enum dispatch; protocol retains pure catalog parsing, the long-lived
+  advertisement task retains all concurrency and lifecycle authority, and the
+  application adds only projection plus an external-discovery lifetime fence.
+  The architecture gate removed an accidental outward `url` dependency before
+  closure, and no new crate or tracker trait hierarchy was needed.
 - **2026-08-05:** Completed Tactical `089`. Task-free coordinated bind policy
   and one bounded session UDP receive owner now sit below incoming and DHT
   runtimes; application generation composition remains explicit. The feature
