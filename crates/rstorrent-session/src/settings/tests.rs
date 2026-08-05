@@ -6,10 +6,10 @@ use rstorrent_engine::{
 use rusqlite::Connection;
 
 use super::{
-    ClientSettings, ClientSettingsError, ClientSettingsRuntimeView, ListenerPolicy, ListenerStatus,
-    PortMappingPolicy, PortMappingStatus, SessionUdpStatus, SettingsPersistenceError,
-    classify_listener_bind_failure, create_client_settings, read_client_settings,
-    replace_client_settings,
+    AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus, ClientSettings, ClientSettingsError,
+    ClientSettingsRuntimeView, ListenerPolicy, ListenerStatus, PortMappingPolicy,
+    PortMappingStatus, SessionUdpStatus, SettingsPersistenceError, classify_listener_bind_failure,
+    create_client_settings, read_client_settings, replace_client_settings,
 };
 
 #[test]
@@ -176,6 +176,13 @@ fn runtime_view_distinguishes_configured_active_effective_and_observed() {
             coordinated_with_tcp: false,
         },
         port_mapping_status: PortMappingStatus::Disabled,
+        advertised_peer_endpoint: AdvertisedPeerEndpointStatus::Local {
+            generation: "1".to_owned(),
+            address: "127.0.0.1".to_owned(),
+            port: 41_000,
+            scope: AdvertisedPeerEndpointScope::Loopback,
+            incoming_observed: false,
+        },
     };
     assert_eq!(view.configured, configured);
     assert_eq!(view.active, active);

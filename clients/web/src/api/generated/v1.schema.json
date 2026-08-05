@@ -121,6 +121,233 @@
       ],
       "type": "object"
     },
+    "AdvertisedPeerEndpointScope": {
+      "enum": [
+        "loopback",
+        "local_network"
+      ],
+      "type": "string"
+    },
+    "AdvertisedPeerEndpointStatus": {
+      "description": "Runtime truth about the TCP endpoint available for peer advertisement.\n\nThis is deliberately separate from [`PortMappingStatus`]: a live local\nlistener remains usable after mapping failure, while an active mapping is\nnot evidence that an outside peer has actually connected.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "unavailable",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "generation": {
+              "type": "string"
+            },
+            "reason": {
+              "$ref": "#/$defs/AdvertisedPeerEndpointUnavailableReason"
+            },
+            "type": {
+              "const": "outbound_only",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "generation",
+            "reason"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "address": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "generation": {
+              "type": "string"
+            },
+            "incoming_observed": {
+              "type": "boolean"
+            },
+            "port": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "scope": {
+              "$ref": "#/$defs/AdvertisedPeerEndpointScope"
+            },
+            "type": {
+              "const": "local",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "generation",
+            "address",
+            "port",
+            "scope",
+            "incoming_observed"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "external_address": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "external_port": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "generation": {
+              "type": "string"
+            },
+            "incoming_observed": {
+              "type": "boolean"
+            },
+            "lease_seconds_remaining": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "local_address": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "local_port": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "mapped",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "generation",
+            "local_address",
+            "local_port",
+            "external_address",
+            "external_port",
+            "lease_seconds_remaining",
+            "incoming_observed"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "detail": {
+              "maxLength": 512,
+              "type": "string"
+            },
+            "external_address": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "external_port": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "generation": {
+              "type": "string"
+            },
+            "incoming_observed": {
+              "type": "boolean"
+            },
+            "lease_seconds_remaining": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "local_address": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "local_port": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "renewal_unhealthy",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "generation",
+            "local_address",
+            "local_port",
+            "external_address",
+            "external_port",
+            "lease_seconds_remaining",
+            "detail",
+            "incoming_observed"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "generation": {
+              "type": "string"
+            },
+            "incoming_observed": {
+              "type": "boolean"
+            },
+            "last_port": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "stopping",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "generation",
+            "incoming_observed"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "AdvertisedPeerEndpointUnavailableReason": {
+      "enum": [
+        "listener_disabled",
+        "listener_bind_failed"
+      ],
+      "type": "string"
+    },
     "ApiEncoding": {
       "enum": [
         "json",
@@ -974,6 +1201,9 @@
         "active": {
           "$ref": "#/$defs/ClientSettings"
         },
+        "advertised_peer_endpoint": {
+          "$ref": "#/$defs/AdvertisedPeerEndpointStatus"
+        },
         "configured": {
           "$ref": "#/$defs/ClientSettings"
         },
@@ -1002,7 +1232,8 @@
         "effective_peer_connection_limit",
         "listener_status",
         "session_udp_status",
-        "port_mapping_status"
+        "port_mapping_status",
+        "advertised_peer_endpoint"
       ],
       "type": "object"
     },
@@ -4730,6 +4961,9 @@
                   "port_mapping": "disabled",
                   "preferred_listen_port": 6881,
                   "upload_slots": 8
+                },
+                "advertised_peer_endpoint": {
+                  "type": "unavailable"
                 },
                 "configured": {
                   "listener": {

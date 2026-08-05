@@ -2,15 +2,16 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rstorrent_engine::peer::PeerRegistrySnapshot;
 use rstorrent_engine::{
-    DownloadControl, PeerConnectionObservation, SeedRegistrationToken, StorageFilePool,
-    TorrentPeerActivitySink, TorrentPeerError, TorrentPeerHandle,
+    DownloadControl, PeerConnectionDirection, PeerConnectionObservation, SeedRegistrationToken,
+    StorageFilePool, TorrentPeerActivitySink, TorrentPeerError, TorrentPeerHandle,
 };
 use tokio::task::JoinHandle;
 
+use crate::advertised_endpoint::AdvertisedPeerEndpointSelector;
 use crate::incoming_seeding::{
     IncomingSeeding, IncomingSeedingError, SeedReconcileInput, SeedReconcileOutcome,
     SeedReconcileResult,
@@ -23,6 +24,7 @@ struct TorrentPeerViewSink {
     torrent_id: String,
     accepting: Arc<AtomicBool>,
     views: ViewHub,
+    advertised_endpoint: AdvertisedPeerEndpointSelector,
 }
 
 impl TorrentPeerActivitySink for TorrentPeerViewSink {
@@ -32,9 +34,17 @@ impl TorrentPeerActivitySink for TorrentPeerViewSink {
         peers: Vec<PeerConnectionObservation>,
     ) {
         if self.accepting.load(Ordering::Acquire) {
+            let incoming_observed = peers
+                .iter()
+                .any(|peer| peer.direction == PeerConnectionDirection::Incoming);
             let _ =
                 self.views
                     .record_peer_connections(&self.torrent_id, captured_at, peers.as_slice());
+            if incoming_observed && self.advertised_endpoint.observe_incoming() {
+                let _ = self
+                    .views
+                    .set_advertised_peer_endpoint(self.advertised_endpoint.status(Instant::now()));
+            }
         }
     }
 
@@ -256,12 +266,14 @@ impl TorrentRuntime {
         torrent_id: String,
         generation: u64,
         views: ViewHub,
+        advertised_endpoint: AdvertisedPeerEndpointSelector,
     ) -> Result<Self, TorrentPeerError> {
         let accepting_peer_events = Arc::new(AtomicBool::new(true));
         let sink = Arc::new(TorrentPeerViewSink {
             torrent_id: torrent_id.clone(),
             accepting: accepting_peer_events.clone(),
             views,
+            advertised_endpoint,
         });
         let peers = TorrentPeerHandle::new(sink)?;
         let handle = TorrentRuntimeHandle {

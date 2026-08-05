@@ -19,13 +19,19 @@ export type PortMappingFailureStage = "discovery" | "description" | "external_ad
 
 export type PortMappingStatus = { "type": "disabled" } | { "type": "ineligible" } | { "type": "discovering" } | { "type": "mapping" } | { "type": "mapped", mechanism: PortMappingMechanism, local_address: string, local_port: number, external_address: string, external_port: number, lease_seconds: number, } | { "type": "failed", stage: PortMappingFailureStage, detail: string, } | { "type": "renewal_failed", external_address: string, external_port: number, detail: string, } | { "type": "stopping" };
 
+export type AdvertisedPeerEndpointScope = "loopback" | "local_network";
+
+export type AdvertisedPeerEndpointUnavailableReason = "listener_disabled" | "listener_bind_failed";
+
+export type AdvertisedPeerEndpointStatus = { "type": "unavailable" } | { "type": "outbound_only", generation: string, reason: AdvertisedPeerEndpointUnavailableReason, } | { "type": "local", generation: string, address: string, port: number, scope: AdvertisedPeerEndpointScope, incoming_observed: boolean, } | { "type": "mapped", generation: string, local_address: string, local_port: number, external_address: string, external_port: number, lease_seconds_remaining: number, incoming_observed: boolean, } | { "type": "renewal_unhealthy", generation: string, local_address: string, local_port: number, external_address: string, external_port: number, lease_seconds_remaining: number, detail: string, incoming_observed: boolean, } | { "type": "stopping", generation: string, last_port?: number | null, incoming_observed: boolean, };
+
 export type SessionUdpStatus = { "type": "unavailable" } | { "type": "bound", address: string, port: number, coordinated_with_tcp: boolean, };
 
-export type ClientSettingsRuntimeView = { configured: ClientSettings, active: ClientSettings, restart_required: boolean, effective_peer_connection_limit: number, listener_status: ListenerStatus, session_udp_status: SessionUdpStatus, port_mapping_status: PortMappingStatus, };
+export type ClientSettingsRuntimeView = { configured: ClientSettings, active: ClientSettings, restart_required: boolean, effective_peer_connection_limit: number, listener_status: ListenerStatus, session_udp_status: SessionUdpStatus, port_mapping_status: PortMappingStatus, advertised_peer_endpoint: AdvertisedPeerEndpointStatus, };
 
 export const DEFAULT_CLIENT_SETTINGS: ClientSettings = {"listener":{"type":"disabled"},"preferred_listen_port":6881,"port_mapping":"disabled","peer_connection_limit":200,"upload_slots":8};
 
-export const DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW: ClientSettingsRuntimeView = {"configured":{"listener":{"type":"disabled"},"preferred_listen_port":6881,"port_mapping":"disabled","peer_connection_limit":200,"upload_slots":8},"active":{"listener":{"type":"disabled"},"preferred_listen_port":6881,"port_mapping":"disabled","peer_connection_limit":200,"upload_slots":8},"restart_required":false,"effective_peer_connection_limit":200,"listener_status":{"type":"disabled"},"session_udp_status":{"type":"unavailable"},"port_mapping_status":{"type":"disabled"}};
+export const DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW: ClientSettingsRuntimeView = {"configured":{"listener":{"type":"disabled"},"preferred_listen_port":6881,"port_mapping":"disabled","peer_connection_limit":200,"upload_slots":8},"active":{"listener":{"type":"disabled"},"preferred_listen_port":6881,"port_mapping":"disabled","peer_connection_limit":200,"upload_slots":8},"restart_required":false,"effective_peer_connection_limit":200,"listener_status":{"type":"disabled"},"session_udp_status":{"type":"unavailable"},"port_mapping_status":{"type":"disabled"},"advertised_peer_endpoint":{"type":"unavailable"}};
 
 export type FilePriority = "normal" | "skip";
 

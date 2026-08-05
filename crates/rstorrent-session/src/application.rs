@@ -30,6 +30,7 @@ use rstorrent_protocol::metainfo::{
 };
 use tokio::task::JoinHandle;
 
+use crate::advertised_endpoint::AdvertisedPeerEndpointSelector;
 use crate::control::{
     AddTorrentBytesRequest, Command, ErrorCode, FilePriority, RemovalDataPolicy, RemovalState,
     RequestEnvelope, ResponseEnvelope, ResponseOutcome, StorageState, TorrentState,
@@ -285,6 +286,7 @@ pub struct ApplicationService {
     storage_file_pool: StorageFilePool,
     peer_budget: PeerBudget,
     incoming_seeding: Option<IncomingSeeding>,
+    advertised_endpoint: AdvertisedPeerEndpointSelector,
     reachability: Option<ReachabilityCoordinator>,
     incoming_service: Option<IncomingPeerService>,
     session_udp: Option<SessionUdpService>,
@@ -486,12 +488,14 @@ impl ApplicationService {
         };
         let dht_observation_receiver = dht.subscribe_observations();
         let initial_dht_view = inspection_view(&dht_observation_receiver.borrow());
+        let advertised_endpoint = AdvertisedPeerEndpointSelector::new(&listener_status);
         let runtime_client_settings = ClientSettingsRuntimeView::from_started(
             snapshot.client_settings.clone(),
             active_client_settings.clone(),
             effective_peer_connection_limit,
             listener_status.clone(),
             session_udp_status,
+            advertised_endpoint.status(std::time::Instant::now()),
         );
         let views = ViewHub::new_with_runtime_views(
             &snapshot,
@@ -515,9 +519,13 @@ impl ApplicationService {
             next_torrent_generation = next_torrent_generation.checked_add(1).ok_or_else(|| {
                 ApplicationError::Configuration("torrent runtime generation overflow".to_owned())
             })?;
-            let runtime =
-                TorrentRuntime::new(torrent.torrent_id.clone(), generation, views.clone())
-                    .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+            let runtime = TorrentRuntime::new(
+                torrent.torrent_id.clone(),
+                generation,
+                views.clone(),
+                advertised_endpoint.clone(),
+            )
+            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
             torrent_runtimes.insert(torrent.torrent_id.clone(), runtime);
         }
         let mut service = Self {
@@ -537,6 +545,7 @@ impl ApplicationService {
             storage_file_pool,
             peer_budget,
             incoming_seeding,
+            advertised_endpoint,
             reachability: None,
             incoming_service,
             session_udp,
@@ -615,6 +624,7 @@ impl ApplicationService {
             &active_client_settings,
             &listener_status,
             service.views.clone(),
+            service.advertised_endpoint.clone(),
         ));
         Ok(service)
     }
@@ -645,9 +655,13 @@ impl ApplicationService {
                         "torrent runtime generation overflow".to_owned(),
                     )
                 })?;
-            let runtime =
-                TorrentRuntime::new(torrent_id.to_owned(), generation, self.views.clone())
-                    .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+            let runtime = TorrentRuntime::new(
+                torrent_id.to_owned(),
+                generation,
+                self.views.clone(),
+                self.advertised_endpoint.clone(),
+            )
+            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
             self.torrent_runtimes.insert(torrent_id.to_owned(), runtime);
         }
         Ok(self

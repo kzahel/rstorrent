@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import type {
+  AdvertisedPeerEndpointStatus,
   ClientSettings,
   ClientSettingsRuntimeView,
   ListenerBindFailureReason,
@@ -453,6 +454,7 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
         </span>
       )}
       <PortMappingRuntime status={settings.port_mapping_status} />
+      <AdvertisedEndpointRuntime status={settings.advertised_peer_endpoint} />
       {settings.restart_required ? (
         <span className={styles.runtimeWarning}>
           Saved settings differ from the running application. Restart is
@@ -474,6 +476,51 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
       )}
     </div>
   );
+}
+
+function AdvertisedEndpointRuntime({
+  status,
+}: {
+  readonly status: AdvertisedPeerEndpointStatus;
+}) {
+  switch (status.type) {
+    case "unavailable":
+      return <span>Peer advertisement endpoint is not available yet.</span>;
+    case "outbound_only":
+      return (
+        <span>
+          Tracker discovery is outbound-only; no connectable peer port is
+          advertised.
+        </span>
+      );
+    case "local":
+      return (
+        <span>
+          Peer protocols may advertise local TCP port {status.port}; external
+          reachability is unverified
+          {status.incoming_observed ? ", but an incoming peer was observed." : "."}
+        </span>
+      );
+    case "mapped":
+      return (
+        <span>
+          Peer protocols may advertise mapped TCP port {status.external_port}
+          {status.incoming_observed
+            ? "; an incoming peer was observed."
+            : "; external reachability is not yet observed."}
+        </span>
+      );
+    case "renewal_unhealthy":
+      return (
+        <span className={styles.runtimeWarning}>
+          Mapped TCP port {status.external_port} remains valid for up to{" "}
+          {status.lease_seconds_remaining} seconds, but renewal is unhealthy:{" "}
+          {status.detail}
+        </span>
+      );
+    case "stopping":
+      return <span>Peer advertisement is stopping.</span>;
+  }
 }
 
 function PortMappingRuntime({ status }: { readonly status: PortMappingStatus }) {

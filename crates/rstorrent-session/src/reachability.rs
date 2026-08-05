@@ -6,7 +6,7 @@
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rstorrent_engine::port_mapping::upnp::{
     UpnpDiscoveryConfig, UpnpError, UpnpMapping, UpnpStage, discover_igd_v2,
@@ -14,6 +14,7 @@ use rstorrent_engine::port_mapping::upnp::{
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
+use crate::advertised_endpoint::AdvertisedPeerEndpointSelector;
 use crate::diagnostics::{DiagnosticSeverity, category};
 use crate::settings::{
     ClientSettings, ListenerPolicy, ListenerStatus, PortMappingFailureStage, PortMappingMechanism,
@@ -63,6 +64,7 @@ pub(crate) struct ReachabilityCoordinator {
     cancellation: CancellationToken,
     task: Option<JoinHandle<Result<(), String>>>,
     counters: Arc<ReachabilityCounters>,
+    endpoint_selector: AdvertisedPeerEndpointSelector,
 }
 
 impl ReachabilityCoordinator {
@@ -70,6 +72,7 @@ impl ReachabilityCoordinator {
         settings: &ClientSettings,
         listener_status: &ListenerStatus,
         views: ViewHub,
+        endpoint_selector: AdvertisedPeerEndpointSelector,
     ) -> Self {
         let generation = NEXT_REACHABILITY_GENERATION.fetch_add(1, Ordering::Relaxed);
         let state = ReachabilityState::new(generation, settings, listener_status);
@@ -79,11 +82,14 @@ impl ReachabilityCoordinator {
             counters.tasks.store(1, Ordering::Release);
             let task_cancellation = cancellation.clone();
             let task_counters = counters.clone();
+            let task_endpoint_selector = endpoint_selector.clone();
+            let task_views = views.clone();
             tokio::spawn(async move {
                 let result = run_mapping(
                     state,
                     local_endpoint,
-                    views,
+                    task_views,
+                    task_endpoint_selector,
                     task_cancellation,
                     task_counters.clone(),
                 )
@@ -96,6 +102,7 @@ impl ReachabilityCoordinator {
             cancellation,
             task,
             counters,
+            endpoint_selector,
         }
     }
 
@@ -107,6 +114,7 @@ impl ReachabilityCoordinator {
     }
 
     pub(crate) async fn shutdown(mut self) -> Result<ReachabilityOwnerCounts, String> {
+        self.endpoint_selector.stop();
         self.cancellation.cancel();
         if let Some(task) = self.task.take() {
             match task.await {
@@ -136,6 +144,7 @@ async fn run_mapping(
     mut state: ReachabilityState,
     local_endpoint: SocketAddrV4,
     views: ViewHub,
+    endpoint_selector: AdvertisedPeerEndpointSelector,
     cancellation: CancellationToken,
     counters: Arc<ReachabilityCounters>,
 ) -> Result<(), String> {
@@ -166,15 +175,24 @@ async fn run_mapping(
         }
     };
     counters.mappings.store(1, Ordering::Release);
-    publish_mapped(&mut state, &views, &mapping)?;
+    publish_mapped(&mut state, &views, &endpoint_selector, &mapping)?;
+    let mut lease_deadline = Instant::now()
+        .checked_add(Duration::from_secs(u64::from(mapping.lease_seconds)))
+        .ok_or_else(|| "UPnP mapping lease deadline overflow".to_owned())?;
     let mut renewal_delay = mapping.renewal_delay();
     loop {
         tokio::select! {
             _ = cancellation.cancelled() => break,
             _ = tokio::time::sleep(renewal_delay) => {
+                if endpoint_selector.expire(Instant::now()) {
+                    publish_selected_endpoint(&endpoint_selector, &views)?;
+                }
                 match gateway.renew_mapping(&mut mapping, &cancellation).await {
                     Ok(()) => {
-                        publish_mapped(&mut state, &views, &mapping)?;
+                        publish_mapped(&mut state, &views, &endpoint_selector, &mapping)?;
+                        lease_deadline = Instant::now()
+                            .checked_add(Duration::from_secs(u64::from(mapping.lease_seconds)))
+                            .ok_or_else(|| "UPnP mapping lease deadline overflow".to_owned())?;
                         renewal_delay = mapping.renewal_delay();
                     }
                     Err(error) => {
@@ -187,14 +205,30 @@ async fn run_mapping(
                                 detail: error.detail().to_owned(),
                             },
                         )?;
+                        if endpoint_selector.renewal_failed(
+                            state.generation(),
+                            error.detail().to_owned(),
+                            Instant::now(),
+                        ) {
+                            publish_selected_endpoint(&endpoint_selector, &views)?;
+                        }
                         record_failure_diagnostic(&views, &error);
-                        renewal_delay = RENEWAL_RETRY_DELAY;
+                        let remaining =
+                            lease_deadline.saturating_duration_since(Instant::now());
+                        renewal_delay = if remaining.is_zero() {
+                            RENEWAL_RETRY_DELAY
+                        } else {
+                            RENEWAL_RETRY_DELAY.min(remaining)
+                        };
                     }
                 }
             }
         }
     }
     publish(&mut state, &views, ReachabilityEvent::Stopping)?;
+    if endpoint_selector.stop() {
+        publish_selected_endpoint(&endpoint_selector, &views)?;
+    }
     let cleanup_cancellation = CancellationToken::new();
     let delete = tokio::time::timeout(
         DELETE_TIMEOUT,
@@ -215,6 +249,7 @@ async fn run_mapping(
 fn publish_mapped(
     state: &mut ReachabilityState,
     views: &ViewHub,
+    endpoint_selector: &AdvertisedPeerEndpointSelector,
     mapping: &UpnpMapping,
 ) -> Result<(), String> {
     publish(
@@ -225,7 +260,14 @@ fn publish_mapped(
             external_port: mapping.external_port,
             lease_seconds: mapping.lease_seconds,
         },
-    )
+    )?;
+    endpoint_selector.mapping_verified(
+        state.generation(),
+        SocketAddrV4::new(mapping.external_address, mapping.external_port),
+        Duration::from_secs(u64::from(mapping.lease_seconds)),
+        Instant::now(),
+    );
+    publish_selected_endpoint(endpoint_selector, views)
 }
 
 fn publish_failure(
@@ -255,6 +297,15 @@ fn publish(
             .map_err(|error| error.to_string())?;
     }
     Ok(())
+}
+
+fn publish_selected_endpoint(
+    endpoint_selector: &AdvertisedPeerEndpointSelector,
+    views: &ViewHub,
+) -> Result<(), String> {
+    views
+        .set_advertised_peer_endpoint(endpoint_selector.status(Instant::now()))
+        .map_err(|error| error.to_string())
 }
 
 fn record_failure_diagnostic(views: &ViewHub, error: &UpnpError) {

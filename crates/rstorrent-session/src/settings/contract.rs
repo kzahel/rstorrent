@@ -225,6 +225,77 @@ pub enum PortMappingStatus {
     Stopping,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum AdvertisedPeerEndpointScope {
+    Loopback,
+    LocalNetwork,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum AdvertisedPeerEndpointUnavailableReason {
+    ListenerDisabled,
+    ListenerBindFailed,
+}
+
+/// Runtime truth about the TCP endpoint available for peer advertisement.
+///
+/// This is deliberately separate from [`PortMappingStatus`]: a live local
+/// listener remains usable after mapping failure, while an active mapping is
+/// not evidence that an outside peer has actually connected.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum AdvertisedPeerEndpointStatus {
+    #[default]
+    Unavailable,
+    OutboundOnly {
+        generation: String,
+        reason: AdvertisedPeerEndpointUnavailableReason,
+    },
+    Local {
+        generation: String,
+        #[schemars(length(max = 64))]
+        address: String,
+        port: u16,
+        scope: AdvertisedPeerEndpointScope,
+        incoming_observed: bool,
+    },
+    Mapped {
+        generation: String,
+        #[schemars(length(max = 64))]
+        local_address: String,
+        local_port: u16,
+        #[schemars(length(max = 64))]
+        external_address: String,
+        external_port: u16,
+        lease_seconds_remaining: u32,
+        incoming_observed: bool,
+    },
+    RenewalUnhealthy {
+        generation: String,
+        #[schemars(length(max = 64))]
+        local_address: String,
+        local_port: u16,
+        #[schemars(length(max = 64))]
+        external_address: String,
+        external_port: u16,
+        lease_seconds_remaining: u32,
+        #[schemars(length(max = 512))]
+        detail: String,
+        incoming_observed: bool,
+    },
+    Stopping {
+        generation: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        last_port: Option<u16>,
+        incoming_observed: bool,
+    },
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 #[serde(deny_unknown_fields)]
@@ -236,6 +307,7 @@ pub struct ClientSettingsRuntimeView {
     pub listener_status: ListenerStatus,
     pub session_udp_status: SessionUdpStatus,
     pub port_mapping_status: PortMappingStatus,
+    pub advertised_peer_endpoint: AdvertisedPeerEndpointStatus,
 }
 
 impl Default for ClientSettingsRuntimeView {
@@ -249,6 +321,7 @@ impl Default for ClientSettingsRuntimeView {
             listener_status: ListenerStatus::Disabled,
             session_udp_status: SessionUdpStatus::Unavailable,
             port_mapping_status: PortMappingStatus::Disabled,
+            advertised_peer_endpoint: AdvertisedPeerEndpointStatus::Unavailable,
         }
     }
 }

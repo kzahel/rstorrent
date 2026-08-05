@@ -27,7 +27,10 @@ use crate::diagnostics::{
     DiagnosticSeverity, DiagnosticStore, diagnostic_matches, interest_matches,
 };
 use crate::file_views::{FileCatalogState, FileProgressModel, FileView};
-use crate::settings::{ClientSettingsRuntimeView, PortMappingStatus, StorageSettingsSnapshot};
+use crate::settings::{
+    AdvertisedPeerEndpointStatus, ClientSettingsRuntimeView, PortMappingStatus,
+    StorageSettingsSnapshot,
+};
 use crate::speed::SessionRateHistory;
 use crate::tracker_views::{TrackerCatalogState, TrackerViewModel};
 
@@ -424,6 +427,23 @@ impl ViewHub {
         let previous_torrents = hub.torrents.clone();
         let previous_client_settings = hub.client_settings.clone();
         hub.client_settings.set_port_mapping_status(status);
+        hub.publish_changes(&previous_torrents, None, Some(&previous_client_settings))
+    }
+
+    pub(crate) fn set_advertised_peer_endpoint(
+        &self,
+        status: AdvertisedPeerEndpointStatus,
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        if hub.client_settings.advertised_peer_endpoint == status {
+            return Ok(());
+        }
+        let previous_torrents = hub.torrents.clone();
+        let previous_client_settings = hub.client_settings.clone();
+        hub.client_settings.set_advertised_peer_endpoint(status);
         hub.publish_changes(&previous_torrents, None, Some(&previous_client_settings))
     }
 

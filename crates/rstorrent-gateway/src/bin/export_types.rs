@@ -8,29 +8,31 @@ use rstorrent_gateway::{
     ChooseDownloadRootRequest, ChooseDownloadRootResponse,
 };
 use rstorrent_session::{
-    ActivePiece, ActivePieceStageView, AddTorrentBytesRequest, ApiEncoding, ApiHello, ApiLimits,
-    ApiVersion, ApplicationCall, ApplicationCallResult, CapabilityStatus, CatalogPageRequest,
-    CatalogPageView, ClientSettings, ClientSettingsRuntimeView, Command, DeliveryMode,
-    DeliveryPolicy, DhtBucketView, DhtInspectionView, DhtLifecycleView, DhtLookupView,
-    DhtNetworkPolicyView, DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
-    DiagnosticProfile, DiagnosticRetention, DiagnosticSeverity, DiagnosticSubject, DiagnosticValue,
-    DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
-    ErrorCode, ErrorResponse, FileCatalogState, FileIndexRange, FilePriority, FileSelectionIntent,
-    FileSelectionView, FileView, IndexRange, ListenerBindFailureReason, ListenerPolicy,
-    ListenerStatus, OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
-    PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerRequestPhase,
-    PeerRole, PeerSourceView, PeerTransportKind, PeerView, PortMappingFailureStage,
-    PortMappingMechanism, PortMappingPolicy, PortMappingStatus, ProgressAction, ProgressAssessment,
-    ProgressDisposition, ProgressPhase, ProgressReason, RemovalDataPolicy, RemovalState,
-    RequestEnvelope, ResetReason, ResponseEnvelope, ResponseOutcome, ServiceSnapshot,
-    SessionUdpStatus, SpeedCurrentRate, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,
-    SpeedPersistenceState, SpeedRange, SpeedSeriesView, StorageRootAvailability,
-    StorageRootSnapshot, StorageSettingsSnapshot, StorageState, SubscriptionSpec,
-    SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentSnapshot,
-    TorrentState, TorrentView, TrackerAnnounceEventView, TrackerCatalogState,
-    TrackerNextActionView, TrackerSourceView, TrackerStatusView, TrackerTransportView, TrackerView,
-    UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector,
-    ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate, ViewUpdatePayload,
+    ActivePiece, ActivePieceStageView, AddTorrentBytesRequest, AdvertisedPeerEndpointScope,
+    AdvertisedPeerEndpointStatus, AdvertisedPeerEndpointUnavailableReason, ApiEncoding, ApiHello,
+    ApiLimits, ApiVersion, ApplicationCall, ApplicationCallResult, CapabilityStatus,
+    CatalogPageRequest, CatalogPageView, ClientSettings, ClientSettingsRuntimeView, Command,
+    DeliveryMode, DeliveryPolicy, DhtBucketView, DhtInspectionView, DhtLifecycleView,
+    DhtLookupView, DhtNetworkPolicyView, DiagnosticCategory, DiagnosticEvent, DiagnosticField,
+    DiagnosticFilter, DiagnosticProfile, DiagnosticRetention, DiagnosticSeverity,
+    DiagnosticSubject, DiagnosticValue, DiskCheckpointStageView, DiskPieceStageView, DiskPieceView,
+    DiskPipelineView, DiskPressureView, ErrorCode, ErrorResponse, FileCatalogState, FileIndexRange,
+    FilePriority, FileSelectionIntent, FileSelectionView, FileView, IndexRange,
+    ListenerBindFailureReason, ListenerPolicy, ListenerStatus, OpenViewSetOptions,
+    OpenViewSetRequest, OpenViewSetResponse, PeerDirection, PeerDisconnectReason,
+    PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerRequestPhase, PeerRole, PeerSourceView,
+    PeerTransportKind, PeerView, PortMappingFailureStage, PortMappingMechanism, PortMappingPolicy,
+    PortMappingStatus, ProgressAction, ProgressAssessment, ProgressDisposition, ProgressPhase,
+    ProgressReason, RemovalDataPolicy, RemovalState, RequestEnvelope, ResetReason,
+    ResponseEnvelope, ResponseOutcome, ServiceSnapshot, SessionUdpStatus, SpeedCurrentRate,
+    SpeedHistoryView, SpeedMetric, SpeedMetricAvailability, SpeedPersistenceState, SpeedRange,
+    SpeedSeriesView, StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot,
+    StorageState, SubscriptionSpec, SwarmCatalogState, SwarmCountsView, SwarmPeerState,
+    SwarmPeerView, TorrentSnapshot, TorrentState, TorrentView, TrackerAnnounceEventView,
+    TrackerCatalogState, TrackerNextActionView, TrackerSourceView, TrackerStatusView,
+    TrackerTransportView, TrackerView, UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy,
+    ViewPatch, ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate,
+    ViewUpdatePayload,
 };
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -78,6 +80,9 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<PortMappingMechanism>(&mut declarations)?;
     append::<PortMappingFailureStage>(&mut declarations)?;
     append::<PortMappingStatus>(&mut declarations)?;
+    append::<AdvertisedPeerEndpointScope>(&mut declarations)?;
+    append::<AdvertisedPeerEndpointUnavailableReason>(&mut declarations)?;
+    append::<AdvertisedPeerEndpointStatus>(&mut declarations)?;
     append::<SessionUdpStatus>(&mut declarations)?;
     append::<ClientSettingsRuntimeView>(&mut declarations)?;
     append_default::<ClientSettings>(

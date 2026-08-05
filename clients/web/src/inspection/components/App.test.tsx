@@ -1523,6 +1523,11 @@ describe("inspection application", () => {
             coordinated_with_tcp: false,
           },
           port_mapping_status: { type: "disabled" },
+          advertised_peer_endpoint: {
+            type: "outbound_only",
+            generation: "1",
+            reason: "listener_bind_failed",
+          },
         },
       },
     });

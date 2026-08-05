@@ -5,6 +5,7 @@
 #[cfg(feature = "uniffi")]
 uniffi::setup_scaffolding!();
 
+mod advertised_endpoint;
 mod application;
 mod application_connection;
 mod control;
@@ -46,10 +47,11 @@ pub use rstorrent_engine::{
     NetworkPolicy,
 };
 pub use settings::{
-    ClientSettings, ClientSettingsError, ClientSettingsRuntimeView, ListenerBindFailureReason,
-    ListenerPolicy, ListenerStatus, PortMappingFailureStage, PortMappingMechanism,
-    PortMappingPolicy, PortMappingStatus, SessionUdpStatus, StorageRootAvailability,
-    StorageRootSnapshot, StorageSettingsSnapshot,
+    AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
+    AdvertisedPeerEndpointUnavailableReason, ClientSettings, ClientSettingsError,
+    ClientSettingsRuntimeView, ListenerBindFailureReason, ListenerPolicy, ListenerStatus,
+    PortMappingFailureStage, PortMappingMechanism, PortMappingPolicy, PortMappingStatus,
+    SessionUdpStatus, StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot,
 };
 pub use speed::{
     SpeedCurrentRate, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,

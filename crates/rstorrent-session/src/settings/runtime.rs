@@ -3,8 +3,9 @@ use std::io;
 use rstorrent_engine::{IncomingTcpBootstrap, PeerBudgetConfig, UploadSchedulerConfig};
 
 use super::contract::{
-    ClientSettings, ClientSettingsRuntimeView, ListenerBindFailureReason, ListenerPolicy,
-    ListenerStatus, MAX_LISTENER_BIND_DETAIL_BYTES, PortMappingStatus, SessionUdpStatus,
+    AdvertisedPeerEndpointStatus, ClientSettings, ClientSettingsRuntimeView,
+    ListenerBindFailureReason, ListenerPolicy, ListenerStatus, MAX_LISTENER_BIND_DETAIL_BYTES,
+    PortMappingStatus, SessionUdpStatus,
 };
 use crate::reachability::ReachabilityState;
 
@@ -47,6 +48,7 @@ impl ClientSettingsRuntimeView {
             listener_status: ListenerStatus::Disabled,
             session_udp_status: SessionUdpStatus::Unavailable,
             port_mapping_status: PortMappingStatus::Disabled,
+            advertised_peer_endpoint: AdvertisedPeerEndpointStatus::Unavailable,
         }
     }
 
@@ -61,6 +63,7 @@ impl ClientSettingsRuntimeView {
         effective_peer_connection_limit: u32,
         listener_status: ListenerStatus,
         session_udp_status: SessionUdpStatus,
+        advertised_peer_endpoint: AdvertisedPeerEndpointStatus,
     ) -> Self {
         let port_mapping_status = ReachabilityState::new(1, &active, &listener_status)
             .status()
@@ -73,11 +76,16 @@ impl ClientSettingsRuntimeView {
             listener_status,
             session_udp_status,
             port_mapping_status,
+            advertised_peer_endpoint,
         }
     }
 
     pub(crate) fn set_port_mapping_status(&mut self, status: PortMappingStatus) {
         self.port_mapping_status = status;
+    }
+
+    pub(crate) fn set_advertised_peer_endpoint(&mut self, status: AdvertisedPeerEndpointStatus) {
+        self.advertised_peer_endpoint = status;
     }
 }
 

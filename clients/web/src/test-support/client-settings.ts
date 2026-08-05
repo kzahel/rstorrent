@@ -19,5 +19,6 @@ export function clientSettingsRuntimeFixture(): ClientSettingsRuntimeView {
     listener_status: { type: "disabled" },
     session_udp_status: { type: "unavailable" },
     port_mapping_status: { type: "disabled" },
+    advertised_peer_endpoint: { type: "unavailable" },
   };
 }

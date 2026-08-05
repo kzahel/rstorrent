@@ -84,6 +84,9 @@
               },
               "port_mapping_status": {
                 "type": "disabled"
+              },
+              "advertised_peer_endpoint": {
+                "type": "unavailable"
               }
             }
           }
@@ -212,6 +215,9 @@
               },
               "port_mapping_status": {
                 "type": "disabled"
+              },
+              "advertised_peer_endpoint": {
+                "type": "unavailable"
               }
             }
           }
