@@ -14,11 +14,10 @@ use rstorrent_engine::{
     DEFAULT_UPLOAD_READ_JOBS, DescriptorFile, DescriptorStorage, DescriptorStoragePlan,
     DiskCheckpointStage, DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink,
     DownloadControl, DownloadError, DownloadResourceLimits, IncomingPeerError, IncomingPeerService,
-    IncomingPeerServiceConfig, IncomingPeerServiceSnapshot, IncomingTcpBootstrap, NetworkConfig,
-    PathPublicationStage, PeerBudget, PeerBudgetConfig, PlatformStorageClient,
-    PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash, PublicationShape,
-    ResumableMagnetDownloadConfig, ResumeArtifactState, ResumedStorage, StorageFilePool,
-    StorageFilePoolSnapshot, TrackerSource, UdpTrackerConfig, UploadSchedulerConfig,
+    IncomingPeerServiceConfig, IncomingPeerServiceSnapshot, NetworkConfig, PathPublicationStage,
+    PeerBudget, PlatformStorageClient, PlatformStorageFailureKind, PlatformStorageSpec,
+    PreparedFileHash, PublicationShape, ResumableMagnetDownloadConfig, ResumeArtifactState,
+    ResumedStorage, StorageFilePool, StorageFilePoolSnapshot, TrackerSource, UdpTrackerConfig,
     download_magnet_metadata_with_dht, plan_descriptor_storage,
     resume_magnet_to_descriptors_with_control, resume_magnet_with_control, torrent_storage_paths,
     verify_prepared_descriptors, verify_prepared_platform_files,
@@ -41,7 +40,10 @@ use crate::diagnostics::{
 use crate::file_views::FileProgressModel;
 use crate::have::HaveState;
 use crate::incoming_seeding::{IncomingSeeding, IncomingSeedingError, SeedReconcileOutcome};
-use crate::settings::{ClientSettings, StorageRootSnapshot};
+use crate::settings::{
+    ClientSettingsRuntimeView, ListenerBindFailureReason, ListenerStatus, StorageRootSnapshot,
+    classify_listener_bind_failure,
+};
 use crate::speed::{PreparedSpeedHistory, SessionSpeedRecorder, SpeedHistoryRuntime};
 use crate::store::{
     ConfiguredStorageRoot, ManagedArtifactState, PreparedFileRecord, RemovalRecord, ResumeRecord,
@@ -109,9 +111,6 @@ pub struct ApplicationConfig {
     pub network: NetworkConfig,
     pub download_resource_limits: DownloadResourceLimits,
     pub dht: DhtConfig,
-    pub incoming_tcp: IncomingTcpBootstrap,
-    pub peer_budget: PeerBudgetConfig,
-    pub upload_scheduler: UploadSchedulerConfig,
     pub upload_read_jobs: usize,
     pub incoming_handshake_timeout: Duration,
     pub incoming_peer_activity_timeout: Duration,
@@ -120,6 +119,8 @@ pub struct ApplicationConfig {
     pub incoming_inactivity_timeout: Duration,
     pub view_set_lease: Duration,
     pub view_set_reaper_interval: Duration,
+    #[doc(hidden)]
+    pub peer_budget_max_open_files_for_testing: Option<usize>,
     #[doc(hidden)]
     pub storage_write_delay_for_testing: Duration,
     #[doc(hidden)]
@@ -199,7 +200,6 @@ impl ApplicationConfig {
         network: NetworkConfig,
     ) -> Self {
         let dht = DhtConfig::for_network(network.policy);
-        let client_settings = ClientSettings::default();
         Self {
             persistence,
             profile_id,
@@ -207,9 +207,6 @@ impl ApplicationConfig {
             network,
             download_resource_limits: DownloadResourceLimits::DESKTOP,
             dht,
-            incoming_tcp: client_settings.incoming_bootstrap(),
-            peer_budget: client_settings.peer_budget_config(),
-            upload_scheduler: client_settings.upload_scheduler_config(),
             upload_read_jobs: DEFAULT_UPLOAD_READ_JOBS,
             incoming_handshake_timeout: DEFAULT_INCOMING_HANDSHAKE_TIMEOUT,
             incoming_peer_activity_timeout: DEFAULT_INCOMING_PEER_ACTIVITY_TIMEOUT,
@@ -218,6 +215,7 @@ impl ApplicationConfig {
             incoming_inactivity_timeout: DEFAULT_INCOMING_INACTIVITY_TIMEOUT,
             view_set_lease: Duration::from_millis(crate::views::VIEW_SET_LEASE_MILLIS),
             view_set_reaper_interval: Duration::from_millis(VIEW_SET_REAPER_INTERVAL_MILLIS),
+            peer_budget_max_open_files_for_testing: None,
             storage_write_delay_for_testing: Duration::ZERO,
             storage_write_concurrency_for_testing: 4,
             storage_hash_concurrency_for_testing: 4,
@@ -353,6 +351,18 @@ impl ApplicationService {
                 SessionStore::open_ephemeral(&config.profile_id, &config.storage_roots)?
             }
         };
+        let snapshot = store.snapshot()?;
+        let active_client_settings = snapshot.client_settings.clone();
+        let mut peer_budget_config = active_client_settings.peer_budget_config();
+        if let Some(maximum) = config.peer_budget_max_open_files_for_testing {
+            peer_budget_config.max_open_files = maximum;
+        }
+        let effective_peer_connection_limit = u32::try_from(peer_budget_config.effective_limit())
+            .map_err(|_| {
+            ApplicationError::Configuration(
+                "effective peer connection limit cannot be represented".to_owned(),
+            )
+        })?;
         let storage_roots = available_storage_roots(store.storage_roots()?);
         let (initial_dht_snapshot, dht_state_warning) = match store.load_dht_snapshot() {
             Ok(snapshot) => (snapshot, None),
@@ -369,10 +379,11 @@ impl ApplicationService {
         let storage_file_pool =
             StorageFilePool::new(DEFAULT_STORAGE_FILE_LIMIT, config.platform_storage_client)
                 .map_err(|error| ApplicationError::Configuration(error.to_owned()))?;
-        let peer_budget = PeerBudget::new(config.peer_budget);
-        let mut incoming_config = IncomingPeerServiceConfig::new(config.incoming_tcp)
-            .with_peer_budget(peer_budget.clone());
-        incoming_config.upload_scheduler = config.upload_scheduler;
+        let peer_budget = PeerBudget::new(peer_budget_config);
+        let mut incoming_config =
+            IncomingPeerServiceConfig::new(active_client_settings.incoming_bootstrap())
+                .with_peer_budget(peer_budget.clone());
+        incoming_config.upload_scheduler = active_client_settings.upload_scheduler_config();
         incoming_config.upload_read_jobs = config.upload_read_jobs;
         incoming_config.handshake_timeout = config.incoming_handshake_timeout;
         incoming_config.peer_activity_timeout = config.incoming_peer_activity_timeout;
@@ -381,7 +392,24 @@ impl ApplicationService {
         incoming_config.inactivity_timeout = config.incoming_inactivity_timeout;
         incoming_config.peer_id = network.peer_id;
         incoming_config.byte_metric_sink = Some(speed_recorder.clone());
-        let mut incoming_service = IncomingPeerService::bind(incoming_config).await?;
+        let (mut incoming_service, listener_status) =
+            match IncomingPeerService::bind(incoming_config).await {
+                Ok(Some(service)) => {
+                    let address = service.listen_address();
+                    (
+                        Some(service),
+                        ListenerStatus::Listening {
+                            address: address.ip().to_string(),
+                            port: address.port(),
+                        },
+                    )
+                }
+                Ok(None) => (None, ListenerStatus::Disabled),
+                Err(IncomingPeerError::Bind { source, .. }) => {
+                    (None, classify_listener_bind_failure(&source))
+                }
+                Err(error) => return Err(error.into()),
+            };
         let mut dht_config = config.dht;
         dht_config.network_policy = network.policy;
         dht_config.initial_snapshot = initial_dht_snapshot;
@@ -397,12 +425,18 @@ impl ApplicationService {
         };
         let dht_observation_receiver = dht.subscribe_observations();
         let initial_dht_view = inspection_view(&dht_observation_receiver.borrow());
-        let snapshot = store.snapshot()?;
+        let runtime_client_settings = ClientSettingsRuntimeView::from_started(
+            snapshot.client_settings.clone(),
+            active_client_settings,
+            effective_peer_connection_limit,
+            listener_status.clone(),
+        );
         let views = ViewHub::new_with_runtime_views(
             &snapshot,
             config.view_set_lease,
             speed.history.clone(),
             initial_dht_view,
+            runtime_client_settings,
         )?;
         let dht_observations =
             DhtObservationRuntime::start(dht_observation_receiver, views.clone());
@@ -458,6 +492,22 @@ impl ApplicationService {
                 None,
                 "Saved DHT state was rejected; using cold bootstrap",
                 &[("detail", &detail)],
+            )?;
+        }
+        if let ListenerStatus::BindFailed { reason, detail } = &listener_status {
+            let reason = match reason {
+                ListenerBindFailureReason::AddressInUse => "address_in_use",
+                ListenerBindFailureReason::PermissionDenied => "permission_denied",
+                ListenerBindFailureReason::AddressUnavailable => "address_unavailable",
+                ListenerBindFailureReason::Other => "other",
+            };
+            service.views.record_diagnostic(
+                DiagnosticSeverity::Warning,
+                category::PEER_CONNECTION,
+                "incoming_listener_bind_failed",
+                None,
+                "Incoming loopback listener could not start; settings remain available",
+                &[("reason", reason), ("detail", detail)],
             )?;
         }
         service.refresh_views()?;
@@ -3690,11 +3740,12 @@ mod tests {
     use std::net::{IpAddr, SocketAddr};
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::Duration;
 
     use rstorrent_engine::dht::BootstrapNode;
     use rstorrent_engine::{
-        ByteMetric, ByteMetricSink, DEFAULT_PEER_ID, DownloadError, IncomingTcpBootstrap,
-        NetworkConfig, NetworkPolicy, PublicationShape, torrent_storage_paths,
+        ByteMetric, ByteMetricSink, DEFAULT_PEER_ID, DownloadError, NetworkConfig, NetworkPolicy,
+        PublicationShape, torrent_storage_paths,
     };
     use rstorrent_protocol::dht::{
         DhtEndpoint, DhtIp, Message as DhtMessage, NodeId, decode_message as decode_dht,
@@ -3720,9 +3771,10 @@ mod tests {
     use crate::{
         AddTorrentBytesRequest, CONTROL_VERSION, ClientSettings, Command, ConfiguredStorageRoot,
         DeliveryPolicy, DhtLifecycleView, DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity,
-        FilePriority, ListenerPolicy, OpenViewSetOptions, OpenViewSetRequest, ProgressDisposition,
-        ProgressReason, RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseOutcome,
-        SessionStore, StorageState, SubscriptionSpec, TorrentState, ViewDeliveryPolicy, ViewPatch,
+        FilePriority, ListenerBindFailureReason, ListenerPolicy, ListenerStatus,
+        OpenViewSetOptions, OpenViewSetRequest, ProgressDisposition, ProgressReason,
+        RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseOutcome, SessionStore,
+        StorageState, SubscriptionSpec, TorrentState, ViewDeliveryPolicy, ViewPatch,
         ViewProjection, ViewSelector, ViewSetError, ViewSetOwner, ViewSetUpdate, ViewSnapshot,
         ViewSpec, ViewUpdatePayload,
     };
@@ -3751,6 +3803,26 @@ mod tests {
                 std::time::Duration::from_secs(5),
             ),
         )
+    }
+
+    fn persist_client_settings(config: &ApplicationConfig, settings: ClientSettings) {
+        let mut store = SessionStore::open(
+            config
+                .durable_profile_root()
+                .expect("test configuration is durable"),
+            &config.profile_id,
+            &config.storage_roots,
+        )
+        .expect("open settings fixture store");
+        let response = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "configure-client-settings".to_owned(),
+                expected_revision: None,
+                command: Command::SetClientSettings { settings },
+            })
+            .expect("configure client settings");
+        assert!(matches!(response.outcome, ResponseOutcome::Success { .. }));
     }
 
     fn add_request(request_id: &str, torrent_id: &str) -> RequestEnvelope {
@@ -3840,6 +3912,36 @@ mod tests {
         })
         .await
         .expect("incoming seed reconciliation deadline");
+    }
+
+    async fn client_settings_runtime(
+        service: &ApplicationService,
+    ) -> crate::ClientSettingsRuntimeView {
+        let subscription = service
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::TorrentList,
+                projection: ViewProjection::Summary,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 4096,
+                },
+                diagnostics: None,
+                catalog_page: None,
+            })
+            .expect("subscribe to client settings");
+        let update = subscription
+            .next_update()
+            .await
+            .expect("initial client settings snapshot");
+        let ViewUpdatePayload::Snapshot {
+            snapshot: ViewSnapshot::TorrentList {
+                client_settings, ..
+            },
+        } = update.payload
+        else {
+            panic!("expected torrent-list client settings snapshot");
+        };
+        client_settings
     }
 
     async fn connect_application_seed(
@@ -4655,6 +4757,32 @@ mod tests {
         assert_eq!(runtime.configured, configured);
         assert_eq!(runtime.active, ClientSettings::default());
         assert!(runtime.restart_required);
+
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "revert-client-settings-view".to_owned(),
+                expected_revision: Some("1".to_owned()),
+                command: Command::SetClientSettings {
+                    settings: ClientSettings::default(),
+                },
+            })
+            .await
+            .expect("revert settings to active values");
+        let update = subscription.next_update().await.expect("revert patch");
+        let ViewUpdatePayload::Patch {
+            patch:
+                ViewPatch::TorrentList {
+                    client_settings: Some(runtime),
+                    ..
+                },
+        } = update.payload
+        else {
+            panic!("expected reverted settings replacement patch");
+        };
+        assert_eq!(runtime.configured, ClientSettings::default());
+        assert_eq!(runtime.active, ClientSettings::default());
+        assert!(!runtime.restart_required);
 
         service.shutdown().await.expect("shutdown");
         drop(service);
@@ -6617,8 +6745,15 @@ mod tests {
         let raw_info = single_file_info("seed.bin", payload, 4);
         let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
         let torrent_id = crate::control::encode_info_hash(info_hash);
-        let mut configuration = config(&root);
-        configuration.incoming_tcp = IncomingTcpBootstrap::AutomaticLoopback;
+        let configuration = config(&root);
+        persist_client_settings(
+            &configuration,
+            ClientSettings {
+                listener: ListenerPolicy::AutomaticLoopback,
+                peer_connection_limit: 1,
+                upload_slots: 1,
+            },
+        );
         fs::create_dir_all(root.join("payload")).expect("create payload root");
         fs::write(root.join("payload/seed.bin"), payload).expect("write published payload");
         {
@@ -6648,6 +6783,15 @@ mod tests {
         let mut first = ApplicationService::open(configuration.clone())
             .await
             .expect("open first application lifetime");
+        let first_runtime = client_settings_runtime(&first).await;
+        assert_eq!(first_runtime.active.peer_connection_limit, 1);
+        assert_eq!(first_runtime.active.upload_slots, 1);
+        assert_eq!(first_runtime.effective_peer_connection_limit, 1);
+        let first_incoming = first
+            .incoming_peer_snapshot()
+            .expect("configured listener is active");
+        assert_eq!(first_incoming.peer_budget.configured_limit, 1);
+        assert_eq!(first_incoming.peer_budget.effective_limit, 1);
         wait_for_seed_registrations(&first, 1).await;
         let (mut peer, mut decoder, mut pending) =
             connect_application_seed(&first, info_hash, DEFAULT_PEER_ID).await;
@@ -6679,13 +6823,58 @@ mod tests {
             }
         );
         drop(peer);
+        let zero_slots = ClientSettings {
+            listener: ListenerPolicy::AutomaticLoopback,
+            peer_connection_limit: 1,
+            upload_slots: 0,
+        };
+        first
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "configure-zero-upload-slots".to_owned(),
+                expected_revision: None,
+                command: Command::SetClientSettings {
+                    settings: zero_slots.clone(),
+                },
+            })
+            .await
+            .expect("persist zero upload slots");
+        let configured = client_settings_runtime(&first).await;
+        assert_eq!(configured.configured, zero_slots);
+        assert_eq!(configured.active.upload_slots, 1);
+        assert!(configured.restart_required);
         first.shutdown().await.expect("shutdown first lifetime");
         drop(first);
 
         let mut second = ApplicationService::open(configuration)
             .await
             .expect("open restarted application");
+        let second_runtime = client_settings_runtime(&second).await;
+        assert_eq!(second_runtime.active, zero_slots);
+        assert!(!second_runtime.restart_required);
         wait_for_seed_registrations(&second, 1).await;
+        let (mut choked_peer, mut choked_decoder, mut choked_pending) =
+            connect_application_seed(&second, info_hash, *b"-RS-CHOKED--00000000").await;
+        choked_peer
+            .write_all(&encode_message(&PeerMessage::Interested).expect("encode interested"))
+            .await
+            .expect("send zero-slot interest");
+        assert!(
+            tokio::time::timeout(
+                Duration::from_millis(100),
+                read_peer_message(&mut choked_peer, &mut choked_decoder, &mut choked_pending,),
+            )
+            .await
+            .is_err(),
+            "zero upload slots must not unchoke an interested peer"
+        );
+        let choked_snapshot = second
+            .incoming_peer_snapshot()
+            .expect("incoming service remains active");
+        assert_eq!(choked_snapshot.upload_scheduler.interested, 1);
+        assert_eq!(choked_snapshot.upload_scheduler.regular, 0);
+        assert_eq!(choked_snapshot.upload_scheduler.optimistic, 0);
+        drop(choked_peer);
         let (mut archived_peer, _, _) =
             connect_application_seed(&second, info_hash, *b"-RS-ARCHIVE-00000000").await;
         second
@@ -6807,6 +6996,10 @@ mod tests {
             .await
             .expect("open disabled incoming service");
         assert!(disabled.incoming_peer_snapshot().is_none());
+        assert_eq!(
+            client_settings_runtime(&disabled).await.listener_status,
+            ListenerStatus::Disabled
+        );
         disabled
             .shutdown()
             .await
@@ -6820,14 +7013,159 @@ mod tests {
             .expect("bind incoming port blocker");
         let port = blocker.local_addr().expect("blocker address").port();
         let mut configuration = config(&fixed_root);
-        configuration.incoming_tcp = IncomingTcpBootstrap::FixedLoopback(port);
+        persist_client_settings(
+            &configuration,
+            ClientSettings {
+                listener: ListenerPolicy::FixedLoopback { port },
+                ..ClientSettings::default()
+            },
+        );
+        let mut conflicted = ApplicationService::open(configuration.clone())
+            .await
+            .expect("fixed bind conflict keeps application available");
+        assert!(conflicted.incoming_peer_snapshot().is_none());
+        let runtime = client_settings_runtime(&conflicted).await;
+        assert_eq!(
+            runtime.active.listener,
+            ListenerPolicy::FixedLoopback { port }
+        );
+        assert!(!runtime.restart_required);
         assert!(matches!(
-            ApplicationService::open(configuration).await,
-            Err(super::ApplicationError::Incoming(
-                rstorrent_engine::IncomingPeerError::Bind { port: failed, .. }
-            )) if failed == port
+            runtime.listener_status,
+            ListenerStatus::BindFailed {
+                reason: ListenerBindFailureReason::AddressInUse,
+                ref detail,
+            } if !detail.is_empty() && detail.len() <= 512
         ));
+        let diagnostics = conflicted
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::TorrentList,
+                projection: ViewProjection::Diagnostics,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 256 * 1024,
+                },
+                diagnostics: Some(DiagnosticFilter::default()),
+                catalog_page: None,
+            })
+            .expect("subscribe to bind diagnostics")
+            .next_update()
+            .await
+            .expect("bind diagnostic snapshot");
+        let diagnostics = serde_json::to_string(&diagnostics).expect("encode bind diagnostics");
+        assert!(diagnostics.contains("incoming_listener_bind_failed"));
+        assert!(diagnostics.contains("address_in_use"));
+
+        let repaired = ClientSettings {
+            listener: ListenerPolicy::AutomaticLoopback,
+            peer_connection_limit: 321,
+            upload_slots: 0,
+        };
+        let response = conflicted
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "repair-fixed-listener".to_owned(),
+                expected_revision: None,
+                command: Command::SetClientSettings {
+                    settings: repaired.clone(),
+                },
+            })
+            .await
+            .expect("repair listener settings through command path");
+        assert!(matches!(response.outcome, ResponseOutcome::Success { .. }));
+        let configured = client_settings_runtime(&conflicted).await;
+        assert_eq!(configured.configured, repaired);
+        assert_eq!(
+            configured.active.listener,
+            ListenerPolicy::FixedLoopback { port }
+        );
+        assert!(configured.restart_required);
+        assert!(matches!(
+            configured.listener_status,
+            ListenerStatus::BindFailed { .. }
+        ));
+        conflicted
+            .shutdown()
+            .await
+            .expect("shutdown conflicted app");
         drop(blocker);
+        drop(conflicted);
+
+        configuration.peer_budget_max_open_files_for_testing = Some(25);
+        let mut repaired_service = ApplicationService::open(configuration.clone())
+            .await
+            .expect("reopen repaired listener");
+        let incoming = repaired_service
+            .incoming_peer_snapshot()
+            .expect("automatic listener starts after repair");
+        assert_eq!(
+            incoming.listen_address.ip(),
+            "127.0.0.1".parse::<IpAddr>().unwrap()
+        );
+        assert_ne!(incoming.listen_address.port(), 0);
+        assert_eq!(incoming.peer_budget.configured_limit, 321);
+        assert_eq!(incoming.peer_budget.effective_limit, 5);
+        assert_eq!(incoming.peer_budget.incoming_slack, 10);
+        let runtime = client_settings_runtime(&repaired_service).await;
+        assert_eq!(runtime.configured, repaired);
+        assert_eq!(runtime.active, repaired);
+        assert!(!runtime.restart_required);
+        assert_eq!(runtime.effective_peer_connection_limit, 5);
+        assert_eq!(
+            runtime.listener_status,
+            ListenerStatus::Listening {
+                address: "127.0.0.1".to_owned(),
+                port: incoming.listen_address.port(),
+            }
+        );
+        let fixed = ClientSettings {
+            listener: ListenerPolicy::FixedLoopback { port },
+            ..repaired.clone()
+        };
+        repaired_service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "select-released-fixed-listener".to_owned(),
+                expected_revision: None,
+                command: Command::SetClientSettings {
+                    settings: fixed.clone(),
+                },
+            })
+            .await
+            .expect("select released fixed port");
+        let pending_fixed = client_settings_runtime(&repaired_service).await;
+        assert_eq!(pending_fixed.configured, fixed);
+        assert_eq!(pending_fixed.active, repaired);
+        assert!(pending_fixed.restart_required);
+        repaired_service
+            .shutdown()
+            .await
+            .expect("shutdown repaired service");
+        drop(repaired_service);
+
+        let mut fixed_service = ApplicationService::open(configuration)
+            .await
+            .expect("retry exact fixed listener on next generation");
+        let incoming = fixed_service
+            .incoming_peer_snapshot()
+            .expect("fixed listener starts after conflict is gone");
+        assert_eq!(incoming.listen_address.port(), port);
+        let runtime = client_settings_runtime(&fixed_service).await;
+        assert_eq!(runtime.configured, fixed);
+        assert_eq!(runtime.active, fixed);
+        assert!(!runtime.restart_required);
+        assert_eq!(
+            runtime.listener_status,
+            ListenerStatus::Listening {
+                address: "127.0.0.1".to_owned(),
+                port,
+            }
+        );
+        fixed_service
+            .shutdown()
+            .await
+            .expect("shutdown fixed service");
+        drop(fixed_service);
         fs::remove_dir_all(fixed_root).expect("remove fixed-conflict root");
     }
 }

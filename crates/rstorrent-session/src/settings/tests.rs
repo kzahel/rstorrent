@@ -1,3 +1,5 @@
+use std::io;
+
 use rstorrent_engine::{
     DEFAULT_CONNECTION_LIMIT, DEFAULT_INCOMING_CONNECTION_SLACK, DEFAULT_UNCHOKE_SLOTS,
 };
@@ -5,8 +7,8 @@ use rusqlite::Connection;
 
 use super::{
     ClientSettings, ClientSettingsError, ClientSettingsRuntimeView, ListenerPolicy, ListenerStatus,
-    SettingsPersistenceError, create_client_settings, read_client_settings,
-    replace_client_settings,
+    SettingsPersistenceError, classify_listener_bind_failure, create_client_settings,
+    read_client_settings, replace_client_settings,
 };
 
 #[test]
@@ -56,7 +58,7 @@ fn validates_exact_listener_connection_and_slot_boundaries() {
         Err(ClientSettingsError::FixedListenerPort { port: 1_023 })
     );
 
-    for value in [1, 2_000] {
+    for value in [1, 199, 200, 2_000] {
         assert_eq!(
             ClientSettings {
                 peer_connection_limit: value,
@@ -77,7 +79,7 @@ fn validates_exact_listener_connection_and_slot_boundaries() {
         );
     }
 
-    for value in [0, 50] {
+    for value in [0, 1, 7, 8, 50] {
         assert_eq!(
             ClientSettings {
                 upload_slots: value,
@@ -144,6 +146,44 @@ fn runtime_view_distinguishes_configured_active_effective_and_observed() {
             port: 41_000,
         }
     );
+}
+
+#[test]
+fn listener_bind_failures_are_closed_classified_and_byte_bounded() {
+    for (kind, expected) in [
+        (
+            io::ErrorKind::AddrInUse,
+            crate::ListenerBindFailureReason::AddressInUse,
+        ),
+        (
+            io::ErrorKind::PermissionDenied,
+            crate::ListenerBindFailureReason::PermissionDenied,
+        ),
+        (
+            io::ErrorKind::AddrNotAvailable,
+            crate::ListenerBindFailureReason::AddressUnavailable,
+        ),
+        (
+            io::ErrorKind::ConnectionRefused,
+            crate::ListenerBindFailureReason::Other,
+        ),
+    ] {
+        let ListenerStatus::BindFailed { reason, detail } =
+            classify_listener_bind_failure(&io::Error::new(kind, "bounded detail"))
+        else {
+            panic!("bind failure must remain typed");
+        };
+        assert_eq!(reason, expected);
+        assert_eq!(detail, "bounded detail");
+    }
+
+    let ListenerStatus::BindFailed { detail, .. } =
+        classify_listener_bind_failure(&io::Error::other("é".repeat(400)))
+    else {
+        panic!("long bind failure must remain typed");
+    };
+    assert!(detail.len() <= 512);
+    assert!(detail.is_char_boundary(detail.len()));
 }
 
 #[test]

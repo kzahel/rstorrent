@@ -8,9 +8,9 @@ use std::time::Duration;
 
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_session::{
-    ApplicationConfig, ApplicationService, CONTROL_VERSION, Command, ConfiguredStorageRoot,
-    IncomingTcpBootstrap, NetworkConfig, NetworkPolicy, RequestEnvelope, ResponseOutcome,
-    SessionStore, StorageState, StoreError,
+    ApplicationConfig, ApplicationService, CONTROL_VERSION, ClientSettings, Command,
+    ConfiguredStorageRoot, ListenerPolicy, NetworkConfig, NetworkPolicy, RequestEnvelope,
+    ResponseOutcome, SessionStore, StorageState, StoreError,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::time::timeout;
@@ -57,7 +57,7 @@ async fn run() -> Result<(), SeedHarnessError> {
         &raw_info,
     )?;
 
-    let mut config = ApplicationConfig::new(
+    let config = ApplicationConfig::new(
         arguments.profile_root,
         "incoming-interop".to_owned(),
         storage_roots,
@@ -67,7 +67,6 @@ async fn run() -> Result<(), SeedHarnessError> {
             Duration::from_secs(5),
         ),
     );
-    config.incoming_tcp = IncomingTcpBootstrap::AutomaticLoopback;
     let mut service = ApplicationService::open(config).await?;
     let ready = timeout(READY_TIMEOUT, async {
         loop {
@@ -206,6 +205,25 @@ fn initialize_catalog(
 ) -> Result<(), SeedHarnessError> {
     let torrent_id = hex(metainfo.info_hash);
     let mut store = SessionStore::open(profile_root, "incoming-interop", storage_roots)?;
+    let desired_settings = ClientSettings {
+        listener: ListenerPolicy::AutomaticLoopback,
+        ..ClientSettings::default()
+    };
+    if store.client_settings()? != desired_settings {
+        let settings = store.handle_durable(&RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: format!("configure-incoming-seed-{}", store.revision()?),
+            expected_revision: None,
+            command: Command::SetClientSettings {
+                settings: desired_settings,
+            },
+        })?;
+        if !matches!(settings.outcome, ResponseOutcome::Success { .. }) {
+            return Err(SeedHarnessError::Catalog(
+                "fixture client settings request was rejected".to_owned(),
+            ));
+        }
+    }
     match store.load_resume(&torrent_id) {
         Ok(resume)
             if resume.state == rstorrent_session::TorrentState::Complete

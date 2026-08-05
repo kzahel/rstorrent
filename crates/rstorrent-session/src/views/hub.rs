@@ -102,6 +102,7 @@ impl ViewHub {
             view_set_lease,
             speed,
             DhtInspectionView::inactive(),
+            ClientSettingsRuntimeView::from_configured(snapshot.client_settings.clone()),
         )
     }
 
@@ -110,6 +111,7 @@ impl ViewHub {
         view_set_lease: Duration,
         speed: Arc<Mutex<SessionRateHistory>>,
         dht: DhtInspectionView,
+        client_settings: ClientSettingsRuntimeView,
     ) -> Result<Self, SubscriptionError> {
         let revision = parse_revision(&snapshot.revision)?;
         Ok(Self {
@@ -127,9 +129,7 @@ impl ViewHub {
                     })
                     .collect(),
                 storage: snapshot.storage.clone(),
-                client_settings: ClientSettingsRuntimeView::from_configured(
-                    snapshot.client_settings.clone(),
-                ),
+                client_settings,
                 disk: DiskSessionModel::default(),
                 dht,
                 speed,

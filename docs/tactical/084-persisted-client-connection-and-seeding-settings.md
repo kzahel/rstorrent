@@ -1,7 +1,7 @@
 # Tactical 084: Persisted Client Connection And Seeding Settings
 
 Status: In progress. Planned on 2026-08-04 and authorized for autonomous
-implementation on 2026-08-05. Gates 1 and 2 are complete; Gates 3 through 5
+implementation on 2026-08-05. Gates 1 through 3 are complete; Gates 4 and 5
 remain.
 
 Topics: `incoming-reachability-and-seeding`, `client-persistence`,
@@ -51,8 +51,39 @@ corruption additions, then the complete 141-test non-ignored library baseline
 passed. Session clippy passed with warnings denied, and all 164 non-skipped web
 tests plus TypeScript type checking passed.
 
-Startup enforcement, recoverable bind failure, shared UI, and restarted-
-product evidence remain for Gates 3 through 5.
+Gate 3 removes the duplicated listener, peer-budget, and upload-scheduler
+product fields from `ApplicationConfig`. `ApplicationService::open` now reads
+the validated profile snapshot before constructing network owners, preserves
+the detected descriptor state and fixed incoming slack, derives the effective
+limit, and supplies the persisted listener and upload-slot values to the
+existing owners. The only new low-level configuration hook overrides reported
+open files in tests; it cannot choose a product connection limit. The incoming
+seed harness now persists its automatic-loopback intent through the ordinary
+settings command instead of bypassing durable authority.
+
+Disabled, automatic, and exact fixed startup publish complete active,
+effective, and listener state before subscriptions open. Only typed incoming
+bind failures are recoverable: the application retains commands, views, DHT,
+and Settings access without creating listener or seeding owners, publishes a
+bounded classified failure and diagnostic, and retries the exact newly
+persisted policy on the next generation. Other incoming initialization and
+ownership errors remain fatal. Reverting configured intent to active values
+clears the restart flag immediately.
+
+Focused startup evidence covers disabled state; fixed address-in-use with
+accessible mutation and diagnostics; repair to an automatic nonzero loopback
+port; retry of the released exact fixed port; a 321-connection configured
+limit clamped to five by injected descriptor evidence with the fixed ten
+incoming slack; one upload slot completing a controlled piece request; zero
+slots keeping an interested peer choked after restart; and joined listener,
+upload-scheduler, and peer-task shutdown with zero peer, read, and registration
+observations through the existing application lifecycle test. All 142 non-
+ignored session library tests, two throughput-profile tests, the incoming-seed
+test, four session CLI tests, session clippy with warnings denied, 164 non-
+skipped web tests, and TypeScript type checking passed.
+
+The shared UI and restarted headless product evidence remain for Gates 4 and
+5.
 
 ## Decision And Motivation
 

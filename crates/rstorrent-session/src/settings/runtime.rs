@@ -1,6 +1,11 @@
+use std::io;
+
 use rstorrent_engine::{IncomingTcpBootstrap, PeerBudgetConfig, UploadSchedulerConfig};
 
-use super::contract::{ClientSettings, ClientSettingsRuntimeView, ListenerPolicy, ListenerStatus};
+use super::contract::{
+    ClientSettings, ClientSettingsRuntimeView, ListenerBindFailureReason, ListenerPolicy,
+    ListenerStatus, MAX_LISTENER_BIND_DETAIL_BYTES,
+};
 
 impl ClientSettings {
     pub(crate) fn incoming_bootstrap(&self) -> IncomingTcpBootstrap {
@@ -42,4 +47,43 @@ impl ClientSettingsRuntimeView {
         self.restart_required = configured != self.active;
         self.configured = configured;
     }
+
+    pub(crate) fn from_started(
+        configured: ClientSettings,
+        active: ClientSettings,
+        effective_peer_connection_limit: u32,
+        listener_status: ListenerStatus,
+    ) -> Self {
+        Self {
+            restart_required: configured != active,
+            configured,
+            active,
+            effective_peer_connection_limit,
+            listener_status,
+        }
+    }
+}
+
+pub(crate) fn classify_listener_bind_failure(error: &io::Error) -> ListenerStatus {
+    let reason = match error.kind() {
+        io::ErrorKind::AddrInUse => ListenerBindFailureReason::AddressInUse,
+        io::ErrorKind::PermissionDenied => ListenerBindFailureReason::PermissionDenied,
+        io::ErrorKind::AddrNotAvailable => ListenerBindFailureReason::AddressUnavailable,
+        _ => ListenerBindFailureReason::Other,
+    };
+    ListenerStatus::BindFailed {
+        reason,
+        detail: bounded_utf8(&error.to_string(), MAX_LISTENER_BIND_DETAIL_BYTES),
+    }
+}
+
+fn bounded_utf8(value: &str, maximum_bytes: usize) -> String {
+    if value.len() <= maximum_bytes {
+        return value.to_owned();
+    }
+    let mut boundary = maximum_bytes;
+    while !value.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    value[..boundary].to_owned()
 }

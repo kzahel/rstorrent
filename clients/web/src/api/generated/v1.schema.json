@@ -2447,6 +2447,7 @@
           "additionalProperties": false,
           "properties": {
             "address": {
+              "maxLength": 64,
               "type": "string"
             },
             "port": {
@@ -2471,6 +2472,7 @@
           "additionalProperties": false,
           "properties": {
             "detail": {
+              "maxLength": 512,
               "type": "string"
             },
             "reason": {

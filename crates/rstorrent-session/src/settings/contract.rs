@@ -10,6 +10,7 @@ pub const MIN_FIXED_LISTENER_PORT: u16 = 1_024;
 pub const MIN_PEER_CONNECTION_LIMIT: u32 = 1;
 pub const MAX_PEER_CONNECTION_LIMIT: u32 = 2_000;
 pub const MAX_UPLOAD_SLOTS: u16 = 50;
+pub(crate) const MAX_LISTENER_BIND_DETAIL_BYTES: usize = 512;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -113,11 +114,13 @@ pub enum ListenerStatus {
     #[default]
     Disabled,
     Listening {
+        #[schemars(length(max = 64))]
         address: String,
         port: u16,
     },
     BindFailed {
         reason: ListenerBindFailureReason,
+        #[schemars(length(max = 512))]
         detail: String,
     },
 }
