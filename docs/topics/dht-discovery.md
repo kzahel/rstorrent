@@ -6,7 +6,9 @@ Status: Partial and product-integrated. Tactical 016 delivered the bounded
 session-owned IPv4 Mainline DHT participant, controlled libtorrent completion,
 incoming-query participation, private-torrent gating, and revalidated warm
 restart. Tactical 065 added its bounded endpoint-free product observatory.
-IPv6 socket operation and self-announcement remain absent.
+Tactical 089 moved application DHT traffic behind the bounded session UDP
+receive owner and separately reports its actual endpoint. IPv6 socket
+operation and self-announcement remain absent.
 
 ## Why DHT Was Front-Loaded
 
@@ -39,10 +41,13 @@ and send is policy checked.
 Protocol state includes bounded KRPC for `ping`, `find_node`, `get_peers`, and
 `announce_peer`; compact IPv4/IPv6 values and separate routing tables; alpha-3
 lookup; K=8 fixed-distance buckets and replacement caches; BEP 42 validation;
-and BEP 43 read-only parsing/admission behavior. The initial runtime binds one
-IPv4 UDP socket. It stages restored contacts before public routers, periodically
-rebootstraps or refreshes, rotates current/previous token secrets, bounds its
-peer store and source-rate state, and reclaims dropped lookup waiters.
+and BEP 43 read-only parsing/admission behavior. The application runtime
+receives through one session-owned IPv4 UDP socket and a bounded 64-datagram
+DHT route; DHT sends through the same socket. The standalone engine constructor
+composes that same owner for focused tests. DHT stages restored contacts before
+public routers, periodically rebootstraps or refreshes, rotates current/previous
+token secrets, bounds its peer store and source-rate state, and reclaims
+dropped lookup waiters.
 
 Verified private metadata disables DHT and purges DHT-only peers before content
 scheduling. Verified private metadata restored from durable state prevents DHT
@@ -122,8 +127,10 @@ DHT is shared session infrastructure, not per-torrent state.
 - Pure protocol values, message codecs, routing-table transitions, traversal
   decisions, token validation, and snapshot values must not depend on Tokio,
   sockets, filesystems, task handles, or application adapters.
-- One engine session owner holds routing tables, outstanding transactions,
-  lookup budgets, maintenance timers, and the UDP socket runtime.
+- One DHT actor holds routing tables, outstanding transactions, lookup
+  budgets, and maintenance timers. One lower session UDP owner alone calls
+  `recv_from`, bounds dispatch, and shares only a send handle and bounded route
+  upward; DHT does not construct a second application socket.
 - Each background task has an explicit cancellation signal and observable
   termination path. Shutdown stops new work, drains or cancels bounded work,
   snapshots eligible state, and closes the socket.
@@ -227,9 +234,10 @@ The completed foundation followed these stages:
 2. **Core state.** Land bounded codecs, routing state, transaction ownership,
    traversal behavior, tokens, and deterministic hostile-input tests without a
    product socket runtime.
-3. **Session runtime.** Add the UDP owner, bootstrap and maintenance lifecycle,
-   query responses, cancellation, network-policy integration, and controlled
-   interop.
+3. **Session runtime.** Add bootstrap and maintenance lifecycle, query
+   responses, cancellation, network-policy integration, and controlled
+   interop. Tactical `089` later moved socket receive ownership into the
+   shared session UDP waist without changing DHT protocol state.
 4. **Warm restart and torrent integration.** Persist bounded bootstrap hints,
    prove cold/warm recovery, enforce private intent, and feed peers into the
    ordinary registry.

@@ -65,6 +65,11 @@ Tactical [`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md) extends
 the same complete client-settings value with typed port-mapping policy and
 runtime status. Status changes publish ordinary torrent-list settings patches;
 the view owner retains no socket, gateway, mapping, renewal, or task authority.
+Tactical [`089`](../tactical/089-coordinated-session-listen-sockets.md) adds
+the durable preferred listen port and an observed `session_udp_status` to that
+same value. The latter reports actual address, port, and whether its numeric
+port is coordinated with the live TCP listener; generated validators reject a
+false coordination claim. The view still owns no socket or runtime task.
 
 ## Purpose And Scope
 
@@ -851,6 +856,10 @@ mapping states. Its off-LAN gate consumes the same summary plus ordinary
 Peers/Swarm snapshots and observes mapped readiness, incoming TCP activity,
 exact transfer, stopping, and terminal resource closure without a diagnostic-
 only state path.
+Tactical `089` preserves the complete-value replacement contract while
+separating configured preferred, active preferred, actual TCP, actual UDP, and
+mapped external TCP facts. Web validation, fixtures, settings presentation,
+generated schema/TypeScript, and regenerated UniFFI Kotlin consumers pass.
 
 Tactical `040` now supplies actual torrent lifecycle evidence in addition to
 the earlier synthetic `removed` diffs. Archive, removal stage, and managed-data

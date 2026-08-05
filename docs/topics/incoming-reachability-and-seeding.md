@@ -28,6 +28,13 @@ reachability coordinator, bounded UPnP IGD v2 mapping, and an exact off-LAN
 incoming transfer through the observed mechanism. Tracker/DHT advertisement
 and other mapping protocols remain later slices.
 
+Tactical
+[`089`](../tactical/089-coordinated-session-listen-sockets.md) is complete.
+Schema version 11 persists a preferred listen port, default `6881`; one
+application-generation allocator resolves actual TCP and UDP endpoints under
+the shared ten-retry/system-fallback policy; and one bounded UDP receive owner
+serves DHT. Tracker and DHT peer advertisement remain the next slice.
+
 ## Purpose And Scope
 
 This topic owns the vertical product story from a locally bound BitTorrent
@@ -80,11 +87,12 @@ endpoint:
   two-RSTorrent/two-libtorrent evidence passes for single-file and cross-file
   content, with all four clients independently verifying 67,109,595 bytes and
   the seed recording the exact 268,438,380 uploaded payload bytes;
-- one schema-version-10 atomic settings group persists listener intent,
+- one schema-version-11 atomic settings group persists listener intent,
   explicit disabled-or-UPnP mapping policy, 1--2,000 ordinary peer
-  connections, and 0--50 upload slots; new and migrated profiles keep mapping
-  disabled, while active/effective/bound/mapped state stays distinct from
-  configured intent and applies on restart;
+  connections, 0--50 upload slots, and a preferred automatic listen port in
+  `1024..=65535`; new and migrated profiles default that preference to `6881`
+  and keep mapping disabled, while active/effective/bound/mapped state stays
+  distinct from configured intent and applies on restart;
 - the generated application contract and shared browser/Tauri Settings
   surface expose that group, the actual loopback port, descriptor-derived
   effective limit, restart requirement, and typed recoverable bind failure;
@@ -102,10 +110,22 @@ endpoint:
   pieces and 4,195,035 payload bytes through the mapped endpoint; ordinary
   Peers/Swarm views observed incoming TCP state, exact physical upload passed,
   independent query proved deletion, and a post-delete connect failed;
+- automatic listening begins from the durable preferred port, shares ten
+  address-in-use retries across TCP then UDP, requests system-selected ports
+  on exhaustion, and never wraps `65535`; fixed listening binds the configured
+  TCP and UDP numeric port atomically or reports failure;
+- one application-generation socket set hands its TCP listener to incoming
+  peers and its UDP socket to a single bounded receiver with a 64-datagram DHT
+  route; DHT sends from that same socket, and disabled or failed TCP retains
+  independently bound ephemeral DHT UDP service;
+- runtime state and diagnostics separately expose configured preferred port,
+  actual TCP, actual UDP plus coordination state, and mapped external TCP;
+  controlled loopback and eligible local-network peers observed the reported
+  TCP listener and exact DHT UDP source, with joined terminal ownership;
 - UDP tracker announces still carry provisional port `6881`, which is not yet
   derived from the listener or mapped endpoint;
-- the IPv4 DHT has a real ephemeral UDP query socket, but RSTorrent does not
-  use it as a peer listener or send `announce_peer`; and
+- the IPv4 DHT uses the session UDP transport but RSTorrent does not treat its
+  endpoint as a TCP peer listener or send `announce_peer`; and
 - PCP, NAT-PMP, IGD v1/WANPPP, IPv6 pinholes, and UDP mappings are absent.
 
 The implementation adds cohesive `peer_io`, `upload`, `seed_content`,
@@ -241,14 +261,13 @@ tries PCP and falls back to NAT-PMP when the gateway explicitly reports an
 unsupported version. UPnP IGD is a separate discovery and SOAP/XML control
 path. Supporting one path does not justify claiming the others.
 
-The initial TCP campaign must not invent a `listener + 1` UDP convention.
-RSTorrent's DHT currently owns an independently selected ephemeral UDP port,
-and uTP is absent. Tactical
-[`089`](../tactical/089-coordinated-session-listen-sockets.md) will replace
-that shape with a libtorrent-informed session socket set: a persisted preferred
-port, coordinated TCP/UDP allocation, one bounded UDP receive owner, and DHT
-transport consumption. UDP mapping still waits for an actual advertisable UDP
-capability.
+The initial TCP campaign does not invent a `listener + 1` UDP convention.
+Completed Tactical
+[`089`](../tactical/089-coordinated-session-listen-sockets.md) replaces the
+independent DHT bind with a libtorrent-informed session socket set: a persisted
+preferred port, coordinated TCP/UDP allocation, one bounded UDP receive owner,
+and DHT transport consumption. uTP remains absent, and UDP mapping still waits
+for an actual advertisable UDP capability.
 
 ### Configuration, actual state, and evidence remain distinct
 
@@ -459,7 +478,7 @@ codecs and state transitions precede scripted gateway servers. Physical-router
 evidence remains environment-scoped, and mapping success alone is not an
 external incoming-connectivity claim.
 
-### 7. [Coordinated session listen sockets](../tactical/089-coordinated-session-listen-sockets.md) — planned
+### 7. [Coordinated session listen sockets](../tactical/089-coordinated-session-listen-sockets.md) — complete
 
 Before advertisement, replace the independent TCP and DHT UDP bind paths with
 one application-generation allocator and one UDP receive owner. Automatic
@@ -472,6 +491,12 @@ DHT consumes a bounded route from the shared UDP owner. The slice exposes
 configured preference, actual TCP, actual UDP, and mapped external TCP as
 separate facts and proves joined shutdown. It deliberately does not replace
 the tracker constant, send DHT `announce_peer`, implement uTP, or map UDP.
+
+The completed evidence covers all conflict/fallback modes, one receiver with
+a 64-datagram queue and terminal zero ownership, a controlled DHT query whose
+source equals the runtime UDP endpoint, and TCP connects to that generation's
+reported loopback and eligible local-network listeners. Fixed TCP failure
+leaves DHT available on an explicitly independent ephemeral UDP endpoint.
 
 ### 8. Truthful tracker and DHT reachability
 
@@ -614,12 +639,11 @@ long-lived per-torrent peer owner and proves it through truthful incoming
 projection in the ordinary Swarm/Peers model. Tactical
 [`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md) completes the
 non-loopback listener, session reachability owner, UPnP IGD v2 mapping, and
-externally dialed exact TCP seeding proof. Planned Tactical
-[`089`](../tactical/089-coordinated-session-listen-sockets.md) is now the
-prerequisite next slice: persist the preferred port, coordinate TCP and UDP,
-move DHT behind one bounded session UDP owner, and expose actual endpoints.
-After it completes, the following reachability slice should replace the
-provisional tracker port with the current advertised endpoint and add eligible
-DHT self-announcement, including mapping-change correction and
-advertisement-before-mapping/listener shutdown. PCP and NAT-PMP remain later
-independent slices until they have suitable runtime evidence.
+externally dialed exact TCP seeding proof. Tactical
+[`089`](../tactical/089-coordinated-session-listen-sockets.md) now completes
+the preferred-port, coordinated TCP/UDP allocation, bounded session UDP/DHT
+owner, and actual-endpoint prerequisite. The next reachability slice should
+replace the provisional tracker port with the current advertised endpoint and
+add eligible DHT self-announcement, including mapping-change correction and
+advertisement withdrawal before mapping or listener shutdown. PCP and NAT-PMP
+remain later independent slices until they have suitable runtime evidence.

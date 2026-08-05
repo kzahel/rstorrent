@@ -1,7 +1,9 @@
 # Tactical 089: Coordinated Session Listen Sockets
 
-Status: In progress. The schema 11 preferred-port and product-contract slice
-is implemented; coordinated socket ownership remains.
+Status: Complete on 2026-08-05. Schema 11 persists the preferred port; one
+application-generation allocator coordinates TCP and UDP; incoming peers and
+DHT consume its supplied transports; and Rust, web, Android, loopback, and
+eligible local-network evidence passes.
 
 Topics: `incoming-reachability-and-seeding`, `client-persistence`,
 `dht-discovery`, `application-view-api`, `protocol-support`,
@@ -364,7 +366,48 @@ the same application generation.
   replacement, and rejects corrupt values below `1024`.
 - The generated JSON Schema, TypeScript, validators, web form, runtime
   equality checks, fixtures, and UniFFI Android constructor carry the same
-  setting. Web tests pass `178` tests with `2` skipped; Android debug unit
-  tests pass after regenerating the ignored UniFFI Kotlin source.
+  setting. The product distinguishes configured preference, actual TCP,
+  actual UDP and its coordination bit, and existing mapped external TCP
+  status; actual endpoints never enter SQLite.
 - Focused Rust settings tests pass `9` cases and focused durable command tests
-  pass `2` cases. Socket ownership implementation and full validation remain.
+  pass `2` cases. Fresh version-11 creation, version-10 migration, corrupt-row
+  rejection, atomic command/revision/replay behavior, and restart-required
+  comparison all pass.
+- `rstorrent-engine::session_socket` holds successful sockets across the
+  complete allocation. Its `7` focused cases prove preferred same-port TCP
+  and UDP, TCP-conflict advancement, UDP-only divergence, shared ten-retry
+  exhaustion into explicit system ports, fixed UDP-conflict atomicity,
+  disabled-listener UDP continuity, and non-wrapping candidate generation.
+- `rstorrent-engine::session_udp` is the only `recv_from` owner. Its capacity
+  is `64` DHT datagrams and its receive buffer is the existing DHT maximum
+  plus one oversize sentinel byte. Its `4` focused cases prove bidirectional
+  use of one socket, bounded oversize delivery, drop-on-full/high-water
+  accounting, saturating lifetime counters, one task high water, and terminal
+  `tasks=0, queued=0` after joined shutdown.
+- `IncomingPeerService::start` validates and consumes an already-bound TCP
+  listener. `DhtService::start_with_transport` consumes the bounded session
+  UDP route and shared send handle; the standalone DHT constructor composes
+  the same UDP owner for focused use. Partial application startup drops the
+  unused route and joins UDP; normal shutdown joins DHT before UDP. The full
+  DHT suite passes `11` active cases with its one public-network smoke ignored.
+- A controlled loopback application generation reports its chosen TCP and UDP
+  endpoints, accepts TCP on the reported listener, and sends a DHT query from
+  the reported UDP source. A second test exercises the same exchange on the
+  host's eligible non-loopback IPv4 interface when present; it ran on the
+  implementation host. Both use the persisted preferred port and observe
+  matching TCP/UDP ports. The fixed-TCP-conflict application case reports a
+  typed listener failure while DHT remains bound independently.
+- The generated-contract validator rejects a runtime claim that marks
+  different TCP and UDP endpoints as coordinated. Web typecheck and build
+  pass; Vitest passes `178` active tests with `2` skipped. Regenerated UniFFI
+  Kotlin bindings compile; Gradle `testDebugUnitTest assembleDebug` succeeds.
+- `cargo fmt --all -- --check`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and
+  `cargo test --workspace` pass. The workspace test gate includes `257`
+  active engine tests with `3` ignored and, after the local-network evidence
+  case landed, `148` active session tests with `1` ignored. Public DHT or
+  public-swarm traffic was intentionally not used for this ownership claim.
+- Logical commits are `5a7a42d` (tactical), `ca338cc` (persisted setting),
+  `d77495d` (coordinated allocator, UDP owner, DHT/application migration and
+  product contract), and `e5969be` (eligible local-network integration
+  evidence).

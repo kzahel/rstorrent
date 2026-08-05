@@ -9,7 +9,9 @@ feature-driven settings seam completed by Tactical
 and selection-action seam completed by Tactical
 [`085`](../tactical/085-unified-contextual-selection-actions.md), with the
 concrete per-torrent lifetime seam now completed by Tactical
-[`086`](../tactical/086-long-lived-torrent-peer-runtime.md).
+[`086`](../tactical/086-long-lived-torrent-peer-runtime.md), and the session
+listen-socket/UDP waist completed by Tactical
+[`089`](../tactical/089-coordinated-session-listen-sockets.md).
 
 Topic: `code-organization-and-refactoring`
 
@@ -106,6 +108,15 @@ joined cleanup. `ApplicationService` retains only construction and shutdown
 order, while the existing view hub remains a task-free projection. The
 physical gate did not expose a reason for a new crate or an umbrella session
 coordinator refactor.
+
+Tactical [`089`](../tactical/089-coordinated-session-listen-sockets.md) adds
+two focused private engine modules without changing the crate graph.
+`session_socket` owns task-free TCP/UDP candidate policy and bound-socket
+handoff; `session_udp` owns the one receive task, bounded dispatch, and shared
+send side. Incoming and DHT runtimes consume supplied transports, while
+`ApplicationService` retains generation composition and ordered rollback and
+shutdown. This is the concrete lifecycle split selected over an umbrella
+session coordinator or new crate.
 
 ## Source-Organization Guidance
 
@@ -305,17 +316,13 @@ first seeding slice deliberately excludes Android product work.
 
 ## Near-Term Recommendation
 
-There should not be one umbrella refactor tactical. Tactical `084` confirms
-that the private-child-module default works: settings contract, SQL helpers,
-and runtime conversion became independently testable while the store and
-application retained their real owners. The incoming-peer projection
-investigation has now found the concrete pressure that guidance required: the
-only ordinary peer-state owner terminates before incoming seeding. Planned
-Tactical `086` therefore extracts the per-torrent lifetime waist and proves it
-through one incoming Peers/Swarm vertical slice while preserving the global
-session root and current single-active-download policy. Selective storage
-remains the leading engine-only refactor candidate when a feature next changes
-its large coordinator; size alone does not authorize the work.
+There should not be one umbrella refactor tactical. Tacticals `084`, `086`,
+`088`, and `089` confirm that focused child modules work: settings, per-torrent
+peer lifetime, reachability, coordinated bind policy, and UDP receive ownership
+became independently testable while the store and application retained their
+real owners. Selective storage remains the leading engine-only refactor
+candidate when a feature next changes its large coordinator; size alone does
+not authorize the work.
 
 ## Maintenance Contract
 
@@ -338,6 +345,11 @@ lifecycle, or navigation problem remains.
 
 ## History
 
+- **2026-08-05:** Completed Tactical `089`. Task-free coordinated bind policy
+  and one bounded session UDP receive owner now sit below incoming and DHT
+  runtimes; application generation composition remains explicit. The feature
+  resolved the shared-socket pressure without a new crate, generic transport
+  trait, or umbrella session coordinator.
 - **2026-08-05:** Completed Tactical `088`. The feature established a focused
   engine UPnP boundary and private session reachability coordinator with one-
   way dependencies, explicit cancellation/join, task-free projection, and

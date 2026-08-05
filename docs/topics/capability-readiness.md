@@ -145,23 +145,27 @@ pieces and 4,195,035 payload bytes through the mapped public endpoint;
 ordinary Peers/Swarm state, exact upload, independent deletion, failed
 reconnect, and terminal-zero evidence pass.
 
+Tactical [`089`](../tactical/089-coordinated-session-listen-sockets.md) is
+complete. Schema version 11 adds the restart-applied preferred port with
+default `6881`. One allocator holds coordinated TCP and UDP sockets through a
+shared ten-conflict retry budget and system fallback; one 64-datagram session
+UDP route feeds DHT. Controlled loopback and eligible local-network traffic
+matches the separately reported TCP listener and DHT UDP source, while fixed
+TCP failure retains independent DHT service and all tasks join terminally.
+
 ## Current Queue
 
 ### Now
 
-**Execute coordinated session listen sockets.** Planned Tactical
-[`089`](../tactical/089-coordinated-session-listen-sockets.md) persists a
-user-editable preferred port, coordinates TCP and UDP allocation with bounded
-libtorrent-informed fallback, moves DHT behind one session UDP receive owner,
-and exposes actual TCP and UDP endpoints separately. This is the prerequisite
-for mapped-endpoint tracker and DHT advertisement; do not reintroduce an
-independent port constant or a `listener + 1` convention.
+**Implement truthful tracker and DHT peer advertisement.** Feed the current
+eligible TCP listener or verified external mapping into tracker announces and
+DHT `announce_peer`; prove correction when the mapped external port changes
+and withdrawal before torrent, mapping, listener, or session shutdown. Do not
+derive the claim from the preferred setting, the DHT UDP endpoint, or a
+conventional port constant.
 
 ### Next
 
-- Feed the current eligible listener or verified external mapping into tracker
-  announces and DHT self-announcement, then prove correction and withdrawal
-  across mapping and session lifecycle.
 - Add PCP and NAT-PMP only with their own bounded tactical and suitable
   controlled or physical gateway evidence; pinned source inspection is not a
   support claim.
@@ -169,7 +173,7 @@ independent port constant or a `listener + 1` convention.
 ### Later
 
 Complete IPv6 DHT operation, live listener/upload-setting application, finite
-bandwidth and seeding goals, LAN/public binding, PEX,
+bandwidth and seeding goals, multi-interface and IPv6 binding, PEX,
 local service discovery, uTP, NAT traversal, v2 and hybrid torrents,
 playback-oriented file priorities, dynamic VPN and metered-network controls,
 and production remote access remain important. After core parity,
@@ -198,7 +202,7 @@ matrix choose BEP breadth; visible novelty alone does not.
 | Multiple magnet trackers | Partial | deterministic, runtime, interop, live | Up to eight startup operations contribute peers, but magnet trackers form one synthetic tier because magnets contain no BEP 12 tier structure. | [`tracker-discovery`](tracker-discovery.md) |
 | Metainfo tracker tiers | Implemented | deterministic, runtime, interop, web | Outer `announce-list`/`announce`, tier and source survive restart; UDP rows are scheduled under the eight-operation ceiling and the controlled imported tracker completes content. | [`tracker-discovery`](tracker-discovery.md) |
 | HTTP and HTTPS trackers | Absent | deterministic retention only | Configured rows survive and are visible with redacted credentials and unsupported transport state, but no request, response, authentication, redirect, or proxy owner exists. | [`tracker-discovery`](tracker-discovery.md) |
-| DHT | Partial | deterministic, runtime, interop, live | A bounded IPv4 participant supports lookup, incoming queries, private gating, revalidated warm restart, and repeated public metadata acquisition. IPv6 UDP operation and self-announcement are absent. | [`dht-discovery`](dht-discovery.md) |
+| DHT | Partial | deterministic, runtime, interop, live | A bounded IPv4 participant supports lookup, incoming queries, private gating, revalidated warm restart, and repeated public metadata acquisition. Its application transport now uses one bounded session UDP receiver and reports the actual source endpoint independently from TCP. IPv6 UDP operation and self-announcement are absent. | [`dht-discovery`](dht-discovery.md) |
 | Peer exchange | Absent | none | BEP 11 depends on a larger live-peer set, extension dispatch, and hostile-source bounds. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Local service discovery | Absent | none | Interface, multicast, and local-network policy are unimplemented. | [`protocol-support`](protocol-support.md) |
 
@@ -212,7 +216,7 @@ matrix choose BEP breadth; visible novelty alone does not.
 | Pre-content peer failover | Implemented | deterministic, runtime, interop, live | Bounded parallel metadata peers share one block owner; two tracker cohorts, 10/10 fresh-DHT owner runs, and 12/12 cross-catalog pairs pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Multiple simultaneous live peers | Implemented | deterministic, runtime, interop, live | Thirty established and thirty half-open attempts remain separate outbound torrent-local defaults beneath one shared session budget whose ordinary default is 200 after descriptor clamping and whose incoming-only slack is ten. Exact saturation, cancellation, mixed-direction release, and simultaneous incoming evidence pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Transfer request ownership and failover | Implemented | deterministic, runtime, interop, live | Ordinary blocks have one generation; strict endgame adds bounded duplicate attempts, first-response cancellation, and harmless losing payload. | [`download-correctness`](download-correctness.md) |
-| Incoming peer connections | Implemented | deterministic, runtime, interop, web | One joined IPv4 listener has a five-entry backlog, eight pending handshake slots, 1,024 generation-fenced registrations, and bounded multi-peer ownership under the shared effective-plus-ten-slack budget. Typed loopback/local-network disabled/automatic/fixed policy, explicit UPnP enablement, 1--2,000 peers, and 0--50 slots persist atomically and apply across restart. Tactical [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) proves ordinary Swarm/Peers ownership; Tactical [`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md) proves an independently queried finite IGD v2 mapping, exact 4,195,035-byte off-LAN TCP seed, mapping deletion, failed reconnect, and terminal zero ownership. Tracker/DHT advertisement remains absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
+| Incoming peer connections | Implemented | deterministic, runtime, interop, web | One joined IPv4 listener has a five-entry backlog, eight pending handshake slots, 1,024 generation-fenced registrations, and bounded multi-peer ownership under the shared effective-plus-ten-slack budget. Typed loopback/local-network disabled/automatic/fixed policy, explicit UPnP enablement, preferred port `1024..=65535`, 1--2,000 peers, and 0--50 slots persist atomically and apply across restart. Automatic TCP/UDP binding shares ten retries before system fallback, while fixed binding is exact and atomic; actual endpoints remain runtime facts. Tactical [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) proves ordinary Swarm/Peers ownership; Tactical [`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md) proves an independently queried finite IGD v2 mapping and exact 4,195,035-byte off-LAN TCP seed; Tactical [`089`](../tactical/089-coordinated-session-listen-sockets.md) proves coordinated loopback/local-network TCP and DHT UDP traffic plus terminal ownership. Tracker/DHT advertisement remains absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
 | Peer reputation and integrity attribution | Partial | deterministic, runtime, live | Exact connection generations receive bounded asymmetric trust; a sole corrupt source is banned and ambiguous sources are only suspected, while full parole selection and persistence are absent. | [`download-correctness`](download-correctness.md) |
 
 ### Content Transfer And Completion
