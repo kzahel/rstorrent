@@ -15,6 +15,7 @@ mod peer_budget;
 mod peer_io;
 mod peer_runtime;
 mod peer_socket;
+pub mod port_mapping;
 mod positional_io;
 mod seed_content;
 mod selective_storage;

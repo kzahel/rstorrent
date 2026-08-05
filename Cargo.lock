@@ -2747,6 +2747,8 @@ name = "rstorrent-engine"
 version = "0.1.0"
 dependencies = [
  "getrandom 0.3.4",
+ "quick-xml",
+ "reqwest",
  "rstorrent-protocol",
  "rustix",
  "serde",
@@ -2754,6 +2756,7 @@ dependencies = [
  "sha1",
  "tokio",
  "tokio-util",
+ "url",
 ]
 
 [[package]]
