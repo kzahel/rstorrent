@@ -10,7 +10,10 @@ schedule's retained lifecycle the authoritative inspectable state and proves
 it through the live browser surface. Tactical `081` adds persisted BEP 12
 metainfo tiers and source attribution. UDP rows enter the existing runtime;
 HTTP/HTTPS trackers remain truthfully visible unsupported configuration rather
-than implemented transports.
+than implemented transports. Planned Tactical
+[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) moves
+that runtime into the long-lived session/torrent lifetime and supplies its
+actual routable or explicit outbound-only port.
 
 ## Scope
 
@@ -253,8 +256,12 @@ should focus on transfer accounting, HTTP/HTTPS operation, and session-wide
 resource policy. The incoming-reachability campaign now places non-loopback
 listener ownership and observed-network UPnP mapping before tracker
 advertisement; tracker state will consume the resulting advertisable endpoint
-in a later bounded slice. The headless public-torrent comparator adds useful
-live evidence but cannot replace controlled protocol and libtorrent tests.
+in planned Tactical
+[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md). That
+slice also adds current counters and completed/stopped lifecycle under one
+session-wide operation ceiling. The headless public-torrent comparator adds
+useful live evidence but cannot replace controlled protocol and libtorrent
+tests.
 
 Tactical `081` parses and persists every valid unique
 `announce-list`/`announce` URL admitted by its

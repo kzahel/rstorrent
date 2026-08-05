@@ -157,12 +157,16 @@ TCP failure retains independent DHT service and all tasks join terminally.
 
 ### Now
 
-**Implement truthful tracker and DHT peer advertisement.** Feed the current
-eligible TCP listener or verified external mapping into tracker announces and
-DHT `announce_peer`; prove correction when the mapped external port changes
-and withdrawal before torrent, mapping, listener, or session shutdown. Do not
-derive the claim from the preferred setting, the DHT UDP endpoint, or a
-conventional port constant.
+**Implement Tactical
+[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md).** Feed
+the current eligible TCP listener or active external mapping into tracker
+announces and explicit-port DHT `announce_peer` only for incoming-routable
+torrents. Preserve outbound-only tracker discovery with the port-`1` sentinel,
+prove correction when the mapped external port changes, and order tracker
+stopping plus DHT cancellation before torrent, mapping, listener, or session
+shutdown. Do not derive the claim from the preferred setting, the DHT UDP
+endpoint, or a conventional port constant; BEP 5 remote entries expire rather
+than supporting immediate withdrawal.
 
 ### Next
 

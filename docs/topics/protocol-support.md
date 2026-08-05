@@ -53,6 +53,13 @@ traffic, and actual TCP/UDP endpoints remain separate runtime facts. Tracker
 announces still use the provisional constant and DHT still does not
 self-announce.
 
+Planned Tactical
+[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) defines
+the next claim boundary: selected TCP-port tracker lifecycle, explicit-port
+token-authenticated DHT self-announcement after verified public and incoming-
+routable state, mapping correction, and ordered stopping. It changes no
+protocol claim until its controlled discovery-to-download evidence passes.
+
 Tactical [`081`](../tactical/081-v1-torrent-byte-intake.md) implements bounded
 v1 outer-metainfo intake, libtorrent-aligned large-v1 limits, and BEP 12 tier
 retention over the existing UDP tracker runtime. Deterministic, maximum-

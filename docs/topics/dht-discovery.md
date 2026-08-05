@@ -8,7 +8,9 @@ incoming-query participation, private-torrent gating, and revalidated warm
 restart. Tactical 065 added its bounded endpoint-free product observatory.
 Tactical 089 moved application DHT traffic behind the bounded session UDP
 receive owner and separately reports its actual endpoint. IPv6 socket
-operation and self-announcement remain absent.
+operation and self-announcement remain absent. Planned Tactical
+[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) owns
+explicit TCP-port self-announcement and its long-lived scheduling boundary.
 
 ## Why DHT Was Front-Loaded
 
@@ -194,10 +196,14 @@ violations before mutating trusted state.
 RSTorrent should be a useful participant, not a write-only crawler. Incoming
 queries are part of the first useful capability. However, RSTorrent must not
 send `announce_peer` with port zero or claim reachability before an eligible
-non-loopback peer listener and, where needed, an authoritative external
-mapping produce a current advertisable port. Peer lookup is still useful
-without self-announcement, so the BEP 5 protocol claim will initially remain
-Partial.
+peer listener, matching incoming torrent registration, and, where active, an
+authoritative external mapping produce a current advertisable port. Planned
+Tactical
+[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) waits
+for verified public metadata, sends the selected TCP port explicitly rather
+than implying the possibly different DHT UDP port, and treats remote peer
+entries as expiring soft state because BEP 5 defines no withdrawal query.
+Peer lookup remains useful without self-announcement.
 
 BEP 43 read-only behavior is relevant to a future metered or uncontactable
 Android mode. It should fit the session policy model, but it is not a substitute

@@ -35,6 +35,14 @@ application-generation allocator resolves actual TCP and UDP endpoints under
 the shared ten-retry/system-fallback policy; and one bounded UDP receive owner
 serves DHT. Tracker and DHT peer advertisement remain the next slice.
 
+Planned Tactical
+[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) now
+defines that slice. It selects mapped-external or actual local TCP ports only
+for incoming-routable torrent generations, retains tracker-only discovery on
+the explicit port-`1` sentinel otherwise, adds token-authenticated explicit-
+port DHT self-announcement, and moves discovery scheduling into the long-lived
+torrent/session lifetime.
+
 ## Purpose And Scope
 
 This topic owns the vertical product story from a locally bound BitTorrent
@@ -498,7 +506,7 @@ source equals the runtime UDP endpoint, and TCP connects to that generation's
 reported loopback and eligible local-network listeners. Fixed TCP failure
 leaves DHT available on an explicitly independent ephemeral UDP endpoint.
 
-### 8. Truthful tracker and DHT reachability
+### 8. [Truthful tracker and DHT peer advertisement](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) — planned
 
 Only after the reachability coordinator has a current eligible listener and,
 where required, an authoritative external mapping should public discovery
@@ -506,17 +514,25 @@ replace the provisional tracker port:
 
 - tracker announces consume the selected advertised peer port and react to
   listener or mapping changes without independent constants;
-- DHT `announce_peer` begins only when the torrent and advertisable endpoint
-  are eligible and the port claim is truthful;
+- incomplete or otherwise unroutable torrents retain outbound tracker
+  discovery through the explicit port-`1` sentinel rather than claiming the
+  session listener;
+- DHT `announce_peer` begins only after verified public metadata, active
+  incoming registration, and an eligible endpoint make the port claim
+  truthful;
 - private-torrent gating remains exact;
-- advertisement stops before listener shutdown, mapping invalidation, or
-  torrent ineligibility; and
+- tracker advertisement stops and DHT reannouncement cancels before listener
+  shutdown, mapping invalidation, or torrent ineligibility; and
 - mapped external-port changes trigger bounded corrective announcements.
 
 Controlled tracker and DHT peers should discover and complete from RSTorrent
 without an explicit peer hint. BEP 10 listen-port advertisement and LSD may
 be added here only if their full bounds and private-policy behavior remain a
 coherent part of the slice; otherwise they stay separate.
+
+BEP 5 has no immediate peer-withdrawal query. This slice proves cancellation
+of new announces, eventual controlled-node expiry, and failed connection to a
+stopped listener rather than claiming deletion of remote soft state.
 
 ### 9. Product settings, status, and platform evidence
 
@@ -642,8 +658,10 @@ non-loopback listener, session reachability owner, UPnP IGD v2 mapping, and
 externally dialed exact TCP seeding proof. Tactical
 [`089`](../tactical/089-coordinated-session-listen-sockets.md) now completes
 the preferred-port, coordinated TCP/UDP allocation, bounded session UDP/DHT
-owner, and actual-endpoint prerequisite. The next reachability slice should
-replace the provisional tracker port with the current advertised endpoint and
-add eligible DHT self-announcement, including mapping-change correction and
-advertisement withdrawal before mapping or listener shutdown. PCP and NAT-PMP
-remain later independent slices until they have suitable runtime evidence.
+owner, and actual-endpoint prerequisite. Planned Tactical
+[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) is the
+next reachability slice. It replaces the provisional tracker port, adds
+eligible explicit-port DHT self-announcement, corrects mapping changes, and
+orders tracker stopping plus DHT cancellation before mapping or listener
+shutdown. PCP and NAT-PMP remain later independent slices until they have
+suitable runtime evidence.

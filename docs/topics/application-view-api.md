@@ -70,6 +70,11 @@ the durable preferred listen port and an observed `session_udp_status` to that
 same value. The latter reports actual address, port, and whether its numeric
 port is coordinated with the live TCP listener; generated validators reject a
 false coordination claim. The view still owns no socket or runtime task.
+Planned Tactical
+[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) extends
+that complete value with selected advertisement source and outbound-only,
+local, mapped, renewal-unhealthy, and stopping meanings. The producer remains
+authoritative; clients do not infer reachability from configured or UDP ports.
 
 ## Purpose And Scope
 
