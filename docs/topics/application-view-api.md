@@ -54,7 +54,7 @@ adds one small complete-replacement client-settings projection to the existing
 always-present torrent-list view. It distinguishes configured intent from
 active/effective listener and limit state without adding a named view, lease,
 queue, task, or persisted runtime observation.
-Planned Tactical
+In-progress Tactical
 [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) changes no public
 view kind: it moves ordinary peer publication into a long-lived per-torrent
 owner and populates the existing Peers/Swarm contract from routed incoming seed

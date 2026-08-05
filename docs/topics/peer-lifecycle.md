@@ -40,10 +40,11 @@ eight bounded upload grants, isolates peer readers and writers, and records
 exact physical upload at peer, torrent, and session scope. Full parole
 selection, persistent integrity reputation, measured picker policy,
 and persistent peer records remain later work. Tactical
-[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) is planned to move
-the registry and active-connection observation out of the download-operation
-lifetime and attach routed incoming seed generations to that same per-torrent
-owner.
+[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) has moved the
+registry and active-connection observation out of the download-operation
+lifetime into one task-free engine state and application-generation torrent
+runtime. Routed incoming attachment and ordinary view projection remain in
+its next gates.
 
 ## Scope
 
@@ -599,8 +600,8 @@ blocking boundary, but controlled timing stayed neutral and the public queue
 remained full. Tactical `031` measures queue wait and per-kind service before
 connection policy and attributes about 88% of public wall time to 16 KiB write
 service. The source-first write owner now precedes another lifecycle change.
-Tactical `086` is planned for incoming integration with ordinary swarm
-observation and the long-lived torrent peer owner. Advertised-port updates,
+Tactical `086` is in progress; its retained torrent peer owner has landed and
+incoming integration with ordinary swarm observation remains. Advertised-port updates,
 finite upload bandwidth and seeding goals, measured performance selection,
 peer-ID duplicate resolution, full parole selection, PEX, and persisted peer
 caches remain later work.

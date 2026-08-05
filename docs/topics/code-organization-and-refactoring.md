@@ -8,7 +8,7 @@ feature-driven settings seam completed by Tactical
 [`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
 and selection-action seam completed by Tactical
 [`085`](../tactical/085-unified-contextual-selection-actions.md), with the
-concrete per-torrent lifetime seam selected by planned Tactical
+concrete per-torrent lifetime seam now being implemented by Tactical
 [`086`](../tactical/086-long-lived-torrent-peer-runtime.md).
 
 Topic: `code-organization-and-refactoring`
@@ -84,14 +84,16 @@ retains only generic invocation, focus, selection, and virtualization
 mechanics, while the existing overlay layer retains positioning and menu
 semantics.
 
-Planned Tactical
-[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) records the next
-feature-driven seam. The ordinary `PeerRegistry` and `PeerRuntime` currently
-die with `TorrentPeerCoordinator` while independently owned incoming seeding
-continues after completion. A private session `TorrentRuntime` child and a
-task-free engine torrent-peer state will give those facts one lifetime and
-publication owner. This is concrete ownership and deterministic-test pressure,
-not a file-size extraction or an umbrella session rewrite.
+Tactical [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) has landed
+the selected feature-driven seam through its first two gates. A task-free
+engine torrent-peer state now retains the ordinary `PeerRegistry`,
+`PeerRuntime`, checked connection IDs, and publication state. A private
+session `TorrentRuntime` owns that handle, active-operation membership, and a
+generation-fenced seed-registration slot across download completion and later
+seeding. `ApplicationService` retains catalog, global service, and
+single-active-torrent policy. This is concrete ownership and
+deterministic-test pressure, not a file-size extraction or an umbrella session
+rewrite; routed incoming task attachment remains in the tactical's next gate.
 
 ## Source-Organization Guidance
 

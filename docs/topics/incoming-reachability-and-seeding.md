@@ -11,9 +11,10 @@ physical-payload accounting. Tactical
 completes the first persisted listener, connection-limit, and upload-slot
 settings slice through the shared product surface and restarted controlled
 seeding. Tactical
-[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) is planned to move
-ordinary peer state out of the download-operation lifetime and attach incoming
-seed generations to the same bounded Peers/Swarm owner. Actual-port
+[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) is in progress.
+Its task-free engine peer state and session per-torrent lifetime owner now
+survive download-to-seed transitions; routed incoming attachment and ordinary
+Peers/Swarm projection remain in its next gates. Actual-port
 advertisement, non-loopback binding, finite bandwidth, seeding goals, and NAT
 mapping remain future slices.
 
@@ -76,8 +77,8 @@ multiple controlled incoming peers through the application service:
   surface expose that group, the actual loopback port, descriptor-derived
   effective limit, restart requirement, and typed recoverable bind failure;
 - incoming peer tasks still publish only aggregate service/upload snapshots;
-  ordinary Peer/Swarm observations remain owned by the active download task
-  and therefore disappear before completed seeding continues;
+  ordinary Peer/Swarm state now has one retained application-generation
+  torrent owner, but routed incoming generations do not attach to it yet;
 - UDP tracker announces still carry provisional port `6881`, which is not
   derived from or guaranteed to match this listener;
 - the IPv4 DHT has a real ephemeral UDP query socket, but RSTorrent does not
@@ -340,7 +341,7 @@ connection, slot, request, read, writer, and 40-handle limits; every joined
 generation ends with zero incoming, gateway-connection, storage, cache, and
 platform-request owners.
 
-### 4. [Long-lived torrent peer runtime](../tactical/086-long-lived-torrent-peer-runtime.md) — planned
+### 4. [Long-lived torrent peer runtime](../tactical/086-long-lived-torrent-peer-runtime.md) — in progress
 
 Move ordinary peer state from the active download operation into one
 application-generation per-torrent runtime, then use incoming integration as

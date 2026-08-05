@@ -16,6 +16,7 @@ mod incoming_seeding;
 mod settings;
 mod speed;
 mod store;
+mod torrent_runtime;
 mod tracker_views;
 mod views;
 

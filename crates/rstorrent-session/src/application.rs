@@ -18,7 +18,7 @@ use rstorrent_engine::{
     PeerBudget, PlatformStorageClient, PlatformStorageFailureKind, PlatformStorageSpec,
     PreparedFileHash, PublicationShape, ResumableMagnetDownloadConfig, ResumeArtifactState,
     ResumedStorage, StorageFilePool, StorageFilePoolSnapshot, TrackerSource, UdpTrackerConfig,
-    download_magnet_metadata_with_dht, plan_descriptor_storage,
+    download_magnet_metadata_with_dht_and_peers, plan_descriptor_storage,
     resume_magnet_to_descriptors_with_control, resume_magnet_with_control, torrent_storage_paths,
     verify_prepared_descriptors, verify_prepared_platform_files,
 };
@@ -50,6 +50,7 @@ use crate::store::{
     SessionStore, StorageRootLocation, StoreError, StoredStorageRoot, StoredTracker,
     StoredTrackerSource, StoredTrackerTransport, prepare_torrent_bytes,
 };
+use crate::torrent_runtime::{ActiveDownload, TorrentRuntime, TorrentRuntimeHandle};
 use crate::tracker_views::TrackerViewModel;
 
 fn parse_durable_metainfo(raw_info: &[u8]) -> Result<Metainfo, MetainfoError> {
@@ -235,13 +236,6 @@ impl ApplicationConfig {
 }
 
 #[derive(Debug)]
-struct ActiveDownload {
-    torrent_id: String,
-    control: DownloadControl,
-    task: JoinHandle<Result<(), String>>,
-}
-
-#[derive(Debug)]
 enum ApplicationTaskReport {
     Metadata,
     Download,
@@ -274,7 +268,9 @@ pub struct ApplicationService {
     peer_budget: PeerBudget,
     incoming_seeding: Option<IncomingSeeding>,
     incoming_service: Option<IncomingPeerService>,
-    active: Option<ActiveDownload>,
+    torrent_runtimes: BTreeMap<String, TorrentRuntime>,
+    active_torrent: Option<String>,
+    next_torrent_generation: u64,
     dht: Option<DhtService>,
     dht_observations: Option<DhtObservationRuntime>,
     speed_recorder: Arc<SessionSpeedRecorder>,
@@ -446,6 +442,18 @@ impl ApplicationService {
         let incoming_seeding = incoming_service
             .as_ref()
             .map(|incoming| IncomingSeeding::new(incoming.handle()));
+        let mut torrent_runtimes = BTreeMap::new();
+        let mut next_torrent_generation = 1_u64;
+        for torrent in &snapshot.torrents {
+            let generation = next_torrent_generation;
+            next_torrent_generation = next_torrent_generation.checked_add(1).ok_or_else(|| {
+                ApplicationError::Configuration("torrent runtime generation overflow".to_owned())
+            })?;
+            let runtime =
+                TorrentRuntime::new(torrent.torrent_id.clone(), generation, views.clone())
+                    .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+            torrent_runtimes.insert(torrent.torrent_id.clone(), runtime);
+        }
         let mut service = Self {
             store: Arc::new(Mutex::new(store)),
             storage_roots: Arc::new(storage_roots),
@@ -464,7 +472,9 @@ impl ApplicationService {
             peer_budget,
             incoming_seeding,
             incoming_service,
-            active: None,
+            torrent_runtimes,
+            active_torrent: None,
+            next_torrent_generation,
             dht: Some(dht),
             dht_observations: Some(dht_observations),
             speed_recorder,
@@ -516,6 +526,74 @@ impl ApplicationService {
         service.reconcile_incoming_catalog().await?;
         service.refresh_views()?;
         Ok(service)
+    }
+
+    fn active_runtime(&self) -> Option<&TorrentRuntime> {
+        self.active_torrent
+            .as_ref()
+            .and_then(|torrent_id| self.torrent_runtimes.get(torrent_id))
+    }
+
+    fn active_download(&self) -> Option<(&str, &ActiveDownload)> {
+        self.active_runtime().and_then(|runtime| {
+            runtime
+                .active_download()
+                .map(|active| (runtime.torrent_id(), active))
+        })
+    }
+
+    fn ensure_torrent_runtime(
+        &mut self,
+        torrent_id: &str,
+    ) -> Result<&mut TorrentRuntime, ApplicationError> {
+        if !self.torrent_runtimes.contains_key(torrent_id) {
+            let generation = self.next_torrent_generation;
+            self.next_torrent_generation =
+                self.next_torrent_generation.checked_add(1).ok_or_else(|| {
+                    ApplicationError::Configuration(
+                        "torrent runtime generation overflow".to_owned(),
+                    )
+                })?;
+            let runtime =
+                TorrentRuntime::new(torrent_id.to_owned(), generation, self.views.clone())
+                    .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+            self.torrent_runtimes.insert(torrent_id.to_owned(), runtime);
+        }
+        Ok(self
+            .torrent_runtimes
+            .get_mut(torrent_id)
+            .expect("torrent runtime exists after insertion"))
+    }
+
+    fn torrent_peers(
+        &mut self,
+        torrent_id: &str,
+    ) -> Result<rstorrent_engine::TorrentPeerHandle, ApplicationError> {
+        Ok(self.ensure_torrent_runtime(torrent_id)?.peers())
+    }
+
+    fn install_active_download(
+        &mut self,
+        torrent_id: &str,
+        active: ActiveDownload,
+    ) -> Result<(), ApplicationError> {
+        if let Some(active_torrent) = &self.active_torrent {
+            return Err(ApplicationError::Busy(active_torrent.clone()));
+        }
+        self.ensure_torrent_runtime(torrent_id)?
+            .set_active_download(active);
+        self.active_torrent = Some(torrent_id.to_owned());
+        Ok(())
+    }
+
+    fn take_active_download(&mut self) -> Option<(String, ActiveDownload)> {
+        let torrent_id = self.active_torrent.take()?;
+        let active = self
+            .torrent_runtimes
+            .get_mut(&torrent_id)
+            .and_then(TorrentRuntime::take_active_download)
+            .expect("active torrent points to an active download");
+        Some((torrent_id, active))
     }
 
     pub async fn dispatch(
@@ -571,7 +649,8 @@ impl ApplicationService {
                 },
             ));
         }
-        if let Some(active) = &self.active {
+        if let Some((active_torrent, _)) = self.active_download() {
+            let active_torrent = active_torrent.to_owned();
             let target = match &command {
                 Command::AddMagnet { magnet, .. } => {
                     rstorrent_protocol::magnet::Magnet::parse(magnet)
@@ -586,15 +665,12 @@ impl ApplicationService {
                 }
                 _ => None,
             };
-            if target.is_some_and(|target| target != active.torrent_id) {
+            if target.is_some_and(|target| target != active_torrent) {
                 return Ok(ResponseEnvelope::error(
                     request.request_id,
                     self.store_mut()?.revision()?,
                     ErrorCode::Busy,
-                    format!(
-                        "torrent {} already owns the download slot",
-                        active.torrent_id
-                    ),
+                    format!("torrent {} already owns the download slot", active_torrent),
                 ));
             }
         }
@@ -727,6 +803,7 @@ impl ApplicationService {
                 }
             }
             Command::Archive { torrent_id } => {
+                let torrent_id = torrent_id.to_ascii_lowercase();
                 self.views.record_diagnostic(
                     DiagnosticSeverity::Info,
                     category::LIFECYCLE_TORRENT,
@@ -735,6 +812,7 @@ impl ApplicationService {
                     "Torrent archived",
                     &[],
                 )?;
+                self.reconcile_incoming_torrent(&torrent_id).await?;
             }
             Command::RestoreArchive { torrent_id } => {
                 let torrent_id = torrent_id.to_ascii_lowercase();
@@ -824,17 +902,15 @@ impl ApplicationService {
             }
         };
         let torrent_id = prepared.torrent_id();
-        if let Some(active) = &self.active
-            && active.torrent_id != torrent_id
+        if let Some((active_torrent, _)) = self.active_download()
+            && active_torrent != torrent_id
         {
+            let active_torrent = active_torrent.to_owned();
             return Ok(ResponseEnvelope::error(
                 request.request_id,
                 self.store_mut()?.revision()?,
                 ErrorCode::Busy,
-                format!(
-                    "torrent {} already owns the download slot",
-                    active.torrent_id
-                ),
+                format!("torrent {} already owns the download slot", active_torrent),
             ));
         }
 
@@ -976,10 +1052,11 @@ impl ApplicationService {
                     .to_owned(),
             ));
         }
-        if let Some(active) = &self.active {
-            let resume = self.store_mut()?.load_resume(&active.torrent_id)?;
+        if let Some((active_torrent, _)) = self.active_download() {
+            let active_torrent = active_torrent.to_owned();
+            let resume = self.store_mut()?.load_resume(&active_torrent)?;
             if resume.storage_root == root_id {
-                return Err(ApplicationError::Busy(active.torrent_id.clone()));
+                return Err(ApplicationError::Busy(active_torrent));
             }
         }
         let path = validate_selected_directory(selected_path)?;
@@ -1114,8 +1191,8 @@ impl ApplicationService {
     ) -> Result<(), ApplicationError> {
         self.reap_finished().await?;
         let torrent_id = torrent_id.to_ascii_lowercase();
-        if let Some(active) = &self.active {
-            return Err(ApplicationError::Busy(active.torrent_id.clone()));
+        if let Some((active_torrent, _)) = self.active_download() {
+            return Err(ApplicationError::Busy(active_torrent.to_owned()));
         }
         let resume = self.load_resume_conservative(&torrent_id)?;
         if !resume.desired_running
@@ -1158,11 +1235,13 @@ impl ApplicationService {
             .as_ref()
             .map_or_else(Vec::new, |have| have.pieces().to_vec());
         let udp_trackers = operational_udp_trackers(&resume.trackers)?;
+        let torrent_peers = self.torrent_peers(&torrent_id)?;
         let config = ResumableMagnetDownloadConfig {
             magnet: resume.magnet,
             storage_root: PathBuf::new(),
             network: self.network,
             peer_budget: self.peer_budget.clone(),
+            torrent_peers: Some(torrent_peers),
             resource_limits: self.download_resource_limits,
             skip_files,
             verified_info: Some(raw_info),
@@ -1192,11 +1271,7 @@ impl ApplicationService {
             .map(|_| ApplicationTaskReport::Download)
         };
         let task = self.spawn_supervised_task(&torrent_id, operation)?;
-        self.active = Some(ActiveDownload {
-            torrent_id,
-            control,
-            task,
-        });
+        self.install_active_download(&torrent_id, ActiveDownload { control, task })?;
         Ok(())
     }
 
@@ -1346,11 +1421,7 @@ impl ApplicationService {
     ) -> Result<(), ApplicationError> {
         self.reap_finished().await?;
         let torrent_id = torrent_id.to_ascii_lowercase();
-        if self
-            .active
-            .as_ref()
-            .is_some_and(|active| active.torrent_id == torrent_id)
-        {
+        if self.active_torrent.as_deref() == Some(torrent_id.as_str()) {
             return Err(ApplicationError::Busy(torrent_id));
         }
         self.store_mut()?
@@ -1373,8 +1444,8 @@ impl ApplicationService {
                 "storage root {root_id} is not a platform capability"
             )));
         }
-        let restart = if let Some(active) = &self.active {
-            let torrent_id = active.torrent_id.clone();
+        let restart = if let Some((active_torrent, _)) = self.active_download() {
+            let torrent_id = active_torrent.to_owned();
             let resume = self.load_resume_conservative(&torrent_id)?;
             (resume.storage_root == root_id).then_some(torrent_id)
         } else {
@@ -1437,8 +1508,10 @@ impl ApplicationService {
                 "platform removal confirmation is stale".to_owned(),
             ));
         }
+        self.prepare_torrent_runtime_removal(&torrent_id)?;
         self.store_mut()?
             .finalize_removal(&torrent_id, operation_id)?;
+        self.torrent_runtimes.remove(&torrent_id);
         self.refresh_views()?;
         self.views.record_diagnostic(
             DiagnosticSeverity::Info,
@@ -1489,6 +1562,9 @@ impl ApplicationService {
         if let Some(incoming) = self.incoming_seeding.take() {
             incoming.stop();
         }
+        if let Some((_, active)) = self.active_download() {
+            active.control.cancel();
+        }
         if let Some(incoming) = self.incoming_service.take() {
             match incoming.shutdown().await {
                 Ok(terminal) => {
@@ -1511,14 +1587,7 @@ impl ApplicationService {
                 Err(error) => active_join_error = Some(format!("incoming peer service: {error}")),
             }
         }
-        if let Some(mut reaper) = self.view_set_reaper.take()
-            && let Err(error) = reaper.shutdown().await
-        {
-            active_join_error = Some(format!("view-set lease reaper: {error}"));
-        }
-        self.close_view_sets();
-        if let Some(active) = self.active.take() {
-            active.control.cancel();
+        if let Some((_, active)) = self.take_active_download() {
             match active.task.await {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) if active_join_error.is_none() => active_join_error = Some(error),
@@ -1529,10 +1598,25 @@ impl ApplicationService {
                 Ok(Err(_)) | Err(_) => {}
             }
         }
-        self.storage_file_pool
-            .shutdown()
-            .await
-            .map_err(|error| ApplicationError::Join(error.to_string()))?;
+        for runtime in self.torrent_runtimes.values_mut() {
+            if let Err(error) = runtime.handle().forget_seed_registration()
+                && active_join_error.is_none()
+            {
+                active_join_error = Some(format!("torrent seed registration: {error}"));
+            }
+            if let Err(error) = runtime.publish_inactive()
+                && active_join_error.is_none()
+            {
+                active_join_error = Some(format!("torrent peer state: {error}"));
+            }
+            runtime.deactivate_peer_events();
+        }
+        self.torrent_runtimes.clear();
+        if let Err(error) = self.storage_file_pool.shutdown().await
+            && active_join_error.is_none()
+        {
+            active_join_error = Some(format!("storage file pool: {error}"));
+        }
         if let Some(dht) = self.dht.take() {
             match dht.shutdown().await {
                 Ok(snapshot) => {
@@ -1564,20 +1648,27 @@ impl ApplicationService {
         {
             active_join_error = Some(format!("speed history: {error}"));
         }
-        if let Some(error) = shutdown_error {
-            return Err(error);
-        }
-        if let Some(error) = active_join_error {
-            return Err(ApplicationError::Join(error));
-        }
-        self.views.record_diagnostic(
+        let _ = self.views.record_diagnostic(
             DiagnosticSeverity::Info,
             category::LIFECYCLE_TORRENT,
             "application_shutdown",
             None,
             "Application shutdown completed",
             &[],
-        )?;
+        );
+        if let Some(mut reaper) = self.view_set_reaper.take()
+            && let Err(error) = reaper.shutdown().await
+            && active_join_error.is_none()
+        {
+            active_join_error = Some(format!("view-set lease reaper: {error}"));
+        }
+        self.close_view_sets();
+        if let Some(error) = shutdown_error {
+            return Err(error);
+        }
+        if let Some(error) = active_join_error {
+            return Err(ApplicationError::Join(error));
+        }
         Ok(())
     }
 
@@ -1704,9 +1795,11 @@ impl ApplicationService {
         }
     }
 
-    fn complete_removal(&self, removal: &RemovalRecord) -> Result<(), ApplicationError> {
+    fn complete_removal(&mut self, removal: &RemovalRecord) -> Result<(), ApplicationError> {
+        self.prepare_torrent_runtime_removal(&removal.torrent_id)?;
         self.store_mut()?
             .finalize_removal(&removal.torrent_id, &removal.operation_id)?;
+        self.torrent_runtimes.remove(&removal.torrent_id);
         self.refresh_views()?;
         self.views.record_diagnostic(
             DiagnosticSeverity::Info,
@@ -1716,6 +1809,28 @@ impl ApplicationService {
             "Torrent removed from the session",
             &[],
         )?;
+        Ok(())
+    }
+
+    fn prepare_torrent_runtime_removal(
+        &mut self,
+        torrent_id: &str,
+    ) -> Result<(), ApplicationError> {
+        if self.active_torrent.as_deref() == Some(torrent_id) {
+            return Err(ApplicationError::Busy(torrent_id.to_owned()));
+        }
+        let Some(runtime) = self.torrent_runtimes.get(torrent_id) else {
+            return Ok(());
+        };
+        if runtime.handle().has_seed_registration() {
+            return Err(ApplicationError::Configuration(format!(
+                "torrent {torrent_id} still owns an incoming seed registration"
+            )));
+        }
+        runtime
+            .publish_inactive()
+            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+        runtime.deactivate_peer_events();
         Ok(())
     }
 
@@ -1756,12 +1871,13 @@ impl ApplicationService {
     ) -> Result<(), ApplicationError> {
         self.reap_finished().await?;
         self.unregister_incoming(torrent_id).await?;
-        if let Some(active) = &self.active {
-            if active.torrent_id == torrent_id {
+        if let Some((active_torrent, _)) = self.active_download() {
+            if active_torrent == torrent_id {
                 return Ok(());
             }
-            return Err(ApplicationError::Busy(active.torrent_id.clone()));
+            return Err(ApplicationError::Busy(active_torrent.to_owned()));
         }
+        let torrent_peers = self.torrent_peers(torrent_id)?;
         let resume = match self.load_resume_conservative(torrent_id) {
             Ok(resume) => resume,
             Err(error) => {
@@ -1839,12 +1955,13 @@ impl ApplicationService {
                 let dht = self.dht.as_ref().map(DhtService::handle);
                 let udp_trackers = operational_udp_trackers(&resume.trackers)?;
                 let operation = async move {
-                    let raw_info = download_magnet_metadata_with_dht(
+                    let raw_info = download_magnet_metadata_with_dht_and_peers(
                         magnet.clone(),
                         network,
                         task_control.clone(),
                         dht.clone(),
                         peer_budget.clone(),
+                        Some(torrent_peers.clone()),
                     )
                     .await?;
                     checkpoints
@@ -1871,6 +1988,7 @@ impl ApplicationService {
                             storage_root: PathBuf::new(),
                             network,
                             peer_budget,
+                            torrent_peers: Some(torrent_peers),
                             resource_limits,
                             skip_files,
                             verified_info: Some(raw_info),
@@ -1887,11 +2005,7 @@ impl ApplicationService {
                     .map(|_| ApplicationTaskReport::Download)
                 };
                 let task = self.spawn_supervised_task(torrent_id, operation)?;
-                self.active = Some(ActiveDownload {
-                    torrent_id: torrent_id.to_owned(),
-                    control,
-                    task,
-                });
+                self.install_active_download(torrent_id, ActiveDownload { control, task })?;
                 return Ok(());
             }
         }
@@ -1937,12 +2051,13 @@ impl ApplicationService {
             let peer_budget = self.peer_budget.clone();
             let dht = self.dht.as_ref().map(DhtService::handle);
             let operation = async move {
-                let raw_info = download_magnet_metadata_with_dht(
+                let raw_info = download_magnet_metadata_with_dht_and_peers(
                     magnet,
                     network,
                     task_control,
                     dht,
                     peer_budget,
+                    Some(torrent_peers),
                 )
                 .await?;
                 checkpoints
@@ -1951,11 +2066,7 @@ impl ApplicationService {
                 Ok(ApplicationTaskReport::Metadata)
             };
             let task = self.spawn_supervised_task(torrent_id, operation)?;
-            self.active = Some(ActiveDownload {
-                torrent_id: torrent_id.to_owned(),
-                control,
-                task,
-            });
+            self.install_active_download(torrent_id, ActiveDownload { control, task })?;
             return Ok(());
         }
         let skip_files = resume
@@ -1978,6 +2089,7 @@ impl ApplicationService {
             storage_root: root_path,
             network: self.network,
             peer_budget: self.peer_budget.clone(),
+            torrent_peers: Some(torrent_peers),
             resource_limits: self.download_resource_limits,
             skip_files,
             verified_info: resume.raw_info,
@@ -2019,11 +2131,7 @@ impl ApplicationService {
                 .map(|_| ApplicationTaskReport::Download)
         };
         let task = self.spawn_supervised_task(torrent_id, operation)?;
-        self.active = Some(ActiveDownload {
-            torrent_id: torrent_id.to_owned(),
-            control,
-            task,
-        });
+        self.install_active_download(torrent_id, ActiveDownload { control, task })?;
         Ok(())
     }
 
@@ -2079,26 +2187,30 @@ impl ApplicationService {
         let storage_roots = self.storage_roots.clone();
         let incoming_seeding = self.incoming_seeding.clone();
         let storage_file_pool = self.storage_file_pool.clone();
+        let torrent_runtime = self
+            .torrent_runtimes
+            .get(torrent_id)
+            .expect("torrent runtime exists before its operation starts")
+            .handle();
         let views = self.views.clone();
         let torrent_id = torrent_id.to_owned();
         Ok(tokio::spawn(async move {
             let outcome = operation.await;
             let result = handle_task_outcome(&store, &storage_roots, &views, &torrent_id, outcome);
-            if result.is_ok()
-                && let Some(incoming_seeding) = incoming_seeding
-                && let Err(error) = reconcile_completed_seed(
-                    &store,
-                    &storage_roots,
-                    &views,
-                    &incoming_seeding,
-                    &storage_file_pool,
-                    &torrent_id,
-                )
-                .await
-            {
-                return Err(error);
+            let reconcile = reconcile_completed_seed(
+                &store,
+                &storage_roots,
+                &views,
+                incoming_seeding.as_ref(),
+                &storage_file_pool,
+                &torrent_runtime,
+                &torrent_id,
+            )
+            .await;
+            match (result, reconcile) {
+                (Ok(()), Ok(())) => Ok(()),
+                (Err(error), _) | (Ok(()), Err(error)) => Err(error),
             }
-            result
         }))
     }
 
@@ -2116,33 +2228,33 @@ impl ApplicationService {
 
     async fn pause(&mut self, torrent_id: &str) -> Result<(), ApplicationError> {
         self.unregister_incoming(torrent_id).await?;
-        if self
-            .active
-            .as_ref()
-            .is_none_or(|active| active.torrent_id != torrent_id)
-        {
-            return Ok(());
+        if self.active_torrent.as_deref() != Some(torrent_id) {
+            return self.reconcile_incoming_torrent(torrent_id).await;
         }
-        let active = self.active.take().expect("matching active task exists");
+        let (_, active) = self
+            .take_active_download()
+            .expect("matching active task exists");
         active.control.cancel_when_safe();
-        match active.task.await {
+        let result = match active.task.await {
             Ok(Ok(())) => Ok(()),
             Ok(Err(error)) => Err(ApplicationError::Join(error)),
             Err(error) if error.is_cancelled() => Ok(()),
             Err(error) => Err(ApplicationError::Join(error.to_string())),
-        }
+        };
+        self.reconcile_incoming_torrent(torrent_id).await?;
+        result
     }
 
     async fn reap_finished(&mut self) -> Result<(), ApplicationError> {
         if self
-            .active
-            .as_ref()
-            .is_none_or(|active| !active.task.is_finished())
+            .active_download()
+            .is_none_or(|(_, active)| !active.task.is_finished())
         {
             return Ok(());
         }
-        let active = self.active.take().expect("finished active task exists");
-        let torrent_id = active.torrent_id;
+        let (torrent_id, active) = self
+            .take_active_download()
+            .expect("finished active task exists");
         let result = match active.task.await {
             Ok(Ok(())) => Ok(()),
             Ok(Err(error)) => Err(ApplicationError::Join(error)),
@@ -2153,15 +2265,34 @@ impl ApplicationService {
         result
     }
 
-    async fn unregister_incoming(&self, torrent_id: &str) -> Result<(), ApplicationError> {
-        if let Some(incoming) = &self.incoming_seeding {
-            incoming.unregister(torrent_id).await?;
+    async fn unregister_incoming(&mut self, torrent_id: &str) -> Result<(), ApplicationError> {
+        let runtime = self
+            .torrent_runtimes
+            .get(torrent_id)
+            .map(TorrentRuntime::handle);
+        if let (Some(incoming), Some(runtime)) = (&self.incoming_seeding, runtime) {
+            runtime
+                .unregister_seed(incoming)
+                .await
+                .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
         }
         Ok(())
     }
 
-    async fn reconcile_incoming_torrent(&self, torrent_id: &str) -> Result<(), ApplicationError> {
+    async fn reconcile_incoming_torrent(
+        &mut self,
+        torrent_id: &str,
+    ) -> Result<(), ApplicationError> {
+        self.ensure_torrent_runtime(torrent_id)?;
+        let runtime = self
+            .torrent_runtimes
+            .get(torrent_id)
+            .expect("torrent runtime exists during seed reconciliation")
+            .handle();
         let Some(incoming) = self.incoming_seeding.clone() else {
+            runtime
+                .publish_inactive()
+                .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
             return Ok(());
         };
         let prepared = {
@@ -2169,26 +2300,34 @@ impl ApplicationService {
             seed_reconcile_inputs(&store, &self.storage_roots, torrent_id)?
         };
         let Some(prepared) = prepared else {
-            incoming.unregister(torrent_id).await?;
+            runtime
+                .unregister_seed(&incoming)
+                .await
+                .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+            runtime
+                .publish_inactive()
+                .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
             return Ok(());
         };
-        let active = self
-            .active
-            .as_ref()
-            .is_some_and(|active| active.torrent_id == torrent_id);
-        let outcome = incoming
-            .reconcile(
+        let active = self.active_torrent.as_deref() == Some(torrent_id);
+        let outcome = runtime
+            .reconcile_seed(
+                &incoming,
                 &prepared.0,
                 prepared.1,
                 prepared.2.as_ref(),
                 active,
                 &self.storage_file_pool,
             )
-            .await?;
-        record_seed_reconcile(&self.views, torrent_id, &outcome).map_err(Into::into)
+            .await
+            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+        if let Some(outcome) = outcome {
+            record_seed_reconcile(&self.views, torrent_id, &outcome)?;
+        }
+        Ok(())
     }
 
-    async fn reconcile_incoming_catalog(&self) -> Result<(), ApplicationError> {
+    async fn reconcile_incoming_catalog(&mut self) -> Result<(), ApplicationError> {
         if self.incoming_seeding.is_none() {
             return Ok(());
         }
@@ -2217,7 +2356,7 @@ impl ApplicationService {
 
 impl Drop for ApplicationService {
     fn drop(&mut self) {
-        if let Some(active) = &self.active {
+        if let Some((_, active)) = self.active_download() {
             active.control.cancel();
         }
     }
@@ -2366,10 +2505,16 @@ async fn reconcile_completed_seed(
     store: &Arc<Mutex<SessionStore>>,
     storage_roots: &BTreeMap<String, StorageRootLocation>,
     views: &ViewHub,
-    incoming: &IncomingSeeding,
+    incoming: Option<&IncomingSeeding>,
     storage_file_pool: &StorageFilePool,
+    runtime: &TorrentRuntimeHandle,
     torrent_id: &str,
 ) -> Result<(), String> {
+    let Some(incoming) = incoming else {
+        return runtime
+            .publish_inactive()
+            .map_err(|error| error.to_string());
+    };
     let prepared = {
         let store = store
             .lock()
@@ -2378,14 +2523,17 @@ async fn reconcile_completed_seed(
             .map_err(|error| error.to_string())?
     };
     let Some(prepared) = prepared else {
-        incoming
-            .unregister(torrent_id)
+        runtime
+            .unregister_seed(incoming)
             .await
             .map_err(|error| error.to_string())?;
-        return Ok(());
+        return runtime
+            .publish_inactive()
+            .map_err(|error| error.to_string());
     };
-    let outcome = incoming
-        .reconcile(
+    let outcome = runtime
+        .reconcile_seed(
+            incoming,
             &prepared.0,
             prepared.1,
             prepared.2.as_ref(),
@@ -2394,7 +2542,10 @@ async fn reconcile_completed_seed(
         )
         .await
         .map_err(|error| error.to_string())?;
-    record_seed_reconcile(views, torrent_id, &outcome).map_err(|error| error.to_string())
+    if let Some(outcome) = outcome {
+        record_seed_reconcile(views, torrent_id, &outcome).map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 type SeedReconcileInputs = (ResumeRecord, bool, Option<StorageRootLocation>);
@@ -5447,7 +5598,7 @@ mod tests {
             })
             .await
             .expect("skip all files");
-        assert!(service.active.is_none());
+        assert!(service.active_download().is_none());
         let idle = service
             .load_resume_conservative(&torrent_id)
             .expect("load all-skipped state");
@@ -6853,6 +7004,11 @@ mod tests {
         assert_eq!(second_runtime.active, zero_slots);
         assert!(!second_runtime.restart_required);
         wait_for_seed_registrations(&second, 1).await;
+        let runtime_generation = second
+            .torrent_runtimes
+            .get(&torrent_id)
+            .expect("complete torrent owns one runtime")
+            .generation();
         let (mut choked_peer, mut choked_decoder, mut choked_pending) =
             connect_application_seed(&second, info_hash, *b"-RS-CHOKED--00000000").await;
         choked_peer
@@ -6908,6 +7064,14 @@ mod tests {
             .await
             .expect("restore seed");
         wait_for_seed_registrations(&second, 1).await;
+        assert_eq!(
+            second
+                .torrent_runtimes
+                .get(&torrent_id)
+                .expect("restored seed retains its runtime")
+                .generation(),
+            runtime_generation
+        );
 
         let (mut recheck_peer, _, _) =
             connect_application_seed(&second, info_hash, *b"-RS-RECHECK-00000000").await;
@@ -6930,6 +7094,14 @@ mod tests {
             0
         );
         wait_for_seed_registrations(&second, 1).await;
+        assert_eq!(
+            second
+                .torrent_runtimes
+                .get(&torrent_id)
+                .expect("rechecked seed retains its runtime")
+                .generation(),
+            runtime_generation
+        );
 
         let (mut paused_peer, _, _) =
             connect_application_seed(&second, info_hash, *b"-RS-PAUSED--00000000").await;
@@ -6964,6 +7136,14 @@ mod tests {
             .await
             .expect("resume seed");
         wait_for_seed_registrations(&second, 1).await;
+        assert_eq!(
+            second
+                .torrent_runtimes
+                .get(&torrent_id)
+                .expect("resumed seed retains its runtime")
+                .generation(),
+            runtime_generation
+        );
 
         second
             .dispatch(RequestEnvelope {
@@ -6971,13 +7151,14 @@ mod tests {
                 request_id: "remove-seed".to_owned(),
                 expected_revision: None,
                 command: Command::RemoveTorrent {
-                    torrent_id,
+                    torrent_id: torrent_id.clone(),
                     data: RemovalDataPolicy::Keep,
                 },
             })
             .await
             .expect("remove seed");
         wait_for_seed_registrations(&second, 0).await;
+        assert!(!second.torrent_runtimes.contains_key(&torrent_id));
         let terminal = second
             .incoming_peer_snapshot()
             .expect("incoming service remains enabled");

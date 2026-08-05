@@ -130,14 +130,15 @@ payload artifacts.
 
 ### Now
 
-**Implement the long-lived torrent peer runtime when authorized.** Tactical
-[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) is planned. It
-extracts peer records, active connection generations, collision-free IDs, and
-ordinary snapshot publication from the download-operation lifetime into one
-application-generation per-torrent owner. Incoming seed connections then
-attach to that same bounded state and appear truthfully in existing
-Swarm/Peers views without widening listener scope, changing limits, or
-retaining a second peer authority.
+**Complete the long-lived torrent peer runtime.** Tactical
+[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) is in progress.
+Its first two gates have extracted peer records, active connection
+generations, collision-free IDs, and ordinary snapshot publication from the
+download-operation lifetime into one application-generation per-torrent
+owner. The next gates attach incoming seed connections to that same bounded
+state and project them truthfully through existing Swarm/Peers views without
+widening listener scope, changing limits, or retaining a second peer
+authority.
 
 ### Next
 

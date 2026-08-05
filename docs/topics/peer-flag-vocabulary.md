@@ -160,18 +160,18 @@ references. Rust emits only states it currently owns.
 
 | Semantic flag | Provisional glyph | Meaning | Initial RSTorrent state |
 | --- | --- | --- | --- |
-| `incoming` | `I` | Remote peer initiated this connection | Direction is represented; live intake is separate from ordinary peer observation until planned Tactical `086` |
+| `incoming` | `I` | Remote peer initiated this connection | Direction is represented; live intake joins ordinary peer observation in Tactical `086` Gate 3 |
 | `encrypted` | `E` | Peer transport is encrypted or obfuscated | Reserved; no application-view fact yet |
 | `download_allowed` | `D` | We are interested and the peer is not choking us | Derivable for current content peers |
 | `download_choked` | `d` | We are interested but the peer is choking us | Derivable for current content peers |
-| `upload_allowed` | `U` | Peer is interested and we are not choking it | Upload owner implements the fact; ordinary connection projection is planned in Tactical `086` |
-| `upload_choked` | `u` | Peer is interested but we are choking it | Upload owner implements the fact; ordinary connection projection is planned in Tactical `086` |
+| `upload_allowed` | `U` | Peer is interested and we are not choking it | Upload owner implements the fact; ordinary connection projection remains in Tactical `086` |
+| `upload_choked` | `u` | Peer is interested but we are choking it | Upload owner implements the fact; ordinary connection projection remains in Tactical `086` |
 | `extension_protocol` | `x` | Peer supports the BEP 10 extension protocol | Negotiated and represented |
-| `metadata_extension` | `m` | Peer advertised the BEP 9 `ut_metadata` extension | Contract field exists; incoming negotiation projection is planned in Tactical `086` |
+| `metadata_extension` | `m` | Peer advertised the BEP 9 `ut_metadata` extension | Contract field exists; incoming negotiation projection remains in Tactical `086` |
 | `utp` | `T` | Connection uses uTP transport | Transport vocabulary exists; runtime uTP remains test-only |
 | `hole_punched` | `h` | Connection succeeded through NAT hole punching | Reserved; not implemented |
 | `on_parole` | `p` | Integrity policy restricts this peer after suspect data | Reserved; current connection view has no full parole fact |
-| `optimistic_unchoke` | `O` | Peer occupies an optimistic unchoke slot | Upload scheduler implements the grant; connection projection is planned in Tactical `086` |
+| `optimistic_unchoke` | `O` | Peer occupies an optimistic unchoke slot | Upload scheduler implements the grant; connection projection remains in Tactical `086` |
 | `snubbed` | `S` | Peer is under degraded request policy after timeout | Reserved; current `stalled` phase is not silently equated with libtorrent snubbing |
 | `upload_only` | `L` | Peer reports it will not download from us | Reserved; not implemented |
 | `endgame` | `e` | This connection is participating in endgame requests | Reserved; no connection-scoped view fact yet |

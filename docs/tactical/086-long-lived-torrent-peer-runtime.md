@@ -1,6 +1,7 @@
 # Tactical 086: Long-Lived Torrent Peer Runtime
 
-Status: In progress on 2026-08-05. Gate 1 is complete; Gates 2--5 remain.
+Status: In progress on 2026-08-05. Gates 1 and 2 are complete; Gates 3--5
+remain.
 
 Topics: `incoming-reachability-and-seeding`, `peer-lifecycle`,
 `code-organization-and-refactoring`, `application-view-api`,
@@ -502,6 +503,29 @@ only after exact joins.
 No incoming connection attaches yet. Every existing application lifecycle,
 restart, receipt, view, and controlled download test remains green. This is a
 useful commit boundary.
+
+Completed on 2026-08-05. `ApplicationService` now owns one private
+`TorrentRuntime` per catalog torrent plus the unchanged single-active-torrent
+admission ID. Each runtime retains its engine peer handle across metadata,
+download, recheck, completion, eligible seeding, pause, archive, and resume;
+active task membership and exact seed-registration ownership no longer live
+in parallel application maps. A checked generation-fenced registration slot
+serializes completion and command races without awaiting under its lock or
+letting a stale registration become current. Download operations borrow the
+runtime handle, retain the session view sink, and reconcile seeding before
+their joined task terminates even when no later application command arrives.
+Removal publishes final inactive peer state and deletes the runtime only
+after its active task and seed registration are gone. Shutdown stops incoming
+registration changes, cancels and joins network producers, publishes final
+empty/inactive state, removes the runtime map, then joins storage, DHT,
+history, and view owners before closing view sets.
+
+The existing complete-seed lifecycle test now proves one runtime generation
+survives archive/restore, a complete published recheck back into seeding, and
+pause/resume, then disappears after removal. The 237-test engine library suite
+passes with three opt-in live cases ignored; focused engine and session
+all-target clippy pass with warnings denied; and the 143-test session library
+suite passes with one allocation-profile case ignored.
 
 ### Gate 3: Routed incoming connection attachment
 

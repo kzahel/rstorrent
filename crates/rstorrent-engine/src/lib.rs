@@ -34,9 +34,10 @@ pub use driver::{
     MetadataAcquisitionSnapshot, MetadataPeerSnapshot, MetadataPeerStage, PathPublicationStage,
     ResumableMagnetDownloadConfig, SwarmActivitySnapshot, download_magnet,
     download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
-    download_magnet_with_control, download_verified_piece,
-    download_verified_piece_to_descriptors_with_control, download_verified_piece_with_control,
-    resume_magnet, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
+    download_magnet_metadata_with_dht_and_peers, download_magnet_with_control,
+    download_verified_piece, download_verified_piece_to_descriptors_with_control,
+    download_verified_piece_with_control, resume_magnet, resume_magnet_to_descriptors_with_control,
+    resume_magnet_with_control,
 };
 pub use incoming::{
     DEFAULT_INCOMING_HANDSHAKE_TIMEOUT, DEFAULT_INCOMING_INACTIVITY_TIMEOUT,

@@ -377,6 +377,14 @@ impl TorrentPeerHandle {
         self.with_state(|state| registry_snapshot(&state.registry, now, active))
     }
 
+    pub fn publish_active(&self, force: bool) -> Result<(), TorrentPeerError> {
+        self.publish(true, force)
+    }
+
+    pub fn publish_inactive(&self) -> Result<(), TorrentPeerError> {
+        self.publish(false, true)
+    }
+
     pub(crate) fn with_state<T>(&self, operation: impl FnOnce(&mut TorrentPeerState) -> T) -> T {
         let mut state = self
             .inner

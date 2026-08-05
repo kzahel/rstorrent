@@ -181,6 +181,9 @@ pub struct ResumableMagnetDownloadConfig {
     pub network: NetworkConfig,
     /// Session-wide connection ownership shared with the incoming listener.
     pub peer_budget: PeerBudget,
+    /// Long-lived per-torrent peer state supplied by the application session.
+    /// Diagnostic and standalone callers leave this unset.
+    pub torrent_peers: Option<TorrentPeerHandle>,
     pub resource_limits: DownloadResourceLimits,
     pub skip_files: Vec<usize>,
     pub verified_info: Option<Vec<u8>>,
@@ -550,11 +553,31 @@ pub async fn download_magnet_metadata_with_dht(
     dht: Option<DhtHandle>,
     peer_budget: PeerBudget,
 ) -> Result<Vec<u8>, DownloadError> {
+    download_magnet_metadata_with_dht_and_peers(magnet, network, control, dht, peer_budget, None)
+        .await
+}
+
+pub async fn download_magnet_metadata_with_dht_and_peers(
+    magnet: String,
+    network: NetworkConfig,
+    control: DownloadControl,
+    dht: Option<DhtHandle>,
+    peer_budget: PeerBudget,
+    torrent_peers: Option<TorrentPeerHandle>,
+) -> Result<Vec<u8>, DownloadError> {
     validate_network_config(network)?;
     if control.is_cancelled() {
         return Err(DownloadError::Cancelled);
     }
-    let result = run_magnet_metadata(magnet, network, control.clone(), dht, peer_budget).await;
+    let result = run_magnet_metadata(
+        magnet,
+        network,
+        control.clone(),
+        dht,
+        peer_budget,
+        torrent_peers,
+    )
+    .await;
     let result = require_terminal_owner_cleanup(&control, result);
     control.clear_buffered_payload();
     result
@@ -1512,6 +1535,7 @@ fn udp_tracker_label(tracker: &UdpTrackerUrl) -> String {
 #[derive(Debug)]
 struct TorrentPeerCoordinator {
     peers: TorrentPeerHandle,
+    owns_peer_sink: bool,
     selector: PeerSelector,
     network: NetworkConfig,
     peer_budget: PeerBudget,
@@ -1641,11 +1665,26 @@ impl TorrentPeerCoordinator {
         control: DownloadControl,
         peer_budget: PeerBudget,
     ) -> Result<Self, DownloadError> {
+        Self::new_with_peer_state(network, control, peer_budget, None)
+    }
+
+    fn new_with_peer_state(
+        network: NetworkConfig,
+        control: DownloadControl,
+        peer_budget: PeerBudget,
+        peers: Option<TorrentPeerHandle>,
+    ) -> Result<Self, DownloadError> {
         validate_network_config(network)?;
-        let peers =
-            TorrentPeerHandle::new(Arc::new(control.clone())).map_err(map_torrent_peer_error)?;
+        let owns_peer_sink = peers.is_none();
+        let peers = match peers {
+            Some(peers) => peers,
+            None => {
+                TorrentPeerHandle::new(Arc::new(control.clone())).map_err(map_torrent_peer_error)?
+            }
+        };
         Ok(Self {
             peers,
+            owns_peer_sink,
             selector: PeerSelector,
             network,
             peer_budget,
@@ -1896,6 +1935,7 @@ impl TorrentPeerCoordinator {
             control,
             dht,
             PeerBudget::system_default(),
+            None,
         )
         .await
     }
@@ -1907,8 +1947,9 @@ impl TorrentPeerCoordinator {
         control: DownloadControl,
         dht: Option<DhtHandle>,
         peer_budget: PeerBudget,
+        torrent_peers: Option<TorrentPeerHandle>,
     ) -> Result<Self, DownloadError> {
-        let mut peers = Self::new_with_peer_budget(network, control, peer_budget)?;
+        let mut peers = Self::new_with_peer_state(network, control, peer_budget, torrent_peers)?;
         peers.publish_peer_registry(true);
         peers.dht = dht;
         if peers.control.is_cancelled() {
@@ -2411,7 +2452,7 @@ impl TorrentPeerCoordinator {
             None => Ok(()),
         };
         self.peers
-            .publish(false, true)
+            .publish(!self.owns_peer_sink, true)
             .map_err(map_torrent_peer_error)?;
         result
     }
@@ -2888,6 +2929,7 @@ async fn run_magnet_metadata(
     control: DownloadControl,
     dht: Option<DhtHandle>,
     peer_budget: PeerBudget,
+    torrent_peers: Option<TorrentPeerHandle>,
 ) -> Result<Vec<u8>, DownloadError> {
     let magnet = Magnet::parse(&magnet).map_err(DownloadError::Magnet)?;
     let mut peers = TorrentPeerCoordinator::from_magnet_with_trackers(
@@ -2897,6 +2939,7 @@ async fn run_magnet_metadata(
         control,
         dht,
         peer_budget,
+        torrent_peers,
     )
     .await?;
     let result = async {
@@ -2940,6 +2983,7 @@ async fn run_resumable_magnet_download(
     let magnet = Magnet::parse(&config.magnet).map_err(DownloadError::Magnet)?;
     let dht = config.dht.clone();
     let configured_trackers = config.udp_trackers.clone();
+    let torrent_peers = config.torrent_peers.clone();
     let resume = ResumeContext {
         verified_pieces: config.verified_pieces,
         checkpoints: checkpoints.clone(),
@@ -2973,6 +3017,7 @@ async fn run_resumable_magnet_download(
             control.clone(),
             content_dht,
             config.peer_budget.clone(),
+            torrent_peers.clone(),
         )
         .await?;
         let output_path = if descriptors.is_some() {
@@ -3011,6 +3056,7 @@ async fn run_resumable_magnet_download(
         control.clone(),
         dht,
         config.peer_budget.clone(),
+        torrent_peers,
     )
     .await?;
     let result = async {
@@ -3342,7 +3388,9 @@ async fn run_content_download(
     resume: Option<ResumeContext>,
 ) -> Result<DownloadReport, DownloadError> {
     peers.control = control.clone();
-    peers.peers.set_sink(Arc::new(control.clone()));
+    if peers.owns_peer_sink {
+        peers.peers.set_sink(Arc::new(control.clone()));
+    }
     peers.publish_peer_registry(true);
     let result =
         run_selective_download(config, metainfo, control, descriptors, peers, resume).await;
