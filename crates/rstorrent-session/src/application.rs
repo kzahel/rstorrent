@@ -4939,6 +4939,34 @@ mod tests {
         client
     }
 
+    async fn local_network_ipv4() -> Option<Ipv4Addr> {
+        let probe = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.ok()?;
+        probe
+            .connect((Ipv4Addr::new(239, 255, 255, 250), 1_900))
+            .await
+            .ok()?;
+        let SocketAddr::V4(address) = probe.local_addr().ok()? else {
+            return None;
+        };
+        let address = *address.ip();
+        (!address.is_unspecified()
+            && !address.is_loopback()
+            && !address.is_multicast()
+            && !address.is_broadcast())
+        .then_some(address)
+    }
+
+    async fn available_port_on(address: Ipv4Addr) -> Option<u16> {
+        for _ in 0..16 {
+            let tcp = TcpListener::bind((address, 0)).await.ok()?;
+            let port = tcp.local_addr().ok()?.port();
+            if UdpSocket::bind((address, port)).await.is_ok() {
+                return Some(port);
+            }
+        }
+        None
+    }
+
     #[tokio::test]
     async fn application_coordinates_tcp_and_dht_udp_endpoints() {
         let root = test_root("coordinated-session-sockets");
@@ -5008,6 +5036,77 @@ mod tests {
         );
         application.shutdown().await.expect("joined shutdown");
         assert!(application.session_udp.is_none());
+        drop(application);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn application_coordinates_local_network_endpoints_when_available() {
+        let Some(local_address) = local_network_ipv4().await else {
+            return;
+        };
+        let Some(preferred_port) = available_port_on(local_address).await else {
+            return;
+        };
+        let root = test_root("coordinated-local-network-sockets");
+        let router = UdpSocket::bind((local_address, 0))
+            .await
+            .expect("bind local-network DHT router");
+        let router_address = router.local_addr().expect("DHT router address");
+        let network = NetworkConfig::new(
+            NetworkPolicy::Online,
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(5),
+        );
+        let mut configuration = ApplicationConfig::new(
+            root.join("profile"),
+            "test".to_owned(),
+            vec![ConfiguredStorageRoot::path(
+                "downloads",
+                root.join("payload"),
+            )],
+            network,
+        );
+        configuration.dht.bootstrap_nodes = vec![BootstrapNode::Address(router_address)];
+        persist_client_settings(
+            &configuration,
+            ClientSettings {
+                listener: ListenerPolicy::AutomaticLocalNetwork,
+                preferred_listen_port: preferred_port,
+                ..ClientSettings::default()
+            },
+        );
+        let mut application = ApplicationService::open(configuration)
+            .await
+            .expect("open local-network application");
+        let runtime = client_settings_runtime(&application).await;
+        let ListenerStatus::Listening { address, port } = runtime.listener_status else {
+            panic!("local-network TCP listener must be active");
+        };
+        let crate::SessionUdpStatus::Bound {
+            address: udp_address,
+            port: udp_port,
+            coordinated_with_tcp,
+        } = runtime.session_udp_status
+        else {
+            panic!("local-network session UDP endpoint must be active");
+        };
+        assert_eq!(address, local_address.to_string());
+        assert_eq!(udp_address, address);
+        assert_eq!(port, preferred_port);
+        assert_eq!(udp_port, port);
+        assert!(coordinated_with_tcp);
+
+        let observed_dht_source = answer_dht_query(&router).await;
+        assert_eq!(
+            observed_dht_source,
+            SocketAddr::from((local_address, udp_port))
+        );
+        let tcp = TcpStream::connect((local_address, port))
+            .await
+            .expect("connect local-network TCP endpoint");
+        drop(tcp);
+        application.shutdown().await.expect("joined shutdown");
         drop(application);
         fs::remove_dir_all(root).expect("remove test root");
     }
