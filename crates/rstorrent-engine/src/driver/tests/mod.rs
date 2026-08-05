@@ -1101,6 +1101,7 @@ fn dht_config(bootstrap: SocketAddr) -> DhtConfig {
         lookup_timeout: Duration::from_secs(3),
         bootstrap_retry_interval: Duration::from_secs(1),
         routing_refresh_interval: Duration::from_secs(60),
+        peer_ttl: Duration::from_secs(30 * 60),
         read_only: false,
         byte_metric_sink: None,
     }

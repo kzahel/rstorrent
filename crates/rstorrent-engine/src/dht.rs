@@ -39,6 +39,7 @@ pub const DEFAULT_LOOKUP_TIMEOUT: Duration = Duration::from_secs(30);
 pub const DEFAULT_BOOTSTRAP_RETRY_INTERVAL: Duration = Duration::from_secs(60);
 pub const DEFAULT_ROUTING_REFRESH_INTERVAL: Duration = Duration::from_secs(15 * 60);
 pub const DHT_OBSERVATION_INTERVAL: Duration = Duration::from_millis(500);
+pub const MAX_ANNOUNCE_PEER_NODES: usize = K;
 const PEER_TTL: Duration = Duration::from_secs(30 * 60);
 const TOKEN_ROTATION: Duration = Duration::from_secs(5 * 60);
 const EXTERNAL_ADDRESS_VOTES: usize = 3;
@@ -91,6 +92,7 @@ pub struct DhtConfig {
     pub lookup_timeout: Duration,
     pub bootstrap_retry_interval: Duration,
     pub routing_refresh_interval: Duration,
+    pub peer_ttl: Duration,
     pub read_only: bool,
     pub byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
 }
@@ -124,6 +126,7 @@ impl DhtConfig {
             lookup_timeout: DEFAULT_LOOKUP_TIMEOUT,
             bootstrap_retry_interval: DEFAULT_BOOTSTRAP_RETRY_INTERVAL,
             routing_refresh_interval: DEFAULT_ROUTING_REFRESH_INTERVAL,
+            peer_ttl: PEER_TTL,
             read_only: false,
             byte_metric_sink: None,
         }
@@ -145,9 +148,12 @@ impl DhtConfig {
                 "DHT timeouts must be nonzero and lookup timeout must cover a query",
             ));
         }
-        if self.bootstrap_retry_interval.is_zero() || self.routing_refresh_interval.is_zero() {
+        if self.bootstrap_retry_interval.is_zero()
+            || self.routing_refresh_interval.is_zero()
+            || self.peer_ttl.is_zero()
+        {
             return Err(DhtError::Configuration(
-                "DHT bootstrap and refresh intervals must be nonzero",
+                "DHT bootstrap, refresh, and peer TTL intervals must be nonzero",
             ));
         }
         if self.bootstrap_nodes.len() > 64 {
@@ -172,6 +178,18 @@ pub struct DhtStats {
     pub routing_refreshes: u64,
     pub datagram_bytes_sent: u64,
     pub datagram_bytes_received: u64,
+    pub announces_sent: u64,
+    pub announces_succeeded: u64,
+    pub announces_failed: u64,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct DhtAnnounceResult {
+    pub peers: Vec<SocketAddr>,
+    pub token_nodes: u8,
+    pub announces_sent: u8,
+    pub announces_succeeded: u8,
+    pub announces_failed: u8,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -281,6 +299,28 @@ impl DhtHandle {
         self.sender
             .send(Command::Lookup {
                 info_hash: NodeId(info_hash),
+                result: sender,
+            })
+            .await
+            .map_err(|_| DhtError::ActorStopped)?;
+        receiver.await.map_err(|_| DhtError::ActorStopped)?
+    }
+
+    pub async fn lookup_and_announce(
+        &self,
+        info_hash: [u8; 20],
+        port: u16,
+    ) -> Result<DhtAnnounceResult, DhtError> {
+        if port == 0 {
+            return Err(DhtError::Configuration(
+                "DHT peer announcement requires a nonzero TCP port",
+            ));
+        }
+        let (sender, receiver) = oneshot::channel();
+        self.sender
+            .send(Command::LookupAndAnnounce {
+                info_hash: NodeId(info_hash),
+                port,
                 result: sender,
             })
             .await
@@ -456,6 +496,11 @@ enum Command {
         info_hash: NodeId,
         result: oneshot::Sender<Result<Vec<SocketAddr>, DhtError>>,
     },
+    LookupAndAnnounce {
+        info_hash: NodeId,
+        port: u16,
+        result: oneshot::Sender<Result<DhtAnnounceResult, DhtError>>,
+    },
     CancelLookup(NodeId),
     Stats(oneshot::Sender<DhtStats>),
     Shutdown(oneshot::Sender<()>),
@@ -483,10 +528,31 @@ struct Lookup {
     candidates: Vec<Candidate>,
     peers: BTreeSet<SocketAddr>,
     waiters: Vec<oneshot::Sender<Result<Vec<SocketAddr>, DhtError>>>,
+    announcement: Option<Announcement>,
+    token_responders: Vec<TokenResponder>,
+    announce_started: bool,
+    announce_pending: BTreeSet<SocketAddr>,
+    announce_token_nodes: u8,
+    announce_sent: u8,
+    announce_succeeded: u8,
+    announce_failed: u8,
     deadline: Instant,
     started_at: Instant,
     closest_responded_prefix_bits: Option<u16>,
     last_convergence_improvement_at: Option<Instant>,
+}
+
+#[derive(Debug)]
+struct Announcement {
+    port: u16,
+    result: oneshot::Sender<Result<DhtAnnounceResult, DhtError>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct TokenResponder {
+    contact: NodeContact,
+    address: SocketAddr,
+    token: Vec<u8>,
 }
 
 impl Lookup {
@@ -498,12 +564,32 @@ impl Lookup {
         deadline: Instant,
         now: Instant,
     ) -> Self {
+        let mut lookup = Self::new_base(id, target, seeds, deadline, now);
+        lookup.waiters.push(waiter);
+        lookup
+    }
+
+    fn new_base(
+        id: u64,
+        target: NodeId,
+        seeds: impl IntoIterator<Item = Candidate>,
+        deadline: Instant,
+        now: Instant,
+    ) -> Self {
         let mut lookup = Self {
             id,
             target,
             candidates: Vec::new(),
             peers: BTreeSet::new(),
-            waiters: vec![waiter],
+            waiters: Vec::new(),
+            announcement: None,
+            token_responders: Vec::new(),
+            announce_started: false,
+            announce_pending: BTreeSet::new(),
+            announce_token_nodes: 0,
+            announce_sent: 0,
+            announce_succeeded: 0,
+            announce_failed: 0,
             deadline,
             started_at: now,
             closest_responded_prefix_bits: None,
@@ -513,6 +599,54 @@ impl Lookup {
             lookup.add_candidate(seed.contact, seed.address);
         }
         lookup
+    }
+
+    fn new_announcement(
+        id: u64,
+        target: NodeId,
+        seeds: impl IntoIterator<Item = Candidate>,
+        announcement: Announcement,
+        deadline: Instant,
+        now: Instant,
+    ) -> Self {
+        let mut lookup = Self::new_base(id, target, seeds, deadline, now);
+        lookup.announcement = Some(announcement);
+        lookup
+    }
+
+    fn add_token_responder(&mut self, contact: NodeContact, address: SocketAddr, token: Vec<u8>) {
+        if token.is_empty() {
+            return;
+        }
+        if let Some(existing) = self
+            .token_responders
+            .iter_mut()
+            .find(|responder| responder.address == address || responder.contact.id == contact.id)
+        {
+            *existing = TokenResponder {
+                contact,
+                address,
+                token,
+            };
+            return;
+        }
+        if self.token_responders.len() < MAX_LOOKUP_CANDIDATES {
+            self.token_responders.push(TokenResponder {
+                contact,
+                address,
+                token,
+            });
+        }
+    }
+
+    fn closest_token_responders(&self) -> Vec<TokenResponder> {
+        let mut responders = self.token_responders.clone();
+        responders.sort_by(|left, right| {
+            NodeId::compare_distance(left.contact.id, right.contact.id, self.target)
+                .then_with(|| left.address.cmp(&right.address))
+        });
+        responders.truncate(MAX_ANNOUNCE_PEER_NODES);
+        responders
     }
 
     fn add_candidate(&mut self, contact: Option<NodeContact>, address: SocketAddr) {
@@ -615,6 +749,9 @@ impl Lookup {
     }
 
     fn has_work(&self) -> bool {
+        if self.announce_started {
+            return !self.announce_pending.is_empty();
+        }
         self.candidates.iter().any(|candidate| {
             matches!(
                 candidate.state,
@@ -624,7 +761,7 @@ impl Lookup {
     }
 
     fn completed_result(&self) -> Option<Result<Vec<SocketAddr>, DhtError>> {
-        if self.has_work() {
+        if self.announcement.is_some() || self.has_work() {
             return None;
         }
         if self.peers.is_empty() {
@@ -646,6 +783,15 @@ impl Lookup {
         for waiter in self.waiters {
             let _ = waiter.send(result.clone());
         }
+        if let Some(announcement) = self.announcement {
+            let _ = announcement.result.send(result.map(|_| DhtAnnounceResult {
+                peers: self.peers.into_iter().collect(),
+                token_nodes: self.announce_token_nodes,
+                announces_sent: self.announce_sent,
+                announces_succeeded: self.announce_succeeded,
+                announces_failed: self.announce_failed,
+            }));
+        }
     }
 }
 
@@ -653,6 +799,7 @@ impl Lookup {
 enum TransactionOwner {
     Bootstrap(NodeId),
     Lookup(NodeId),
+    Announce(NodeId),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -972,31 +1119,7 @@ impl Actor {
                     let _ = result.send(Err(DhtError::LookupCapacity));
                     return Ok(());
                 }
-                let elapsed = self.started.elapsed().as_secs();
-                let mut seeds = self
-                    .routing_v4
-                    .closest(info_hash, K, elapsed)
-                    .into_iter()
-                    .map(|contact| Candidate {
-                        contact: Some(contact),
-                        address: socket_endpoint(contact.address),
-                        state: CandidateState::Unqueried,
-                    })
-                    .collect::<Vec<_>>();
-                let bootstrap = if self.fallback_pending
-                    || (self.fallback_bootstrap.is_empty() && !self.warm_bootstrap.is_empty())
-                {
-                    &self.warm_bootstrap
-                } else {
-                    &self.fallback_bootstrap
-                };
-                for address in bootstrap {
-                    seeds.push(Candidate {
-                        contact: None,
-                        address: *address,
-                        state: CandidateState::Unqueried,
-                    });
-                }
+                let seeds = self.lookup_seeds(info_hash);
                 let now = Instant::now();
                 self.lookups.insert(
                     info_hash,
@@ -1010,19 +1133,54 @@ impl Actor {
                     ),
                 );
                 self.next_lookup_id = self.next_lookup_id.checked_add(1).unwrap_or(1);
-                self.fill_lookup(info_hash).await?;
-                if let Some(result) = self
-                    .lookups
-                    .get(&info_hash)
-                    .and_then(Lookup::completed_result)
-                {
-                    self.finish_lookup(info_hash, result);
+                self.advance_lookup(info_hash).await?;
+            }
+            Command::LookupAndAnnounce {
+                info_hash,
+                port,
+                result,
+            } => {
+                if matches!(self.config.network_policy, NetworkPolicy::Offline) {
+                    let _ = result.send(Err(DhtError::NetworkDisabled));
+                    return Ok(());
                 }
+                if let Some(lookup) = self.lookups.get_mut(&info_hash) {
+                    if lookup.announcement.is_some() {
+                        let _ = result.send(Err(DhtError::LookupCapacity));
+                        return Ok(());
+                    }
+                    lookup.announcement = Some(Announcement { port, result });
+                    self.advance_lookup(info_hash).await?;
+                    return Ok(());
+                }
+                if self.lookups.len() == MAX_ACTIVE_LOOKUPS {
+                    let _ = result.send(Err(DhtError::LookupCapacity));
+                    return Ok(());
+                }
+                let seeds = self.lookup_seeds(info_hash);
+                let now = Instant::now();
+                self.lookups.insert(
+                    info_hash,
+                    Lookup::new_announcement(
+                        self.next_lookup_id,
+                        info_hash,
+                        seeds,
+                        Announcement { port, result },
+                        now + self.config.lookup_timeout,
+                        now,
+                    ),
+                );
+                self.next_lookup_id = self.next_lookup_id.checked_add(1).unwrap_or(1);
+                self.advance_lookup(info_hash).await?;
             }
             Command::CancelLookup(info_hash) => {
                 self.finish_lookup(info_hash, Err(DhtError::Cancelled));
                 self.transactions.retain(|_, transaction| {
-                    transaction.owner != TransactionOwner::Lookup(info_hash)
+                    !matches!(
+                        transaction.owner,
+                        TransactionOwner::Lookup(hash) | TransactionOwner::Announce(hash)
+                            if hash == info_hash
+                    )
                 });
             }
             Command::Stats(sender) => {
@@ -1035,6 +1193,35 @@ impl Actor {
             Command::Shutdown(_) => unreachable!("shutdown handled by run loop"),
         }
         Ok(())
+    }
+
+    fn lookup_seeds(&self, info_hash: NodeId) -> Vec<Candidate> {
+        let elapsed = self.started.elapsed().as_secs();
+        let mut seeds = self
+            .routing_v4
+            .closest(info_hash, K, elapsed)
+            .into_iter()
+            .map(|contact| Candidate {
+                contact: Some(contact),
+                address: socket_endpoint(contact.address),
+                state: CandidateState::Unqueried,
+            })
+            .collect::<Vec<_>>();
+        let bootstrap = if self.fallback_pending
+            || (self.fallback_bootstrap.is_empty() && !self.warm_bootstrap.is_empty())
+        {
+            &self.warm_bootstrap
+        } else {
+            &self.fallback_bootstrap
+        };
+        for address in bootstrap {
+            seeds.push(Candidate {
+                contact: None,
+                address: *address,
+                state: CandidateState::Unqueried,
+            });
+        }
+        seeds
     }
 
     async fn fill_lookup(&mut self, info_hash: NodeId) -> Result<(), DhtError> {
@@ -1073,6 +1260,105 @@ impl Actor {
                 lookup.mark(address, CandidateState::Failed, contact);
             }
         }
+        Ok(())
+    }
+
+    async fn advance_lookup(&mut self, info_hash: NodeId) -> Result<(), DhtError> {
+        let announcing = self
+            .lookups
+            .get(&info_hash)
+            .is_some_and(|lookup| lookup.announce_started);
+        if !announcing {
+            self.fill_lookup(info_hash).await?;
+        }
+
+        if let Some(result) = self
+            .lookups
+            .get(&info_hash)
+            .and_then(Lookup::completed_result)
+        {
+            self.finish_lookup(info_hash, result);
+            return Ok(());
+        }
+
+        let ready = self.lookups.get(&info_hash).is_some_and(|lookup| {
+            lookup.announcement.is_some() && !lookup.announce_started && !lookup.has_work()
+        });
+        if !ready {
+            return Ok(());
+        }
+        let (port, responders, responded) = {
+            let lookup = self
+                .lookups
+                .get(&info_hash)
+                .expect("ready lookup remains installed");
+            (
+                lookup
+                    .announcement
+                    .as_ref()
+                    .expect("ready lookup has announcement")
+                    .port,
+                lookup.closest_token_responders(),
+                lookup
+                    .candidates
+                    .iter()
+                    .any(|candidate| candidate.state == CandidateState::Responded),
+            )
+        };
+        if responders.is_empty() {
+            let peers = self
+                .lookups
+                .get(&info_hash)
+                .map(|lookup| lookup.peers.iter().copied().collect())
+                .unwrap_or_default();
+            self.finish_lookup(
+                info_hash,
+                if responded {
+                    Ok(peers)
+                } else {
+                    Err(DhtError::NoReachableNodes)
+                },
+            );
+            return Ok(());
+        }
+
+        if let Some(lookup) = self.lookups.get_mut(&info_hash) {
+            lookup.announce_started = true;
+            lookup.announce_token_nodes = responders.len().try_into().unwrap_or(u8::MAX);
+            lookup.deadline = Instant::now() + self.config.query_timeout;
+        }
+        for responder in responders {
+            let query = Query::AnnouncePeer {
+                info_hash,
+                port,
+                implied_port: false,
+                token: responder.token,
+            };
+            match self
+                .send_query(
+                    responder.address,
+                    Some(responder.contact),
+                    query,
+                    TransactionOwner::Announce(info_hash),
+                )
+                .await
+            {
+                Ok(()) => {
+                    self.stats.announces_sent = self.stats.announces_sent.saturating_add(1);
+                    if let Some(lookup) = self.lookups.get_mut(&info_hash) {
+                        lookup.announce_pending.insert(responder.address);
+                        lookup.announce_sent = lookup.announce_sent.saturating_add(1);
+                    }
+                }
+                Err(_) => {
+                    self.stats.announces_failed = self.stats.announces_failed.saturating_add(1);
+                    if let Some(lookup) = self.lookups.get_mut(&info_hash) {
+                        lookup.announce_failed = lookup.announce_failed.saturating_add(1);
+                    }
+                }
+            }
+        }
+        self.finish_announcement_if_complete(info_hash);
         Ok(())
     }
 
@@ -1164,8 +1450,8 @@ impl Actor {
             mut nodes,
             mut nodes6,
             peers,
+            token,
             observed_address,
-            ..
         } = response;
         let Some(transaction_id) = decode_transaction_id(&transaction) else {
             return Ok(());
@@ -1237,6 +1523,9 @@ impl Actor {
             TransactionOwner::Lookup(info_hash) => {
                 if let Some(lookup) = self.lookups.get_mut(&info_hash) {
                     lookup.mark(source, CandidateState::Responded, Some(contact));
+                    if let Some(token) = token {
+                        lookup.add_token_responder(contact, source, token);
+                    }
                     for node in nodes {
                         lookup.add_candidate(Some(node), socket_endpoint(node.address));
                     }
@@ -1249,14 +1538,17 @@ impl Actor {
                         }
                     }
                 }
-                self.fill_lookup(info_hash).await?;
-                if let Some(result) = self
-                    .lookups
-                    .get(&info_hash)
-                    .and_then(Lookup::completed_result)
+                self.advance_lookup(info_hash).await?;
+            }
+            TransactionOwner::Announce(info_hash) => {
+                if let Some(lookup) = self.lookups.get_mut(&info_hash)
+                    && lookup.announce_pending.remove(&source)
                 {
-                    self.finish_lookup(info_hash, result);
+                    lookup.announce_succeeded = lookup.announce_succeeded.saturating_add(1);
+                    self.stats.announces_succeeded =
+                        self.stats.announces_succeeded.saturating_add(1);
                 }
+                self.finish_announcement_if_complete(info_hash);
             }
         }
         Ok(())
@@ -1449,7 +1741,7 @@ impl Actor {
             self.peer_store.remove(&oldest_hash);
         }
         let peers = self.peer_store.entry(info_hash).or_default();
-        let expires_at = Instant::now() + PEER_TTL;
+        let expires_at = Instant::now() + self.config.peer_ttl;
         if let Some(peer) = peers.iter_mut().find(|peer| peer.address == address) {
             peer.expires_at = expires_at;
             return;
@@ -1509,17 +1801,29 @@ impl Actor {
 
         for lookup in self.lookups.values_mut() {
             lookup.waiters.retain(|waiter| !waiter.is_closed());
+            if lookup
+                .announcement
+                .as_ref()
+                .is_some_and(|announcement| announcement.result.is_closed())
+            {
+                lookup.announcement = None;
+            }
         }
         let abandoned = self
             .lookups
             .iter()
-            .filter(|(_, lookup)| lookup.waiters.is_empty())
+            .filter(|(_, lookup)| lookup.waiters.is_empty() && lookup.announcement.is_none())
             .map(|(hash, _)| *hash)
             .collect::<Vec<_>>();
         for hash in abandoned {
             self.lookups.remove(&hash);
-            self.transactions
-                .retain(|_, transaction| transaction.owner != TransactionOwner::Lookup(hash));
+            self.transactions.retain(|_, transaction| {
+                !matches!(
+                    transaction.owner,
+                    TransactionOwner::Lookup(owner) | TransactionOwner::Announce(owner)
+                        if owner == hash
+                )
+            });
         }
 
         let timed_out = self
@@ -1529,14 +1833,58 @@ impl Actor {
             .map(|(hash, _)| *hash)
             .collect::<Vec<_>>();
         for hash in timed_out {
-            let result = self
+            let announce_started = self
                 .lookups
                 .get(&hash)
-                .map(Lookup::timeout_result)
-                .unwrap_or(Err(DhtError::LookupTimedOut));
-            self.finish_lookup(hash, result);
-            self.transactions
-                .retain(|_, transaction| transaction.owner != TransactionOwner::Lookup(hash));
+                .is_some_and(|lookup| lookup.announce_started);
+            if announce_started {
+                self.transactions.retain(|_, transaction| {
+                    !matches!(transaction.owner, TransactionOwner::Announce(owner) if owner == hash)
+                });
+                if let Some(lookup) = self.lookups.get_mut(&hash) {
+                    let failed = lookup.announce_pending.len();
+                    lookup.announce_pending.clear();
+                    lookup.announce_failed = lookup
+                        .announce_failed
+                        .saturating_add(failed.try_into().unwrap_or(u8::MAX));
+                    self.stats.announces_failed = self
+                        .stats
+                        .announces_failed
+                        .saturating_add(failed.try_into().unwrap_or(u64::MAX));
+                }
+                self.finish_announcement_if_complete(hash);
+                continue;
+            }
+            let has_announcement = self
+                .lookups
+                .get(&hash)
+                .is_some_and(|lookup| lookup.announcement.is_some());
+            if has_announcement {
+                self.transactions.retain(|_, transaction| {
+                    !matches!(transaction.owner, TransactionOwner::Lookup(owner) if owner == hash)
+                });
+                if let Some(lookup) = self.lookups.get_mut(&hash) {
+                    for candidate in &mut lookup.candidates {
+                        if matches!(
+                            candidate.state,
+                            CandidateState::Unqueried | CandidateState::InFlight
+                        ) {
+                            candidate.state = CandidateState::Failed;
+                        }
+                    }
+                }
+                self.advance_lookup(hash).await?;
+            } else {
+                let result = self
+                    .lookups
+                    .get(&hash)
+                    .map(Lookup::timeout_result)
+                    .unwrap_or(Err(DhtError::LookupTimedOut));
+                self.finish_lookup(hash, result);
+                self.transactions.retain(|_, transaction| {
+                    !matches!(transaction.owner, TransactionOwner::Lookup(owner) if owner == hash)
+                });
+            }
         }
 
         let maintenance_in_flight = self
@@ -1563,24 +1911,45 @@ impl Actor {
         if let Some(contact) = transaction.contact {
             self.routing_v4.record_failure(contact);
         }
-        if let TransactionOwner::Lookup(info_hash) = transaction.owner {
-            if let Some(lookup) = self.lookups.get_mut(&info_hash) {
-                lookup.mark(
-                    transaction.endpoint,
-                    CandidateState::Failed,
-                    transaction.contact,
-                );
+        match transaction.owner {
+            TransactionOwner::Lookup(info_hash) => {
+                if let Some(lookup) = self.lookups.get_mut(&info_hash) {
+                    lookup.mark(
+                        transaction.endpoint,
+                        CandidateState::Failed,
+                        transaction.contact,
+                    );
+                }
+                self.advance_lookup(info_hash).await?;
             }
-            self.fill_lookup(info_hash).await?;
-            if let Some(result) = self
-                .lookups
-                .get(&info_hash)
-                .and_then(Lookup::completed_result)
-            {
-                self.finish_lookup(info_hash, result);
+            TransactionOwner::Announce(info_hash) => {
+                if let Some(lookup) = self.lookups.get_mut(&info_hash)
+                    && lookup.announce_pending.remove(&transaction.endpoint)
+                {
+                    lookup.announce_failed = lookup.announce_failed.saturating_add(1);
+                    self.stats.announces_failed = self.stats.announces_failed.saturating_add(1);
+                }
+                self.finish_announcement_if_complete(info_hash);
             }
+            TransactionOwner::Bootstrap(_) => {}
         }
         Ok(())
+    }
+
+    fn finish_announcement_if_complete(&mut self, info_hash: NodeId) {
+        let complete = self
+            .lookups
+            .get(&info_hash)
+            .is_some_and(|lookup| lookup.announce_started && lookup.announce_pending.is_empty());
+        if !complete {
+            return;
+        }
+        let peers = self
+            .lookups
+            .get(&info_hash)
+            .map(|lookup| lookup.peers.iter().copied().collect())
+            .unwrap_or_default();
+        self.finish_lookup(info_hash, Ok(peers));
     }
 
     fn finish_lookup(&mut self, info_hash: NodeId, result: Result<Vec<SocketAddr>, DhtError>) {
@@ -1944,6 +2313,43 @@ mod tests {
             Some(first_prefix)
         );
     }
+
+    #[test]
+    fn announce_selects_only_the_eight_closest_token_responders() {
+        let now = Instant::now();
+        let (sender, _receiver) = oneshot::channel();
+        let mut lookup = Lookup::new(
+            8,
+            NodeId::ZERO,
+            [],
+            sender,
+            now + Duration::from_secs(30),
+            now,
+        );
+        for distance in (1_u8..=10).rev() {
+            let mut id = [0_u8; 20];
+            id[19] = distance;
+            let address = SocketAddr::from((Ipv4Addr::LOCALHOST, 6300 + u16::from(distance)));
+            lookup.add_token_responder(
+                NodeContact {
+                    id: NodeId(id),
+                    address: dht_endpoint(address),
+                },
+                address,
+                vec![distance],
+            );
+        }
+
+        let selected = lookup.closest_token_responders();
+        assert_eq!(selected.len(), K);
+        assert_eq!(
+            selected
+                .iter()
+                .map(|responder| responder.contact.id.0[19])
+                .collect::<Vec<_>>(),
+            (1_u8..=8).collect::<Vec<_>>()
+        );
+    }
     use rstorrent_protocol::dht::{ResponseMessage, decode_message};
 
     fn loopback_config(bootstrap: Vec<BootstrapNode>) -> DhtConfig {
@@ -1956,6 +2362,7 @@ mod tests {
             lookup_timeout: Duration::from_secs(3),
             bootstrap_retry_interval: Duration::from_secs(1),
             routing_refresh_interval: Duration::from_secs(60),
+            peer_ttl: PEER_TTL,
             read_only: false,
             byte_metric_sink: None,
         }
@@ -2043,6 +2450,42 @@ mod tests {
             .expect("warm lookup peer");
         assert_eq!(warm_peers, vec![announced_peer]);
         warm.shutdown().await.expect("warm shutdown");
+        server.shutdown().await.expect("server shutdown");
+    }
+
+    #[tokio::test]
+    async fn lookup_and_announce_uses_the_explicit_tcp_port_and_correlated_token() {
+        let server = DhtService::start(loopback_config(Vec::new()))
+            .await
+            .expect("start server");
+        let server_address = server.local_address();
+        let client = DhtService::start(loopback_config(vec![BootstrapNode::Address(
+            server_address,
+        )]))
+        .await
+        .expect("start client");
+        let info_hash = [11; 20];
+
+        let report = client
+            .handle()
+            .lookup_and_announce(info_hash, 55_555)
+            .await
+            .expect("announce peer");
+        assert_eq!(report.token_nodes, 1);
+        assert_eq!(report.announces_sent, 1);
+        assert_eq!(report.announces_succeeded, 1);
+        assert_eq!(report.announces_failed, 0);
+
+        let peers = client
+            .handle()
+            .lookup(info_hash)
+            .await
+            .expect("lookup announced peer");
+        assert_eq!(peers.len(), 1);
+        assert_eq!(peers[0].port(), 55_555);
+        assert_ne!(peers[0].port(), client.local_address().port());
+
+        client.shutdown().await.expect("client shutdown");
         server.shutdown().await.expect("server shutdown");
     }
 

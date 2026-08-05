@@ -494,8 +494,11 @@ impl ApplicationService {
         let dht_observation_receiver = dht.subscribe_observations();
         let initial_dht_view = inspection_view(&dht_observation_receiver.borrow());
         let advertised_endpoint = AdvertisedPeerEndpointSelector::new(&listener_status);
-        let discovery_advertisement =
-            DiscoveryAdvertisementService::start(network, advertised_endpoint.subscribe_wire());
+        let discovery_advertisement = DiscoveryAdvertisementService::start(
+            network,
+            advertised_endpoint.subscribe_wire(),
+            dht.handle(),
+        );
         let discovery_handle = discovery_advertisement.handle();
         let runtime_client_settings = ClientSettingsRuntimeView::from_started(
             snapshot.client_settings.clone(),
@@ -1375,7 +1378,7 @@ impl ApplicationService {
             verified_pieces,
             artifact_state,
             download_missing: true,
-            dht: self.dht.as_ref().map(DhtService::handle),
+            dht: None,
             udp_trackers: Some(Vec::new()),
         };
         let checkpoints: Arc<dyn DownloadCheckpointSink> = Arc::new(StoreCheckpointSink {
@@ -1690,11 +1693,13 @@ impl ApplicationService {
             match discovery.shutdown().await {
                 Ok(terminal) => {
                     let terminal_counts = format!(
-                        "tasks={},registrations={},tracker_operations={},tracker_high_water={},queue_high_water={}",
+                        "tasks={},registrations={},tracker_operations={},tracker_high_water={},dht_operations={},dht_high_water={},queue_high_water={}",
                         terminal.tasks,
                         terminal.registrations,
                         terminal.tracker_operations,
                         terminal.tracker_operations_high_water,
+                        terminal.dht_operations,
+                        terminal.dht_operations_high_water,
                         terminal.command_queue_high_water,
                     );
                     let _ = self.views.record_diagnostic(
@@ -2284,7 +2289,7 @@ impl ApplicationService {
             verified_pieces,
             artifact_state,
             download_missing: resume.desired_running,
-            dht: self.dht.as_ref().map(DhtService::handle),
+            dht: None,
             udp_trackers: Some(Vec::new()),
         };
         let checkpoints: Arc<dyn DownloadCheckpointSink> = Arc::new(StoreCheckpointSink {
@@ -3871,6 +3876,35 @@ impl ViewActivitySink {
                     Some(&self.torrent_id),
                     "DHT lookup returned peers",
                     &[("peers", &peers)],
+                );
+            }
+            DownloadActivityEvent::DhtAnnounceCompleted {
+                port,
+                token_nodes,
+                announces_sent,
+                announces_succeeded,
+                announces_failed,
+            } => {
+                self.record_structured(
+                    if announces_failed == 0 {
+                        DiagnosticSeverity::Info
+                    } else {
+                        DiagnosticSeverity::Warning
+                    },
+                    category::DISCOVERY_DHT,
+                    "dht_announce_completed",
+                    "DHT peer announcement traversal completed",
+                    Vec::new(),
+                    vec![
+                        DiagnosticField::count("port", u64::from(port)),
+                        DiagnosticField::count("token_nodes", u64::from(token_nodes)),
+                        DiagnosticField::count("announces_sent", u64::from(announces_sent)),
+                        DiagnosticField::count(
+                            "announces_succeeded",
+                            u64::from(announces_succeeded),
+                        ),
+                        DiagnosticField::count("announces_failed", u64::from(announces_failed)),
+                    ],
                 );
             }
             DownloadActivityEvent::DhtLookupFailed { detail } => {

@@ -30,8 +30,8 @@ mod upload;
 mod upload_scheduler;
 
 pub use advertisement::{
-    DISCOVERY_ADVERTISEMENT_COMMAND_CAPACITY, DiscoveryAdvertisementError,
-    DiscoveryAdvertisementHandle, DiscoveryAdvertisementOwnerCounts,
+    DHT_ANNOUNCE_INTERVAL, DHT_LOOKUP_INTERVAL, DISCOVERY_ADVERTISEMENT_COMMAND_CAPACITY,
+    DiscoveryAdvertisementError, DiscoveryAdvertisementHandle, DiscoveryAdvertisementOwnerCounts,
     DiscoveryAdvertisementRegistration, DiscoveryAdvertisementService, MAX_TRACKER_OPERATIONS,
     OUTBOUND_ONLY_TRACKER_PORT, PeerAdvertisementEndpoint, PeerAdvertisementEndpointScope,
     TRACKER_STOP_TIMEOUT, TorrentPrivacy, TrackerCounterSnapshot, TrackerCounters,

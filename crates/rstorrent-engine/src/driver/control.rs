@@ -125,6 +125,13 @@ pub enum DownloadActivityEvent {
     DhtLookupSucceeded {
         peer_count: u32,
     },
+    DhtAnnounceCompleted {
+        port: u16,
+        token_nodes: u8,
+        announces_sent: u8,
+        announces_succeeded: u8,
+        announces_failed: u8,
+    },
     DhtLookupFailed {
         detail: String,
     },

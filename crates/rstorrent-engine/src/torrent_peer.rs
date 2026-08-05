@@ -390,6 +390,12 @@ impl TorrentPeerHandle {
         self.publish(true, true)
     }
 
+    pub fn remove_discovery_source(&self, source: PeerSource) -> Result<usize, TorrentPeerError> {
+        let removed = self.with_state(|state| state.registry.remove_source(source));
+        self.publish(true, true)?;
+        Ok(removed)
+    }
+
     pub fn registry_snapshot(&self, active: bool) -> PeerRegistrySnapshot {
         let now = self.elapsed();
         self.with_state(|state| registry_snapshot(&state.registry, now, active))

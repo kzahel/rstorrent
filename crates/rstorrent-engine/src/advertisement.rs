@@ -12,6 +12,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 
+use crate::dht::{DhtAnnounceResult, DhtError, DhtHandle, MAX_ACTIVE_LOOKUPS};
 use crate::driver::{
     DownloadActivityEvent, DownloadActivitySink, DownloadControl, DownloadError,
     UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache,
@@ -29,6 +30,8 @@ pub const UNKNOWN_METADATA_LEFT_BYTES: u64 = 16 * 1024;
 pub const MAX_TRACKER_OPERATIONS: usize = 8;
 pub const DISCOVERY_ADVERTISEMENT_COMMAND_CAPACITY: usize = 256;
 pub const TRACKER_STOP_TIMEOUT: Duration = Duration::from_secs(5);
+pub const DHT_LOOKUP_INTERVAL: Duration = Duration::from_secs(60);
+pub const DHT_ANNOUNCE_INTERVAL: Duration = Duration::from_secs(15 * 60);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PeerAdvertisementEndpointScope {
@@ -165,6 +168,8 @@ pub struct DiscoveryAdvertisementOwnerCounts {
     pub tracker_operations: usize,
     pub tracker_operations_high_water: usize,
     pub command_queue_high_water: usize,
+    pub dht_operations: usize,
+    pub dht_operations_high_water: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -222,6 +227,7 @@ impl DiscoveryAdvertisementService {
     pub fn start(
         network: NetworkConfig,
         endpoint: watch::Receiver<PeerAdvertisementEndpoint>,
+        dht: DhtHandle,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(DISCOVERY_ADVERTISEMENT_COMMAND_CAPACITY);
         let queued = Arc::new(AtomicU64::new(0));
@@ -234,6 +240,7 @@ impl DiscoveryAdvertisementService {
         let task = tokio::spawn(run_service(
             network,
             endpoint,
+            dht,
             receiver,
             queued,
             queue_high_water,
@@ -329,6 +336,10 @@ struct TorrentEntry {
     last_endpoint_generation: u64,
     removal: Option<Removal>,
     pending_replacement: Option<DiscoveryAdvertisementRegistration>,
+    dht_epoch: u64,
+    dht_inflight: bool,
+    next_dht_action: Instant,
+    last_dht_endpoint_generation: u64,
 }
 
 impl TorrentEntry {
@@ -353,6 +364,10 @@ impl TorrentEntry {
             last_endpoint_generation: 0,
             removal: None,
             pending_replacement: None,
+            dht_epoch: 1,
+            dht_inflight: false,
+            next_dht_action: Instant::now(),
+            last_dht_endpoint_generation: 0,
         };
         entry.emit_snapshot(entry.registration.desired_running);
         Ok(entry)
@@ -371,6 +386,8 @@ impl TorrentEntry {
         response: Option<oneshot::Sender<Result<(), DiscoveryAdvertisementError>>>,
     ) {
         self.registration.desired_running = false;
+        self.dht_epoch = self.dht_epoch.saturating_add(1);
+        self.dht_inflight = false;
         self.schedule.request_stop();
         self.removal = Some(Removal {
             deadline: Instant::now() + TRACKER_STOP_TIMEOUT,
@@ -378,6 +395,13 @@ impl TorrentEntry {
         });
         self.emit_snapshot(true);
     }
+}
+
+#[derive(Debug)]
+struct RegistrationEffect {
+    info_hash: [u8; 20],
+    cancel_dht: bool,
+    purge_dht_from: Option<TorrentPeerHandle>,
 }
 
 #[derive(Debug)]
@@ -392,9 +416,26 @@ struct TrackerOperationResult {
     result: Result<AnnounceResponse, DownloadError>,
 }
 
+#[derive(Debug)]
+enum DhtOperationSuccess {
+    Lookup(Vec<std::net::SocketAddr>),
+    Announce(DhtAnnounceResult),
+}
+
+#[derive(Debug)]
+struct DhtOperationResult {
+    info_hash: [u8; 20],
+    registration_generation: u64,
+    dht_epoch: u64,
+    endpoint_generation: u64,
+    announce_port: Option<u16>,
+    result: Result<DhtOperationSuccess, DhtError>,
+}
+
 async fn run_service(
     network: NetworkConfig,
     mut endpoint_receiver: watch::Receiver<PeerAdvertisementEndpoint>,
+    dht: DhtHandle,
     mut receiver: mpsc::Receiver<Command>,
     queued: Arc<AtomicU64>,
     queue_high_water: Arc<AtomicU64>,
@@ -403,7 +444,9 @@ async fn run_service(
     let mut endpoint = *endpoint_receiver.borrow_and_update();
     let mut entries = BTreeMap::<[u8; 20], TorrentEntry>::new();
     let mut operations = JoinSet::new();
+    let mut dht_operations = JoinSet::new();
     let mut operation_high_water = 0_usize;
+    let mut dht_operation_high_water = 0_usize;
     let mut shutting_down = false;
     let mut shutdown_response = None;
     let mut shutdown_deadline = None;
@@ -419,7 +462,15 @@ async fn run_service(
 
         let tracker_wait =
             fill_tracker_operations(&mut entries, &mut operations, network, endpoint);
+        let dht_wait = fill_dht_operations(
+            &mut entries,
+            &mut dht_operations,
+            dht.clone(),
+            network.policy,
+            endpoint,
+        );
         operation_high_water = operation_high_water.max(operations.len());
+        dht_operation_high_water = dht_operation_high_water.max(dht_operations.len());
         let now = Instant::now();
         let removal_wait = entries
             .values()
@@ -429,6 +480,7 @@ async fn run_service(
             .min();
         let next_wait = tracker_wait
             .into_iter()
+            .chain(dht_wait)
             .chain(removal_wait)
             .min()
             .unwrap_or(Duration::from_secs(24 * 60 * 60));
@@ -441,17 +493,30 @@ async fn run_service(
                 let Some(command) = command else {
                     shutting_down = true;
                     begin_session_shutdown(&mut entries, &mut shutdown_deadline);
+                    for info_hash in entries.keys().copied().collect::<Vec<_>>() {
+                        let _ = dht.cancel_lookup(info_hash).await;
+                    }
                     continue;
                 };
                 queued.fetch_sub(1, Ordering::AcqRel);
                 match command {
                     Command::Upsert(registration) => {
-                        apply_registration(&mut entries, registration)?;
+                        let effect = apply_registration(&mut entries, registration)?;
+                        if effect.cancel_dht {
+                            let _ = dht.cancel_lookup(effect.info_hash).await;
+                        }
+                        if let Some(peers) = effect.purge_dht_from {
+                            let _ = peers.remove_discovery_source(PeerSource::Dht);
+                            if let Some(entry) = entries.get(&effect.info_hash) {
+                                entry.control.emit(DownloadActivityEvent::DhtDisabledForPrivateTorrent);
+                            }
+                        }
                     }
                     Command::Remove { info_hash, generation, response } => {
                         match entries.get_mut(&info_hash) {
                             Some(entry) if entry.registration.generation == generation => {
                                 entry.begin_stop(Some(response));
+                                let _ = dht.cancel_lookup(info_hash).await;
                             }
                             _ => {
                                 let _ = response.send(Ok(()));
@@ -462,6 +527,9 @@ async fn run_service(
                         shutting_down = true;
                         shutdown_response = Some(response);
                         begin_session_shutdown(&mut entries, &mut shutdown_deadline);
+                        for info_hash in entries.keys().copied().collect::<Vec<_>>() {
+                            let _ = dht.cancel_lookup(info_hash).await;
+                        }
                     }
                 }
             }
@@ -476,11 +544,32 @@ async fn run_service(
                             entry.schedule.request_update();
                         }
                     }
+                    let corrected = entries
+                        .iter_mut()
+                        .filter_map(|(info_hash, entry)| {
+                            dht_announce_port(network.policy, endpoint, &entry.registration)?;
+                            if entry.last_dht_endpoint_generation == endpoint.generation {
+                                return None;
+                            }
+                            entry.dht_epoch = entry.dht_epoch.saturating_add(1);
+                            entry.dht_inflight = false;
+                            entry.next_dht_action = Instant::now();
+                            Some(*info_hash)
+                        })
+                        .collect::<Vec<_>>();
+                    for info_hash in corrected {
+                        let _ = dht.cancel_lookup(info_hash).await;
+                    }
                 }
             }
             joined = operations.join_next(), if !operations.is_empty() => {
                 if let Some(Ok(operation)) = joined {
                     apply_tracker_result(&mut entries, operation, network.policy, endpoint);
+                }
+            }
+            joined = dht_operations.join_next(), if !dht_operations.is_empty() => {
+                if let Some(Ok(operation)) = joined {
+                    apply_dht_result(&mut entries, operation, network.policy, endpoint);
                 }
             }
             _ = &mut sleep => {}
@@ -490,6 +579,8 @@ async fn run_service(
     cancellation.cancel();
     operations.abort_all();
     while operations.join_next().await.is_some() {}
+    dht_operations.abort_all();
+    while dht_operations.join_next().await.is_some() {}
     if let Some(response) = shutdown_response {
         let _ = response.send(Ok(()));
     }
@@ -502,25 +593,42 @@ async fn run_service(
             .load(Ordering::Acquire)
             .try_into()
             .unwrap_or(usize::MAX),
+        dht_operations: dht_operations.len(),
+        dht_operations_high_water: dht_operation_high_water,
     })
 }
 
 fn apply_registration(
     entries: &mut BTreeMap<[u8; 20], TorrentEntry>,
     registration: DiscoveryAdvertisementRegistration,
-) -> Result<(), DiscoveryAdvertisementError> {
+) -> Result<RegistrationEffect, DiscoveryAdvertisementError> {
+    let info_hash = registration.info_hash;
+    let private_peers =
+        (registration.privacy == TorrentPrivacy::Private).then(|| registration.peers.clone());
     let Some(entry) = entries.get_mut(&registration.info_hash) else {
         entries.insert(registration.info_hash, TorrentEntry::new(registration)?);
-        return Ok(());
+        return Ok(RegistrationEffect {
+            info_hash,
+            cancel_dht: false,
+            purge_dht_from: private_peers,
+        });
     };
     if registration.generation < entry.registration.generation {
-        return Ok(());
+        return Ok(RegistrationEffect {
+            info_hash,
+            cancel_dht: false,
+            purge_dht_from: None,
+        });
     }
     if let Some(pending) = entry.pending_replacement.as_mut() {
         if registration.generation >= pending.generation {
             *pending = registration;
         }
-        return Ok(());
+        return Ok(RegistrationEffect {
+            info_hash,
+            cancel_dht: true,
+            purge_dht_from: private_peers,
+        });
     }
     if registration.generation > entry.registration.generation
         || registration.trackers != entry.registration.trackers
@@ -529,13 +637,21 @@ fn apply_registration(
         if entry.removal.is_none() {
             entry.begin_stop(None);
         }
-        return Ok(());
+        return Ok(RegistrationEffect {
+            info_hash,
+            cancel_dht: true,
+            purge_dht_from: private_peers,
+        });
     }
 
     let completed = !entry.registration.complete && registration.complete;
     let incoming_changed =
         entry.registration.incoming_registered != registration.incoming_registered;
     let resume = !entry.registration.desired_running && registration.desired_running;
+    let dht_changed = entry.registration.privacy != registration.privacy
+        || entry.registration.desired_running != registration.desired_running
+        || entry.registration.complete != registration.complete
+        || incoming_changed;
     entry.registration = registration;
     entry
         .control
@@ -555,8 +671,17 @@ fn apply_registration(
     if !entry.registration.desired_running && entry.removal.is_none() {
         entry.begin_stop(None);
     }
+    if dht_changed {
+        entry.dht_epoch = entry.dht_epoch.saturating_add(1);
+        entry.dht_inflight = false;
+        entry.next_dht_action = Instant::now();
+    }
     entry.emit_snapshot(entry.registration.desired_running || entry.removal.is_some());
-    Ok(())
+    Ok(RegistrationEffect {
+        info_hash,
+        cancel_dht: dht_changed,
+        purge_dht_from: private_peers,
+    })
 }
 
 fn begin_session_shutdown(
@@ -736,6 +861,173 @@ fn fill_tracker_operations(
     }
 }
 
+fn fill_dht_operations(
+    entries: &mut BTreeMap<[u8; 20], TorrentEntry>,
+    operations: &mut JoinSet<DhtOperationResult>,
+    dht: DhtHandle,
+    policy: NetworkPolicy,
+    endpoint: PeerAdvertisementEndpoint,
+) -> Option<Duration> {
+    let now = Instant::now();
+    let mut minimum_wait = None;
+    for entry in entries.values_mut() {
+        if operations.len() >= MAX_ACTIVE_LOOKUPS {
+            break;
+        }
+        if entry.removal.is_some()
+            || !entry.registration.desired_running
+            || entry.registration.privacy == TorrentPrivacy::Private
+            || entry.dht_inflight
+        {
+            continue;
+        }
+        if entry.next_dht_action > now {
+            let wait = entry.next_dht_action.saturating_duration_since(now);
+            minimum_wait = Some(minimum_wait.map_or(wait, |current: Duration| current.min(wait)));
+            continue;
+        }
+
+        let announce_port = dht_announce_port(policy, endpoint, &entry.registration);
+        let info_hash = entry.registration.info_hash;
+        let registration_generation = entry.registration.generation;
+        let dht_epoch = entry.dht_epoch;
+        let endpoint_generation = endpoint.generation;
+        let operation_dht = dht.clone();
+        entry.dht_inflight = true;
+        entry.control.emit(DownloadActivityEvent::DhtLookupStarted);
+        operations.spawn(async move {
+            let result = match announce_port {
+                Some(port) => operation_dht
+                    .lookup_and_announce(info_hash, port)
+                    .await
+                    .map(DhtOperationSuccess::Announce),
+                None => operation_dht
+                    .lookup(info_hash)
+                    .await
+                    .map(DhtOperationSuccess::Lookup),
+            };
+            DhtOperationResult {
+                info_hash,
+                registration_generation,
+                dht_epoch,
+                endpoint_generation,
+                announce_port,
+                result,
+            }
+        });
+    }
+    minimum_wait
+}
+
+fn apply_dht_result(
+    entries: &mut BTreeMap<[u8; 20], TorrentEntry>,
+    operation: DhtOperationResult,
+    policy: NetworkPolicy,
+    endpoint: PeerAdvertisementEndpoint,
+) {
+    let Some(entry) = entries.get_mut(&operation.info_hash) else {
+        return;
+    };
+    if entry.registration.generation != operation.registration_generation
+        || entry.dht_epoch != operation.dht_epoch
+    {
+        return;
+    }
+    entry.dht_inflight = false;
+    if operation.announce_port.is_some()
+        && (operation.endpoint_generation != endpoint.generation
+            || operation.announce_port != dht_announce_port(policy, endpoint, &entry.registration))
+    {
+        entry.next_dht_action = Instant::now();
+        return;
+    }
+
+    let now = Instant::now();
+    match operation.result {
+        Ok(success) => {
+            let (peers, interval) = match success {
+                DhtOperationSuccess::Lookup(peers) => (peers, DHT_LOOKUP_INTERVAL),
+                DhtOperationSuccess::Announce(report) => {
+                    entry.last_dht_endpoint_generation = operation.endpoint_generation;
+                    entry
+                        .control
+                        .emit(DownloadActivityEvent::DhtAnnounceCompleted {
+                            port: operation
+                                .announce_port
+                                .expect("announce result retains its explicit port"),
+                            token_nodes: report.token_nodes,
+                            announces_sent: report.announces_sent,
+                            announces_succeeded: report.announces_succeeded,
+                            announces_failed: report.announces_failed,
+                        });
+                    (report.peers, DHT_ANNOUNCE_INTERVAL)
+                }
+            };
+            let peer_count = peers.len().try_into().unwrap_or(u32::MAX);
+            for address in peers {
+                if !policy.allows(address) {
+                    continue;
+                }
+                let Ok(endpoint) = PeerEndpoint::new(address) else {
+                    continue;
+                };
+                let _ = entry
+                    .registration
+                    .peers
+                    .observe_discovered_peer(PeerObservation::dialable(endpoint, PeerSource::Dht));
+            }
+            entry
+                .control
+                .emit(DownloadActivityEvent::DhtLookupSucceeded { peer_count });
+            entry.next_dht_action = now + interval;
+        }
+        Err(DhtError::Cancelled) => {
+            entry.next_dht_action = now;
+        }
+        Err(error) => {
+            entry.control.emit(DownloadActivityEvent::DhtLookupFailed {
+                detail: error.to_string(),
+            });
+            entry
+                .control
+                .emit(DownloadActivityEvent::DhtRetryScheduled {
+                    retry_in_seconds: DHT_LOOKUP_INTERVAL.as_secs(),
+                });
+            entry.next_dht_action = now + DHT_LOOKUP_INTERVAL;
+        }
+    }
+}
+
+fn dht_announce_port(
+    policy: NetworkPolicy,
+    endpoint: PeerAdvertisementEndpoint,
+    registration: &DiscoveryAdvertisementRegistration,
+) -> Option<u16> {
+    if !registration.desired_running
+        || !registration.complete
+        || !registration.incoming_registered
+        || registration.privacy != TorrentPrivacy::Public
+        || endpoint.stopping
+    {
+        return None;
+    }
+    match (endpoint.endpoint, endpoint.scope) {
+        (
+            Some(endpoint),
+            Some(
+                PeerAdvertisementEndpointScope::Mapped
+                | PeerAdvertisementEndpointScope::LocalNetwork,
+            ),
+        ) => Some(endpoint.port()),
+        (Some(endpoint), Some(PeerAdvertisementEndpointScope::Loopback))
+            if policy == NetworkPolicy::LoopbackOnly =>
+        {
+            Some(endpoint.port())
+        }
+        _ => None,
+    }
+}
+
 fn apply_tracker_result(
     entries: &mut BTreeMap<[u8; 20], TorrentEntry>,
     operation: TrackerOperationResult,
@@ -897,6 +1189,7 @@ mod tests {
     #[derive(Debug, Default)]
     struct RecordingActivity {
         successes: Mutex<usize>,
+        dht_announces: Mutex<Vec<(u16, u8, u8, u8, u8)>>,
         changed: Notify,
     }
 
@@ -910,6 +1203,21 @@ mod tests {
                     >= expected
                 {
                     return;
+                }
+                self.changed.notified().await;
+            }
+        }
+
+        async fn wait_for_dht_announces(&self, expected: usize) -> (u16, u8, u8, u8, u8) {
+            loop {
+                {
+                    let reports = self
+                        .dht_announces
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    if reports.len() >= expected {
+                        return *reports.last().expect("nonempty reports");
+                    }
                 }
                 self.changed.notified().await;
             }
@@ -928,6 +1236,26 @@ mod tests {
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
                 *successes += 1;
                 drop(successes);
+                self.changed.notify_waiters();
+            }
+            if let DownloadActivityEvent::DhtAnnounceCompleted {
+                port,
+                token_nodes,
+                announces_sent,
+                announces_succeeded,
+                announces_failed,
+            } = event
+            {
+                self.dht_announces
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .push((
+                        port,
+                        token_nodes,
+                        announces_sent,
+                        announces_succeeded,
+                        announces_failed,
+                    ));
                 self.changed.notify_waiters();
             }
         }
@@ -966,6 +1294,64 @@ mod tests {
             tracker_port(NetworkPolicy::LoopbackOnly, endpoint, true),
             43_000
         );
+    }
+
+    #[test]
+    fn dht_announcement_requires_verified_public_routable_seed() {
+        let endpoint = PeerAdvertisementEndpoint {
+            generation: 2,
+            endpoint: Some("127.0.0.1:43000".parse().expect("endpoint")),
+            scope: Some(PeerAdvertisementEndpointScope::Loopback),
+            stopping: false,
+        };
+        let mut registration = test_registration(1, 41001);
+        assert_eq!(
+            dht_announce_port(NetworkPolicy::LoopbackOnly, endpoint, &registration),
+            None
+        );
+        registration.complete = true;
+        registration.incoming_registered = true;
+        registration.privacy = TorrentPrivacy::Public;
+        assert_eq!(
+            dht_announce_port(NetworkPolicy::LoopbackOnly, endpoint, &registration),
+            Some(43_000)
+        );
+        assert_eq!(
+            dht_announce_port(NetworkPolicy::Online, endpoint, &registration),
+            None
+        );
+        registration.privacy = TorrentPrivacy::Private;
+        assert_eq!(
+            dht_announce_port(NetworkPolicy::LoopbackOnly, endpoint, &registration),
+            None
+        );
+    }
+
+    #[test]
+    fn verified_private_transition_cancels_and_purges_dht_only_peers() {
+        let peers = TorrentPeerHandle::new(Arc::new(NoopSink)).expect("peer registry");
+        peers
+            .observe_discovered_peer(PeerObservation::dialable(
+                PeerEndpoint::new("127.0.0.1:44001".parse().expect("peer endpoint"))
+                    .expect("valid peer"),
+                PeerSource::Dht,
+            ))
+            .expect("observe DHT peer");
+        let mut registration = test_registration(1, 41001);
+        registration.peers = peers.clone();
+        registration.privacy = TorrentPrivacy::Unknown;
+        let mut entries = BTreeMap::new();
+        apply_registration(&mut entries, registration.clone()).expect("unknown registration");
+
+        registration.privacy = TorrentPrivacy::Private;
+        let effect = apply_registration(&mut entries, registration).expect("private transition");
+        assert!(effect.cancel_dht);
+        effect
+            .purge_dht_from
+            .expect("private transition supplies purge owner")
+            .remove_discovery_source(PeerSource::Dht)
+            .expect("purge DHT source");
+        assert!(peers.registry_snapshot(true).records.is_empty());
     }
 
     #[test]
@@ -1087,7 +1473,13 @@ mod tests {
             Duration::from_secs(1),
             Duration::from_secs(1),
         );
-        let service = DiscoveryAdvertisementService::start(network, endpoint_receiver);
+        let mut dht_config = crate::dht::DhtConfig::for_network(NetworkPolicy::Offline);
+        dht_config.bootstrap_nodes.clear();
+        let dht = crate::dht::DhtService::start(dht_config)
+            .await
+            .expect("start offline DHT");
+        let service =
+            DiscoveryAdvertisementService::start(network, endpoint_receiver, dht.handle());
         let handle = service.handle();
         let counters = TrackerCounters::default();
         counters.add_downloaded(11);
@@ -1139,6 +1531,7 @@ mod tests {
             .expect("remove task")
             .expect("remove registration");
         let terminal = service.shutdown().await.expect("shutdown service");
+        dht.shutdown().await.expect("shutdown DHT");
         tracker_task.await.expect("tracker task");
 
         assert_eq!(announce_event(&started), AnnounceEvent::Started as u32);
@@ -1157,6 +1550,123 @@ mod tests {
         );
         assert_eq!(terminal.registrations, 0);
         assert!(terminal.tracker_operations_high_water <= MAX_TRACKER_OPERATIONS);
+    }
+
+    #[tokio::test]
+    async fn session_scheduler_announces_public_seed_and_keeps_dht_peers() {
+        let server = crate::dht::DhtService::start(crate::dht::DhtConfig {
+            network_policy: NetworkPolicy::LoopbackOnly,
+            bind_address: "127.0.0.1:0".parse().expect("bind address"),
+            bootstrap_nodes: Vec::new(),
+            initial_snapshot: None,
+            query_timeout: Duration::from_millis(500),
+            lookup_timeout: Duration::from_secs(3),
+            bootstrap_retry_interval: Duration::from_secs(60),
+            routing_refresh_interval: Duration::from_secs(60),
+            peer_ttl: Duration::from_millis(100),
+            read_only: false,
+            byte_metric_sink: None,
+        })
+        .await
+        .expect("start DHT server");
+        let client = crate::dht::DhtService::start(crate::dht::DhtConfig {
+            bootstrap_nodes: vec![crate::dht::BootstrapNode::Address(server.local_address())],
+            ..crate::dht::DhtConfig {
+                network_policy: NetworkPolicy::LoopbackOnly,
+                bind_address: "127.0.0.1:0".parse().expect("bind address"),
+                bootstrap_nodes: Vec::new(),
+                initial_snapshot: None,
+                query_timeout: Duration::from_millis(500),
+                lookup_timeout: Duration::from_secs(3),
+                bootstrap_retry_interval: Duration::from_secs(60),
+                routing_refresh_interval: Duration::from_secs(60),
+                peer_ttl: Duration::from_secs(30 * 60),
+                read_only: false,
+                byte_metric_sink: None,
+            }
+        })
+        .await
+        .expect("start DHT client");
+        let endpoint = PeerAdvertisementEndpoint {
+            generation: 7,
+            endpoint: Some("127.0.0.1:55001".parse().expect("peer endpoint")),
+            scope: Some(PeerAdvertisementEndpointScope::Loopback),
+            stopping: false,
+        };
+        let (endpoint_sender, endpoint_receiver) = watch::channel(endpoint);
+        let network = NetworkConfig::new(
+            NetworkPolicy::LoopbackOnly,
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+        );
+        let service =
+            DiscoveryAdvertisementService::start(network, endpoint_receiver, client.handle());
+        let activity = Arc::new(RecordingActivity::default());
+        let peers = TorrentPeerHandle::new(Arc::new(NoopSink)).expect("peer registry");
+        service
+            .handle()
+            .upsert(DiscoveryAdvertisementRegistration {
+                generation: 1,
+                info_hash: [12; 20],
+                trackers: Vec::new(),
+                desired_running: true,
+                complete: true,
+                incoming_registered: true,
+                privacy: TorrentPrivacy::Public,
+                counters: TrackerCounters::default(),
+                peers,
+                activity_sink: activity.clone(),
+            })
+            .await
+            .expect("register seed");
+
+        assert_eq!(
+            activity.wait_for_dht_announces(1).await,
+            (55_001, 1, 1, 1, 0)
+        );
+        endpoint_sender
+            .send(PeerAdvertisementEndpoint {
+                generation: 8,
+                endpoint: Some("127.0.0.1:55002".parse().expect("corrected endpoint")),
+                ..endpoint
+            })
+            .expect("publish corrected endpoint");
+        assert_eq!(
+            activity.wait_for_dht_announces(2).await,
+            (55_002, 1, 1, 1, 0)
+        );
+        let discovered = client
+            .handle()
+            .lookup([12; 20])
+            .await
+            .expect("lookup announced seed");
+        assert!(discovered.iter().any(|peer| peer.port() == 55_002));
+
+        service.shutdown().await.expect("shutdown scheduler");
+        let queries_after_shutdown = server
+            .handle()
+            .stats()
+            .await
+            .expect("server stats after shutdown")
+            .queries_received;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(
+            server
+                .handle()
+                .stats()
+                .await
+                .expect("server stats after expiry")
+                .queries_received,
+            queries_after_shutdown,
+            "joined scheduler must send no post-stop DHT query"
+        );
+        assert_eq!(
+            client.handle().lookup([12; 20]).await,
+            Err(DhtError::NoReachableNodes),
+            "controlled short-TTL node must expire stale remote peer state"
+        );
+        client.shutdown().await.expect("shutdown DHT client");
+        server.shutdown().await.expect("shutdown DHT server");
     }
 
     fn announce_counter(packet: &[u8], offset: usize) -> u64 {
