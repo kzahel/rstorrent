@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import gc
 import hashlib
+import os
 import shutil
 import socket
 import struct
@@ -24,7 +25,11 @@ from upnp_external_seeding import (
     PROCESS_TIMEOUT,
     build_seed,
     create_fixture,
+    discover_control,
+    finish_remote,
+    query_mapping,
     read_json_line,
+    start_remote,
     stop_seed,
     terminate,
 )
@@ -64,6 +69,15 @@ class ControlledUdpTracker:
         if not self.seed_started.wait(timeout=10):
             raise ScenarioFailure("RSTorrent did not send a tracker started announce")
         self.raise_failure()
+
+    def wait_seed_port(self, expected: int) -> None:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            self.raise_failure()
+            if self.seed_port == expected:
+                return
+            time.sleep(0.02)
+        raise ScenarioFailure("tracker did not observe the selected mapped TCP port")
 
     def wait_seed_stopped(self) -> None:
         if not self.seed_stopped.wait(timeout=7):
@@ -171,6 +185,15 @@ class ControlledDhtRouter:
         if not self.seed_announced.wait(timeout=10):
             raise ScenarioFailure("RSTorrent did not self-announce through DHT")
         self.raise_failure()
+
+    def wait_seed_port(self, expected: int) -> None:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            self.raise_failure()
+            if self.seed_port == expected:
+                return
+            time.sleep(0.02)
+        raise ScenarioFailure("DHT did not observe the selected mapped TCP port")
 
     def close(self) -> None:
         self.finished.set()
@@ -449,13 +472,132 @@ def run_dht(binary: Path, root: Path) -> tuple[int, int]:
         router.close()
 
 
+def run_mapped_external(
+    repository: Path, binary: Path, root: Path
+) -> tuple[int, int, int]:
+    target = os.environ.get("RSTORRENT_OFF_LAN_SSH_TARGET")
+    if not target:
+        raise GateFailure("off-LAN SSH target is not configured")
+    root.mkdir(parents=True)
+    fixture = create_fixture(root)
+    tracker = ControlledUdpTracker(str(fixture["info_hash"]))
+    router = ControlledDhtRouter(str(fixture["info_hash"]))
+    tracker.start()
+    router.start()
+    seed: subprocess.Popen[str] | None = None
+    remote_processes: list[subprocess.Popen[str]] = []
+    try:
+        seed, ready = start_seed(
+            binary,
+            fixture,
+            [
+                "--upnp",
+                "--tracker",
+                tracker.url,
+                "--dht-bootstrap",
+                f"127.0.0.1:{router.port}",
+            ],
+        )
+        mapping = ready.get("mapping")
+        if not isinstance(mapping, dict) or mapping.get("type") != "mapped":
+            raise ScenarioFailure("seed did not publish mapped readiness")
+        local_address = mapping.get("local_address")
+        local_port = mapping.get("local_port")
+        external_address = mapping.get("external_address")
+        external_port = mapping.get("external_port")
+        if not (
+            isinstance(local_address, str)
+            and isinstance(local_port, int)
+            and isinstance(external_address, str)
+            and isinstance(external_port, int)
+        ):
+            raise ScenarioFailure("mapped readiness fields are invalid")
+
+        tracker.wait_seed_port(external_port)
+        router.wait_seed_port(external_port)
+        control, service = discover_control(local_address)
+        installed = query_mapping(control, service, external_port)
+        if installed is None or not (
+            installed["NewInternalClient"] == local_address
+            and int(installed["NewInternalPort"]) == local_port
+            and installed["NewEnabled"] == "1"
+        ):
+            raise ScenarioFailure("independent query did not verify the mapping")
+
+        remote_source = (repository / "tests/interop/off_lan_peer_wire.py").read_text()
+        remote = start_remote(
+            target,
+            remote_source,
+            {
+                "host": external_address,
+                # This is deliberately the tracker-wire observation, with
+                # equality against the DHT-wire observation checked above.
+                "port": tracker.seed_port,
+                "info_hash": fixture["info_hash"],
+                "total_length": fixture["total_length"],
+                "piece_length": 16 * 1024,
+                "piece_hashes": fixture["piece_hashes"],
+                "payload_sha256": fixture["payload_sha256"],
+                "hold_seconds": 0,
+            },
+        )
+        remote_processes.append(remote)
+        result = finish_remote(remote, "verified")
+        if (
+            result.get("bytes") != fixture["total_length"]
+            or result.get("sha256") != fixture["payload_sha256"]
+        ):
+            raise ScenarioFailure("off-LAN payload did not verify")
+
+        stopped = stop_seed(seed)
+        seed = None
+        tracker.wait_seed_stopped()
+        if query_mapping(control, service, external_port) is not None:
+            raise ScenarioFailure("mapping survived joined shutdown")
+        unreachable = start_remote(
+            target,
+            remote_source,
+            {
+                "host": external_address,
+                "port": tracker.seed_port,
+                "expect_connect_failure": True,
+            },
+        )
+        remote_processes.append(unreachable)
+        finish_remote(unreachable, "unreachable")
+        if not (
+            stopped.get("mapping_tasks_after_shutdown") == 0
+            and stopped.get("mappings_after_shutdown") == 0
+        ):
+            raise ScenarioFailure("mapping owners were not terminal at shutdown")
+        return external_port, tracker.leecher_announces, router.announce_queries
+    finally:
+        for remote in remote_processes:
+            terminate(remote)
+        if seed is not None:
+            try:
+                stop_seed(seed)
+            except BaseException:
+                terminate(seed)
+        tracker.close()
+        router.close()
+
+
 def main() -> int:
     repository = Path(__file__).resolve().parents[2]
     root = Path(tempfile.mkdtemp(prefix="rstorrent-advertised-seeding-"))
     try:
         binary = build_seed(repository)
+        mapped_external = "--mapped-external" in sys.argv[1:]
+        if any(argument != "--mapped-external" for argument in sys.argv[1:]):
+            raise ScenarioFailure("unknown argument")
         tracker_announces, tracker_port = run_tracker(binary, root / "tracker")
         dht_queries, dht_port = run_dht(binary, root / "dht")
+        mapped_result = (
+            run_mapped_external(repository, binary, root / "mapped")
+            if mapped_external
+            else None
+        )
         print(f"libtorrent_binding_version={lt.__version__}")
         print(f"libtorrent_native_version={lt.version}")
         print(
@@ -470,6 +612,18 @@ def main() -> int:
             f"dht_get_peers_queries={dht_queries} "
             f"dht_seed_port_nonzero={dht_port > 1}"
         )
+        if mapped_result is not None:
+            mapped_port, mapped_tracker_announces, mapped_dht_announces = mapped_result
+            print(
+                "mapped_external=verified tracker_wire_port_matches=true "
+                "dht_wire_port_matches=true off_lan_payload_sha256=verified "
+                "post_shutdown_unreachable=true"
+            )
+            print(
+                f"mapped_port_nonzero={mapped_port > 1} "
+                f"mapped_tracker_leecher_announces={mapped_tracker_announces} "
+                f"mapped_dht_announces={mapped_dht_announces}"
+            )
         return 0
     except (GateFailure, OSError, ScenarioFailure, subprocess.SubprocessError) as error:
         print(error, file=sys.stderr)
