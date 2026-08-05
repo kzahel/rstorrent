@@ -8,11 +8,14 @@ use std::time::Duration;
 use rstorrent_protocol::peer_wire::{BlockRequest, MAX_REQUEST_BLOCK_LENGTH};
 use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
 
+use crate::piece_picker::{AvailabilityPicker, PieceActivationPolicy};
+
 pub const DEFAULT_MAX_ESTABLISHED_CONNECTIONS: usize = 30;
 pub const DEFAULT_MAX_PENDING_DIALS: usize = 30;
 pub const DEFAULT_INITIAL_REQUESTS_PER_CONNECTION: usize = 4;
 pub const DEFAULT_MAX_REQUESTS_PER_CONNECTION: usize = 500;
 pub const DEFAULT_MAX_ACTIVE_PIECE_BYTES: usize = 256 * 1024 * 1024;
+pub const DEFAULT_MAX_ACTIVE_PIECES: usize = 2_048;
 pub const DEFAULT_MAX_TERMINAL_ATTEMPTS_PER_BLOCK: usize = DEFAULT_MAX_ESTABLISHED_CONNECTIONS;
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 pub const DEFAULT_UNPRODUCTIVE_GRACE: Duration = Duration::from_secs(60);
@@ -154,6 +157,8 @@ pub struct SwarmConfig {
     pub initial_requests_per_connection: usize,
     pub max_requests_per_connection: usize,
     pub max_active_piece_bytes: usize,
+    pub max_active_pieces: usize,
+    pub piece_activation_policy: PieceActivationPolicy,
     pub max_terminal_attempts_per_block: usize,
     pub max_outstanding_request_bytes: usize,
     pub request_timeout: Duration,
@@ -169,6 +174,8 @@ impl SwarmConfig {
             initial_requests_per_connection: DEFAULT_INITIAL_REQUESTS_PER_CONNECTION,
             max_requests_per_connection: DEFAULT_MAX_REQUESTS_PER_CONNECTION,
             max_active_piece_bytes: DEFAULT_MAX_ACTIVE_PIECE_BYTES,
+            max_active_pieces: DEFAULT_MAX_ACTIVE_PIECES,
+            piece_activation_policy: PieceActivationPolicy::RarestFirst,
             max_terminal_attempts_per_block: DEFAULT_MAX_TERMINAL_ATTEMPTS_PER_BLOCK,
             max_outstanding_request_bytes,
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
@@ -203,6 +210,16 @@ impl SwarmConfig {
         if self.max_active_piece_bytes < MIN_PAYLOAD_ALLOWANCE {
             return Err(SwarmError::InvalidConfig(
                 "active piece working set is smaller than one request block",
+            ));
+        }
+        if self.max_active_pieces == 0 {
+            return Err(SwarmError::InvalidConfig(
+                "active piece count limit must be nonzero",
+            ));
+        }
+        if self.max_established_connections > u16::MAX as usize {
+            return Err(SwarmError::InvalidConfig(
+                "established connection limit exceeds availability counter width",
             ));
         }
         if self.max_terminal_attempts_per_block == 0 {
@@ -326,6 +343,17 @@ pub struct SwarmSnapshot {
     pub verified_blocks: usize,
     pub active_piece_count: usize,
     pub active_piece_bytes: usize,
+    pub max_active_pieces: usize,
+    pub piece_activation_policy: PieceActivationPolicy,
+    pub availability_seed_count: usize,
+    pub picker_retained_bytes: usize,
+    pub picker_rank_comparisons: u64,
+    pub picker_bulk_rebuilds: u64,
+    pub picker_candidate_inspections: u64,
+    pub active_piece_visits: u64,
+    pub inactive_planned_piece_visits: u64,
+    pub last_activated_piece: Option<u32>,
+    pub last_activated_availability: Option<u32>,
     pub outstanding_request_bytes: usize,
     pub outstanding_request_high_water: usize,
     pub request_target_total: usize,
@@ -383,6 +411,7 @@ pub enum ConnectionRemoval {
 #[derive(Debug)]
 struct ConnectionState {
     availability: PieceAvailability,
+    wanted_piece_count: usize,
     choking: bool,
     connected_at: Duration,
     last_useful_at: Option<Duration>,
@@ -394,6 +423,7 @@ struct ConnectionState {
 struct PieceAvailability {
     bytes: Vec<u8>,
     piece_count: usize,
+    set_count: usize,
 }
 
 impl PieceAvailability {
@@ -401,6 +431,7 @@ impl PieceAvailability {
         Self {
             bytes: vec![0; piece_count.div_ceil(8)],
             piece_count,
+            set_count: 0,
         }
     }
 
@@ -425,7 +456,12 @@ impl PieceAvailability {
                 return None;
             }
         }
-        Some(Self { bytes, piece_count })
+        let set_count = bytes.iter().map(|byte| byte.count_ones() as usize).sum();
+        Some(Self {
+            bytes,
+            piece_count,
+            set_count,
+        })
     }
 
     fn contains(&self, piece: usize) -> bool {
@@ -433,9 +469,33 @@ impl PieceAvailability {
         self.bytes[piece / 8] & (1 << (7 - piece % 8)) != 0
     }
 
-    fn set(&mut self, piece: usize) {
+    fn set(&mut self, piece: usize) -> bool {
         debug_assert!(piece < self.piece_count);
-        self.bytes[piece / 8] |= 1 << (7 - piece % 8);
+        let mask = 1 << (7 - piece % 8);
+        let byte = &mut self.bytes[piece / 8];
+        if *byte & mask != 0 {
+            return false;
+        }
+        *byte |= mask;
+        self.set_count += 1;
+        true
+    }
+
+    fn is_full(&self) -> bool {
+        self.set_count == self.piece_count
+    }
+
+    fn set_pieces(&self) -> impl Iterator<Item = usize> + '_ {
+        let piece_count = self.piece_count;
+        self.bytes
+            .iter()
+            .enumerate()
+            .flat_map(move |(byte_index, byte)| {
+                (0..8).filter_map(move |bit| {
+                    let piece = byte_index * 8 + bit;
+                    (piece < piece_count && byte & (1 << (7 - bit)) != 0).then_some(piece)
+                })
+            })
     }
 }
 
@@ -791,11 +851,13 @@ impl PieceStorageJoin {
 pub struct SwarmState {
     config: SwarmConfig,
     piece_count: usize,
+    picker: AvailabilityPicker,
     pieces: BTreeMap<u32, PieceState>,
     blocks: BTreeMap<BlockKey, BlockState>,
     incomplete_pieces: BTreeSet<usize>,
     active_pieces: BTreeSet<usize>,
     requestable_active_pieces: BTreeSet<usize>,
+    requestable_active_blocks: usize,
     active_piece_bytes: usize,
     active_attempts: BTreeMap<RequestAttemptId, RequestAttempt>,
     unverified_contributor_blocks: BTreeMap<ConnectionId, usize>,
@@ -810,6 +872,10 @@ pub struct SwarmState {
     outstanding_request_bytes: usize,
     outstanding_request_high_water: usize,
     last_scheduled_connection: Option<ConnectionId>,
+    last_activated_piece: Option<u32>,
+    last_activated_availability: Option<u32>,
+    active_piece_visits: u64,
+    inactive_planned_piece_visits: u64,
     endgame_assignments: usize,
     cancelled_request_attempts: usize,
     redundant_payload_bytes: usize,
@@ -824,23 +890,48 @@ impl SwarmState {
         piece_count: usize,
         plans: Vec<PiecePlan>,
     ) -> Result<Self, SwarmError> {
-        let config = config.validate()?;
-        if piece_count == 0 {
-            return Err(SwarmError::InvalidConfig("piece count must be nonzero"));
-        }
         if plans.is_empty() {
             return Err(SwarmError::InvalidConfig(
                 "at least one wanted piece plan is required",
             ));
         }
+        let wanted = plans.iter().map(PiecePlan::index).collect();
+        Self::new_with_wanted(config, piece_count, wanted, plans, 0)
+    }
+
+    pub fn new_with_wanted(
+        config: SwarmConfig,
+        piece_count: usize,
+        wanted: Vec<u32>,
+        plans: Vec<PiecePlan>,
+        picker_seed: u64,
+    ) -> Result<Self, SwarmError> {
+        let config = config.validate()?;
+        if piece_count == 0 {
+            return Err(SwarmError::InvalidConfig("piece count must be nonzero"));
+        }
+        if wanted.is_empty() {
+            return Err(SwarmError::InvalidConfig(
+                "at least one wanted piece is required",
+            ));
+        }
+        let picker = AvailabilityPicker::new(
+            piece_count,
+            wanted,
+            config.piece_activation_policy,
+            picker_seed,
+        )
+        .map_err(SwarmError::Invariant)?;
         let mut state = Self {
             config,
             piece_count,
+            picker,
             pieces: BTreeMap::new(),
             blocks: BTreeMap::new(),
             incomplete_pieces: BTreeSet::new(),
             active_pieces: BTreeSet::new(),
             requestable_active_pieces: BTreeSet::new(),
+            requestable_active_blocks: 0,
             active_piece_bytes: 0,
             active_attempts: BTreeMap::new(),
             unverified_contributor_blocks: BTreeMap::new(),
@@ -855,6 +946,10 @@ impl SwarmState {
             outstanding_request_bytes: 0,
             outstanding_request_high_water: 0,
             last_scheduled_connection: None,
+            last_activated_piece: None,
+            last_activated_availability: None,
+            active_piece_visits: 0,
+            inactive_planned_piece_visits: 0,
             endgame_assignments: 0,
             cancelled_request_attempts: 0,
             redundant_payload_bytes: 0,
@@ -913,6 +1008,9 @@ impl SwarmState {
                 usize::try_from(plan.index)
                     .map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?,
             );
+            self.picker
+                .mark_planned(plan.index as usize)
+                .map_err(SwarmError::Invariant)?;
             self.missing_blocks = self
                 .missing_blocks
                 .checked_add(block_count)
@@ -952,7 +1050,40 @@ impl SwarmState {
     }
 
     pub fn is_complete(&self) -> bool {
-        self.incomplete_pieces.is_empty()
+        self.picker.wanted_remaining() == 0
+    }
+
+    pub fn reserve_piece_for_planning(&mut self, maximum_planned_pieces: usize) -> Option<u32> {
+        if self.pieces.len() >= maximum_planned_pieces
+            || self.outstanding_request_bytes >= self.config.max_outstanding_request_bytes
+        {
+            return None;
+        }
+        let connections = &self.connections;
+        self.picker.reserve_best_matching(|piece| {
+            connections.values().any(|connection| {
+                !connection.choking
+                    && connection.active_request_count < connection.request_window.target
+                    && connection.availability.contains(piece)
+            })
+        })
+    }
+
+    pub fn cancel_piece_planning(&mut self, piece: u32) -> Result<(), SwarmError> {
+        self.picker
+            .cancel_reserved(piece as usize)
+            .map_err(SwarmError::Invariant)
+    }
+
+    pub fn piece_availability(&self, piece: u32) -> Result<u32, SwarmError> {
+        let index =
+            usize::try_from(piece).map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
+        self.picker
+            .availability(index)
+            .ok_or(SwarmError::PieceOutOfRange {
+                piece,
+                piece_count: self.piece_count,
+            })
     }
 
     pub fn planned_piece_count(&self) -> usize {
@@ -1003,6 +1134,7 @@ impl SwarmState {
             id,
             ConnectionState {
                 availability: PieceAvailability::empty(self.piece_count),
+                wanted_piece_count: 0,
                 choking: true,
                 connected_at: now,
                 last_useful_at: None,
@@ -1040,6 +1172,8 @@ impl SwarmState {
                 "removed connection retained active requests",
             ));
         }
+        self.remove_availability_contribution(&removed.availability)?;
+        self.picker.rebuild_after_bulk_update();
         Ok(released)
     }
 
@@ -1054,8 +1188,7 @@ impl SwarmState {
                 expected: self.piece_count,
             });
         }
-        self.connection_mut(id)?.availability = PieceAvailability::from_flags(availability);
-        Ok(())
+        self.replace_connection_availability(id, PieceAvailability::from_flags(availability))
     }
 
     pub fn set_compact_bitfield(
@@ -1070,8 +1203,7 @@ impl SwarmState {
                 expected: self.piece_count,
             },
         )?;
-        self.connection_mut(id)?.availability = availability;
-        Ok(())
+        self.replace_connection_availability(id, availability)
     }
 
     pub fn peer_has(&mut self, id: ConnectionId, piece: u32) -> Result<(), SwarmError> {
@@ -1081,7 +1213,41 @@ impl SwarmState {
         if index >= piece_count {
             return Err(SwarmError::PieceOutOfRange { piece, piece_count });
         }
-        self.connection_mut(id)?.availability.set(index);
+        let wanted = self.picker.is_wanted(index);
+        let became_seed = {
+            let connection = self.connection_mut(id)?;
+            if !connection.availability.set(index) {
+                return Ok(());
+            }
+            if wanted {
+                connection.wanted_piece_count =
+                    connection.wanted_piece_count.checked_add(1).ok_or(
+                        SwarmError::ArithmeticOverflow("connection wanted piece count"),
+                    )?;
+            }
+            connection.availability.is_full()
+        };
+        self.picker
+            .increment_piece(index)
+            .map_err(SwarmError::Invariant)?;
+        if became_seed {
+            let pieces = self
+                .connections
+                .get(&id)
+                .ok_or(SwarmError::UnknownConnection(id))?
+                .availability
+                .set_pieces()
+                .collect::<Vec<_>>();
+            for piece in pieces {
+                self.picker
+                    .decrement_piece_without_repair(piece)
+                    .map_err(SwarmError::Invariant)?;
+            }
+            self.picker
+                .increment_seed_without_rebuild()
+                .map_err(SwarmError::Invariant)?;
+            self.picker.rebuild_after_bulk_update();
+        }
         Ok(())
     }
 
@@ -1090,7 +1256,11 @@ impl SwarmState {
         id: ConnectionId,
         choking: bool,
     ) -> Result<Vec<BlockKey>, SwarmError> {
+        let changed = self.connection_mut(id)?.choking != choking;
         self.connection_mut(id)?.choking = choking;
+        if changed {
+            self.picker.note_eligibility_change();
+        }
         if choking {
             self.release_requests_for_connection(id, RequestDisposition::Choked)
         } else {
@@ -1112,16 +1282,10 @@ impl SwarmState {
                 {
                     continue;
                 }
-                let Some(block) = self.next_block_for_connection(connection)? else {
+                let Some(block) = self.next_active_block_for_connection(connection)? else {
                     continue;
                 };
-                let length = usize::try_from(block.length)
-                    .map_err(|_| SwarmError::ArithmeticOverflow("block length"))?;
-                if self
-                    .outstanding_request_bytes
-                    .checked_add(length)
-                    .is_none_or(|reserved| reserved > self.config.max_outstanding_request_bytes)
-                {
+                if !self.request_budget_allows(block)? {
                     continue;
                 }
                 let assignment = self.assign(connection, block, now, false)?;
@@ -1129,9 +1293,15 @@ impl SwarmState {
                 self.last_scheduled_connection = Some(connection);
                 progress = true;
             }
-            if !progress {
-                break;
+            if progress {
+                continue;
             }
+            let Some((connection, block)) = self.next_inactive_assignment()? else {
+                break;
+            };
+            let assignment = self.assign(connection, block, now, false)?;
+            assignments.push(assignment);
+            self.last_scheduled_connection = Some(connection);
         }
         if self.missing_blocks == 0 {
             for connection in self.ordered_connection_ids() {
@@ -1576,6 +1746,19 @@ impl SwarmState {
                 "verified piece is absent from the incomplete index",
             ));
         }
+        self.picker
+            .mark_completed(piece_index)
+            .map_err(SwarmError::Invariant)?;
+        for connection in self.connections.values_mut() {
+            if connection.availability.contains(piece_index) {
+                connection.wanted_piece_count = connection
+                    .wanted_piece_count
+                    .checked_sub(1)
+                    .ok_or(SwarmError::Invariant(
+                        "connection wanted piece count underflow",
+                    ))?;
+            }
+        }
         self.deactivate_piece(piece)?;
         Ok(contributors)
     }
@@ -1754,6 +1937,7 @@ impl SwarmState {
         }
         self.active_pieces.clear();
         self.requestable_active_pieces.clear();
+        self.requestable_active_blocks = 0;
         self.active_piece_bytes = 0;
         self.pending_dials.clear();
         Ok(())
@@ -1763,19 +1947,15 @@ impl SwarmState {
         if self.connections.len() < self.config.max_established_connections {
             return None;
         }
-        let wanted_pieces = &self.incomplete_pieces;
         self.connections
             .iter()
             .filter(|(id, connection)| {
                 now.saturating_sub(connection.last_useful_at.unwrap_or(connection.connected_at))
                     >= self.config.unproductive_grace
-                    && !self.has_unique_wanted_piece(**id, wanted_pieces)
+                    && !self.has_unique_wanted_piece(**id)
             })
             .filter_map(|(id, connection)| {
-                let has_wanted = wanted_pieces
-                    .iter()
-                    .any(|piece| connection.availability.contains(*piece));
-                let priority = if !has_wanted {
+                let priority = if connection.wanted_piece_count == 0 {
                     0_u8
                 } else if connection.choking {
                     1
@@ -1845,6 +2025,7 @@ impl SwarmState {
                     Some(next_expiry.map_or(deadline, |next: Duration| next.min(deadline)));
             }
         }
+        let picker_counters = self.picker.counters();
         SwarmSnapshot {
             pending_dials: self.pending_dials.len(),
             connected_peers: self.connections.len(),
@@ -1865,6 +2046,17 @@ impl SwarmState {
             verified_blocks: self.verified_blocks,
             active_piece_count: self.active_pieces.len(),
             active_piece_bytes: self.active_piece_bytes,
+            max_active_pieces: self.config.max_active_pieces,
+            piece_activation_policy: self.picker.policy(),
+            availability_seed_count: self.picker.seed_count() as usize,
+            picker_retained_bytes: self.picker.retained_bytes(),
+            picker_rank_comparisons: picker_counters.rank_comparisons,
+            picker_bulk_rebuilds: picker_counters.bulk_rebuilds,
+            picker_candidate_inspections: picker_counters.candidate_inspections,
+            active_piece_visits: self.active_piece_visits,
+            inactive_planned_piece_visits: self.inactive_planned_piece_visits,
+            last_activated_piece: self.last_activated_piece,
+            last_activated_availability: self.last_activated_availability,
             outstanding_request_bytes: self.outstanding_request_bytes,
             outstanding_request_high_water: self.outstanding_request_high_water,
             request_target_total: self
@@ -1948,11 +2140,7 @@ impl SwarmState {
                 ConnectionActivitySnapshot {
                     id: *id,
                     choking: connection.choking,
-                    wanted_piece_count: self
-                        .incomplete_pieces
-                        .iter()
-                        .filter(|piece| connection.availability.contains(**piece))
-                        .count(),
+                    wanted_piece_count: connection.wanted_piece_count,
                     pending_requests,
                     target_requests: connection.request_window.target,
                     queued_payload_bytes,
@@ -1978,15 +2166,13 @@ impl SwarmState {
         if self.connections.len() < self.config.max_established_connections {
             return None;
         }
-        let wanted_pieces = &self.incomplete_pieces;
         self.connections
             .iter()
-            .filter(|(id, _)| !self.has_unique_wanted_piece(**id, wanted_pieces))
+            .filter(|(id, _)| !self.has_unique_wanted_piece(**id))
             .filter(|(id, connection)| {
-                let has_wanted = wanted_pieces
-                    .iter()
-                    .any(|piece| connection.availability.contains(*piece));
-                !has_wanted || connection.choking || self.connection_request_count(**id) == 0
+                connection.wanted_piece_count == 0
+                    || connection.choking
+                    || self.connection_request_count(**id) == 0
             })
             .filter_map(|(_, connection)| {
                 connection
@@ -2001,6 +2187,58 @@ impl SwarmState {
         self.connections
             .get_mut(&id)
             .ok_or(SwarmError::UnknownConnection(id))
+    }
+
+    fn replace_connection_availability(
+        &mut self,
+        id: ConnectionId,
+        availability: PieceAvailability,
+    ) -> Result<(), SwarmError> {
+        let wanted_piece_count = availability
+            .set_pieces()
+            .filter(|piece| self.picker.is_wanted(*piece))
+            .count();
+        let previous = {
+            let connection = self.connection_mut(id)?;
+            connection.wanted_piece_count = wanted_piece_count;
+            std::mem::replace(&mut connection.availability, availability)
+        };
+        self.remove_availability_contribution(&previous)?;
+        let current = self
+            .connections
+            .get(&id)
+            .ok_or(SwarmError::UnknownConnection(id))?;
+        if current.availability.is_full() {
+            self.picker
+                .increment_seed_without_rebuild()
+                .map_err(SwarmError::Invariant)?;
+        } else {
+            for piece in current.availability.set_pieces() {
+                self.picker
+                    .increment_piece_without_repair(piece)
+                    .map_err(SwarmError::Invariant)?;
+            }
+        }
+        self.picker.rebuild_after_bulk_update();
+        Ok(())
+    }
+
+    fn remove_availability_contribution(
+        &mut self,
+        availability: &PieceAvailability,
+    ) -> Result<(), SwarmError> {
+        if availability.is_full() {
+            self.picker
+                .decrement_seed_without_rebuild()
+                .map_err(SwarmError::Invariant)?;
+        } else {
+            for piece in availability.set_pieces() {
+                self.picker
+                    .decrement_piece_without_repair(piece)
+                    .map_err(SwarmError::Invariant)?;
+            }
+        }
+        Ok(())
     }
 
     fn connection_target(&self, id: ConnectionId) -> Result<usize, SwarmError> {
@@ -2021,8 +2259,8 @@ impl SwarmState {
         ids
     }
 
-    fn next_block_for_connection(
-        &self,
+    fn next_active_block_for_connection(
+        &mut self,
         connection: ConnectionId,
     ) -> Result<Option<BlockKey>, SwarmError> {
         let connection = self
@@ -2033,26 +2271,59 @@ impl SwarmState {
             return Ok(None);
         }
         for piece in &self.requestable_active_pieces {
+            self.active_piece_visits = self.active_piece_visits.saturating_add(1);
             if connection.availability.contains(*piece)
                 && let Some(block) = self.first_missing_block(*piece as u32)
             {
                 return Ok(Some(block));
             }
         }
-        for &index in &self.incomplete_pieces {
-            let piece =
-                u32::try_from(index).map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
-            if self.active_pieces.contains(&index) || !connection.availability.contains(index) {
+        Ok(None)
+    }
+
+    fn next_inactive_assignment(&mut self) -> Result<Option<(ConnectionId, BlockKey)>, SwarmError> {
+        let ordered_connections = self.ordered_connection_ids();
+        let mut selected: Option<(usize, ConnectionId, BlockKey)> = None;
+        for &piece in &self.incomplete_pieces {
+            self.inactive_planned_piece_visits =
+                self.inactive_planned_piece_visits.saturating_add(1);
+            if self.active_pieces.contains(&piece) || !self.can_activate_piece(piece) {
                 continue;
             }
-            if !self.can_activate_piece(index) {
+            let piece_u32 =
+                u32::try_from(piece).map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
+            let Some(block) = self.first_missing_block(piece_u32) else {
+                continue;
+            };
+            if !self.request_budget_allows(block)? {
                 continue;
             }
-            if let Some(block) = self.first_missing_block(piece) {
-                return Ok(Some(block));
+            let Some(connection) = ordered_connections.iter().copied().find(|connection| {
+                self.connections.get(connection).is_some_and(|state| {
+                    !state.choking
+                        && state.active_request_count < state.request_window.target
+                        && state.availability.contains(piece)
+                })
+            }) else {
+                continue;
+            };
+            if selected
+                .as_ref()
+                .is_none_or(|(current, _, _)| self.picker.precedes(piece, *current))
+            {
+                selected = Some((piece, connection, block));
             }
         }
-        Ok(None)
+        Ok(selected.map(|(_, connection, block)| (connection, block)))
+    }
+
+    fn request_budget_allows(&self, block: BlockKey) -> Result<bool, SwarmError> {
+        let length = usize::try_from(block.length)
+            .map_err(|_| SwarmError::ArithmeticOverflow("block length"))?;
+        Ok(self
+            .outstanding_request_bytes
+            .checked_add(length)
+            .is_some_and(|reserved| reserved <= self.config.max_outstanding_request_bytes))
     }
 
     fn next_endgame_block_for_connection(
@@ -2098,6 +2369,22 @@ impl SwarmState {
     fn can_activate_piece(&self, piece: usize) -> bool {
         if self.active_pieces.is_empty() {
             return true;
+        }
+        if self.active_pieces.len() >= self.config.max_active_pieces {
+            return false;
+        }
+        if u32::try_from(piece)
+            .ok()
+            .and_then(|piece| self.pieces.get(&piece))
+            .is_none()
+        {
+            return false;
+        }
+        let peer_pressure = self.connections.len().saturating_mul(3) / 2;
+        if self.requestable_active_pieces.len() > peer_pressure
+            || self.requestable_active_blocks > 2_048
+        {
+            return false;
         }
         self.active_piece_bytes
             .checked_add(self.piece_working_set_bytes(piece))
@@ -2306,6 +2593,7 @@ impl SwarmState {
                 .ok_or(SwarmError::Invariant(
                     "connection active request count underflow",
                 ))?;
+        self.picker.note_eligibility_change();
         Ok(())
     }
 
@@ -2347,6 +2635,8 @@ impl SwarmState {
                 .active_piece_bytes
                 .checked_add(self.piece_working_set_bytes(index))
                 .ok_or(SwarmError::ArithmeticOverflow("active piece bytes"))?;
+            self.last_activated_piece = Some(piece);
+            self.last_activated_availability = self.picker.availability(index);
         }
         self.refresh_requestable_piece(piece)?;
         Ok(())
@@ -2358,7 +2648,7 @@ impl SwarmState {
         if !self.active_pieces.remove(&index) {
             return Ok(());
         }
-        self.requestable_active_pieces.remove(&index);
+        self.remove_requestable_piece(index)?;
         self.active_piece_bytes = self
             .active_piece_bytes
             .checked_sub(self.piece_working_set_bytes(index))
@@ -2376,10 +2666,44 @@ impl SwarmState {
             .missing_blocks
             != 0;
         if self.active_pieces.contains(&index) && has_missing {
-            self.requestable_active_pieces.insert(index);
+            if self.requestable_active_pieces.insert(index) {
+                self.requestable_active_blocks = self
+                    .requestable_active_blocks
+                    .checked_add(
+                        self.pieces
+                            .get(&piece)
+                            .ok_or(SwarmError::UnknownPiece(piece))?
+                            .blocks
+                            .len(),
+                    )
+                    .ok_or(SwarmError::ArithmeticOverflow(
+                        "requestable active block span",
+                    ))?;
+            }
         } else {
-            self.requestable_active_pieces.remove(&index);
+            self.remove_requestable_piece(index)?;
         }
+        Ok(())
+    }
+
+    fn remove_requestable_piece(&mut self, index: usize) -> Result<(), SwarmError> {
+        if !self.requestable_active_pieces.remove(&index) {
+            return Ok(());
+        }
+        let piece =
+            u32::try_from(index).map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
+        self.requestable_active_blocks = self
+            .requestable_active_blocks
+            .checked_sub(
+                self.pieces
+                    .get(&piece)
+                    .ok_or(SwarmError::UnknownPiece(piece))?
+                    .blocks
+                    .len(),
+            )
+            .ok_or(SwarmError::Invariant(
+                "requestable active block span underflow",
+            ))?;
         Ok(())
     }
 
@@ -2474,23 +2798,14 @@ impl SwarmState {
             .map_or(0, |state| state.active_request_count)
     }
 
-    fn has_unique_wanted_piece(
-        &self,
-        connection: ConnectionId,
-        wanted_pieces: &BTreeSet<usize>,
-    ) -> bool {
+    fn has_unique_wanted_piece(&self, connection: ConnectionId) -> bool {
         let Some(current) = self.connections.get(&connection) else {
             return false;
         };
-        wanted_pieces.iter().any(|piece| {
-            current.availability.contains(*piece)
-                && self
-                    .connections
-                    .iter()
-                    .filter(|(id, state)| **id != connection && state.availability.contains(*piece))
-                    .count()
-                    == 0
-        })
+        current
+            .availability
+            .set_pieces()
+            .any(|piece| self.picker.is_wanted(piece) && self.picker.availability(piece) == Some(1))
     }
 
     fn no_request_reason(&self) -> Option<NoRequestReason> {
@@ -2500,11 +2815,10 @@ impl SwarmState {
         if self.connections.is_empty() {
             return Some(NoRequestReason::NoConnections);
         }
-        let mut useful = self.connections.values().filter(|connection| {
-            self.incomplete_pieces
-                .iter()
-                .any(|piece| connection.availability.contains(*piece))
-        });
+        let mut useful = self
+            .connections
+            .values()
+            .filter(|connection| connection.wanted_piece_count != 0);
         let useful_count = useful.clone().count();
         if useful_count == 0 {
             return Some(NoRequestReason::NoPeerHasWantedPiece);
@@ -2522,10 +2836,10 @@ impl SwarmState {
         }) {
             return Some(NoRequestReason::RequestWindowsFull);
         }
-        let blocked_by_working_set = self
-            .incomplete_pieces
-            .iter()
-            .all(|piece| self.active_pieces.contains(piece) || !self.can_activate_piece(*piece));
+        let blocked_by_working_set = !self.incomplete_pieces.is_empty()
+            && self.incomplete_pieces.iter().all(|piece| {
+                self.active_pieces.contains(piece) || !self.can_activate_piece(*piece)
+            });
         if blocked_by_working_set {
             return Some(NoRequestReason::ActivePieceLimit);
         }
@@ -2817,12 +3131,37 @@ mod tests {
             .collect::<BTreeSet<_>>();
         assert_eq!(state.requestable_active_pieces, requestable_active_pieces);
         assert_eq!(
+            state.requestable_active_blocks,
+            requestable_active_pieces
+                .iter()
+                .map(|piece| state.pieces[&(*piece as u32)].blocks.len())
+                .sum::<usize>()
+        );
+        assert_eq!(
             state.active_piece_bytes,
             active_pieces
                 .iter()
                 .map(|piece| state.piece_working_set_bytes(*piece))
                 .sum::<usize>()
         );
+        for piece in 0..state.piece_count {
+            let expected = state
+                .connections
+                .values()
+                .filter(|connection| connection.availability.contains(piece))
+                .count() as u32;
+            assert_eq!(state.picker.availability(piece), Some(expected));
+        }
+        for connection in state.connections.values() {
+            assert_eq!(
+                connection.wanted_piece_count,
+                connection
+                    .availability
+                    .set_pieces()
+                    .filter(|piece| state.picker.is_wanted(*piece))
+                    .count()
+            );
+        }
     }
 
     #[test]
@@ -3746,6 +4085,242 @@ mod tests {
                 .iter()
                 .all(|assignment| assignment.block.piece == 0)
         );
+    }
+
+    #[test]
+    fn availability_accounting_is_exact_through_duplicates_seed_transition_and_disconnect() {
+        let mut state = SwarmState::new_with_wanted(
+            SwarmConfig::for_request_limit(4 * BLOCK as usize),
+            4,
+            vec![0, 1, 2, 3],
+            Vec::new(),
+            0x91,
+        )
+        .expect("unplanned swarm");
+        state
+            .add_connection(connection(1), Duration::ZERO)
+            .expect("first peer");
+        state
+            .set_bitfield(connection(1), vec![true, false, true, false])
+            .expect("first bitfield");
+        state.peer_has(connection(1), 2).expect("duplicate have");
+        assert_eq!(state.piece_availability(2), Ok(1));
+        state.peer_has(connection(1), 1).expect("new have");
+        state.peer_has(connection(1), 3).expect("seed transition");
+        assert_eq!(state.picker.seed_count(), 1);
+        assert_eq!(
+            (0..4)
+                .map(|piece| state.piece_availability(piece).expect("availability"))
+                .collect::<Vec<_>>(),
+            vec![1, 1, 1, 1]
+        );
+
+        add_peer(&mut state, connection(2), &[0, 1], false);
+        assert_eq!(
+            (0..4)
+                .map(|piece| state.piece_availability(piece).expect("availability"))
+                .collect::<Vec<_>>(),
+            vec![2, 2, 1, 1]
+        );
+        state
+            .remove_connection(connection(1), ConnectionRemoval::Disconnected)
+            .expect("remove seed");
+        assert_eq!(state.picker.seed_count(), 0);
+        assert_eq!(
+            (0..4)
+                .map(|piece| state.piece_availability(piece).expect("availability"))
+                .collect::<Vec<_>>(),
+            vec![1, 1, 0, 0]
+        );
+        assert_cached_indexes(&state);
+    }
+
+    #[test]
+    fn global_rarest_piece_is_planned_and_activated_before_common_work() {
+        let mut state = SwarmState::new_with_wanted(
+            SwarmConfig::for_request_limit(4 * BLOCK as usize),
+            4,
+            vec![0, 1, 2, 3],
+            Vec::new(),
+            0,
+        )
+        .expect("unplanned swarm");
+        add_peer(&mut state, connection(1), &[0, 1, 2], false);
+        add_peer(&mut state, connection(2), &[0, 1], false);
+
+        let piece = state
+            .reserve_piece_for_planning(256)
+            .expect("rarest plan reservation");
+        assert_eq!(piece, 2);
+        state
+            .append_piece_plans(vec![plan(piece, 1)])
+            .expect("rarest plan");
+        let assignments = state.schedule(Duration::ZERO).expect("schedule");
+        assert_eq!(assignments[0].block.piece, 2);
+        let snapshot = state.snapshot(Duration::ZERO);
+        assert_eq!(snapshot.last_activated_piece, Some(2));
+        assert_eq!(snapshot.last_activated_availability, Some(1));
+
+        let mut config = SwarmConfig::for_request_limit(4 * BLOCK as usize);
+        config.piece_activation_policy = PieceActivationPolicy::InOrder;
+        let mut in_order = SwarmState::new_with_wanted(config, 4, vec![0, 1, 2, 3], Vec::new(), 0)
+            .expect("in-order swarm");
+        add_peer(&mut in_order, connection(1), &[0, 1, 2], false);
+        add_peer(&mut in_order, connection(2), &[0, 1], false);
+        assert_eq!(in_order.reserve_piece_for_planning(256), Some(0));
+    }
+
+    #[test]
+    fn bounded_planning_sweep_reaches_common_work_behind_blocked_rare_pieces() {
+        let mut state = SwarmState::new_with_wanted(
+            SwarmConfig::for_request_limit(4 * BLOCK as usize),
+            300,
+            (0..300).collect(),
+            Vec::new(),
+            0,
+        )
+        .expect("unplanned swarm");
+        add_peer(
+            &mut state,
+            connection(1),
+            &(0..=256).collect::<Vec<_>>(),
+            true,
+        );
+        add_peer(&mut state, connection(2), &[257], false);
+        add_peer(&mut state, connection(3), &[257], false);
+
+        assert_eq!(state.reserve_piece_for_planning(256), None);
+        assert_eq!(
+            state.snapshot(Duration::ZERO).picker_candidate_inspections,
+            256
+        );
+        assert_eq!(state.reserve_piece_for_planning(256), Some(257));
+        assert_eq!(
+            state.snapshot(Duration::ZERO).picker_candidate_inspections,
+            258
+        );
+    }
+
+    #[test]
+    fn unique_unplanned_wanted_piece_protects_its_peer_from_replacement() {
+        let mut config = SwarmConfig::for_request_limit(4 * BLOCK as usize);
+        config.max_established_connections = 3;
+        config.unproductive_grace = Duration::from_secs(1);
+        let mut state =
+            SwarmState::new_with_wanted(config, 4, vec![0, 1, 2, 3], vec![plan(0, 1)], 0)
+                .expect("partially planned swarm");
+        add_peer(&mut state, connection(1), &[3], true);
+        add_peer(&mut state, connection(2), &[0], true);
+        add_peer(&mut state, connection(3), &[0], true);
+
+        assert_eq!(state.connections[&connection(1)].wanted_piece_count, 1);
+        assert_eq!(
+            state.replacement_candidate(Duration::from_secs(1)),
+            Some(connection(2))
+        );
+    }
+
+    #[test]
+    fn active_piece_count_is_independent_from_the_byte_ceiling() {
+        let mut config = SwarmConfig::for_request_limit(4 * BLOCK as usize);
+        config.initial_requests_per_connection = 4;
+        config.max_active_pieces = 2;
+        let mut state = SwarmState::new(config, 4, (0..4).map(|piece| plan(piece, 1)).collect())
+            .expect("count-bounded swarm");
+        add_peer(&mut state, connection(1), &[0, 1, 2, 3], false);
+        let assignments = state.schedule(Duration::ZERO).expect("schedule");
+        assert_eq!(assignments.len(), 2);
+        assert_eq!(state.snapshot(Duration::ZERO).active_piece_count, 2);
+    }
+
+    #[test]
+    fn partial_pressure_bounds_new_activation_without_cancelling_owned_work() {
+        let mut config = SwarmConfig::for_request_limit(64 * 1024 * 1024);
+        config.max_active_piece_bytes = 64 * 1024 * 1024;
+        let mut peer_bounded =
+            SwarmState::new(config, 3, (0..3).map(|piece| plan(piece, 2)).collect())
+                .expect("peer-pressure swarm");
+        add_peer(&mut peer_bounded, connection(1), &[0, 1, 2], false);
+        peer_bounded.activate_piece(0).expect("first partial");
+        assert!(peer_bounded.can_activate_piece(1));
+        peer_bounded.activate_piece(1).expect("threshold crossing");
+        assert!(!peer_bounded.can_activate_piece(2));
+        assert_eq!(peer_bounded.active_pieces.len(), 2);
+
+        let mut block_bounded = SwarmState::new(config, 2, vec![plan(0, 2_049), plan(1, 1)])
+            .expect("block-pressure swarm");
+        add_peer(&mut block_bounded, connection(1), &[0, 1], false);
+        block_bounded
+            .activate_piece(0)
+            .expect("one oversized partial span");
+        assert_eq!(block_bounded.requestable_active_blocks, 2_049);
+        assert!(!block_bounded.can_activate_piece(1));
+        assert_eq!(block_bounded.active_pieces.len(), 1);
+    }
+
+    #[test]
+    fn falling_peer_count_stops_new_activation_but_retains_active_pieces() {
+        let mut config = SwarmConfig::for_request_limit(64 * BLOCK as usize);
+        config.max_active_piece_bytes = 64 * BLOCK as usize;
+        let mut state = SwarmState::new(config, 7, (0..7).map(|piece| plan(piece, 2)).collect())
+            .expect("peer-pressure swarm");
+        for id in 1..=3 {
+            add_peer(
+                &mut state,
+                connection(id),
+                &(0..7).collect::<Vec<_>>(),
+                false,
+            );
+        }
+        for piece in 0..5 {
+            assert!(state.can_activate_piece(piece));
+            state.activate_piece(piece as u32).expect("active piece");
+        }
+        state
+            .remove_connection(connection(2), ConnectionRemoval::Disconnected)
+            .expect("second peer leaves");
+        state
+            .remove_connection(connection(3), ConnectionRemoval::Disconnected)
+            .expect("third peer leaves");
+        assert!(!state.can_activate_piece(5));
+        assert_eq!(state.active_pieces.len(), 5);
+    }
+
+    #[test]
+    fn maximum_active_hot_path_does_not_touch_the_global_rarity_index() {
+        const ACTIVE: usize = DEFAULT_MAX_ACTIVE_PIECES;
+        let mut config = SwarmConfig::for_request_limit(ACTIVE * BLOCK as usize);
+        config.max_active_piece_bytes = ACTIVE * BLOCK as usize;
+        let mut state = SwarmState::new(
+            config,
+            ACTIVE,
+            (0..ACTIVE as u32).map(|piece| plan(piece, 1)).collect(),
+        )
+        .expect("maximum active swarm");
+        add_peer(&mut state, connection(1), &[ACTIVE - 1], false);
+        for piece in 0..ACTIVE as u32 {
+            state.activate_piece(piece).expect("activate piece");
+        }
+        state.picker.reset_counters();
+        state.active_piece_visits = 0;
+        let started = std::time::Instant::now();
+        for _ in 0..100_000 {
+            assert!(
+                state
+                    .next_active_block_for_connection(connection(1))
+                    .expect("active selection")
+                    .is_some()
+            );
+        }
+        assert!(started.elapsed() < Duration::from_secs(5));
+        let counters = state.picker.counters();
+        assert_eq!(counters.rank_comparisons, 0);
+        assert_eq!(counters.single_piece_updates, 0);
+        assert_eq!(counters.bulk_rebuilds, 0);
+        assert_eq!(counters.candidate_inspections, 0);
+        assert_eq!(state.active_piece_visits, 100_000 * ACTIVE as u64);
+        assert_eq!(state.inactive_planned_piece_visits, 0);
+        assert_eq!(state.active_pieces.len(), ACTIVE);
     }
 
     #[test]

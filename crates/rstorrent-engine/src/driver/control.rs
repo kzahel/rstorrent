@@ -23,6 +23,7 @@ use crate::peer::{DialAttempt, DialAttemptId, PeerRegistryCounts, PeerRegistrySn
 #[cfg(test)]
 use crate::peer::{PeerRegistry, PeerSelectionContext};
 use crate::peer_runtime::PeerConnectionObservation;
+use crate::piece_picker::PieceActivationPolicy;
 use crate::selective_storage::PlatformStorageSpec;
 use crate::storage_file_pool::StorageFilePool;
 use crate::swarm::{BlockKey, ConnectionWindowPhaseSnapshot, NoRequestReason, SwarmState};
@@ -175,6 +176,17 @@ pub struct SwarmActivitySnapshot {
     pub verified_blocks: usize,
     pub active_piece_count: usize,
     pub active_piece_bytes: usize,
+    pub max_active_pieces: usize,
+    pub piece_activation_policy: PieceActivationPolicy,
+    pub availability_seed_count: usize,
+    pub picker_retained_bytes: usize,
+    pub picker_rank_comparisons: u64,
+    pub picker_bulk_rebuilds: u64,
+    pub picker_candidate_inspections: u64,
+    pub active_piece_visits: u64,
+    pub inactive_planned_piece_visits: u64,
+    pub last_activated_piece: Option<u32>,
+    pub last_activated_availability: Option<u32>,
     pub outstanding_request_bytes: usize,
     pub outstanding_request_high_water: usize,
     pub request_target_total: usize,
@@ -1500,6 +1512,17 @@ impl DownloadControl {
             verified_blocks: snapshot.verified_blocks,
             active_piece_count: snapshot.active_piece_count,
             active_piece_bytes: snapshot.active_piece_bytes,
+            max_active_pieces: snapshot.max_active_pieces,
+            piece_activation_policy: snapshot.piece_activation_policy,
+            availability_seed_count: snapshot.availability_seed_count,
+            picker_retained_bytes: snapshot.picker_retained_bytes,
+            picker_rank_comparisons: snapshot.picker_rank_comparisons,
+            picker_bulk_rebuilds: snapshot.picker_bulk_rebuilds,
+            picker_candidate_inspections: snapshot.picker_candidate_inspections,
+            active_piece_visits: snapshot.active_piece_visits,
+            inactive_planned_piece_visits: snapshot.inactive_planned_piece_visits,
+            last_activated_piece: snapshot.last_activated_piece,
+            last_activated_availability: snapshot.last_activated_availability,
             outstanding_request_bytes: snapshot.outstanding_request_bytes,
             outstanding_request_high_water: snapshot.outstanding_request_high_water,
             request_target_total: snapshot.request_target_total,

@@ -51,6 +51,7 @@ use crate::peer_runtime::{
 use crate::peer_socket::{
     self, PeerConnection, PeerSetError, PeerSetEvent, PeerSocketError, PeerSocketSet, PeerTaskEvent,
 };
+use crate::piece_picker::picker_seed;
 use crate::selective_storage::{
     DescriptorStorage, PreparedFileHash, PublicationShape, ResumeArtifactState, ResumedStorage,
     SelectiveStorage, SelectiveStorageError, VERIFICATION_CHUNK_LENGTH,
@@ -59,7 +60,8 @@ use crate::selective_storage::{
 };
 use crate::swarm::{
     BlockKey, ConnectionId, ConnectionRemoval, ConnectionWindowPhaseSnapshot, PendingDialId,
-    PieceHashFailure, PiecePlan, ReceiveDisposition, SwarmConfig, SwarmError, SwarmState,
+    PieceHashFailure, PiecePlan, ReceiveDisposition, RequestAssignment, SwarmConfig, SwarmError,
+    SwarmState,
 };
 use crate::torrent_peer::{TorrentPeerError, TorrentPeerHandle};
 use crate::tracker::{
@@ -96,6 +98,7 @@ pub struct DownloadResourceLimits {
     pub max_outstanding_request_bytes: usize,
     pub max_buffered_payload_bytes: usize,
     pub max_active_piece_bytes: usize,
+    pub max_active_pieces: usize,
 }
 
 impl DownloadResourceLimits {
@@ -103,12 +106,14 @@ impl DownloadResourceLimits {
         max_outstanding_request_bytes: 256 * 1024 * 1024,
         max_buffered_payload_bytes: 32 * 1024 * 1024,
         max_active_piece_bytes: 256 * 1024 * 1024,
+        max_active_pieces: crate::swarm::DEFAULT_MAX_ACTIVE_PIECES,
     };
 
     pub const ANDROID: Self = Self {
         max_outstanding_request_bytes: 128 * 1024 * 1024,
         max_buffered_payload_bytes: 16 * 1024 * 1024,
         max_active_piece_bytes: 128 * 1024 * 1024,
+        max_active_pieces: crate::swarm::DEFAULT_MAX_ACTIVE_PIECES,
     };
 
     pub const fn new(
@@ -120,6 +125,7 @@ impl DownloadResourceLimits {
             max_outstanding_request_bytes,
             max_buffered_payload_bytes,
             max_active_piece_bytes,
+            max_active_pieces: crate::swarm::DEFAULT_MAX_ACTIVE_PIECES,
         }
     }
 
@@ -139,12 +145,18 @@ impl DownloadResourceLimits {
                 "active piece working set must fit one request block",
             ));
         }
+        if self.max_active_pieces == 0 {
+            return Err(DownloadError::InvalidResourceLimit(
+                "active piece count must be nonzero",
+            ));
+        }
         Ok(self)
     }
 
     fn swarm_config(self) -> SwarmConfig {
         let mut config = SwarmConfig::for_request_limit(self.max_outstanding_request_bytes);
         config.max_active_piece_bytes = self.max_active_piece_bytes;
+        config.max_active_pieces = self.max_active_pieces;
         config
     }
 }
@@ -3474,7 +3486,6 @@ struct ContentSwarmDownload<'a> {
     part_written_bytes: usize,
     last_piece: Option<VerifiedPiece>,
     contributor_attempts: BTreeMap<ConnectionId, DialAttempt>,
-    remaining_pieces: std::vec::IntoIter<u32>,
     selection: FileSelection,
     maximum_planned_bytes: usize,
 }
@@ -3486,6 +3497,7 @@ struct ContentDownloadContext<'a> {
     control: &'a DownloadControl,
 }
 
+#[cfg(test)]
 fn build_content_plan_window(
     layout: &TorrentLayout,
     selection: &FileSelection,
@@ -3501,15 +3513,7 @@ fn build_content_plan_window(
         let Some(&piece) = pieces.as_slice().first() else {
             break;
         };
-        let ranges = layout
-            .request_ranges(piece, selection)
-            .map_err(DownloadError::Layout)?;
-        let block_count = ranges.len();
-        let piece_bytes = ranges.iter().try_fold(0_usize, |total, range| {
-            total.checked_add(range.length as usize)
-        });
-        let piece_bytes =
-            piece_bytes.ok_or(DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+        let (plan, block_count, piece_bytes) = build_content_piece_plan(layout, selection, piece)?;
         let next_total_bytes = total_bytes
             .checked_add(piece_bytes)
             .ok_or(DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
@@ -3521,13 +3525,30 @@ fn build_content_plan_window(
             .checked_add(block_count)
             .ok_or(DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
         total_bytes = next_total_bytes;
-        let ranges = ranges
-            .into_iter()
-            .map(|range| (range.begin, range.length))
-            .collect::<Vec<_>>();
-        plans.push(PiecePlan::new(piece, &ranges).map_err(DownloadError::Swarm)?);
+        plans.push(plan);
     }
     Ok((plans, total_blocks, total_bytes))
+}
+
+fn build_content_piece_plan(
+    layout: &TorrentLayout,
+    selection: &FileSelection,
+    piece: u32,
+) -> Result<(PiecePlan, usize, usize), DownloadError> {
+    let ranges = layout
+        .request_ranges(piece, selection)
+        .map_err(DownloadError::Layout)?;
+    let block_count = ranges.len();
+    let piece_bytes = ranges.iter().try_fold(0_usize, |total, range| {
+        total.checked_add(range.length as usize)
+    });
+    let piece_bytes = piece_bytes.ok_or(DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+    let ranges = ranges
+        .into_iter()
+        .map(|range| (range.begin, range.length))
+        .collect::<Vec<_>>();
+    let plan = PiecePlan::new(piece, &ranges).map_err(DownloadError::Swarm)?;
+    Ok((plan, block_count, piece_bytes))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3543,6 +3564,7 @@ impl<'a> ContentSwarmDownload<'a> {
         config: SwarmConfig,
         max_buffered_payload_bytes: usize,
         wanted_pieces: Vec<u32>,
+        picker_seed: u64,
         selection: FileSelection,
         storage: ContentStorage,
         context: ContentDownloadContext<'a>,
@@ -3554,17 +3576,14 @@ impl<'a> ContentSwarmDownload<'a> {
             control,
         } = context;
         let maximum_planned_bytes = config.max_active_piece_bytes;
-        let mut remaining_pieces = wanted_pieces.into_iter();
-        let (swarm_plans, total_blocks, total_bytes) = build_content_plan_window(
-            layout,
-            &selection,
-            &mut remaining_pieces,
-            MAX_PLANNED_CONTENT_PIECES,
-            maximum_planned_bytes,
-            true,
-        )?;
-        let state = SwarmState::new(config, layout.piece_count(), swarm_plans)
-            .map_err(DownloadError::Swarm)?;
+        let state = SwarmState::new_with_wanted(
+            config,
+            layout.piece_count(),
+            wanted_pieces,
+            Vec::new(),
+            picker_seed,
+        )
+        .map_err(DownloadError::Swarm)?;
         let checkpoints = resume.map(|resume| resume.checkpoints.clone());
         Ok(Self {
             state,
@@ -3582,45 +3601,76 @@ impl<'a> ContentSwarmDownload<'a> {
             layout,
             resume,
             control,
-            total_blocks,
-            total_bytes,
+            total_blocks: 0,
+            total_bytes: 0,
             selected_written_bytes: 0,
             part_written_bytes: 0,
             last_piece: None,
             contributor_attempts: BTreeMap::new(),
-            remaining_pieces,
             selection,
             maximum_planned_bytes,
         })
     }
 
     fn is_complete(&self) -> bool {
-        self.remaining_pieces.len() == 0 && self.state.is_complete()
+        self.state.is_complete()
     }
 
     fn advance_plan_window(&mut self, verified_piece: u32) -> Result<(), DownloadError> {
         self.state
             .retire_verified_piece(verified_piece)
             .map_err(DownloadError::Swarm)?;
-        let capacity = MAX_PLANNED_CONTENT_PIECES.saturating_sub(self.state.planned_piece_count());
-        if capacity == 0 {
-            return Ok(());
-        }
+        Ok(())
+    }
+
+    fn prepare_next_piece(&mut self) -> Result<bool, DownloadError> {
+        let Some(piece) = self
+            .state
+            .reserve_piece_for_planning(MAX_PLANNED_CONTENT_PIECES)
+        else {
+            return Ok(false);
+        };
+        let (plan, blocks, bytes) =
+            match build_content_piece_plan(self.layout, &self.selection, piece) {
+                Ok(plan) => plan,
+                Err(error) => {
+                    self.state
+                        .cancel_piece_planning(piece)
+                        .map_err(DownloadError::Swarm)?;
+                    return Err(error);
+                }
+            };
         let planned_bytes = self.state.planned_piece_bytes();
-        let available_bytes = self.maximum_planned_bytes.saturating_sub(planned_bytes);
-        let (plans, blocks, bytes) = build_content_plan_window(
-            self.layout,
-            &self.selection,
-            &mut self.remaining_pieces,
-            capacity,
-            available_bytes,
-            planned_bytes == 0,
-        )?;
+        let fits = planned_bytes
+            .checked_add(bytes)
+            .is_some_and(|total| total <= self.maximum_planned_bytes);
+        if !fits && planned_bytes != 0 {
+            self.state
+                .cancel_piece_planning(piece)
+                .map_err(DownloadError::Swarm)?;
+            return Ok(false);
+        }
+        self.state
+            .append_piece_plans(vec![plan])
+            .map_err(DownloadError::Swarm)?;
         self.total_blocks = self.total_blocks.saturating_add(blocks);
         self.total_bytes = self.total_bytes.saturating_add(bytes);
-        self.state
-            .append_piece_plans(plans)
-            .map_err(DownloadError::Swarm)
+        Ok(true)
+    }
+
+    fn schedule(&mut self, now: Duration) -> Result<Vec<RequestAssignment>, DownloadError> {
+        let mut assignments = Vec::new();
+        loop {
+            let planned = self.prepare_next_piece()?;
+            let batch = self.state.schedule(now).map_err(DownloadError::Swarm)?;
+            let progressed = !batch.is_empty();
+            assignments.extend(batch);
+            if !progressed {
+                debug_assert!(!planned || self.state.planned_piece_count() != 0);
+                break;
+            }
+        }
+        Ok(assignments)
     }
 
     async fn handle_message(
@@ -4366,7 +4416,7 @@ async fn run_selective_swarm_loop(
         }
 
         let assignments = if storage_ready && !storage_backpressured {
-            download.state.schedule(now).map_err(DownloadError::Swarm)?
+            download.schedule(now)?
         } else {
             Vec::new()
         };
@@ -5130,6 +5180,7 @@ async fn run_selective_download(
             config.swarm_config,
             config.max_buffered_payload_bytes,
             wanted_pieces,
+            picker_seed(metainfo.info_hash, peers.network.peer_id),
             plan_selection,
             ContentStorage(Box::new(storage)),
             ContentDownloadContext {
