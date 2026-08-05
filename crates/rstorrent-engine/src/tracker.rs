@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::time::Duration;
 
-use rstorrent_protocol::magnet::UdpTrackerUrl;
+use rstorrent_protocol::magnet::{MAX_TRACKER_URL_LENGTH, UdpTrackerUrl};
 use rstorrent_protocol::udp_tracker::AnnounceEvent;
 
 pub(crate) const TRACKER_BACKOFF_RATIO: u64 = 250;
@@ -39,6 +39,24 @@ pub enum TrackerEndpoint {
 
 impl TrackerEndpoint {
     pub fn from_http_url(value: &str) -> Option<Self> {
+        if value.is_empty()
+            || value.len() > MAX_TRACKER_URL_LENGTH
+            || !value.is_ascii()
+            || value
+                .bytes()
+                .any(|byte| byte.is_ascii_control() || byte == b' ')
+            || value.contains('#')
+        {
+            return None;
+        }
+        let (_, remainder) = value.split_once("://")?;
+        let authority_end = remainder.find(['/', '?']).unwrap_or(remainder.len());
+        let host_port = remainder[..authority_end]
+            .rsplit_once('@')
+            .map_or(&remainder[..authority_end], |(_, host_port)| host_port);
+        if host_port.is_empty() {
+            return None;
+        }
         let target = url::Url::parse(value).ok()?;
         if target.host().is_none() || target.fragment().is_some() {
             return None;
@@ -62,6 +80,7 @@ impl TrackerEndpoint {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TrackerRuntimeStatus {
     Inactive,
+    Disabled,
     Idle,
     Announcing,
     RetryWait,
@@ -152,6 +171,7 @@ pub(crate) struct TrackerRecord {
     pending_event: Option<TrackerPriorityEvent>,
     inflight_event: Option<AnnounceEvent>,
     stopped: bool,
+    disabled: bool,
     updating: bool,
     last_success: Option<Duration>,
     last_failure: Option<Duration>,
@@ -178,6 +198,7 @@ impl TrackerRecord {
             pending_event: None,
             inflight_event: None,
             stopped: false,
+            disabled: false,
             updating: false,
             last_success: None,
             last_failure: None,
@@ -325,6 +346,14 @@ impl TrackerSchedule {
         self.reset_round();
     }
 
+    pub(crate) fn cancel_inflight(&mut self) {
+        for record in &mut self.records {
+            record.updating = false;
+            record.inflight_event = None;
+        }
+        self.reset_round();
+    }
+
     pub(crate) fn stop_complete(&self) -> bool {
         self.stopping
             && self
@@ -341,6 +370,7 @@ impl TrackerSchedule {
             if let Some(record) = self.records.iter_mut().find(|record| {
                 !record.updating
                     && !record.stopped
+                    && !record.disabled
                     && record.pending_event.is_some()
                     && !self.attempted.contains(&record.id)
             }) {
@@ -385,11 +415,11 @@ impl TrackerSchedule {
                         .expect("scheduled wait retains its reason"),
                 };
             }
-            if let Some(record) = self
-                .records
-                .iter_mut()
-                .find(|record| !self.attempted.contains(&record.id) && record.next_announce <= now)
-            {
+            if let Some(record) = self.records.iter_mut().find(|record| {
+                !record.disabled
+                    && !self.attempted.contains(&record.id)
+                    && record.next_announce <= now
+            }) {
                 let fallback = !self.attempted.is_empty();
                 self.attempted.insert(record.id);
                 record.total_attempts = record.total_attempts.saturating_add(1);
@@ -419,7 +449,7 @@ impl TrackerSchedule {
             if let Some(record) = self
                 .records
                 .iter()
-                .filter(|record| !self.attempted.contains(&record.id))
+                .filter(|record| !record.disabled && !self.attempted.contains(&record.id))
                 .min_by_key(|record| record.next_announce)
             {
                 return TrackerAction::Wait {
@@ -431,11 +461,14 @@ impl TrackerSchedule {
             }
 
             self.attempted.clear();
-            let earliest = self
+            let Some(earliest) = self
                 .records
                 .iter()
+                .filter(|record| !record.disabled)
                 .min_by_key(|record| record.next_announce)
-                .expect("nonempty schedule has an earliest tracker");
+            else {
+                return TrackerAction::Exhausted;
+            };
             self.round_not_before = earliest.next_announce;
             self.round_tracker = Some(earliest.id);
             self.round_wait_kind = Some(TrackerWaitKind::FailureRetry);
@@ -443,18 +476,40 @@ impl TrackerSchedule {
     }
 
     pub(crate) fn failed(&mut self, id: TrackerId, now: Duration, detail: &str) -> TrackerFailure {
+        let failures = self.record_mut(id).failures.saturating_add(1);
+        let retry_in = tracker_failure_delay(failures);
+        self.failed_with_retry(id, now, detail, retry_in)
+    }
+
+    pub(crate) fn failed_with_retry(
+        &mut self,
+        id: TrackerId,
+        now: Duration,
+        detail: &str,
+        retry_in: Duration,
+    ) -> TrackerFailure {
         let record = self.record_mut(id);
         record.updating = false;
         record.inflight_event = None;
         record.failures = record.failures.saturating_add(1).min(MAX_TRACKER_FAILURES);
         record.last_failure = Some(now);
         record.last_error = Some(bounded_tracker_error(detail));
-        let retry_in = tracker_failure_delay(record.failures);
         record.next_announce = now.saturating_add(retry_in);
         TrackerFailure {
             failures: record.failures,
             retry_in,
         }
+    }
+
+    pub(crate) fn disable(&mut self, id: TrackerId, now: Duration, detail: &str) {
+        let record = self.record_mut(id);
+        record.updating = false;
+        record.inflight_event = None;
+        record.pending_event = None;
+        record.start_acknowledged = false;
+        record.disabled = true;
+        record.last_failure = Some(now);
+        record.last_error = Some(bounded_tracker_error(detail));
     }
 
     pub(crate) fn supersede(&mut self, id: TrackerId) {
@@ -478,8 +533,26 @@ impl TrackerSchedule {
         seeders: u32,
         leechers: u32,
     ) -> TrackerSuccess {
-        let interval = Duration::from_secs(u64::from(interval_seconds))
-            .clamp(TRACKER_ANNOUNCE_MIN, TRACKER_ANNOUNCE_MAX);
+        self.succeeded_outcome(
+            id,
+            now,
+            Duration::from_secs(u64::from(interval_seconds)),
+            peer_count,
+            Some(seeders),
+            Some(leechers),
+        )
+    }
+
+    pub(crate) fn succeeded_outcome(
+        &mut self,
+        id: TrackerId,
+        now: Duration,
+        requested_interval: Duration,
+        peer_count: u32,
+        seeders: Option<u32>,
+        leechers: Option<u32>,
+    ) -> TrackerSuccess {
+        let interval = requested_interval.clamp(TRACKER_ANNOUNCE_MIN, TRACKER_ANNOUNCE_MAX);
         let position = self
             .records
             .iter()
@@ -514,8 +587,8 @@ impl TrackerSchedule {
             record.last_success = Some(now);
             record.interval = Some(interval);
             record.last_peer_count = Some(peer_count);
-            record.seeders = Some(seeders);
-            record.leechers = Some(leechers);
+            record.seeders = seeders;
+            record.leechers = leechers;
             record.last_error = None;
             record.next_announce = now.saturating_add(interval);
         }
@@ -563,6 +636,8 @@ impl TrackerRecord {
             (TrackerRuntimeStatus::Inactive, None, None)
         } else if self.updating {
             (TrackerRuntimeStatus::Announcing, None, None)
+        } else if self.disabled {
+            (TrackerRuntimeStatus::Disabled, None, None)
         } else if self.next_announce > now {
             let (status, action) = if self.failures != 0 {
                 (TrackerRuntimeStatus::RetryWait, TrackerNextAction::Retry)
@@ -829,6 +904,56 @@ mod tests {
                 ..
             } if endpoint == TrackerEndpoint::Udp(second)
         ));
+    }
+
+    #[test]
+    fn explicit_retry_and_generation_scoped_disable_preserve_tier_fallback() {
+        let mut schedule = TrackerSchedule::new(vec![
+            tracker("first.example", 80),
+            tracker("second.example", 81),
+        ]);
+        let first = announce(&mut schedule, Duration::ZERO);
+        let failure = schedule.failed_with_retry(
+            first,
+            Duration::from_secs(2),
+            "retry later",
+            Duration::from_secs(600),
+        );
+        assert_eq!(failure.retry_in, Duration::from_secs(600));
+
+        let second = announce(&mut schedule, Duration::from_secs(2));
+        schedule.disable(second, Duration::from_secs(3), "never retry");
+        let disabled = schedule.snapshot(Duration::from_secs(3), true);
+        let record = disabled
+            .records
+            .iter()
+            .find(|record| record.tracker_id == "000000:000001")
+            .expect("disabled tracker row");
+        assert_eq!(record.status, TrackerRuntimeStatus::Disabled);
+        assert_eq!(record.next_action, None);
+        assert_eq!(record.last_error.as_deref(), Some("never retry"));
+
+        assert_eq!(
+            schedule.next_action(Duration::from_secs(3)),
+            TrackerAction::Wait {
+                delay: Duration::from_secs(599),
+                url: "udp://first.example:80".to_owned(),
+                endpoint: TrackerEndpoint::Udp(tracker("first.example", 80)),
+                kind: TrackerWaitKind::FailureRetry,
+            }
+        );
+
+        let restarted = TrackerSchedule::new(vec![
+            tracker("first.example", 80),
+            tracker("second.example", 81),
+        ]);
+        assert!(
+            restarted
+                .snapshot(Duration::ZERO, true)
+                .records
+                .iter()
+                .all(|record| record.status == TrackerRuntimeStatus::Idle)
+        );
     }
 
     #[test]

@@ -6,6 +6,7 @@ mod advertisement;
 mod checkpoint;
 pub mod dht;
 mod driver;
+mod http_tracker;
 mod incoming;
 mod metadata_seed;
 mod metrics;

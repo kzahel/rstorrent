@@ -4308,6 +4308,13 @@
       ],
       "type": "string"
     },
+    "TrackerSecurityView": {
+      "enum": [
+        "unencrypted",
+        "encrypted_unauthenticated"
+      ],
+      "type": "string"
+    },
     "TrackerSourceView": {
       "enum": [
         "magnet",
@@ -4319,6 +4326,7 @@
       "enum": [
         "unsupported",
         "inactive",
+        "disabled",
         "idle",
         "announcing",
         "retry_wait",
@@ -4409,6 +4417,9 @@
             "null"
           ]
         },
+        "security": {
+          "$ref": "#/$defs/TrackerSecurityView"
+        },
         "seeders": {
           "format": "uint32",
           "minimum": 0,
@@ -4447,6 +4458,7 @@
         "tracker_id",
         "url",
         "transport",
+        "security",
         "source",
         "tier",
         "status",

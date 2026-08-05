@@ -22,11 +22,11 @@ use rstorrent_engine::{
     PublicationShape, ResumableMagnetDownloadConfig, ResumeArtifactState, ResumedStorage,
     SessionSocketConfig, SessionSocketError, SessionSocketSet, SessionUdpError, SessionUdpService,
     StorageFilePool, StorageFilePoolSnapshot, TorrentPrivacy, TrackerConfig, TrackerEndpoint,
-    TrackerSource, download_magnet_metadata_with_external_discovery, plan_descriptor_storage,
-    resume_magnet_to_descriptors_with_control, resume_magnet_with_control, torrent_storage_paths,
-    verify_prepared_descriptors, verify_prepared_platform_files,
+    TrackerSource, TrackerTransport, download_magnet_metadata_with_external_discovery,
+    plan_descriptor_storage, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
+    torrent_storage_paths, verify_prepared_descriptors, verify_prepared_platform_files,
 };
-use rstorrent_protocol::magnet::UdpTrackerUrl;
+use rstorrent_protocol::magnet::{MAX_TRACKER_URL_LENGTH, UdpTrackerUrl};
 use rstorrent_protocol::metainfo::{
     BEP9_METAINFO_LIMITS, DURABLE_METAINFO_LIMITS, Metainfo, MetainfoError,
 };
@@ -83,22 +83,41 @@ fn classify_session_socket_bind_failure(error: &SessionSocketError) -> Option<Li
     )))
 }
 
-fn operational_udp_trackers(
+fn operational_trackers(
     trackers: &[StoredTracker],
 ) -> Result<Vec<TrackerConfig>, ApplicationError> {
     trackers
         .iter()
-        .filter(|tracker| tracker.transport == StoredTrackerTransport::Udp)
-        .map(|tracker| {
-            let endpoint = UdpTrackerUrl::from_metainfo_url(&tracker.url).ok_or_else(|| {
-                ApplicationError::Configuration(format!(
-                    "stored UDP tracker at tier {}, position {} is invalid",
-                    tracker.tier, tracker.position
-                ))
-            })?;
+        .filter_map(|tracker| {
+            if tracker.url.len() > MAX_TRACKER_URL_LENGTH
+                || !tracker.url.is_ascii()
+                || tracker
+                    .url
+                    .bytes()
+                    .any(|byte| byte.is_ascii_control() || byte == b' ')
+                || tracker.url.contains('#')
+            {
+                return None;
+            }
+            let endpoint = match tracker.transport {
+                StoredTrackerTransport::Udp => {
+                    TrackerEndpoint::Udp(UdpTrackerUrl::from_metainfo_url(&tracker.url)?)
+                }
+                StoredTrackerTransport::Http | StoredTrackerTransport::Https => {
+                    TrackerEndpoint::from_http_url(&tracker.url)?
+                }
+            };
+            if !matches!(
+                (tracker.transport, endpoint.transport()),
+                (StoredTrackerTransport::Udp, TrackerTransport::Udp)
+                    | (StoredTrackerTransport::Http, TrackerTransport::Http)
+                    | (StoredTrackerTransport::Https, TrackerTransport::Https)
+            ) {
+                return None;
+            }
             Ok(TrackerConfig {
                 url: tracker.url.clone(),
-                endpoint: TrackerEndpoint::Udp(endpoint),
+                endpoint,
                 tier: tracker.tier,
                 position: tracker.position,
                 source: match tracker.source {
@@ -106,6 +125,7 @@ fn operational_udp_trackers(
                     StoredTrackerSource::Metainfo => TrackerSource::Metainfo,
                 },
             })
+            .into()
         })
         .collect()
 }
@@ -2575,7 +2595,7 @@ impl ApplicationService {
             info_hash: crate::control::decode_info_hash(torrent_id).ok_or_else(|| {
                 ApplicationError::Configuration("invalid torrent identity".to_owned())
             })?,
-            trackers: operational_udp_trackers(&resume.trackers)?,
+            trackers: operational_trackers(&resume.trackers)?,
             desired_running: resume.desired_running,
             complete: resume.state == TorrentState::Complete,
             incoming_registered: handle.has_seed_registration(),
@@ -2934,8 +2954,7 @@ async fn reconcile_completed_advertisement(
             generation: runtime.generation(),
             info_hash: crate::control::decode_info_hash(torrent_id)
                 .ok_or_else(|| "invalid torrent identity".to_owned())?,
-            trackers: operational_udp_trackers(&resume.trackers)
-                .map_err(|error| error.to_string())?,
+            trackers: operational_trackers(&resume.trackers).map_err(|error| error.to_string())?,
             desired_running: resume.desired_running,
             complete: resume.state == TorrentState::Complete,
             incoming_registered: runtime.has_seed_registration(),
@@ -3727,7 +3746,7 @@ impl ViewActivitySink {
                     DiagnosticSeverity::Info,
                     category::TRACKER_ANNOUNCE,
                     "tracker_announce_started",
-                    "Contacting UDP tracker",
+                    "Contacting tracker",
                     vec![DiagnosticSubject::Tracker {
                         tracker_id: tracker,
                     }],
@@ -3758,7 +3777,7 @@ impl ViewActivitySink {
                     DiagnosticSeverity::Warning,
                     category::TRACKER_ANNOUNCE,
                     "tracker_announce_failed",
-                    "UDP tracker announce failed temporarily",
+                    "Tracker announce failed temporarily",
                     vec![DiagnosticSubject::Tracker {
                         tracker_id: tracker,
                     }],
@@ -3823,7 +3842,7 @@ impl ViewActivitySink {
                     DiagnosticSeverity::Info,
                     category::TRACKER_ANNOUNCE,
                     "tracker_announce_succeeded",
-                    "UDP tracker announce succeeded",
+                    "Tracker announce succeeded",
                     vec![DiagnosticSubject::Tracker {
                         tracker_id: tracker,
                     }],
@@ -3834,6 +3853,16 @@ impl ViewActivitySink {
                             interval_seconds.saturating_mul(1_000),
                         ),
                     ],
+                );
+            }
+            DownloadActivityEvent::TrackerWarning { tracker, detail } => {
+                let _ = self.views.record_diagnostic(
+                    DiagnosticSeverity::Warning,
+                    category::TRACKER_ANNOUNCE,
+                    "tracker_warning",
+                    Some(&self.torrent_id),
+                    "Tracker announce succeeded with a warning",
+                    &[("tracker", &tracker), ("detail", &detail)],
                 );
             }
             DownloadActivityEvent::TrackerPeersUnavailable {

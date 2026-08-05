@@ -1363,23 +1363,34 @@ function validateTrackerView(value: unknown): void {
     throw new ContractError("tracker identity or redacted URL is invalid");
   }
   oneOf(tracker.transport, "tracker transport", ["udp", "http", "https"]);
+  oneOf(tracker.security, "tracker security", [
+    "unencrypted",
+    "encrypted_unauthenticated",
+  ]);
+  if (
+    (tracker.transport === "https") !==
+    (tracker.security === "encrypted_unauthenticated")
+  ) {
+    throw new ContractError("tracker transport and security are inconsistent");
+  }
   oneOf(tracker.source, "tracker source", ["magnet", "metainfo"]);
   boundedInteger(tracker.tier, "tracker tier", 0, MAX_U32);
   oneOf(tracker.status, "tracker status", [
     "unsupported",
     "inactive",
+    "disabled",
     "idle",
     "announcing",
     "retry_wait",
     "reannounce_wait",
   ]);
-  if (
-    (tracker.transport === "udp") === (tracker.status === "unsupported")
-  ) {
-    throw new ContractError("tracker transport and status are inconsistent");
-  }
   if (tracker.announce_event !== null) {
-    oneOf(tracker.announce_event, "tracker announce event", ["started", "update"]);
+    oneOf(tracker.announce_event, "tracker announce event", [
+      "started",
+      "update",
+      "completed",
+      "stopped",
+    ]);
   }
   boundedInteger(tracker.total_attempts, "tracker attempts", 0, MAX_U32);
   boundedInteger(tracker.consecutive_failures, "tracker failures", 0, 127);

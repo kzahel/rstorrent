@@ -164,7 +164,17 @@ function trackerColumns(nowMs: number): readonly VirtualColumn<TrackerRow>[] {
       width: 68,
       defaultVisible: false,
       sortValue: (row) => row.transport,
-      render: (row) => row.transport.toUpperCase(),
+      render: (row) => (
+        <span
+          title={
+            row.security === "encrypted_unauthenticated"
+              ? "Encrypted, certificate and hostname not validated"
+              : "Unencrypted tracker transport"
+          }
+        >
+          {row.transport.toUpperCase()}
+        </span>
+      ),
     },
     {
       id: "source",

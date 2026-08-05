@@ -118,6 +118,10 @@ pub enum DownloadActivityEvent {
         peer_count: u32,
         interval_seconds: u64,
     },
+    TrackerWarning {
+        tracker: String,
+        detail: String,
+    },
     TrackerPeersUnavailable {
         tracker: String,
         peer_count: u32,

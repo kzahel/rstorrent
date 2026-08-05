@@ -1245,6 +1245,7 @@ function mapTracker(
     torrentId,
     url: tracker.url,
     transport: tracker.transport,
+    security: tracker.security,
     source: tracker.source,
     tier: tracker.tier,
     status: tracker.status,

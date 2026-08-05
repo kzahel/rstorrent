@@ -2,12 +2,12 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::net::SocketAddrV4;
+use std::net::{SocketAddr, SocketAddrV4};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use rstorrent_protocol::udp_tracker::{AnnounceEvent, AnnounceResponse, MAX_COMPACT_PEERS};
+use rstorrent_protocol::udp_tracker::{AnnounceEvent, MAX_COMPACT_PEERS};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
@@ -17,6 +17,10 @@ use crate::driver::{
     DownloadActivityEvent, DownloadActivitySink, DownloadControl, DownloadError,
     UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache,
     announce_udp_tracker, compact_peer_address, random_nonzero_u32,
+};
+use crate::http_tracker::{
+    HTTP_TRACKER_TIMEOUT, HttpTrackerAnnounce, HttpTrackerClients, HttpTrackerResponse,
+    TrackerRetryDirective, announce_http_tracker,
 };
 use crate::network::{NetworkConfig, NetworkPolicy};
 use crate::peer::{PeerEndpoint, PeerObservation, PeerSource};
@@ -294,6 +298,7 @@ pub enum DiscoveryAdvertisementError {
     OwnerStopped,
     Entropy(String),
     Join(String),
+    HttpClient(String),
 }
 
 impl fmt::Display for DiscoveryAdvertisementError {
@@ -302,6 +307,9 @@ impl fmt::Display for DiscoveryAdvertisementError {
             Self::OwnerStopped => formatter.write_str("discovery advertisement owner stopped"),
             Self::Entropy(detail) => write!(formatter, "tracker key entropy: {detail}"),
             Self::Join(detail) => write!(formatter, "discovery advertisement owner join: {detail}"),
+            Self::HttpClient(detail) => {
+                write!(formatter, "HTTP tracker client construction: {detail}")
+            }
         }
     }
 }
@@ -332,6 +340,8 @@ struct TorrentEntry {
     tracker_key: u32,
     control: DownloadControl,
     token_caches: BTreeMap<TrackerId, UdpTrackerTokenCache>,
+    http_tracker_ids: BTreeMap<TrackerId, Vec<u8>>,
+    tracker_cancellation: CancellationToken,
     schedule_epoch: u64,
     last_endpoint_generation: u64,
     removal: Option<Removal>,
@@ -360,6 +370,8 @@ impl TorrentEntry {
             tracker_key,
             control,
             token_caches: BTreeMap::new(),
+            http_tracker_ids: BTreeMap::new(),
+            tracker_cancellation: CancellationToken::new(),
             schedule_epoch: 1,
             last_endpoint_generation: 0,
             removal: None,
@@ -386,6 +398,10 @@ impl TorrentEntry {
         response: Option<oneshot::Sender<Result<(), DiscoveryAdvertisementError>>>,
     ) {
         self.registration.desired_running = false;
+        self.tracker_cancellation.cancel();
+        self.tracker_cancellation = CancellationToken::new();
+        self.schedule_epoch = self.schedule_epoch.saturating_add(1);
+        self.schedule.cancel_inflight();
         self.dht_epoch = self.dht_epoch.saturating_add(1);
         self.dht_inflight = false;
         self.schedule.request_stop();
@@ -412,8 +428,28 @@ struct TrackerOperationResult {
     endpoint_generation: u64,
     id: TrackerId,
     tracker: String,
-    token_cache: UdpTrackerTokenCache,
-    result: Result<AnnounceResponse, DownloadError>,
+    token_cache: Option<UdpTrackerTokenCache>,
+    result: Result<TrackerAnnounceOutcome, TrackerOperationFailure>,
+}
+
+#[derive(Debug)]
+struct TrackerAnnounceOutcome {
+    interval: Duration,
+    seeders: Option<u32>,
+    leechers: Option<u32>,
+    peers: Vec<SocketAddr>,
+    tracker_id: Option<Vec<u8>>,
+    warnings: Vec<String>,
+}
+
+#[derive(Debug)]
+enum TrackerOperationFailure {
+    Cancelled,
+    Transport(String),
+    Declared {
+        reason: String,
+        retry: Option<TrackerRetryDirective>,
+    },
 }
 
 #[derive(Debug)]
@@ -440,7 +476,8 @@ async fn run_service(
     queued: Arc<AtomicU64>,
     queue_high_water: Arc<AtomicU64>,
 ) -> Result<DiscoveryAdvertisementOwnerCounts, DiscoveryAdvertisementError> {
-    let cancellation = CancellationToken::new();
+    let http_clients = HttpTrackerClients::new(network.policy)
+        .map_err(|error| DiscoveryAdvertisementError::HttpClient(error.to_string()))?;
     let mut endpoint = *endpoint_receiver.borrow_and_update();
     let mut entries = BTreeMap::<[u8; 20], TorrentEntry>::new();
     let mut operations = JoinSet::new();
@@ -460,8 +497,13 @@ async fn run_service(
             break;
         }
 
-        let tracker_wait =
-            fill_tracker_operations(&mut entries, &mut operations, network, endpoint);
+        let tracker_wait = fill_tracker_operations(
+            &mut entries,
+            &mut operations,
+            &http_clients,
+            network,
+            endpoint,
+        );
         let dht_wait = fill_dht_operations(
             &mut entries,
             &mut dht_operations,
@@ -576,7 +618,6 @@ async fn run_service(
         }
     }
 
-    cancellation.cancel();
     operations.abort_all();
     while operations.join_next().await.is_some() {}
     dht_operations.abort_all();
@@ -659,6 +700,7 @@ fn apply_registration(
     if resume {
         entry.schedule = TrackerSchedule::from_configs(entry.registration.trackers.clone());
         entry.token_caches.clear();
+        entry.http_tracker_ids.clear();
         entry.schedule_epoch = entry.schedule_epoch.saturating_add(1);
         entry.removal = None;
     }
@@ -732,6 +774,7 @@ fn finish_stopped_entries(
 fn fill_tracker_operations(
     entries: &mut BTreeMap<[u8; 20], TorrentEntry>,
     operations: &mut JoinSet<TrackerOperationResult>,
+    http_clients: &HttpTrackerClients,
     network: NetworkConfig,
     endpoint: PeerAdvertisementEndpoint,
 ) -> Option<Duration> {
@@ -759,16 +802,7 @@ fn fill_tracker_operations(
                     fallback,
                     ..
                 } => {
-                    let tracker = url;
-                    let TrackerEndpoint::Udp(url) = tracker_endpoint else {
-                        let _ = entry.schedule.failed(
-                            id,
-                            entry.control.diagnostic_elapsed(),
-                            "HTTP tracker transport is not active",
-                        );
-                        entry.emit_snapshot(true);
-                        continue;
-                    };
+                    let tracker = redacted_tracker_label(&url);
                     if fallback {
                         entry
                             .control
@@ -797,52 +831,169 @@ fn fill_tracker_operations(
                     } else {
                         MAX_COMPACT_PEERS as i32
                     };
-                    let mut token_cache = entry.token_caches.remove(&id).unwrap_or_default();
                     let control = entry.control.clone();
                     let info_hash = entry.registration.info_hash;
                     let registration_generation = entry.registration.generation;
                     let schedule_epoch = entry.schedule_epoch;
+                    let cancellation = entry.tracker_cancellation.clone();
                     let tracker_key = entry.tracker_key;
-                    operations.spawn(async move {
-                        let result = announce_udp_tracker(
-                            &url,
-                            network.policy,
-                            &mut token_cache,
-                            UdpTrackerAnnounce {
-                                info_hash,
-                                peer_id: network.peer_id,
-                                key: tracker_key,
-                                downloaded: counters.downloaded,
-                                left: counters.left,
-                                uploaded: counters.uploaded,
-                                event,
-                                num_want,
-                                port,
-                            },
-                            UdpTrackerExchange {
-                                timing: UdpTrackerTiming::PRODUCTION,
-                                control: &control,
-                                tracker_label: &tracker,
-                            },
-                        )
-                        .await;
-                        TrackerOperationResult {
-                            info_hash,
-                            registration_generation,
-                            schedule_epoch,
-                            endpoint_generation: endpoint.generation,
-                            id,
-                            tracker,
-                            token_cache,
-                            result,
+                    match tracker_endpoint {
+                        TrackerEndpoint::Udp(url) => {
+                            let mut token_cache =
+                                entry.token_caches.remove(&id).unwrap_or_default();
+                            operations.spawn(async move {
+                                let result = tokio::select! {
+                                    biased;
+                                    _ = cancellation.cancelled() => {
+                                        Err(TrackerOperationFailure::Cancelled)
+                                    }
+                                    response = announce_udp_tracker(
+                                        &url,
+                                        network.policy,
+                                        &mut token_cache,
+                                        UdpTrackerAnnounce {
+                                            info_hash,
+                                            peer_id: network.peer_id,
+                                            key: tracker_key,
+                                            downloaded: counters.downloaded,
+                                            left: counters.left,
+                                            uploaded: counters.uploaded,
+                                            event,
+                                            num_want,
+                                            port,
+                                        },
+                                        UdpTrackerExchange {
+                                            timing: UdpTrackerTiming::PRODUCTION,
+                                            control: &control,
+                                            tracker_label: &tracker,
+                                        },
+                                    ) => response
+                                        .map(|response| TrackerAnnounceOutcome {
+                                            interval: Duration::from_secs(u64::from(response.interval)),
+                                            seeders: Some(response.seeders),
+                                            leechers: Some(response.leechers),
+                                            peers: response
+                                                .peers
+                                                .into_iter()
+                                                .map(compact_peer_address)
+                                                .collect(),
+                                            tracker_id: None,
+                                            warnings: Vec::new(),
+                                        })
+                                        .map_err(|error| {
+                                            TrackerOperationFailure::Transport(error.to_string())
+                                        }),
+                                };
+                                TrackerOperationResult {
+                                    info_hash,
+                                    registration_generation,
+                                    schedule_epoch,
+                                    endpoint_generation: endpoint.generation,
+                                    id,
+                                    tracker,
+                                    token_cache: Some(token_cache),
+                                    result,
+                                }
+                            });
                         }
-                    });
+                        TrackerEndpoint::Http { .. } => {
+                            let clients = http_clients.clone();
+                            let tracker_id = entry.http_tracker_ids.get(&id).cloned();
+                            let timeout = if event == AnnounceEvent::Stopped {
+                                TRACKER_STOP_TIMEOUT
+                            } else {
+                                HTTP_TRACKER_TIMEOUT
+                            };
+                            operations.spawn(async move {
+                                let announce = HttpTrackerAnnounce {
+                                    info_hash,
+                                    peer_id: network.peer_id,
+                                    port,
+                                    uploaded: counters.uploaded,
+                                    downloaded: counters.downloaded,
+                                    left: counters.left,
+                                    event,
+                                    key: tracker_key,
+                                    num_want: u32::try_from(num_want).unwrap_or(0),
+                                    tracker_id,
+                                };
+                                let response = tokio::select! {
+                                    biased;
+                                    _ = cancellation.cancelled() => {
+                                        return TrackerOperationResult {
+                                            info_hash,
+                                            registration_generation,
+                                            schedule_epoch,
+                                            endpoint_generation: endpoint.generation,
+                                            id,
+                                            tracker,
+                                            token_cache: None,
+                                            result: Err(TrackerOperationFailure::Cancelled),
+                                        };
+                                    }
+                                    response = announce_http_tracker(
+                                        &clients,
+                                        &url,
+                                        network.policy,
+                                        false,
+                                        &announce,
+                                        timeout,
+                                    ) => response,
+                                };
+                                let result = match response {
+                                    Ok(HttpTrackerResponse::Success(success)) => {
+                                        let mut warnings = success.diagnostics;
+                                        if let Some(warning) = success.warning {
+                                            warnings.insert(0, warning);
+                                        }
+                                        Ok(TrackerAnnounceOutcome {
+                                            interval: success.interval,
+                                            seeders: success.seeders,
+                                            leechers: success.leechers,
+                                            peers: success
+                                                .peers
+                                                .into_iter()
+                                                .filter_map(|peer| {
+                                                    match peer {
+                                                    crate::http_tracker::TrackerPeer::Address(
+                                                        address,
+                                                    ) => Some(address),
+                                                    crate::http_tracker::TrackerPeer::Hostname {
+                                                        ..
+                                                    } => None,
+                                                }
+                                                })
+                                                .collect(),
+                                            tracker_id: success.tracker_id,
+                                            warnings,
+                                        })
+                                    }
+                                    Ok(HttpTrackerResponse::Failure { reason, retry }) => {
+                                        Err(TrackerOperationFailure::Declared { reason, retry })
+                                    }
+                                    Err(error) => {
+                                        Err(TrackerOperationFailure::Transport(error.to_string()))
+                                    }
+                                };
+                                TrackerOperationResult {
+                                    info_hash,
+                                    registration_generation,
+                                    schedule_epoch,
+                                    endpoint_generation: endpoint.generation,
+                                    id,
+                                    tracker,
+                                    token_cache: None,
+                                    result,
+                                }
+                            });
+                        }
+                    }
                     spawned = true;
                 }
                 TrackerAction::Wait {
                     delay, url, kind, ..
                 } => {
-                    let tracker = url;
+                    let tracker = redacted_tracker_label(&url);
                     match kind {
                         TrackerWaitKind::FailureRetry => {
                             entry
@@ -1054,9 +1205,9 @@ fn apply_tracker_result(
     {
         return;
     }
-    entry
-        .token_caches
-        .insert(operation.id, operation.token_cache);
+    if let Some(token_cache) = operation.token_cache {
+        entry.token_caches.insert(operation.id, token_cache);
+    }
     let now = entry.control.diagnostic_elapsed();
     if operation.endpoint_generation != endpoint.generation && entry.removal.is_none() {
         entry.schedule.supersede(operation.id);
@@ -1066,7 +1217,7 @@ fn apply_tracker_result(
     match operation.result {
         Ok(response) => {
             let peer_count = response.peers.len().try_into().unwrap_or(u32::MAX);
-            let success = entry.schedule.succeeded(
+            let success = entry.schedule.succeeded_outcome(
                 operation.id,
                 now,
                 response.interval,
@@ -1074,20 +1225,28 @@ fn apply_tracker_result(
                 response.seeders,
                 response.leechers,
             );
+            if let Some(tracker_id) = response.tracker_id {
+                entry.http_tracker_ids.insert(operation.id, tracker_id);
+            }
             entry.last_endpoint_generation = operation.endpoint_generation;
             entry
                 .control
                 .emit(DownloadActivityEvent::TrackerAnnounceSucceeded {
-                    tracker: operation.tracker,
+                    tracker: operation.tracker.clone(),
                     peer_count,
                     interval_seconds: success.interval.as_secs(),
                 });
+            for detail in response.warnings {
+                entry.control.emit(DownloadActivityEvent::TrackerWarning {
+                    tracker: operation.tracker.clone(),
+                    detail,
+                });
+            }
             for peer in response.peers {
-                let address = compact_peer_address(peer);
-                if !policy.allows(address) {
+                if !policy.allows(peer) {
                     continue;
                 }
-                let Ok(endpoint) = PeerEndpoint::new(address) else {
+                let Ok(endpoint) = PeerEndpoint::new(peer) else {
                     continue;
                 };
                 let _ = entry
@@ -1098,8 +1257,8 @@ fn apply_tracker_result(
                     ));
             }
         }
-        Err(error) => {
-            let detail = error.to_string();
+        Err(TrackerOperationFailure::Cancelled) => {}
+        Err(TrackerOperationFailure::Transport(detail)) => {
             let failure = entry.schedule.failed(operation.id, now, &detail);
             entry
                 .control
@@ -1108,6 +1267,33 @@ fn apply_tracker_result(
                     failures: failure.failures,
                     retry_in_seconds: failure.retry_in.as_secs(),
                     detail,
+                });
+        }
+        Err(TrackerOperationFailure::Declared { reason, retry }) => {
+            let (failures, retry_in_seconds) = match retry {
+                Some(TrackerRetryDirective::After(delay)) => {
+                    let failure =
+                        entry
+                            .schedule
+                            .failed_with_retry(operation.id, now, &reason, delay);
+                    (failure.failures, failure.retry_in.as_secs())
+                }
+                Some(TrackerRetryDirective::Never) => {
+                    entry.schedule.disable(operation.id, now, &reason);
+                    (0, 0)
+                }
+                None => {
+                    let failure = entry.schedule.failed(operation.id, now, &reason);
+                    (failure.failures, failure.retry_in.as_secs())
+                }
+            };
+            entry
+                .control
+                .emit(DownloadActivityEvent::TrackerAnnounceFailed {
+                    tracker: operation.tracker,
+                    failures,
+                    retry_in_seconds,
+                    detail: reason,
                 });
         }
     }
@@ -1163,13 +1349,33 @@ fn shuffle_tracker_configs(trackers: &mut [TrackerConfig]) -> Result<(), Downloa
     Ok(())
 }
 
+fn redacted_tracker_label(value: &str) -> String {
+    let Ok(url) = url::Url::parse(value) else {
+        return "tracker".to_owned();
+    };
+    let Some(host) = url.host_str() else {
+        return "tracker".to_owned();
+    };
+    let host = if host.contains(':') {
+        format!("[{host}]")
+    } else {
+        host.to_owned()
+    };
+    match url.port() {
+        Some(port) => format!("{}://{host}:{port}", url.scheme()),
+        None => format!("{}://{host}", url.scheme()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::peer::PeerRegistrySnapshot;
     use crate::{PeerConnectionObservation, TorrentPeerActivitySink};
+    use std::net::Ipv4Addr;
     use std::sync::Mutex;
-    use tokio::net::UdpSocket;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream, UdpSocket};
     use tokio::sync::Notify;
 
     #[derive(Debug, Default)]
@@ -1424,6 +1630,146 @@ mod tests {
             peers: TorrentPeerHandle::new(Arc::new(NoopSink)).expect("peer registry"),
             activity_sink: Arc::new(NoopSink),
         }
+    }
+
+    async fn read_http_tracker_request(stream: &mut TcpStream) -> String {
+        let mut request = Vec::new();
+        while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+            let mut chunk = [0_u8; 1_024];
+            let length = stream.read(&mut chunk).await.expect("read request");
+            assert_ne!(length, 0, "request ended before HTTP headers");
+            request.extend_from_slice(&chunk[..length]);
+            assert!(request.len() <= 16 * 1_024, "request headers are bounded");
+        }
+        String::from_utf8(request).expect("HTTP tracker request is ASCII")
+    }
+
+    fn http_tracker_response(peer: SocketAddrV4) -> Vec<u8> {
+        let mut body = b"d8:intervali900e8:completei2e10:incompletei1e10:tracker id4:next15:warning message12:fixture note5:peers6:"
+            .to_vec();
+        body.extend_from_slice(&peer.ip().octets());
+        body.extend_from_slice(&peer.port().to_be_bytes());
+        body.push(b'e');
+        let mut response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n",
+            body.len()
+        )
+        .into_bytes();
+        response.extend_from_slice(&body);
+        response
+    }
+
+    #[tokio::test]
+    async fn session_http_tracker_carries_lifecycle_id_and_peers_through_common_owner() {
+        let tracker = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind HTTP tracker");
+        let tracker_address = tracker.local_addr().expect("HTTP tracker address");
+        let returned_peer = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 49_001);
+        let (request_sender, mut request_receiver) = mpsc::channel(3);
+        let tracker_task = tokio::spawn(async move {
+            for _ in 0..3 {
+                let (mut stream, _) = tracker.accept().await.expect("accept HTTP announce");
+                let request = read_http_tracker_request(&mut stream).await;
+                request_sender
+                    .send(request)
+                    .await
+                    .expect("record HTTP announce");
+                stream
+                    .write_all(&http_tracker_response(returned_peer))
+                    .await
+                    .expect("write HTTP announce response");
+                stream.shutdown().await.expect("close HTTP response");
+            }
+        });
+
+        let endpoint = PeerAdvertisementEndpoint {
+            generation: 1,
+            endpoint: Some("127.0.0.1:48001".parse().expect("listener endpoint")),
+            scope: Some(PeerAdvertisementEndpointScope::Loopback),
+            stopping: false,
+        };
+        let (_endpoint_sender, endpoint_receiver) = watch::channel(endpoint);
+        let network = NetworkConfig::new(
+            NetworkPolicy::LoopbackOnly,
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+        );
+        let mut dht_config = crate::dht::DhtConfig::for_network(NetworkPolicy::Offline);
+        dht_config.bootstrap_nodes.clear();
+        let dht = crate::dht::DhtService::start(dht_config)
+            .await
+            .expect("start offline DHT");
+        let service =
+            DiscoveryAdvertisementService::start(network, endpoint_receiver, dht.handle());
+        let handle = service.handle();
+        let counters = TrackerCounters::default();
+        counters.add_downloaded(11);
+        counters.add_uploaded(7);
+        counters.set_left(99);
+        let peers = TorrentPeerHandle::new(Arc::new(NoopSink)).expect("peer registry");
+        let activity = Arc::new(RecordingActivity::default());
+        let tracker_url = format!("http://{tracker_address}/announce?passkey=fixture");
+        let registration = DiscoveryAdvertisementRegistration {
+            generation: 3,
+            info_hash: [4; 20],
+            trackers: vec![TrackerConfig {
+                endpoint: TrackerEndpoint::from_http_url(&tracker_url)
+                    .expect("HTTP tracker endpoint"),
+                url: tracker_url,
+                tier: 0,
+                position: 0,
+                source: crate::TrackerSource::Metainfo,
+            }],
+            desired_running: true,
+            complete: false,
+            incoming_registered: true,
+            privacy: TorrentPrivacy::Public,
+            counters: counters.clone(),
+            peers: peers.clone(),
+            activity_sink: activity.clone(),
+        };
+        handle.upsert(registration.clone()).await.expect("register");
+        let started = request_receiver.recv().await.expect("started announce");
+        activity.wait_for_successes(1).await;
+
+        let snapshot = peers.registry_snapshot(true);
+        assert_eq!(snapshot.records.len(), 1);
+        assert_eq!(snapshot.records[0].endpoint.address(), returned_peer.into());
+        assert!(snapshot.records[0].sources.contains(PeerSource::Tracker));
+
+        counters.set_left(0);
+        handle
+            .upsert(DiscoveryAdvertisementRegistration {
+                complete: true,
+                ..registration
+            })
+            .await
+            .expect("promote complete seed");
+        let completed = request_receiver.recv().await.expect("completed announce");
+        activity.wait_for_successes(2).await;
+
+        let remove = tokio::spawn(async move { handle.remove([4; 20], 3).await });
+        let stopped = request_receiver.recv().await.expect("stopped announce");
+        remove
+            .await
+            .expect("remove task")
+            .expect("remove registration");
+        let terminal = service.shutdown().await.expect("shutdown service");
+        dht.shutdown().await.expect("shutdown DHT");
+        tracker_task.await.expect("HTTP tracker task");
+
+        assert!(started.starts_with("GET /announce?passkey=fixture&"));
+        assert!(started.contains("&port=48001&uploaded=7&downloaded=11&left=99&"));
+        assert!(started.contains("&event=started "));
+        assert!(!started.contains("trackerid="));
+        assert!(completed.contains("&left=0&"));
+        assert!(completed.contains("&event=completed&trackerid=%6E%65%78%74 "));
+        assert!(stopped.contains("&numwant=0&event=stopped&trackerid=%6E%65%78%74 "));
+        assert_eq!(terminal.registrations, 0);
+        assert_eq!(terminal.tracker_operations, 0);
+        assert_eq!(terminal.tracker_operations_high_water, 1);
+        assert_eq!(terminal.tasks, 0);
     }
 
     #[tokio::test]

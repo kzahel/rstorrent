@@ -63,8 +63,8 @@ pub use store::{
     StoredTrackerTransport,
 };
 pub use tracker_views::{
-    TrackerAnnounceEventView, TrackerCatalogState, TrackerNextActionView, TrackerSourceView,
-    TrackerStatusView, TrackerTransportView, TrackerView,
+    TrackerAnnounceEventView, TrackerCatalogState, TrackerNextActionView, TrackerSecurityView,
+    TrackerSourceView, TrackerStatusView, TrackerTransportView, TrackerView,
 };
 pub use views::{
     API_VERSION, ActivePiece, ActivePieceStageView, ApiEncoding, ApiHello, ApiLimits, ApiVersion,

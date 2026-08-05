@@ -698,6 +698,7 @@ function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
               tracker_id: "000000:000000",
               url: "udp://tracker.example:6969",
               transport: "udp",
+              security: "unencrypted",
               source: "magnet",
               tier: 0,
               status: "retry_wait",

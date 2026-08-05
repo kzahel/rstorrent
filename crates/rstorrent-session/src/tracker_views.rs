@@ -7,9 +7,10 @@ use ts_rs::TS;
 
 use crate::store::{StoredTracker, StoredTrackerSource, StoredTrackerTransport};
 use rstorrent_engine::{
-    TrackerAnnounceEvent, TrackerNextAction, TrackerRuntimeRecordSnapshot, TrackerRuntimeSnapshot,
-    TrackerRuntimeStatus, TrackerSource, TrackerTransport,
+    TrackerAnnounceEvent, TrackerEndpoint, TrackerNextAction, TrackerRuntimeRecordSnapshot,
+    TrackerRuntimeSnapshot, TrackerRuntimeStatus, TrackerSource, TrackerTransport,
 };
+use rstorrent_protocol::magnet::{MAX_TRACKER_URL_LENGTH, UdpTrackerUrl};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -31,6 +32,14 @@ pub enum TrackerTransportView {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
+pub enum TrackerSecurityView {
+    Unencrypted,
+    EncryptedUnauthenticated,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
 pub enum TrackerSourceView {
     Magnet,
     Metainfo,
@@ -42,6 +51,7 @@ pub enum TrackerSourceView {
 pub enum TrackerStatusView {
     Unsupported,
     Inactive,
+    Disabled,
     Idle,
     Announcing,
     RetryWait,
@@ -73,6 +83,7 @@ pub struct TrackerView {
     pub tracker_id: String,
     pub url: String,
     pub transport: TrackerTransportView,
+    pub security: TrackerSecurityView,
     pub source: TrackerSourceView,
     pub tier: u32,
     pub status: TrackerStatusView,
@@ -100,12 +111,13 @@ impl TrackerView {
                 StoredTrackerTransport::Http => TrackerTransportView::Http,
                 StoredTrackerTransport::Https => TrackerTransportView::Https,
             },
+            security: tracker_security(tracker.transport),
             source: match tracker.source {
                 StoredTrackerSource::Magnet => TrackerSourceView::Magnet,
                 StoredTrackerSource::Metainfo => TrackerSourceView::Metainfo,
             },
             tier: tracker.tier,
-            status: if tracker.transport == StoredTrackerTransport::Udp {
+            status: if tracker_is_operational(tracker) {
                 TrackerStatusView::Inactive
             } else {
                 TrackerStatusView::Unsupported
@@ -126,6 +138,35 @@ impl TrackerView {
     }
 }
 
+const fn tracker_security(transport: StoredTrackerTransport) -> TrackerSecurityView {
+    match transport {
+        StoredTrackerTransport::Udp | StoredTrackerTransport::Http => {
+            TrackerSecurityView::Unencrypted
+        }
+        StoredTrackerTransport::Https => TrackerSecurityView::EncryptedUnauthenticated,
+    }
+}
+
+fn tracker_is_operational(tracker: &StoredTracker) -> bool {
+    if tracker.url.len() > MAX_TRACKER_URL_LENGTH
+        || !tracker.url.is_ascii()
+        || tracker
+            .url
+            .bytes()
+            .any(|byte| byte.is_ascii_control() || byte == b' ')
+        || tracker.url.contains('#')
+    {
+        return false;
+    }
+    match tracker.transport {
+        StoredTrackerTransport::Udp => UdpTrackerUrl::from_metainfo_url(&tracker.url).is_some(),
+        StoredTrackerTransport::Http => TrackerEndpoint::from_http_url(&tracker.url)
+            .is_some_and(|endpoint| endpoint.transport() == TrackerTransport::Http),
+        StoredTrackerTransport::Https => TrackerEndpoint::from_http_url(&tracker.url)
+            .is_some_and(|endpoint| endpoint.transport() == TrackerTransport::Https),
+    }
+}
+
 impl From<&TrackerRuntimeRecordSnapshot> for TrackerView {
     fn from(record: &TrackerRuntimeRecordSnapshot) -> Self {
         Self {
@@ -136,6 +177,10 @@ impl From<&TrackerRuntimeRecordSnapshot> for TrackerView {
                 TrackerTransport::Http => TrackerTransportView::Http,
                 TrackerTransport::Https => TrackerTransportView::Https,
             },
+            security: match record.transport {
+                TrackerTransport::Udp | TrackerTransport::Http => TrackerSecurityView::Unencrypted,
+                TrackerTransport::Https => TrackerSecurityView::EncryptedUnauthenticated,
+            },
             source: match record.source {
                 TrackerSource::Magnet => TrackerSourceView::Magnet,
                 TrackerSource::Metainfo => TrackerSourceView::Metainfo,
@@ -143,6 +188,7 @@ impl From<&TrackerRuntimeRecordSnapshot> for TrackerView {
             tier: record.tier,
             status: match record.status {
                 TrackerRuntimeStatus::Inactive => TrackerStatusView::Inactive,
+                TrackerRuntimeStatus::Disabled => TrackerStatusView::Disabled,
                 TrackerRuntimeStatus::Idle => TrackerStatusView::Idle,
                 TrackerRuntimeStatus::Announcing => TrackerStatusView::Announcing,
                 TrackerRuntimeStatus::RetryWait => TrackerStatusView::RetryWait,
@@ -295,10 +341,10 @@ mod tests {
         TrackerRuntimeStatus, TrackerSource, TrackerTransport,
     };
 
-    use super::{TrackerNextActionView, TrackerStatusView, TrackerViewModel};
+    use super::{TrackerNextActionView, TrackerSecurityView, TrackerStatusView, TrackerViewModel};
 
     #[test]
-    fn durable_catalog_redacts_credentials_and_marks_unsupported_transport() {
+    fn durable_catalog_redacts_credentials_and_projects_transport_security() {
         let model = TrackerViewModel::from_trackers(&[
             StoredTracker {
                 tier: 0,
@@ -314,13 +360,26 @@ mod tests {
                 transport: StoredTrackerTransport::Https,
                 source: StoredTrackerSource::Metainfo,
             },
+            StoredTracker {
+                tier: 2,
+                position: 0,
+                url: "https:///missing-host".to_owned(),
+                transport: StoredTrackerTransport::Https,
+                source: StoredTrackerSource::Metainfo,
+            },
         ]);
         let rows = model.rows();
-        assert_eq!(rows.len(), 2);
+        assert_eq!(rows.len(), 3);
         assert_eq!(rows[0].url, "udp://tracker.example:6969");
         assert_eq!(rows[0].status, TrackerStatusView::Inactive);
+        assert_eq!(rows[0].security, TrackerSecurityView::Unencrypted);
         assert_eq!(rows[1].url, "https://tracker.example");
-        assert_eq!(rows[1].status, TrackerStatusView::Unsupported);
+        assert_eq!(rows[1].status, TrackerStatusView::Inactive);
+        assert_eq!(
+            rows[1].security,
+            TrackerSecurityView::EncryptedUnauthenticated
+        );
+        assert_eq!(rows[2].status, TrackerStatusView::Unsupported);
     }
 
     #[test]
@@ -386,7 +445,11 @@ mod tests {
         assert_eq!(rows[2_049].tracker_id, "000002:002049");
         assert!(
             rows.iter()
-                .all(|row| row.status == TrackerStatusView::Unsupported)
+                .all(|row| row.status == TrackerStatusView::Inactive)
+        );
+        assert!(
+            rows.iter()
+                .all(|row| { row.security == TrackerSecurityView::EncryptedUnauthenticated })
         );
     }
 }
