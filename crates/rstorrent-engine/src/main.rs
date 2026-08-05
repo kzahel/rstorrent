@@ -2,13 +2,14 @@ use std::ffi::OsString;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rstorrent_engine::dht::{BootstrapNode, DhtConfig, DhtService};
 use rstorrent_engine::{
-    DownloadConfig, DownloadControl, DownloadError, DownloadProgress, DownloadResourceLimits,
-    MagnetDownloadConfig, NetworkConfig, NetworkPolicy, download_magnet_with_control,
-    download_verified_piece_with_control,
+    DownloadActivityEvent, DownloadActivitySink, DownloadConfig, DownloadControl, DownloadError,
+    DownloadProgress, DownloadResourceLimits, MagnetDownloadConfig, NetworkConfig, NetworkPolicy,
+    download_magnet_with_control, download_verified_piece_with_control,
 };
 use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
 
@@ -40,6 +41,33 @@ enum DownloadCommand {
     },
 }
 
+#[derive(Debug, Default)]
+struct DiagnosticActivity {
+    first_verified_piece: Mutex<Option<u32>>,
+}
+
+impl DiagnosticActivity {
+    fn first_verified_piece(&self) -> Option<u32> {
+        *self
+            .first_verified_piece
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+impl DownloadActivitySink for DiagnosticActivity {
+    fn record(&self, event: DownloadActivityEvent) {
+        let DownloadActivityEvent::PieceVerified { piece_index } = event else {
+            return;
+        };
+        let mut first = self
+            .first_verified_piece
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        first.get_or_insert(piece_index);
+    }
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
     let arguments: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -57,6 +85,8 @@ async fn main() -> ExitCode {
     };
 
     let control = DownloadControl::new();
+    let activity = Arc::new(DiagnosticActivity::default());
+    control.set_activity_sink(activity.clone());
     if let Err(error) = configure_diagnostic_storage_execution(&control) {
         eprintln!("argument error: {error}");
         return ExitCode::from(2);
@@ -75,7 +105,11 @@ async fn main() -> ExitCode {
                 match DhtService::start(dht_config).await {
                     Ok(service) => Some(service),
                     Err(error) => {
-                        return report_result(Err(DownloadError::Dht(error)), control.snapshot());
+                        return report_result(
+                            Err(DownloadError::Dht(error)),
+                            control.snapshot(),
+                            activity.first_verified_piece(),
+                        );
                     }
                 }
             } else {
@@ -88,23 +122,28 @@ async fn main() -> ExitCode {
                 if result.is_ok()
                     && let Err(error) = shutdown
                 {
-                    return report_result(Err(error), control.snapshot());
+                    return report_result(
+                        Err(error),
+                        control.snapshot(),
+                        activity.first_verified_piece(),
+                    );
                 }
             }
             result
         }
     };
-    report_result(result, control.snapshot())
+    report_result(result, control.snapshot(), activity.first_verified_piece())
 }
 
 fn report_result(
     result: Result<rstorrent_engine::DownloadReport, DownloadError>,
     progress: DownloadProgress,
+    first_verified_piece: Option<u32>,
 ) -> ExitCode {
     match result {
         Ok(report) => {
             println!(
-                "verified pieces={}/{} skipped_pieces={} bytes={} sha1={} info_hash={} blocks={} \
+                "verified pieces={}/{} skipped_pieces={} first_verified_piece={} bytes={} sha1={} info_hash={} blocks={} \
 payload_limit={} payload_high_water={} outstanding_request_limit={} \
 outstanding_request_high_water={} active_piece_limit={} verification_buffer={} selected_file_bytes={} \
 skipped_file_bytes={} padding_bytes={} selected_written_bytes={} part_written_bytes={} \
@@ -116,6 +155,7 @@ storage_hash_service_micros={} storage_hash_active_high_water={}",
                 report.verified_piece_count,
                 report.piece_count,
                 report.skipped_piece_count,
+                first_verified_piece.map_or_else(|| "-".to_owned(), |piece| piece.to_string()),
                 report.bytes_written,
                 hex(&report.piece_hash),
                 hex(&report.info_hash),

@@ -59,10 +59,17 @@ def bencode(value: int | bytes | dict[bytes, object]) -> bytes:
 class AdversePeer:
     """Serve valid metadata, advertise the piece, and never unchoke."""
 
-    def __init__(self, info_hash: bytes, info: bytes, piece_count: int) -> None:
+    def __init__(
+        self,
+        info_hash: bytes,
+        info: bytes,
+        piece_count: int,
+        advertised_pieces: set[int] | None = None,
+    ) -> None:
         self.info_hash = info_hash
         self.info = info
         self.piece_count = piece_count
+        self.advertised_pieces = advertised_pieces
         self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.listener.bind(("127.0.0.1", 0))
@@ -71,6 +78,7 @@ class AdversePeer:
         self.address = f"127.0.0.1:{self.listener.getsockname()[1]}"
         self.stop_requested = threading.Event()
         self.started = threading.Event()
+        self.content_interested = threading.Event()
         self.thread = threading.Thread(target=self._run, name="adverse-peer")
         self.active: socket.socket | None = None
         self.error: BaseException | None = None
@@ -142,9 +150,16 @@ class AdversePeer:
             + self.info_hash
             + PEER_ID
         )
-        bitfield = bytearray([0xFF] * ((self.piece_count + 7) // 8))
-        if self.piece_count % 8:
-            bitfield[-1] &= 0xFF << (8 - self.piece_count % 8)
+        bitfield = bytearray((self.piece_count + 7) // 8)
+        advertised = (
+            range(self.piece_count)
+            if self.advertised_pieces is None
+            else self.advertised_pieces
+        )
+        for piece in advertised:
+            if piece < 0 or piece >= self.piece_count:
+                raise ScenarioFailure(f"scripted peer piece {piece} is out of range")
+            bitfield[piece // 8] |= 1 << (7 - piece % 8)
         self._send_frame(connection, 5, bytes(bitfield))
 
         if supports_extensions:
@@ -177,6 +192,7 @@ class AdversePeer:
             message_id, _ = self._receive_frame(connection)
             if message_id == 2:
                 self.interested_messages += 1
+                self.content_interested.set()
             elif message_id == 6:
                 raise ScenarioFailure("choked scripted peer received a block request")
 

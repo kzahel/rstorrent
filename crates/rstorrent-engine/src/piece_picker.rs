@@ -583,30 +583,66 @@ mod tests {
     #[test]
     #[ignore = "manual release-mode picker timing profile"]
     fn maximum_geometry_timing_profile() {
-        let started = Instant::now();
-        let mut picker = AvailabilityPicker::new(
-            MAX_PIECES,
-            (0..MAX_PIECES as u32).collect(),
-            PieceActivationPolicy::RarestFirst,
-            0x91_5eed,
-        )
-        .expect("maximum picker");
-        let build = started.elapsed();
-        let update_started = Instant::now();
-        for piece in (0..MAX_PIECES).step_by(2) {
-            picker
-                .increment_piece_without_repair(piece)
-                .expect("bulk increment");
+        for piece_count in [131_072, 524_288, MAX_PIECES] {
+            let started = Instant::now();
+            let mut picker = AvailabilityPicker::new(
+                piece_count,
+                (0..piece_count as u32).collect(),
+                PieceActivationPolicy::RarestFirst,
+                0x91_5eed,
+            )
+            .expect("profile picker");
+            let build = started.elapsed();
+            let update_started = Instant::now();
+            for piece in (0..piece_count).step_by(2) {
+                picker
+                    .increment_piece_without_repair(piece)
+                    .expect("bulk increment");
+            }
+            picker.rebuild_after_bulk_update();
+            let rebuild = update_started.elapsed();
+            println!(
+                "pieces={piece_count} retained_bytes={} build_ms={} rebuild_ms={} build_ns_per_piece={} rebuild_ns_per_piece={} comparisons={}",
+                picker.retained_bytes(),
+                build.as_millis(),
+                rebuild.as_millis(),
+                build.as_nanos() / piece_count as u128,
+                rebuild.as_nanos() / piece_count as u128,
+                picker.counters().rank_comparisons,
+            );
+            assert!(picker.retained_bytes() <= piece_count * 12);
         }
-        picker.rebuild_after_bulk_update();
-        let rebuild = update_started.elapsed();
+    }
+
+    #[test]
+    #[ignore = "manual release-mode four-torrent memory profile"]
+    fn maximum_geometry_four_torrent_profile() {
+        let started = Instant::now();
+        let mut pickers = (0..4)
+            .map(|torrent| {
+                AvailabilityPicker::new(
+                    MAX_PIECES,
+                    (0..MAX_PIECES as u32).collect(),
+                    PieceActivationPolicy::RarestFirst,
+                    0x91_5eed + torrent,
+                )
+                .expect("maximum picker")
+            })
+            .collect::<Vec<_>>();
+        let retained = pickers
+            .iter()
+            .map(AvailabilityPicker::retained_bytes)
+            .sum::<usize>();
+        for (torrent, picker) in pickers.iter_mut().enumerate() {
+            picker
+                .increment_piece(MAX_PIECES - 1 - torrent)
+                .expect("tail availability");
+            assert!(picker.reserve_best_matching(|_| true).is_some());
+        }
         println!(
-            "pieces={MAX_PIECES} retained_bytes={} build_ms={} rebuild_ms={} comparisons={}",
-            picker.retained_bytes(),
-            build.as_millis(),
-            rebuild.as_millis(),
-            picker.counters().rank_comparisons,
+            "torrents=4 pieces_each={MAX_PIECES} retained_bytes={retained} build_and_query_ms={}",
+            started.elapsed().as_millis(),
         );
-        assert!(picker.retained_bytes() <= MAX_PIECES * 12);
+        assert!(retained <= 4 * MAX_PIECES * 12);
     }
 }

@@ -4324,6 +4324,71 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "manual release-mode active picker comparison"]
+    fn active_hot_path_policy_timing_profile() {
+        const ACTIVE: usize = DEFAULT_MAX_ACTIVE_PIECES;
+        const ATTEMPTS: usize = 20_000;
+
+        fn profile_state(policy: PieceActivationPolicy) -> SwarmState {
+            let mut config = SwarmConfig::for_request_limit(ACTIVE * BLOCK as usize);
+            config.max_active_piece_bytes = ACTIVE * BLOCK as usize;
+            config.piece_activation_policy = policy;
+            let mut state = SwarmState::new(
+                config,
+                ACTIVE,
+                (0..ACTIVE as u32).map(|piece| plan(piece, 1)).collect(),
+            )
+            .expect("profile swarm");
+            add_peer(&mut state, connection(1), &[ACTIVE - 1], false);
+            for piece in 0..ACTIVE as u32 {
+                state.activate_piece(piece).expect("activate piece");
+            }
+            state
+        }
+
+        fn sample(state: &mut SwarmState) -> Duration {
+            let started = std::time::Instant::now();
+            for _ in 0..ATTEMPTS {
+                assert!(
+                    state
+                        .next_active_block_for_connection(connection(1))
+                        .expect("active selection")
+                        .is_some()
+                );
+            }
+            started.elapsed()
+        }
+
+        let mut in_order = profile_state(PieceActivationPolicy::InOrder);
+        let mut rarest = profile_state(PieceActivationPolicy::RarestFirst);
+        let _ = sample(&mut in_order);
+        let _ = sample(&mut rarest);
+        let mut in_order_samples = Vec::new();
+        let mut rarest_samples = Vec::new();
+        for _ in 0..5 {
+            in_order_samples.push(sample(&mut in_order));
+            rarest_samples.push(sample(&mut rarest));
+        }
+        in_order_samples.sort_unstable();
+        rarest_samples.sort_unstable();
+        let in_order_median = in_order_samples[2];
+        let rarest_median = rarest_samples[2];
+        let in_order_p95 = in_order_samples[4];
+        let rarest_p95 = rarest_samples[4];
+        println!(
+            "active={ACTIVE} attempts_per_sample={ATTEMPTS} in_order_median_us={} rarest_median_us={} median_ratio={:.3} in_order_p95_us={} rarest_p95_us={} p95_ratio={:.3}",
+            in_order_median.as_micros(),
+            rarest_median.as_micros(),
+            rarest_median.as_secs_f64() / in_order_median.as_secs_f64(),
+            in_order_p95.as_micros(),
+            rarest_p95.as_micros(),
+            rarest_p95.as_secs_f64() / in_order_p95.as_secs_f64(),
+        );
+        assert!(rarest_median.as_secs_f64() <= in_order_median.as_secs_f64() * 1.10);
+        assert!(rarest_p95.as_secs_f64() <= in_order_p95.as_secs_f64() * 1.20);
+    }
+
+    #[test]
     fn maximum_peer_availability_is_retained_as_a_compact_bitfield() {
         let piece_count = rstorrent_protocol::metainfo::MAX_METAINFO_PIECES;
         let mut state = SwarmState::new(
