@@ -8,4 +8,3 @@ publish = false
 
 [dependencies]
 sha1 = { workspace = true }
-url = { workspace = true }

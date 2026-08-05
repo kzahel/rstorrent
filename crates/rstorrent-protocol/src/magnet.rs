@@ -52,10 +52,6 @@ impl TrackerUrl {
                 udp_endpoint: Some(endpoint),
             });
         }
-        let parsed = url::Url::parse(value).ok()?;
-        if parsed.host().is_none() || parsed.fragment().is_some() {
-            return None;
-        }
         let transport = if scheme.eq_ignore_ascii_case("http") {
             TrackerUrlTransport::Http
         } else if scheme.eq_ignore_ascii_case("https") {
@@ -63,9 +59,10 @@ impl TrackerUrl {
         } else {
             return None;
         };
+        let identity = http_tracker_identity(value, transport)?;
         Some(Self {
             url: value.to_owned(),
-            identity: parsed.to_string(),
+            identity,
             transport,
             udp_endpoint: None,
         })
@@ -376,6 +373,85 @@ fn udp_tracker_url(tracker: &UdpTrackerUrl) -> String {
     }
 }
 
+fn http_tracker_identity(value: &str, transport: TrackerUrlTransport) -> Option<String> {
+    if value.contains('\\') {
+        return None;
+    }
+    let (_, remainder) = value.split_once("://")?;
+    let authority_end = remainder.find(['/', '?']).unwrap_or(remainder.len());
+    let authority = &remainder[..authority_end];
+    let suffix = &remainder[authority_end..];
+    if authority.is_empty() {
+        return None;
+    }
+    let (userinfo, host_port) = authority
+        .rsplit_once('@')
+        .map_or((None, authority), |(userinfo, host_port)| {
+            (Some(userinfo), host_port)
+        });
+    if userinfo.is_some_and(|userinfo| userinfo.contains('@')) || host_port.is_empty() {
+        return None;
+    }
+    let (host, port, ipv6) = if let Some(bracketed) = host_port.strip_prefix('[') {
+        let close = bracketed.find(']')?;
+        let host = &bracketed[..close];
+        let trailing = &bracketed[close + 1..];
+        let port = if trailing.is_empty() {
+            None
+        } else {
+            Some(parse_port(trailing.strip_prefix(':')?)?)
+        };
+        if !valid_ipv6(host) {
+            return None;
+        }
+        (host.to_ascii_lowercase(), port, true)
+    } else if host_port.contains(':') {
+        let (host, port) = host_port.rsplit_once(':')?;
+        if host.contains(':') {
+            return None;
+        }
+        (normalize_host(host)?, Some(parse_port(port)?), false)
+    } else {
+        (normalize_host(host_port)?, None, false)
+    };
+    let scheme = match transport {
+        TrackerUrlTransport::Http => "http",
+        TrackerUrlTransport::Https => "https",
+        TrackerUrlTransport::Udp => return None,
+    };
+    let default_port = matches!(
+        (transport, port),
+        (TrackerUrlTransport::Http, Some(80)) | (TrackerUrlTransport::Https, Some(443))
+    );
+    let mut identity = String::with_capacity(value.len() + 1);
+    identity.push_str(scheme);
+    identity.push_str("://");
+    if let Some(userinfo) = userinfo {
+        identity.push_str(userinfo);
+        identity.push('@');
+    }
+    if ipv6 {
+        identity.push('[');
+    }
+    identity.push_str(&host);
+    if ipv6 {
+        identity.push(']');
+    }
+    if let Some(port) = port.filter(|_| !default_port) {
+        identity.push(':');
+        identity.push_str(&port.to_string());
+    }
+    if suffix.is_empty() {
+        identity.push('/');
+    } else if suffix.starts_with('?') {
+        identity.push('/');
+        identity.push_str(suffix);
+    } else {
+        identity.push_str(suffix);
+    }
+    Some(identity)
+}
+
 fn normalize_host(host: &str) -> Option<String> {
     if host.len() > MAX_HOST_LENGTH || !host.is_ascii() {
         return None;
@@ -649,6 +725,7 @@ mod tests {
              tr=UDP%3A%2F%2Ftracker.example%3A6969%2Fannounce&\
              tr=udp%3A%2F%2F%5B%3A%3A1%5D%3A80%2F&\
              tr=https%3A%2F%2Ftracker.example%2Fannounce&\
+             tr=HTTPS%3A%2F%2FTRACKER.EXAMPLE%3A443%2Fannounce&\
              tr=http%3A%2F%2Fuser%3Apass%40tracker.example%2Fa%3Fx%3D1"
         ))
         .expect("tracker magnet");
@@ -687,6 +764,9 @@ mod tests {
             "udp://tracker.example:80?query",
             "udp://2001:db8::1:80",
             "udp://999.1.1.1:80",
+            "http://tracker.example:bad/announce",
+            "https://[2001:db8::1/announce",
+            "http://tracker.example\\redirect",
             "wss://tracker.example",
         ]
         .into_iter()
