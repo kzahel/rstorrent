@@ -174,7 +174,50 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "gateway_connection_metrics {}",
         serde_json::to_string(&connection_metrics.snapshot())?
     );
-    application.lock().await.shutdown().await?;
+    let mut application = application.lock().await;
+    let incoming_before_shutdown = application.incoming_peer_snapshot();
+    let storage_before_shutdown = application.storage_file_pool_snapshot();
+    application.shutdown().await?;
+    let storage_after_shutdown = application.storage_file_pool_snapshot();
+    let incoming_metrics = incoming_before_shutdown.map_or(serde_json::Value::Null, |snapshot| {
+        serde_json::json!({
+            "listen": snapshot.listen_address.to_string(),
+            "registrations_before_shutdown": snapshot.registrations,
+            "pending_before_shutdown": snapshot.pending,
+            "established_before_shutdown": snapshot.established,
+            "reads_before_shutdown": snapshot.reads,
+            "configured_connection_limit": snapshot.peer_budget.configured_limit,
+            "effective_connection_limit": snapshot.peer_budget.effective_limit,
+            "incoming_connection_slack": snapshot.peer_budget.incoming_slack,
+            "pending_high_water": snapshot.pending_high_water,
+            "established_high_water": snapshot.established_high_water,
+            "connection_high_water": snapshot.peer_budget.total_high_water,
+            "upload_regular_high_water": snapshot.upload_regular_high_water,
+            "upload_optimistic_high_water": snapshot.upload_optimistic_high_water,
+            "upload_slots_high_water": snapshot.upload_slots_high_water,
+            "queued_requests_high_water": snapshot.queued_requests_high_water,
+            "queued_bytes_high_water": snapshot.queued_bytes_high_water,
+            "read_high_water": snapshot.read_high_water,
+            "read_bytes_high_water": snapshot.read_bytes_high_water,
+            "writer_send_buffer_high_water": snapshot.writer_send_buffer_high_water,
+            "payload_bytes_sent": snapshot.payload_bytes_sent,
+        })
+    });
+    eprintln!(
+        "gateway_application_metrics {}",
+        serde_json::to_string(&serde_json::json!({
+            "incoming": incoming_metrics,
+            "incoming_owner_after_shutdown": application.incoming_peer_snapshot().is_some(),
+            "storage_limit": storage_before_shutdown.limit,
+            "storage_owned_before_shutdown": storage_before_shutdown.current_owned,
+            "storage_owned_high_water": storage_before_shutdown.owned_high_water,
+            "storage_cached_before_shutdown": storage_before_shutdown.cached_entries,
+            "platform_pending_high_water": storage_before_shutdown.platform_pending_high_water,
+            "storage_owned_after_shutdown": storage_after_shutdown.current_owned,
+            "storage_cached_after_shutdown": storage_after_shutdown.cached_entries,
+            "platform_pending_after_shutdown": storage_after_shutdown.platform_pending,
+        }))?
+    );
     Ok(())
 }
 

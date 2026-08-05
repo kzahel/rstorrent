@@ -47,8 +47,8 @@ def start_gateway(
     origin: str = ORIGIN,
     network_policy: str = "loopback_only",
 ) -> tuple[subprocess.Popen[str], str]:
-    profile.mkdir()
-    storage.mkdir()
+    profile.mkdir(parents=True, exist_ok=True)
+    storage.mkdir(parents=True, exist_ok=True)
     environment = os.environ.copy()
     environment.update(
         {
@@ -138,4 +138,16 @@ def connection_metrics(stderr: str) -> dict[str, object]:
     ]
     if len(matches) != 1 or not isinstance(matches[0], dict):
         raise ScenarioFailure("gateway did not emit one connection metrics snapshot")
+    return matches[0]
+
+
+def application_metrics(stderr: str) -> dict[str, object]:
+    prefix = "gateway_application_metrics "
+    matches = [
+        json.loads(line[len(prefix) :])
+        for line in stderr.splitlines()
+        if line.startswith(prefix)
+    ]
+    if len(matches) != 1 or not isinstance(matches[0], dict):
+        raise ScenarioFailure("gateway did not emit one application metrics snapshot")
     return matches[0]

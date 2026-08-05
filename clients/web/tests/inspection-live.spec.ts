@@ -22,6 +22,94 @@ const expectFileSelection = process.env.RSTORRENT_LIVE_FILE_SELECTION === "1";
 const torrentFile = process.env.RSTORRENT_LIVE_TORRENT_FILE;
 const expectTorrentFilePicker =
   process.env.RSTORRENT_LIVE_TORRENT_FILE_PICKER === "1";
+const clientSettingsPhase = process.env.RSTORRENT_LIVE_CLIENT_SETTINGS_PHASE;
+
+test("live client settings persist across restart and recover bind failure", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  test.skip(
+    clientSettingsPhase === undefined ||
+      gateway === undefined ||
+      gatewayToken === undefined ||
+      (clientSettingsPhase === "configure" &&
+        (magnet === undefined || torrentId === undefined)),
+    "controlled live client-settings lifecycle is opt-in",
+  );
+  await page.setViewportSize({ width: 1_024, height: 800 });
+  await page.goto(liveUrl());
+  await expect(page.getByRole("grid", { name: "Transfer queue" })).toBeVisible();
+
+  if (clientSettingsPhase === "configure") {
+    const torrentRow = await addAndOpenInWorkbench(page, magnet!, torrentId!);
+    await expect(torrentRow).toContainText("complete", { timeout: 60_000 });
+  }
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Settings" });
+  const runtime = dialog.getByLabel("Current runtime state");
+  await expect(dialog).toBeVisible();
+
+  if (clientSettingsPhase === "configure") {
+    await dialog
+      .getByRole("radio", { name: /Automatic local port/ })
+      .check();
+    await dialog
+      .getByRole("spinbutton", { name: "Peer connection limit" })
+      .fill("37");
+    await dialog
+      .getByRole("spinbutton", { name: "Payload upload slots" })
+      .fill("1");
+    await dialog.getByRole("button", { name: "Save settings" }).click();
+    await expect(
+      dialog.getByText(/Restart the application to apply these changes/i),
+    ).toBeVisible();
+    await expect(runtime).toContainText(
+      "Incoming TCP is off for this application generation.",
+    );
+  } else if (clientSettingsPhase === "observe") {
+    await expect(
+      dialog.getByRole("radio", { name: /Automatic local port/ }),
+    ).toBeChecked();
+    await expect(
+      dialog.getByRole("spinbutton", { name: "Peer connection limit" }),
+    ).toHaveValue("37");
+    await expect(
+      dialog.getByRole("spinbutton", { name: "Payload upload slots" }),
+    ).toHaveValue("1");
+    await expect(
+      dialog.getByText(/Restart is required before they take effect/i),
+    ).toHaveCount(0);
+    await expect(runtime).toContainText(/Listening locally on 127\.0\.0\.1:\d+/);
+  } else if (clientSettingsPhase === "recover") {
+    await expect(
+      dialog.getByRole("radio", { name: /Fixed local port/ }),
+    ).toBeChecked();
+    await expect(runtime).toContainText(/port already in use/i);
+    await dialog
+      .getByRole("radio", { name: /Automatic local port/ })
+      .check();
+    await dialog.getByRole("button", { name: "Save settings" }).click();
+    await expect(
+      dialog.getByText(/Restart the application to apply these changes/i),
+    ).toBeVisible();
+  } else {
+    throw new Error(`unknown client settings phase ${clientSettingsPhase}`);
+  }
+
+  const violations = (
+    await new AxeBuilder({ page }).include('[role="dialog"]').analyze()
+  ).violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+  const runtimeText = (await runtime.textContent()) ?? "";
+  const portMatch = /Listening locally on 127\.0\.0\.1:(\d+)/.exec(runtimeText);
+  console.log(
+    `client_settings_live_milestone ${JSON.stringify({ phase: clientSettingsPhase, listenerPort: portMatch === null ? null : Number(portMatch[1]), axeViolations: violations.length })}`,
+  );
+});
 
 test("live torrent file picker uses one WebSocket binary attachment", async ({
   page,

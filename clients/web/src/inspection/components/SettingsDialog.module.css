@@ -337,7 +337,7 @@
 }
 
 .runtimeWarning {
-  color: var(--danger);
+  color: var(--danger-strong);
 }
 
 .formActions {
