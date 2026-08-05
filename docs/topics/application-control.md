@@ -47,6 +47,10 @@ Tactical `084` adds one atomic typed `set_client_settings` command through the
 same generic HTTP, WebSocket, Tauri, and UniFFI dispatch. Durable configured
 intent changes immediately, while listener, connection budget, and upload
 slots remain truthfully restart-applied.
+Tactical `085` adds the minimal projected `force_recheck_available` capability
+and composes existing per-torrent commands sequentially in the React action
+owner. It does not add a batch command, atomic multi-torrent semantics, or a
+new application task owner.
 
 ## Scope
 
@@ -158,6 +162,10 @@ while running intent downloads only the missing or corrupt wanted pieces.
 Android application request IDs now include a process-random namespace before
 their monotonic suffix, matching the browser contract and preventing a
 restarted process from reusing `android-1` for different durable intent.
+The torrent application view now also projects whether current durable managed
+content can accept Force recheck. Presentation uses that semantic value only
+to derive exact-selection availability; dispatch and durable request handling
+remain authoritative if state races after activation.
 
 Authorization is transport context, not a user-supplied command field. A
 future remote transport must authenticate a principal, attach verified
@@ -266,6 +274,13 @@ the new immutable plan. All-skipped content becomes idle without losing
 running intent, while promotion from a complete selection returns to checking.
 Dynamic platform-capability selection fails closed until descriptor reacquire
 and provider lifecycle have their own design.
+
+Tactical `085` deliberately keeps multi-target orchestration above this
+boundary. The React owner snapshots materialized torrent order and sends one
+fresh ordinary request at a time, continues after per-target failure, and
+bounds presentation diagnostics. Multi-remove similarly confirms one policy
+but dispatches durable removals individually, so it promises neither atomicity
+nor rollback of an earlier successful deletion.
 
 Later work must define multi-torrent scheduling, stable product error
 taxonomy, capability installation, production remote

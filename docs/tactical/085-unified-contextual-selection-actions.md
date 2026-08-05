@@ -1,6 +1,6 @@
 # Tactical 085: Unified Contextual Selection Actions
 
-Status: Planned on 2026-08-05.
+Status: Completed on 2026-08-05.
 
 Topics: `web-ui-design`, `table-interaction`, `application-control`,
 `client-surfaces`, `code-organization-and-refactoring`
@@ -531,6 +531,72 @@ policies within one confirmed target set, makes removal concurrent, replaces
 long press with context invocation, adds a dependency, adds a context-only
 selection capability with no discoverable alternative, or materially changes
 Android/platform storage behavior.
+
+## Implemented Result
+
+The slice landed in three bounded commits:
+
+- `d6d7498` adds the pure torrent-action inventory, grouping, placement, exact
+  target availability, and the projected `force_recheck_available` semantic
+  capability through Rust, generated TypeScript/schema fixtures, live/demo
+  mapping, and tests.
+- `c4f8933` adds the application-lifetime torrent action owner, shared toolbar
+  and context renderers, sequential full-selection execution, one-write plural
+  magnet copy, coordinated multi-remove with failed-target-only retry, shared
+  file priority actions, and generic actionable-row context invocation.
+- `7e190f2` keeps toolbar focus stable during pending work, places one named
+  context trigger outside the ARIA grid, and adds production-browser and
+  Android generated-contract evidence.
+
+Transfers and Workbench now expose the same seven ordered torrent actions for
+an exact target snapshot. Start and Pause remain direct toolbar actions;
+Force recheck, Copy magnet link(s), Archive, Restore, and Remove remain in
+More; their union exactly matches the grouped row context menu. The owner
+dispatches every selected torrent sequentially in materialized application
+order, continues after individual failures, retains only five failure details,
+and remains mounted across destination changes.
+
+The removal owner accepts one or many targets, keeps downloaded data by
+default, applies one deletion policy to the complete target set, bounds the
+name preview and failure details, and retries only failed targets. Files use
+one `Normal`/`Skip` definition and the existing single sorted multi-index
+command from both More and the context menu.
+
+`VirtualTable` owns selection preparation, pointer coordinates, Shift+F10 and
+Context Menu key entry, dismissal, stale-target closure, and row-focus return.
+One visually hidden named trigger is a sibling of the grid rather than an
+invalid grid child. Right-clicking a selected row preserves the complete
+selection; right-clicking an unselected row establishes the singleton target.
+Read-only tables and non-row surfaces retain the native context menu, while
+touch/pen long press remains additive selection.
+
+## Validation Evidence
+
+- `npm test --prefix clients/web -- --run`: 30 files passed and two were
+  intentionally skipped; 178 tests passed and two were skipped.
+- `npm run typecheck --prefix clients/web` passed.
+- `npm run generate --prefix clients/web` passed and left generated artifacts
+  stable.
+- `npm run build --prefix clients/web` passed the production Vite build and
+  CSP scan. Vite retained its existing large-chunk advisory.
+- The complete deterministic Playwright suite passed 29 cases with seven live
+  opt-in cases skipped. It covers both torrent tables, Files, pointer and
+  keyboard invocation, exact plural clipboard readback, grouped menu parity,
+  plural removal intent, viewport clamping, 4,096 logical files with a bounded
+  DOM, focus return, and empty serious/critical Axe findings.
+- Two focused contextual-action cases passed again against the built Vite
+  preview rather than the development server.
+- `cargo fmt --all -- --check` and
+  `cargo clippy -p rstorrent-session --all-targets -- -D warnings` passed.
+- `cargo test -p rstorrent-session` passed 149 tests across the library and
+  binaries with one intentional ignored library test. The existing `ts-rs`
+  serde-attribute parse warnings remained non-failing.
+- The Android bootstrap cross-built the Rust library and generated UniFFI
+  Kotlin for x86_64 and arm64-v8a at API 28. After refreshing the reducer
+  fixture with `forceRecheckAvailable`, `assembleDebug testDebugUnitTest`
+  passed all 41 Gradle tasks.
+- `git diff --check` passed. No public swarm, live Internet, visible client,
+  emulator/device, or ChromeOS run was required by this presentation slice.
 
 ## Potential Follow-Up Work
 

@@ -55,6 +55,11 @@ generic Logs table with the structured ordered console through both browser
 polling and Tauri Channel delivery. Shared generated Rust/TypeScript/Kotlin
 semantic artifacts continue to compile, but Android presentation intentionally
 does not mirror this dense desktop diagnostic surface.
+Tactical `085` gives the shared browser/Tauri product one grouped action model
+for toolbar, More, and actionable-row context menus, including coordinated
+multi-torrent removal and multi-file priority changes. Android receives and
+compiles the projected recheck-capability field but intentionally gains no
+desktop context-menu presentation.
 
 Tactical `081` adds adapter-level v1 `.torrent` byte intake through
 the ordinary browser WebSocket and raw in-process Tauri IPC, plus HTTP
@@ -198,17 +203,19 @@ default. It is a maintainer-facing local bridge, not a change to the accepted
 in-process Tauri product architecture. Tactical `048` makes that same React
 application the Tauri product entry through an in-process adapter. The React
 application currently supports inspection, magnet and local `.torrent` add,
-pause, and resume, but not the full application command set. Its HTTP,
-WebSocket, and Tauri clients implement the generated transport-neutral
-byte-intake operation. React emits transport-neutral magnet or byte intent;
-only the live adapter constructs the generated application request, assigns
-selection `all`, and chooses the active transport.
+pause/resume, force recheck, archive/restore, removal, and Normal/Skip file
+selection, but not the full application command set. Its HTTP, WebSocket, and
+Tauri clients implement the generated transport-neutral byte-intake operation.
+React emits transport-neutral magnet or byte intent; only the live adapter
+constructs the generated application request, assigns selection `all`, and
+chooses the active transport.
 Typed and curated magnet intake share that path. A deterministic catalog test
 keeps the UI shortcuts identical to `tests/live/torrents.json`; public swarm
 availability remains variable evidence rather than a UI guarantee.
-The selected-torrent More menu can also copy a canonical v1 magnet synthesized
-from the already projected info hash. This presentation action does not imply
-that the original submitted URI was retained byte-for-byte.
+Torrent More and context menus can also copy one canonical v1 magnet per
+selected torrent, synthesized from projected info hashes and joined by
+newlines in stable application order. This presentation action does not imply
+that original submitted URIs were retained byte-for-byte.
 
 ## Reactive Views
 

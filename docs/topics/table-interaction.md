@@ -8,7 +8,9 @@ trial on 2026-08-03 through
 independent active-versus-batch command model implemented by
 [`068`](../tactical/068-active-and-batch-table-interaction.md) after trial use
 showed that one action bar could not safely infer which independent set to
-target.
+target. Tactical [`085`](../tactical/085-unified-contextual-selection-actions.md)
+adds the accepted desktop context-invocation contract without changing that
+selection model or the touch/pen long-press gesture.
 
 ## Purpose And Scope
 
@@ -89,6 +91,8 @@ Shift ranges but receives no persistent product meaning or visual state.
 | Command/Control-click a row | Apply the same additive toggle as its checkbox. |
 | Shift-click a row or checkbox | Replace selection with the inclusive anchor-to-clicked range in current sorted/filtered order; make the endpoint current. |
 | Click the header checkbox | Select or clear every logical row in the current filtered table while preserving selected rows outside that table until an exact replacement gesture. |
+| Right-click a selected actionable row | Preserve current and the complete selected set, including hidden targets, and open actions for that exact ordered snapshot. |
+| Right-click an unselected actionable row | Replace selection/current with that singleton before opening its actions. |
 | Long-press with touch or pen | Toggle the held row through the additive selection path, subject to movement, scrolling, cancellation, and synthetic-click guards. |
 | Activate empty table space | Clear selection, current, and its detail when the table permits an empty selection. |
 
@@ -108,6 +112,7 @@ currently contains one row or many.
 | Space | Toggle the current row through the additive selection path. |
 | Shift+Space | Replace selection with the inclusive anchor-to-current range. |
 | Enter | Reveal or activate current detail behavior without changing selection. |
+| Context Menu key or Shift+F10 | Open the actionable row menu for the complete selection; first establish the focused row as the singleton when it is not selected. |
 | Escape or Done | Collapse a multi-selection to current. |
 
 Both Meta+A and Control+A may be recognized at the web event boundary without
@@ -140,6 +145,12 @@ targets outside their new logical selection.
 Changing sort or filter invalidates a range anchor only when its row is no
 longer in the logical table. The next Shift gesture falls back to current and
 then its own endpoint rather than using a stale index.
+
+A context menu retains one exact target snapshot rather than following later
+checkbox history. Changing the target set, filtering the origin away, or
+virtualizing the origin out of the rendered window closes the menu. Torrent
+target order follows the complete materialized application order; file target
+order follows metainfo index.
 
 ## Visual And Accessibility Contract
 
@@ -204,6 +215,14 @@ the destination, singleton selection, General tab, open detail, and one-shot
 focus target change atomically.
 
 Tactical [`071`](../tactical/071-copy-magnet-link.md) applies the same explicit
-action-scope rule to canonical magnet copy: the item is enabled only when the
-complete selection contains exactly one torrent. It never chooses a current or
-visible member from a larger selected set implicitly.
+action-scope rule to canonical magnet copy. Tactical
+[`085`](../tactical/085-unified-contextual-selection-actions.md) supersedes its
+singleton presentation limit: one or many selected torrents now produce one
+newline-delimited clipboard write in stable full-selection order. It still
+never chooses a current or visible subset implicitly.
+
+Tactical `085` also proves selected/unselected pointer targeting, Shift+F10,
+hidden-selection preservation, stale context closure, focus return, grouped
+toolbar/context action parity, and the 4,096-file virtualization bound. Its
+complete deterministic browser gate passed 29 cases with seven live opt-in
+cases skipped and no serious or critical Axe findings.

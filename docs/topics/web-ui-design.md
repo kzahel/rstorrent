@@ -81,6 +81,12 @@ retains magnet validation. The existing root/start dialog owns options while
 the component retains only the browser `File`; bytes are read when the add
 begins and no filename, path, digest, or progress percentage enters
 presentation state.
+Tactical `085` unifies selection-scoped toolbar, More, and row-context actions.
+Transfers and Workbench expose full-selection Start, Pause, Force recheck,
+Copy magnet links, Archive, Restore, and coordinated Remove; Files exposes the
+same Normal/Skip policy from More and its row context menu. One application-
+lifetime torrent owner keeps sequential progress and multi-remove state alive
+across destination changes.
 
 ## Purpose
 
@@ -252,8 +258,9 @@ nested menu divides usable width with its parent rather than rendering off
 screen or covering the parent. Escape restores the relevant trigger; Tab
 continues through document focus order. The first outside tap dismisses only
 and does not also activate the obscured control. The shared trigger supports
-desktop context invocation, but production context targets and touch-long-
-press policy remain separate product decisions.
+desktop context invocation. Tactical `085` binds it only to actionable torrent
+and file rows; visible toolbar/More actions remain the primary touch path and
+touch/pen long press remains additive selection.
 
 The continuing actionable-table interaction contract lives in
 [`table-interaction.md`](table-interaction.md). Tactical `069` implements its
@@ -266,7 +273,9 @@ actions. Tactical `070` makes an error-bearing torrent status a nested
 explanatory control without disturbing those row gestures. Hover exposes its
 bounded error, keyboard and assistive technology receive the same context, and
 activation establishes a singleton current row before opening and focusing the
-General error detail.
+General error detail. Tactical `085` adds right-click, Context Menu key, and
+Shift+F10: a selected row preserves the complete checked set, while an
+unselected row becomes the singleton target before the menu opens.
 
 Torrent-detail tab selection is a paint-only state change. Labels retain the
 same font metrics, the underline is out of layout flow, and bounded count
@@ -515,9 +524,10 @@ table Columns popover, and column-help overlay with one locally styled React
 Aria Components layer. It retains action and table state in the feature
 owners, while the shared layer owns body-portalled rendering, collision-aware
 placement and sizing, focus, dismissal, nested-menu behavior, and portal-safe
-theme/interface metrics. Its context-trigger capability remains test-only;
-product rows do not gain right-click behavior and table touch long press still
-selects.
+theme/interface metrics. Tactical `085` now uses that context-trigger
+capability on production actionable rows, through one named trigger outside
+the ARIA grid. Table touch long press still selects, and read-only tables retain
+ordinary browser context behavior.
 
 The Add dialog now has one checked-by-default **Start downloading files when
 metadata is available** checkbox. Clearing it acquires metadata without
@@ -624,8 +634,10 @@ Tactical `071` adds deterministic component and browser coverage for the
 selection-aware copy action. The browser grants clipboard permission, reads
 back the exact canonical URI, checks restored More focus and disabled
 multi-selection behavior, and finds no serious or critical Axe violations in
-the open menu. No application-view bytes, generated contracts, or durable
-state are added.
+the open menu. Tactical `085` supersedes only the prior multi-selection
+disablement: it reads back one exact newline-delimited value for every selected
+torrent in stable order. No submitted-source URI or durable clipboard state is
+added.
 
 Tactical `077` adds deterministic overlay evidence at 320x568, 390x844,
 456x1024, 920x720, and 1440x900, at every trigger corner and after live
@@ -638,6 +650,16 @@ Light and Dark. The accepted dependency adds 153.44 kB minified / 48.21 kB
 gzip to the production bootstrap while removing about 0.43 kB of component
 CSS; `npm audit --omit=dev` reports no vulnerabilities and the CSP scan stays
 clean.
+
+Tactical `085` adds pure action-policy and component coverage for exact action
+order/grouping/placement, whole-selection availability, sequential command
+continuation, bounded failure feedback, plural removal retry, and shared file
+priority rendering. The complete deterministic browser gate passes 29 cases
+with seven live opt-in cases skipped; it covers Transfers, Workbench, Files,
+pointer and keyboard context entry, plural clipboard readback, collision,
+focus return, 4,096-file virtualization, and empty serious/critical Axe
+findings. Two focused cases pass again against the production Vite preview,
+and the build/CSP scan remains clean.
 
 ## Likely Sequencing
 
