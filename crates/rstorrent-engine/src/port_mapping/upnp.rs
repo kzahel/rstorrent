@@ -42,6 +42,7 @@ const DISCOVERY_ATTEMPTS: usize = 3;
 const DISCOVERY_WINDOW: Duration = Duration::from_millis(900);
 const DISCOVERY_DEADLINE: Duration = Duration::from_secs(8);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(5);
+const HTTP_OPERATION_PAUSE: Duration = Duration::from_millis(100);
 const HIGH_PORT_START: u16 = 40_000;
 const HIGH_PORT_COUNT: u16 = 10_000;
 
@@ -61,6 +62,7 @@ pub struct UpnpError {
     stage: UpnpStage,
     detail: String,
     fault_code: Option<u16>,
+    transport: bool,
 }
 
 impl UpnpError {
@@ -69,6 +71,7 @@ impl UpnpError {
             stage,
             detail: bounded(detail.as_ref(), MAX_ERROR_DETAIL_BYTES),
             fault_code: None,
+            transport: false,
         }
     }
 
@@ -80,6 +83,7 @@ impl UpnpError {
                 MAX_ERROR_DETAIL_BYTES,
             ),
             fault_code: Some(code),
+            transport: false,
         }
     }
 
@@ -93,6 +97,10 @@ impl UpnpError {
 
     pub fn fault_code(&self) -> Option<u16> {
         self.fault_code
+    }
+
+    pub fn is_transport(&self) -> bool {
+        self.transport
     }
 }
 
@@ -292,17 +300,63 @@ impl UpnpGateway {
                 last_conflict = Some(external_port);
                 continue;
             }
-            match self
-                .add_mapping(external_port, local_port, UpnpStage::Add, cancellation)
-                .await
-            {
-                Ok(()) => {}
-                Err(error) if error.fault_code() == Some(718) => {
-                    last_conflict = Some(external_port);
-                    continue;
+            tokio::time::sleep(HTTP_OPERATION_PAUSE).await;
+            let mut transport_failure = None;
+            for attempt in 0..2 {
+                match self
+                    .add_mapping(external_port, local_port, UpnpStage::Add, cancellation)
+                    .await
+                {
+                    Ok(()) => {
+                        transport_failure = None;
+                        break;
+                    }
+                    Err(error) if error.fault_code() == Some(718) => {
+                        last_conflict = Some(external_port);
+                        break;
+                    }
+                    Err(error) if error.is_transport() => {
+                        transport_failure = Some(error);
+                        tokio::time::sleep(HTTP_OPERATION_PAUSE).await;
+                        match self
+                            .query_mapping(external_port, UpnpStage::Verify, cancellation)
+                            .await
+                        {
+                            Ok(Some(entry)) => {
+                                verify_mapping_entry(
+                                    &entry,
+                                    self.local_address,
+                                    local_port,
+                                    UpnpStage::Verify,
+                                )?;
+                                return Ok(UpnpMapping {
+                                    local_endpoint: SocketAddrV4::new(
+                                        self.local_address,
+                                        local_port,
+                                    ),
+                                    external_address,
+                                    external_port,
+                                    lease_seconds: entry.lease_seconds,
+                                });
+                            }
+                            Ok(None) if attempt == 0 => {
+                                tokio::time::sleep(HTTP_OPERATION_PAUSE).await;
+                                continue;
+                            }
+                            Ok(None) => break,
+                            Err(query_error) => return Err(query_error),
+                        }
+                    }
+                    Err(error) => return Err(error),
                 }
-                Err(error) => return Err(error),
             }
+            if last_conflict == Some(external_port) {
+                continue;
+            }
+            if let Some(error) = transport_failure {
+                return Err(error);
+            }
+            tokio::time::sleep(HTTP_OPERATION_PAUSE).await;
             let entry = self
                 .query_mapping(external_port, UpnpStage::Verify, cancellation)
                 .await?
@@ -444,11 +498,13 @@ impl UpnpGateway {
         let request = self
             .client
             .post(self.control_url.clone())
+            .header("connection", "close")
             .header(CONTENT_TYPE, "text/xml; charset=\"utf-8\"")
             .header("soapaction", soap_action)
             .body(body);
         let response = cancellable(cancellation, request.send(), stage).await?;
         let status = response.status();
+        validate_xml_content_type(response.headers(), stage)?;
         let body = read_bounded_body(response, stage, cancellation).await?;
         let leaves = parse_xml_leaves(&body, stage)?;
         if let Some((code, description)) = parse_soap_fault(&leaves, stage)? {
@@ -681,6 +737,7 @@ async fn http_get_xml(
         cancellation,
         client
             .get(url)
+            .header("connection", "close")
             .header("accept", "text/xml, application/xml")
             .send(),
         UpnpStage::Description,
@@ -757,7 +814,9 @@ fn sanitize_transport_error(error: reqwest::Error, stage: UpnpStage) -> UpnpErro
     } else {
         "gateway HTTP transport failed"
     };
-    UpnpError::new(stage, detail)
+    let mut error = UpnpError::new(stage, detail);
+    error.transport = true;
+    error
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1400,7 +1459,8 @@ mod tests {
 
     #[tokio::test]
     async fn scripted_gateway_runs_exact_add_verify_renew_delete_lifecycle() {
-        let (config, transcript, udp_task, http_task) = scripted_gateway(false).await;
+        let (config, transcript, udp_task, http_task) =
+            scripted_gateway(ScriptedAddBehavior::Normal).await;
         let cancellation = CancellationToken::new();
         let gateway = discover_igd_v2(config, &cancellation)
             .await
@@ -1440,8 +1500,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn add_transport_failure_reconciles_an_installed_mapping() {
+        let (config, transcript, udp_task, http_task) =
+            scripted_gateway(ScriptedAddBehavior::DropAfterApply).await;
+        let cancellation = CancellationToken::new();
+        let gateway = discover_igd_v2(config, &cancellation)
+            .await
+            .expect("discover scripted gateway");
+        let mapping = gateway
+            .create_mapping(42_000, &cancellation)
+            .await
+            .expect("reconcile mapping installed before transport failure");
+        assert_eq!(mapping.external_port, 42_000);
+        gateway
+            .delete_mapping(&mapping, &cancellation)
+            .await
+            .expect("delete reconciled mapping");
+        udp_task.await.expect("join SSDP task");
+        http_task.await.expect("join HTTP task");
+        assert_eq!(
+            transcript.lock().unwrap().as_slice(),
+            [
+                "GET /root.xml",
+                "GET /wan.xml",
+                "GetExternalIPAddress",
+                "GetSpecificPortMappingEntry",
+                "AddPortMapping",
+                "GetSpecificPortMappingEntry",
+                "DeletePortMapping",
+                "GetSpecificPortMappingEntry",
+            ]
+        );
+    }
+
+    #[tokio::test]
     async fn permanent_lease_fault_is_a_typed_hard_stop() {
-        let (config, _, udp_task, http_task) = scripted_gateway(true).await;
+        let (config, _, udp_task, http_task) =
+            scripted_gateway(ScriptedAddBehavior::PermanentLeaseFault).await;
         let cancellation = CancellationToken::new();
         let gateway = discover_igd_v2(config, &cancellation)
             .await
@@ -1472,8 +1567,15 @@ mod tests {
         assert_eq!(error.stage(), UpnpStage::Discovery);
     }
 
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum ScriptedAddBehavior {
+        Normal,
+        PermanentLeaseFault,
+        DropAfterApply,
+    }
+
     async fn scripted_gateway(
-        permanent_lease_fault: bool,
+        add_behavior: ScriptedAddBehavior,
     ) -> (
         UpnpDiscoveryConfig,
         Arc<Mutex<Vec<String>>>,
@@ -1487,7 +1589,11 @@ mod tests {
             SocketAddr::V4(endpoint) => endpoint,
             SocketAddr::V6(_) => unreachable!(),
         };
-        let response_count = if permanent_lease_fault { 5 } else { 10 };
+        let response_count = match add_behavior {
+            ScriptedAddBehavior::Normal => 10,
+            ScriptedAddBehavior::PermanentLeaseFault => 5,
+            ScriptedAddBehavior::DropAfterApply => 8,
+        };
         let transcript = Arc::new(Mutex::new(Vec::new()));
         let http_transcript = transcript.clone();
         let http_task = tokio::spawn(async move {
@@ -1496,7 +1602,7 @@ mod tests {
                 let (mut stream, _) = listener.accept().await.unwrap();
                 let request = read_http_request(&mut stream).await;
                 let first_line = request.lines().next().unwrap_or_default();
-                let (status, content_type, body, event) = if first_line
+                let (status, content_type, body, event, drop_response) = if first_line
                     .starts_with("GET /root.xml ")
                 {
                     (
@@ -1504,6 +1610,7 @@ mod tests {
                         "text/xml",
                         device_description(http_port),
                         "GET /root.xml",
+                        false,
                     )
                 } else if first_line.starts_with("GET /wan.xml ") {
                     (
@@ -1511,16 +1618,18 @@ mod tests {
                         "application/xml",
                         scpd_description(),
                         "GET /wan.xml",
+                        false,
                     )
                 } else {
                     let action = soap_action(&request);
-                    let (status, body) = match action {
+                    let (status, body, drop_response) = match action {
                         "GetExternalIPAddress" => (
                             "200 OK",
                             soap_response(
                                 action,
                                 "<NewExternalIPAddress>203.0.113.10</NewExternalIPAddress>",
                             ),
+                            false,
                         ),
                         "GetSpecificPortMappingEntry" if mapped => (
                             "200 OK",
@@ -1528,15 +1637,22 @@ mod tests {
                                 action,
                                 "<NewInternalPort>42000</NewInternalPort><NewInternalClient>127.0.0.1</NewInternalClient><NewEnabled>1</NewEnabled><NewPortMappingDescription>RSTorrent</NewPortMappingDescription><NewLeaseDuration>3600</NewLeaseDuration>",
                             ),
+                            false,
                         ),
                         "GetSpecificPortMappingEntry" => (
                             "500 Internal Server Error",
                             soap_fault(714, "NoSuchEntryInArray"),
+                            false,
                         ),
-                        "AddPortMapping" if permanent_lease_fault => (
-                            "500 Internal Server Error",
-                            soap_fault(725, "OnlyPermanentLeasesSupported"),
-                        ),
+                        "AddPortMapping"
+                            if add_behavior == ScriptedAddBehavior::PermanentLeaseFault =>
+                        {
+                            (
+                                "500 Internal Server Error",
+                                soap_fault(725, "OnlyPermanentLeasesSupported"),
+                                false,
+                            )
+                        }
                         "AddPortMapping" => {
                             assert!(request.contains("<NewLeaseDuration>3600</NewLeaseDuration>"));
                             assert!(
@@ -1544,17 +1660,30 @@ mod tests {
                                     .contains("<NewInternalClient>127.0.0.1</NewInternalClient>")
                             );
                             mapped = true;
-                            ("200 OK", soap_response(action, ""))
+                            (
+                                "200 OK",
+                                soap_response(action, ""),
+                                add_behavior == ScriptedAddBehavior::DropAfterApply,
+                            )
                         }
                         "DeletePortMapping" => {
                             mapped = false;
-                            ("200 OK", soap_response(action, ""))
+                            ("200 OK", soap_response(action, ""), false)
                         }
                         other => panic!("unexpected scripted action {other}"),
                     };
-                    (status, "text/xml; charset=utf-8", body, action)
+                    (
+                        status,
+                        "text/xml; charset=utf-8",
+                        body,
+                        action,
+                        drop_response,
+                    )
                 };
                 http_transcript.lock().unwrap().push(event.to_owned());
+                if drop_response {
+                    continue;
+                }
                 let response = format!(
                     "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                     body.len()

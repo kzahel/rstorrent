@@ -22,6 +22,7 @@ pub mod category {
     pub const LIFECYCLE_TORRENT: &str = "lifecycle.torrent";
     pub const DISCOVERY_PEER: &str = "discovery.peer";
     pub const DISCOVERY_DHT: &str = "discovery.dht";
+    pub const DISCOVERY_REACHABILITY: &str = "discovery.reachability";
     pub const TRACKER_ANNOUNCE: &str = "tracker.announce";
     pub const PEER_CONNECTION: &str = "peer.connection";
     pub const PEER_PROTOCOL: &str = "peer.protocol";

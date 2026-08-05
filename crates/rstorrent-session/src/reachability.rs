@@ -4,11 +4,26 @@
 //! This module keeps eligibility and stale-result fencing deterministic.
 
 use std::net::{Ipv4Addr, SocketAddrV4};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::time::Duration;
 
+use rstorrent_engine::port_mapping::upnp::{
+    UpnpDiscoveryConfig, UpnpError, UpnpMapping, UpnpStage, discover_igd_v2,
+};
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
+
+use crate::diagnostics::{DiagnosticSeverity, category};
 use crate::settings::{
     ClientSettings, ListenerPolicy, ListenerStatus, PortMappingFailureStage, PortMappingMechanism,
     PortMappingPolicy, PortMappingStatus,
 };
+use crate::views::ViewHub;
+
+const DELETE_TIMEOUT: Duration = Duration::from_secs(5);
+const RENEWAL_RETRY_DELAY: Duration = Duration::from_secs(60);
+static NEXT_REACHABILITY_GENERATION: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ReachabilityEvent {
@@ -29,6 +44,253 @@ pub(crate) enum ReachabilityEvent {
         detail: String,
     },
     Stopping,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct ReachabilityOwnerCounts {
+    pub tasks: usize,
+    pub mappings: usize,
+}
+
+#[derive(Debug, Default)]
+struct ReachabilityCounters {
+    tasks: AtomicUsize,
+    mappings: AtomicUsize,
+}
+
+#[derive(Debug)]
+pub(crate) struct ReachabilityCoordinator {
+    cancellation: CancellationToken,
+    task: Option<JoinHandle<Result<(), String>>>,
+    counters: Arc<ReachabilityCounters>,
+}
+
+impl ReachabilityCoordinator {
+    pub(crate) fn start(
+        settings: &ClientSettings,
+        listener_status: &ListenerStatus,
+        views: ViewHub,
+    ) -> Self {
+        let generation = NEXT_REACHABILITY_GENERATION.fetch_add(1, Ordering::Relaxed);
+        let state = ReachabilityState::new(generation, settings, listener_status);
+        let cancellation = CancellationToken::new();
+        let counters = Arc::new(ReachabilityCounters::default());
+        let task = state.local_endpoint().map(|local_endpoint| {
+            counters.tasks.store(1, Ordering::Release);
+            let task_cancellation = cancellation.clone();
+            let task_counters = counters.clone();
+            tokio::spawn(async move {
+                let result = run_mapping(
+                    state,
+                    local_endpoint,
+                    views,
+                    task_cancellation,
+                    task_counters.clone(),
+                )
+                .await;
+                task_counters.tasks.store(0, Ordering::Release);
+                result
+            })
+        });
+        Self {
+            cancellation,
+            task,
+            counters,
+        }
+    }
+
+    pub(crate) fn owner_counts(&self) -> ReachabilityOwnerCounts {
+        ReachabilityOwnerCounts {
+            tasks: self.counters.tasks.load(Ordering::Acquire),
+            mappings: self.counters.mappings.load(Ordering::Acquire),
+        }
+    }
+
+    pub(crate) async fn shutdown(mut self) -> Result<ReachabilityOwnerCounts, String> {
+        self.cancellation.cancel();
+        if let Some(task) = self.task.take() {
+            match task.await {
+                Ok(result) => result?,
+                Err(error) if error.is_cancelled() => {}
+                Err(error) => return Err(format!("reachability task join: {error}")),
+            }
+        }
+        let terminal = self.owner_counts();
+        if terminal != ReachabilityOwnerCounts::default() {
+            return Err(format!(
+                "reachability owners remain: tasks={},mappings={}",
+                terminal.tasks, terminal.mappings
+            ));
+        }
+        Ok(terminal)
+    }
+}
+
+impl Drop for ReachabilityCoordinator {
+    fn drop(&mut self) {
+        self.cancellation.cancel();
+    }
+}
+
+async fn run_mapping(
+    mut state: ReachabilityState,
+    local_endpoint: SocketAddrV4,
+    views: ViewHub,
+    cancellation: CancellationToken,
+    counters: Arc<ReachabilityCounters>,
+) -> Result<(), String> {
+    publish(&mut state, &views, ReachabilityEvent::Discovering)?;
+    let config = match UpnpDiscoveryConfig::new(*local_endpoint.ip()) {
+        Ok(config) => config,
+        Err(error) => {
+            publish_failure(&mut state, &views, error)?;
+            return Ok(());
+        }
+    };
+    let gateway = match discover_igd_v2(config, &cancellation).await {
+        Ok(gateway) => gateway,
+        Err(error) => {
+            publish_failure(&mut state, &views, error)?;
+            return Ok(());
+        }
+    };
+    publish(&mut state, &views, ReachabilityEvent::Mapping)?;
+    let mut mapping = match gateway
+        .create_mapping(local_endpoint.port(), &cancellation)
+        .await
+    {
+        Ok(mapping) => mapping,
+        Err(error) => {
+            publish_failure(&mut state, &views, error)?;
+            return Ok(());
+        }
+    };
+    counters.mappings.store(1, Ordering::Release);
+    publish_mapped(&mut state, &views, &mapping)?;
+    let mut renewal_delay = mapping.renewal_delay();
+    loop {
+        tokio::select! {
+            _ = cancellation.cancelled() => break,
+            _ = tokio::time::sleep(renewal_delay) => {
+                match gateway.renew_mapping(&mut mapping, &cancellation).await {
+                    Ok(()) => {
+                        publish_mapped(&mut state, &views, &mapping)?;
+                        renewal_delay = mapping.renewal_delay();
+                    }
+                    Err(error) => {
+                        publish(
+                            &mut state,
+                            &views,
+                            ReachabilityEvent::RenewalFailed {
+                                external_address: mapping.external_address,
+                                external_port: mapping.external_port,
+                                detail: error.detail().to_owned(),
+                            },
+                        )?;
+                        record_failure_diagnostic(&views, &error);
+                        renewal_delay = RENEWAL_RETRY_DELAY;
+                    }
+                }
+            }
+        }
+    }
+    publish(&mut state, &views, ReachabilityEvent::Stopping)?;
+    let cleanup_cancellation = CancellationToken::new();
+    let delete = tokio::time::timeout(
+        DELETE_TIMEOUT,
+        gateway.delete_mapping(&mapping, &cleanup_cancellation),
+    )
+    .await;
+    counters.mappings.store(0, Ordering::Release);
+    match delete {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(error)) => {
+            record_failure_diagnostic(&views, &error);
+            Err(format!("delete UPnP mapping: {}", error.detail()))
+        }
+        Err(_) => Err("delete UPnP mapping: cleanup deadline elapsed".to_owned()),
+    }
+}
+
+fn publish_mapped(
+    state: &mut ReachabilityState,
+    views: &ViewHub,
+    mapping: &UpnpMapping,
+) -> Result<(), String> {
+    publish(
+        state,
+        views,
+        ReachabilityEvent::Mapped {
+            external_address: mapping.external_address,
+            external_port: mapping.external_port,
+            lease_seconds: mapping.lease_seconds,
+        },
+    )
+}
+
+fn publish_failure(
+    state: &mut ReachabilityState,
+    views: &ViewHub,
+    error: UpnpError,
+) -> Result<(), String> {
+    record_failure_diagnostic(views, &error);
+    publish(
+        state,
+        views,
+        ReachabilityEvent::Failed {
+            stage: failure_stage(error.stage()),
+            detail: error.detail().to_owned(),
+        },
+    )
+}
+
+fn publish(
+    state: &mut ReachabilityState,
+    views: &ViewHub,
+    event: ReachabilityEvent,
+) -> Result<(), String> {
+    if state.apply(state.generation(), event) {
+        views
+            .set_port_mapping_status(state.status().clone())
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn record_failure_diagnostic(views: &ViewHub, error: &UpnpError) {
+    let stage = failure_stage_name(error.stage());
+    let _ = views.record_diagnostic(
+        DiagnosticSeverity::Warning,
+        category::DISCOVERY_REACHABILITY,
+        "upnp_mapping_failed",
+        None,
+        "Automatic incoming TCP mapping failed; the local listener remains available",
+        &[("stage", stage), ("detail", error.detail())],
+    );
+}
+
+fn failure_stage(stage: UpnpStage) -> PortMappingFailureStage {
+    match stage {
+        UpnpStage::Discovery => PortMappingFailureStage::Discovery,
+        UpnpStage::Description => PortMappingFailureStage::Description,
+        UpnpStage::ExternalAddress => PortMappingFailureStage::ExternalAddress,
+        UpnpStage::Add => PortMappingFailureStage::Add,
+        UpnpStage::Verify => PortMappingFailureStage::Verify,
+        UpnpStage::Renewal => PortMappingFailureStage::Renewal,
+        UpnpStage::Delete => PortMappingFailureStage::Delete,
+    }
+}
+
+fn failure_stage_name(stage: UpnpStage) -> &'static str {
+    match stage {
+        UpnpStage::Discovery => "discovery",
+        UpnpStage::Description => "description",
+        UpnpStage::ExternalAddress => "external_address",
+        UpnpStage::Add => "add",
+        UpnpStage::Verify => "verify",
+        UpnpStage::Renewal => "renewal",
+        UpnpStage::Delete => "delete",
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

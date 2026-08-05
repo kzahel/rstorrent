@@ -9,8 +9,10 @@ use std::time::Duration;
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_session::{
     ApplicationConfig, ApplicationService, CONTROL_VERSION, ClientSettings, Command,
-    ConfiguredStorageRoot, ListenerPolicy, NetworkConfig, NetworkPolicy, RequestEnvelope,
-    ResponseOutcome, SessionStore, StorageState, StoreError,
+    ConfiguredStorageRoot, DeliveryPolicy, ListenerPolicy, NetworkConfig, NetworkPolicy,
+    PortMappingPolicy, PortMappingStatus, RequestEnvelope, ResponseOutcome, SessionStore,
+    StorageState, StoreError, SubscriptionSpec, ViewProjection, ViewSelector, ViewSnapshot,
+    ViewUpdatePayload,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::time::timeout;
@@ -56,6 +58,7 @@ async fn run() -> Result<(), SeedHarnessError> {
         &storage_roots,
         &metainfo,
         &raw_info,
+        arguments.upnp,
     )?;
 
     let config = ApplicationConfig::new(
@@ -81,6 +84,11 @@ async fn run() -> Result<(), SeedHarnessError> {
     })
     .await
     .map_err(|_| SeedHarnessError::ReadinessTimeout)?;
+    let mapping = if arguments.upnp {
+        Some(wait_for_mapping(&service).await?)
+    } else {
+        None
+    };
     let ready_json = serde_json::json!({
         "event": "ready",
         "info_hash": hex(metainfo.info_hash),
@@ -95,6 +103,7 @@ async fn run() -> Result<(), SeedHarnessError> {
         "read_high_water": ready.read_high_water,
         "read_bytes_high_water": ready.read_bytes_high_water,
         "payload_bytes_sent": ready.payload_bytes_sent,
+        "mapping": mapping,
     });
     let mut stdout = tokio::io::stdout();
     stdout
@@ -143,6 +152,15 @@ async fn run() -> Result<(), SeedHarnessError> {
             "established_high_water": snapshot.established_high_water,
             "connection_high_water": snapshot.peer_budget.total_high_water,
             "upload_slots_high_water": snapshot.upload_slots_high_water,
+            "queued_requests_high_water": snapshot.queued_requests_high_water,
+            "read_high_water": snapshot.read_high_water,
+            "payload_bytes_sent": snapshot.payload_bytes_sent,
+            "peers": snapshot_view(&service, ViewSelector::Torrent {
+                torrent_id: hex(metainfo.info_hash),
+            }, ViewProjection::Peers).await?,
+            "swarm": snapshot_view(&service, ViewSelector::Torrent {
+                torrent_id: hex(metainfo.info_hash),
+            }, ViewProjection::Swarm).await?,
         });
         stdout
             .write_all(format!("{snapshot_json}\n").as_bytes())
@@ -180,6 +198,8 @@ async fn run() -> Result<(), SeedHarnessError> {
         "read_high_water": final_snapshot.read_high_water,
         "read_bytes_high_water": final_snapshot.read_bytes_high_water,
         "writer_send_buffer_high_water": final_snapshot.writer_send_buffer_high_water,
+        "mapping_tasks_after_shutdown": 0,
+        "mappings_after_shutdown": 0,
     });
     stdout
         .write_all(format!("{stopped_json}\n").as_bytes())
@@ -203,11 +223,21 @@ fn initialize_catalog(
     storage_roots: &[ConfiguredStorageRoot],
     metainfo: &Metainfo,
     raw_info: &[u8],
+    upnp: bool,
 ) -> Result<(), SeedHarnessError> {
     let torrent_id = hex(metainfo.info_hash);
     let mut store = SessionStore::open(profile_root, PROFILE_ID, storage_roots)?;
     let desired_settings = ClientSettings {
-        listener: ListenerPolicy::AutomaticLoopback,
+        listener: if upnp {
+            ListenerPolicy::AutomaticLocalNetwork
+        } else {
+            ListenerPolicy::AutomaticLoopback
+        },
+        port_mapping: if upnp {
+            PortMappingPolicy::Upnp
+        } else {
+            PortMappingPolicy::Disabled
+        },
         ..ClientSettings::default()
     };
     if store.client_settings()? != desired_settings {
@@ -271,6 +301,7 @@ struct Arguments {
     profile_root: PathBuf,
     storage_root: PathBuf,
     metainfo: PathBuf,
+    upnp: bool,
 }
 
 impl Arguments {
@@ -278,19 +309,27 @@ impl Arguments {
         arguments: impl Iterator<Item = std::ffi::OsString>,
     ) -> Result<Self, SeedHarnessError> {
         let arguments = arguments.collect::<Vec<_>>();
-        if arguments.len() != 6 {
-            return Err(SeedHarnessError::Arguments(
-                "usage: rstorrent-incoming-seed --profile-root PATH --storage-root PATH --metainfo PATH"
-                    .to_owned(),
-            ));
-        }
         let mut profile_root = None;
         let mut storage_root = None;
         let mut metainfo = None;
-        for pair in arguments.chunks_exact(2) {
-            let flag = pair[0]
+        let mut upnp = false;
+        let mut index = 0;
+        while index < arguments.len() {
+            let flag = arguments[index]
                 .to_str()
                 .ok_or_else(|| SeedHarnessError::Arguments("flag is not UTF-8".to_owned()))?;
+            if flag == "--upnp" {
+                if std::mem::replace(&mut upnp, true) {
+                    return Err(SeedHarnessError::Arguments(
+                        "--upnp may appear only once".to_owned(),
+                    ));
+                }
+                index += 1;
+                continue;
+            }
+            let value = arguments
+                .get(index + 1)
+                .ok_or_else(|| SeedHarnessError::Arguments(format!("{flag} requires a path")))?;
             let target = match flag {
                 "--profile-root" => &mut profile_root,
                 "--storage-root" => &mut storage_root,
@@ -301,11 +340,12 @@ impl Arguments {
                     )));
                 }
             };
-            if target.replace(PathBuf::from(&pair[1])).is_some() {
+            if target.replace(PathBuf::from(value)).is_some() {
                 return Err(SeedHarnessError::Arguments(format!(
                     "{flag} may appear only once"
                 )));
             }
+            index += 2;
         }
         Ok(Self {
             profile_root: profile_root.ok_or_else(|| {
@@ -316,7 +356,94 @@ impl Arguments {
             })?,
             metainfo: metainfo
                 .ok_or_else(|| SeedHarnessError::Arguments("--metainfo is required".to_owned()))?,
+            upnp,
         })
+    }
+}
+
+async fn wait_for_mapping(
+    service: &ApplicationService,
+) -> Result<PortMappingStatus, SeedHarnessError> {
+    let subscription = service
+        .subscribe(SubscriptionSpec {
+            selector: ViewSelector::TorrentList,
+            projection: ViewProjection::Summary,
+            delivery: DeliveryPolicy {
+                min_interval_millis: 0,
+                max_queue_bytes: 64 * 1_024,
+            },
+            diagnostics: None,
+            catalog_page: None,
+        })
+        .map_err(|error| SeedHarnessError::Catalog(error.to_string()))?;
+    timeout(READY_TIMEOUT, async {
+        loop {
+            let update = subscription.next_update().await.ok_or_else(|| {
+                SeedHarnessError::Catalog(
+                    "mapping view subscription closed before readiness".to_owned(),
+                )
+            })?;
+            let status = match update.payload {
+                ViewUpdatePayload::Snapshot {
+                    snapshot:
+                        ViewSnapshot::TorrentList {
+                            client_settings, ..
+                        },
+                } => Some(client_settings.port_mapping_status),
+                ViewUpdatePayload::Patch {
+                    patch:
+                        rstorrent_session::ViewPatch::TorrentList {
+                            client_settings: Some(client_settings),
+                            ..
+                        },
+                } => Some(client_settings.port_mapping_status),
+                _ => None,
+            };
+            match status {
+                Some(status @ PortMappingStatus::Mapped { .. }) => return Ok(status),
+                Some(PortMappingStatus::Failed { stage, detail }) => {
+                    return Err(SeedHarnessError::Catalog(format!(
+                        "UPnP mapping failed during {stage:?}: {detail}"
+                    )));
+                }
+                Some(PortMappingStatus::RenewalFailed { detail, .. }) => {
+                    return Err(SeedHarnessError::Catalog(format!(
+                        "UPnP mapping renewal failed before readiness: {detail}"
+                    )));
+                }
+                _ => {}
+            }
+        }
+    })
+    .await
+    .map_err(|_| SeedHarnessError::ReadinessTimeout)?
+}
+
+async fn snapshot_view(
+    service: &ApplicationService,
+    selector: ViewSelector,
+    projection: ViewProjection,
+) -> Result<ViewSnapshot, SeedHarnessError> {
+    let subscription = service
+        .subscribe(SubscriptionSpec {
+            selector,
+            projection,
+            delivery: DeliveryPolicy {
+                min_interval_millis: 0,
+                max_queue_bytes: 256 * 1_024,
+            },
+            diagnostics: None,
+            catalog_page: None,
+        })
+        .map_err(|error| SeedHarnessError::Catalog(error.to_string()))?;
+    let update = subscription.next_update().await.ok_or_else(|| {
+        SeedHarnessError::Catalog("view subscription closed before snapshot".to_owned())
+    })?;
+    match update.payload {
+        ViewUpdatePayload::Snapshot { snapshot } => Ok(snapshot),
+        _ => Err(SeedHarnessError::Catalog(
+            "view subscription did not begin with a snapshot".to_owned(),
+        )),
     }
 }
 
@@ -397,6 +524,22 @@ mod tests {
         )
         .expect("parse harness arguments");
         assert_eq!(parsed.profile_root.to_string_lossy(), "profile");
+        assert!(!parsed.upnp);
+        let upnp = Arguments::parse(
+            [
+                "--upnp",
+                "--profile-root",
+                "profile",
+                "--storage-root",
+                "storage",
+                "--metainfo",
+                "fixture.torrent",
+            ]
+            .into_iter()
+            .map(OsString::from),
+        )
+        .expect("parse UPnP harness arguments");
+        assert!(upnp.upnp);
         assert!(Arguments::parse(std::iter::empty()).is_err());
     }
 }

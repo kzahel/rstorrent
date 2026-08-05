@@ -41,6 +41,7 @@ use crate::diagnostics::{
 use crate::file_views::FileProgressModel;
 use crate::have::HaveState;
 use crate::incoming_seeding::{IncomingSeeding, IncomingSeedingError, SeedReconcileOutcome};
+use crate::reachability::ReachabilityCoordinator;
 use crate::settings::{
     ClientSettingsRuntimeView, ListenerBindFailureReason, ListenerStatus, StorageRootSnapshot,
     classify_listener_bind_failure,
@@ -268,6 +269,7 @@ pub struct ApplicationService {
     storage_file_pool: StorageFilePool,
     peer_budget: PeerBudget,
     incoming_seeding: Option<IncomingSeeding>,
+    reachability: Option<ReachabilityCoordinator>,
     incoming_service: Option<IncomingPeerService>,
     torrent_runtimes: BTreeMap<String, TorrentRuntime>,
     active_torrent: Option<String>,
@@ -438,7 +440,7 @@ impl ApplicationService {
         let initial_dht_view = inspection_view(&dht_observation_receiver.borrow());
         let runtime_client_settings = ClientSettingsRuntimeView::from_started(
             snapshot.client_settings.clone(),
-            active_client_settings,
+            active_client_settings.clone(),
             effective_peer_connection_limit,
             listener_status.clone(),
         );
@@ -486,6 +488,7 @@ impl ApplicationService {
             storage_file_pool,
             peer_budget,
             incoming_seeding,
+            reachability: None,
             incoming_service,
             torrent_runtimes,
             active_torrent: None,
@@ -540,6 +543,11 @@ impl ApplicationService {
         service.restore_running().await?;
         service.reconcile_incoming_catalog().await?;
         service.refresh_views()?;
+        service.reachability = Some(ReachabilityCoordinator::start(
+            &active_client_settings,
+            &listener_status,
+            service.views.clone(),
+        ));
         Ok(service)
     }
 
@@ -1574,6 +1582,25 @@ impl ApplicationService {
     pub async fn shutdown(&mut self) -> Result<(), ApplicationError> {
         let mut active_join_error = None;
         let mut shutdown_error = None;
+        if let Some(reachability) = self.reachability.take() {
+            match reachability.shutdown().await {
+                Ok(terminal) => {
+                    let terminal_counts =
+                        format!("tasks={},mappings={}", terminal.tasks, terminal.mappings);
+                    let _ = self.views.record_diagnostic(
+                        DiagnosticSeverity::Info,
+                        category::DISCOVERY_REACHABILITY,
+                        "reachability_coordinator_stopped",
+                        None,
+                        "Incoming reachability coordinator stopped with joined owners",
+                        &[("terminal_counts", &terminal_counts)],
+                    );
+                }
+                Err(error) => {
+                    active_join_error = Some(format!("reachability coordinator: {error}"));
+                }
+            }
+        }
         if let Some(incoming) = self.incoming_seeding.take() {
             incoming.stop();
         }
@@ -7415,6 +7442,40 @@ mod tests {
             .expect("shutdown disabled service");
         drop(disabled);
         fs::remove_dir_all(disabled_root).expect("remove disabled root");
+
+        let ineligible_root = test_root("incoming-loopback-upnp-ineligible");
+        let ineligible_config = config(&ineligible_root);
+        persist_client_settings(
+            &ineligible_config,
+            ClientSettings {
+                listener: ListenerPolicy::AutomaticLoopback,
+                port_mapping: crate::PortMappingPolicy::Upnp,
+                ..ClientSettings::default()
+            },
+        );
+        let mut ineligible = ApplicationService::open(ineligible_config)
+            .await
+            .expect("open ineligible loopback mapping policy");
+        assert_eq!(
+            client_settings_runtime(&ineligible)
+                .await
+                .port_mapping_status,
+            crate::PortMappingStatus::Ineligible
+        );
+        assert_eq!(
+            ineligible
+                .reachability
+                .as_ref()
+                .expect("coordinator exists")
+                .owner_counts(),
+            crate::reachability::ReachabilityOwnerCounts::default()
+        );
+        ineligible
+            .shutdown()
+            .await
+            .expect("shutdown ineligible app");
+        drop(ineligible);
+        fs::remove_dir_all(ineligible_root).expect("remove ineligible root");
 
         let fixed_root = test_root("incoming-fixed-conflict");
         let blocker = TcpListener::bind("127.0.0.1:0")
