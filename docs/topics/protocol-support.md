@@ -29,6 +29,14 @@ The claim remains loopback and complete-torrent only and does not include
 public binding, listener advertisement, NAT traversal, finite bandwidth, or
 ratio/time policy.
 
+Tactical [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) retains
+one ordinary peer authority across download and completed-seed lifetimes and
+attaches routed incoming sockets to it. Controlled authenticated-gateway
+evidence observes simultaneous pinned libtorrent and RSTorrent Peers/Swarm
+rows while both independently verify exact content, then observes exact row
+removal, pause, and terminal zero ownership. This expands inspection and
+lifecycle evidence without expanding the claimed network scope.
+
 Tactical [`081`](../tactical/081-v1-torrent-byte-intake.md) implements bounded
 v1 outer-metainfo intake, libtorrent-aligned large-v1 limits, and BEP 12 tier
 retention over the existing UDP tracker runtime. Deterministic, maximum-

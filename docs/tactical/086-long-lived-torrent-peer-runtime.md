@@ -1,6 +1,7 @@
 # Tactical 086: Long-Lived Torrent Peer Runtime
 
-Status: In progress on 2026-08-05. Gates 1--4 are complete; Gate 5 remains.
+Status: Completed on 2026-08-05. All five gates and the stopping condition
+pass.
 
 Topics: `incoming-reachability-and-seeding`, `peer-lifecycle`,
 `code-organization-and-refactoring`, `application-view-api`,
@@ -619,6 +620,47 @@ Record exact resource high water and terminal zero counts, run the complete
 validation matrix, update the tactical and all owning topics with only passed
 evidence, and identify truthful actual-port advertisement as the next separate
 reachability slice.
+
+Completed on 2026-08-05. The isolated harness now prepares its durable
+complete seed under the production gateway profile, reopens it behind the
+authenticated polling gateway, and holds one outbound-only pinned libtorrent
+2.0.13 leecher while an ordinary RSTorrent magnet leecher joins. One leased
+view set follows the library, Peers, and Swarm projections throughout the
+transfer. It observed two distinct incoming TCP generations identified as
+`libtorrent 2.0.13` and `RSTorrent 0.0.0.1`; both rows negotiated BEP 10 and
+`ut_metadata`, became remotely interested and locally unchoked, carried
+nonzero per-peer upload totals, and exposed `incoming`, `upload_allowed`,
+`extension_protocol`, and `metadata_extension`. The default eight-slot policy
+gave both peers regular grants, so the absence of `optimistic_unchoke` in this
+run is truthful; Gate 4's one-slot application test separately observes that
+flag from an optimistic grant.
+
+Both clients independently hash-verified the exact 67,109,595-byte,
+4,097-piece single-file fixture. The gateway seed recorded exactly
+134,219,190 physical payload bytes. After both sockets closed, Peers was empty
+and Swarm retained exactly two `incoming`, non-connectable records. A real
+pause command then produced inactive empty Peers/Swarm state. Gateway shutdown
+reported zero registrations, pending/established peers, reads/read bytes,
+peer-budget membership in every direction and phase, scheduler peers,
+interested/regular/optimistic grants, torrent/peer upload records, gateway
+connections, storage handles/cache entries, and platform requests.
+
+The gateway run's resource high water was one pending handshake, two
+established and budgeted connections, two upload slots, 500 queued requests,
+8,192,000 queued bytes, two reads/32,768 read bytes, and 42,441 writer bytes,
+all within the accepted bounds. The same harness also repeated the earlier
+four-client overlap with exact 268,438,380-byte upload and the independent
+8,401,233-byte cross-file/short-final-piece libtorrent and restarted-RSTorrent
+transfers.
+
+Final validation passed `cargo fmt --all -- --check`, workspace all-target
+clippy with warnings denied, all workspace tests, byte-identical generated
+contracts, 178 web tests with two opt-in interop tests skipped, TypeScript
+typecheck, production web build and CSP scan, two consecutive controlled
+libtorrent 2.0.13/RSTorrent harness runs, Python syntax compilation, and
+`git diff --check`. Rust workspace totals include 234 engine library tests
+passing with three opt-in public tests ignored and 142 session library tests
+passing with one allocation-profile case ignored.
 
 ## Validation Matrix
 

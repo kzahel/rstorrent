@@ -40,7 +40,7 @@ eight bounded upload grants, isolates peer readers and writers, and records
 exact physical upload at peer, torrent, and session scope. Full parole
 selection, persistent integrity reputation, measured picker policy,
 and persistent peer records remain later work. Tactical
-[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) has moved the
+[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) completed the
 registry and active-connection observation out of the download-operation
 lifetime into one task-free engine state and application-generation torrent
 runtime. Routed incoming connections now attach to that state and detach only
@@ -413,11 +413,11 @@ The preferred sequence is:
    budgets, CPU, memory, and throughput before adding protocol breadth.
 
 Tacticals `078` and `082` complete local incoming connection and bounded
-multi-peer payload-upload ownership. In-progress Tactical
+multi-peer payload-upload ownership. Completed Tactical
 [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) owns ordinary
 incoming swarm/view integration and the per-torrent lifetime boundary it
-requires; both have landed, with controlled interoperability and resource
-closure remaining. PEX, LSD, uTP, NAT traversal, persistent peer caches,
+requires; both now pass controlled interoperability and resource closure.
+PEX, LSD, uTP, NAT traversal, persistent peer caches,
 mature peer-ID duplicate resolution, and dynamic VPN or metered policy remain
 separate tacticals. The provisional tracker announce port is still independent
 of the loopback listener and does not establish reachability.
@@ -596,9 +596,9 @@ blocking boundary, but controlled timing stayed neutral and the public queue
 remained full. Tactical `031` measures queue wait and per-kind service before
 connection policy and attributes about 88% of public wall time to 16 KiB write
 service. The source-first write owner now precedes another lifecycle change.
-Tactical `086` is in progress; its retained torrent peer owner has landed and
-routed incoming peers now use ordinary Peers and Swarm observation. Controlled
-interoperability and terminal resource closure remain in its final gate.
+Tactical `086` is complete; its retained torrent peer owner and routed
+incoming Peers/Swarm observation pass controlled libtorrent/RSTorrent gateway
+interoperability and terminal resource closure.
 Advertised-port updates, finite upload bandwidth and seeding goals, measured
 performance selection, peer-ID duplicate resolution, full parole selection,
 PEX, and persisted peer caches remain later work.

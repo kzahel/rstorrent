@@ -54,12 +54,13 @@ adds one small complete-replacement client-settings projection to the existing
 always-present torrent-list view. It distinguishes configured intent from
 active/effective listener and limit state without adding a named view, lease,
 queue, task, or persisted runtime observation.
-In-progress Tactical
+Completed Tactical
 [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) changes no public
 view kind: it moves ordinary peer publication into a long-lived per-torrent
 owner and now populates the existing Peers/Swarm contract from routed incoming
-seed connections. Controlled interoperability and terminal resource evidence
-remain before that tactical completes.
+seed connections. Authenticated gateway interoperability follows pinned
+libtorrent and RSTorrent rows through transfer, exact removal, pause, and
+joined terminal cleanup.
 
 ## Purpose And Scope
 
@@ -700,7 +701,7 @@ unrecognized evidence is `unavailable`, not `unsupported`. The peer-controlled
 fingerprint is a display hint only and cannot affect peer identity, trust, or
 scheduling. The existing nullable field and consumer shape do not change.
 
-In-progress Tactical
+Completed Tactical
 [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) uses this existing
 contract as the proof of a corrected engine/session lifetime. A routed
 incoming connection is now one ordinary keyed active generation. Its current
@@ -712,7 +713,9 @@ record. Unknown pre-routing sockets remain session diagnostics rather than
 torrent rows, and disconnect removes the Peers row only after joined
 connection cleanup. Application and leased-view tests cover the full row,
 Swarm retention, disconnecting upsert, and exact removal; the unchanged
-generated contract passes through the live TypeScript adapter.
+generated contract passes through the live TypeScript adapter. Authenticated
+gateway evidence follows simultaneous pinned libtorrent and RSTorrent rows
+through nonzero upload, exact removal, inactive pause, and joined shutdown.
 
 `InspectionApplication` now accepts semantic desired views. The live adapter
 maps them to Rust specifications while responsive navigation can retain only a

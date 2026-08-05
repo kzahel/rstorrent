@@ -8,7 +8,7 @@ feature-driven settings seam completed by Tactical
 [`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
 and selection-action seam completed by Tactical
 [`085`](../tactical/085-unified-contextual-selection-actions.md), with the
-concrete per-torrent lifetime seam now being implemented by Tactical
+concrete per-torrent lifetime seam now completed by Tactical
 [`086`](../tactical/086-long-lived-torrent-peer-runtime.md).
 
 Topic: `code-organization-and-refactoring`
@@ -85,7 +85,7 @@ mechanics, while the existing overlay layer retains positioning and menu
 semantics.
 
 Tactical [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) has landed
-the selected feature-driven seam through its first four gates. A task-free
+the selected feature-driven seam through all five gates. A task-free
 engine torrent-peer state now retains the ordinary `PeerRegistry`,
 `PeerRuntime`, checked connection IDs, and publication state. A private
 session `TorrentRuntime` owns that handle, active-operation membership, and a

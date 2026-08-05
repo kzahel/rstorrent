@@ -16,6 +16,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::time::timeout;
 
 const READY_TIMEOUT: Duration = Duration::from_secs(30);
+const PROFILE_ID: &str = "default";
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
@@ -59,7 +60,7 @@ async fn run() -> Result<(), SeedHarnessError> {
 
     let config = ApplicationConfig::new(
         arguments.profile_root,
-        "incoming-interop".to_owned(),
+        PROFILE_ID.to_owned(),
         storage_roots,
         NetworkConfig::new(
             NetworkPolicy::LoopbackOnly,
@@ -204,7 +205,7 @@ fn initialize_catalog(
     raw_info: &[u8],
 ) -> Result<(), SeedHarnessError> {
     let torrent_id = hex(metainfo.info_hash);
-    let mut store = SessionStore::open(profile_root, "incoming-interop", storage_roots)?;
+    let mut store = SessionStore::open(profile_root, PROFILE_ID, storage_roots)?;
     let desired_settings = ClientSettings {
         listener: ListenerPolicy::AutomaticLoopback,
         ..ClientSettings::default()

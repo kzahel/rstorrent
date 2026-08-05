@@ -6,7 +6,7 @@ Status: Implemented by Tactical `051` on 2026-08-02. Rust now projects the
 typed semantic set, generated v1 bindings carry it additively, and React uses
 one exhaustive definition table for compact cells and the accessible legend.
 The compact glyph mapping remains explicitly revisable as broader client
-comparison and real inspection use provide evidence. In-progress Tactical
+comparison and real inspection use provide evidence. Completed Tactical
 [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) now makes the
 existing incoming, upload-relationship, metadata, and optimistic-unchoke
 variants truthful for routed incoming seed connections.

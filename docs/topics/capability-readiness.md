@@ -126,30 +126,34 @@ WebSocket binary frame, zero semantic HTTP calls, a visible imported row,
 empty serious/critical axe findings, joined cleanup, and no metadata-only
 payload artifacts.
 
+Tactical
+[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) is complete. One
+task-free torrent peer state and application-generation runtime now retain
+ordinary peer authority across download and completed-seed lifetimes. Routed
+incoming sockets populate the existing Peers/Swarm contract and compact flags.
+An authenticated gateway run observed simultaneous pinned libtorrent 2.0.13
+and RSTorrent rows while both independently verified 67,109,595 bytes, then
+observed exact removal, inactive empty pause state, exact 134,219,190-byte
+physical upload, and terminal zero ownership.
+
 ## Current Queue
 
 ### Now
 
-**Complete the long-lived torrent peer runtime.** Tactical
-[`086`](../tactical/086-long-lived-torrent-peer-runtime.md) is in progress.
-Its first four gates have extracted peer records, active connection
-generations, collision-free IDs, and ordinary snapshot publication from the
-download-operation lifetime into one application-generation per-torrent
-owner, then attached routed incoming seed connections and projected their
-typed upload facts through existing Swarm/Peers views and the unchanged
-headless product adapter. Its final gate owns controlled RSTorrent/libtorrent
-interoperability and terminal resource evidence without widening listener
-scope, changing limits, or retaining a second peer authority.
+**Advertise the authoritative usable peer-listener port.** Derive UDP tracker
+and DHT self-announcement inputs from actual listener state without claiming
+public reachability, changing loopback-only binding, or implying gateway
+mapping. Create the bounded tactical and source dossier before implementation.
 
 ### Next
 
-- Derive truthful tracker/DHT peer-port advertisement from an actual usable
-  listener without implying public reachability or gateway mapping.
+- Define the next reachability boundary after actual-port advertisement,
+  keeping non-loopback binding and gateway mapping separate decisions.
 
 ### Later
 
 Complete IPv6 DHT operation, live listener/upload-setting application, finite
-bandwidth and seeding goals, listener advertisement, LAN/public binding, PEX,
+bandwidth and seeding goals, LAN/public binding, PEX,
 local service discovery, uTP, NAT traversal, v2 and hybrid torrents,
 playback-oriented file priorities, dynamic VPN and metered-network controls,
 and production remote access remain important. After core parity,
@@ -192,7 +196,7 @@ matrix choose BEP breadth; visible novelty alone does not.
 | Pre-content peer failover | Implemented | deterministic, runtime, interop, live | Bounded parallel metadata peers share one block owner; two tracker cohorts, 10/10 fresh-DHT owner runs, and 12/12 cross-catalog pairs pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Multiple simultaneous live peers | Implemented | deterministic, runtime, interop, live | Thirty established and thirty half-open attempts remain separate outbound torrent-local defaults beneath one shared session budget whose ordinary default is 200 after descriptor clamping and whose incoming-only slack is ten. Exact saturation, cancellation, mixed-direction release, and simultaneous incoming evidence pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Transfer request ownership and failover | Implemented | deterministic, runtime, interop, live | Ordinary blocks have one generation; strict endgame adds bounded duplicate attempts, first-response cancellation, and harmless losing payload. | [`download-correctness`](download-correctness.md) |
-| Incoming peer connections | Implemented | deterministic, runtime, interop, web | One joined IPv4 loopback listener has a five-entry backlog, eight pending handshake slots, 1,024 generation-fenced registrations, and bounded multi-peer ownership under the shared effective-plus-ten-slack budget. Typed disabled/automatic/fixed policy, 1--2,000 peers, and 0--50 slots persist atomically and apply across restart; the production browser proof seeds exact content and repairs a held fixed-port conflict. In-progress Tactical [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) has landed the long-lived torrent peer boundary and ordinary routed-incoming Swarm/Peers projection; its final controlled closure remains. Non-loopback binding, advertisement, and NAT mapping remain absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
+| Incoming peer connections | Implemented | deterministic, runtime, interop, web | One joined IPv4 loopback listener has a five-entry backlog, eight pending handshake slots, 1,024 generation-fenced registrations, and bounded multi-peer ownership under the shared effective-plus-ten-slack budget. Typed disabled/automatic/fixed policy, 1--2,000 peers, and 0--50 slots persist atomically and apply across restart. Completed Tactical [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) retains one torrent peer authority across download/seeding, projects routed libtorrent/RSTorrent peers through ordinary Swarm/Peers views, and proves exact removal, pause, and terminal zero ownership. Non-loopback binding, advertisement, and NAT mapping remain absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
 | Peer reputation and integrity attribution | Partial | deterministic, runtime, live | Exact connection generations receive bounded asymmetric trust; a sole corrupt source is banned and ambiguous sources are only suspected, while full parole selection and persistence are absent. | [`download-correctness`](download-correctness.md) |
 
 ### Content Transfer And Completion

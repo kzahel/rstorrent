@@ -13,6 +13,9 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,11 +23,20 @@ from pathlib import Path
 import libtorrent as lt
 
 from first_verified_piece import DEFAULT_PAYLOAD_ALLOWANCE, ScenarioFailure
+from application_surface_harness import (
+    ORIGIN,
+    TOKEN,
+    application_metrics,
+    connection_metrics,
+    start_gateway,
+    stop_gateway,
+)
 
 
 PIECE_SIZE = 16 * 1024
 TRANSFER_TIMEOUT_SECONDS = 20
 PROCESS_TIMEOUT_SECONDS = 30
+GATEWAY_OWNER = "08600000000000000000000000000000"
 
 
 @dataclass(frozen=True)
@@ -47,6 +59,206 @@ class Fixture:
 class SeedRun:
     ready: dict[str, object]
     stopped: dict[str, object]
+
+
+@dataclass
+class GatewayViews:
+    address: str
+    view_set_id: str
+    cursor: str
+    listener: str
+    peers: dict[str, dict[str, object]]
+    peer_history: dict[str, dict[str, object]]
+    swarm: dict[str, dict[str, object]]
+    swarm_state: str
+
+    @classmethod
+    def open(cls, address: str, torrent_id: str) -> GatewayViews:
+        response = gateway_json(
+            address,
+            "POST",
+            "/api/v1/view-sets",
+            {
+                "views": [
+                    {
+                        "type": "torrent_list",
+                        "view_id": "library",
+                        "delivery": {"min_interval_millis": 0},
+                    },
+                    {
+                        "type": "torrent_peers",
+                        "view_id": "peers",
+                        "torrent_id": torrent_id,
+                        "delivery": {"min_interval_millis": 0},
+                    },
+                    {
+                        "type": "torrent_swarm",
+                        "view_id": "swarm",
+                        "torrent_id": torrent_id,
+                        "delivery": {"min_interval_millis": 0},
+                    },
+                ],
+                "options": {},
+            },
+            expected_status=201,
+        )
+        initial = object_field(response, "initial")
+        views = cls(
+            address=address,
+            view_set_id=string_field(response, "view_set_id"),
+            cursor=string_field(initial, "cursor"),
+            listener="",
+            peers={},
+            peer_history={},
+            swarm={},
+            swarm_state="torrent_missing",
+        )
+        views.apply_batch(initial)
+        if not views.listener:
+            raise ScenarioFailure("gateway view lacks the active incoming listener")
+        return views
+
+    def apply_batch(self, batch: dict[str, object]) -> None:
+        updates = batch.get("updates")
+        if not isinstance(updates, list):
+            raise ScenarioFailure("gateway view batch lacks updates")
+        for update in updates:
+            if not isinstance(update, dict):
+                raise ScenarioFailure("gateway view update is not an object")
+            update_type = update.get("type")
+            if update_type == "reset_required":
+                raise ScenarioFailure(f"gateway view unexpectedly reset: {update}")
+            payload = update.get("snapshot") if update_type == "snapshot" else update.get("patch")
+            if update_type not in ("snapshot", "patch") or not isinstance(payload, dict):
+                continue
+            projection = payload.get("type")
+            if projection == "torrent_list":
+                settings = payload.get("client_settings")
+                if isinstance(settings, dict):
+                    status = settings.get("listener_status")
+                    if isinstance(status, dict) and status.get("type") == "listening":
+                        port = status.get("port")
+                        if not isinstance(port, int):
+                            raise ScenarioFailure("gateway listener port is not an integer")
+                        self.listener = f"{string_field(status, 'address')}:{port}"
+            elif projection == "peers":
+                if update_type == "snapshot":
+                    rows = object_list(payload, "peers")
+                    self.peers = {
+                        string_field(row, "connection_id"): row for row in rows
+                    }
+                else:
+                    for row in object_list(payload, "upsert"):
+                        self.peers[string_field(row, "connection_id")] = row
+                    for connection_id in string_list(payload, "removed"):
+                        self.peers.pop(connection_id, None)
+                for connection_id, row in self.peers.items():
+                    self.peer_history[connection_id] = row.copy()
+            elif projection == "swarm":
+                self.swarm_state = string_field(payload, "state")
+                if update_type == "snapshot":
+                    rows = object_list(payload, "peers")
+                    self.swarm = {
+                        string_field(row, "peer_record_id"): row for row in rows
+                    }
+                else:
+                    for row in object_list(payload, "upsert"):
+                        self.swarm[string_field(row, "peer_record_id")] = row
+                    for record_id in string_list(payload, "removed"):
+                        self.swarm.pop(record_id, None)
+        self.cursor = string_field(batch, "cursor")
+
+    def poll(self, wait_millis: int = 100) -> None:
+        query = urllib.parse.urlencode(
+            {"after": self.cursor, "wait_ms": str(wait_millis)}
+        )
+        batch = gateway_json(
+            self.address,
+            "GET",
+            f"/api/v1/view-sets/{self.view_set_id}/updates?{query}",
+        )
+        self.apply_batch(batch)
+
+    def close(self) -> None:
+        gateway_json(
+            self.address,
+            "DELETE",
+            f"/api/v1/view-sets/{self.view_set_id}",
+            expected_status=204,
+        )
+
+
+def gateway_json(
+    address: str,
+    method: str,
+    path: str,
+    payload: dict[str, object] | None = None,
+    *,
+    expected_status: int = 200,
+) -> dict[str, object]:
+    encoded = None if payload is None else json.dumps(payload).encode()
+    request = urllib.request.Request(
+        f"http://{address}{path}",
+        data=encoded,
+        method=method,
+        headers={
+            "Authorization": f"Bearer {TOKEN}",
+            "Content-Type": "application/json",
+            "Origin": ORIGIN,
+            "X-RSTorrent-Owner": GATEWAY_OWNER,
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            status = response.status
+            body = response.read()
+    except urllib.error.HTTPError as error:
+        raise ScenarioFailure(
+            f"gateway {method} {path} failed with {error.code}: "
+            f"{error.read().decode(errors='replace')}"
+        ) from error
+    if status != expected_status:
+        raise ScenarioFailure(
+            f"gateway {method} {path} returned {status}, expected {expected_status}"
+        )
+    if not body:
+        return {}
+    decoded = json.loads(body)
+    if not isinstance(decoded, dict):
+        raise ScenarioFailure("gateway response is not a JSON object")
+    return decoded
+
+
+def string_field(observation: dict[str, object], field: str) -> str:
+    value = observation.get(field)
+    if not isinstance(value, str):
+        raise ScenarioFailure(f"gateway observation field {field} is not a string")
+    return value
+
+
+def object_field(
+    observation: dict[str, object], field: str
+) -> dict[str, object]:
+    value = observation.get(field)
+    if not isinstance(value, dict):
+        raise ScenarioFailure(f"gateway observation field {field} is not an object")
+    return value
+
+
+def object_list(
+    observation: dict[str, object], field: str
+) -> list[dict[str, object]]:
+    value = observation.get(field)
+    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+        raise ScenarioFailure(f"gateway observation field {field} is not an object list")
+    return value
+
+
+def string_list(observation: dict[str, object], field: str) -> list[str]:
+    value = observation.get(field)
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ScenarioFailure(f"gateway observation field {field} is not a string list")
+    return value
 
 
 def deterministic_bytes(offset: int, length: int) -> bytes:
@@ -165,7 +377,7 @@ def validate_fixture(
         raise ScenarioFailure("controlled fixture unexpectedly contains a tracker")
 
 
-def build_binaries(repository: Path) -> tuple[Path, Path]:
+def build_binaries(repository: Path) -> tuple[Path, Path, Path]:
     command = [
         "cargo",
         "build",
@@ -177,6 +389,10 @@ def build_binaries(repository: Path) -> tuple[Path, Path]:
         "rstorrent-engine",
         "--bin",
         "rstorrent-download-piece",
+        "-p",
+        "rstorrent-gateway",
+        "--bin",
+        "rstorrent-gateway",
     ]
     completed = subprocess.run(
         command,
@@ -193,9 +409,10 @@ def build_binaries(repository: Path) -> tuple[Path, Path]:
         )
     seed = repository / "target/debug/rstorrent-incoming-seed"
     leech = repository / "target/debug/rstorrent-download-piece"
-    if not seed.is_file() or not leech.is_file():
+    gateway = repository / "target/debug/rstorrent-gateway"
+    if not seed.is_file() or not leech.is_file() or not gateway.is_file():
         raise ScenarioFailure("incoming-seeding diagnostic binaries were not created")
-    return seed, leech
+    return seed, leech, gateway
 
 
 def read_json_line(
@@ -653,11 +870,341 @@ def run_fixture(
     )
 
 
+def peer_client(row: dict[str, object]) -> str | None:
+    client = row.get("client_name")
+    if not isinstance(client, str):
+        return None
+    folded = client.casefold()
+    if "libtorrent" in folded:
+        return "libtorrent"
+    if "rstorrent" in folded:
+        return "rstorrent"
+    return None
+
+
+def assert_incoming_peer_row(row: dict[str, object], listener: str) -> None:
+    expected = {
+        "direction": "incoming",
+        "transport": "tcp",
+        "lifecycle": "connected",
+        "role": "content",
+        "supports_extensions": True,
+        "supports_ut_metadata": True,
+        "remote_interested": True,
+        "local_choking": False,
+        "local_endpoint": listener,
+    }
+    for field, value in expected.items():
+        if row.get(field) != value:
+            raise ScenarioFailure(
+                f"incoming peer field {field}={row.get(field)!r}, expected {value!r}"
+            )
+    remote = string_field(row, "remote_endpoint")
+    if not remote.startswith("127.0.0.1:"):
+        raise ScenarioFailure(f"incoming peer endpoint escaped loopback: {remote}")
+    sources = string_list(row, "sources")
+    if "incoming" not in sources:
+        raise ScenarioFailure("incoming peer row lacks its incoming source")
+    flags = string_list(row, "peer_flags")
+    for flag in (
+        "incoming",
+        "upload_allowed",
+        "extension_protocol",
+        "metadata_extension",
+    ):
+        if flag not in flags:
+            raise ScenarioFailure(f"incoming peer row lacks {flag}: {flags}")
+    if row.get("peer_record_id") is None or row.get("peer_id") is None:
+        raise ScenarioFailure("incoming peer row lacks stable record or handshake identity")
+    if peer_client(row) is None:
+        raise ScenarioFailure(f"incoming peer client was not identified: {row}")
+    if not isinstance(row.get("pending_requests"), int):
+        raise ScenarioFailure("incoming peer row lacks its upload request count")
+    for field in (
+        "queued_payload_bytes",
+        "payload_upload_rate_bytes",
+        "payload_uploaded_bytes",
+        "connected_age_millis",
+    ):
+        value = row.get(field)
+        if not isinstance(value, str) or not value.isdecimal():
+            raise ScenarioFailure(f"incoming peer row lacks numeric {field}")
+    capabilities = object_field(row, "capabilities")
+    for field in (
+        "local_endpoint",
+        "client_name",
+        "ut_metadata",
+        "interest_directions",
+        "local_choke",
+        "upload",
+    ):
+        if capabilities.get(field) != "available":
+            raise ScenarioFailure(
+                f"incoming peer capability {field}={capabilities.get(field)!r}"
+            )
+
+
+def dispatch_pause(address: str, torrent_id: str) -> None:
+    response = gateway_json(
+        address,
+        "POST",
+        "/api/v1/commands",
+        {
+            "version": 1,
+            "request_id": "pause-controlled-incoming-seed",
+            "command": {"type": "pause", "torrent_id": torrent_id},
+        },
+    )
+    if response.get("status") != "success":
+        raise ScenarioFailure(f"gateway pause was rejected: {response}")
+
+
+def assert_gateway_terminal_metrics(
+    gateway: dict[str, object],
+    application: dict[str, object],
+    expected_payload: int,
+) -> dict[str, object]:
+    if gateway.get("active_connections") != 0:
+        raise ScenarioFailure("gateway retained a connection after joined shutdown")
+    incoming = object_field(application, "incoming")
+    terminal_zero = (
+        "registrations_before_shutdown",
+        "pending_before_shutdown",
+        "established_before_shutdown",
+        "reads_before_shutdown",
+        "read_bytes_before_shutdown",
+        "peer_budget_total_before_shutdown",
+        "outgoing_connecting_before_shutdown",
+        "outgoing_established_before_shutdown",
+        "incoming_connecting_before_shutdown",
+        "incoming_established_before_shutdown",
+        "upload_peers_before_shutdown",
+        "upload_interested_before_shutdown",
+        "upload_regular_before_shutdown",
+        "upload_optimistic_before_shutdown",
+        "torrent_upload_records_before_shutdown",
+        "peer_upload_records_before_shutdown",
+    )
+    for field in terminal_zero:
+        if integer_field(incoming, field) != 0:
+            raise ScenarioFailure(f"gateway seed retained {field}={incoming.get(field)}")
+    if integer_field(incoming, "payload_bytes_sent") != expected_payload:
+        raise ScenarioFailure(
+            f"gateway seed sent {incoming.get('payload_bytes_sent')} bytes, "
+            f"expected exactly {expected_payload}"
+        )
+    assert_resource_bounds(incoming, minimum_established=2)
+    for field in (
+        "storage_owned_after_shutdown",
+        "storage_cached_after_shutdown",
+        "platform_pending_after_shutdown",
+    ):
+        if integer_field(application, field) != 0:
+            raise ScenarioFailure(f"application shutdown retained {field}")
+    if application.get("incoming_owner_after_shutdown") is not False:
+        raise ScenarioFailure("application shutdown retained the incoming owner")
+    return incoming
+
+
+def run_gateway_view_evidence(
+    gateway_binary: Path,
+    leech_binary: Path,
+    fixture: Fixture,
+) -> dict[str, object]:
+    gateway: subprocess.Popen[str] | None = None
+    views: GatewayViews | None = None
+    failure: BaseException | None = None
+    try:
+        gateway, gateway_address = start_gateway(
+            gateway_binary,
+            fixture.profile_root,
+            fixture.storage_root,
+        )
+        views = GatewayViews.open(gateway_address, fixture.info_hash)
+        ready = {"listen": views.listener}
+        libtorrent_output = fixture.torrent_path.parent / "gateway-libtorrent-output"
+        libtorrent_output.mkdir()
+        rstorrent_output = fixture.torrent_path.parent / "gateway-rstorrent-single.out"
+        connected = threading.Event()
+        release_download = threading.Event()
+        observed_clients: dict[str, dict[str, object]] = {}
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            libtorrent_future = executor.submit(
+                leech_with_libtorrent,
+                fixture,
+                ready,
+                libtorrent_output,
+                None,
+                None,
+                connected,
+                release_download,
+            )
+            if not connected.wait(timeout=5):
+                raise ScenarioFailure("gateway libtorrent peer did not connect")
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                views.poll(50)
+                for row in views.peers.values():
+                    client = peer_client(row)
+                    if (
+                        client == "libtorrent"
+                        and row.get("lifecycle") == "connected"
+                        and row.get("supports_ut_metadata") is True
+                        and row.get("remote_interested") is True
+                        and row.get("local_choking") is False
+                        and isinstance(row.get("payload_uploaded_bytes"), str)
+                        and int(row["payload_uploaded_bytes"]) > 0
+                    ):
+                        observed_clients[client] = row.copy()
+                if "libtorrent" in observed_clients:
+                    break
+            else:
+                raise ScenarioFailure("gateway views did not observe libtorrent")
+
+            rstorrent_future = executor.submit(
+                leech_with_rstorrent,
+                leech_binary,
+                fixture,
+                ready,
+                rstorrent_output,
+            )
+            deadline = time.monotonic() + TRANSFER_TIMEOUT_SECONDS
+            while time.monotonic() < deadline:
+                views.poll(20)
+                for row in views.peers.values():
+                    client = peer_client(row)
+                    if (
+                        client is not None
+                        and row.get("lifecycle") == "connected"
+                        and row.get("supports_ut_metadata") is True
+                        and row.get("remote_interested") is True
+                        and row.get("local_choking") is False
+                        and isinstance(row.get("payload_uploaded_bytes"), str)
+                        and int(row["payload_uploaded_bytes"]) > 0
+                    ):
+                        observed_clients[client] = row.copy()
+                if set(observed_clients) == {"libtorrent", "rstorrent"}:
+                    break
+                if rstorrent_future.done():
+                    rstorrent_future.result()
+                    break
+            if set(observed_clients) != {"libtorrent", "rstorrent"}:
+                raise ScenarioFailure(
+                    f"gateway views did not observe both peer clients: {observed_clients}"
+                )
+            release_download.set()
+            rstorrent_diagnostic = rstorrent_future.result()
+            libtorrent_future.result()
+
+        for row in observed_clients.values():
+            assert_incoming_peer_row(row, views.listener)
+
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            views.poll(50)
+            retained = [
+                row
+                for row in views.swarm.values()
+                if "incoming" in string_list(row, "sources")
+            ]
+            if not views.peers and len(retained) == 2 and all(
+                row.get("state") == "not_connectable"
+                and row.get("connectable") is False
+                for row in retained
+            ):
+                break
+        else:
+            raise ScenarioFailure(
+                "gateway views did not reach empty Peers and retained Swarm state"
+            )
+
+        dispatch_pause(gateway_address, fixture.info_hash)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            views.poll(50)
+            if not views.peers and not views.swarm and views.swarm_state == "inactive":
+                break
+        else:
+            raise ScenarioFailure("pause did not publish terminal empty peer views")
+        views.close()
+        views = None
+
+        stderr = stop_gateway(gateway)
+        gateway = None
+        gateway_observation = connection_metrics(stderr)
+        application_observation = application_metrics(stderr)
+        incoming = assert_gateway_terminal_metrics(
+            gateway_observation,
+            application_observation,
+            fixture.total_size * 2,
+        )
+        return {
+            "listen": ready["listen"],
+            "clients": {
+                client: {
+                    "connection_id": string_field(row, "connection_id"),
+                    "client_name": string_field(row, "client_name"),
+                    "flags": string_list(row, "peer_flags"),
+                    "payload_uploaded_bytes": string_field(
+                        row, "payload_uploaded_bytes"
+                    ),
+                }
+                for client, row in sorted(observed_clients.items())
+            },
+            "payload_bytes_sent": integer_field(incoming, "payload_bytes_sent"),
+            "pending_high_water": integer_field(incoming, "pending_high_water"),
+            "established_high_water": integer_field(
+                incoming, "established_high_water"
+            ),
+            "connection_high_water": integer_field(
+                incoming, "connection_high_water"
+            ),
+            "upload_slots_high_water": integer_field(
+                incoming, "upload_slots_high_water"
+            ),
+            "queued_requests_high_water": integer_field(
+                incoming, "queued_requests_high_water"
+            ),
+            "queued_bytes_high_water": integer_field(
+                incoming, "queued_bytes_high_water"
+            ),
+            "read_high_water": integer_field(incoming, "read_high_water"),
+            "read_bytes_high_water": integer_field(
+                incoming, "read_bytes_high_water"
+            ),
+            "writer_send_buffer_high_water": integer_field(
+                incoming, "writer_send_buffer_high_water"
+            ),
+            "rstorrent_diagnostic": rstorrent_diagnostic,
+            "peers_terminal": 0,
+            "swarm_after_pause": "inactive_empty",
+            "shutdown": "joined_zero",
+        }
+    except BaseException as error:
+        failure = error
+        raise
+    finally:
+        if views is not None:
+            try:
+                views.close()
+            except BaseException as cleanup_error:
+                if failure is None:
+                    raise
+                print(f"view cleanup failed: {cleanup_error}", file=sys.stderr)
+        if gateway is not None:
+            try:
+                stop_gateway(gateway)
+            except BaseException as cleanup_error:
+                if failure is None:
+                    raise
+                print(f"gateway cleanup failed: {cleanup_error}", file=sys.stderr)
+
+
 def run(repository: Path) -> None:
     run_root = Path(tempfile.mkdtemp(prefix="rstorrent-incoming-seeding-"))
     failure: BaseException | None = None
     try:
-        seed_binary, leech_binary = build_binaries(repository)
+        seed_binary, leech_binary, gateway_binary = build_binaries(repository)
         fixtures = (create_single_fixture(run_root), create_multi_fixture(run_root))
         for fixture in fixtures:
             concurrent = fixture.name == "single"
@@ -666,6 +1213,11 @@ def run(repository: Path) -> None:
                 leech_binary,
                 fixture,
                 concurrent,
+            )
+            gateway_evidence = (
+                run_gateway_view_evidence(gateway_binary, leech_binary, fixture)
+                if fixture.name == "single"
+                else None
             )
             print(
                 json.dumps(
@@ -679,6 +1231,7 @@ def run(repository: Path) -> None:
                         "restarted_rstorrent_seed": restarted.stopped,
                         "rstorrent_diagnostics": diagnostics,
                         "restart_diagnostic": restart_diagnostic,
+                        "gateway_view_evidence": gateway_evidence,
                     },
                     sort_keys=True,
                 )
