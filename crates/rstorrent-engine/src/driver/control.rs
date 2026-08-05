@@ -19,14 +19,14 @@ use tokio_util::sync::CancellationToken;
 use super::DownloadError;
 use crate::checkpoint::CheckpointBatch;
 use crate::metrics::{ByteMetric, ByteMetricSink, SharedByteMetricSink};
-use crate::peer::{
-    DialAttempt, DialAttemptId, PeerRegistry, PeerRegistryCounts, PeerRegistrySnapshot,
-    PeerSelectionContext,
-};
-use crate::peer_runtime::{PeerConnectionObservation, PeerRuntime};
+use crate::peer::{DialAttempt, DialAttemptId, PeerRegistryCounts, PeerRegistrySnapshot};
+#[cfg(test)]
+use crate::peer::{PeerRegistry, PeerSelectionContext};
+use crate::peer_runtime::PeerConnectionObservation;
 use crate::selective_storage::PlatformStorageSpec;
 use crate::storage_file_pool::StorageFilePool;
 use crate::swarm::{BlockKey, ConnectionWindowPhaseSnapshot, NoRequestReason, SwarmState};
+use crate::torrent_peer::TorrentPeerActivitySink;
 use crate::tracker::TrackerRuntimeSnapshot;
 
 pub(super) const CONTENT_STORAGE_WRITE_CONCURRENCY: usize = 4;
@@ -35,7 +35,6 @@ const CONTENT_STORAGE_MAX_DIAGNOSTIC_CONCURRENCY: usize = 8;
 const SAFE_CANCEL_REQUESTED: usize = 1 << (usize::BITS - 1);
 const SAFE_CANCEL_CRITICAL_MASK: usize = SAFE_CANCEL_REQUESTED - 1;
 const CONTENT_PEER_DIAGNOSTIC_INTERVAL: Duration = Duration::from_secs(1);
-const PEER_OBSERVATION_INTERVAL: Duration = Duration::from_millis(100);
 const STORAGE_OBSERVATION_INTERVAL: Duration = Duration::from_millis(100);
 pub(super) const MAX_RECENT_METADATA_ATTEMPTS: usize = 64;
 pub(super) const MAX_DIAGNOSTIC_ERROR_LENGTH: usize = 256;
@@ -357,8 +356,10 @@ struct PeerConnectionDiagnosticState {
 
 #[derive(Debug, Default)]
 struct PeerRegistryActivityState {
+    #[cfg(test)]
     active: bool,
     last_emitted: Option<PeerRegistrySnapshot>,
+    #[cfg(test)]
     next_transition_at: Option<Duration>,
 }
 
@@ -1535,6 +1536,7 @@ impl DownloadControl {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn observe_peer_registry(
         &self,
         registry: &PeerRegistry,
@@ -1597,40 +1599,6 @@ impl DownloadControl {
         };
         if let Some(event) = event {
             self.emit(event);
-        }
-    }
-
-    pub(super) fn observe_peer_runtime(
-        &self,
-        runtime: &PeerRuntime,
-        captured_at: Duration,
-        force: bool,
-    ) {
-        let current = runtime.snapshot();
-        let emit = {
-            let mut state = self
-                .inner
-                .peer_connections
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            state.current = current.clone();
-            let due = force
-                || state.last_emitted_at.is_none_or(|previous| {
-                    captured_at.saturating_sub(previous) >= PEER_OBSERVATION_INTERVAL
-                });
-            if due && state.last_emitted != current {
-                state.last_emitted = current.clone();
-                state.last_emitted_at = Some(captured_at);
-                true
-            } else {
-                false
-            }
-        };
-        if emit {
-            self.emit(DownloadActivityEvent::PeerConnections {
-                captured_at,
-                peers: Box::new(current),
-            });
         }
     }
 
@@ -2388,6 +2356,41 @@ impl DownloadControl {
                 failures.checked_sub(1)
             })
             .is_ok()
+    }
+}
+
+impl TorrentPeerActivitySink for DownloadControl {
+    fn record_peer_connections(
+        &self,
+        captured_at: Duration,
+        peers: Vec<PeerConnectionObservation>,
+    ) {
+        {
+            let mut state = self
+                .inner
+                .peer_connections
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state.current = peers.clone();
+            state.last_emitted = peers.clone();
+            state.last_emitted_at = Some(captured_at);
+        }
+        self.emit(DownloadActivityEvent::PeerConnections {
+            captured_at,
+            peers: Box::new(peers),
+        });
+    }
+
+    fn record_peer_registry(&self, active: bool, snapshot: PeerRegistrySnapshot) {
+        self.inner
+            .peer_registry_activity
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .last_emitted = Some(snapshot.clone());
+        self.emit(DownloadActivityEvent::PeerRegistryState {
+            active,
+            snapshot: Box::new(snapshot),
+        });
     }
 }
 

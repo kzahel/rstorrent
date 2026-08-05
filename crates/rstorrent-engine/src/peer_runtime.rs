@@ -61,11 +61,31 @@ pub struct PeerContentActivity {
     pub request_window_phase: PeerRequestWindowPhase,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PeerUploadGrant {
+    Choked,
+    Regular,
+    Optimistic,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PeerUploadActivity {
+    pub interested: bool,
+    pub grant: PeerUploadGrant,
+    pub queued_requests: usize,
+    pub queued_bytes: usize,
+    pub read_active: bool,
+    pub writer_bytes: usize,
+    pub payload_bytes: u64,
+    pub payload_rate: u64,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PeerConnectionObservation {
     pub connection_id: ConnectionId,
     pub record_id: Option<PeerRecordId>,
     pub endpoint: SocketAddr,
+    pub local_endpoint: Option<SocketAddr>,
     pub sources: PeerSources,
     pub direction: PeerConnectionDirection,
     pub transport: PeerTransport,
@@ -75,8 +95,21 @@ pub struct PeerConnectionObservation {
     pub lifecycle_changed_at: Duration,
     pub peer_id: Option<[u8; 20]>,
     pub supports_extensions: Option<bool>,
+    pub supports_ut_metadata: Option<bool>,
     pub content: Option<PeerContentActivity>,
+    pub upload: Option<PeerUploadActivity>,
     pub close_reason: Option<PeerFailure>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct IncomingPeerStart {
+    pub(crate) record_id: PeerRecordId,
+    pub(crate) endpoint: SocketAddr,
+    pub(crate) local_endpoint: SocketAddr,
+    pub(crate) transport: PeerTransport,
+    pub(crate) role: PeerConnectionRole,
+    pub(crate) peer_id: [u8; 20],
+    pub(crate) supports_extensions: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -131,6 +164,7 @@ impl PeerRuntime {
             connection_id: connection,
             record_id: Some(attempt.record_id()),
             endpoint: attempt.endpoint().address(),
+            local_endpoint: None,
             sources: PeerSources::default(),
             direction: PeerConnectionDirection::Outgoing,
             transport: PeerTransport::Tcp,
@@ -140,35 +174,37 @@ impl PeerRuntime {
             lifecycle_changed_at: now,
             peer_id: None,
             supports_extensions: None,
+            supports_ut_metadata: None,
             content: None,
+            upload: None,
             close_reason: None,
         })?;
         Ok(connection)
     }
 
-    #[cfg(test)]
     pub(crate) fn begin_incoming(
         &mut self,
         connection: ConnectionId,
-        endpoint: SocketAddr,
-        transport: PeerTransport,
-        role: PeerConnectionRole,
+        start: IncomingPeerStart,
         now: Duration,
     ) -> Result<(), PeerRuntimeError> {
         self.insert(PeerConnectionObservation {
             connection_id: connection,
-            record_id: None,
-            endpoint,
+            record_id: Some(start.record_id),
+            endpoint: start.endpoint,
+            local_endpoint: Some(start.local_endpoint),
             sources: PeerSources::from_source(crate::peer::PeerSource::Incoming),
             direction: PeerConnectionDirection::Incoming,
-            transport,
+            transport: start.transport,
             lifecycle: PeerConnectionLifecycle::ProtocolHandshaking,
-            role,
+            role: start.role,
             started_at: now,
             lifecycle_changed_at: now,
-            peer_id: None,
-            supports_extensions: None,
+            peer_id: Some(start.peer_id),
+            supports_extensions: Some(start.supports_extensions),
+            supports_ut_metadata: None,
             content: None,
+            upload: None,
             close_reason: None,
         })
     }
@@ -211,6 +247,19 @@ impl PeerRuntime {
         Ok(())
     }
 
+    pub(crate) fn incoming_handshake_completed(
+        &mut self,
+        connection: ConnectionId,
+        now: Duration,
+    ) -> Result<(), PeerRuntimeError> {
+        self.transition(
+            connection,
+            PeerConnectionLifecycle::Connected,
+            now,
+            &[PeerConnectionLifecycle::ProtocolHandshaking],
+        )
+    }
+
     pub(crate) fn set_sources(
         &mut self,
         connection: ConnectionId,
@@ -243,6 +292,32 @@ impl PeerRuntime {
             });
         }
         peer.content = Some(activity);
+        Ok(())
+    }
+
+    pub(crate) fn set_upload_activity(
+        &mut self,
+        connection: ConnectionId,
+        activity: PeerUploadActivity,
+    ) -> Result<(), PeerRuntimeError> {
+        let peer = self.connection_mut(connection)?;
+        if peer.lifecycle != PeerConnectionLifecycle::Connected {
+            return Err(PeerRuntimeError::InvalidTransition {
+                connection,
+                from: peer.lifecycle,
+                to: PeerConnectionLifecycle::Connected,
+            });
+        }
+        peer.upload = Some(activity);
+        Ok(())
+    }
+
+    pub(crate) fn set_metadata_extension(
+        &mut self,
+        connection: ConnectionId,
+        supported: bool,
+    ) -> Result<(), PeerRuntimeError> {
+        self.connection_mut(connection)?.supports_ut_metadata = Some(supported);
         Ok(())
     }
 
@@ -339,14 +414,14 @@ impl PeerRuntime {
 }
 
 pub(crate) fn connection_id(attempt: DialAttempt) -> ConnectionId {
-    ConnectionId::new(attempt.id().get()).expect("dial attempt identifiers are nonzero")
+    attempt.connection_id()
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        PeerConnectionDirection, PeerConnectionLifecycle, PeerConnectionRole, PeerRuntime,
-        PeerRuntimeError, PeerTransport, connection_id,
+        IncomingPeerStart, PeerConnectionDirection, PeerConnectionLifecycle, PeerConnectionRole,
+        PeerRuntime, PeerRuntimeError, PeerTransport, connection_id,
     };
     use crate::peer::{
         PeerEndpoint, PeerObservation, PeerRegistry, PeerRegistryConfig, PeerSelectionContext,
@@ -416,15 +491,21 @@ mod tests {
     }
 
     #[test]
-    fn incoming_generation_begins_at_protocol_handshake_without_identity() {
+    fn incoming_generation_begins_at_protocol_handshake_with_routed_identity() {
         let connection = ConnectionId::new(42).expect("connection");
         let mut runtime = PeerRuntime::default();
         runtime
             .begin_incoming(
                 connection,
-                "127.0.0.1:51413".parse().expect("endpoint"),
-                PeerTransport::Utp,
-                PeerConnectionRole::Metadata,
+                IncomingPeerStart {
+                    record_id: attempt().record_id(),
+                    endpoint: "127.0.0.1:51413".parse().expect("endpoint"),
+                    local_endpoint: "127.0.0.1:6881".parse().expect("local endpoint"),
+                    transport: PeerTransport::Utp,
+                    role: PeerConnectionRole::Metadata,
+                    peer_id: *b"-LTTEST-000000000000",
+                    supports_extensions: true,
+                },
                 Duration::from_secs(1),
             )
             .expect("incoming intake");
@@ -432,8 +513,8 @@ mod tests {
         assert_eq!(peer.direction, PeerConnectionDirection::Incoming);
         assert_eq!(peer.transport, PeerTransport::Utp);
         assert_eq!(peer.lifecycle, PeerConnectionLifecycle::ProtocolHandshaking);
-        assert_eq!(peer.record_id, None);
-        assert_eq!(peer.peer_id, None);
+        assert!(peer.record_id.is_some());
+        assert_eq!(peer.peer_id, Some(*b"-LTTEST-000000000000"));
     }
 
     #[test]

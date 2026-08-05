@@ -27,7 +27,7 @@ async fn explicit_policies_gate_non_loopback_peers_and_offline_dns() {
         ),
     )
     .expect("online policy accepts valid public peer");
-    assert_eq!(online.registry.len(), 1);
+    assert_eq!(online.registry_len(), 1);
 
     let offline = download_magnet_metadata_with_control(
         "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213\
@@ -356,7 +356,7 @@ async fn tracker_only_magnet_discovers_registry_peers_and_downloads() {
     let mut peers = TorrentPeerCoordinator::from_magnet(&parsed, network, control.clone(), None)
         .await
         .expect("prepare tracker discovery");
-    assert!(peers.registry.is_empty());
+    assert!(peers.registry_is_empty());
 
     let report = run_magnet_download_with_peers(
         MagnetDownloadConfig {
@@ -375,17 +375,27 @@ async fn tracker_only_magnet_discovers_registry_peers_and_downloads() {
     .await
     .expect("tracker-discovered magnet download");
 
-    assert_eq!(peers.registry.len(), 2);
+    assert_eq!(peers.registry_len(), 2);
     let failed = peers
-        .registry
-        .find_endpoint(PeerEndpoint::new(unreachable).expect("failed endpoint"))
+        .peers
+        .with_state(|state| {
+            state
+                .registry
+                .find_endpoint(PeerEndpoint::new(unreachable).expect("failed endpoint"))
+                .cloned()
+        })
         .expect("failed tracker peer retained");
     assert_eq!(failed.history().total_failures, 1);
     assert_eq!(failed.history().last_failure, Some(PeerFailure::Connect));
     assert!(failed.sources().contains(PeerSource::Tracker));
     let succeeded = peers
-        .registry
-        .find_endpoint(PeerEndpoint::new(reachable).expect("successful endpoint"))
+        .peers
+        .with_state(|state| {
+            state
+                .registry
+                .find_endpoint(PeerEndpoint::new(reachable).expect("successful endpoint"))
+                .cloned()
+        })
         .expect("successful tracker peer retained");
     assert_eq!(succeeded.history().total_failures, 0);
     assert!(succeeded.history().last_connected_at.is_some());
@@ -464,7 +474,7 @@ async fn initial_tracker_operations_start_concurrently_and_merge_results() {
     .await
     .expect("concurrent tracker result deadline");
 
-    assert_eq!(peers.registry.len(), 3);
+    assert_eq!(peers.registry_len(), 3);
     let succeeded = {
         let events = activity
             .events
@@ -547,7 +557,7 @@ async fn initial_tracker_operations_hold_the_ceiling_and_advance_on_failure() {
         .expect("bounded tracker result deadline")
         .expect("last startup tracker succeeds");
     assert_eq!(started.load(Ordering::Acquire), tracker_count);
-    assert_eq!(peers.registry.len(), 1);
+    assert_eq!(peers.registry_len(), 1);
 
     peers
         .shutdown_tracker()
@@ -670,7 +680,7 @@ async fn zero_peer_success_waits_for_reannounce_without_tracker_failure() {
         .await
         .expect("empty tracker result deadline")
         .expect("valid empty tracker result");
-    assert!(peers.registry.is_empty());
+    assert!(peers.registry_is_empty());
     timeout(Duration::from_secs(1), async {
         loop {
             let has_reannounce = activity
@@ -953,8 +963,13 @@ async fn stalled_metadata_peer_does_not_delay_useful_peer() {
     assert_eq!(raw_info, single_file_info(&payload));
     assert_eq!(metainfo.info_hash, info_hash);
     let stalled = peers
-        .registry
-        .find_endpoint(PeerEndpoint::new(stalled_address).expect("stalled endpoint"))
+        .peers
+        .with_state(|state| {
+            state
+                .registry
+                .find_endpoint(PeerEndpoint::new(stalled_address).expect("stalled endpoint"))
+                .cloned()
+        })
         .expect("stalled peer retained");
     assert_eq!(stalled.phase(), PeerPhase::Idle);
     assert_eq!(stalled.history().dial_attempts, 1);
@@ -1539,8 +1554,13 @@ async fn tracker_discovery_continues_while_metadata_peer_stalls() {
 
     assert_eq!(metainfo.info_hash, info_hash);
     let discovered = peers
-        .registry
-        .find_endpoint(PeerEndpoint::new(useful_address).expect("tracker endpoint"))
+        .peers
+        .with_state(|state| {
+            state
+                .registry
+                .find_endpoint(PeerEndpoint::new(useful_address).expect("tracker endpoint"))
+                .cloned()
+        })
         .expect("tracker peer retained");
     assert!(discovered.sources().contains(PeerSource::Tracker));
     peers.close_current(None).expect("close metadata winner");
@@ -1590,7 +1610,7 @@ async fn magnet_registry_fails_over_and_hands_same_peer_to_content_download() {
         TorrentPeerCoordinator::from_magnet(&parsed, network, DownloadControl::new(), None)
             .await
             .expect("resolve failover peers");
-    assert_eq!(peers.registry.len(), 2);
+    assert_eq!(peers.registry_len(), 2);
 
     let report = run_magnet_download_with_peers(
         MagnetDownloadConfig {
@@ -1610,8 +1630,13 @@ async fn magnet_registry_fails_over_and_hands_same_peer_to_content_download() {
     .expect("magnet metadata and content after failover");
 
     let failed = peers
-        .registry
-        .find_endpoint(PeerEndpoint::new(unreachable).expect("failed endpoint"))
+        .peers
+        .with_state(|state| {
+            state
+                .registry
+                .find_endpoint(PeerEndpoint::new(unreachable).expect("failed endpoint"))
+                .cloned()
+        })
         .expect("failed peer record retained");
     assert_eq!(failed.phase(), PeerPhase::Idle);
     assert_eq!(failed.history().dial_attempts, 1);
@@ -1621,8 +1646,13 @@ async fn magnet_registry_fails_over_and_hands_same_peer_to_content_download() {
     assert!(failed.sources().contains(PeerSource::MagnetHint));
 
     let connected = peers
-        .registry
-        .find_endpoint(PeerEndpoint::new(address).expect("connected endpoint"))
+        .peers
+        .with_state(|state| {
+            state
+                .registry
+                .find_endpoint(PeerEndpoint::new(address).expect("connected endpoint"))
+                .cloned()
+        })
         .expect("connected peer record retained");
     assert_eq!(connected.phase(), PeerPhase::Idle);
     assert_eq!(connected.history().dial_attempts, 1);

@@ -617,6 +617,7 @@ async fn peer_view_upserts_generations_and_removes_only_on_cleanup() {
         connection_id: ConnectionId::new(7).expect("connection"),
         record_id: None,
         endpoint: "127.0.0.1:6881".parse().expect("endpoint"),
+        local_endpoint: None,
         sources: PeerSources::from_source(PeerSource::Manual),
         direction: PeerConnectionDirection::Incoming,
         transport: PeerTransport::Utp,
@@ -626,7 +627,9 @@ async fn peer_view_upserts_generations_and_removes_only_on_cleanup() {
         lifecycle_changed_at: Duration::from_millis(5),
         peer_id: None,
         supports_extensions: Some(true),
+        supports_ut_metadata: None,
         content: None,
+        upload: None,
         close_reason: None,
     };
     hub.record_peer_connections(TORRENT_ID, Duration::from_millis(10), &[peer.clone()])
@@ -741,6 +744,7 @@ fn sixty_active_peer_snapshot_stays_inside_default_queue_bound() {
                 endpoint: format!("127.0.0.1:{}", 6_000 + value)
                     .parse()
                     .expect("endpoint"),
+                local_endpoint: None,
                 sources: PeerSources::from_source(PeerSource::Manual),
                 direction: PeerConnectionDirection::Outgoing,
                 transport: PeerTransport::Tcp,
@@ -758,6 +762,7 @@ fn sixty_active_peer_snapshot_stays_inside_default_queue_bound() {
                 lifecycle_changed_at: Duration::from_secs(2),
                 peer_id: connected.then_some([value as u8; 20]),
                 supports_extensions: connected.then_some(true),
+                supports_ut_metadata: None,
                 content: connected.then_some(PeerContentActivity {
                     choking: false,
                     wanted_piece_count: 8,
@@ -773,6 +778,7 @@ fn sixty_active_peer_snapshot_stays_inside_default_queue_bound() {
                     oldest_request_age: Some(Duration::from_millis(50)),
                     request_window_phase: PeerRequestWindowPhase::Steady,
                 }),
+                upload: None,
                 close_reason: None,
             }
         })

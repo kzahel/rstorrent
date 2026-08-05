@@ -7,6 +7,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use crate::network::is_valid_outbound_address;
+use crate::swarm::ConnectionId;
 
 pub const DEFAULT_MAX_PEER_RECORDS: usize = 1_000;
 pub const DEFAULT_MAX_CONSECUTIVE_FAILURES: u32 = 3;
@@ -200,6 +201,7 @@ pub struct PeerRecord {
     history: PeerHistory,
     integrity: PeerIntegrity,
     last_connection_attempt: Option<DialAttemptId>,
+    incoming_connections: u32,
 }
 
 impl PeerRecord {
@@ -339,6 +341,7 @@ impl DialCandidate {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DialAttempt {
     id: DialAttemptId,
+    connection_id: ConnectionId,
     record_id: PeerRecordId,
     endpoint: PeerEndpoint,
 }
@@ -346,6 +349,10 @@ pub struct DialAttempt {
 impl DialAttempt {
     pub fn id(self) -> DialAttemptId {
         self.id
+    }
+
+    pub fn connection_id(self) -> ConnectionId {
+        self.connection_id
     }
 
     pub fn record_id(self) -> PeerRecordId {
@@ -367,6 +374,9 @@ impl PeerSelector {
         context: PeerSelectionContext,
         config: PeerRegistryConfig,
     ) -> DialEligibility {
+        if record.incoming_connections != 0 {
+            return DialEligibility::Connected;
+        }
         match record.phase {
             PeerPhase::Dialing { .. } => return DialEligibility::Dialing,
             PeerPhase::Connected { .. } => return DialEligibility::Connected,
@@ -608,6 +618,7 @@ impl PeerRegistry {
             history: PeerHistory::default(),
             integrity: PeerIntegrity::default(),
             last_connection_attempt: None,
+            incoming_connections: 0,
         });
         self.next_record_id = next_record_id;
         self.next_observation_order = next_observation_order;
@@ -622,6 +633,17 @@ impl PeerRegistry {
         &mut self,
         candidate: DialCandidate,
         context: PeerSelectionContext,
+    ) -> Result<DialAttempt, PeerRegistryError> {
+        let connection_id = ConnectionId::new(self.next_attempt_id)
+            .ok_or(PeerRegistryError::IdentifierOverflow("connection"))?;
+        self.begin_dial_with_connection_id(candidate, context, connection_id)
+    }
+
+    pub(crate) fn begin_dial_with_connection_id(
+        &mut self,
+        candidate: DialCandidate,
+        context: PeerSelectionContext,
+        connection_id: ConnectionId,
     ) -> Result<DialAttempt, PeerRegistryError> {
         let record_index = self
             .record_index(candidate.record_id)
@@ -657,9 +679,51 @@ impl PeerRegistry {
 
         Ok(DialAttempt {
             id: attempt_id,
+            connection_id,
             record_id: candidate.record_id,
             endpoint: candidate.endpoint,
         })
+    }
+
+    pub(crate) fn incoming_connected(
+        &mut self,
+        record_id: PeerRecordId,
+        now: Duration,
+    ) -> Result<(), PeerRegistryError> {
+        let record = self
+            .records
+            .iter_mut()
+            .find(|record| record.id == record_id)
+            .ok_or(PeerRegistryError::UnknownRecord(record_id))?;
+        record.incoming_connections = record
+            .incoming_connections
+            .checked_add(1)
+            .ok_or(PeerRegistryError::HistoryOverflow(record_id))?;
+        record.history.last_connected_at = Some(now);
+        Ok(())
+    }
+
+    pub(crate) fn incoming_closed(
+        &mut self,
+        record_id: PeerRecordId,
+        now: Duration,
+        failure: Option<PeerFailure>,
+    ) -> Result<(), PeerRegistryError> {
+        let backoff = self.config.reconnect_backoff;
+        let record = self
+            .records
+            .iter_mut()
+            .find(|record| record.id == record_id)
+            .ok_or(PeerRegistryError::UnknownRecord(record_id))?;
+        let Some(incoming_connections) = record.incoming_connections.checked_sub(1) else {
+            return Err(PeerRegistryError::InactiveIncoming(record_id));
+        };
+        record.incoming_connections = incoming_connections;
+        record.history.last_disconnected_at = Some(now);
+        if let Some(failure) = failure {
+            apply_failure(record, now, failure, backoff)?;
+        }
+        Ok(())
     }
 
     pub fn dial_failed(
@@ -719,6 +783,9 @@ impl PeerRegistry {
             .iter_mut()
             .find(|record| record.id == id)
             .ok_or(PeerRegistryError::UnknownRecord(id))?;
+        if record.incoming_connections != 0 {
+            return Err(PeerRegistryError::ActivePeer(id));
+        }
         match record.phase {
             PeerPhase::Idle | PeerPhase::Banned => {
                 record.phase = PeerPhase::Banned;
@@ -812,7 +879,9 @@ impl PeerRegistry {
         self.records
             .iter()
             .enumerate()
-            .filter(|(_, record)| record.phase == PeerPhase::Idle)
+            .filter(|(_, record)| {
+                record.phase == PeerPhase::Idle && record.incoming_connections == 0
+            })
             .max_by(|(_, left), (_, right)| compare_eviction_candidates(left, right, self.config))
             .map(|(index, _)| index)
     }
@@ -883,6 +952,7 @@ pub enum PeerRegistryError {
     },
     StaleAttempt(DialAttemptId),
     ActivePeer(PeerRecordId),
+    InactiveIncoming(PeerRecordId),
     IdentifierOverflow(&'static str),
     HistoryOverflow(PeerRecordId),
     TimeOverflow(PeerRecordId),
@@ -923,6 +993,12 @@ impl fmt::Display for PeerRegistryError {
             }
             Self::ActivePeer(record_id) => {
                 write!(formatter, "peer record {record_id} is active")
+            }
+            Self::InactiveIncoming(record_id) => {
+                write!(
+                    formatter,
+                    "peer record {record_id} has no active incoming connection"
+                )
             }
             Self::IdentifierOverflow(kind) => write!(formatter, "{kind} identifier overflow"),
             Self::HistoryOverflow(record_id) => {

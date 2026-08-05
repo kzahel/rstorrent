@@ -20,6 +20,7 @@ mod seed_content;
 mod selective_storage;
 mod storage_file_pool;
 pub mod swarm;
+mod torrent_peer;
 mod tracker;
 mod upload;
 mod upload_scheduler;
@@ -63,7 +64,7 @@ pub use peer_budget::{
 pub use peer_runtime::{
     PeerConnectionDirection, PeerConnectionLifecycle, PeerConnectionObservation,
     PeerConnectionRole, PeerContentActivity, PeerRequestWindowPhase, PeerRuntimeError,
-    PeerTransport,
+    PeerTransport, PeerUploadActivity, PeerUploadGrant,
 };
 pub use seed_content::{SeedContent, SeedContentError, SeedContentSnapshot};
 pub use selective_storage::{
@@ -83,6 +84,9 @@ pub use storage_file_pool::{
     PlatformStorageTarget, StorageFileAccess, StorageFileHandle, StorageFileKey, StorageFileLease,
     StorageFileLocator, StorageFilePool, StorageFilePoolError, StorageFilePoolSnapshot,
     StorageFileReference, StorageFileRole, platform_storage_channel,
+};
+pub use torrent_peer::{
+    IncomingPeerAttachment, TorrentPeerActivitySink, TorrentPeerError, TorrentPeerHandle,
 };
 pub use tracker::{
     TrackerAnnounceEvent, TrackerNextAction, TrackerRuntimeRecordSnapshot, TrackerRuntimeSnapshot,

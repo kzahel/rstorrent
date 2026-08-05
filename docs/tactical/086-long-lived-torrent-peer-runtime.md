@@ -1,6 +1,6 @@
 # Tactical 086: Long-Lived Torrent Peer Runtime
 
-Status: Planned on 2026-08-05. Implementation has not started.
+Status: In progress on 2026-08-05. Gate 1 is complete; Gates 2--5 remain.
 
 Topics: `incoming-reachability-and-seeding`, `peer-lifecycle`,
 `code-organization-and-refactoring`, `application-view-api`,
@@ -478,6 +478,17 @@ behavior, timings, generated contracts, and all stale-generation tests.
 Pure attach/update/disconnect/remove, source merge, ID exhaustion, activity
 coalescing, and simultaneous-direction cases pass without Tokio, sockets,
 storage, or a view hub. This is a useful commit boundary.
+
+Completed on 2026-08-05. `torrent_peer` now owns the bounded registry,
+active-generation state, one checked connection-ID allocator, source refresh,
+and publication coalescing behind a cloneable task-free handle. Outgoing dial
+attempts carry their separately allocated connection ID, removing the former
+`ConnectionId == DialAttemptId` assumption while preserving stale-attempt
+fencing. Incoming state now has pure routed attach, handshake, upload,
+disconnect, and exact removal transitions plus non-connectable registry
+membership. The complete 237-test engine library suite passes with three
+opt-in live cases ignored; focused all-target engine clippy passes with
+warnings denied.
 
 ### Gate 2: Session per-torrent lifetime owner
 

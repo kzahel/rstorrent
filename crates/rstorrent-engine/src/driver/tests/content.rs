@@ -524,15 +524,25 @@ async fn sole_corrupt_source_is_banned_and_clean_peer_retries_piece() {
             + metrics.bytes(ByteMetric::PeerUnclassifiedSent),
     );
     let corrupt_record = peers
-        .registry
-        .find_endpoint(PeerEndpoint::new(corrupt_address).expect("corrupt endpoint"))
+        .peers
+        .with_state(|state| {
+            state
+                .registry
+                .find_endpoint(PeerEndpoint::new(corrupt_address).expect("corrupt endpoint"))
+                .cloned()
+        })
         .expect("corrupt record");
     assert_eq!(corrupt_record.phase(), crate::peer::PeerPhase::Banned);
     assert_eq!(corrupt_record.integrity().trust_points, -2);
     assert_eq!(corrupt_record.integrity().hash_failures, 1);
     let clean_record = peers
-        .registry
-        .find_endpoint(PeerEndpoint::new(clean_address).expect("clean endpoint"))
+        .peers
+        .with_state(|state| {
+            state
+                .registry
+                .find_endpoint(PeerEndpoint::new(clean_address).expect("clean endpoint"))
+                .cloned()
+        })
         .expect("clean record");
     assert_eq!(clean_record.integrity().trust_points, 1);
     assert_eq!(clean_record.integrity().valid_pieces, 1);
@@ -678,8 +688,13 @@ async fn ambiguous_corrupt_generation_records_suspects_without_false_bans() {
     assert_eq!(snapshot.last_hash_failure_contributors, 2);
     for address in [first_address, second_address] {
         let record = peers
-            .registry
-            .find_endpoint(PeerEndpoint::new(address).expect("suspect endpoint"))
+            .peers
+            .with_state(|state| {
+                state
+                    .registry
+                    .find_endpoint(PeerEndpoint::new(address).expect("suspect endpoint"))
+                    .cloned()
+            })
             .expect("suspect record");
         assert_ne!(record.phase(), crate::peer::PeerPhase::Banned);
         assert_eq!(record.integrity().trust_points, -2);
@@ -687,8 +702,13 @@ async fn ambiguous_corrupt_generation_records_suspects_without_false_bans() {
         assert!(record.integrity().on_parole);
     }
     let clean_record = peers
-        .registry
-        .find_endpoint(PeerEndpoint::new(clean_address).expect("clean endpoint"))
+        .peers
+        .with_state(|state| {
+            state
+                .registry
+                .find_endpoint(PeerEndpoint::new(clean_address).expect("clean endpoint"))
+                .cloned()
+        })
         .expect("clean record");
     assert_eq!(clean_record.integrity().trust_points, 1);
     for task in [first_task, second_task, clean_task] {
@@ -847,12 +867,12 @@ async fn cancellation_joins_a_full_silent_pending_cohort() {
         .expect("download task");
     assert!(matches!(result, Err(DownloadError::Cancelled)));
     assert_eq!(accepted.load(Ordering::Acquire), DEFAULT_MAX_PENDING_DIALS);
-    assert!(
-        peers
+    assert!(peers.peers.with_state(|state| {
+        state
             .registry
             .records()
             .all(|record| record.phase() == PeerPhase::Idle)
-    );
+    }));
     for task in tasks {
         timeout(Duration::from_secs(1), task)
             .await
@@ -1073,7 +1093,10 @@ async fn full_choked_set_without_an_alternative_waits_without_churn() {
         download.await
     };
     assert!(matches!(result, Err(DownloadError::Cancelled)));
-    let record = peers.registry.records().next().expect("retained peer");
+    let record = peers
+        .peers
+        .with_state(|state| state.registry.records().next().cloned())
+        .expect("retained peer");
     assert_eq!(record.history().dial_attempts, 1);
     assert_eq!(record.history().total_failures, 0);
     timeout(Duration::from_secs(1), peer_task)
@@ -1385,8 +1408,13 @@ async fn dht_peer_discovered_during_content_becomes_useful() {
     assert_eq!(report.verified_piece_count, 1);
     assert_eq!(tokio::fs::read(&output).await.expect("output"), payload);
     let discovered = peers
-        .registry
-        .find_endpoint(PeerEndpoint::new(useful_address).expect("DHT endpoint"))
+        .peers
+        .with_state(|state| {
+            state
+                .registry
+                .find_endpoint(PeerEndpoint::new(useful_address).expect("DHT endpoint"))
+                .cloned()
+        })
         .expect("DHT peer retained");
     assert!(discovered.sources().contains(PeerSource::Dht));
     for task in [unavailable_task, useful_task, dht_task] {

@@ -41,12 +41,11 @@ use crate::network::DEFAULT_PEER_ID;
 use crate::network::{NetworkConfig, NetworkPolicy};
 use crate::peer::{
     DialAttempt, DialAttemptId, DialCandidate, PeerEndpoint, PeerFailure, PeerIntegrityAction,
-    PeerObservation, PeerRegistry, PeerRegistryConfig, PeerRegistryError, PeerSelectionContext,
-    PeerSelector, PeerSource,
+    PeerObservation, PeerRegistryError, PeerSelectionContext, PeerSelector, PeerSource,
 };
 use crate::peer_budget::PeerBudget;
 use crate::peer_runtime::{
-    PeerConnectionRole, PeerContentActivity, PeerRequestWindowPhase, PeerRuntime, PeerRuntimeError,
+    PeerConnectionRole, PeerContentActivity, PeerRequestWindowPhase, PeerRuntimeError,
     connection_id,
 };
 use crate::peer_socket::{
@@ -62,6 +61,7 @@ use crate::swarm::{
     BlockKey, ConnectionId, ConnectionRemoval, ConnectionWindowPhaseSnapshot, PendingDialId,
     PieceHashFailure, PiecePlan, ReceiveDisposition, SwarmConfig, SwarmError, SwarmState,
 };
+use crate::torrent_peer::{TorrentPeerError, TorrentPeerHandle};
 use crate::tracker::{
     TrackerAction, TrackerId, TrackerSchedule, TrackerWaitKind, UdpTrackerConfig,
 };
@@ -456,6 +456,16 @@ impl Error for DownloadError {
 impl DownloadError {
     pub fn is_existing_artifact(&self) -> bool {
         preserves_existing_artifact(self)
+    }
+}
+
+fn map_torrent_peer_error(error: TorrentPeerError) -> DownloadError {
+    match error {
+        TorrentPeerError::Registry(error) => DownloadError::PeerRegistry(error),
+        TorrentPeerError::Runtime(error) => DownloadError::PeerRuntime(error),
+        TorrentPeerError::ConnectionIdentifierOverflow => {
+            DownloadError::PeerRegistry(PeerRegistryError::IdentifierOverflow("peer connection"))
+        }
     }
 }
 
@@ -1501,10 +1511,8 @@ fn udp_tracker_label(tracker: &UdpTrackerUrl) -> String {
 
 #[derive(Debug)]
 struct TorrentPeerCoordinator {
-    registry: PeerRegistry,
-    runtime: PeerRuntime,
+    peers: TorrentPeerHandle,
     selector: PeerSelector,
-    started_at: Instant,
     network: NetworkConfig,
     peer_budget: PeerBudget,
     tracker: Option<TrackerManager>,
@@ -1634,12 +1642,11 @@ impl TorrentPeerCoordinator {
         peer_budget: PeerBudget,
     ) -> Result<Self, DownloadError> {
         validate_network_config(network)?;
+        let peers =
+            TorrentPeerHandle::new(Arc::new(control.clone())).map_err(map_torrent_peer_error)?;
         Ok(Self {
-            registry: PeerRegistry::new(PeerRegistryConfig::default())
-                .map_err(DownloadError::PeerRegistry)?,
-            runtime: PeerRuntime::default(),
+            peers,
             selector: PeerSelector,
-            started_at: Instant::now(),
             network,
             peer_budget,
             tracker: None,
@@ -1660,27 +1667,27 @@ impl TorrentPeerCoordinator {
             now: self.elapsed(),
         };
         let attempt = self
-            .registry
-            .begin_dial(candidate, context)
-            .map_err(DownloadError::PeerRegistry)?;
-        if let Err(error) = self.runtime.begin_outgoing(attempt, role, context.now) {
-            let _ = self.registry.dial_cancelled(attempt);
-            return Err(DownloadError::PeerRuntime(error));
-        }
+            .peers
+            .with_state(|state| state.begin_dial(candidate, role, context.now))
+            .map_err(map_torrent_peer_error)?;
         self.publish_peer_runtime(true)?;
         Ok(attempt)
     }
 
     fn transport_connected(&mut self, attempt: DialAttempt) -> Result<(), DownloadError> {
         let connection = connection_id(attempt);
-        let Some(peer) = self.runtime.observation(connection) else {
+        let Some(peer) = self
+            .peers
+            .with_state(|state| state.runtime.observation(connection).cloned())
+        else {
             return Ok(());
         };
         if peer.lifecycle != crate::peer_runtime::PeerConnectionLifecycle::TransportConnecting {
             return Ok(());
         }
-        self.runtime
-            .transport_connected(connection, self.elapsed())
+        let now = self.elapsed();
+        self.peers
+            .with_state(|state| state.runtime.transport_connected(connection, now))
             .map_err(DownloadError::PeerRuntime)?;
         self.publish_peer_runtime(true)
     }
@@ -1690,12 +1697,16 @@ impl TorrentPeerCoordinator {
         attempt: DialAttempt,
         handshake: &Handshake,
     ) -> Result<(), DownloadError> {
-        self.registry
-            .dial_succeeded(attempt, self.elapsed())
-            .map_err(DownloadError::PeerRegistry)?;
-        self.runtime
-            .handshake_completed(connection_id(attempt), handshake, self.elapsed())
-            .map_err(DownloadError::PeerRuntime)?;
+        let now = self.elapsed();
+        self.peers
+            .with_state(|state| {
+                state.registry.dial_succeeded(attempt, now)?;
+                state
+                    .runtime
+                    .handshake_completed(connection_id(attempt), handshake, now)
+                    .map_err(TorrentPeerError::Runtime)
+            })
+            .map_err(map_torrent_peer_error)?;
         self.publish_peer_runtime(true)
     }
 
@@ -1705,31 +1716,45 @@ impl TorrentPeerCoordinator {
         failure: PeerFailure,
     ) -> Result<(), DownloadError> {
         let connection = connection_id(attempt);
-        self.runtime
-            .begin_disconnect(connection, Some(failure), self.elapsed())
+        let now = self.elapsed();
+        self.peers
+            .with_state(|state| {
+                state
+                    .runtime
+                    .begin_disconnect(connection, Some(failure), now)
+            })
             .map_err(DownloadError::PeerRuntime)?;
         self.publish_peer_runtime(true)?;
-        self.registry
-            .dial_failed(attempt, self.elapsed(), failure)
-            .map_err(DownloadError::PeerRegistry)?;
-        self.runtime
-            .remove(connection)
-            .map_err(DownloadError::PeerRuntime)?;
+        self.peers
+            .with_state(|state| {
+                state.registry.dial_failed(attempt, now, failure)?;
+                state
+                    .runtime
+                    .remove(connection)
+                    .map_err(TorrentPeerError::Runtime)?;
+                Ok::<_, TorrentPeerError>(())
+            })
+            .map_err(map_torrent_peer_error)?;
         self.publish_peer_runtime(true)
     }
 
     fn dial_cancelled(&mut self, attempt: DialAttempt) -> Result<(), DownloadError> {
         let connection = connection_id(attempt);
-        self.runtime
-            .begin_disconnect(connection, None, self.elapsed())
+        let now = self.elapsed();
+        self.peers
+            .with_state(|state| state.runtime.begin_disconnect(connection, None, now))
             .map_err(DownloadError::PeerRuntime)?;
         self.publish_peer_runtime(true)?;
-        self.registry
-            .dial_cancelled(attempt)
-            .map_err(DownloadError::PeerRegistry)?;
-        self.runtime
-            .remove(connection)
-            .map_err(DownloadError::PeerRuntime)?;
+        self.peers
+            .with_state(|state| {
+                state.registry.dial_cancelled(attempt)?;
+                state
+                    .runtime
+                    .remove(connection)
+                    .map_err(TorrentPeerError::Runtime)?;
+                Ok::<_, TorrentPeerError>(())
+            })
+            .map_err(map_torrent_peer_error)?;
         self.publish_peer_runtime(true)
     }
 
@@ -1738,8 +1763,13 @@ impl TorrentPeerCoordinator {
         attempt: DialAttempt,
         failure: Option<PeerFailure>,
     ) -> Result<(), DownloadError> {
-        self.runtime
-            .begin_disconnect(connection_id(attempt), failure, self.elapsed())
+        let now = self.elapsed();
+        self.peers
+            .with_state(|state| {
+                state
+                    .runtime
+                    .begin_disconnect(connection_id(attempt), failure, now)
+            })
             .map_err(DownloadError::PeerRuntime)?;
         self.publish_peer_runtime(true)
     }
@@ -1750,99 +1780,102 @@ impl TorrentPeerCoordinator {
         failure: Option<PeerFailure>,
     ) -> Result<(), DownloadError> {
         let connection = connection_id(attempt);
-        if self.runtime.observation(connection).is_some_and(|peer| {
-            peer.lifecycle != crate::peer_runtime::PeerConnectionLifecycle::Disconnecting
+        if self.peers.with_state(|state| {
+            state.runtime.observation(connection).is_some_and(|peer| {
+                peer.lifecycle != crate::peer_runtime::PeerConnectionLifecycle::Disconnecting
+            })
         }) {
             self.begin_disconnect(attempt, failure)?;
         }
-        self.registry
-            .connection_closed(attempt, self.elapsed(), failure)
-            .map_err(DownloadError::PeerRegistry)?;
-        self.runtime
-            .remove(connection)
-            .map_err(DownloadError::PeerRuntime)?;
+        let now = self.elapsed();
+        self.peers
+            .with_state(|state| {
+                state.registry.connection_closed(attempt, now, failure)?;
+                state
+                    .runtime
+                    .remove(connection)
+                    .map_err(TorrentPeerError::Runtime)?;
+                Ok::<_, TorrentPeerError>(())
+            })
+            .map_err(map_torrent_peer_error)?;
         self.publish_peer_runtime(true)
     }
 
     fn handoff_to_content(&mut self, attempt: DialAttempt) -> Result<(), DownloadError> {
-        self.runtime
-            .set_role(connection_id(attempt), PeerConnectionRole::Content)
+        self.peers
+            .with_state(|state| {
+                state
+                    .runtime
+                    .set_role(connection_id(attempt), PeerConnectionRole::Content)
+            })
             .map_err(DownloadError::PeerRuntime)?;
         self.publish_peer_runtime(true)
     }
 
     fn observe_content_peers(&mut self, state: &SwarmState) -> Result<(), DownloadError> {
         for peer in state.connection_activity(self.elapsed()) {
-            self.runtime
-                .set_content_activity(
-                    peer.id,
-                    PeerContentActivity {
-                        choking: peer.choking,
-                        wanted_piece_count: peer.wanted_piece_count,
-                        pending_requests: peer.pending_requests,
-                        target_requests: peer.target_requests,
-                        queued_payload_bytes: peer.queued_payload_bytes,
-                        useful_payload_bytes: peer.useful_payload_bytes,
-                        observed_payload_rate: peer.observed_payload_rate,
-                        connected_age: peer.connected_age,
-                        last_useful_age: peer.last_useful_age,
-                        last_payload_age: peer.last_payload_age,
-                        request_timeout: peer.request_timeout,
-                        oldest_request_age: peer.oldest_request_age,
-                        request_window_phase: match peer.window_phase {
-                            ConnectionWindowPhaseSnapshot::SlowStart => {
-                                PeerRequestWindowPhase::SlowStart
-                            }
-                            ConnectionWindowPhaseSnapshot::Steady => PeerRequestWindowPhase::Steady,
-                            ConnectionWindowPhaseSnapshot::Stalled => {
-                                PeerRequestWindowPhase::Stalled
-                            }
+            self.peers
+                .with_state(|state| {
+                    state.runtime.set_content_activity(
+                        peer.id,
+                        PeerContentActivity {
+                            choking: peer.choking,
+                            wanted_piece_count: peer.wanted_piece_count,
+                            pending_requests: peer.pending_requests,
+                            target_requests: peer.target_requests,
+                            queued_payload_bytes: peer.queued_payload_bytes,
+                            useful_payload_bytes: peer.useful_payload_bytes,
+                            observed_payload_rate: peer.observed_payload_rate,
+                            connected_age: peer.connected_age,
+                            last_useful_age: peer.last_useful_age,
+                            last_payload_age: peer.last_payload_age,
+                            request_timeout: peer.request_timeout,
+                            oldest_request_age: peer.oldest_request_age,
+                            request_window_phase: match peer.window_phase {
+                                ConnectionWindowPhaseSnapshot::SlowStart => {
+                                    PeerRequestWindowPhase::SlowStart
+                                }
+                                ConnectionWindowPhaseSnapshot::Steady => {
+                                    PeerRequestWindowPhase::Steady
+                                }
+                                ConnectionWindowPhaseSnapshot::Stalled => {
+                                    PeerRequestWindowPhase::Stalled
+                                }
+                            },
                         },
-                    },
-                )
+                    )
+                })
                 .map_err(DownloadError::PeerRuntime)?;
         }
         self.publish_peer_runtime(false)
     }
 
     fn publish_peer_runtime(&mut self, force: bool) -> Result<(), DownloadError> {
-        let connections = self
-            .runtime
-            .snapshot()
-            .into_iter()
-            .map(|peer| peer.connection_id)
-            .collect::<Vec<_>>();
-        for connection in connections {
-            let record_id = self
-                .runtime
-                .observation(connection)
-                .and_then(|peer| peer.record_id);
-            if let Some(sources) = record_id
-                .and_then(|record_id| self.registry.get(record_id))
-                .map(|record| record.sources())
-            {
-                self.runtime
-                    .set_sources(connection, sources)
-                    .map_err(DownloadError::PeerRuntime)?;
-            }
-        }
-        self.control
-            .observe_peer_runtime(&self.runtime, self.elapsed(), force);
-        self.publish_peer_registry(force);
-        Ok(())
+        self.peers
+            .publish(true, force)
+            .map_err(map_torrent_peer_error)
     }
 
     fn publish_peer_registry(&self, force: bool) {
-        self.control
-            .observe_peer_registry(&self.registry, self.elapsed(), true, force);
+        let _ = self.peers.publish(true, force);
     }
 
+    #[cfg(test)]
     fn from_endpoint(
         address: SocketAddr,
         source: PeerSource,
         network: NetworkConfig,
     ) -> Result<Self, DownloadError> {
-        let mut peers = Self::new(network, DownloadControl::new())?;
+        Self::from_endpoint_with_control(address, source, network, DownloadControl::new())
+    }
+
+    fn from_endpoint_with_control(
+        address: SocketAddr,
+        source: PeerSource,
+        network: NetworkConfig,
+        control: DownloadControl,
+    ) -> Result<Self, DownloadError> {
+        let mut peers = Self::new(network, control)?;
         if matches!(network.policy, NetworkPolicy::Offline) {
             return Err(DownloadError::NetworkDisabled);
         }
@@ -1898,7 +1931,7 @@ impl TorrentPeerCoordinator {
                 peers.control.clone(),
             )?);
         }
-        if peers.registry.is_empty() && peers.tracker.is_none() && peers.dht.is_none() {
+        if peers.registry_is_empty() && peers.tracker.is_none() && peers.dht.is_none() {
             return Err(peers
                 .last_error
                 .take()
@@ -1937,14 +1970,37 @@ impl TorrentPeerCoordinator {
             });
         }
         let endpoint = PeerEndpoint::new(address).map_err(DownloadError::PeerRegistry)?;
-        self.registry
-            .observe(PeerObservation::dialable(endpoint, source), self.elapsed())
+        let now = self.elapsed();
+        self.peers
+            .with_state(|state| {
+                state
+                    .registry
+                    .observe(PeerObservation::dialable(endpoint, source), now)
+            })
             .map_err(DownloadError::PeerRegistry)?;
         self.publish_peer_runtime(true)
     }
 
     fn elapsed(&self) -> Duration {
-        self.started_at.elapsed()
+        self.peers.elapsed()
+    }
+
+    fn registry_is_empty(&self) -> bool {
+        self.peers.with_state(|state| state.registry.is_empty())
+    }
+
+    #[cfg(test)]
+    fn registry_len(&self) -> usize {
+        self.peers.with_state(|state| state.registry.len())
+    }
+
+    fn select_candidate(&self, context: PeerSelectionContext) -> Option<DialCandidate> {
+        self.peers
+            .with_state(|state| self.selector.select(&state.registry, context))
+    }
+
+    fn registry_snapshot(&self) -> crate::peer::PeerRegistrySnapshot {
+        self.peers.registry_snapshot(true)
     }
 
     async fn receive_tracker_peers(&mut self) -> Result<(), DownloadError> {
@@ -1963,13 +2019,9 @@ impl TorrentPeerCoordinator {
             }
         }
         if self
-            .selector
-            .select(
-                &self.registry,
-                PeerSelectionContext {
-                    now: self.elapsed(),
-                },
-            )
+            .select_candidate(PeerSelectionContext {
+                now: self.elapsed(),
+            })
             .is_none()
         {
             self.control
@@ -2033,7 +2085,7 @@ impl TorrentPeerCoordinator {
                                 self.last_error = Some(error);
                             }
                         }
-                        if self.registry.is_empty() {
+                        if self.registry_is_empty() {
                             self.control
                                 .emit(DownloadActivityEvent::TrackerPeersUnavailable {
                                     tracker,
@@ -2082,7 +2134,7 @@ impl TorrentPeerCoordinator {
             let context = PeerSelectionContext {
                 now: self.elapsed(),
             };
-            let candidate = match self.selector.select(&self.registry, context) {
+            let candidate = match self.select_candidate(context) {
                 Some(candidate) => candidate,
                 None => {
                     self.receive_discovery_peers(info_hash).await?;
@@ -2114,9 +2166,7 @@ impl TorrentPeerCoordinator {
         self.control.metadata_started();
         let result = self.acquire_metadata_inner(info_hash).await;
         self.control.observe_metadata_supervisor(
-            self.registry.snapshot(PeerSelectionContext {
-                now: self.elapsed(),
-            }),
+            self.registry_snapshot(),
             0,
             0,
             self.last_error.as_ref(),
@@ -2149,7 +2199,7 @@ impl TorrentPeerCoordinator {
                 let context = PeerSelectionContext {
                     now: self.elapsed(),
                 };
-                let Some(candidate) = self.selector.select(&self.registry, context) else {
+                let Some(candidate) = self.select_candidate(context) else {
                     break;
                 };
                 self.control.emit(DownloadActivityEvent::PeerDialStarted {
@@ -2170,9 +2220,7 @@ impl TorrentPeerCoordinator {
             }
 
             self.control.observe_metadata_supervisor(
-                self.registry.snapshot(PeerSelectionContext {
-                    now: self.elapsed(),
-                }),
+                self.registry_snapshot(),
                 sockets.pending_len(),
                 workers.len(),
                 self.last_error.as_ref(),
@@ -2362,18 +2410,22 @@ impl TorrentPeerCoordinator {
             Some(tracker) => tracker.shutdown().await,
             None => Ok(()),
         };
-        self.control
-            .observe_peer_registry(&self.registry, self.elapsed(), false, true);
+        self.peers
+            .publish(false, true)
+            .map_err(map_torrent_peer_error)?;
         result
     }
 
     async fn disable_dht_for_private(&mut self, info_hash: [u8; 20]) -> Result<(), DownloadError> {
         let current_is_dht_only = self.connection.as_ref().is_some_and(|connection| {
-            self.registry
-                .get(connection.attempt().record_id())
-                .is_some_and(|record| {
-                    record.sources().contains(PeerSource::Dht) && record.sources().len() == 1
-                })
+            self.peers.with_state(|state| {
+                state
+                    .registry
+                    .get(connection.attempt().record_id())
+                    .is_some_and(|record| {
+                        record.sources().contains(PeerSource::Dht) && record.sources().len() == 1
+                    })
+            })
         });
         if current_is_dht_only {
             self.close_current(None)?;
@@ -2383,7 +2435,8 @@ impl TorrentPeerCoordinator {
                 .await
                 .map_err(DownloadError::Dht)?;
         }
-        self.registry.remove_source(PeerSource::Dht);
+        self.peers
+            .with_state(|state| state.registry.remove_source(PeerSource::Dht));
         self.control
             .emit(DownloadActivityEvent::DhtDisabledForPrivateTorrent);
         Ok(())
@@ -3255,8 +3308,12 @@ async fn run_download(
     let metainfo_bytes = read_bounded_metainfo(&config.metainfo_path).await?;
     let metainfo = Metainfo::from_bytes_with_limits(&metainfo_bytes, BEP9_METAINFO_LIMITS)
         .map_err(DownloadError::Metainfo)?;
-    let mut peers =
-        TorrentPeerCoordinator::from_endpoint(config.peer, PeerSource::Manual, config.network)?;
+    let mut peers = TorrentPeerCoordinator::from_endpoint_with_control(
+        config.peer,
+        PeerSource::Manual,
+        config.network,
+        control.clone(),
+    )?;
     let content_config = ContentDownloadConfig {
         output_path: config.output_path,
         max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
@@ -3285,6 +3342,7 @@ async fn run_content_download(
     resume: Option<ResumeContext>,
 ) -> Result<DownloadReport, DownloadError> {
     peers.control = control.clone();
+    peers.peers.set_sink(Arc::new(control.clone()));
     peers.publish_peer_registry(true);
     let result =
         run_selective_download(config, metainfo, control, descriptors, peers, resume).await;
@@ -3782,7 +3840,10 @@ fn record_verified_piece_contributors(
                 "verified piece contributor attempt is missing",
             ))
         })?;
-        match peers.registry.record_piece_passed(attempt) {
+        match peers
+            .peers
+            .with_state(|state| state.registry.record_piece_passed(attempt))
+        {
             Ok(())
             | Err(PeerRegistryError::StaleAttempt(_))
             | Err(PeerRegistryError::UnknownRecord(_)) => {}
@@ -3807,7 +3868,10 @@ async fn record_failed_piece_contributors(
                 "failed piece contributor attempt is missing",
             ))
         })?;
-        match peers.registry.record_piece_failed(attempt, known_bad) {
+        match peers
+            .peers
+            .with_state(|state| state.registry.record_piece_failed(attempt, known_bad))
+        {
             Ok(PeerIntegrityAction::Retain) => {}
             Ok(PeerIntegrityAction::Ban) => banned.push((connection, attempt)),
             Err(PeerRegistryError::StaleAttempt(_)) | Err(PeerRegistryError::UnknownRecord(_)) => {}
@@ -3819,8 +3883,8 @@ async fn record_failed_piece_contributors(
             close_content_connection(peers, sockets, &mut download.state, connection, None).await?;
         }
         peers
-            .registry
-            .ban(attempt.record_id())
+            .peers
+            .with_state(|state| state.registry.ban(attempt.record_id()))
             .map_err(DownloadError::PeerRegistry)?;
     }
     download.prune_contributor_attempts();
@@ -3884,7 +3948,7 @@ fn fill_content_dials(
         let context = PeerSelectionContext {
             now: peers.elapsed(),
         };
-        let Some(candidate) = peers.selector.select(&peers.registry, context) else {
+        let Some(candidate) = peers.select_candidate(context) else {
             break;
         };
         peers.control.emit(DownloadActivityEvent::PeerDialStarted {
@@ -4321,13 +4385,9 @@ async fn run_selective_swarm_loop(
                 }
                 if let Some(tracker) = tracker
                     && peers
-                        .selector
-                        .select(
-                            &peers.registry,
-                            PeerSelectionContext {
-                                now: peers.elapsed(),
-                            },
-                        )
+                        .select_candidate(PeerSelectionContext {
+                            now: peers.elapsed(),
+                        })
                         .is_none()
                 {
                     peers

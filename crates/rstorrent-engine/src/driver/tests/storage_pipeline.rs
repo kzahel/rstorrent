@@ -1031,8 +1031,13 @@ async fn storage_pressure_cannot_starve_dht_intake_or_dial_refill() {
     assert!(!disk.intake_backpressured);
     assert!(disk.pressure_transition_count >= 2);
     let discovered = peers
-        .registry
-        .find_endpoint(PeerEndpoint::new(discovered_address).expect("DHT endpoint"))
+        .peers
+        .with_state(|state| {
+            state
+                .registry
+                .find_endpoint(PeerEndpoint::new(discovered_address).expect("DHT endpoint"))
+                .cloned()
+        })
         .expect("DHT peer retained");
     assert!(discovered.sources().contains(PeerSource::Dht));
     assert!(discovered.history().dial_attempts >= 1);

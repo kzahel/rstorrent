@@ -1,0 +1,741 @@
+//! Task-free per-torrent peer state shared by outgoing and incoming owners.
+
+use std::error::Error;
+use std::fmt;
+use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use crate::peer::{
+    DialAttempt, DialCandidate, DialEligibility, PeerFailure, PeerObservation, PeerRecordId,
+    PeerRegistry, PeerRegistryConfig, PeerRegistryCounts, PeerRegistryError, PeerRegistrySnapshot,
+    PeerSelectionContext, PeerSource,
+};
+use crate::peer_runtime::{
+    IncomingPeerStart, PeerConnectionObservation, PeerConnectionRole, PeerRuntime,
+    PeerRuntimeError, PeerTransport, PeerUploadActivity,
+};
+use crate::swarm::ConnectionId;
+
+const PEER_OBSERVATION_INTERVAL: Duration = Duration::from_millis(100);
+
+pub trait TorrentPeerActivitySink: Send + Sync + fmt::Debug {
+    fn record_peer_connections(&self, captured_at: Duration, peers: Vec<PeerConnectionObservation>);
+
+    fn record_peer_registry(&self, active: bool, snapshot: PeerRegistrySnapshot);
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IncomingPeerAttachment {
+    connection_id: ConnectionId,
+    record_id: PeerRecordId,
+}
+
+impl IncomingPeerAttachment {
+    pub fn connection_id(self) -> ConnectionId {
+        self.connection_id
+    }
+
+    pub fn record_id(self) -> PeerRecordId {
+        self.record_id
+    }
+}
+
+#[derive(Debug)]
+pub enum TorrentPeerError {
+    Registry(PeerRegistryError),
+    Runtime(PeerRuntimeError),
+    ConnectionIdentifierOverflow,
+}
+
+impl fmt::Display for TorrentPeerError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Registry(error) => write!(formatter, "peer registry: {error}"),
+            Self::Runtime(error) => write!(formatter, "peer runtime: {error}"),
+            Self::ConnectionIdentifierOverflow => {
+                formatter.write_str("peer connection identifier overflow")
+            }
+        }
+    }
+}
+
+impl Error for TorrentPeerError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Registry(error) => Some(error),
+            Self::Runtime(error) => Some(error),
+            Self::ConnectionIdentifierOverflow => None,
+        }
+    }
+}
+
+impl From<PeerRegistryError> for TorrentPeerError {
+    fn from(error: PeerRegistryError) -> Self {
+        Self::Registry(error)
+    }
+}
+
+impl From<PeerRuntimeError> for TorrentPeerError {
+    fn from(error: PeerRuntimeError) -> Self {
+        Self::Runtime(error)
+    }
+}
+
+#[derive(Debug, Default)]
+struct RegistryPublicationState {
+    active: bool,
+    last_emitted: Option<PeerRegistrySnapshot>,
+    next_transition_at: Option<Duration>,
+}
+
+#[derive(Debug)]
+pub(crate) struct TorrentPeerState {
+    pub(crate) registry: PeerRegistry,
+    pub(crate) runtime: PeerRuntime,
+    next_connection_id: u64,
+    last_connections_emitted: Vec<PeerConnectionObservation>,
+    last_connections_emitted_at: Option<Duration>,
+    registry_publication: RegistryPublicationState,
+}
+
+impl TorrentPeerState {
+    fn new(config: PeerRegistryConfig) -> Result<Self, TorrentPeerError> {
+        Ok(Self {
+            registry: PeerRegistry::new(config)?,
+            runtime: PeerRuntime::default(),
+            next_connection_id: 1,
+            last_connections_emitted: Vec::new(),
+            last_connections_emitted_at: None,
+            registry_publication: RegistryPublicationState::default(),
+        })
+    }
+
+    pub(crate) fn begin_dial(
+        &mut self,
+        candidate: DialCandidate,
+        role: PeerConnectionRole,
+        now: Duration,
+    ) -> Result<DialAttempt, TorrentPeerError> {
+        let connection_id = self.allocate_connection_id()?;
+        let context = PeerSelectionContext { now };
+        let attempt =
+            self.registry
+                .begin_dial_with_connection_id(candidate, context, connection_id)?;
+        if let Err(error) = self.runtime.begin_outgoing(attempt, role, now) {
+            let _ = self.registry.dial_cancelled(attempt);
+            return Err(error.into());
+        }
+        Ok(attempt)
+    }
+
+    fn begin_incoming(
+        &mut self,
+        remote_endpoint: SocketAddr,
+        local_endpoint: SocketAddr,
+        peer_id: [u8; 20],
+        supports_extensions: bool,
+        role: PeerConnectionRole,
+        now: Duration,
+    ) -> Result<IncomingPeerAttachment, TorrentPeerError> {
+        let connection_id = self.allocate_connection_id()?;
+        let endpoint = crate::peer::PeerEndpoint::new(remote_endpoint)?;
+        let observed = self.registry.observe(
+            PeerObservation::new(endpoint, PeerSource::Incoming, false),
+            now,
+        )?;
+        self.registry.incoming_connected(observed.record_id, now)?;
+        if let Err(error) = self.runtime.begin_incoming(
+            connection_id,
+            IncomingPeerStart {
+                record_id: observed.record_id,
+                endpoint: remote_endpoint,
+                local_endpoint,
+                transport: PeerTransport::Tcp,
+                role,
+                peer_id,
+                supports_extensions,
+            },
+            now,
+        ) {
+            let _ = self.registry.incoming_closed(observed.record_id, now, None);
+            return Err(error.into());
+        }
+        Ok(IncomingPeerAttachment {
+            connection_id,
+            record_id: observed.record_id,
+        })
+    }
+
+    fn incoming_handshake_completed(
+        &mut self,
+        attachment: IncomingPeerAttachment,
+        now: Duration,
+    ) -> Result<(), TorrentPeerError> {
+        self.runtime
+            .incoming_handshake_completed(attachment.connection_id, now)?;
+        Ok(())
+    }
+
+    fn set_incoming_upload(
+        &mut self,
+        attachment: IncomingPeerAttachment,
+        activity: PeerUploadActivity,
+    ) -> Result<(), TorrentPeerError> {
+        self.runtime
+            .set_upload_activity(attachment.connection_id, activity)?;
+        Ok(())
+    }
+
+    fn set_incoming_metadata_extension(
+        &mut self,
+        attachment: IncomingPeerAttachment,
+        supported: bool,
+    ) -> Result<(), TorrentPeerError> {
+        self.runtime
+            .set_metadata_extension(attachment.connection_id, supported)?;
+        Ok(())
+    }
+
+    fn begin_incoming_disconnect(
+        &mut self,
+        attachment: IncomingPeerAttachment,
+        failure: Option<PeerFailure>,
+        now: Duration,
+    ) -> Result<(), TorrentPeerError> {
+        self.runtime
+            .begin_disconnect(attachment.connection_id, failure, now)?;
+        Ok(())
+    }
+
+    fn remove_incoming(
+        &mut self,
+        attachment: IncomingPeerAttachment,
+        failure: Option<PeerFailure>,
+        now: Duration,
+    ) -> Result<(), TorrentPeerError> {
+        let peer = self.runtime.observation(attachment.connection_id).ok_or(
+            PeerRuntimeError::UnknownConnection(attachment.connection_id),
+        )?;
+        if peer.record_id != Some(attachment.record_id) {
+            return Err(PeerRuntimeError::UnknownConnection(attachment.connection_id).into());
+        }
+        self.runtime.remove(attachment.connection_id)?;
+        self.registry
+            .incoming_closed(attachment.record_id, now, failure)?;
+        Ok(())
+    }
+
+    fn allocate_connection_id(&mut self) -> Result<ConnectionId, TorrentPeerError> {
+        let connection_id = ConnectionId::new(self.next_connection_id)
+            .ok_or(TorrentPeerError::ConnectionIdentifierOverflow)?;
+        self.next_connection_id = self
+            .next_connection_id
+            .checked_add(1)
+            .ok_or(TorrentPeerError::ConnectionIdentifierOverflow)?;
+        Ok(connection_id)
+    }
+
+    fn refresh_sources(&mut self) -> Result<(), TorrentPeerError> {
+        let connections = self
+            .runtime
+            .snapshot()
+            .into_iter()
+            .map(|peer| peer.connection_id)
+            .collect::<Vec<_>>();
+        for connection in connections {
+            let record_id = self
+                .runtime
+                .observation(connection)
+                .and_then(|peer| peer.record_id);
+            if let Some(sources) = record_id
+                .and_then(|record_id| self.registry.get(record_id))
+                .map(|record| record.sources())
+            {
+                self.runtime.set_sources(connection, sources)?;
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn set_next_connection_id(&mut self, next: u64) {
+        self.next_connection_id = next;
+    }
+}
+
+#[derive(Debug)]
+struct TorrentPeerHandleInner {
+    started_at: Instant,
+    state: Mutex<TorrentPeerState>,
+    sink: Mutex<Arc<dyn TorrentPeerActivitySink>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct TorrentPeerHandle {
+    inner: Arc<TorrentPeerHandleInner>,
+}
+
+impl TorrentPeerHandle {
+    pub fn new(sink: Arc<dyn TorrentPeerActivitySink>) -> Result<Self, TorrentPeerError> {
+        Self::with_registry_config(PeerRegistryConfig::default(), sink)
+    }
+
+    pub fn with_registry_config(
+        config: PeerRegistryConfig,
+        sink: Arc<dyn TorrentPeerActivitySink>,
+    ) -> Result<Self, TorrentPeerError> {
+        Ok(Self {
+            inner: Arc::new(TorrentPeerHandleInner {
+                started_at: Instant::now(),
+                state: Mutex::new(TorrentPeerState::new(config)?),
+                sink: Mutex::new(sink),
+            }),
+        })
+    }
+
+    pub fn elapsed(&self) -> Duration {
+        self.inner.started_at.elapsed()
+    }
+
+    pub fn begin_incoming(
+        &self,
+        remote_endpoint: SocketAddr,
+        local_endpoint: SocketAddr,
+        peer_id: [u8; 20],
+        supports_extensions: bool,
+        role: PeerConnectionRole,
+    ) -> Result<IncomingPeerAttachment, TorrentPeerError> {
+        let now = self.elapsed();
+        let attachment = self.with_state(|state| {
+            state.begin_incoming(
+                remote_endpoint,
+                local_endpoint,
+                peer_id,
+                supports_extensions,
+                role,
+                now,
+            )
+        })?;
+        self.publish(true, true)?;
+        Ok(attachment)
+    }
+
+    pub fn incoming_handshake_completed(
+        &self,
+        attachment: IncomingPeerAttachment,
+    ) -> Result<(), TorrentPeerError> {
+        let now = self.elapsed();
+        self.with_state(|state| state.incoming_handshake_completed(attachment, now))?;
+        self.publish(true, true)
+    }
+
+    pub fn set_incoming_upload(
+        &self,
+        attachment: IncomingPeerAttachment,
+        activity: PeerUploadActivity,
+    ) -> Result<(), TorrentPeerError> {
+        self.with_state(|state| state.set_incoming_upload(attachment, activity))?;
+        self.publish(true, false)
+    }
+
+    pub fn set_incoming_metadata_extension(
+        &self,
+        attachment: IncomingPeerAttachment,
+        supported: bool,
+    ) -> Result<(), TorrentPeerError> {
+        self.with_state(|state| state.set_incoming_metadata_extension(attachment, supported))?;
+        self.publish(true, true)
+    }
+
+    pub fn begin_incoming_disconnect(
+        &self,
+        attachment: IncomingPeerAttachment,
+        failure: Option<PeerFailure>,
+    ) -> Result<(), TorrentPeerError> {
+        let now = self.elapsed();
+        self.with_state(|state| state.begin_incoming_disconnect(attachment, failure, now))?;
+        self.publish(true, true)
+    }
+
+    pub fn remove_incoming(
+        &self,
+        attachment: IncomingPeerAttachment,
+        failure: Option<PeerFailure>,
+    ) -> Result<(), TorrentPeerError> {
+        let now = self.elapsed();
+        self.with_state(|state| state.remove_incoming(attachment, failure, now))?;
+        self.publish(true, true)
+    }
+
+    pub fn connection_snapshot(&self) -> Vec<PeerConnectionObservation> {
+        self.with_state(|state| state.runtime.snapshot())
+    }
+
+    pub fn registry_snapshot(&self, active: bool) -> PeerRegistrySnapshot {
+        let now = self.elapsed();
+        self.with_state(|state| registry_snapshot(&state.registry, now, active))
+    }
+
+    pub(crate) fn with_state<T>(&self, operation: impl FnOnce(&mut TorrentPeerState) -> T) -> T {
+        let mut state = self
+            .inner
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        operation(&mut state)
+    }
+
+    pub(crate) fn set_sink(&self, sink: Arc<dyn TorrentPeerActivitySink>) {
+        *self
+            .inner
+            .sink
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = sink;
+        self.with_state(|state| {
+            state.last_connections_emitted.clear();
+            state.last_connections_emitted_at = None;
+            state.registry_publication = RegistryPublicationState::default();
+        });
+    }
+
+    pub(crate) fn publish(&self, active: bool, force: bool) -> Result<(), TorrentPeerError> {
+        self.publish_at(self.elapsed(), active, force)
+    }
+
+    fn publish_at(
+        &self,
+        captured_at: Duration,
+        active: bool,
+        force: bool,
+    ) -> Result<(), TorrentPeerError> {
+        let (connections, registry) = self.with_state(|state| {
+            state.refresh_sources()?;
+            let current = state.runtime.snapshot();
+            let due = force
+                || state.last_connections_emitted_at.is_none_or(|previous| {
+                    captured_at.saturating_sub(previous) >= PEER_OBSERVATION_INTERVAL
+                });
+            let connections = if due && state.last_connections_emitted != current {
+                state.last_connections_emitted = current.clone();
+                state.last_connections_emitted_at = Some(captured_at);
+                Some(current)
+            } else {
+                None
+            };
+
+            let registry = registry_publication(state, captured_at, active, force);
+            Ok::<_, TorrentPeerError>((connections, registry))
+        })?;
+        let sink = self
+            .inner
+            .sink
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        if let Some(connections) = connections {
+            sink.record_peer_connections(captured_at, connections);
+        }
+        if let Some(snapshot) = registry {
+            sink.record_peer_registry(active, snapshot);
+        }
+        Ok(())
+    }
+}
+
+fn registry_snapshot(
+    registry: &PeerRegistry,
+    captured_at: Duration,
+    active: bool,
+) -> PeerRegistrySnapshot {
+    let mut snapshot = registry.snapshot(PeerSelectionContext { now: captured_at });
+    if !active {
+        snapshot.records.clear();
+        snapshot.counts = PeerRegistryCounts::default();
+    }
+    snapshot
+}
+
+fn registry_publication(
+    state: &mut TorrentPeerState,
+    captured_at: Duration,
+    active: bool,
+    force: bool,
+) -> Option<PeerRegistrySnapshot> {
+    if !force
+        && state.registry_publication.active == active
+        && state
+            .registry_publication
+            .next_transition_at
+            .is_none_or(|deadline| captured_at < deadline)
+    {
+        return None;
+    }
+    let snapshot = registry_snapshot(&state.registry, captured_at, active);
+    state.registry_publication.next_transition_at = active
+        .then(|| {
+            snapshot
+                .records
+                .iter()
+                .filter_map(|record| match record.eligibility {
+                    DialEligibility::Backoff { retry_at } if retry_at > captured_at => {
+                        Some(retry_at)
+                    }
+                    _ => None,
+                })
+                .min()
+        })
+        .flatten();
+    let changed = state.registry_publication.active != active
+        || state
+            .registry_publication
+            .last_emitted
+            .as_ref()
+            .is_none_or(|previous| {
+                previous.maximum_records != snapshot.maximum_records
+                    || previous.counts != snapshot.counts
+                    || previous.records != snapshot.records
+            });
+    state.registry_publication.active = active;
+    if changed {
+        state.registry_publication.last_emitted = Some(snapshot.clone());
+        Some(snapshot)
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TorrentPeerActivitySink, TorrentPeerError, TorrentPeerHandle};
+    use crate::peer::{
+        PeerEndpoint, PeerObservation, PeerSelectionContext, PeerSelector, PeerSource,
+    };
+    use crate::peer_runtime::{
+        PeerConnectionDirection, PeerConnectionLifecycle, PeerConnectionRole, PeerUploadActivity,
+        PeerUploadGrant,
+    };
+    use crate::swarm::ConnectionId;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    #[derive(Debug, Default)]
+    struct RecordingSink {
+        connections: Mutex<Vec<Vec<crate::peer_runtime::PeerConnectionObservation>>>,
+        registries: Mutex<Vec<(bool, crate::peer::PeerRegistrySnapshot)>>,
+    }
+
+    impl TorrentPeerActivitySink for RecordingSink {
+        fn record_peer_connections(
+            &self,
+            _captured_at: Duration,
+            peers: Vec<crate::peer_runtime::PeerConnectionObservation>,
+        ) {
+            self.connections.lock().expect("connections").push(peers);
+        }
+
+        fn record_peer_registry(&self, active: bool, snapshot: crate::peer::PeerRegistrySnapshot) {
+            self.registries
+                .lock()
+                .expect("registries")
+                .push((active, snapshot));
+        }
+    }
+
+    fn handle() -> (TorrentPeerHandle, Arc<RecordingSink>) {
+        let sink = Arc::new(RecordingSink::default());
+        let handle = TorrentPeerHandle::new(sink.clone()).expect("handle");
+        (handle, sink)
+    }
+
+    #[test]
+    fn one_allocator_keeps_simultaneous_directions_distinct() {
+        let (handle, _) = handle();
+        let outgoing = handle.with_state(|state| {
+            let endpoint = PeerEndpoint::new("127.0.0.1:6881".parse().expect("endpoint"))
+                .expect("valid endpoint");
+            state
+                .registry
+                .observe(
+                    PeerObservation::dialable(endpoint, PeerSource::Tracker),
+                    Duration::ZERO,
+                )
+                .expect("observe");
+            let candidate = PeerSelector
+                .select(
+                    &state.registry,
+                    PeerSelectionContext {
+                        now: Duration::ZERO,
+                    },
+                )
+                .expect("candidate");
+            state
+                .begin_dial(candidate, PeerConnectionRole::Metadata, Duration::ZERO)
+                .expect("dial")
+        });
+        let incoming = handle
+            .begin_incoming(
+                "127.0.0.1:51413".parse().expect("remote"),
+                "127.0.0.1:43210".parse().expect("local"),
+                *b"-LTTEST-000000000000",
+                true,
+                PeerConnectionRole::Content,
+            )
+            .expect("incoming");
+
+        assert_eq!(outgoing.connection_id(), ConnectionId::new(1).expect("id"));
+        assert_eq!(incoming.connection_id(), ConnectionId::new(2).expect("id"));
+        let rows = handle.connection_snapshot();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].direction, PeerConnectionDirection::Outgoing);
+        assert_eq!(rows[1].direction, PeerConnectionDirection::Incoming);
+        assert_eq!(
+            rows[1].lifecycle,
+            PeerConnectionLifecycle::ProtocolHandshaking
+        );
+    }
+
+    #[test]
+    fn incoming_record_is_non_connectable_and_survives_until_exact_cleanup() {
+        let (handle, sink) = handle();
+        let attachment = handle
+            .begin_incoming(
+                "127.0.0.1:51413".parse().expect("remote"),
+                "127.0.0.1:43210".parse().expect("local"),
+                *b"-LTTEST-000000000000",
+                true,
+                PeerConnectionRole::Content,
+            )
+            .expect("incoming");
+        handle
+            .incoming_handshake_completed(attachment)
+            .expect("connected");
+        handle
+            .set_incoming_upload(
+                attachment,
+                PeerUploadActivity {
+                    interested: true,
+                    grant: PeerUploadGrant::Optimistic,
+                    queued_requests: 2,
+                    queued_bytes: 32_768,
+                    read_active: true,
+                    writer_bytes: 16_384,
+                    payload_bytes: 65_536,
+                    payload_rate: 32_768,
+                },
+            )
+            .expect("activity");
+        let registry = handle.registry_snapshot(true);
+        assert_eq!(registry.records.len(), 1);
+        assert!(!registry.records[0].connectable);
+        assert!(registry.records[0].sources.contains(PeerSource::Incoming));
+        assert_eq!(
+            registry.records[0].eligibility,
+            crate::peer::DialEligibility::Connected
+        );
+
+        handle
+            .begin_incoming_disconnect(attachment, None)
+            .expect("disconnecting");
+        handle.remove_incoming(attachment, None).expect("remove");
+        assert!(handle.connection_snapshot().is_empty());
+        assert!(matches!(
+            handle.remove_incoming(attachment, None),
+            Err(TorrentPeerError::Runtime(_))
+        ));
+        let emissions = sink.connections.lock().expect("connections");
+        assert!(emissions.iter().any(|rows| rows.is_empty()));
+    }
+
+    #[test]
+    fn incoming_merges_exact_endpoint_sources_and_activity_is_coalesced() {
+        let (handle, sink) = handle();
+        let remote = "127.0.0.1:51413".parse().expect("remote");
+        let endpoint = PeerEndpoint::new(remote).expect("endpoint");
+        let attachment = handle.with_state(|state| {
+            let tracker = state
+                .registry
+                .observe(
+                    PeerObservation::dialable(endpoint, PeerSource::Tracker),
+                    Duration::ZERO,
+                )
+                .expect("tracker observation");
+            let attachment = state
+                .begin_incoming(
+                    remote,
+                    "127.0.0.1:43210".parse().expect("local"),
+                    *b"-LTTEST-000000000000",
+                    true,
+                    PeerConnectionRole::Content,
+                    Duration::ZERO,
+                )
+                .expect("incoming");
+            assert_eq!(attachment.record_id(), tracker.record_id);
+            state
+                .incoming_handshake_completed(attachment, Duration::ZERO)
+                .expect("connected");
+            attachment
+        });
+        handle
+            .publish_at(Duration::ZERO, true, true)
+            .expect("initial publication");
+        let registry = handle.registry_snapshot(true);
+        assert_eq!(registry.records.len(), 1);
+        assert!(registry.records[0].connectable);
+        assert!(registry.records[0].sources.contains(PeerSource::Tracker));
+        assert!(registry.records[0].sources.contains(PeerSource::Incoming));
+
+        let activity = |payload_bytes| PeerUploadActivity {
+            interested: true,
+            grant: PeerUploadGrant::Regular,
+            queued_requests: 1,
+            queued_bytes: 16_384,
+            read_active: false,
+            writer_bytes: 0,
+            payload_bytes,
+            payload_rate: payload_bytes,
+        };
+        handle
+            .with_state(|state| state.set_incoming_upload(attachment, activity(1)))
+            .expect("first activity");
+        handle
+            .publish_at(Duration::from_millis(50), true, false)
+            .expect("coalesced publication");
+        assert_eq!(sink.connections.lock().expect("connections").len(), 1);
+
+        handle
+            .with_state(|state| state.set_incoming_upload(attachment, activity(2)))
+            .expect("second activity");
+        handle
+            .publish_at(Duration::from_millis(100), true, false)
+            .expect("due publication");
+        let emissions = sink.connections.lock().expect("connections");
+        assert_eq!(emissions.len(), 2);
+        assert_eq!(
+            emissions[1][0]
+                .upload
+                .expect("upload activity")
+                .payload_bytes,
+            2
+        );
+    }
+
+    #[test]
+    fn checked_connection_identifier_exhaustion_does_not_wrap() {
+        let (handle, _) = handle();
+        handle.with_state(|state| state.set_next_connection_id(u64::MAX));
+        let result = handle.begin_incoming(
+            "127.0.0.1:51413".parse().expect("remote"),
+            "127.0.0.1:43210".parse().expect("local"),
+            *b"-LTTEST-000000000000",
+            false,
+            PeerConnectionRole::Content,
+        );
+        assert!(matches!(
+            result,
+            Err(TorrentPeerError::ConnectionIdentifierOverflow)
+        ));
+        assert!(handle.connection_snapshot().is_empty());
+        assert!(handle.registry_snapshot(true).records.is_empty());
+    }
+}
