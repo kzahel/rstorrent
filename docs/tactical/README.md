@@ -412,6 +412,10 @@ that scope and its cleanup or compatibility rules explicitly.
   planned; extracts one application-generation per-torrent runtime and one
   shared engine peer-state owner, then proves the boundary by attaching
   incoming seed connections to the ordinary bounded Peers/Swarm lifecycle.
+- [`087-uniform-detail-tab-footprints.md`](087-uniform-detail-tab-footprints.md):
+  complete; removes redundant detail-tab count badges, gives every tab one
+  interface-size-specific footprint, and retains the torrent/session divider
+  plus horizontal overflow on constrained widths.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

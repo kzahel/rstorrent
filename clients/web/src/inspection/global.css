@@ -48,6 +48,7 @@
   --ui-header-height: 52px;
   --ui-actionbar-height: 46px;
   --ui-tab-height: 42px;
+  --ui-detail-tab-width: 6.25rem;
   --ui-table-toolbar-height: 34px;
   --ui-space-xs: 0.3rem;
   --ui-space-sm: 0.5rem;
@@ -69,6 +70,7 @@
   --ui-header-height: 48px;
   --ui-actionbar-height: 40px;
   --ui-tab-height: 38px;
+  --ui-detail-tab-width: 5.5rem;
   --ui-table-toolbar-height: 30px;
   --ui-space-xs: 0.22rem;
   --ui-space-sm: 0.4rem;
@@ -87,6 +89,7 @@
   --ui-header-height: 60px;
   --ui-actionbar-height: 56px;
   --ui-tab-height: 48px;
+  --ui-detail-tab-width: 7rem;
   --ui-table-toolbar-height: 40px;
   --ui-space-xs: 0.4rem;
   --ui-space-sm: 0.65rem;

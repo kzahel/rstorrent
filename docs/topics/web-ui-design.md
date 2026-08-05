@@ -278,12 +278,13 @@ Shift+F10: a selected row preserves the complete checked set, while an
 unselected row becomes the singleton target before the menu opens.
 
 Torrent-detail tab selection is a paint-only state change. Labels retain the
-same font metrics, the underline is out of layout flow, and bounded count
-badges keep fixed inline geometry. Peers and configured-tracker counts come
-from the selected torrent summary, not the detail collection that is requested
-only while its tab is visible. Selecting or evicting a detail view therefore
-cannot move neighboring tabs or make its navigation count appear only while
-selected.
+same font metrics, the underline is out of layout flow, and every tab has the
+same fixed footprint for the selected interface size. Navigation labels do not
+carry counts; the corresponding detail content owns row totals and summaries.
+The divider before Disk continues to distinguish torrent-scoped from
+session-scoped views. Selecting or evicting a detail view therefore cannot move
+neighboring tabs, while constrained layouts retain one horizontally scrolling
+row rather than shrinking or wrapping the tabs.
 
 The responsive web application does not replace the native Android Compose
 product or create automatic UI parity with it. Phone usability applies to the
@@ -609,10 +610,18 @@ uses its bounded name. No view selection, table identity, or local preference
 changes during that transition.
 
 The detail-tab regression suite records each tab's layout offset and width
-while selecting every view. It also keeps peer and tracker badges visible from
-the stable summary throughout those view-set changes; narrow layouts may
-scroll to reveal a clipped active tab, but the tab boxes themselves do not
-reflow.
+while selecting every view. It asserts label-only tabs, equal footprints at
+every interface size, the divider before Disk, and horizontal overflow at
+phone width. Narrow layouts may scroll to reveal a clipped active tab, but the
+tab boxes themselves do not reflow.
+
+Tactical `087` removes the redundant configured-tracker and connected-peer
+badges and establishes 88-, 100-, and 112-pixel tab footprints for Compact,
+Standard, and Spacious. Headless Chrome confirms equal, stable geometry at
+wide, compact-window, and phone widths, including the real phone
+list-to-detail path and horizontal overflow. The representative 1,440- and
+390-pixel strips were visually inspected with the torrent/session divider
+intact and no label clipping or wrapping.
 
 Tactical `049` replaces the generic Logs table with a dedicated ordered
 console. Opening Logs does not require a selected torrent. Capture profile,

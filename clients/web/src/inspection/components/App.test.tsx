@@ -92,8 +92,10 @@ describe("inspection application", () => {
     expect(screen.getByRole("grid", { name: "Torrent library" })).toHaveAttribute("aria-rowcount", "4");
     expect(screen.getByRole("grid", { name: "Active peer connections" })).toBeVisible();
     const peersTab = screen.getByRole("tab", { name: "Peers" });
-    const peerCount = peersTab.textContent;
-    expect(peerCount).toMatch(/^Peers\d+$/);
+    expect(peersTab).toHaveTextContent(/^Peers$/);
+    expect(screen.getByRole("tab", { name: "Trackers" })).toHaveTextContent(
+      /^Trackers$/,
+    );
     await user.click(screen.getByRole("button", { name: "Explain Flags" }));
     const flagLegend = screen.getByRole("dialog", {
       name: "Flags column help",
@@ -109,7 +111,7 @@ describe("inspection application", () => {
 
     await user.click(screen.getByRole("tab", { name: "General" }));
     expect(screen.getByText("Current transfer")).toBeVisible();
-    expect(peersTab).toHaveTextContent(peerCount!);
+    expect(peersTab).toHaveTextContent(/^Peers$/);
     await user.click(screen.getByRole("tab", { name: "Logs" }));
     expect(
       screen.getByRole("log", { name: "Chronological diagnostic events" }),

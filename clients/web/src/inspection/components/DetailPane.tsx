@@ -30,6 +30,9 @@ export function DetailPane() {
   );
   const activeTab = useInspectionStore((state) => state.presentation.activeTab);
   const layout = useInspectionStore((state) => state.presentation.layout);
+  const interfaceSize = useInspectionStore(
+    (state) => state.presentation.interfaceSize,
+  );
   const detailOpen = useInspectionStore(
     (state) => state.presentation.detailOpen,
   );
@@ -55,7 +58,7 @@ export function DetailPane() {
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [activeTab, detailOpen, layout]);
+  }, [activeTab, detailOpen, interfaceSize, layout]);
 
   const selectAdjacentTab = (tab: DetailTab, direction: -1 | 1) => {
     const index = DETAIL_TABS.findIndex((candidate) => candidate.id === tab);
@@ -81,50 +84,32 @@ export function DetailPane() {
         role="tablist"
         aria-label="Torrent detail views"
       >
-        {DETAIL_TABS.map((tab) => {
-          const count =
-            tab.id === "peers"
-              ? (torrent?.peersConnected ?? null)
-              : tab.id === "trackers"
-                ? (torrent?.configuredTrackerCount ?? null)
-                : undefined;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              id={`tab-${tab.id}`}
-              data-tab-id={tab.id}
-              data-tab-scope={tab.scope}
-              aria-label={tab.label}
-              aria-selected={activeTab === tab.id}
-              aria-controls={`panel-${tab.id}`}
-              tabIndex={activeTab === tab.id ? 0 : -1}
-              onClick={() => selectTab(tab.id)}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowLeft") {
-                  event.preventDefault();
-                  selectAdjacentTab(tab.id, -1);
-                } else if (event.key === "ArrowRight") {
-                  event.preventDefault();
-                  selectAdjacentTab(tab.id, 1);
-                }
-              }}
-            >
-              {tab.label}
-              {count === undefined ? null : (
-                <span
-                  className={styles.tabCount}
-                  data-empty={torrent === undefined ? "true" : undefined}
-                  title={count === null ? "Count unavailable" : count.toLocaleString()}
-                  aria-hidden="true"
-                >
-                  {count === null ? "—" : formatTabCount(count)}
-                </span>
-              )}
-            </button>
-          );
-        })}
+        {DETAIL_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            id={`tab-${tab.id}`}
+            data-tab-id={tab.id}
+            data-tab-scope={tab.scope}
+            aria-label={tab.label}
+            aria-selected={activeTab === tab.id}
+            aria-controls={`panel-${tab.id}`}
+            tabIndex={activeTab === tab.id ? 0 : -1}
+            onClick={() => selectTab(tab.id)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowLeft") {
+                event.preventDefault();
+                selectAdjacentTab(tab.id, -1);
+              } else if (event.key === "ArrowRight") {
+                event.preventDefault();
+                selectAdjacentTab(tab.id, 1);
+              }
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
       <div
         className={styles.panel}
@@ -160,10 +145,6 @@ export function DetailPane() {
       </div>
     </section>
   );
-}
-
-function formatTabCount(count: number): string {
-  return count > 99 ? "99+" : count.toLocaleString();
 }
 
 function GeneralDetail({

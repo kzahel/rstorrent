@@ -18,9 +18,10 @@
 .tabs button {
   position: relative;
   display: inline-flex;
-  flex: 0 0 auto;
+  flex: 0 0 var(--ui-detail-tab-width);
   align-items: center;
-  gap: var(--ui-space-xs);
+  justify-content: center;
+  inline-size: var(--ui-detail-tab-width);
   min-height: var(--ui-tab-height);
   border: 0;
   padding: 0 var(--ui-space-md);
@@ -47,22 +48,6 @@
   background: var(--accent);
   content: "";
   opacity: 0;
-}
-
-.tabCount {
-  display: inline-flex;
-  inline-size: 2.2rem;
-  justify-content: center;
-  border-radius: 999px;
-  padding: 0.08rem 0.36rem;
-  color: var(--text-muted);
-  background: var(--surface-tertiary);
-  font-size: var(--ui-font-caption);
-  font-variant-numeric: tabular-nums;
-}
-
-.tabCount[data-empty="true"] {
-  visibility: hidden;
 }
 
 .tabs button[aria-selected="true"] {

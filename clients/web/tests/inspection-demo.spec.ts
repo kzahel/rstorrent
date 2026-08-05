@@ -321,14 +321,22 @@ test("wide inspection surface is accessible and drivable", async ({ page }) => {
   await expect(torrentRows.nth(1)).toHaveAttribute("aria-current", "true");
 });
 
-test("detail tab geometry and counts do not change with selection", async ({ page }) => {
+test("detail tabs keep equal stable footprints with narrow scrolling", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openScenario(page, "tracker-recovery", 24_000);
 
   const tabs = page.getByRole("tab");
   await expect(tabs).toHaveCount(10);
-  await expect(page.getByRole("tab", { name: "Peers" }).locator("span")).toHaveText("14");
-  await expect(page.getByRole("tab", { name: "Trackers" }).locator("span")).toHaveText("2");
+  await expect(tabs.locator("span")).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Peers" })).toHaveText("Peers");
+  await expect(page.getByRole("tab", { name: "Trackers" })).toHaveText("Trackers");
+  await expect
+    .poll(() =>
+      page
+        .getByRole("tab", { name: "Disk" })
+        .evaluate((element) => getComputedStyle(element).borderLeftWidth),
+    )
+    .toBe("1px");
 
   const tabNames = [
     "General",
@@ -342,9 +350,25 @@ test("detail tab geometry and counts do not change with selection", async ({ pag
     "Speed",
     "DHT",
   ];
-  for (const width of [1440, 920]) {
+  for (const width of [1440, 920, 390]) {
     await page.setViewportSize({ width, height: 900 });
+    if (width === 390) {
+      await page
+        .getByRole("grid", { name: "Torrent library" })
+        .locator("[data-row-id]")
+        .first()
+        .click();
+      await expect(tabs).toHaveCount(10);
+    }
     const initialGeometry = await tabGeometry(page);
+    expect(new Set(initialGeometry.map((tab) => tab.width)).size).toBe(1);
+    if (width === 390) {
+      expect(
+        await page
+          .getByRole("tablist", { name: "Torrent detail views" })
+          .evaluate((element) => element.scrollWidth > element.clientWidth),
+      ).toBe(true);
+    }
     for (const name of tabNames) {
       const tab = page.getByRole("tab", { name });
       await tab.click();
@@ -461,6 +485,9 @@ test("interface size settings persist and keep geometry coherent", async ({
       Math.round((await more.locator("svg").boundingBox())?.width ?? 0),
     )
     .toBeGreaterThanOrEqual(17);
+  const activeDetailTab = page.getByRole("tab", { name: "DHT" });
+  await activeDetailTab.click();
+  await expect.poll(() => detailTabIsFullyVisible(page, "DHT")).toBe(true);
 
   const settings = page.getByRole("button", { name: "Settings", exact: true });
   await settings.click();
@@ -470,6 +497,8 @@ test("interface size settings persist and keep geometry coherent", async ({
   await page.keyboard.press("Shift+Tab");
   await expect(dialog.getByRole("radio", { name: /Spacious/ })).toBeFocused();
   await dialog.getByRole("radio", { name: /Standard/ }).check();
+  await expect.poll(() => detailTabWidths(page)).toEqual([100]);
+  await expect.poll(() => detailTabIsFullyVisible(page, "DHT")).toBe(true);
   const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
     (violation) =>
       violation.impact === "serious" || violation.impact === "critical",
@@ -479,6 +508,8 @@ test("interface size settings persist and keep geometry coherent", async ({
 
   await dialog.getByRole("radio", { name: /Compact/ }).check();
   await expect(app).toHaveAttribute("data-interface-size", "compact");
+  await expect.poll(() => detailTabWidths(page)).toEqual([88]);
+  await expect.poll(() => detailTabIsFullyVisible(page, "DHT")).toBe(true);
   await expect.poll(() => elementHeight(firstRow)).toBe(32);
   await expect.poll(() => elementHeight(more)).toBe(30);
   await expect
@@ -490,6 +521,8 @@ test("interface size settings persist and keep geometry coherent", async ({
 
   await dialog.getByRole("radio", { name: /Spacious/ }).check();
   await expect(app).toHaveAttribute("data-interface-size", "spacious");
+  await expect.poll(() => detailTabWidths(page)).toEqual([112]);
+  await expect.poll(() => detailTabIsFullyVisible(page, "DHT")).toBe(true);
   await expect.poll(() => elementHeight(firstRow)).toBe(42);
   await expect.poll(() => elementHeight(more)).toBe(44);
   await capture(page, "rstorrent-settings-spacious.png");
@@ -1212,6 +1245,21 @@ async function tabGeometry(page: Page) {
       width: (element as HTMLElement).offsetWidth,
     })),
   );
+}
+
+async function detailTabWidths(page: Page) {
+  const geometry = await tabGeometry(page);
+  return [...new Set(geometry.map((tab) => tab.width))];
+}
+
+async function detailTabIsFullyVisible(page: Page, name: string) {
+  return page.getByRole("tab", { name }).evaluate((element) => {
+    const tabList = element.parentElement;
+    if (tabList === null) return false;
+    const tabBounds = element.getBoundingClientRect();
+    const listBounds = tabList.getBoundingClientRect();
+    return tabBounds.left >= listBounds.left && tabBounds.right <= listBounds.right;
+  });
 }
 
 async function elementHeight(locator: ReturnType<Page["locator"]>) {
