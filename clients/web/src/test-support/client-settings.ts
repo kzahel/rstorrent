@@ -17,6 +17,7 @@ export function clientSettingsRuntimeFixture(): ClientSettingsRuntimeView {
     restart_required: false,
     effective_peer_connection_limit: 200,
     listener_status: { type: "disabled" },
+    session_udp_status: { type: "unavailable" },
     port_mapping_status: { type: "disabled" },
   };
 }

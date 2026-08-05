@@ -4,7 +4,7 @@ use rstorrent_engine::{IncomingTcpBootstrap, PeerBudgetConfig, UploadSchedulerCo
 
 use super::contract::{
     ClientSettings, ClientSettingsRuntimeView, ListenerBindFailureReason, ListenerPolicy,
-    ListenerStatus, MAX_LISTENER_BIND_DETAIL_BYTES, PortMappingStatus,
+    ListenerStatus, MAX_LISTENER_BIND_DETAIL_BYTES, PortMappingStatus, SessionUdpStatus,
 };
 use crate::reachability::ReachabilityState;
 
@@ -45,6 +45,7 @@ impl ClientSettingsRuntimeView {
             active: settings,
             restart_required: false,
             listener_status: ListenerStatus::Disabled,
+            session_udp_status: SessionUdpStatus::Unavailable,
             port_mapping_status: PortMappingStatus::Disabled,
         }
     }
@@ -59,6 +60,7 @@ impl ClientSettingsRuntimeView {
         active: ClientSettings,
         effective_peer_connection_limit: u32,
         listener_status: ListenerStatus,
+        session_udp_status: SessionUdpStatus,
     ) -> Self {
         let port_mapping_status = ReachabilityState::new(1, &active, &listener_status)
             .status()
@@ -69,6 +71,7 @@ impl ClientSettingsRuntimeView {
             active,
             effective_peer_connection_limit,
             listener_status,
+            session_udp_status,
             port_mapping_status,
         }
     }

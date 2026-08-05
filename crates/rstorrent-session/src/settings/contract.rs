@@ -157,6 +157,20 @@ pub enum ListenerStatus {
     },
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SessionUdpStatus {
+    #[default]
+    Unavailable,
+    Bound {
+        #[schemars(length(max = 64))]
+        address: String,
+        port: u16,
+        coordinated_with_tcp: bool,
+    },
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
@@ -220,6 +234,7 @@ pub struct ClientSettingsRuntimeView {
     pub restart_required: bool,
     pub effective_peer_connection_limit: u32,
     pub listener_status: ListenerStatus,
+    pub session_udp_status: SessionUdpStatus,
     pub port_mapping_status: PortMappingStatus,
 }
 
@@ -232,6 +247,7 @@ impl Default for ClientSettingsRuntimeView {
             active: settings,
             restart_required: false,
             listener_status: ListenerStatus::Disabled,
+            session_udp_status: SessionUdpStatus::Unavailable,
             port_mapping_status: PortMappingStatus::Disabled,
         }
     }

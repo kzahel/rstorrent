@@ -990,6 +990,9 @@
         },
         "restart_required": {
           "type": "boolean"
+        },
+        "session_udp_status": {
+          "$ref": "#/$defs/SessionUdpStatus"
         }
       },
       "required": [
@@ -998,6 +1001,7 @@
         "restart_required",
         "effective_peer_connection_limit",
         "listener_status",
+        "session_udp_status",
         "port_mapping_status"
       ],
       "type": "object"
@@ -3383,6 +3387,52 @@
       ],
       "type": "object"
     },
+    "SessionUdpStatus": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "unavailable",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "address": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "coordinated_with_tcp": {
+              "type": "boolean"
+            },
+            "port": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "bound",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "address",
+            "port",
+            "coordinated_with_tcp"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "SpeedCurrentRate": {
       "properties": {
         "bytes": {
@@ -4697,7 +4747,10 @@
                 "port_mapping_status": {
                   "type": "disabled"
                 },
-                "restart_required": false
+                "restart_required": false,
+                "session_udp_status": {
+                  "type": "unavailable"
+                }
               }
             },
             "storage": {

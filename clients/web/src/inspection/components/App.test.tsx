@@ -1516,6 +1516,12 @@ describe("inspection application", () => {
             reason: "address_in_use",
             detail: "loopback port 51413 is already in use.",
           },
+          session_udp_status: {
+            type: "bound",
+            address: "127.0.0.1",
+            port: 51_414,
+            coordinated_with_tcp: false,
+          },
           port_mapping_status: { type: "disabled" },
         },
       },

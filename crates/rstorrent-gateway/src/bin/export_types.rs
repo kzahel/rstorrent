@@ -23,7 +23,7 @@ use rstorrent_session::{
     PortMappingMechanism, PortMappingPolicy, PortMappingStatus, ProgressAction, ProgressAssessment,
     ProgressDisposition, ProgressPhase, ProgressReason, RemovalDataPolicy, RemovalState,
     RequestEnvelope, ResetReason, ResponseEnvelope, ResponseOutcome, ServiceSnapshot,
-    SpeedCurrentRate, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,
+    SessionUdpStatus, SpeedCurrentRate, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,
     SpeedPersistenceState, SpeedRange, SpeedSeriesView, StorageRootAvailability,
     StorageRootSnapshot, StorageSettingsSnapshot, StorageState, SubscriptionSpec,
     SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentSnapshot,
@@ -78,6 +78,7 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<PortMappingMechanism>(&mut declarations)?;
     append::<PortMappingFailureStage>(&mut declarations)?;
     append::<PortMappingStatus>(&mut declarations)?;
+    append::<SessionUdpStatus>(&mut declarations)?;
     append::<ClientSettingsRuntimeView>(&mut declarations)?;
     append_default::<ClientSettings>(
         &mut declarations,

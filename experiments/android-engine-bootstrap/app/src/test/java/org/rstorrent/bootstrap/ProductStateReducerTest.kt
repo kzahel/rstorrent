@@ -27,6 +27,7 @@ import org.rstorrent.session.uniffi.ProgressAssessment
 import org.rstorrent.session.uniffi.ProgressDisposition
 import org.rstorrent.session.uniffi.ProgressPhase
 import org.rstorrent.session.uniffi.ProgressReason
+import org.rstorrent.session.uniffi.SessionUdpStatus
 import org.rstorrent.session.uniffi.StorageState
 import org.rstorrent.session.uniffi.StorageSettingsSnapshot
 import org.rstorrent.session.uniffi.SubscriptionSpec
@@ -318,11 +319,13 @@ class ProductStateReducerTest {
                 uploadSlots = 8U.toUShort(),
             ),
             configured.listener != ListenerPolicy.Disabled ||
+                configured.preferredListenPort != 6_881U.toUShort() ||
                 configured.portMapping != PortMappingPolicy.DISABLED ||
                 configured.peerConnectionLimit != 200U ||
                 configured.uploadSlots != 8U.toUShort(),
             200U,
             ListenerStatus.Disabled,
+            SessionUdpStatus.Unavailable,
             PortMappingStatus.Disabled,
         )
 

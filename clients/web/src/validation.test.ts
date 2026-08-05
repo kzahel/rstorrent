@@ -116,6 +116,33 @@ describe("client settings validation", () => {
     expect(() => decodeUpdateBatch(JSON.stringify(inconsistent))).toThrow(
       /restart-required state is inconsistent/,
     );
+
+    const mismatchedUdp = torrentBatch("Mismatched UDP");
+    mismatchedUdp.updates[0]!.snapshot.client_settings = {
+      ...clientSettingsRuntimeFixture(),
+      active: {
+        ...clientSettingsRuntimeFixture().active,
+        listener: { type: "automatic_loopback" },
+      },
+      configured: {
+        ...clientSettingsRuntimeFixture().configured,
+        listener: { type: "automatic_loopback" },
+      },
+      listener_status: {
+        type: "listening",
+        address: "127.0.0.1",
+        port: 6_881,
+      },
+      session_udp_status: {
+        type: "bound",
+        address: "127.0.0.1",
+        port: 6_882,
+        coordinated_with_tcp: true,
+      },
+    };
+    expect(() => decodeUpdateBatch(JSON.stringify(mismatchedUdp))).toThrow(
+      /coordinated session UDP endpoint differs/,
+    );
   });
 });
 

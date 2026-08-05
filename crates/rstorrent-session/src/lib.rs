@@ -48,8 +48,8 @@ pub use rstorrent_engine::{
 pub use settings::{
     ClientSettings, ClientSettingsError, ClientSettingsRuntimeView, ListenerBindFailureReason,
     ListenerPolicy, ListenerStatus, PortMappingFailureStage, PortMappingMechanism,
-    PortMappingPolicy, PortMappingStatus, StorageRootAvailability, StorageRootSnapshot,
-    StorageSettingsSnapshot,
+    PortMappingPolicy, PortMappingStatus, SessionUdpStatus, StorageRootAvailability,
+    StorageRootSnapshot, StorageSettingsSnapshot,
 };
 pub use speed::{
     SpeedCurrentRate, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,

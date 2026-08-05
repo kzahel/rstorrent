@@ -20,7 +20,7 @@ use tokio::time::{Instant, MissedTickBehavior, interval};
 use tokio_util::sync::CancellationToken;
 
 use crate::network::{NetworkPolicy, is_valid_outbound_address};
-use crate::{ByteMetric, ByteMetricSink};
+use crate::{ByteMetric, ByteMetricSink, SessionUdpService, SessionUdpTransport};
 
 pub const DHT_SNAPSHOT_VERSION: u32 = 1;
 pub const MAX_PERSISTED_NODES_PER_FAMILY: usize = 64;
@@ -312,11 +312,42 @@ pub struct DhtService {
     task: Option<JoinHandle<Result<DhtSnapshot, DhtError>>>,
     local_address: SocketAddr,
     observations: watch::Receiver<DhtObservation>,
+    owned_udp: Option<SessionUdpService>,
 }
 
 impl DhtService {
-    pub async fn start(mut config: DhtConfig) -> Result<Self, DhtError> {
+    pub async fn start(config: DhtConfig) -> Result<Self, DhtError> {
         config.validate()?;
+        let socket = UdpSocket::bind(config.bind_address)
+            .await
+            .map_err(|error| DhtError::Io(error.to_string()))?;
+        let (udp, transport) =
+            SessionUdpService::start(socket).map_err(|error| DhtError::Io(error.to_string()))?;
+        match Self::start_inner(config, transport).await {
+            Ok(mut dht) => {
+                dht.owned_udp = Some(udp);
+                Ok(dht)
+            }
+            Err(error) => {
+                let _ = udp.shutdown().await;
+                Err(error)
+            }
+        }
+    }
+
+    pub async fn start_with_transport(
+        config: DhtConfig,
+        transport: SessionUdpTransport,
+    ) -> Result<Self, DhtError> {
+        Self::start_inner(config, transport).await
+    }
+
+    async fn start_inner(
+        mut config: DhtConfig,
+        transport: SessionUdpTransport,
+    ) -> Result<Self, DhtError> {
+        config.validate()?;
+        validate_transport(&config, transport.local_address())?;
         let snapshot = config
             .initial_snapshot
             .take()
@@ -326,12 +357,7 @@ impl DhtService {
             .as_ref()
             .map(|snapshot| snapshot.node_id)
             .unwrap_or(random_node_id()?);
-        let socket = UdpSocket::bind(config.bind_address)
-            .await
-            .map_err(|error| DhtError::Io(error.to_string()))?;
-        let local_address = socket
-            .local_addr()
-            .map_err(|error| DhtError::Io(error.to_string()))?;
+        let local_address = transport.local_address();
         let bootstrap = resolve_bootstrap(&config, snapshot.as_ref()).await;
         let (sender, receiver) = mpsc::channel(DHT_COMMAND_QUEUE);
         let (observation_sender, observations) =
@@ -340,7 +366,7 @@ impl DhtService {
         let task_cancellation = cancellation.clone();
         let actor = Actor::new(
             config,
-            socket,
+            transport,
             node_id,
             bootstrap,
             receiver,
@@ -354,6 +380,7 @@ impl DhtService {
             task: Some(task),
             local_address,
             observations,
+            owned_udp: None,
         })
     }
 
@@ -385,8 +412,20 @@ impl DhtService {
         let Some(task) = self.task.take() else {
             return Err(DhtError::ActorStopped);
         };
-        task.await
-            .map_err(|error| DhtError::Io(error.to_string()))?
+        let actor_result = task
+            .await
+            .map_err(|error| DhtError::Io(error.to_string()))?;
+        let udp_result = if let Some(udp) = self.owned_udp.take() {
+            udp.shutdown()
+                .await
+                .map(|_| ())
+                .map_err(|error| DhtError::Io(error.to_string()))
+        } else {
+            Ok(())
+        };
+        let snapshot = actor_result?;
+        udp_result?;
+        Ok(snapshot)
     }
 }
 
@@ -397,6 +436,18 @@ impl Drop for DhtService {
             task.abort();
         }
     }
+}
+
+fn validate_transport(config: &DhtConfig, address: SocketAddr) -> Result<(), DhtError> {
+    if !address.is_ipv4()
+        || address.port() == 0
+        || (!config.bind_address.ip().is_unspecified() && config.bind_address.ip() != address.ip())
+    {
+        return Err(DhtError::Configuration(
+            "session UDP transport does not match the DHT bind policy",
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -692,7 +743,7 @@ impl Tokens {
 #[derive(Debug)]
 struct Actor {
     config: DhtConfig,
-    socket: UdpSocket,
+    transport: SessionUdpTransport,
     node_id: NodeId,
     started: Instant,
     routing_v4: RoutingTable,
@@ -721,7 +772,7 @@ struct Actor {
 impl Actor {
     fn new(
         config: DhtConfig,
-        socket: UdpSocket,
+        transport: SessionUdpTransport,
         node_id: NodeId,
         bootstrap: ResolvedBootstrap,
         commands: mpsc::Receiver<Command>,
@@ -732,7 +783,7 @@ impl Actor {
         let tokens = Tokens::new(now)?;
         Ok(Self {
             config,
-            socket,
+            transport,
             node_id,
             started: now,
             routing_v4: RoutingTable::new(node_id),
@@ -774,7 +825,6 @@ impl Actor {
     async fn run_active(&mut self) -> Result<(), DhtError> {
         let _ = self.bootstrap().await;
         self.publish_observation(None);
-        let mut receive_buffer = [0_u8; MAX_DATAGRAM_SIZE + 1];
         let mut maintenance = interval(Duration::from_millis(200));
         maintenance.set_missed_tick_behavior(MissedTickBehavior::Skip);
         loop {
@@ -798,9 +848,10 @@ impl Actor {
                         }
                     }
                 }
-                received = self.socket.recv_from(&mut receive_buffer) => {
+                received = self.transport.receive() => {
                     match received {
-                        Ok((length, source)) => {
+                        Ok((bytes, source)) => {
+                            let length = bytes.len();
                             self.stats.datagram_bytes_received = self
                                 .stats
                                 .datagram_bytes_received
@@ -809,7 +860,7 @@ impl Actor {
                                 sink.record(ByteMetric::DhtReceived, length as u64);
                             }
                             if length <= MAX_DATAGRAM_SIZE {
-                                self.handle_datagram(&receive_buffer[..length], source).await?;
+                                self.handle_datagram(&bytes, source).await?;
                             } else {
                                 self.stats.malformed_received =
                                     self.stats.malformed_received.saturating_add(1);
@@ -1048,7 +1099,7 @@ impl Actor {
         )
         .map_err(|error| DhtError::Io(error.to_string()))?;
         let sent = self
-            .socket
+            .transport
             .send_to(&bytes, endpoint)
             .await
             .map_err(|error| DhtError::Io(error.to_string()))?;
@@ -1315,7 +1366,7 @@ impl Actor {
             }
         };
         if let Ok(bytes) = result
-            && let Ok(sent) = self.socket.send_to(&bytes, source).await
+            && let Ok(sent) = self.transport.send_to(&bytes, source).await
         {
             self.stats.datagram_bytes_sent =
                 self.stats.datagram_bytes_sent.saturating_add(sent as u64);

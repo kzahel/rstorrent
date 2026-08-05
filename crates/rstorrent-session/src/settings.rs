@@ -11,8 +11,8 @@ mod runtime;
 pub use contract::{
     ClientSettings, ClientSettingsError, ClientSettingsRuntimeView, ListenerBindFailureReason,
     ListenerPolicy, ListenerStatus, PortMappingFailureStage, PortMappingMechanism,
-    PortMappingPolicy, PortMappingStatus, StorageRootAvailability, StorageRootSnapshot,
-    StorageSettingsSnapshot,
+    PortMappingPolicy, PortMappingStatus, SessionUdpStatus, StorageRootAvailability,
+    StorageRootSnapshot, StorageSettingsSnapshot,
 };
 pub(crate) use persistence::{
     SettingsPersistenceError, create_client_settings, migrate_client_settings_to_v10,

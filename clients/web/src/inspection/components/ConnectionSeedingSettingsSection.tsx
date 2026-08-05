@@ -439,6 +439,19 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
           {listener.detail} Save a replacement and restart to try again.
         </span>
       )}
+      {settings.session_udp_status.type === "bound" ? (
+        <span>
+          Session UDP is bound on {settings.session_udp_status.address}:
+          {settings.session_udp_status.port}
+          {settings.session_udp_status.coordinated_with_tcp
+            ? " with the TCP listener."
+            : " independently from TCP."}
+        </span>
+      ) : (
+        <span className={styles.runtimeWarning}>
+          Session UDP is not available in this snapshot.
+        </span>
+      )}
       <PortMappingRuntime status={settings.port_mapping_status} />
       {settings.restart_required ? (
         <span className={styles.runtimeWarning}>

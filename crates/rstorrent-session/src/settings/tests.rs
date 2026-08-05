@@ -7,8 +7,9 @@ use rusqlite::Connection;
 
 use super::{
     ClientSettings, ClientSettingsError, ClientSettingsRuntimeView, ListenerPolicy, ListenerStatus,
-    PortMappingPolicy, PortMappingStatus, SettingsPersistenceError, classify_listener_bind_failure,
-    create_client_settings, read_client_settings, replace_client_settings,
+    PortMappingPolicy, PortMappingStatus, SessionUdpStatus, SettingsPersistenceError,
+    classify_listener_bind_failure, create_client_settings, read_client_settings,
+    replace_client_settings,
 };
 
 #[test]
@@ -168,6 +169,11 @@ fn runtime_view_distinguishes_configured_active_effective_and_observed() {
         listener_status: ListenerStatus::Listening {
             address: "127.0.0.1".to_owned(),
             port: 41_000,
+        },
+        session_udp_status: SessionUdpStatus::Bound {
+            address: "127.0.0.1".to_owned(),
+            port: 41_001,
+            coordinated_with_tcp: false,
         },
         port_mapping_status: PortMappingStatus::Disabled,
     };

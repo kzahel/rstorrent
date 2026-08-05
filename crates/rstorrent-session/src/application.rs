@@ -18,7 +18,8 @@ use rstorrent_engine::{
     IncomingPeerServiceConfig, IncomingPeerServiceSnapshot, NetworkConfig, PathPublicationStage,
     PeerBudget, PlatformStorageClient, PlatformStorageFailureKind, PlatformStorageSpec,
     PreparedFileHash, PublicationShape, ResumableMagnetDownloadConfig, ResumeArtifactState,
-    ResumedStorage, StorageFilePool, StorageFilePoolSnapshot, TrackerSource, UdpTrackerConfig,
+    ResumedStorage, SessionSocketConfig, SessionSocketError, SessionSocketSet, SessionUdpError,
+    SessionUdpService, StorageFilePool, StorageFilePoolSnapshot, TrackerSource, UdpTrackerConfig,
     download_magnet_metadata_with_dht_and_peers, plan_descriptor_storage,
     resume_magnet_to_descriptors_with_control, resume_magnet_with_control, torrent_storage_paths,
     verify_prepared_descriptors, verify_prepared_platform_files,
@@ -43,8 +44,8 @@ use crate::have::HaveState;
 use crate::incoming_seeding::{IncomingSeeding, IncomingSeedingError, SeedReconcileOutcome};
 use crate::reachability::ReachabilityCoordinator;
 use crate::settings::{
-    ClientSettingsRuntimeView, ListenerBindFailureReason, ListenerStatus, StorageRootSnapshot,
-    classify_listener_bind_failure,
+    ClientSettingsRuntimeView, ListenerBindFailureReason, ListenerStatus, SessionUdpStatus,
+    StorageRootSnapshot, classify_listener_bind_failure,
 };
 use crate::speed::{PreparedSpeedHistory, SessionSpeedRecorder, SpeedHistoryRuntime};
 use crate::store::{
@@ -61,6 +62,21 @@ fn parse_durable_metainfo(raw_info: &[u8]) -> Result<Metainfo, MetainfoError> {
 
 fn parse_peer_metainfo(raw_info: &[u8]) -> Result<Metainfo, MetainfoError> {
     Metainfo::from_info_bytes_with_limits(raw_info, BEP9_METAINFO_LIMITS)
+}
+
+fn classify_session_socket_bind_failure(error: &SessionSocketError) -> Option<ListenerStatus> {
+    let kind = match error {
+        SessionSocketError::Bind { source, .. }
+        | SessionSocketError::LocalAddress { source, .. } => source.kind(),
+        SessionSocketError::LocalNetworkAddress(_) => io::ErrorKind::AddrNotAvailable,
+        SessionSocketError::InvalidPreferredPort(_)
+        | SessionSocketError::InvalidFixedPort(_)
+        | SessionSocketError::InvalidUdpFallbackAddress => return None,
+    };
+    Some(classify_listener_bind_failure(&io::Error::new(
+        kind,
+        error.to_string(),
+    )))
 }
 
 fn operational_udp_trackers(
@@ -271,6 +287,7 @@ pub struct ApplicationService {
     incoming_seeding: Option<IncomingSeeding>,
     reachability: Option<ReachabilityCoordinator>,
     incoming_service: Option<IncomingPeerService>,
+    session_udp: Option<SessionUdpService>,
     torrent_runtimes: BTreeMap<String, TorrentRuntime>,
     active_torrent: Option<String>,
     next_torrent_generation: u64,
@@ -391,47 +408,78 @@ impl ApplicationService {
         incoming_config.inactivity_timeout = config.incoming_inactivity_timeout;
         incoming_config.peer_id = network.peer_id;
         incoming_config.byte_metric_sink = Some(speed_recorder.clone());
-        let (mut incoming_service, listener_status) =
-            match IncomingPeerService::bind(incoming_config).await {
-                Ok(Some(service)) => {
-                    let address = service.listen_address();
-                    (
-                        Some(service),
-                        ListenerStatus::Listening {
-                            address: address.ip().to_string(),
-                            port: address.port(),
-                        },
-                    )
-                }
-                Ok(None) => (None, ListenerStatus::Disabled),
-                Err(IncomingPeerError::Bind { source, .. }) => {
-                    (None, classify_listener_bind_failure(&source))
-                }
-                Err(IncomingPeerError::LocalNetworkAddress { source }) => (
-                    None,
-                    classify_listener_bind_failure(&io::Error::new(
-                        io::ErrorKind::AddrNotAvailable,
-                        source,
-                    )),
-                ),
-                Err(error @ IncomingPeerError::InvalidLocalNetworkAddress) => (
-                    None,
-                    classify_listener_bind_failure(&io::Error::new(
-                        io::ErrorKind::AddrNotAvailable,
-                        error,
-                    )),
-                ),
-                Err(error) => return Err(error.into()),
-            };
         let mut dht_config = config.dht;
         dht_config.network_policy = network.policy;
         dht_config.initial_snapshot = initial_dht_snapshot;
         dht_config.byte_metric_sink = Some(speed_recorder.clone());
-        let dht = match DhtService::start(dht_config).await {
+        let socket_config = SessionSocketConfig::new(
+            active_client_settings.incoming_bootstrap(),
+            active_client_settings.preferred_listen_port,
+            dht_config.bind_address,
+        );
+        let mut listener_failure = None;
+        let socket_set = match SessionSocketSet::bind(socket_config).await {
+            Ok(sockets) => sockets,
+            Err(error)
+                if !matches!(
+                    incoming_config.bootstrap,
+                    crate::IncomingTcpBootstrap::Disabled
+                ) =>
+            {
+                let Some(failure) = classify_session_socket_bind_failure(&error) else {
+                    return Err(error.into());
+                };
+                listener_failure = Some(failure);
+                SessionSocketSet::bind(SessionSocketConfig::new(
+                    crate::IncomingTcpBootstrap::Disabled,
+                    active_client_settings.preferred_listen_port,
+                    dht_config.bind_address,
+                ))
+                .await?
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let tcp_address = socket_set.tcp_address();
+        let udp_address = socket_set.udp_address();
+        let coordinated_with_tcp = socket_set.ports_match();
+        let (tcp_listener, udp_socket) = socket_set.into_parts();
+        let (session_udp, dht_transport) = SessionUdpService::start(udp_socket)?;
+        let (mut incoming_service, listener_status) = match tcp_listener {
+            Some(listener) => match IncomingPeerService::start(incoming_config, listener) {
+                Ok(service) => (
+                    Some(service),
+                    ListenerStatus::Listening {
+                        address: tcp_address
+                            .expect("bound TCP listener has an observed address")
+                            .ip()
+                            .to_string(),
+                        port: tcp_address
+                            .expect("bound TCP listener has an observed address")
+                            .port(),
+                    },
+                ),
+                Err(error) => {
+                    drop(dht_transport);
+                    session_udp.shutdown().await?;
+                    return Err(error.into());
+                }
+            },
+            None => (None, listener_failure.unwrap_or(ListenerStatus::Disabled)),
+        };
+        let session_udp_status = SessionUdpStatus::Bound {
+            address: udp_address.ip().to_string(),
+            port: udp_address.port(),
+            coordinated_with_tcp,
+        };
+        let mut session_udp = Some(session_udp);
+        let dht = match DhtService::start_with_transport(dht_config, dht_transport).await {
             Ok(dht) => dht,
             Err(error) => {
                 if let Some(incoming) = incoming_service.take() {
                     incoming.shutdown().await?;
+                }
+                if let Some(udp) = session_udp.take() {
+                    udp.shutdown().await?;
                 }
                 return Err(error.into());
             }
@@ -443,6 +491,7 @@ impl ApplicationService {
             active_client_settings.clone(),
             effective_peer_connection_limit,
             listener_status.clone(),
+            session_udp_status,
         );
         let views = ViewHub::new_with_runtime_views(
             &snapshot,
@@ -490,6 +539,7 @@ impl ApplicationService {
             incoming_seeding,
             reachability: None,
             incoming_service,
+            session_udp,
             torrent_runtimes,
             active_torrent: None,
             next_torrent_generation,
@@ -510,6 +560,24 @@ impl ApplicationService {
                 ("profile", &config.profile_id),
                 ("network_policy", network.policy.as_str()),
                 ("persistence_mode", config.persistence.diagnostic_name()),
+            ],
+        )?;
+        let preferred_port = active_client_settings.preferred_listen_port.to_string();
+        let tcp_endpoint =
+            tcp_address.map_or_else(|| "disabled".to_owned(), |address| address.to_string());
+        let udp_endpoint = udp_address.to_string();
+        let coordinated = coordinated_with_tcp.to_string();
+        service.views.record_diagnostic(
+            DiagnosticSeverity::Info,
+            category::PEER_CONNECTION,
+            "session_listen_sockets_bound",
+            None,
+            "Session listen sockets resolved to concrete runtime endpoints",
+            &[
+                ("preferred_port", &preferred_port),
+                ("tcp_endpoint", &tcp_endpoint),
+                ("udp_endpoint", &udp_endpoint),
+                ("coordinated", &coordinated),
             ],
         )?;
         if let Some(detail) = dht_state_warning {
@@ -1670,6 +1738,28 @@ impl ApplicationService {
                     }
                 }
                 Err(error) => shutdown_error = Some(error.into()),
+            }
+        }
+        if let Some(udp) = self.session_udp.take() {
+            match udp.shutdown().await {
+                Ok(terminal) => {
+                    let terminal_counts = format!(
+                        "tasks={},queued={},dropped={}",
+                        terminal.tasks, terminal.queued, terminal.datagrams_dropped
+                    );
+                    let _ = self.views.record_diagnostic(
+                        DiagnosticSeverity::Info,
+                        category::DISCOVERY_DHT,
+                        "session_udp_service_stopped",
+                        None,
+                        "Session UDP service stopped with joined ownership",
+                        &[("terminal_counts", &terminal_counts)],
+                    );
+                }
+                Err(error) if active_join_error.is_none() => {
+                    active_join_error = Some(format!("session UDP service: {error}"));
+                }
+                Err(_) => {}
             }
         }
         if let Some(observations) = self.dht_observations.take() {
@@ -3828,6 +3918,8 @@ pub enum ApplicationError {
     Subscription(SubscriptionError),
     Dht(DhtError),
     Incoming(IncomingPeerError),
+    SessionSocket(SessionSocketError),
+    SessionUdp(SessionUdpError),
     IncomingSeeding(String),
 }
 
@@ -3851,6 +3943,8 @@ impl fmt::Display for ApplicationError {
             Self::Subscription(error) => write!(formatter, "{error}"),
             Self::Dht(error) => write!(formatter, "{error}"),
             Self::Incoming(error) => write!(formatter, "{error}"),
+            Self::SessionSocket(error) => write!(formatter, "{error}"),
+            Self::SessionUdp(error) => write!(formatter, "{error}"),
             Self::IncomingSeeding(error) => write!(formatter, "incoming seeding: {error}"),
         }
     }
@@ -3864,6 +3958,8 @@ impl Error for ApplicationError {
             Self::Subscription(error) => Some(error),
             Self::Dht(error) => Some(error),
             Self::Incoming(error) => Some(error),
+            Self::SessionSocket(error) => Some(error),
+            Self::SessionUdp(error) => Some(error),
             _ => None,
         }
     }
@@ -3884,6 +3980,18 @@ impl From<DhtError> for ApplicationError {
 impl From<IncomingPeerError> for ApplicationError {
     fn from(error: IncomingPeerError) -> Self {
         Self::Incoming(error)
+    }
+}
+
+impl From<SessionSocketError> for ApplicationError {
+    fn from(error: SessionSocketError) -> Self {
+        Self::SessionSocket(error)
+    }
+}
+
+impl From<SessionUdpError> for ApplicationError {
+    fn from(error: SessionUdpError) -> Self {
+        Self::SessionUdp(error)
     }
 }
 
@@ -3930,7 +4038,7 @@ pub fn application_error_response(
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::net::{IpAddr, SocketAddr};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
@@ -3955,7 +4063,7 @@ mod tests {
     use rusqlite::Connection;
     use sha1::{Digest, Sha1};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::{TcpListener, UdpSocket};
+    use tokio::net::{TcpListener, TcpStream, UdpSocket};
 
     use super::{
         ApplicationConfig, ApplicationService, ManagedArtifactState, delete_path_artifacts,
@@ -4802,7 +4910,7 @@ mod tests {
         fs::remove_dir_all(root).expect("remove offline ephemeral test root");
     }
 
-    async fn answer_dht_query(router: &UdpSocket) {
+    async fn answer_dht_query(router: &UdpSocket) -> SocketAddr {
         let mut packet = [0_u8; 1024];
         let (length, client) = tokio::time::timeout(
             std::time::Duration::from_secs(1),
@@ -4828,6 +4936,80 @@ mod tests {
             .send_to(&response, client)
             .await
             .expect("send DHT response");
+        client
+    }
+
+    #[tokio::test]
+    async fn application_coordinates_tcp_and_dht_udp_endpoints() {
+        let root = test_root("coordinated-session-sockets");
+        let preferred_probe = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind preferred-port probe");
+        let preferred_port = preferred_probe.local_addr().unwrap().port();
+        let preferred_udp_probe = UdpSocket::bind((Ipv4Addr::LOCALHOST, preferred_port))
+            .await
+            .expect("bind preferred UDP-port probe");
+        drop(preferred_probe);
+        drop(preferred_udp_probe);
+        let router = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind DHT router");
+        let router_address = router.local_addr().expect("DHT router address");
+        let mut configuration = config(&root);
+        configuration.dht.bootstrap_nodes = vec![BootstrapNode::Address(router_address)];
+        persist_client_settings(
+            &configuration,
+            ClientSettings {
+                listener: ListenerPolicy::AutomaticLoopback,
+                preferred_listen_port: preferred_port,
+                ..ClientSettings::default()
+            },
+        );
+        let mut application = ApplicationService::open(configuration)
+            .await
+            .expect("open coordinated application");
+        let runtime = client_settings_runtime(&application).await;
+        let ListenerStatus::Listening {
+            address: tcp_address,
+            port: tcp_port,
+        } = runtime.listener_status
+        else {
+            panic!("coordinated TCP listener must be active");
+        };
+        let crate::SessionUdpStatus::Bound {
+            address: udp_address,
+            port: udp_port,
+            coordinated_with_tcp,
+        } = runtime.session_udp_status
+        else {
+            panic!("session UDP endpoint must be active");
+        };
+        assert_eq!(tcp_address, "127.0.0.1");
+        assert_eq!(udp_address, tcp_address);
+        assert_eq!(tcp_port, preferred_port);
+        assert_eq!(udp_port, tcp_port);
+        assert!(coordinated_with_tcp);
+
+        let observed_dht_source = answer_dht_query(&router).await;
+        assert_eq!(observed_dht_source.ip().to_string(), udp_address);
+        assert_eq!(observed_dht_source.port(), udp_port);
+        let tcp = TcpStream::connect((tcp_address.as_str(), tcp_port))
+            .await
+            .expect("connect observed TCP endpoint");
+        drop(tcp);
+        assert_eq!(
+            application
+                .session_udp
+                .as_ref()
+                .expect("session UDP owner")
+                .snapshot()
+                .task_high_water,
+            1
+        );
+        application.shutdown().await.expect("joined shutdown");
+        assert!(application.session_udp.is_none());
+        drop(application);
+        fs::remove_dir_all(root).expect("remove test root");
     }
 
     #[tokio::test]
@@ -7509,6 +7691,14 @@ mod tests {
                 reason: ListenerBindFailureReason::AddressInUse,
                 ref detail,
             } if !detail.is_empty() && detail.len() <= 512
+        ));
+        assert!(matches!(
+            runtime.session_udp_status,
+            crate::SessionUdpStatus::Bound {
+                port: active_udp_port,
+                coordinated_with_tcp: false,
+                ..
+            } if active_udp_port != 0
         ));
         let diagnostics = conflicted
             .subscribe(SubscriptionSpec {

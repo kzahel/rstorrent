@@ -1087,6 +1087,39 @@ function validateClientSettingsRuntime(value: unknown): void {
     throw new ContractError("enabled listener reports a disabled status");
   }
 
+  const udpStatus = asRecord(runtime.session_udp_status, "session UDP status");
+  const udpStatusType = oneOf(udpStatus.type, "session UDP status type", [
+    "unavailable",
+    "bound",
+  ]);
+  if (udpStatusType === "bound") {
+    const udpAddress = boundedString(
+      udpStatus.address,
+      "session UDP address",
+      64,
+    );
+    const udpPort = boundedInteger(
+      udpStatus.port,
+      "session UDP port",
+      1,
+      65_535,
+    );
+    const coordinated = boolean(
+      udpStatus.coordinated_with_tcp,
+      "session UDP coordination state",
+    );
+    if (
+      coordinated &&
+      (statusType !== "listening" ||
+        status.address !== udpAddress ||
+        status.port !== udpPort)
+    ) {
+      throw new ContractError(
+        "coordinated session UDP endpoint differs from the active listener",
+      );
+    }
+  }
+
   const mappingStatus = asRecord(runtime.port_mapping_status, "port mapping status");
   const mappingStatusType = oneOf(
     mappingStatus.type,

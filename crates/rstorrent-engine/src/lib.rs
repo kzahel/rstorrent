@@ -19,6 +19,8 @@ pub mod port_mapping;
 mod positional_io;
 mod seed_content;
 mod selective_storage;
+mod session_socket;
+mod session_udp;
 mod storage_file_pool;
 pub mod swarm;
 mod torrent_peer;
@@ -78,6 +80,14 @@ pub use selective_storage::{
     selective_staging_path, torrent_storage_paths, torrent_storage_paths_for_metainfo,
     torrent_storage_paths_with_shape, validate_publication_name, verify_prepared_descriptors,
     verify_prepared_platform_files,
+};
+pub use session_socket::{
+    MAX_LISTEN_PORT_RETRIES, SessionSocketConfig, SessionSocketError, SessionSocketSet,
+    SessionSocketTransport,
+};
+pub use session_udp::{
+    SESSION_UDP_DHT_QUEUE, SessionUdpError, SessionUdpService, SessionUdpSnapshot,
+    SessionUdpTransport,
 };
 pub use storage_file_pool::{
     DEFAULT_STORAGE_FILE_LIMIT, PLATFORM_STORAGE_REQUEST_CAPACITY,

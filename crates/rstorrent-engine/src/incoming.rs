@@ -700,25 +700,7 @@ impl IncomingPeerService {
     pub async fn bind(
         config: IncomingPeerServiceConfig,
     ) -> Result<Option<Self>, IncomingPeerError> {
-        if config.handshake_timeout.is_zero()
-            || config.peer_activity_timeout.is_zero()
-            || config.keepalive_interval.is_zero()
-            || config.no_request_timeout.is_zero()
-            || config.inactivity_timeout.is_zero()
-        {
-            return Err(IncomingPeerError::InvalidTimeout);
-        }
-        if !(1..=MAX_CONFIGURED_UPLOAD_READ_JOBS).contains(&config.upload_read_jobs) {
-            return Err(IncomingPeerError::InvalidUploadReadJobs {
-                maximum: MAX_CONFIGURED_UPLOAD_READ_JOBS,
-            });
-        }
-        let upload_coordinator = UploadCoordinator::new(config.upload_scheduler)
-            .map_err(IncomingPeerError::InvalidScheduler)?;
-        let upload_interval = config
-            .upload_scheduler
-            .unchoke_interval
-            .min(config.upload_scheduler.optimistic_interval);
+        validate_service_config(&config)?;
         let (bind_address, port) = match config.bootstrap {
             IncomingTcpBootstrap::Disabled => return Ok(None),
             IncomingTcpBootstrap::AutomaticLoopback => (Ipv4Addr::LOCALHOST, 0),
@@ -746,12 +728,27 @@ impl IncomingPeerService {
         let listener = socket
             .listen(DEFAULT_LISTEN_BACKLOG)
             .map_err(|source| IncomingPeerError::Bind { port, source })?;
+        Self::start(config, listener).map(Some)
+    }
+
+    pub fn start(
+        config: IncomingPeerServiceConfig,
+        listener: TcpListener,
+    ) -> Result<Self, IncomingPeerError> {
+        validate_service_config(&config)?;
         let listen_address = listener
             .local_addr()
             .map_err(|source| IncomingPeerError::Io {
-                operation: "read incoming listener address",
+                operation: "read supplied incoming listener address",
                 source,
             })?;
+        validate_supplied_listener(config.bootstrap, listen_address)?;
+        let upload_coordinator = UploadCoordinator::new(config.upload_scheduler)
+            .map_err(IncomingPeerError::InvalidScheduler)?;
+        let upload_interval = config
+            .upload_scheduler
+            .unchoke_interval
+            .min(config.upload_scheduler.optimistic_interval);
         let shared = Arc::new(Shared {
             bootstrap: config.bootstrap,
             listen_address,
@@ -785,12 +782,12 @@ impl IncomingPeerService {
             cancellation.clone(),
             upload_interval,
         ));
-        Ok(Some(Self {
+        Ok(Self {
             handle: IncomingPeerHandle { shared },
             cancellation,
             accept_task: Some(accept_task),
             upload_task: Some(upload_task),
-        }))
+        })
     }
 
     pub fn handle(&self) -> IncomingPeerHandle {
@@ -835,7 +832,49 @@ impl IncomingPeerService {
     }
 }
 
-async fn select_local_network_ipv4(
+fn validate_service_config(config: &IncomingPeerServiceConfig) -> Result<(), IncomingPeerError> {
+    if config.handshake_timeout.is_zero()
+        || config.peer_activity_timeout.is_zero()
+        || config.keepalive_interval.is_zero()
+        || config.no_request_timeout.is_zero()
+        || config.inactivity_timeout.is_zero()
+    {
+        return Err(IncomingPeerError::InvalidTimeout);
+    }
+    if !(1..=MAX_CONFIGURED_UPLOAD_READ_JOBS).contains(&config.upload_read_jobs) {
+        return Err(IncomingPeerError::InvalidUploadReadJobs {
+            maximum: MAX_CONFIGURED_UPLOAD_READ_JOBS,
+        });
+    }
+    Ok(())
+}
+
+fn validate_supplied_listener(
+    bootstrap: IncomingTcpBootstrap,
+    address: SocketAddr,
+) -> Result<(), IncomingPeerError> {
+    let SocketAddr::V4(address) = address else {
+        return Err(IncomingPeerError::InvalidSuppliedListener);
+    };
+    let valid = match bootstrap {
+        IncomingTcpBootstrap::Disabled => false,
+        IncomingTcpBootstrap::AutomaticLoopback => address.ip().is_loopback(),
+        IncomingTcpBootstrap::FixedLoopback(port) => {
+            address.ip().is_loopback() && address.port() == port
+        }
+        IncomingTcpBootstrap::AutomaticLocalNetwork => eligible_local_network_ipv4(*address.ip()),
+        IncomingTcpBootstrap::FixedLocalNetwork(port) => {
+            eligible_local_network_ipv4(*address.ip()) && address.port() == port
+        }
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(IncomingPeerError::InvalidSuppliedListener)
+    }
+}
+
+pub(crate) async fn select_local_network_ipv4(
     address_override: Option<Ipv4Addr>,
 ) -> Result<Ipv4Addr, IncomingPeerError> {
     let address = if let Some(address) = address_override {
@@ -2004,6 +2043,7 @@ async fn join_read(read: Option<ActiveRead>) {
 #[derive(Debug)]
 pub enum IncomingPeerError {
     InvalidFixedPort,
+    InvalidSuppliedListener,
     InvalidLocalNetworkAddress,
     LocalNetworkAddress {
         source: io::Error,
@@ -2033,6 +2073,8 @@ impl fmt::Display for IncomingPeerError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidFixedPort => formatter.write_str("fixed incoming port must be nonzero"),
+            Self::InvalidSuppliedListener => formatter
+                .write_str("supplied incoming listener does not match its bootstrap policy"),
             Self::InvalidLocalNetworkAddress => formatter
                 .write_str("local-network listener requires a concrete non-loopback IPv4 address"),
             Self::LocalNetworkAddress { source } => {
@@ -2434,6 +2476,30 @@ mod tests {
         assert!(matches!(
             IncomingPeerService::bind(config(IncomingTcpBootstrap::FixedLoopback(port))).await,
             Err(IncomingPeerError::Bind { port: failed, .. }) if failed == port
+        ));
+
+        let supplied = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind supplied listener");
+        let supplied_address = supplied.local_addr().expect("supplied address");
+        let supplied_service =
+            IncomingPeerService::start(config(IncomingTcpBootstrap::AutomaticLoopback), supplied)
+                .expect("start supplied listener");
+        assert_eq!(supplied_service.listen_address(), supplied_address);
+        supplied_service
+            .shutdown()
+            .await
+            .expect("shutdown supplied");
+
+        let mismatched = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind mismatched listener");
+        assert!(matches!(
+            IncomingPeerService::start(
+                config(IncomingTcpBootstrap::FixedLoopback(6_881)),
+                mismatched,
+            ),
+            Err(IncomingPeerError::InvalidSuppliedListener)
         ));
     }
 
