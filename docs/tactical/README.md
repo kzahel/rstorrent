@@ -404,6 +404,10 @@ that scope and its cleanup or compatibility rules explicitly.
   for loopback listener policy, the global peer ceiling, and payload upload
   slots through startup enforcement, existing application transports and
   views, and the shared browser/Tauri Settings surface.
+- [`085-unified-contextual-selection-actions.md`](085-unified-contextual-selection-actions.md):
+  planned; unifies torrent and file action policy across visible toolbars,
+  More, and row context menus, including whole-selection magnet copy, recheck,
+  archive/restore, and confirmed sequential multi-torrent removal.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
