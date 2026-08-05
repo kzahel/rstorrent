@@ -13,6 +13,10 @@ import {
   TauriApplicationViewClient,
   type TauriViewBridge,
 } from "./tauri-view-client";
+import {
+  clientSettingsFixture,
+  clientSettingsRuntimeFixture,
+} from "./test-support/client-settings";
 
 const viewSetId = "vs_000102030405060708090a0b0c0d0e0f";
 const listView: ViewSpec = {
@@ -79,6 +83,7 @@ describe("Tauri leased view-set adapter", () => {
           profile_id: "test",
           revision: "1",
           storage: { roots: [], show_add_options: true },
+          client_settings: clientSettingsFixture(),
           torrents: [],
         },
       };
@@ -327,6 +332,7 @@ function opened(): OpenViewSetResponse {
             type: "torrent_list",
             torrents: [],
             storage: { roots: [], show_add_options: true },
+            client_settings: clientSettingsRuntimeFixture(),
           },
         },
       ],

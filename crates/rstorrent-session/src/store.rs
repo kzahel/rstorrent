@@ -22,9 +22,12 @@ use crate::control::{
     parse_revision, validate_add_torrent_bytes_request, validate_identifier, validate_request,
 };
 use crate::have::{HaveError, HaveState, MAX_DURABLE_HAVE_STATE_BYTES, MAX_DURABLE_PIECES};
-use crate::settings::{StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot};
+use crate::settings::{
+    ClientSettings, SettingsPersistenceError, StorageRootAvailability, StorageRootSnapshot,
+    StorageSettingsSnapshot, create_client_settings, read_client_settings, replace_client_settings,
+};
 
-const SCHEMA_VERSION: i64 = 8;
+const SCHEMA_VERSION: i64 = 9;
 const DATABASE_FILENAME: &str = "session.db";
 const MAX_RECEIPTS: i64 = 1024;
 pub(crate) const EPHEMERAL_SESSION_MAX_BYTES: u64 = 256 * 1024 * 1024;
@@ -462,6 +465,10 @@ impl SessionStore {
         read_snapshot(&self.connection, &self.profile_id)
     }
 
+    pub fn client_settings(&self) -> Result<ClientSettings, StoreError> {
+        read_client_settings(&self.connection).map_err(StoreError::from)
+    }
+
     pub fn storage_roots(&self) -> Result<Vec<StoredStorageRoot>, StoreError> {
         read_storage_roots(&self.connection)
     }
@@ -691,6 +698,7 @@ impl SessionStore {
         }
 
         let request_json = serde_json::to_string(request)?;
+        let durable_profile = self.database_path.is_some();
         let transaction = self.connection.transaction()?;
         if let Some((stored_request, stored_response)) = transaction
             .query_row(
@@ -738,7 +746,13 @@ impl SessionStore {
                 ),
             )
         } else {
-            apply_mutation(&transaction, request, current_revision, &self.profile_id)?
+            apply_mutation(
+                &transaction,
+                request,
+                current_revision,
+                &self.profile_id,
+                durable_profile,
+            )?
         };
 
         let response_json = serde_json::to_string(&response)?;
@@ -1888,6 +1902,15 @@ impl From<HaveError> for StoreError {
     }
 }
 
+impl From<SettingsPersistenceError> for StoreError {
+    fn from(error: SettingsPersistenceError) -> Self {
+        match error {
+            SettingsPersistenceError::Sqlite(error) => Self::Sqlite(error),
+            SettingsPersistenceError::Corrupt(message) => Self::DurableState(message),
+        }
+    }
+}
+
 fn configure_ephemeral_connection(
     connection: &Connection,
     maximum_bytes: u64,
@@ -2058,6 +2081,7 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
              VALUES (1, NULL, 1)",
             [],
         )?;
+        create_client_settings(&transaction)?;
         transaction.execute_batch(DHT_TABLES_SQL)?;
         transaction.execute_batch(REMOVAL_TABLE_SQL)?;
         transaction.execute_batch(SOURCE_TABLES_SQL)?;
@@ -2238,6 +2262,9 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
     if (1..=7).contains(&version) {
         migrate_sources_and_intake_bounds_to_v8(connection)?;
     }
+    if (1..=8).contains(&version) {
+        migrate_client_settings_to_v9(connection)?;
+    }
     let stored_profile: String = connection.query_row(
         "SELECT profile_id FROM profile_state WHERE singleton = 1",
         [],
@@ -2248,6 +2275,7 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
             "profile directory belongs to {stored_profile}, not {profile_id}"
         )));
     }
+    read_client_settings(connection)?;
     Ok(())
 }
 
@@ -2519,6 +2547,14 @@ fn migrate_sources_and_intake_bounds_to_v8(connection: &mut Connection) -> Resul
             )?;
         }
     }
+    transaction.pragma_update(None, "user_version", 8)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn migrate_client_settings_to_v9(connection: &mut Connection) -> Result<(), StoreError> {
+    let transaction = connection.transaction()?;
+    create_client_settings(&transaction)?;
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;
     Ok(())
@@ -2702,7 +2738,29 @@ fn apply_mutation(
     request: &RequestEnvelope,
     current_revision: u64,
     profile_id: &str,
+    durable_profile: bool,
 ) -> Result<ResponseEnvelope, StoreError> {
+    if let Command::SetClientSettings { settings } = &request.command {
+        if !durable_profile {
+            return Ok(ResponseEnvelope::error(
+                request.request_id.clone(),
+                current_revision,
+                ErrorCode::InvalidDurableState,
+                "client settings cannot be changed in an ephemeral profile because they require an application restart",
+            ));
+        }
+        let changed = replace_client_settings(transaction, settings)?;
+        let revision = if changed {
+            next_revision_strict(transaction, current_revision)?
+        } else {
+            current_revision
+        };
+        return Ok(ResponseEnvelope::success(
+            request.request_id.clone(),
+            revision,
+            read_snapshot(transaction, profile_id)?,
+        ));
+    }
     let result = match &request.command {
         Command::AddMagnet {
             magnet,
@@ -2747,6 +2805,7 @@ fn apply_mutation(
         Command::SetShowAddOptions { show } => {
             set_show_add_options(transaction, *show, current_revision)
         }
+        Command::SetClientSettings { .. } => unreachable!("settings are handled atomically above"),
         Command::RemoveStorageRoot { storage_root } => {
             remove_storage_root(transaction, storage_root, current_revision)
         }
@@ -3661,6 +3720,22 @@ fn next_revision(
     Ok(revision)
 }
 
+fn next_revision_strict(
+    transaction: &Transaction<'_>,
+    current_revision: u64,
+) -> Result<u64, StoreError> {
+    let revision = current_revision
+        .checked_add(1)
+        .ok_or_else(|| StoreError::DurableState("profile revision overflow".to_owned()))?;
+    let revision_sql = i64::try_from(revision)
+        .map_err(|_| StoreError::DurableState("profile revision overflow".to_owned()))?;
+    transaction.execute(
+        "UPDATE profile_state SET revision = ?1 WHERE singleton = 1",
+        [revision_sql],
+    )?;
+    Ok(revision)
+}
+
 fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSnapshot, StoreError> {
     let revision = read_revision(connection)?;
     let mut statement = connection.prepare(
@@ -3756,6 +3831,7 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
         profile_id: profile_id.to_owned(),
         revision: revision.to_string(),
         storage: read_storage_settings(connection)?,
+        client_settings: read_client_settings(connection)?,
         torrents,
     })
 }
@@ -4150,11 +4226,12 @@ mod tests {
         ConfiguredStorageRoot, ManagedArtifactState, PreparedFileRecord, SCHEMA_VERSION,
         SessionStore, StoreError, StoredTrackerSource, StoredTrackerTransport,
     };
+    use crate::ClientSettings;
     use crate::have::{HaveState, MAX_DURABLE_HAVE_STATE_BYTES, MAX_DURABLE_PIECES};
     use crate::{
         AddTorrentBytesRequest, CONTROL_VERSION, Command, ErrorCode, FileIndexRange, FilePriority,
-        FileSelectionIntent, RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseOutcome,
-        StorageState, TorrentState,
+        FileSelectionIntent, ListenerPolicy, RemovalDataPolicy, RemovalState, RequestEnvelope,
+        ResponseOutcome, StorageState, TorrentState,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -5163,6 +5240,7 @@ mod tests {
                  DROP TABLE dht_nodes;
                  DROP TABLE dht_state;
                  DROP TABLE removal_jobs;
+                 DROP TABLE client_settings;
                  DROP TABLE storage_settings;
                  ALTER TABLE storage_roots DROP COLUMN kind;
                  ALTER TABLE storage_roots DROP COLUMN label;
@@ -5218,6 +5296,7 @@ mod tests {
         connection
             .execute_batch(
                 "DROP TABLE removal_jobs;
+                 DROP TABLE client_settings;
                  DROP TABLE storage_settings;
                  ALTER TABLE storage_roots DROP COLUMN kind;
                  ALTER TABLE storage_roots DROP COLUMN label;
@@ -5284,7 +5363,8 @@ mod tests {
         let connection = Connection::open(&database_path).expect("open raw database");
         connection
             .execute_batch(
-                "ALTER TABLE torrents DROP COLUMN publication_name;
+                "DROP TABLE client_settings;
+                 ALTER TABLE torrents DROP COLUMN publication_name;
                  ALTER TABLE torrents DROP COLUMN managed_artifacts;
                  PRAGMA user_version = 5;",
             )
@@ -5357,6 +5437,9 @@ mod tests {
                 rusqlite::params![info_hash.as_slice(), [0_u8; 20].as_slice()],
             )
             .expect("insert prepared row");
+        connection
+            .execute("DROP TABLE client_settings", [])
+            .expect("remove version-nine settings table");
         connection
             .pragma_update(None, "user_version", 6)
             .expect("mark schema six");
@@ -6238,6 +6321,268 @@ mod tests {
         assert_eq!(complete.storage_state, StorageState::Published);
         assert_eq!(complete.managed_artifacts, ManagedArtifactState::Published);
         drop(reopened);
+        fs::remove_dir_all(root).expect("remove profile");
+    }
+
+    #[test]
+    fn migrates_version_eight_to_default_client_settings() {
+        let root = test_root("schema-v8-client-settings");
+        let configured = configured_root(&root);
+        let store =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
+        let database_path = store.database_path().unwrap().to_owned();
+        drop(store);
+
+        let connection = Connection::open(&database_path).expect("open schema eight fixture");
+        connection
+            .execute("DROP TABLE client_settings", [])
+            .expect("remove version-nine table");
+        connection
+            .pragma_update(None, "user_version", 8)
+            .expect("mark schema eight");
+        drop(connection);
+
+        let reopened = SessionStore::open(&root, "default", &[configured]).expect("migrate");
+        assert_eq!(
+            reopened.client_settings().expect("read migrated settings"),
+            ClientSettings::default()
+        );
+        assert_eq!(
+            reopened
+                .connection
+                .pragma_query_value::<i64, _>(None, "user_version", |row| row.get(0))
+                .expect("read schema version"),
+            SCHEMA_VERSION
+        );
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove profile");
+    }
+
+    #[test]
+    fn client_settings_are_atomic_replayable_restartable_and_durable_only() {
+        let root = test_root("client-settings-command");
+        let configured_root = configured_root(&root);
+        let mut store =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured_root))
+                .expect("open");
+        let configured = ClientSettings {
+            listener: ListenerPolicy::FixedLoopback { port: 42_001 },
+            peer_connection_limit: 321,
+            upload_slots: 3,
+        };
+        let request = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "set-client-settings".to_owned(),
+            expected_revision: Some("0".to_owned()),
+            command: Command::SetClientSettings {
+                settings: configured.clone(),
+            },
+        };
+        let accepted = store.handle_durable(&request).expect("set settings");
+        assert_eq!(accepted.revision, "1");
+        let ResponseOutcome::Success { snapshot } = &accepted.outcome else {
+            panic!("settings mutation must succeed");
+        };
+        assert_eq!(snapshot.client_settings, configured);
+        assert_eq!(store.handle_durable(&request).expect("replay"), accepted);
+
+        let conflict = store
+            .handle_durable(&RequestEnvelope {
+                command: Command::SetClientSettings {
+                    settings: ClientSettings::default(),
+                },
+                ..request.clone()
+            })
+            .expect("settings request conflict");
+        assert!(matches!(
+            conflict.outcome,
+            ResponseOutcome::Error {
+                error: crate::ErrorResponse {
+                    code: ErrorCode::RequestConflict,
+                    ..
+                }
+            }
+        ));
+
+        let no_op = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "settings-no-op".to_owned(),
+                expected_revision: Some("1".to_owned()),
+                command: Command::SetClientSettings {
+                    settings: configured.clone(),
+                },
+            })
+            .expect("no-op settings");
+        assert_eq!(no_op.revision, "1");
+        let stale = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "settings-stale".to_owned(),
+                expected_revision: Some("0".to_owned()),
+                command: Command::SetClientSettings {
+                    settings: ClientSettings::default(),
+                },
+            })
+            .expect("stale settings");
+        assert!(matches!(
+            stale.outcome,
+            ResponseOutcome::Error {
+                error: crate::ErrorResponse {
+                    code: ErrorCode::StaleRevision,
+                    ..
+                }
+            }
+        ));
+        let invalid_request_id = "invalid-settings".to_owned();
+        let invalid = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: invalid_request_id.clone(),
+                expected_revision: Some("1".to_owned()),
+                command: Command::SetClientSettings {
+                    settings: ClientSettings {
+                        peer_connection_limit: 0,
+                        ..ClientSettings::default()
+                    },
+                },
+            })
+            .expect("reject invalid settings");
+        assert!(matches!(
+            invalid.outcome,
+            ResponseOutcome::Error {
+                error: crate::ErrorResponse {
+                    code: ErrorCode::InvalidRequest,
+                    ..
+                }
+            }
+        ));
+        assert_eq!(store.revision().unwrap(), 1);
+        assert_eq!(store.client_settings().unwrap(), configured);
+        drop(store);
+
+        let mut reopened =
+            SessionStore::open(&root, "default", &[configured_root]).expect("reopen");
+        assert_eq!(reopened.client_settings().unwrap(), configured);
+        let reverted = reopened
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: invalid_request_id,
+                expected_revision: Some("1".to_owned()),
+                command: Command::SetClientSettings {
+                    settings: ClientSettings::default(),
+                },
+            })
+            .expect("retry corrected settings request");
+        assert_eq!(reverted.revision, "2");
+        assert_eq!(
+            reopened.client_settings().unwrap(),
+            ClientSettings::default()
+        );
+        drop(reopened);
+
+        let mut ephemeral =
+            SessionStore::open_ephemeral("ephemeral", &[]).expect("open ephemeral store");
+        let rejected = ephemeral
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "ephemeral-settings".to_owned(),
+                expected_revision: None,
+                command: Command::SetClientSettings {
+                    settings: ClientSettings {
+                        peer_connection_limit: 199,
+                        ..ClientSettings::default()
+                    },
+                },
+            })
+            .expect("reject ephemeral settings");
+        assert!(matches!(
+            rejected.outcome,
+            ResponseOutcome::Error {
+                error: crate::ErrorResponse {
+                    code: ErrorCode::InvalidDurableState,
+                    ..
+                }
+            }
+        ));
+        assert_eq!(ephemeral.revision().unwrap(), 0);
+        assert_eq!(
+            ephemeral.client_settings().unwrap(),
+            ClientSettings::default()
+        );
+        fs::remove_dir_all(root).expect("remove profile");
+    }
+
+    #[test]
+    fn client_settings_storage_failure_rolls_back_group_revision_and_receipt() {
+        let root = test_root("client-settings-rollback");
+        let configured_root = configured_root(&root);
+        let mut store =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured_root))
+                .expect("open");
+        store
+            .connection
+            .execute_batch(
+                "CREATE TRIGGER reject_client_settings
+                 BEFORE UPDATE ON client_settings
+                 BEGIN
+                    SELECT RAISE(ABORT, 'injected settings write failure');
+                 END;",
+            )
+            .expect("install failure trigger");
+        let request = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "settings-write-failure".to_owned(),
+            expected_revision: Some("0".to_owned()),
+            command: Command::SetClientSettings {
+                settings: ClientSettings {
+                    peer_connection_limit: 199,
+                    ..ClientSettings::default()
+                },
+            },
+        };
+        assert!(store.handle_durable(&request).is_err());
+        assert_eq!(store.revision().unwrap(), 0);
+        assert_eq!(store.client_settings().unwrap(), ClientSettings::default());
+
+        store
+            .connection
+            .execute_batch("DROP TRIGGER reject_client_settings")
+            .expect("remove failure trigger");
+        let accepted = store
+            .handle_durable(&request)
+            .expect("retry unrecorded request");
+        assert_eq!(accepted.revision, "1");
+        drop(store);
+        fs::remove_dir_all(root).expect("remove profile");
+    }
+
+    #[test]
+    fn corrupt_client_settings_prevent_profile_open() {
+        let root = test_root("client-settings-corrupt-open");
+        let configured = configured_root(&root);
+        let store =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
+        let database_path = store.database_path().unwrap().to_owned();
+        drop(store);
+
+        let connection = Connection::open(database_path).expect("open raw database");
+        connection
+            .pragma_update(None, "ignore_check_constraints", true)
+            .expect("disable constraints for corruption fixture");
+        connection
+            .execute(
+                "UPDATE client_settings SET peer_connection_limit = -1 WHERE singleton = 1",
+                [],
+            )
+            .expect("write corrupt setting");
+        drop(connection);
+
+        let error = match SessionStore::open(&root, "default", &[configured]) {
+            Ok(_) => panic!("corrupt settings must prevent profile open"),
+            Err(error) => error,
+        };
+        assert!(matches!(error, StoreError::DurableState(_)));
         fs::remove_dir_all(root).expect("remove profile");
     }
 }

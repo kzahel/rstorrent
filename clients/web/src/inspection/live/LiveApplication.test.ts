@@ -19,6 +19,10 @@ import type { ApplicationViewClient } from "../../api/client";
 import { HttpApiError } from "../../api/client";
 import type { InspectionSnapshot } from "../model";
 import { LiveApplication } from "./LiveApplication";
+import {
+  clientSettingsFixture,
+  clientSettingsRuntimeFixture,
+} from "../../test-support/client-settings";
 
 const TORRENT_ID = "000102030405060708090a0b0c0d0e0f10111213";
 
@@ -73,6 +77,7 @@ class FakeLiveClient implements ApplicationViewClient {
         profile_id: "live",
         revision: "4",
         storage: { roots: [], show_add_options: true },
+        client_settings: clientSettingsFixture(),
         torrents: [],
       },
     };
@@ -92,6 +97,7 @@ class FakeLiveClient implements ApplicationViewClient {
         profile_id: "live",
         revision: "4",
         storage: { roots: [], show_add_options: true },
+        client_settings: clientSettingsFixture(),
         torrents: [],
       },
     };
@@ -570,6 +576,7 @@ function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
           type: "torrent_list",
           torrents: [torrent()],
           storage: { roots: [], show_add_options: true },
+          client_settings: clientSettingsRuntimeFixture(),
         },
       };
     case "torrent_summary":

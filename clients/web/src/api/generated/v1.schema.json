@@ -931,6 +931,62 @@
       },
       "type": "object"
     },
+    "ClientSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "listener": {
+          "$ref": "#/$defs/ListenerPolicy"
+        },
+        "peer_connection_limit": {
+          "format": "uint32",
+          "maximum": 2000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "upload_slots": {
+          "format": "uint16",
+          "maximum": 50,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "listener",
+        "peer_connection_limit",
+        "upload_slots"
+      ],
+      "type": "object"
+    },
+    "ClientSettingsRuntimeView": {
+      "additionalProperties": false,
+      "properties": {
+        "active": {
+          "$ref": "#/$defs/ClientSettings"
+        },
+        "configured": {
+          "$ref": "#/$defs/ClientSettings"
+        },
+        "effective_peer_connection_limit": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "listener_status": {
+          "$ref": "#/$defs/ListenerStatus"
+        },
+        "restart_required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "configured",
+        "active",
+        "restart_required",
+        "effective_peer_connection_limit",
+        "listener_status"
+      ],
+      "type": "object"
+    },
     "Command": {
       "oneOf": [
         {
@@ -1051,6 +1107,22 @@
           "required": [
             "type",
             "show"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "settings": {
+              "$ref": "#/$defs/ClientSettings"
+            },
+            "type": {
+              "const": "set_client_settings",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "settings"
           ],
           "type": "object"
         },
@@ -2297,6 +2369,127 @@
       ],
       "type": "object"
     },
+    "ListenerBindFailureReason": {
+      "enum": [
+        "address_in_use",
+        "permission_denied",
+        "address_unavailable",
+        "other"
+      ],
+      "type": "string"
+    },
+    "ListenerPolicy": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "disabled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "automatic_loopback",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "port": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 1024,
+              "type": "integer"
+            },
+            "type": {
+              "const": "fixed_loopback",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "port"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ListenerStatus": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "disabled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "address": {
+              "type": "string"
+            },
+            "port": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "listening",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "address",
+            "port"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "detail": {
+              "type": "string"
+            },
+            "reason": {
+              "$ref": "#/$defs/ListenerBindFailureReason"
+            },
+            "type": {
+              "const": "bind_failed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "reason",
+            "detail"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "OpenViewSetOptions": {
       "properties": {
         "requested_queue_bytes": {
@@ -2908,6 +3101,16 @@
     },
     "ServiceSnapshot": {
       "properties": {
+        "client_settings": {
+          "$ref": "#/$defs/ClientSettings",
+          "default": {
+            "listener": {
+              "type": "disabled"
+            },
+            "peer_connection_limit": 200,
+            "upload_slots": 8
+          }
+        },
         "profile_id": {
           "type": "string"
         },
@@ -3786,6 +3989,16 @@
       "oneOf": [
         {
           "properties": {
+            "client_settings": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClientSettingsRuntimeView"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "removed": {
               "items": {
                 "type": "string"
@@ -4203,6 +4416,30 @@
       "oneOf": [
         {
           "properties": {
+            "client_settings": {
+              "$ref": "#/$defs/ClientSettingsRuntimeView",
+              "default": {
+                "active": {
+                  "listener": {
+                    "type": "disabled"
+                  },
+                  "peer_connection_limit": 200,
+                  "upload_slots": 8
+                },
+                "configured": {
+                  "listener": {
+                    "type": "disabled"
+                  },
+                  "peer_connection_limit": 200,
+                  "upload_slots": 8
+                },
+                "effective_peer_connection_limit": 200,
+                "listener_status": {
+                  "type": "disabled"
+                },
+                "restart_required": false
+              }
+            },
             "storage": {
               "$ref": "#/$defs/StorageSettingsSnapshot"
             },

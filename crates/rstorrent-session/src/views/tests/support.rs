@@ -33,6 +33,7 @@ pub(super) fn snapshot(revision: u64, piece_count: u32) -> ServiceSnapshot {
         profile_id: "test".to_owned(),
         revision: revision.to_string(),
         storage: Default::default(),
+        client_settings: Default::default(),
         torrents: vec![TorrentSnapshot {
             torrent_id: "000102030405060708090a0b0c0d0e0f10111213".to_owned(),
             storage_root: "downloads".to_owned(),

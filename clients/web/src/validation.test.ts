@@ -4,8 +4,10 @@ import {
   ContractError,
   decodeApplicationServerFrame,
   decodeChooseDownloadRootResponse,
+  decodeResponseEnvelope,
   decodeUpdateBatch,
 } from "./validation";
+import { clientSettingsRuntimeFixture } from "./test-support/client-settings";
 
 describe("download folder response validation", () => {
   it("accepts selection or cancellation and rejects an oversized label", () => {
@@ -47,6 +49,71 @@ describe("application connection validation", () => {
         }),
       ),
     ).toThrow(ContractError);
+  });
+});
+
+describe("client settings validation", () => {
+  it("applies Rust-owned defaults to older service and view snapshots", () => {
+    const response = decodeResponseEnvelope(
+      JSON.stringify({
+        version: 1,
+        request_id: "request-1",
+        revision: "0",
+        status: "success",
+        snapshot: {
+          profile_id: "default",
+          revision: "0",
+          storage: { roots: [], show_add_options: true },
+          torrents: [],
+        },
+      }),
+    );
+    expect(response.status).toBe("success");
+    if (response.status === "success") {
+      expect(response.snapshot.client_settings).toEqual({
+        listener: { type: "disabled" },
+        peer_connection_limit: 200,
+        upload_slots: 8,
+      });
+    }
+
+    const batch = torrentBatch("Defaulted");
+    const snapshot = batch.updates[0]!.snapshot as unknown as Record<
+      string,
+      unknown
+    >;
+    delete snapshot.client_settings;
+    const decoded = decodeUpdateBatch(JSON.stringify(batch));
+    const update = decoded.updates[0]!;
+    expect(update.type).toBe("snapshot");
+    if (update.type === "snapshot" && update.snapshot.type === "torrent_list") {
+      expect(update.snapshot.client_settings).toEqual(
+        clientSettingsRuntimeFixture(),
+      );
+    }
+  });
+
+  it("rejects additional, malformed, and inconsistent runtime settings", () => {
+    const additional = torrentBatch("Additional");
+    const additionalSettings = additional.updates[0]!.snapshot
+      .client_settings.configured as unknown as Record<string, unknown>;
+    additionalSettings.invented = true;
+    expect(() => decodeUpdateBatch(JSON.stringify(additional))).toThrow(
+      ContractError,
+    );
+
+    const fractional = torrentBatch("Fractional");
+    fractional.updates[0]!.snapshot.client_settings.configured.upload_slots = 1.5;
+    expect(() => decodeUpdateBatch(JSON.stringify(fractional))).toThrow(
+      ContractError,
+    );
+
+    const inconsistent = torrentBatch("Inconsistent");
+    inconsistent.updates[0]!.snapshot.client_settings.configured.peer_connection_limit =
+      199;
+    expect(() => decodeUpdateBatch(JSON.stringify(inconsistent))).toThrow(
+      /restart-required state is inconsistent/,
+    );
   });
 });
 
@@ -484,6 +551,7 @@ function torrentBatch(displayName: string) {
         snapshot: {
           type: "torrent_list" as const,
           storage: { roots: [], show_add_options: true },
+          client_settings: clientSettingsRuntimeFixture(),
           torrents: [
             {
               torrent_id: "0".repeat(40),

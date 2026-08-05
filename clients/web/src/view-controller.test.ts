@@ -17,6 +17,10 @@ import type {
 import { ApplicationViewError, HttpApiError } from "./api/client";
 import { ViewController } from "./view-controller";
 import { ViewSetContinuityError } from "./view-set-reducer";
+import {
+  clientSettingsFixture,
+  clientSettingsRuntimeFixture,
+} from "./test-support/client-settings";
 
 const viewSetId = "vs_000102030405060708090a0b0c0d0e0f";
 const listView: ViewSpec = {
@@ -48,6 +52,7 @@ class FakeClient implements ApplicationViewClient {
         profile_id: "test",
         revision: "0",
         storage: { roots: [], show_add_options: true },
+        client_settings: clientSettingsFixture(),
         torrents: [],
       },
     };
@@ -81,6 +86,7 @@ class FakeClient implements ApplicationViewClient {
           type: "torrent_list",
           torrents: [],
           storage: { roots: [], show_add_options: true },
+          client_settings: clientSettingsRuntimeFixture(),
         },
       },
     ]);

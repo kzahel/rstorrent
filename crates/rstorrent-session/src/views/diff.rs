@@ -9,7 +9,7 @@ use crate::diagnostics::{
     MAX_DIAGNOSTIC_PATCH_BYTES, MAX_DIAGNOSTIC_PATCH_EVENTS, patch_encoded_len,
 };
 use crate::file_views::FileView;
-use crate::settings::StorageSettingsSnapshot;
+use crate::settings::{ClientSettingsRuntimeView, StorageSettingsSnapshot};
 use crate::tracker_views::{TrackerView, TrackerViewModel};
 
 use super::ranges::{difference, insert_interval, remove_interval};
@@ -24,6 +24,8 @@ pub(super) fn patch_for(
     current: &BTreeMap<String, TorrentModel>,
     previous_storage: Option<&StorageSettingsSnapshot>,
     current_storage: &StorageSettingsSnapshot,
+    previous_client_settings: Option<&ClientSettingsRuntimeView>,
+    current_client_settings: &ClientSettingsRuntimeView,
 ) -> Option<ViewPatch> {
     match (&spec.selector, spec.projection) {
         (ViewSelector::TorrentList, ViewProjection::Summary) => {
@@ -38,13 +40,17 @@ pub(super) fn patch_for(
                 .cloned()
                 .collect::<Vec<_>>();
             let storage = previous_storage.map(|_| current_storage.clone());
-            (!upsert.is_empty() || !removed.is_empty() || storage.is_some()).then_some(
-                ViewPatch::TorrentList {
-                    upsert,
-                    removed,
-                    storage,
-                },
-            )
+            let client_settings = previous_client_settings.map(|_| current_client_settings.clone());
+            (!upsert.is_empty()
+                || !removed.is_empty()
+                || storage.is_some()
+                || client_settings.is_some())
+            .then_some(ViewPatch::TorrentList {
+                upsert,
+                removed,
+                storage,
+                client_settings,
+            })
         }
         (ViewSelector::Torrent { torrent_id }, ViewProjection::Summary) => {
             let old = previous.get(torrent_id).map(|model| &model.view);
@@ -205,6 +211,7 @@ pub(super) fn targeted_activity_patch(
                 upsert: vec![next_view.clone()],
                 removed: Vec::new(),
                 storage: None,
+                client_settings: None,
             })
         }
         (
@@ -276,6 +283,7 @@ pub(super) fn targeted_peer_patch(
                 upsert: vec![next_view.clone()],
                 removed: Vec::new(),
                 storage: None,
+                client_settings: None,
             })
         }
         (
@@ -329,6 +337,7 @@ pub(super) fn targeted_tracker_patch(
                 upsert: vec![next_view.clone()],
                 removed: Vec::new(),
                 storage: None,
+                client_settings: None,
             })
         }
         (
@@ -494,11 +503,13 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
                 upsert,
                 removed,
                 storage,
+                client_settings,
             },
             ViewPatch::TorrentList {
                 upsert: next_upsert,
                 removed: next_removed,
                 storage: next_storage,
+                client_settings: next_client_settings,
             },
         ) => {
             let mut values = upsert
@@ -520,6 +531,9 @@ pub(crate) fn coalesce_patch(current: &mut ViewPatch, next: &ViewPatch) -> bool 
             *removed = removed_ids.into_iter().collect();
             if next_storage.is_some() {
                 *storage = next_storage.clone();
+            }
+            if next_client_settings.is_some() {
+                *client_settings = next_client_settings.clone();
             }
             true
         }

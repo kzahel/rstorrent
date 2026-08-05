@@ -117,6 +117,7 @@ function cloneSnapshot(snapshot: ViewSnapshot): ViewSnapshot {
           ...snapshot.storage,
           roots: [...snapshot.storage.roots],
         },
+        client_settings: structuredClone(snapshot.client_settings),
       };
     case "torrent":
       return { ...snapshot };
@@ -181,6 +182,7 @@ function applyPatch(snapshot: ViewSnapshot, patch: ViewPatch): ViewSnapshot {
         type: "torrent_list",
         torrents: [...torrents.values()],
         storage: patch.storage ?? snapshot.storage,
+        client_settings: patch.client_settings ?? snapshot.client_settings,
       };
     }
     case "torrent":

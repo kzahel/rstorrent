@@ -27,7 +27,7 @@ use crate::diagnostics::{
     DiagnosticSeverity, DiagnosticStore, diagnostic_matches, interest_matches,
 };
 use crate::file_views::{FileCatalogState, FileProgressModel, FileView};
-use crate::settings::StorageSettingsSnapshot;
+use crate::settings::{ClientSettingsRuntimeView, StorageSettingsSnapshot};
 use crate::speed::SessionRateHistory;
 use crate::tracker_views::{TrackerCatalogState, TrackerViewModel};
 
@@ -59,6 +59,7 @@ pub(crate) struct HubState {
     pub(crate) revision: u64,
     pub(super) torrents: BTreeMap<String, TorrentModel>,
     storage: StorageSettingsSnapshot,
+    client_settings: ClientSettingsRuntimeView,
     disk: DiskSessionModel,
     dht: DhtInspectionView,
     speed: Arc<Mutex<SessionRateHistory>>,
@@ -126,6 +127,9 @@ impl ViewHub {
                     })
                     .collect(),
                 storage: snapshot.storage.clone(),
+                client_settings: ClientSettingsRuntimeView::from_configured(
+                    snapshot.client_settings.clone(),
+                ),
                 disk: DiskSessionModel::default(),
                 dht,
                 speed,
@@ -343,6 +347,7 @@ impl ViewHub {
             .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
         let previous = hub.torrents.clone();
         let previous_storage = hub.storage.clone();
+        let previous_client_settings = hub.client_settings.clone();
         let previous_disk = hub.disk.view(&hub.torrents);
         let mut next = BTreeMap::new();
         for torrent in &snapshot.torrents {
@@ -389,10 +394,16 @@ impl ViewHub {
         hub.revision = revision;
         hub.torrents = next;
         hub.storage = snapshot.storage.clone();
+        hub.client_settings
+            .set_configured(snapshot.client_settings.clone());
         let current_torrent_ids = hub.torrents.keys().cloned().collect::<BTreeSet<_>>();
         hub.disk.retain(&current_torrent_ids);
         let current_disk = hub.disk.view(&hub.torrents);
-        hub.publish_changes(&previous, Some(&previous_storage))?;
+        hub.publish_changes(
+            &previous,
+            Some(&previous_storage),
+            Some(&previous_client_settings),
+        )?;
         if previous_disk != current_disk {
             hub.publish_disk_changes(&previous_disk, &current_disk)?;
         }
@@ -580,7 +591,7 @@ impl ViewHub {
         };
         model.progress_inputs = inputs;
         model.view.progress = assess_progress(&model.snapshot, inputs);
-        hub.publish_changes(&previous, None)
+        hub.publish_changes(&previous, None, None)
     }
 
     pub(crate) fn set_discovery_activity(
@@ -605,7 +616,7 @@ impl ViewHub {
         model.progress_inputs.discovery_retry_scheduled = retry_scheduled;
         model.progress_inputs.discovery_exhausted = false;
         model.view.progress = assess_progress(&model.snapshot, model.progress_inputs);
-        hub.publish_changes(&previous, None)
+        hub.publish_changes(&previous, None, None)
     }
 
     pub(crate) fn record_peer_connections(
@@ -822,6 +833,7 @@ impl HubState {
                     .map(|torrent| torrent.view.clone())
                     .collect(),
                 storage: self.storage.clone(),
+                client_settings: self.client_settings.clone(),
             },
             (ViewSelector::Torrent { torrent_id }, ViewProjection::Summary) => {
                 ViewSnapshot::Torrent {
@@ -976,6 +988,7 @@ impl HubState {
         &mut self,
         previous: &BTreeMap<String, TorrentModel>,
         previous_storage: Option<&StorageSettingsSnapshot>,
+        previous_client_settings: Option<&ClientSettingsRuntimeView>,
     ) -> Result<(), SubscriptionError> {
         let revision = self.revision;
         self.retain_live_view_sets();
@@ -997,6 +1010,8 @@ impl HubState {
                 current,
                 previous_storage.filter(|storage| *storage != &self.storage),
                 &self.storage,
+                previous_client_settings.filter(|settings| *settings != &self.client_settings),
+                &self.client_settings,
             );
             if let Some(patch) = patch {
                 subscriber.enqueue_patch(revision, patch)?;
@@ -1020,6 +1035,8 @@ impl HubState {
                     current,
                     previous_storage.filter(|storage| *storage != &self.storage),
                     &self.storage,
+                    previous_client_settings.filter(|settings| *settings != &self.client_settings),
+                    &self.client_settings,
                 ) {
                     view_set.enqueue_patch(spec.view_id(), patch, revision)?;
                 }

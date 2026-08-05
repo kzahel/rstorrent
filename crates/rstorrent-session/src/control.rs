@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::settings::StorageSettingsSnapshot;
+use crate::settings::{ClientSettings, StorageSettingsSnapshot};
 
 pub const CONTROL_VERSION: u16 = 1;
 pub const MAX_REQUEST_ID_LENGTH: usize = 128;
@@ -86,6 +86,9 @@ pub enum Command {
     SetShowAddOptions {
         show: bool,
     },
+    SetClientSettings {
+        settings: ClientSettings,
+    },
     RemoveStorageRoot {
         storage_root: String,
     },
@@ -119,6 +122,7 @@ impl Command {
             Self::AddMagnet { .. }
                 | Self::SetDefaultStorageRoot { .. }
                 | Self::SetShowAddOptions { .. }
+                | Self::SetClientSettings { .. }
                 | Self::RemoveStorageRoot { .. }
                 | Self::Pause { .. }
                 | Self::Resume { .. }
@@ -283,6 +287,8 @@ pub struct ServiceSnapshot {
     pub revision: String,
     #[serde(default)]
     pub storage: StorageSettingsSnapshot,
+    #[serde(default)]
+    pub client_settings: ClientSettings,
     pub torrents: Vec<TorrentSnapshot>,
 }
 
@@ -490,6 +496,11 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
         Command::SetDefaultStorageRoot { storage_root }
         | Command::RemoveStorageRoot { storage_root } => {
             validate_identifier(storage_root, "storage root", MAX_ROOT_ID_LENGTH)?;
+        }
+        Command::SetClientSettings { settings } => {
+            settings
+                .validate()
+                .map_err(|error| (ErrorCode::InvalidRequest, error.to_string()))?;
         }
         Command::SetShowAddOptions { .. } => {}
         Command::Snapshot | Command::Shutdown => {}

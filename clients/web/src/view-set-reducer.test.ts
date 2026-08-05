@@ -6,6 +6,7 @@ import {
   ViewSetContinuityError,
   type ViewSetState,
 } from "./view-set-reducer";
+import { clientSettingsRuntimeFixture } from "./test-support/client-settings";
 
 const torrentId = "000102030405060708090a0b0c0d0e0f10111213";
 
@@ -94,6 +95,7 @@ describe("view-set reducer", () => {
             type: "torrent_list",
             torrents: [],
             storage: { roots: [], show_add_options: true },
+            client_settings: clientSettingsRuntimeFixture(),
           },
         },
       ]),
@@ -134,6 +136,53 @@ describe("view-set reducer", () => {
     });
   });
 
+  it("replaces client settings runtime state independently of torrent rows", () => {
+    let state = reduceUpdateBatch(
+      undefined,
+      batch("0", "1", [
+        {
+          type: "snapshot",
+          view_id: "library",
+          snapshot: {
+            type: "torrent_list",
+            torrents: [],
+            storage: { roots: [], show_add_options: true },
+            client_settings: clientSettingsRuntimeFixture(),
+          },
+        },
+      ]),
+    );
+    const configured = {
+      listener: { type: "automatic_loopback" as const },
+      peer_connection_limit: 320,
+      upload_slots: 12,
+    };
+    state = reduceUpdateBatch(
+      state,
+      batch("1", "2", [
+        {
+          type: "patch",
+          view_id: "library",
+          patch: {
+            type: "torrent_list",
+            upsert: [],
+            removed: [],
+            client_settings: {
+              ...clientSettingsRuntimeFixture(),
+              configured,
+              restart_required: true,
+            },
+          },
+        },
+      ]),
+    );
+    expect(state.views.library).toMatchObject({
+      type: "torrent_list",
+      torrents: [],
+      client_settings: { configured, restart_required: true },
+    });
+  });
+
   it("replaces the hash-only row when verified metadata supplies a name", () => {
     let state = reduceUpdateBatch(
       undefined,
@@ -145,6 +194,7 @@ describe("view-set reducer", () => {
             type: "torrent_list",
             torrents: [torrent(0)],
             storage: { roots: [], show_add_options: true },
+            client_settings: clientSettingsRuntimeFixture(),
           },
         },
       ]),
@@ -338,6 +388,7 @@ describe("view-set reducer", () => {
             type: "torrent_list",
             torrents: [torrent(0)],
             storage: { roots: [], show_add_options: true },
+            client_settings: clientSettingsRuntimeFixture(),
           },
         },
       ]),
@@ -356,6 +407,7 @@ describe("view-set reducer", () => {
       type: "torrent_list",
       torrents: [],
       storage: { roots: [], show_add_options: true },
+      client_settings: clientSettingsRuntimeFixture(),
     });
     state = reduceUpdateBatch(
       state,
@@ -371,6 +423,7 @@ describe("view-set reducer", () => {
       type: "torrent_list",
       torrents: [torrent(3)],
       storage: { roots: [], show_add_options: true },
+      client_settings: clientSettingsRuntimeFixture(),
     });
     state = reduceUpdateBatch(
       state,
@@ -507,6 +560,7 @@ describe("view-set reducer", () => {
           type: "torrent_list",
           torrents: [],
           storage: { roots: [], show_add_options: true },
+          client_settings: clientSettingsRuntimeFixture(),
         },
       },
     ]);
@@ -525,6 +579,7 @@ describe("view-set reducer", () => {
             type: "torrent_list",
             torrents: [torrent(0)],
             storage: { roots: [], show_add_options: true },
+            client_settings: clientSettingsRuntimeFixture(),
           },
         },
       ]),

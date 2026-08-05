@@ -1,6 +1,6 @@
 use rstorrent_engine::{IncomingTcpBootstrap, PeerBudgetConfig, UploadSchedulerConfig};
 
-use super::contract::{ClientSettings, ListenerPolicy};
+use super::contract::{ClientSettings, ClientSettingsRuntimeView, ListenerPolicy, ListenerStatus};
 
 impl ClientSettings {
     pub(crate) fn incoming_bootstrap(&self) -> IncomingTcpBootstrap {
@@ -24,5 +24,22 @@ impl ClientSettings {
             slots: usize::from(self.upload_slots),
             ..UploadSchedulerConfig::default()
         }
+    }
+}
+
+impl ClientSettingsRuntimeView {
+    pub(crate) fn from_configured(settings: ClientSettings) -> Self {
+        Self {
+            effective_peer_connection_limit: settings.peer_connection_limit,
+            configured: settings.clone(),
+            active: settings,
+            restart_required: false,
+            listener_status: ListenerStatus::Disabled,
+        }
+    }
+
+    pub(crate) fn set_configured(&mut self, configured: ClientSettings) {
+        self.restart_required = configured != self.active;
+        self.configured = configured;
     }
 }

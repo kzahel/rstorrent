@@ -10,21 +10,23 @@ use rstorrent_gateway::{
 use rstorrent_session::{
     ActivePiece, ActivePieceStageView, AddTorrentBytesRequest, ApiEncoding, ApiHello, ApiLimits,
     ApiVersion, ApplicationCall, ApplicationCallResult, CapabilityStatus, CatalogPageRequest,
-    CatalogPageView, Command, DeliveryMode, DeliveryPolicy, DhtBucketView, DhtInspectionView,
-    DhtLifecycleView, DhtLookupView, DhtNetworkPolicyView, DiagnosticCategory, DiagnosticEvent,
-    DiagnosticField, DiagnosticFilter, DiagnosticProfile, DiagnosticRetention, DiagnosticSeverity,
-    DiagnosticSubject, DiagnosticValue, DiskCheckpointStageView, DiskPieceStageView, DiskPieceView,
-    DiskPipelineView, DiskPressureView, ErrorCode, ErrorResponse, FileCatalogState, FileIndexRange,
-    FilePriority, FileSelectionIntent, FileSelectionView, FileView, IndexRange, OpenViewSetOptions,
-    OpenViewSetRequest, OpenViewSetResponse, PeerDirection, PeerDisconnectReason,
-    PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerRequestPhase, PeerRole, PeerSourceView,
-    PeerTransportKind, PeerView, ProgressAction, ProgressAssessment, ProgressDisposition,
-    ProgressPhase, ProgressReason, RemovalDataPolicy, RemovalState, RequestEnvelope, ResetReason,
-    ResponseEnvelope, ResponseOutcome, ServiceSnapshot, SpeedCurrentRate, SpeedHistoryView,
-    SpeedMetric, SpeedMetricAvailability, SpeedPersistenceState, SpeedRange, SpeedSeriesView,
-    StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot, StorageState,
-    SubscriptionSpec, SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView,
-    TorrentSnapshot, TorrentState, TorrentView, TrackerAnnounceEventView, TrackerCatalogState,
+    CatalogPageView, ClientSettings, ClientSettingsRuntimeView, Command, DeliveryMode,
+    DeliveryPolicy, DhtBucketView, DhtInspectionView, DhtLifecycleView, DhtLookupView,
+    DhtNetworkPolicyView, DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
+    DiagnosticProfile, DiagnosticRetention, DiagnosticSeverity, DiagnosticSubject, DiagnosticValue,
+    DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
+    ErrorCode, ErrorResponse, FileCatalogState, FileIndexRange, FilePriority, FileSelectionIntent,
+    FileSelectionView, FileView, IndexRange, ListenerBindFailureReason, ListenerPolicy,
+    ListenerStatus, OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
+    PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerRequestPhase,
+    PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
+    ProgressDisposition, ProgressPhase, ProgressReason, RemovalDataPolicy, RemovalState,
+    RequestEnvelope, ResetReason, ResponseEnvelope, ResponseOutcome, ServiceSnapshot,
+    SpeedCurrentRate, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,
+    SpeedPersistenceState, SpeedRange, SpeedSeriesView, StorageRootAvailability,
+    StorageRootSnapshot, StorageSettingsSnapshot, StorageState, SubscriptionSpec,
+    SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentSnapshot,
+    TorrentState, TorrentView, TrackerAnnounceEventView, TrackerCatalogState,
     TrackerNextActionView, TrackerSourceView, TrackerStatusView, TrackerTransportView, TrackerView,
     UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector,
     ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate, ViewUpdatePayload,
@@ -67,6 +69,21 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
          // Do not edit by hand.\n\n",
     );
     append::<Command>(&mut declarations)?;
+    append::<ListenerPolicy>(&mut declarations)?;
+    append::<ClientSettings>(&mut declarations)?;
+    append::<ListenerBindFailureReason>(&mut declarations)?;
+    append::<ListenerStatus>(&mut declarations)?;
+    append::<ClientSettingsRuntimeView>(&mut declarations)?;
+    append_default::<ClientSettings>(
+        &mut declarations,
+        "DEFAULT_CLIENT_SETTINGS",
+        "ClientSettings",
+    )?;
+    append_default::<ClientSettingsRuntimeView>(
+        &mut declarations,
+        "DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW",
+        "ClientSettingsRuntimeView",
+    )?;
     append::<FilePriority>(&mut declarations)?;
     append::<RemovalDataPolicy>(&mut declarations)?;
     append::<RemovalState>(&mut declarations)?;
@@ -186,6 +203,16 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
 
 fn append<T: TS>(output: &mut String) -> Result<(), std::fmt::Error> {
     writeln!(output, "export {}\n", T::decl(&Config::default()))
+}
+
+fn append_default<T: Default + Serialize>(
+    output: &mut String,
+    constant: &str,
+    type_name: &str,
+) -> Result<(), Box<dyn Error>> {
+    let value = serde_json::to_string(&T::default())?;
+    writeln!(output, "export const {constant}: {type_name} = {value};\n")?;
+    Ok(())
 }
 
 fn write_schema(output: &Path) -> Result<(), Box<dyn Error>> {
@@ -349,6 +376,7 @@ fn write_view_set_fixture(output: PathBuf) -> Result<(), Box<dyn Error>> {
             snapshot: ViewSnapshot::TorrentList {
                 torrents: vec![fixture_torrent(&torrent_id, 0)],
                 storage: Default::default(),
+                client_settings: Default::default(),
             },
         }],
     };
@@ -365,6 +393,7 @@ fn write_view_set_fixture(output: PathBuf) -> Result<(), Box<dyn Error>> {
                 upsert: vec![fixture_torrent(&torrent_id, 1)],
                 removed: Vec::new(),
                 storage: None,
+                client_settings: None,
             },
         }],
     };
@@ -385,6 +414,7 @@ fn write_view_set_fixture(output: PathBuf) -> Result<(), Box<dyn Error>> {
                 snapshot: ViewSnapshot::TorrentList {
                     torrents: vec![fixture_torrent(&torrent_id, 3)],
                     storage: Default::default(),
+                    client_settings: Default::default(),
                 },
             },
         ],

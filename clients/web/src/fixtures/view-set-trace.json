@@ -53,6 +53,27 @@
             "storage": {
               "roots": [],
               "show_add_options": true
+            },
+            "client_settings": {
+              "configured": {
+                "listener": {
+                  "type": "disabled"
+                },
+                "peer_connection_limit": 200,
+                "upload_slots": 8
+              },
+              "active": {
+                "listener": {
+                  "type": "disabled"
+                },
+                "peer_connection_limit": 200,
+                "upload_slots": 8
+              },
+              "restart_required": false,
+              "effective_peer_connection_limit": 200,
+              "listener_status": {
+                "type": "disabled"
+              }
             }
           }
         }
@@ -148,6 +169,27 @@
             "storage": {
               "roots": [],
               "show_add_options": true
+            },
+            "client_settings": {
+              "configured": {
+                "listener": {
+                  "type": "disabled"
+                },
+                "peer_connection_limit": 200,
+                "upload_slots": 8
+              },
+              "active": {
+                "listener": {
+                  "type": "disabled"
+                },
+                "peer_connection_limit": 200,
+                "upload_slots": 8
+              },
+              "restart_required": false,
+              "effective_peer_connection_limit": 200,
+              "listener_status": {
+                "type": "disabled"
+              }
             }
           }
         }

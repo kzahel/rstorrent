@@ -15,6 +15,10 @@ import type {
   ApplicationWebSocketFactory,
 } from "./websocket-view-client";
 import { WebSocketApplicationViewClient } from "./websocket-view-client";
+import {
+  clientSettingsFixture,
+  clientSettingsRuntimeFixture,
+} from "./test-support/client-settings";
 
 const viewSetId = "vs_000102030405060708090a0b0c0d0e0f";
 const clientInstanceId = "00000000000000000000000000000001";
@@ -508,6 +512,7 @@ function opened(id = viewSetId): OpenViewSetResponse {
             type: "torrent_list",
             torrents: [],
             storage: { roots: [], show_add_options: true },
+            client_settings: clientSettingsRuntimeFixture(),
           },
         },
       ],
@@ -556,6 +561,7 @@ function commandResponse(requestId: string): ResponseEnvelope {
       profile_id: "test",
       revision: "0",
       storage: { roots: [], show_add_options: true },
+      client_settings: clientSettingsFixture(),
       torrents: [],
     },
   };

@@ -14,7 +14,7 @@ use ts_rs::TS;
 use crate::control::{RemovalState, StorageState, TorrentState};
 use crate::diagnostics::{DiagnosticEvent, DiagnosticFilter, DiagnosticRetention};
 use crate::file_views::{FileCatalogState, FileView};
-use crate::settings::StorageSettingsSnapshot;
+use crate::settings::{ClientSettingsRuntimeView, StorageSettingsSnapshot};
 use crate::speed::{SpeedHistoryView, SpeedMetric, SpeedRange};
 use crate::tracker_views::{TrackerCatalogState, TrackerView};
 
@@ -1192,6 +1192,8 @@ pub enum ViewSnapshot {
     TorrentList {
         torrents: Vec<TorrentView>,
         storage: StorageSettingsSnapshot,
+        #[serde(default)]
+        client_settings: ClientSettingsRuntimeView,
     },
     Torrent {
         torrent: Option<TorrentView>,
@@ -1255,6 +1257,8 @@ pub enum ViewPatch {
         removed: Vec<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         storage: Option<StorageSettingsSnapshot>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        client_settings: Option<ClientSettingsRuntimeView>,
     },
     Torrent {
         torrent: Option<TorrentView>,

@@ -1,9 +1,12 @@
 use rstorrent_engine::{
     DEFAULT_CONNECTION_LIMIT, DEFAULT_INCOMING_CONNECTION_SLACK, DEFAULT_UNCHOKE_SLOTS,
 };
+use rusqlite::Connection;
 
 use super::{
     ClientSettings, ClientSettingsError, ClientSettingsRuntimeView, ListenerPolicy, ListenerStatus,
+    SettingsPersistenceError, create_client_settings, read_client_settings,
+    replace_client_settings,
 };
 
 #[test]
@@ -141,4 +144,63 @@ fn runtime_view_distinguishes_configured_active_effective_and_observed() {
             port: 41_000,
         }
     );
+}
+
+#[test]
+fn typed_persistence_round_trips_one_atomic_group() {
+    let mut connection = Connection::open_in_memory().unwrap();
+    let transaction = connection.transaction().unwrap();
+    create_client_settings(&transaction).unwrap();
+    assert_eq!(
+        read_client_settings(&transaction).unwrap(),
+        ClientSettings::default()
+    );
+    let configured = ClientSettings {
+        listener: ListenerPolicy::FixedLoopback { port: 42_000 },
+        peer_connection_limit: 1,
+        upload_slots: 0,
+    };
+    assert!(replace_client_settings(&transaction, &configured).unwrap());
+    assert!(!replace_client_settings(&transaction, &configured).unwrap());
+    transaction.commit().unwrap();
+    assert_eq!(read_client_settings(&connection).unwrap(), configured);
+}
+
+#[test]
+fn sqlite_constraints_and_decoder_reject_invalid_durable_shapes() {
+    let mut connection = Connection::open_in_memory().unwrap();
+    let transaction = connection.transaction().unwrap();
+    create_client_settings(&transaction).unwrap();
+    transaction.commit().unwrap();
+
+    assert!(
+        connection
+            .execute(
+                "UPDATE client_settings SET peer_connection_limit = 0 WHERE singleton = 1",
+                [],
+            )
+            .is_err()
+    );
+    connection
+        .pragma_update(None, "ignore_check_constraints", true)
+        .unwrap();
+    connection
+        .execute(
+            "UPDATE client_settings
+             SET listener_mode = 'fixed_loopback', listener_port = NULL
+             WHERE singleton = 1",
+            [],
+        )
+        .unwrap();
+    assert!(matches!(
+        read_client_settings(&connection),
+        Err(SettingsPersistenceError::Corrupt(_))
+    ));
+    connection
+        .execute("DELETE FROM client_settings", [])
+        .unwrap();
+    assert!(matches!(
+        read_client_settings(&connection),
+        Err(SettingsPersistenceError::Corrupt(_))
+    ));
 }

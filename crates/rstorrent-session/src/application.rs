@@ -713,7 +713,9 @@ impl ApplicationService {
             Command::RemoveStorageRoot { .. } => {
                 self.reload_storage_roots()?;
             }
-            Command::SetDefaultStorageRoot { .. } | Command::SetShowAddOptions { .. } => {}
+            Command::SetDefaultStorageRoot { .. }
+            | Command::SetShowAddOptions { .. }
+            | Command::SetClientSettings { .. } => {}
             Command::Shutdown => {
                 self.shutdown().await?;
             }
@@ -3716,11 +3718,11 @@ mod tests {
         handle_task_outcome,
     };
     use crate::{
-        AddTorrentBytesRequest, CONTROL_VERSION, Command, ConfiguredStorageRoot, DeliveryPolicy,
-        DhtLifecycleView, DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity, FilePriority,
-        OpenViewSetOptions, OpenViewSetRequest, ProgressDisposition, ProgressReason,
-        RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseOutcome, SessionStore,
-        StorageState, SubscriptionSpec, TorrentState, ViewDeliveryPolicy, ViewPatch,
+        AddTorrentBytesRequest, CONTROL_VERSION, ClientSettings, Command, ConfiguredStorageRoot,
+        DeliveryPolicy, DhtLifecycleView, DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity,
+        FilePriority, ListenerPolicy, OpenViewSetOptions, OpenViewSetRequest, ProgressDisposition,
+        ProgressReason, RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseOutcome,
+        SessionStore, StorageState, SubscriptionSpec, TorrentState, ViewDeliveryPolicy, ViewPatch,
         ViewProjection, ViewSelector, ViewSetError, ViewSetOwner, ViewSetUpdate, ViewSnapshot,
         ViewSpec, ViewUpdatePayload,
     };
@@ -4586,6 +4588,73 @@ mod tests {
                 .expect("serialize patch")
                 .contains(torrent_id)
         );
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn client_settings_mutation_publishes_configured_restart_state() {
+        let root = test_root("client-settings-view-patch");
+        let mut service = ApplicationService::open(config(&root))
+            .await
+            .expect("open service");
+        let subscription = service
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::TorrentList,
+                projection: ViewProjection::Summary,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 4096,
+                },
+                diagnostics: None,
+                catalog_page: None,
+            })
+            .expect("subscribe");
+        let initial = subscription.next_update().await.expect("initial");
+        let ViewUpdatePayload::Snapshot {
+            snapshot:
+                ViewSnapshot::TorrentList {
+                    client_settings: initial,
+                    ..
+                },
+        } = initial.payload
+        else {
+            panic!("expected settings snapshot");
+        };
+        assert!(!initial.restart_required);
+
+        let configured = ClientSettings {
+            listener: ListenerPolicy::AutomaticLoopback,
+            peer_connection_limit: 321,
+            upload_slots: 3,
+        };
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "set-client-settings-view".to_owned(),
+                expected_revision: Some("0".to_owned()),
+                command: Command::SetClientSettings {
+                    settings: configured.clone(),
+                },
+            })
+            .await
+            .expect("set settings");
+        let update = subscription.next_update().await.expect("settings patch");
+        let ViewUpdatePayload::Patch {
+            patch:
+                ViewPatch::TorrentList {
+                    client_settings: Some(runtime),
+                    ..
+                },
+        } = update.payload
+        else {
+            panic!("expected settings replacement patch");
+        };
+        assert_eq!(runtime.configured, configured);
+        assert_eq!(runtime.active, ClientSettings::default());
+        assert!(runtime.restart_required);
 
         service.shutdown().await.expect("shutdown");
         drop(service);

@@ -12,7 +12,7 @@ pub const MAX_PEER_CONNECTION_LIMIT: u32 = 2_000;
 pub const MAX_UPLOAD_SLOTS: u16 = 50;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ListenerPolicy {
     #[default]
     Disabled,
@@ -25,6 +25,7 @@ pub enum ListenerPolicy {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[serde(deny_unknown_fields)]
 pub struct ClientSettings {
     pub listener: ListenerPolicy,
     #[schemars(range(min = 1, max = 2_000))]
@@ -107,7 +108,7 @@ pub enum ListenerBindFailureReason {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ListenerStatus {
     #[default]
     Disabled,
@@ -123,6 +124,7 @@ pub enum ListenerStatus {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[serde(deny_unknown_fields)]
 pub struct ClientSettingsRuntimeView {
     pub configured: ClientSettings,
     pub active: ClientSettings,

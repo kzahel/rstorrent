@@ -217,6 +217,7 @@ mod tests {
             profile_id: "test".to_owned(),
             revision: "0".to_owned(),
             storage: Default::default(),
+            client_settings: Default::default(),
             torrents: Vec::new(),
         })
         .expect("view hub");

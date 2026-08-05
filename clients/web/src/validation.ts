@@ -14,6 +14,10 @@ import type {
   ViewSnapshot,
   ViewUpdate,
 } from "./api/generated/v1";
+import {
+  DEFAULT_CLIENT_SETTINGS,
+  DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW,
+} from "./api/generated/v1";
 import { assertApiSchema, SchemaError } from "./api/schema";
 
 const MAX_FRAME_BYTES = 512 * 1024;
@@ -375,9 +379,11 @@ function validateResponse(value: unknown): void {
 
 function validateServiceSnapshot(value: unknown): void {
   const snapshot = asRecord(value, "service snapshot");
+  snapshot.client_settings ??= structuredClone(DEFAULT_CLIENT_SETTINGS);
   identifier(snapshot.profile_id, "profile ID");
   decimal(snapshot.revision, "snapshot revision");
   validateStorageSettings(snapshot.storage);
+  validateClientSettings(snapshot.client_settings);
   const torrents = array(snapshot.torrents, "torrent snapshots");
   for (const item of torrents) {
     const torrent = asRecord(item, "torrent snapshot");
@@ -596,10 +602,16 @@ function validateDhtInspection(value: unknown): void {
 
 function validateViewSnapshot(value: unknown): void {
   const snapshot = asRecord(value, "view snapshot");
+  if (snapshot.type === "torrent_list") {
+    snapshot.client_settings ??= structuredClone(
+      DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW,
+    );
+  }
   switch (string(snapshot.type, "view snapshot type")) {
     case "torrent_list":
       array(snapshot.torrents, "torrent list").forEach(validateTorrentView);
       validateStorageSettings(snapshot.storage);
+      validateClientSettingsRuntime(snapshot.client_settings);
       break;
     case "torrent":
       if (snapshot.torrent !== null) validateTorrentView(snapshot.torrent);
@@ -749,6 +761,9 @@ function validateViewPatch(value: unknown): void {
       array(patch.removed, "torrent removals").forEach(torrentId);
       if (patch.storage !== undefined && patch.storage !== null) {
         validateStorageSettings(patch.storage);
+      }
+      if (patch.client_settings !== undefined && patch.client_settings !== null) {
+        validateClientSettingsRuntime(patch.client_settings);
       }
       break;
     case "torrent":
@@ -975,6 +990,92 @@ function validateStorageSettings(value: unknown): void {
     }
   }
   boolean(settings.show_add_options, "show add options");
+}
+
+function validateClientSettings(value: unknown): void {
+  const settings = asRecord(value, "client settings");
+  const listener = asRecord(settings.listener, "listener policy");
+  const listenerType = oneOf(listener.type, "listener policy type", [
+    "disabled",
+    "automatic_loopback",
+    "fixed_loopback",
+  ]);
+  if (listenerType === "fixed_loopback") {
+    boundedInteger(listener.port, "fixed listener port", 1_024, 65_535);
+  }
+  boundedInteger(
+    settings.peer_connection_limit,
+    "peer connection limit",
+    1,
+    2_000,
+  );
+  boundedInteger(settings.upload_slots, "upload slots", 0, 50);
+}
+
+function validateClientSettingsRuntime(value: unknown): void {
+  const runtime = asRecord(value, "client settings runtime");
+  validateClientSettings(runtime.configured);
+  validateClientSettings(runtime.active);
+  const restartRequired = boolean(
+    runtime.restart_required,
+    "client settings restart-required state",
+  );
+  if (restartRequired === clientSettingsEqual(runtime.configured, runtime.active)) {
+    throw new ContractError("client settings restart-required state is inconsistent");
+  }
+  boundedInteger(
+    runtime.effective_peer_connection_limit,
+    "effective peer connection limit",
+    1,
+    2_000,
+  );
+
+  const active = asRecord(runtime.active, "active client settings");
+  const listener = asRecord(active.listener, "active listener policy");
+  const status = asRecord(runtime.listener_status, "listener status");
+  const statusType = oneOf(status.type, "listener status type", [
+    "disabled",
+    "listening",
+    "bind_failed",
+  ]);
+  if (statusType === "listening") {
+    if (boundedString(status.address, "listener address", 64) !== "127.0.0.1") {
+      throw new ContractError("listener address is not IPv4 loopback");
+    }
+    const port = boundedInteger(status.port, "listener port", 1, 65_535);
+    if (listener.type === "disabled") {
+      throw new ContractError("disabled listener reports a listening status");
+    }
+    if (listener.type === "fixed_loopback" && listener.port !== port) {
+      throw new ContractError("fixed listener status reports another port");
+    }
+  } else if (statusType === "bind_failed") {
+    oneOf(status.reason, "listener bind failure reason", [
+      "address_in_use",
+      "permission_denied",
+      "address_unavailable",
+      "other",
+    ]);
+    boundedString(status.detail, "listener bind failure detail", 512);
+    if (listener.type === "disabled") {
+      throw new ContractError("disabled listener reports a bind failure");
+    }
+  } else if (listener.type !== "disabled") {
+    throw new ContractError("enabled listener reports a disabled status");
+  }
+}
+
+function clientSettingsEqual(left: unknown, right: unknown): boolean {
+  const leftSettings = asRecord(left, "configured client settings");
+  const rightSettings = asRecord(right, "active client settings");
+  const leftListener = asRecord(leftSettings.listener, "configured listener");
+  const rightListener = asRecord(rightSettings.listener, "active listener");
+  return (
+    leftSettings.peer_connection_limit === rightSettings.peer_connection_limit &&
+    leftSettings.upload_slots === rightSettings.upload_slots &&
+    leftListener.type === rightListener.type &&
+    leftListener.port === rightListener.port
+  );
 }
 
 function validateStorageRoot(value: unknown): string {

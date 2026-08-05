@@ -56,6 +56,7 @@ fn service_snapshot(revision: u64, verified: u32) -> ServiceSnapshot {
         profile_id: "test".to_owned(),
         revision: revision.to_string(),
         storage: Default::default(),
+        client_settings: Default::default(),
         torrents: vec![TorrentSnapshot {
             torrent_id: TORRENT_ID.to_owned(),
             storage_root: "downloads".to_owned(),
@@ -94,6 +95,7 @@ fn inner(now: Instant) -> Arc<ViewSetInner> {
                 snapshot: ViewSnapshot::TorrentList {
                     torrents: vec![torrent_view("aa", 0)],
                     storage: Default::default(),
+                    client_settings: Default::default(),
                 },
             }],
             now,
@@ -237,6 +239,7 @@ fn replays_until_acknowledged_then_emits_accumulated_patch() {
                 upsert: vec![torrent_view("aa", 1)],
                 removed: Vec::new(),
                 storage: None,
+                client_settings: None,
             },
             8,
         )
@@ -282,6 +285,7 @@ fn nonzero_delivery_interval_defers_accumulated_patch_without_a_task() {
                 snapshot: ViewSnapshot::TorrentList {
                     torrents: vec![torrent_view("aa", 0)],
                     storage: Default::default(),
+                    client_settings: Default::default(),
                 },
             }],
             now,
@@ -300,6 +304,7 @@ fn nonzero_delivery_interval_defers_accumulated_patch_without_a_task() {
                 upsert: vec![torrent_view("aa", 1)],
                 removed: Vec::new(),
                 storage: None,
+                client_settings: None,
             },
             8,
         )
