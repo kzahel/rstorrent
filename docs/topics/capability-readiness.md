@@ -140,10 +140,11 @@ physical upload, and terminal zero ownership.
 
 ### Now
 
-**Prove one UPnP IGD v2-mapped incoming TCP path end to end.** Create the
-bounded tactical and source dossier for an explicitly eligible non-loopback
-IPv4 listener, one session reachability coordinator, and generic UPnP IGD v2
-mapping against the mechanism observed on the current validation network.
+**Execute Tactical
+[`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md).** Add an
+explicitly eligible non-loopback IPv4 listener, one session reachability
+coordinator, and generic UPnP IGD v2 mapping against the mechanism observed on
+the current validation network.
 Require installed-mapping inspection, an exact transfer dialed by a controlled
 off-LAN peer, mapping removal, and terminal zero ownership. Do not add or claim
 PCP, NAT-PMP, tracker advertisement, or DHT self-announcement in this slice.

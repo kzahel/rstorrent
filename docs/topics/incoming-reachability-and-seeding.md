@@ -21,6 +21,14 @@ through exact transfer, removal, pause, and terminal zero ownership.
 Non-loopback binding, gateway mapping, mapped-endpoint advertisement, finite
 bandwidth, and seeding goals remain future slices.
 
+Tactical
+[`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md) is planned and
+authorized. It owns the next bounded outcome: an explicitly eligible
+non-loopback IPv4 listener, one session reachability coordinator, generic UPnP
+IGD v2 mapping, and an exact off-LAN incoming transfer through the observed
+mapping mechanism. Tracker/DHT advertisement and other mapping protocols stay
+outside that tactical.
+
 ## Purpose And Scope
 
 This topic owns the vertical product story from a locally bound BitTorrent
