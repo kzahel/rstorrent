@@ -5,6 +5,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.rstorrent.session.uniffi.ActivePiece
 import org.rstorrent.session.uniffi.ActivePieceStageView
+import org.rstorrent.session.uniffi.AdvertisedPeerEndpointStatus
 import org.rstorrent.session.uniffi.CatalogPageRequest
 import org.rstorrent.session.uniffi.CatalogPageView
 import org.rstorrent.session.uniffi.ClientSettings
@@ -327,6 +328,7 @@ class ProductStateReducerTest {
             ListenerStatus.Disabled,
             SessionUdpStatus.Unavailable,
             PortMappingStatus.Disabled,
+            AdvertisedPeerEndpointStatus.Unavailable,
         )
 
     private fun update(
