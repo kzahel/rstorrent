@@ -416,11 +416,36 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; removes redundant detail-tab count badges, gives every tab one
   interface-size-specific footprint, and retains the torrent/session divider
   plus horizontal overflow on constrained widths.
-
+- [`088-upnp-mapped-external-tcp-seeding.md`](088-upnp-mapped-external-tcp-seeding.md):
+  complete; adds bounded IPv4 UPnP IGD v2 mapping ownership and proves exact
+  payload seeding from an independently controlled off-LAN peer followed by
+  verified mapping deletion and failed reconnect.
+- [`089-coordinated-session-listen-sockets.md`](089-coordinated-session-listen-sockets.md):
+  complete; coordinates application-generation TCP and UDP bind policy,
+  migrates DHT to one bounded session UDP owner, and reports actual transport
+  endpoints separately before truthful peer advertisement.
+- [`090-peer-id-duplicate-connection-resolution.md`](090-peer-id-duplicate-connection-resolution.md):
+  planned; resolves simultaneous live connections by handshake peer ID with a
+  deterministic cross-direction winner and generation-fenced exact cleanup,
+  without treating peer ID as durable identity or merging endpoint records.
+- [`091-availability-ranked-piece-activation.md`](091-availability-ranked-piece-activation.md):
+  planned and first after the current **Now** item; retains partial-first work
+  and unique-piece protection, then adds an active-piece count ceiling and an
+  incrementally indexed rarest-first default with an in-order baseline, naive
+  test oracle, and adversarial maximum-geometry CPU/memory gates.
 - [`092-truthful-tracker-and-dht-peer-advertisement.md`](092-truthful-tracker-and-dht-peer-advertisement.md):
   complete; replaces provisional tracker/DHT peer-port claims with one
   generation-fenced advertised endpoint and retains discovery plus
   advertisement across the long-lived torrent runtime.
+- [`093-bep6-fast-request-lifecycle.md`](093-bep6-fast-request-lifecycle.md):
+  planned; implements the complete negotiated Fast request lifecycle,
+  including explicit rejection, exactly-one terminal responses, initial
+  availability forms, and bounded suggestions and allowed-fast state.
+- [`094-bounded-bep11-peer-exchange.md`](094-bounded-bep11-peer-exchange.md):
+  planned; adds a bounded general BEP 10 negotiation map and bidirectional PEX
+  with exact live add/drop events, private gating, source diversity, hostile
+  input limits, and controlled two-hop evidence.
+
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
 checkpoint live in [`../topics/capability-readiness.md`](../topics/capability-readiness.md)

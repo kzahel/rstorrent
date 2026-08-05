@@ -238,6 +238,10 @@ related unit test exists.
 | DL-C26 | A multi-file torrent changes between Skip and Normal before and after content starts | Metadata-only intake creates no payload artifact; Skip changes wanted-piece planning only after the old generation joins; Normal rechecks current sources, materializes verified skipped spans, and removes an empty part file without false have state. | Passing selective-storage, store, two-generation loopback, and bearer-authenticated controlled browser/libtorrent evidence from Tactical `063`. |
 | DL-C27 | Valid managed bytes exist while durable have says absent | Full recheck discovers, synchronizes when needed, and atomically restores those bits without peer payload. | Passing empty/stale bitmap, pre-sync, post-sync/pre-commit, and seed-unavailable restart evidence; the retained campaign recovered all 256 physically valid pieces with zero restart upload. |
 | DL-C28 | Process death crosses path or provider publication | Durable ownership identifies the one valid artifact side, fresh handles are fully rechecked, and only then may completion commit. | Passing path intent/rename/namespace gates with the seed unavailable, plus API 34 provider-rename death and fresh published-piece recheck. |
+| DL-C29 | Simultaneous incoming and outgoing sockets complete with the same remote peer ID | Both clients retain the same one usable connection; the loser releases every request, upload, descriptor, registry-generation, and task charge exactly once without merging endpoint reputation. | Planned in Tactical [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md); current runtime records peer IDs but does not resolve duplicate live connections by them. |
+| DL-C30 | Eligible inactive pieces have deliberately skewed live availability, including a maximum-geometry hostile case | Existing requestable partial work finishes first within explicit byte/count/partial-pressure limits, then the picker activates availability-one and lower-availability pieces before common pieces with bounded dispersed ties; optimized and naive choices agree, and active block assignment performs no inactive scan, rank rebuild, sort, or candidate allocation. | Planned in Tactical [`091`](../tactical/091-availability-ranked-piece-activation.md); current new-piece activation follows ascending incomplete-piece order and has no independent active-piece count ceiling. |
+| DL-C31 | A negotiated Fast peer chokes and explicitly rejects outstanding requests | Each request receives exactly one piece/reject outcome; exact rejection immediately releases and reassigns the block without waiting for timeout, while ordinary non-Fast choke behavior remains compatible. | Planned in Tactical [`093`](../tactical/093-bep6-fast-request-lifecycle.md); Fast negotiation and messages are currently absent. |
+| DL-C32 | A public torrent learns its only useful second-hop peer through a hostile-capable PEX source | Bounded PEX admits the eligible endpoint through the ordinary registry and completes, while rate/source/address limits hold and privacy-unknown or private torrents admit no PEX peer. | Planned in Tactical [`094`](../tactical/094-bounded-bep11-peer-exchange.md); PEX is currently absent. |
 
 ## Required Scheduler Observability
 
@@ -364,3 +368,10 @@ artifact. No singular `.rstorrent-part` artifact was created.
 
 Routine engine validation remains headless; no additional product UI is
 required by that slice.
+
+Planned Tacticals `090`, `091`, `093`, and `094` own DL-C29 through DL-C32
+after the authoritative readiness queue reaches them. These records do not
+reopen the completed liveness cases or authorize implementation. Full snub
+semantics and parole piece isolation remain unplanned until a stable
+adversarial case shows that the current one-probe stalled policy or corruption
+retry cannot complete within existing bounds.

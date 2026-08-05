@@ -185,6 +185,16 @@ and production remote access remain important. After core parity,
 common-denominator versus full-reference deltas and the protocol evidence
 matrix choose BEP breadth; visible novelty alone does not.
 
+Four planned post-**Now** download-liveness slices record the current default
+order without authorizing execution: availability-ranked activation in
+Tactical [`091`](../tactical/091-availability-ranked-piece-activation.md),
+peer-ID duplicate resolution in Tactical
+[`090`](../tactical/090-peer-id-duplicate-connection-resolution.md), the complete
+BEP 6 request lifecycle in Tactical
+[`093`](../tactical/093-bep6-fast-request-lifecycle.md), and bounded BEP 11 PEX
+in Tactical [`094`](../tactical/094-bounded-bep11-peer-exchange.md). Full snub
+and parole selection remain evidence-gated rather than preplanned slices.
+
 ## Capability Scoreboard
 
 ### Input, Identity, And Metadata
@@ -208,16 +218,16 @@ matrix choose BEP breadth; visible novelty alone does not.
 | Metainfo tracker tiers | Implemented | deterministic, runtime, interop, web | Outer `announce-list`/`announce`, tier and source survive restart; UDP rows are scheduled under the eight-operation ceiling and the controlled imported tracker completes content. | [`tracker-discovery`](tracker-discovery.md) |
 | HTTP and HTTPS trackers | Absent | deterministic retention only | Configured rows survive and are visible with redacted credentials and unsupported transport state, but no request, response, authentication, redirect, or proxy owner exists. | [`tracker-discovery`](tracker-discovery.md) |
 | DHT | Partial | deterministic, runtime, interop, live | A bounded IPv4 participant supports lookup, incoming queries, private gating, revalidated warm restart, repeated public metadata acquisition, and verified-public self-announcement of the selected explicit TCP port to K=8 token-bearing nodes. One session scheduler survives download completion; controlled DHT-only and mapped off-LAN seed discovery pass. IPv6 UDP operation remains absent. | [`dht-discovery`](dht-discovery.md) |
-| Peer exchange | Absent | none | BEP 11 depends on a larger live-peer set, extension dispatch, and hostile-source bounds. | [`peer-lifecycle`](peer-lifecycle.md) |
+| Peer exchange | Absent | none | BEP 11 depends on peer-ID duplicate resolution, truthful advertisement, bounded extension dispatch, and hostile-source controls recorded in planned Tactical [`094`](../tactical/094-bounded-bep11-peer-exchange.md). | [`peer-lifecycle`](peer-lifecycle.md), [`protocol-support`](protocol-support.md) |
 | Local service discovery | Absent | none | Interface, multicast, and local-network policy are unimplemented. | [`protocol-support`](protocol-support.md) |
 
 ### Peer And Swarm Lifecycle
 
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
-| Bounded peer registry and source merging | Implemented | deterministic, runtime | Records are volatile and peer-ID duplicate resolution is absent. | [`peer-lifecycle`](peer-lifecycle.md) |
-| Registry-backed Swarm inspection | Implemented | deterministic, runtime, interop, web | The bounded volatile registry, exact state counts, source merging, retry eligibility, and terminal cleanup are visible; durable history and peer-ID duplicate resolution remain absent. | [`peer-lifecycle`](peer-lifecycle.md), [`application-view-api`](application-view-api.md) |
-| Deterministic dial selection and guarded attempts | Implemented | deterministic, runtime | Selection is intentionally basic; peer-ID duplicate resolution and measured scoring are absent. | [`peer-lifecycle`](peer-lifecycle.md) |
+| Bounded peer registry and source merging | Implemented | deterministic, runtime | Records are volatile and peer-ID duplicate resolution is absent; planned Tactical [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) keeps endpoint records separate while admitting one live connection per peer ID. | [`peer-lifecycle`](peer-lifecycle.md) |
+| Registry-backed Swarm inspection | Implemented | deterministic, runtime, interop, web | The bounded volatile registry, exact state counts, source merging, retry eligibility, and terminal cleanup are visible; durable history and peer-ID duplicate resolution remain absent. Planned Tactical [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) closes only the live-connection gap. | [`peer-lifecycle`](peer-lifecycle.md), [`application-view-api`](application-view-api.md) |
+| Deterministic dial selection and guarded attempts | Implemented | deterministic, runtime | Selection is intentionally basic; peer-ID duplicate resolution and measured scoring are absent. Planned Tactical [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) adds post-handshake duplicate admission without introducing peer scoring. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Pre-content peer failover | Implemented | deterministic, runtime, interop, live | Bounded parallel metadata peers share one block owner; two tracker cohorts, 10/10 fresh-DHT owner runs, and 12/12 cross-catalog pairs pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Multiple simultaneous live peers | Implemented | deterministic, runtime, interop, live | Thirty established and thirty half-open attempts remain separate outbound torrent-local defaults beneath one shared session budget whose ordinary default is 200 after descriptor clamping and whose incoming-only slack is ten. Exact saturation, cancellation, mixed-direction release, and simultaneous incoming evidence pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Transfer request ownership and failover | Implemented | deterministic, runtime, interop, live | Ordinary blocks have one generation; strict endgame adds bounded duplicate attempts, first-response cancellation, and harmless losing payload. | [`download-correctness`](download-correctness.md) |
@@ -230,7 +240,7 @@ matrix choose BEP breadth; visible novelty alone does not.
 | --- | --- | --- | --- | --- |
 | Bounded 16 KiB block pipeline | Implemented | deterministic, runtime, interop, live | Per-connection depth adapts under distinct torrent request and resident-payload limits; desktop uses 256 MiB/32 MiB and Android 128 MiB/16 MiB, with no session-wide multi-torrent budget yet. | [`download-correctness`](download-correctness.md) |
 | Sequential multi-piece download | Implemented | deterministic, runtime, interop | BEP 3 `length`, one-entry `files`, and ordinary multi-file torrents share one download, durable resume, repair, and publication pipeline. | [`download-correctness`](download-correctness.md) |
-| Availability-aware piece selection | Partial | deterministic, runtime, interop | Swarm-wide availability, partial-first work, fairness, and unique-piece retention exist; rarest-first and measured scoring are absent. | [`download-correctness`](download-correctness.md) |
+| Availability-aware piece selection | Partial | deterministic, runtime, interop | Per-connection availability, partial-first work, fairness, and unique-piece retention exist; aggregate rarest-first ranking and measured scoring are absent. Planned Tactical [`091`](../tactical/091-availability-ranked-piece-activation.md) adds bounded live counts, an independent active-piece count ceiling, incrementally indexed rarity, a naive differential oracle, and maximum-geometry CPU/memory gates. | [`download-correctness`](download-correctness.md) |
 | Choke recovery | Implemented | deterministic, runtime, interop | Requests move to another peer and full choked sets are replaceable; mature choking/reputation policy is absent. | [`download-correctness`](download-correctness.md) |
 | Per-request timeout and slow-peer handling | Implemented | deterministic, runtime | Useful response samples derive a bounded inactivity deadline and reduce a stalled peer to one probe; broader snub reputation remains absent. | [`download-correctness`](download-correctness.md) |
 | Endgame | Implemented | deterministic, runtime, live | Strict duplicates, core cancels, late-loss safety, exact accounting, and public verified publication pass; throughput parity remains open. | [`download-correctness`](download-correctness.md) |

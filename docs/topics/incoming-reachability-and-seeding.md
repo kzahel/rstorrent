@@ -61,7 +61,12 @@ itself authorize or prioritize implementation.
 The topic does not make PEX, local service discovery, uTP, BEP 55 hole
 punching, incoming MSE/PE, a remote daemon, or broad public-swarm seeding part
 of the first slice. Those capabilities may depend on this foundation but keep
-their own protocol, ownership, security, and evidence requirements.
+their own protocol, ownership, security, and evidence requirements. Planned
+Tactical [`093`](../tactical/093-bep6-fast-request-lifecycle.md) records the
+Fast upload request/reject changes against the established upload owner, while
+planned Tactical [`094`](../tactical/094-bounded-bep11-peer-exchange.md)
+records PEX only after truthful advertisement and duplicate-connection
+resolution. Neither changes this campaign's current action.
 
 ## Current Truth
 
@@ -639,8 +644,10 @@ After completed Tactical `084`, the campaign direction does not yet settle:
   permission affect listening and mapping;
 - the eventual relationship among the DHT UDP port, future uTP, and UDP
   mapping; and
-- when incoming MSE/PE, IPv6 firewall pinholes, LSD, PEX, or BEP 55 become
-  independently justified tacticals.
+- when incoming MSE/PE, IPv6 firewall pinholes, LSD, or BEP 55 become
+  independently justified tacticals. PEX now has a planned but unauthorized
+  bounded slice in Tactical
+  [`094`](../tactical/094-bounded-bep11-peer-exchange.md).
 
 Tactical `084` resolves the initial default, bounds, persistence authority,
 restart semantics, and corrupt-row behavior. External-port and

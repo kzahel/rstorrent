@@ -422,12 +422,15 @@ multi-peer payload-upload ownership. Completed Tactical
 [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) owns ordinary
 incoming swarm/view integration and the per-torrent lifetime boundary it
 requires; both now pass controlled interoperability and resource closure.
-PEX, LSD, uTP, NAT traversal, persistent peer caches, mature peer-ID duplicate
-resolution, and dynamic VPN or metered policy remain separate tacticals.
-Completed Tactical [`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md)
-feeds the generation-fenced selected TCP endpoint into tracker and DHT
-discovery; endpoint selection remains distinct from observed incoming
-reachability.
+LSD, uTP, NAT traversal, persistent peer caches, and dynamic VPN or metered
+policy remain separate future tacticals. Planned Tactical
+[`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) records
+mature peer-ID duplicate resolution, and planned Tactical
+[`094`](../tactical/094-bounded-bep11-peer-exchange.md) records PEX after that
+identity boundary and truthful peer advertisement. Neither planned slice
+changes the authoritative readiness queue. Completed Tactical `092` now feeds
+the generation-fenced selected TCP endpoint into tracker and DHT discovery;
+endpoint selection remains distinct from observed incoming reachability.
 
 ## Current Evidence And Gaps
 
@@ -611,6 +614,12 @@ exact 4,195,035-byte externally dialed transfer through a verified mapping,
 followed by retained Swarm history and terminal resource closure.
 Tactical `092` additionally proves tracker-only, DHT-only, and mapped
 wire-port discovery into the same retained peer lifetime. Finite upload
-bandwidth, seeding goals, measured performance selection, peer-ID duplicate
-resolution, full parole selection, PEX, and persisted peer caches remain
-later work.
+bandwidth and seeding goals remain later work. Planned Tactical
+[`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) records the
+post-handshake duplicate-connection boundary, Tactical
+[`091`](../tactical/091-availability-ranked-piece-activation.md) records the
+measured picker refinement, and Tactical
+[`094`](../tactical/094-bounded-bep11-peer-exchange.md) records PEX's bounded
+discovery path. Full parole selection still requires adversarial evidence that
+the existing retry and suspicion policy cannot recover; persisted peer caches
+also remain unplanned.
