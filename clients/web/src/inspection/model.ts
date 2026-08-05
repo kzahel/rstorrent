@@ -155,6 +155,7 @@ export interface TorrentRow {
   readonly archived: boolean | null;
   readonly removalState: "pending" | "awaiting_platform" | "failed" | null;
   readonly deleteManagedDataSupported: boolean;
+  readonly forceRecheckAvailable: boolean;
   readonly infoHash: string;
   readonly error: string | null;
   readonly progressReason: string;

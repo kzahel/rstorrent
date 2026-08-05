@@ -11,6 +11,7 @@ export type IconName =
   | "play"
   | "plus"
   | "remove"
+  | "recheck"
   | "restore"
   | "settings"
   | "transfers"
@@ -80,6 +81,14 @@ function IconPaths({ name }: { readonly name: IconName }) {
         <>
           <path d="M4.75 6.25h10.5M8 3.75h4M6 6.25l.75 10h6.5l.75-10" />
           <path d="M8.25 9v4.5M11.75 9v4.5" />
+        </>
+      );
+    case "recheck":
+      return (
+        <>
+          <path d="M4.25 9.25a5.75 5.75 0 0 1 10.45-2.7" />
+          <path d="M14.75 3.75v3.5h-3.5M15.75 10.75A5.75 5.75 0 0 1 5.3 13.45" />
+          <path d="M5.25 16.25v-3.5h3.5" />
         </>
       );
     case "restore":

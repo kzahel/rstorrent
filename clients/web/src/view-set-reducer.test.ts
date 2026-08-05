@@ -31,6 +31,7 @@ function torrent(verified: number): TorrentView {
     },
     archived: false,
     delete_managed_data_supported: true,
+    force_recheck_available: true,
   };
 }
 

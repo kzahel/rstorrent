@@ -478,6 +478,7 @@ fn fixture_torrent(torrent_id: &str, verified: u32) -> TorrentView {
         archived: false,
         removal_state: None,
         delete_managed_data_supported: true,
+        force_recheck_available: true,
         error: None,
     }
 }

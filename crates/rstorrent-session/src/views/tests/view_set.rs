@@ -40,6 +40,7 @@ fn torrent_view(id: &str, verified: u32) -> TorrentView {
         archived: false,
         removal_state: None,
         delete_managed_data_supported: true,
+        force_recheck_available: true,
         error: None,
     }
 }
@@ -69,6 +70,7 @@ fn service_snapshot(revision: u64, verified: u32) -> ServiceSnapshot {
             archived: false,
             removal_state: None,
             delete_managed_data_supported: true,
+            force_recheck_available: true,
             error: None,
         }],
     }

@@ -957,6 +957,7 @@ pub struct TorrentView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub removal_state: Option<RemovalState>,
     pub delete_managed_data_supported: bool,
+    pub force_recheck_available: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }

@@ -248,6 +248,7 @@ function row(id: string, status: TorrentRow["status"]): TorrentRow {
     archived: false,
     removalState: null,
     deleteManagedDataSupported: true,
+    forceRecheckAvailable: true,
     infoHash: id,
     error: null,
     progressReason: "test",

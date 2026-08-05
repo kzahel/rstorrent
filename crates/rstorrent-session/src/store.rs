@@ -3741,7 +3741,7 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
     let mut statement = connection.prepare(
         "SELECT t.info_hash, t.storage_root, t.state, t.storage_state,
                 t.raw_info IS NOT NULL, t.piece_count, t.have_state,
-                t.error, t.archived, r.state, r.error
+                t.error, t.archived, r.state, r.error, t.managed_artifacts
          FROM torrents t
          LEFT JOIN removal_jobs r ON r.info_hash = t.info_hash
          ORDER BY t.info_hash",
@@ -3759,6 +3759,7 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
             row.get::<_, bool>(8)?,
             row.get::<_, Option<String>>(9)?,
             row.get::<_, Option<String>>(10)?,
+            row.get::<_, String>(11)?,
         ))
     })?;
     let mut torrents = Vec::new();
@@ -3773,6 +3774,9 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
             .ok_or_else(|| StoreError::DurableState("invalid torrent state".to_owned()))?;
         let mut storage_state = StorageState::parse(&row.3)
             .ok_or_else(|| StoreError::DurableState("invalid storage state".to_owned()))?;
+        let persisted_storage_state = storage_state;
+        let managed_artifacts = ManagedArtifactState::parse(&row.11)
+            .ok_or_else(|| StoreError::DurableState("invalid managed artifact state".to_owned()))?;
         let piece_count = match row.5 {
             Some(piece_count) => bounded_piece_count(piece_count)?,
             None => 0,
@@ -3824,6 +3828,16 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
                 None => None,
             },
             delete_managed_data_supported: true,
+            force_recheck_available: row.4
+                && row.9.is_none()
+                && matches!(
+                    persisted_storage_state,
+                    StorageState::Staging | StorageState::Published
+                )
+                && matches!(
+                    managed_artifacts,
+                    ManagedArtifactState::Staging | ManagedArtifactState::Published
+                ),
             error: row.10.or(row.7),
         });
     }
@@ -5954,6 +5968,7 @@ mod tests {
                 },
             })
             .expect("add source");
+        assert!(!store.snapshot().expect("metadata snapshot").torrents[0].force_recheck_available);
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record metadata");
@@ -6038,6 +6053,7 @@ mod tests {
         store
             .mark_storage_prepared(&torrent_id, StorageState::Staging)
             .expect("record managed staging");
+        assert!(store.snapshot().expect("staging snapshot").torrents[0].force_recheck_available);
         store.record_piece(&torrent_id, 0).expect("record old have");
 
         let request = RequestEnvelope {

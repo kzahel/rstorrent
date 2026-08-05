@@ -47,7 +47,8 @@
                   "actions": []
                 },
                 "archived": false,
-                "delete_managed_data_supported": true
+                "delete_managed_data_supported": true,
+                "force_recheck_available": true
               }
             ],
             "storage": {
@@ -116,7 +117,8 @@
                   "actions": []
                 },
                 "archived": false,
-                "delete_managed_data_supported": true
+                "delete_managed_data_supported": true,
+                "force_recheck_available": true
               }
             ],
             "removed": []
@@ -163,7 +165,8 @@
                   "actions": []
                 },
                 "archived": false,
-                "delete_managed_data_supported": true
+                "delete_managed_data_supported": true,
+                "force_recheck_available": true
               }
             ],
             "storage": {

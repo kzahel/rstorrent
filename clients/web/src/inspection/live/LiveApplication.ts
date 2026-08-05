@@ -908,6 +908,7 @@ function mapTorrent(torrent: TorrentView): TorrentRow {
     archived: torrent.archived,
     removalState: torrent.removal_state ?? null,
     deleteManagedDataSupported: torrent.delete_managed_data_supported,
+    forceRecheckAvailable: torrent.force_recheck_available,
     infoHash: torrent.torrent_id,
     error: torrent.error ?? null,
     progressReason: torrent.progress.reason.replaceAll("_", " "),

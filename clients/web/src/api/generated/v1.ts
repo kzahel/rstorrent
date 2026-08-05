@@ -43,7 +43,7 @@ export type TorrentState = "awaiting_metadata" | "awaiting_storage" | "checking"
 
 export type StorageState = "none" | "staging" | "prepared" | "published" | "needs_repair";
 
-export type TorrentSnapshot = { torrent_id: string, storage_root: string, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, skip_files: Array<number>, archived: boolean, removal_state?: RemovalState | null, delete_managed_data_supported: boolean, error?: string | null, };
+export type TorrentSnapshot = { torrent_id: string, storage_root: string, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, skip_files: Array<number>, archived: boolean, removal_state?: RemovalState | null, delete_managed_data_supported: boolean, force_recheck_available: boolean, error?: string | null, };
 
 export type StorageRootAvailability = "available" | "unavailable";
 
@@ -133,7 +133,7 @@ export type SpeedCurrentRate = { metric: SpeedMetric, bytes: string | null, };
 
 export type SpeedHistoryView = { captured_millis: string, history_epoch: string, range: SpeedRange, bucket_millis: string, start_millis: string, complete_through_millis: string, live: boolean, persistence: SpeedPersistenceState, current: Array<SpeedCurrentRate>, series: Array<SpeedSeriesView>, catalog: Array<SpeedMetricAvailability>, };
 
-export type TorrentView = { torrent_id: string, display_name?: string | null, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, requested_bytes: string, received_bytes: string, stored_bytes: string, active_peer_connections: number, configured_tracker_count?: number | null, payload_download_rate_bytes: string, progress: ProgressAssessment, archived: boolean, removal_state?: RemovalState | null, delete_managed_data_supported: boolean, error?: string | null, };
+export type TorrentView = { torrent_id: string, display_name?: string | null, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, requested_bytes: string, received_bytes: string, stored_bytes: string, active_peer_connections: number, configured_tracker_count?: number | null, payload_download_rate_bytes: string, progress: ProgressAssessment, archived: boolean, removal_state?: RemovalState | null, delete_managed_data_supported: boolean, force_recheck_available: boolean, error?: string | null, };
 
 export type CapabilityStatus = "available" | "unavailable" | "unsupported";
 

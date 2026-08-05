@@ -565,6 +565,7 @@ impl TorrentModel {
                 archived: snapshot.archived,
                 removal_state: snapshot.removal_state,
                 delete_managed_data_supported: snapshot.delete_managed_data_supported,
+                force_recheck_available: snapshot.force_recheck_available,
                 error: snapshot.error.clone(),
             },
             snapshot: snapshot.clone(),

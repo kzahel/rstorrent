@@ -3583,6 +3583,10 @@
             "null"
           ]
         },
+        "force_recheck_available": {
+          "default": false,
+          "type": "boolean"
+        },
         "metadata_available": {
           "type": "boolean"
         },
@@ -3686,6 +3690,9 @@
             "null"
           ]
         },
+        "force_recheck_available": {
+          "type": "boolean"
+        },
         "metadata_available": {
           "type": "boolean"
         },
@@ -3748,7 +3755,8 @@
         "payload_download_rate_bytes",
         "progress",
         "archived",
-        "delete_managed_data_supported"
+        "delete_managed_data_supported",
+        "force_recheck_available"
       ],
       "type": "object"
     },

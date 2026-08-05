@@ -309,6 +309,8 @@ pub struct TorrentSnapshot {
     pub removal_state: Option<RemovalState>,
     #[serde(default)]
     pub delete_managed_data_supported: bool,
+    #[serde(default)]
+    pub force_recheck_available: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
