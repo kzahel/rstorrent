@@ -149,16 +149,19 @@ reconnect, and terminal-zero evidence pass.
 
 ### Now
 
-**Plan the bounded mapped-endpoint advertisement slice.** Feed the current
-eligible listener or verified external mapping into tracker announces and DHT
-self-announcement, then prove correction and withdrawal across mapping and
-session lifecycle. Tactical
-[`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md) has supplied the
-required physical reachability evidence; do not reintroduce an independent
-port constant.
+**Execute coordinated session listen sockets.** Planned Tactical
+[`089`](../tactical/089-coordinated-session-listen-sockets.md) persists a
+user-editable preferred port, coordinates TCP and UDP allocation with bounded
+libtorrent-informed fallback, moves DHT behind one session UDP receive owner,
+and exposes actual TCP and UDP endpoints separately. This is the prerequisite
+for mapped-endpoint tracker and DHT advertisement; do not reintroduce an
+independent port constant or a `listener + 1` convention.
 
 ### Next
 
+- Feed the current eligible listener or verified external mapping into tracker
+  announces and DHT self-announcement, then prove correction and withdrawal
+  across mapping and session lifecycle.
 - Add PCP and NAT-PMP only with their own bounded tactical and suitable
   controlled or physical gateway evidence; pinned source inspection is not a
   support claim.

@@ -243,8 +243,12 @@ path. Supporting one path does not justify claiming the others.
 
 The initial TCP campaign must not invent a `listener + 1` UDP convention.
 RSTorrent's DHT currently owns an independently selected ephemeral UDP port,
-and uTP is absent. UDP mapping waits for an actual UDP capability whose owner
-and advertised-port semantics are defined.
+and uTP is absent. Tactical
+[`089`](../tactical/089-coordinated-session-listen-sockets.md) will replace
+that shape with a libtorrent-informed session socket set: a persisted preferred
+port, coordinated TCP/UDP allocation, one bounded UDP receive owner, and DHT
+transport consumption. UDP mapping still waits for an actual advertisable UDP
+capability.
 
 ### Configuration, actual state, and evidence remain distinct
 
@@ -264,7 +268,8 @@ The campaign should use explicit settings rather than one ambiguous
 
 | Setting or policy | Meaning |
 | --- | --- |
-| Listener policy | `Disabled`, OS-selected `Automatic`, or `Fixed` local TCP port. |
+| Listener policy | `Disabled`, preferred-with-bounded-fallback `Automatic`, or exact `Fixed` local TCP port. |
+| Preferred listen port | First TCP/UDP candidate for automatic listening; default `6881`, restart-applied, and not an actual endpoint. |
 | Pending-handshake limit | Maximum unauthenticated sockets admitted before torrent routing. |
 | Incoming-connection limit | Maximum established inbound peers, coordinated with total connection budgets. |
 | Upload-slot limit | Maximum peers currently allowed to receive requested payload. |
@@ -454,7 +459,21 @@ codecs and state transitions precede scripted gateway servers. Physical-router
 evidence remains environment-scoped, and mapping success alone is not an
 external incoming-connectivity claim.
 
-### 7. Truthful tracker and DHT reachability
+### 7. [Coordinated session listen sockets](../tactical/089-coordinated-session-listen-sockets.md) — planned
+
+Before advertisement, replace the independent TCP and DHT UDP bind paths with
+one application-generation allocator and one UDP receive owner. Automatic
+listening starts from a persisted preferred port, tries the next ten candidates
+under the pinned libtorrent policy, then uses an OS-selected port. UDP begins
+from the actual TCP port but may diverge after a UDP-only conflict. Exact fixed
+mode either binds both transports to its configured port or reports failure.
+
+DHT consumes a bounded route from the shared UDP owner. The slice exposes
+configured preference, actual TCP, actual UDP, and mapped external TCP as
+separate facts and proves joined shutdown. It deliberately does not replace
+the tracker constant, send DHT `announce_peer`, implement uTP, or map UDP.
+
+### 8. Truthful tracker and DHT reachability
 
 Only after the reachability coordinator has a current eligible listener and,
 where required, an authoritative external mapping should public discovery
@@ -474,7 +493,7 @@ without an explicit peer hint. BEP 10 listen-port advertisement and LSD may
 be added here only if their full bounds and private-policy behavior remain a
 coherent part of the slice; otherwise they stay separate.
 
-### 8. Product settings, status, and platform evidence
+### 9. Product settings, status, and platform evidence
 
 Expose the proven semantic settings and reachability states through the
 appropriate product surfaces. Desktop/web and Android may present different
@@ -595,8 +614,12 @@ long-lived per-torrent peer owner and proves it through truthful incoming
 projection in the ordinary Swarm/Peers model. Tactical
 [`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md) completes the
 non-loopback listener, session reachability owner, UPnP IGD v2 mapping, and
-externally dialed exact TCP seeding proof. The next reachability slice should
-replace provisional tracker port `6881` with the current advertised endpoint
-and add eligible DHT self-announcement, including mapping-change correction
-and advertisement-before-mapping/listener shutdown. PCP and NAT-PMP remain
-later independent slices until they have suitable runtime evidence.
+externally dialed exact TCP seeding proof. Planned Tactical
+[`089`](../tactical/089-coordinated-session-listen-sockets.md) is now the
+prerequisite next slice: persist the preferred port, coordinate TCP and UDP,
+move DHT behind one bounded session UDP owner, and expose actual endpoints.
+After it completes, the following reachability slice should replace the
+provisional tracker port with the current advertised endpoint and add eligible
+DHT self-announcement, including mapping-change correction and
+advertisement-before-mapping/listener shutdown. PCP and NAT-PMP remain later
+independent slices until they have suitable runtime evidence.
