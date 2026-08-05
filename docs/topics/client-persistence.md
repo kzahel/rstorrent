@@ -29,7 +29,10 @@ restore bounded path-backed seeding without a schema change. Tactical `081`
 advances the store to schema version `8` and implements the accepted source
 boundary: exact original magnet or outer-metainfo input is provenance, while
 hash-authorized `raw_info`, normalized trackers and hints, and ordinary resume
-state remain operational SQLite authority.
+state remain operational SQLite authority. Tactical `084` advances the store
+to schema version `9` with one constrained typed client-settings singleton and
+atomic durable full-group mutation for restart-applied listener, connection,
+and upload-slot intent.
 
 ## Scope
 
@@ -531,12 +534,12 @@ successful mutation unreadable after upgrade.
   required before a later fast-resume path may skip hashing.
 - How completed payload moved outside the application is deliberately
   relocated or rediscovered.
-- Planned Tactical
+- Tactical
   [`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
-  defines a typed SQLite singleton and atomic full-group mutation for loopback
-  listener policy, the ordinary global peer ceiling, and payload upload slots.
-  Finite bandwidth, durable upload totals, ratio/time seeding goals, and live
-  setting application remain later boundaries.
+  implements a typed SQLite singleton and atomic full-group mutation for
+  loopback listener policy, the ordinary global peer ceiling, and payload
+  upload slots. Finite bandwidth, durable upload totals, ratio/time seeding
+  goals, and live setting application remain later boundaries.
 - JSTorrent migration is accepted as an explicit user-initiated semantic
   import into one selected backend, not in-place reuse of the legacy database
   or live synchronization between backends. The exact supported source
@@ -623,6 +626,15 @@ after download-task completion, restores it after application restart, and
 generation-fences pause, archive, recheck, selection, removal, and shutdown.
 Application and controlled process evidence verifies exact payload across
 restart without adding a schema, platform read path, or detached service.
+
+[`../tactical/084-persisted-client-connection-and-seeding-settings.md`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
+adds schema version `9`, migrates older profiles to disabled/200/eight, and
+fails closed on missing or malformed typed rows. Full-group validation,
+revision, no-op, replay, conflict, stale request, SQLite rollback, ephemeral
+rejection, reopen, and configured-versus-active evidence pass. A temporary
+durable profile preserves automatic/37/one through ordinary gateway shutdown
+and reopen, then seeds verified content before a second fixed-bind failure and
+command-path repair cycle.
 
 This evidence does not broaden into a general multi-torrent scheduler, stable
 public wire protocol, UI settings catalog, remote listener,

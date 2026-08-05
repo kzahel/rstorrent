@@ -130,21 +130,19 @@ payload artifacts.
 
 ### Now
 
-**Review and authorize Tactical `084`, persisted client connection and seeding
-settings.** Tactical
-[`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
-plans one typed, atomic, restart-applied settings group for loopback listener
-policy, the global peer ceiling, and payload upload slots. It carries the group
-through SQLite, existing application transports and views, startup enforcing
-owners, and the shared browser/Tauri Settings surface while leaving internal
-safety limits, bandwidth, seeding goals, advertisement, and public
-reachability out of scope.
+**Plan one bounded incoming-peer projection slice.** Tactical
+[`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md) is
+complete: the typed atomic loopback-listener/global-peer/upload-slot group now
+persists through SQLite, generic application transports and views, enforcing
+restart owners, and the shared browser/Tauri Settings surface. The next slice
+should reconcile accepted incoming generations with the ordinary bounded
+Swarm/Peers presentation without widening listener scope or retaining a
+second peer authority.
 
 ### Next
 
-- Integrate incoming peers into ordinary bounded Swarm/Peers presentation if
-  the settings tactical can prove lifecycle and projection ownership without
-  widening listener scope.
+- Derive truthful tracker/DHT peer-port advertisement from an actual usable
+  listener without implying public reachability or gateway mapping.
 
 ### Later
 
@@ -192,7 +190,7 @@ matrix choose BEP breadth; visible novelty alone does not.
 | Pre-content peer failover | Implemented | deterministic, runtime, interop, live | Bounded parallel metadata peers share one block owner; two tracker cohorts, 10/10 fresh-DHT owner runs, and 12/12 cross-catalog pairs pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Multiple simultaneous live peers | Implemented | deterministic, runtime, interop, live | Thirty established and thirty half-open attempts remain separate outbound torrent-local defaults beneath one shared session budget whose ordinary default is 200 after descriptor clamping and whose incoming-only slack is ten. Exact saturation, cancellation, mixed-direction release, and simultaneous incoming evidence pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Transfer request ownership and failover | Implemented | deterministic, runtime, interop, live | Ordinary blocks have one generation; strict endgame adds bounded duplicate attempts, first-response cancellation, and harmless losing payload. | [`download-correctness`](download-correctness.md) |
-| Incoming peer connections | Implemented | deterministic, runtime, interop | One joined IPv4 loopback listener has a five-entry backlog, eight pending handshake slots, 1,024 generation-fenced registrations, and bounded multi-peer established ownership under the shared effective-200-plus-ten-slack budget. Two RSTorrent and two libtorrent clients overlap successfully. Incoming peers are not yet integrated into ordinary Swarm/Peers views; non-loopback binding, persisted settings, advertisement, and NAT mapping are absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
+| Incoming peer connections | Implemented | deterministic, runtime, interop, web | One joined IPv4 loopback listener has a five-entry backlog, eight pending handshake slots, 1,024 generation-fenced registrations, and bounded multi-peer ownership under the shared effective-plus-ten-slack budget. Typed disabled/automatic/fixed policy, 1--2,000 peers, and 0--50 slots persist atomically and apply across restart; the production browser proof seeds exact content and repairs a held fixed-port conflict. Incoming peers are not yet integrated into ordinary Swarm/Peers views; non-loopback binding, advertisement, and NAT mapping are absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
 | Peer reputation and integrity attribution | Partial | deterministic, runtime, live | Exact connection generations receive bounded asymmetric trust; a sole corrupt source is banned and ambiguous sources are only suspected, while full parole selection and persistence are absent. | [`download-correctness`](download-correctness.md) |
 
 ### Content Transfer And Completion
@@ -207,7 +205,7 @@ matrix choose BEP breadth; visible novelty alone does not.
 | Endgame | Implemented | deterministic, runtime, live | Strict duplicates, core cancels, late-loss safety, exact accounting, and public verified publication pass; throughput parity remains open. | [`download-correctness`](download-correctness.md) |
 | Hash-failure recovery | Implemented | deterministic, runtime, interop, live | A failed v1 generation resets the whole piece with bounded contributors; v2 block-level recovery and full parole selection are absent. | [`download-correctness`](download-correctness.md) |
 | Reliable completion on ordinary swarms | Partial | deterministic, runtime, interop, live | Multi-peer liveness, endgame, corrupt-generation retry, and bounded storage completion pass, but completion latency is not yet comparable and public corruption was not induced. | [`download-correctness`](download-correctness.md) |
-| Payload upload and seeding | Implemented | deterministic, runtime, interop | Completed published path storage serves exact verified/readable bitfields and bounded 16-KiB requests to multiple peers under eight session slots with one optimistic grant, 2,000 descriptors per peer, ten reads, the shared 40-handle pool, and a 528,396-byte/64-descriptor writer bound. Exact peer/torrent/session physical counters and rates pass simultaneous two-RSTorrent/two-libtorrent evidence. Finite bandwidth, ratio/time goals, incomplete-torrent upload, platform-storage evidence, public reachability, and persisted settings remain absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`protocol-support`](protocol-support.md) |
+| Payload upload and seeding | Implemented | deterministic, runtime, interop, web | Completed published path storage serves exact verified/readable bitfields and bounded 16-KiB requests to multiple peers under restart-applied 0--50 session slots, with default eight and one optimistic grant, 2,000 descriptors per peer, ten reads, the shared 40-handle pool, and a 528,396-byte/64-descriptor writer bound. Exact multi-peer accounting passes, and the production browser restart proof enforces one slot while seeding 2 MiB to outbound-only libtorrent. Finite bandwidth, ratio/time goals, incomplete-torrent upload, platform-storage evidence, and public reachability remain absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`protocol-support`](protocol-support.md) |
 
 ### Integrity, Storage, And Resume
 

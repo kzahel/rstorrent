@@ -127,6 +127,21 @@ The harness creates and removes temporary application, browser, seed, and
 download state, uses the pinned Python libtorrent environment, verifies
 payload SHA-1, and requires every child process to join.
 
+Run the durable client-settings restart and incoming-seeding proof with:
+
+```bash
+source ~/.profile
+uv run --project tests/interop --locked \
+  python tests/interop/client_settings_restart.py
+```
+
+This loopback-only harness drives the production web build and ordinary
+authenticated gateway through four application generations. It persists a
+nondefault listener/connection/slot group, seeds verified content to an
+outbound-only libtorrent client after restart, recovers a real fixed-port bind
+conflict through the normal command path, and asserts bounded high-water and
+zero-owner shutdown observations.
+
 Add `--disk-pressure` to run the isolated Tactical `044` storage proof. It
 uses only loopback traffic, injects a bounded slow-write profile into the
 unauthenticated development gateway, verifies high/low pressure recovery and

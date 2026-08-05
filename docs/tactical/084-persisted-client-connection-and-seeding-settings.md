@@ -1,7 +1,8 @@
 # Tactical 084: Persisted Client Connection And Seeding Settings
 
-Status: In progress. Planned on 2026-08-04 and authorized for autonomous
-implementation on 2026-08-05. Gates 1 through 4 are complete; Gate 5 remains.
+Status: Complete. Planned on 2026-08-04, authorized for autonomous
+implementation on 2026-08-05, and completed on 2026-08-05. All five gates
+and the stopping condition pass.
 
 Topics: `incoming-reachability-and-seeding`, `client-persistence`,
 `application-control`, `application-view-api`, `client-surfaces`,
@@ -81,8 +82,6 @@ ignored session library tests, two throughput-profile tests, the incoming-seed
 test, four session CLI tests, session clippy with warnings denied, 164 non-
 skipped web tests, and TypeScript type checking passed.
 
-The restarted headless product evidence remains for Gate 5.
-
 Gate 4 carries the generated runtime view through the live, demo, and Zustand
 state boundary and maps one semantic `set_client_settings` command through
 `LiveApplication`'s existing generic controller. An accepted mutation requests
@@ -121,6 +120,42 @@ runtime view, status, command, snapshot, and patch Kotlin values; native API-28
 release builds passed for x86_64 and arm64-v8a, and `assembleDebug` plus the
 debug JVM unit suite passed after its explicit torrent-list fixtures adopted
 the new generated field. No Compose settings UI was added.
+
+Gate 5 drives the production React build and ordinary authenticated browser
+gateway through four joined application generations on one temporary durable
+profile. The first generation downloaded and verified 2,097,152 bytes from a
+controlled libtorrent seed, atomically saved automatic loopback/37 peers/one
+slot, and showed configured intent distinct from the still-disabled runtime.
+The next generation reopened those exact active values, exposed its actual
+nonzero loopback port, and seeded the exact payload to an outbound-only
+libtorrent client with SHA-1
+`4ae63e2c60d424a93353b7eeafbc2bb25654ae36`.
+
+The harness then saved a separate fixed port, held it with an independent
+loopback socket, reopened the application into the typed address-in-use state
+without listener owners, repaired the policy to automatic through the same
+semantic command path, and reopened successfully. All four Settings phases
+had zero serious or critical Axe findings; the first run also exposed and
+corrected insufficient restart-warning contrast.
+
+The seeding generation recorded configured/effective connection limits
+37/37 with ten incoming slack; high water was one pending, one established,
+one total connection, zero regular plus one optimistic upload grant, one total
+slot, 64 queued requests/1,048,576 queued bytes, one read/16,384 read bytes,
+16,397 writer bytes, and exactly 2,097,152 physical payload bytes. The shared
+storage pool retained its 40-handle limit and reached 40 owned handles during
+the fixture; immediately before shutdown one handle and one cache entry
+remained, and after joined shutdown incoming owner, owned handles, cache
+entries, platform requests, and gateway application connections were all
+zero.
+
+The final matrix passed workspace formatting, clippy across all targets with
+warnings denied, all workspace tests, generated-contract regeneration with no
+drift, 168 web tests with two existing skips, TypeScript checking, production
+build and CSP scan, the controlled four-generation Playwright/libtorrent
+scenario, and `git diff --check`. Gate 4's final platform-consumer evidence
+remains the no-window desktop all-target build, Android release builds for
+x86_64 and arm64-v8a, `assembleDebug`, and the debug JVM suite.
 
 ## Decision And Motivation
 

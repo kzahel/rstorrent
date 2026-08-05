@@ -1,10 +1,10 @@
 # Code Organization And Refactoring
 
-Status: Living guidance and repository snapshot, refreshed on 2026-08-04
+Status: Living guidance and repository snapshot, refreshed on 2026-08-05
 after completed Tacticals
 [`079`](../tactical/079-engine-driver-source-shape.md) and
-[`080`](../tactical/080-session-view-subsystem-boundaries.md), with the next
-feature-driven seam selected by planned Tactical
+[`080`](../tactical/080-session-view-subsystem-boundaries.md), and after the
+feature-driven settings seam completed by Tactical
 [`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md).
 
 Topic: `code-organization-and-refactoring`
@@ -63,9 +63,9 @@ splitting the 1,706-line hub merely because it remains the largest child; it
 now has one coherent coordinator/registry owner and focused lower seams.
 
 Tacticals `078` and `082` implemented the feature-driven incoming and upload
-owners without enlarging the download driver. Planned Tactical
+owners without enlarging the download driver. Tactical
 [`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
-selects the next concrete seam: one private session settings facade with
+completes the next concrete seam: one private session settings facade with
 portable contract, borrowed-transaction persistence helpers, deterministic
 runtime conversion, and focused tests. It preserves `ApplicationService` and
 `SessionStore` ownership, moves the existing storage-settings DTO family
@@ -260,18 +260,15 @@ first seeding slice deliberately excludes Android product work.
 
 ## Near-Term Recommendation
 
-There should not be one umbrella refactor tactical.
-
-- Tactical `080` is complete; do not immediately continue splitting the view
-  hub or its contracts.
-- If the next work is the already planned seeding capability, implement
-  Tactical `078` directly; its owner map already includes the bounded
-  extractions the feature needs.
-- Reassess selective storage immediately after `078` exposes immutable seed
-  reads. It remains the leading engine-only refactor candidate.
-
-This ordering keeps refactoring evidence-driven while still preventing known
-two-way dependencies and mixed owners from accumulating silently.
+There should not be one umbrella refactor tactical. Tactical `084` confirms
+that the private-child-module default works: settings contract, SQL helpers,
+and runtime conversion became independently testable while the store and
+application retained their real owners. The next incoming-peer projection
+slice should use the existing incoming and view facades and extract another
+boundary only if concrete ownership or deterministic-test pressure appears.
+Selective storage remains the leading engine-only refactor candidate when a
+feature next changes its large coordinator; size alone does not authorize the
+work.
 
 ## Maintenance Contract
 

@@ -6,11 +6,12 @@ Status: Tacticals
 [`078`](../tactical/078-local-single-peer-tcp-seeding.md) and
 [`082`](../tactical/082-bounded-multi-peer-upload-ownership.md) complete local
 incoming TCP seeding through a bounded multi-peer upload owner with exact
-physical-payload accounting. Planned Tactical
+physical-payload accounting. Tactical
 [`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
-defines the first persisted listener, connection-limit, and upload-slot
-settings slice. Actual-port advertisement, non-loopback binding, finite
-bandwidth, seeding goals, and NAT mapping remain future slices.
+completes the first persisted listener, connection-limit, and upload-slot
+settings slice through the shared product surface and restarted controlled
+seeding. Actual-port advertisement, non-loopback binding, finite bandwidth,
+seeding goals, and NAT mapping remain future slices.
 
 ## Purpose And Scope
 
@@ -63,8 +64,13 @@ multiple controlled incoming peers through the application service:
   two-RSTorrent/two-libtorrent evidence passes for single-file and cross-file
   content, with all four clients independently verifying 67,109,595 bytes and
   the seed recording the exact 268,438,380 uploaded payload bytes;
-- the listener has internal Rust bootstrap and observation only; it is not in
-  persistent settings, generated application contracts, or product UI;
+- one schema-version-9 atomic settings group now persists disabled,
+  automatic-loopback, or fixed-loopback listener intent, 1--2,000 ordinary
+  peer connections, and 0--50 upload slots; active/effective/bound state stays
+  distinct from configured intent and applies on restart;
+- the generated application contract and shared browser/Tauri Settings
+  surface expose that group, the actual loopback port, descriptor-derived
+  effective limit, restart requirement, and typed recoverable bind failure;
 - UDP tracker announces still carry provisional port `6881`, which is not
   derived from or guaranteed to match this listener;
 - the IPv4 DHT has a real ephemeral UDP query socket, but RSTorrent does not
@@ -302,21 +308,30 @@ ten-peer evidence proves the eight-slot ceiling, one optimistic slot, fair
 rotation, slow-writer isolation, cancellation fencing, and joined cleanup.
 Downloading-torrent tit-for-tat and public performance tuning remain later.
 
-### 3. Persisted client connection and seeding settings — planned
+### 3. Persisted client connection and seeding settings — complete
 
 Tactical
 [`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
-plans one typed, atomic settings group for loopback listener policy, the
+implements one typed, atomic settings group for loopback listener policy, the
 ordinary session-wide peer ceiling, and piece-payload upload slots. It adopts
 the pinned libtorrent defaults where existing owners have equivalent
 semantics while preserving listener-disabled as RSTorrent's default.
 
-The slice owns validation, typed SQLite persistence, restart-applied
+The slice now owns validation, typed SQLite persistence, restart-applied
 configured-versus-active semantics, startup enforcement, generated contracts,
 the shared browser/Tauri Settings surface, and equivalent headless behavior.
 Pending-handshake and incoming-slack tuning remain internal safety policy.
 Finite bandwidth and ratio/time seeding goals wait for their own enforcing and
 durability owners.
+
+Controlled product evidence persists automatic/37/one through the production
+web gateway, reopens onto an observed nonzero listener, and seeds an exact
+2,097,152-byte payload to outbound-only libtorrent. A held fixed port reopens
+as typed address-in-use, remains command-accessible, repairs to automatic, and
+reopens successfully. Seeding high water remains within all declared
+connection, slot, request, read, writer, and 40-handle limits; every joined
+generation ends with zero incoming, gateway-connection, storage, cache, and
+platform-request owners.
 
 ### 4. Truthful tracker and DHT reachability
 
@@ -446,7 +461,7 @@ high-water marks, terminal owner counts, and what the evidence does not prove.
 
 ## Open Decisions
 
-After planned Tactical `084`, the campaign direction does not yet settle:
+After completed Tactical `084`, the campaign direction does not yet settle:
 
 - whether automatic port fallback is ever allowed after a fixed bind fails;
 - whether the temporary rule that a desired-running complete torrent seeds
@@ -468,15 +483,11 @@ multi-interface policy remain focused later slices.
 
 ## Campaign Checkpoint And Next Action
 
-Tactical
-[`082`](../tactical/082-bounded-multi-peer-upload-ownership.md) is complete with
-coordinated incoming/total budgets, eight fair upload slots, exact physical-
-payload counters and rates, slow-reader isolation, and controlled simultaneous
-RSTorrent/libtorrent evidence. Its limits and tuning default to pinned
-libtorrent 2.0.13 wherever the semantics match, with explicit RSTorrent
-deviations. Planned Tactical
+Tacticals
+[`082`](../tactical/082-bounded-multi-peer-upload-ownership.md) and
 [`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
-is the next boundary in this vertical story: a typed settings subsystem and
-end-to-end persisted listener/global-peer/upload-slot group through the shared
-Settings surface. Truthful tracker/DHT port use and gateway mapping remain
-later independent slices.
+now complete bounded multi-peer upload ownership and the restart-applied
+product settings boundary. The next coherent local slice is truthful
+projection of incoming peers into the ordinary Swarm/Peers model; actual-port
+tracker/DHT advertisement and gateway mapping remain later independent
+slices.

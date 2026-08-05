@@ -48,7 +48,7 @@ total count and stable offset, so accepted libtorrent-scale catalogs do not
 require one rendered snapshot or whole-catalog patch. The existing 16-MiB
 snapshot ceiling is a page bound. It does not make the view or
 diagnostics the tracker configuration authority.
-Planned Tactical
+Tactical
 [`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
 adds one small complete-replacement client-settings projection to the existing
 always-present torrent-list view. It distinguishes configured intent from
@@ -812,6 +812,13 @@ The completed foundation evidence proves:
   snapshots and diffs through polling; and
 - one controlled libtorrent-seeded download observed through that client from
   add through verified publication and clean shutdown.
+
+Tactical `084` additionally proves immediate settings replacement after an
+atomic mutation, no substitution of configured intent for active state, and
+fresh initial active/effective/listener observation after durable reopen. Four
+production-browser generations converge through the existing torrent-list
+view across disabled mismatch, automatic listening, fixed bind failure, and
+repaired automatic listening without another view owner or transport path.
 
 Tactical `040` now supplies actual torrent lifecycle evidence in addition to
 the earlier synthetic `removed` diffs. Archive, removal stage, and managed-data

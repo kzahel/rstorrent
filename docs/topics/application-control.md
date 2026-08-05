@@ -43,6 +43,10 @@ semantics. Tactical `083` removes SHA-256 from the caller declaration: Rust
 derives it from the received bytes and reconstructs the same legacy receipt
 fingerprint, so existing exact replays and different-byte conflicts remain
 unchanged while browser intake needs no source hashing or secure context.
+Tactical `084` adds one atomic typed `set_client_settings` command through the
+same generic HTTP, WebSocket, Tauri, and UniFFI dispatch. Durable configured
+intent changes immediately, while listener, connection budget, and upload
+slots remain truthfully restart-applied.
 
 ## Scope
 
@@ -277,13 +281,19 @@ without treating the diagnostic WebSocket gateway as a product daemon.
 [`../tactical/013-explicit-live-network-policy.md`](../tactical/013-explicit-live-network-policy.md)
 records explicit offline, loopback-only, and online engine policy selection.
 The current application configuration is immutable for the service lifetime.
-Planned Tactical
+Tactical
 [`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
 adds an atomic durable client-settings replacement while deliberately keeping
 listener, global peer-limit, and upload-slot enforcement restart-applied. A
 later live-control slice must own safe listener rebind, connection eviction,
 slot regrant, cancellation, and torrent-intent preservation. Android network
 binding and VPN leak prevention require separate platform evidence.
+
+The production browser/gateway proof saves automatic/37/one, observes the
+configured/active mismatch, joins and reopens onto those active owners, seeds
+verified content, then saves a held fixed port and repairs its typed bind
+failure through this same command path. No settings route, adapter-specific
+mutation, live owner mutation, or command-owned background task was added.
 
 [`../tactical/075-ephemeral-application-state.md`](../tactical/075-ephemeral-application-state.md)
 adds an immutable persistence-mode choice at the same service-lifetime

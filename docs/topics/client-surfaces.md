@@ -30,6 +30,11 @@ application to live torrent and active-peer views, including semantic
 responsive view selection and recovery after a suspended tab outlives its
 Rust view-set lease. The live path is proven through the headless browser
 gateway; Android remains intentionally unchanged.
+Tactical `084` splits the shared React Settings dialog into focused
+appearance, download, and connection/seeding sections. Browser-hosted and
+Tauri clients now share one atomic persisted loopback-listener/global-peer/
+upload-slot form and authoritative active/effective/bind status; Android
+receives the generated contract but no Compose settings screen.
 Tactical `036` packages that same production-built live browser path behind
 `./scripts/webui`, with isolated persistent state, default online networking,
 normal-browser opening, and joined terminal-owned shutdown. Tactical `076`
@@ -401,13 +406,9 @@ future server.
   Those controls should extend application network prerequisites while
   preserving torrent intent; VPN-grade leak prevention requires explicit
   Android network binding and race analysis.
-- Planned Tactical
-  [`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
-  splits the shared React Settings dialog into focused appearance, download,
-  and connection/seeding sections. Browser-hosted and Tauri clients receive
-  the same atomic persisted loopback-listener/global-peer/upload-slot form;
-  Android receives generated contract coverage but no Compose settings screen
-  in that slice.
+- Android has no Compose connection/seeding settings screen. Tactical `084`
+  deliberately stops at generated contract and build/test coverage there;
+  mobile restart UX and connectivity policy require their own product slice.
 - No HTTP playback server exists.
 
 Tacticals `008` and `009` record the implemented contract, exact controlled
