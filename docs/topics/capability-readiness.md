@@ -184,16 +184,15 @@ that observation does not become a public-tracker reliability claim.
 ### Now
 
 **Tactical
-[`094`](../tactical/094-bounded-bep11-peer-exchange.md) is complete; no new
-implementation tactical is authorized.** The current action is to select the
-next bounded slice from recorded evidence rather than silently extending PEX.
+[`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md) is
+authorized and in progress.** Implement strict bounded BEP 53 select-only
+intake, compact durable selection, typed duplicate-add outcomes, and the
+shared React reveal and feedback path without broadening duplicate merging.
 
 ### Next
 
-- Execute planned Tactical
-  [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md) as
-  the next independent product slice when product work is selected over the
-  engine sequence.
+- Select the next bounded slice from recorded evidence after Tactical `100`
+  closes; no successor is pre-authorized.
 
 ### Later
 

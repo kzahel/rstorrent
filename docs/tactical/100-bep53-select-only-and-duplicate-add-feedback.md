@@ -1,9 +1,8 @@
 # Tactical 100: BEP 53 Select-Only And Duplicate Add Feedback
 
-Status: Planned on 2026-08-06 after the maintainer accepted BEP 53
-select-only magnets, additive selection for an existing torrent, and visible
-focus plus feedback for every add outcome. Implementation is not authorized
-yet.
+Status: Authorized and in progress on 2026-08-06. The maintainer selected
+this as the next bounded product slice and authorized end-to-end execution
+with incremental commits.
 
 Topics: `protocol-support`, `client-persistence`, `application-control`,
 `application-view-api`, `table-interaction`, `web-ui-design`,
