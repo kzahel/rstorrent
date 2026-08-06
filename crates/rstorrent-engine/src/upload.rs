@@ -1,13 +1,16 @@
 //! Runtime-independent payload upload admission and cancellation state.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
+use std::net::Ipv4Addr;
 use std::sync::Arc;
 
 use rstorrent_protocol::peer_wire::{BlockRequest, MAX_REQUEST_BLOCK_LENGTH, PeerMessage};
+use sha1::{Digest, Sha1};
 
 pub const MAX_QUEUED_UPLOAD_REQUESTS: usize = 2_000;
 pub const MAX_QUEUED_UPLOAD_BYTES: usize =
     MAX_QUEUED_UPLOAD_REQUESTS * MAX_REQUEST_BLOCK_LENGTH as usize;
+pub const MAX_GENERATED_ALLOWED_FAST_PIECES: usize = 10;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct UploadRead {
@@ -52,6 +55,7 @@ struct PendingRequest {
 struct InFlightRequest {
     pending: PendingRequest,
     cancelled: bool,
+    terminal_sent: bool,
 }
 
 #[derive(Debug)]
@@ -60,6 +64,8 @@ pub struct UploadPeerState {
     available: Arc<[bool]>,
     interested: bool,
     choking: bool,
+    fast_extension: bool,
+    allowed_fast: BTreeSet<u32>,
     queued: VecDeque<PendingRequest>,
     in_flight: Option<InFlightRequest>,
     read_enabled: bool,
@@ -89,6 +95,8 @@ impl UploadPeerState {
             available,
             interested: false,
             choking: true,
+            fast_extension: false,
+            allowed_fast: BTreeSet::new(),
             queued: VecDeque::new(),
             in_flight: None,
             read_enabled: true,
@@ -109,6 +117,16 @@ impl UploadPeerState {
         bitfield
     }
 
+    pub fn initial_availability_message(&self, fast_extension: bool) -> PeerMessage {
+        if fast_extension && self.available.iter().all(|available| *available) {
+            PeerMessage::HaveAll
+        } else if fast_extension && self.available.iter().all(|available| !*available) {
+            PeerMessage::HaveNone
+        } else {
+            PeerMessage::Bitfield(self.bitfield())
+        }
+    }
+
     pub fn snapshot(&self) -> UploadPeerSnapshot {
         UploadPeerSnapshot {
             interested: self.interested,
@@ -120,6 +138,26 @@ impl UploadPeerState {
             read_in_flight: self.in_flight.is_some(),
             read_enabled: self.read_enabled,
         }
+    }
+
+    pub fn enable_fast_extension(
+        &mut self,
+        allowed_fast: impl IntoIterator<Item = u32>,
+    ) -> Result<(), &'static str> {
+        if self.pending_count() != 0 {
+            return Err("Fast capability cannot change after upload requests begin");
+        }
+        let mut retained = BTreeSet::new();
+        for piece in allowed_fast {
+            let index = usize::try_from(piece).map_err(|_| "allowed-fast piece is invalid")?;
+            if index >= self.piece_lengths.len() {
+                return Err("allowed-fast piece is outside torrent geometry");
+            }
+            retained.insert(piece);
+        }
+        self.fast_extension = true;
+        self.allowed_fast = retained;
+        Ok(())
     }
 
     pub fn set_granted(&mut self, granted: bool) -> Vec<UploadAction> {
@@ -135,8 +173,14 @@ impl UploadPeerState {
             Vec::new()
         } else {
             self.choking = true;
-            self.clear_pending_requests();
-            vec![UploadAction::Send(PeerMessage::Choke)]
+            let mut actions = vec![UploadAction::Send(PeerMessage::Choke)];
+            if self.fast_extension {
+                self.reject_disallowed_requests(&mut actions);
+                self.start_next_read(&mut actions);
+            } else {
+                self.clear_pending_requests();
+            }
+            actions
         }
     }
 
@@ -176,16 +220,32 @@ impl UploadPeerState {
             .saturating_sub(read.request.length as usize);
         let mut actions = Vec::new();
         match result {
-            Err(()) => actions.push(UploadAction::Close(UploadCloseReason::ReadFailed)),
+            Err(()) => {
+                if self.fast_extension && !in_flight.terminal_sent {
+                    actions.push(UploadAction::Send(PeerMessage::RejectRequest(read.request)));
+                }
+                actions.push(UploadAction::Close(UploadCloseReason::ReadFailed));
+            }
             Ok(block) if block.len() != read.request.length as usize => {
+                if self.fast_extension && !in_flight.terminal_sent {
+                    actions.push(UploadAction::Send(PeerMessage::RejectRequest(read.request)));
+                }
                 actions.push(UploadAction::Close(UploadCloseReason::ShortRead));
             }
-            Ok(block) if !in_flight.cancelled && self.interested && !self.choking => {
+            Ok(block)
+                if !in_flight.cancelled
+                    && !in_flight.terminal_sent
+                    && self.interested
+                    && (!self.choking || self.allowed_fast.contains(&read.request.index)) =>
+            {
                 actions.push(UploadAction::Send(PeerMessage::Piece {
                     index: read.request.index,
                     begin: read.request.begin,
                     block,
                 }));
+            }
+            Ok(_) if self.fast_extension && !in_flight.terminal_sent => {
+                actions.push(UploadAction::Send(PeerMessage::RejectRequest(read.request)));
             }
             Ok(_) => {}
         }
@@ -205,22 +265,24 @@ impl UploadPeerState {
 
     fn on_not_interested(&mut self) -> Vec<UploadAction> {
         self.interested = false;
-        let was_choking = self.choking;
-        self.choking = true;
-        self.clear_pending_requests();
-        if was_choking {
-            Vec::new()
-        } else {
-            vec![UploadAction::Send(PeerMessage::Choke)]
+        if self.choking {
+            return Vec::new();
         }
+        self.set_granted(false)
     }
 
     fn on_request(&mut self, request: BlockRequest) -> Vec<UploadAction> {
-        if self.choking || !self.interested {
-            return Vec::new();
-        }
         if !self.valid_request(request) {
             return vec![UploadAction::Close(UploadCloseReason::InvalidRequest)];
+        }
+        if self.choking && (!self.fast_extension || !self.allowed_fast.contains(&request.index))
+            || !self.interested
+        {
+            return self
+                .fast_extension
+                .then_some(UploadAction::Send(PeerMessage::RejectRequest(request)))
+                .into_iter()
+                .collect();
         }
         let requested_bytes = request.length as usize;
         if self.pending_count() == MAX_QUEUED_UPLOAD_REQUESTS
@@ -229,7 +291,11 @@ impl UploadPeerState {
                 .checked_add(requested_bytes)
                 .is_none_or(|bytes| bytes > MAX_QUEUED_UPLOAD_BYTES)
         {
-            return vec![UploadAction::Close(UploadCloseReason::RequestLimit)];
+            return vec![if self.fast_extension {
+                UploadAction::Send(PeerMessage::RejectRequest(request))
+            } else {
+                UploadAction::Close(UploadCloseReason::RequestLimit)
+            }];
         }
         let generation = self.next_generation;
         self.next_generation = self.next_generation.wrapping_add(1).max(1);
@@ -247,33 +313,49 @@ impl UploadPeerState {
 
     fn on_cancel(&mut self, request: BlockRequest) -> Vec<UploadAction> {
         let mut removed_bytes = 0_usize;
+        let mut removed = 0_usize;
         self.queued.retain(|pending| {
             if pending.request == request {
                 removed_bytes = removed_bytes.saturating_add(pending.request.length as usize);
+                removed = removed.saturating_add(1);
                 false
             } else {
                 true
             }
         });
         self.pending_bytes = self.pending_bytes.saturating_sub(removed_bytes);
+        let mut actions = Vec::new();
+        if self.fast_extension {
+            actions.extend(
+                (0..removed).map(|_| UploadAction::Send(PeerMessage::RejectRequest(request))),
+            );
+        }
         if let Some(in_flight) = &mut self.in_flight
             && in_flight.pending.request == request
         {
             in_flight.cancelled = true;
+            if self.fast_extension && !in_flight.terminal_sent {
+                in_flight.terminal_sent = true;
+                actions.push(UploadAction::Send(PeerMessage::RejectRequest(request)));
+            }
         }
-        Vec::new()
+        actions
     }
 
     fn start_next_read(&mut self, actions: &mut Vec<UploadAction>) {
-        if self.in_flight.is_some() || self.choking || !self.interested || !self.read_enabled {
+        if self.in_flight.is_some() || !self.interested || !self.read_enabled {
             return;
         }
-        let Some(pending) = self.queued.pop_front() else {
+        let position = self.queued.iter().position(|pending| {
+            !self.choking || self.allowed_fast.contains(&pending.request.index)
+        });
+        let Some(pending) = position.and_then(|position| self.queued.remove(position)) else {
             return;
         };
         self.in_flight = Some(InFlightRequest {
             pending,
             cancelled: false,
+            terminal_sent: false,
         });
         actions.push(UploadAction::Read(UploadRead {
             generation: pending.generation,
@@ -293,6 +375,34 @@ impl UploadPeerState {
         self.queued.clear();
         if let Some(in_flight) = &mut self.in_flight {
             in_flight.cancelled = true;
+        }
+    }
+
+    fn reject_disallowed_requests(&mut self, actions: &mut Vec<UploadAction>) {
+        let allowed_fast = &self.allowed_fast;
+        let mut retained = VecDeque::new();
+        while let Some(pending) = self.queued.pop_front() {
+            if allowed_fast.contains(&pending.request.index) {
+                retained.push_back(pending);
+            } else {
+                self.pending_bytes = self
+                    .pending_bytes
+                    .saturating_sub(pending.request.length as usize);
+                actions.push(UploadAction::Send(PeerMessage::RejectRequest(
+                    pending.request,
+                )));
+            }
+        }
+        self.queued = retained;
+        if let Some(in_flight) = &mut self.in_flight
+            && !allowed_fast.contains(&in_flight.pending.request.index)
+            && !in_flight.terminal_sent
+        {
+            in_flight.cancelled = true;
+            in_flight.terminal_sent = true;
+            actions.push(UploadAction::Send(PeerMessage::RejectRequest(
+                in_flight.pending.request,
+            )));
         }
     }
 
@@ -316,13 +426,49 @@ impl UploadPeerState {
     }
 }
 
+pub fn generate_allowed_fast_set(
+    info_hash: [u8; 20],
+    remote_ip: Ipv4Addr,
+    piece_count: usize,
+    requested_size: usize,
+) -> Result<Vec<u32>, &'static str> {
+    if piece_count == 0 || piece_count > u32::MAX as usize {
+        return Err("allowed-fast piece count is outside supported geometry");
+    }
+    let target = requested_size
+        .min(MAX_GENERATED_ALLOWED_FAST_PIECES)
+        .min(piece_count);
+    let mut seed = Vec::with_capacity(24);
+    let octets = remote_ip.octets();
+    seed.extend_from_slice(&[octets[0], octets[1], octets[2], 0]);
+    seed.extend_from_slice(&info_hash);
+    let mut retained = BTreeSet::new();
+    let mut ordered = Vec::with_capacity(target);
+    while ordered.len() < target {
+        let digest: [u8; 20] = Sha1::digest(&seed).into();
+        seed.clear();
+        seed.extend_from_slice(&digest);
+        for chunk in digest.chunks_exact(4) {
+            let value = u32::from_be_bytes(chunk.try_into().expect("four-byte SHA-1 chunk"));
+            let piece = value % piece_count as u32;
+            if retained.insert(piece) {
+                ordered.push(piece);
+                if ordered.len() == target {
+                    break;
+                }
+            }
+        }
+    }
+    Ok(ordered)
+}
+
 #[cfg(test)]
 mod tests {
     use rstorrent_protocol::peer_wire::{BlockRequest, PeerMessage};
 
     use super::{
         MAX_QUEUED_UPLOAD_BYTES, MAX_QUEUED_UPLOAD_REQUESTS, UploadAction, UploadCloseReason,
-        UploadPeerState, UploadRead,
+        UploadPeerState, UploadRead, generate_allowed_fast_set,
     };
 
     fn request(index: u32, begin: u32, length: u32) -> BlockRequest {
@@ -351,6 +497,45 @@ mod tests {
         )
         .expect("valid state");
         assert_eq!(state.bitfield(), [0b1011_0001, 0b1000_0000]);
+    }
+
+    #[test]
+    fn fast_initial_availability_chooses_exactly_one_compact_form() {
+        let all = UploadPeerState::new(vec![4; 3], vec![true; 3]).expect("all state");
+        let none = UploadPeerState::new(vec![4; 3], vec![false; 3]).expect("none state");
+        let mixed = UploadPeerState::new(vec![4; 3], vec![true, false, true]).expect("mixed state");
+        assert_eq!(all.initial_availability_message(true), PeerMessage::HaveAll);
+        assert_eq!(
+            none.initial_availability_message(true),
+            PeerMessage::HaveNone
+        );
+        assert_eq!(
+            mixed.initial_availability_message(true),
+            PeerMessage::Bitfield(vec![0b1010_0000])
+        );
+        assert!(matches!(
+            all.initial_availability_message(false),
+            PeerMessage::Bitfield(_)
+        ));
+    }
+
+    #[test]
+    fn canonical_allowed_fast_generation_matches_bep_6_vectors() {
+        let info_hash = [0xaa; 20];
+        let address = "80.4.4.200".parse().expect("IPv4 vector");
+        assert_eq!(
+            generate_allowed_fast_set(info_hash, address, 1_313, 7).expect("seven pieces"),
+            [1059, 431, 808, 1217, 287, 376, 1188]
+        );
+        assert_eq!(
+            generate_allowed_fast_set(info_hash, address, 1_313, 9).expect("nine pieces"),
+            [1059, 431, 808, 1217, 287, 376, 1188, 353, 508]
+        );
+        assert_eq!(
+            generate_allowed_fast_set(info_hash, address, 3, 32).expect("capped pieces"),
+            [1, 2, 0]
+        );
+        assert!(generate_allowed_fast_set(info_hash, address, 0, 10).is_err());
     }
 
     #[test]
@@ -518,6 +703,125 @@ mod tests {
                     Ok(vec![1; 4]),
                 )
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn fast_choke_precedes_rejects_and_retains_allowed_read() {
+        let mut state = UploadPeerState::new(vec![4, 4], vec![true, true]).expect("valid state");
+        state
+            .enable_fast_extension([1])
+            .expect("enable Fast upload");
+        interested(&mut state);
+        let in_flight = request(0, 0, 4);
+        let allowed = request(1, 0, 4);
+        let queued = request(0, 0, 4);
+        assert!(matches!(
+            state
+                .on_message(&PeerMessage::Request(in_flight))
+                .as_slice(),
+            [UploadAction::Read(_)]
+        ));
+        assert!(state.on_message(&PeerMessage::Request(allowed)).is_empty());
+        assert!(state.on_message(&PeerMessage::Request(queued)).is_empty());
+
+        assert_eq!(
+            state.set_granted(false),
+            [
+                UploadAction::Send(PeerMessage::Choke),
+                UploadAction::Send(PeerMessage::RejectRequest(queued)),
+                UploadAction::Send(PeerMessage::RejectRequest(in_flight)),
+            ]
+        );
+        assert_eq!(state.snapshot().queued_requests, 2);
+        assert_eq!(
+            state.on_read_complete(
+                UploadRead {
+                    generation: 1,
+                    request: in_flight,
+                },
+                Ok(vec![1; 4]),
+            ),
+            [UploadAction::Read(UploadRead {
+                generation: 2,
+                request: allowed,
+            })]
+        );
+        assert_eq!(
+            state.on_read_complete(
+                UploadRead {
+                    generation: 2,
+                    request: allowed,
+                },
+                Ok(vec![2; 4]),
+            ),
+            [UploadAction::Send(PeerMessage::Piece {
+                index: 1,
+                begin: 0,
+                block: vec![2; 4],
+            })]
+        );
+        assert_eq!(state.snapshot().queued_requests, 0);
+    }
+
+    #[test]
+    fn fast_requests_while_choked_are_rejected_unless_allowed() {
+        let mut state = UploadPeerState::new(vec![4, 4], vec![true, true]).expect("valid state");
+        state
+            .enable_fast_extension([1])
+            .expect("enable Fast upload");
+        assert!(state.on_message(&PeerMessage::Interested).is_empty());
+        let ordinary = request(0, 0, 4);
+        let allowed = request(1, 0, 4);
+        assert_eq!(
+            state.on_message(&PeerMessage::Request(ordinary)),
+            [UploadAction::Send(PeerMessage::RejectRequest(ordinary))]
+        );
+        assert_eq!(
+            state.on_message(&PeerMessage::Request(allowed)),
+            [UploadAction::Read(UploadRead {
+                generation: 1,
+                request: allowed,
+            })]
+        );
+    }
+
+    #[test]
+    fn fast_cancel_and_read_failure_each_emit_one_terminal_response() {
+        let block = request(0, 0, 4);
+        let mut cancelled = UploadPeerState::new(vec![4], vec![true]).expect("valid state");
+        cancelled
+            .enable_fast_extension([])
+            .expect("enable Fast upload");
+        interested(&mut cancelled);
+        let read = match cancelled
+            .on_message(&PeerMessage::Request(block))
+            .as_slice()
+        {
+            [UploadAction::Read(read)] => *read,
+            actions => panic!("unexpected read actions: {actions:?}"),
+        };
+        assert_eq!(
+            cancelled.on_message(&PeerMessage::Cancel(block)),
+            [UploadAction::Send(PeerMessage::RejectRequest(block))]
+        );
+        assert!(cancelled.on_read_complete(read, Ok(vec![1; 4])).is_empty());
+
+        let mut failed = UploadPeerState::new(vec![4], vec![true]).expect("valid state");
+        failed
+            .enable_fast_extension([])
+            .expect("enable Fast upload");
+        interested(&mut failed);
+        let read = match failed.on_message(&PeerMessage::Request(block)).as_slice() {
+            [UploadAction::Read(read)] => *read,
+            actions => panic!("unexpected read actions: {actions:?}"),
+        };
+        assert_eq!(
+            failed.on_read_complete(read, Err(())),
+            [
+                UploadAction::Send(PeerMessage::RejectRequest(block)),
+                UploadAction::Close(UploadCloseReason::ReadFailed),
+            ]
         );
     }
 }

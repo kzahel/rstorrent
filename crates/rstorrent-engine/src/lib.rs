@@ -123,8 +123,9 @@ pub use tracker::{
     TrackerRuntimeSnapshot, TrackerRuntimeStatus, TrackerSource, TrackerTransport,
 };
 pub use upload::{
-    MAX_QUEUED_UPLOAD_BYTES, MAX_QUEUED_UPLOAD_REQUESTS, UploadAction, UploadCloseReason,
-    UploadPeerSnapshot, UploadPeerState, UploadRead,
+    MAX_GENERATED_ALLOWED_FAST_PIECES, MAX_QUEUED_UPLOAD_BYTES, MAX_QUEUED_UPLOAD_REQUESTS,
+    UploadAction, UploadCloseReason, UploadPeerSnapshot, UploadPeerState, UploadRead,
+    generate_allowed_fast_set,
 };
 pub use upload_scheduler::{
     DEFAULT_OPTIMISTIC_UNCHOKE_INTERVAL, DEFAULT_SEEDING_PIECE_QUOTA, DEFAULT_UNCHOKE_INTERVAL,
