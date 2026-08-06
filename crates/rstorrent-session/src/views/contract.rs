@@ -1060,6 +1060,8 @@ pub enum PeerSourceView {
 pub enum PeerDisconnectReason {
     Connect,
     Handshake,
+    SelfConnection,
+    DuplicatePeerId,
     Protocol,
     RemoteClosed,
 }

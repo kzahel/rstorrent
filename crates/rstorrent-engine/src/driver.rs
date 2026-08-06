@@ -1824,7 +1824,12 @@ impl TorrentPeerCoordinator {
                 state.registry.dial_succeeded(attempt, now)?;
                 state
                     .runtime
-                    .handshake_completed(connection_id(attempt), handshake, now)
+                    .handshake_completed(
+                        connection_id(attempt),
+                        handshake,
+                        self.network.peer_id,
+                        now,
+                    )
                     .map_err(TorrentPeerError::Runtime)
             })
             .map_err(map_torrent_peer_error)?;

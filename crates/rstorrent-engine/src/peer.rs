@@ -158,6 +158,8 @@ pub enum PeerPhase {
 pub enum PeerFailure {
     Connect,
     Handshake,
+    SelfConnection,
+    DuplicatePeerId,
     Protocol,
     RemoteClosed,
 }

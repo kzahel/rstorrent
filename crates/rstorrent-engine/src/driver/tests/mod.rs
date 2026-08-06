@@ -376,6 +376,16 @@ fn two_piece_metainfo(first: &[u8], second: &[u8]) -> Vec<u8> {
     metainfo
 }
 
+fn scripted_peer_id(listener: &TcpListener, mut peer_id: [u8; 20]) -> [u8; 20] {
+    let port = listener
+        .local_addr()
+        .expect("scripted peer address")
+        .port()
+        .to_be_bytes();
+    peer_id[18..].copy_from_slice(&port);
+    peer_id
+}
+
 async fn serve_content_peer(
     listener: TcpListener,
     info_hash: [u8; 20],
@@ -418,7 +428,10 @@ async fn serve_content_peer_recording(
         .expect("read content handshake");
     decode_handshake(&handshake, info_hash).expect("valid content handshake");
     stream
-        .write_all(&encode_handshake(info_hash, *b"-RS-SPLIT-0000000000"))
+        .write_all(&encode_handshake(
+            info_hash,
+            scripted_peer_id(&listener, *b"-RS-SPLIT-0000000000"),
+        ))
         .await
         .expect("send content handshake");
     let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, io_timeout);
@@ -484,7 +497,10 @@ async fn serve_window_probe_peer(
         .expect("read window handshake");
     decode_handshake(&handshake, info_hash).expect("valid window handshake");
     stream
-        .write_all(&encode_handshake(info_hash, *b"-RS-WINDOW-000000000"))
+        .write_all(&encode_handshake(
+            info_hash,
+            scripted_peer_id(&listener, *b"-RS-WINDOW-000000000"),
+        ))
         .await
         .expect("send window handshake");
     let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(2));
@@ -586,7 +602,10 @@ async fn serve_adverse_content_peer(
         .expect("read adverse handshake");
     decode_handshake(&handshake, info_hash).expect("valid adverse handshake");
     stream
-        .write_all(&encode_handshake(info_hash, *b"-RS-ADVERS-000000000"))
+        .write_all(&encode_handshake(
+            info_hash,
+            scripted_peer_id(&listener, *b"-RS-ADVERS-000000000"),
+        ))
         .await
         .expect("send adverse handshake");
     let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(2));
@@ -643,7 +662,10 @@ async fn serve_one_block_then_choke_peer(
         .expect("read parole handshake");
     decode_handshake(&handshake, info_hash).expect("valid parole handshake");
     stream
-        .write_all(&encode_handshake(info_hash, *b"-RS-PAROLE-000000000"))
+        .write_all(&encode_handshake(
+            info_hash,
+            scripted_peer_id(&listener, *b"-RS-PAROLE-000000000"),
+        ))
         .await
         .expect("send parole handshake");
     let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(2));
@@ -726,7 +748,10 @@ async fn serve_permanently_choked_peer(
         .expect("read choked handshake");
     decode_handshake(&handshake, info_hash).expect("valid choked handshake");
     stream
-        .write_all(&encode_handshake(info_hash, *b"-RS-CHOKED-000000000"))
+        .write_all(&encode_handshake(
+            info_hash,
+            scripted_peer_id(&listener, *b"-RS-CHOKED-000000000"),
+        ))
         .await
         .expect("send choked handshake");
     let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(2));
@@ -759,7 +784,10 @@ async fn prepare_endgame_peer(
         .expect("read endgame handshake");
     decode_handshake(&handshake, info_hash).expect("valid endgame handshake");
     stream
-        .write_all(&encode_handshake(info_hash, *b"-RS-ENDGAME-00000000"))
+        .write_all(&encode_handshake(
+            info_hash,
+            scripted_peer_id(&listener, *b"-RS-ENDGAME-00000000"),
+        ))
         .await
         .expect("send endgame handshake");
     let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(2));
@@ -866,7 +894,10 @@ async fn serve_delayed_block_peer_with_timeout(
         .expect("read delayed handshake");
     decode_handshake(&handshake, info_hash).expect("valid delayed handshake");
     stream
-        .write_all(&encode_handshake(info_hash, *b"-RS-DELAY--000000000"))
+        .write_all(&encode_handshake(
+            info_hash,
+            scripted_peer_id(&listener, *b"-RS-DELAY--000000000"),
+        ))
         .await
         .expect("send delayed handshake");
     let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, io_timeout);

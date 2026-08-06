@@ -12,8 +12,8 @@ use crate::peer::{
     PeerSelectionContext, PeerSource,
 };
 use crate::peer_runtime::{
-    IncomingPeerStart, PeerConnectionObservation, PeerConnectionRole, PeerRuntime,
-    PeerRuntimeError, PeerTransport, PeerUploadActivity,
+    IncomingPeerStart, PeerAdmissionOutcome, PeerConnectionObservation, PeerConnectionRole,
+    PeerRuntime, PeerRuntimeError, PeerTransport, PeerUploadActivity,
 };
 use crate::swarm::ConnectionId;
 
@@ -170,11 +170,14 @@ impl TorrentPeerState {
     fn incoming_handshake_completed(
         &mut self,
         attachment: IncomingPeerAttachment,
+        local_peer_id: [u8; 20],
         now: Duration,
-    ) -> Result<(), TorrentPeerError> {
-        self.runtime
-            .incoming_handshake_completed(attachment.connection_id, now)?;
-        Ok(())
+    ) -> Result<PeerAdmissionOutcome, TorrentPeerError> {
+        Ok(self.runtime.incoming_handshake_completed(
+            attachment.connection_id,
+            local_peer_id,
+            now,
+        )?)
     }
 
     fn set_incoming_upload(
@@ -330,13 +333,17 @@ impl TorrentPeerHandle {
         Ok(attachment)
     }
 
-    pub fn incoming_handshake_completed(
+    pub(crate) fn incoming_handshake_completed(
         &self,
         attachment: IncomingPeerAttachment,
-    ) -> Result<(), TorrentPeerError> {
+        local_peer_id: [u8; 20],
+    ) -> Result<PeerAdmissionOutcome, TorrentPeerError> {
         let now = self.elapsed();
-        self.with_state(|state| state.incoming_handshake_completed(attachment, now))?;
-        self.publish(true, true)
+        let outcome = self.with_state(|state| {
+            state.incoming_handshake_completed(attachment, local_peer_id, now)
+        })?;
+        self.publish(true, true)?;
+        Ok(outcome)
     }
 
     pub fn set_incoming_upload(
@@ -640,7 +647,7 @@ mod tests {
             )
             .expect("incoming");
         handle
-            .incoming_handshake_completed(attachment)
+            .incoming_handshake_completed(attachment, *b"-RS0001-LOCALPEER001")
             .expect("connected");
         handle
             .set_incoming_upload(
@@ -704,7 +711,7 @@ mod tests {
                 .expect("incoming");
             assert_eq!(attachment.record_id(), tracker.record_id);
             state
-                .incoming_handshake_completed(attachment, Duration::ZERO)
+                .incoming_handshake_completed(attachment, *b"-RS0001-LOCALPEER001", Duration::ZERO)
                 .expect("connected");
             attachment
         });

@@ -291,6 +291,8 @@ impl PeerView {
             disconnect_reason: peer.close_reason.map(|reason| match reason {
                 PeerFailure::Connect => PeerDisconnectReason::Connect,
                 PeerFailure::Handshake => PeerDisconnectReason::Handshake,
+                PeerFailure::SelfConnection => PeerDisconnectReason::SelfConnection,
+                PeerFailure::DuplicatePeerId => PeerDisconnectReason::DuplicatePeerId,
                 PeerFailure::Protocol => PeerDisconnectReason::Protocol,
                 PeerFailure::RemoteClosed => PeerDisconnectReason::RemoteClosed,
             }),
@@ -412,6 +414,8 @@ fn peer_failure_view(failure: PeerFailure) -> PeerDisconnectReason {
     match failure {
         PeerFailure::Connect => PeerDisconnectReason::Connect,
         PeerFailure::Handshake => PeerDisconnectReason::Handshake,
+        PeerFailure::SelfConnection => PeerDisconnectReason::SelfConnection,
+        PeerFailure::DuplicatePeerId => PeerDisconnectReason::DuplicatePeerId,
         PeerFailure::Protocol => PeerDisconnectReason::Protocol,
         PeerFailure::RemoteClosed => PeerDisconnectReason::RemoteClosed,
     }

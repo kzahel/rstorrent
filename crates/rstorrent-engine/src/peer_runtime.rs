@@ -18,6 +18,24 @@ pub enum PeerConnectionDirection {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PeerAdmissionRejection {
+    SelfConnection,
+    DuplicatePeerId { winner: ConnectionId },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PeerAdmissionOutcome {
+    Admitted { evicted: Option<ConnectionId> },
+    Rejected(PeerAdmissionRejection),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PeerIdConnection {
+    connection: ConnectionId,
+    direction: PeerConnectionDirection,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PeerTransport {
     Tcp,
     Utp,
@@ -150,6 +168,7 @@ impl Error for PeerRuntimeError {}
 #[derive(Debug, Default)]
 pub(crate) struct PeerRuntime {
     connections: BTreeMap<ConnectionId, PeerConnectionObservation>,
+    peer_ids: BTreeMap<[u8; 20], PeerIdConnection>,
 }
 
 impl PeerRuntime {
@@ -226,38 +245,85 @@ impl PeerRuntime {
         &mut self,
         connection: ConnectionId,
         handshake: &Handshake,
+        local_peer_id: [u8; 20],
         now: Duration,
-    ) -> Result<(), PeerRuntimeError> {
-        let peer = self.connection_mut(connection)?;
-        if !matches!(
-            peer.lifecycle,
-            PeerConnectionLifecycle::TransportConnecting
-                | PeerConnectionLifecycle::ProtocolHandshaking
-        ) {
-            return Err(PeerRuntimeError::InvalidTransition {
-                connection,
-                from: peer.lifecycle,
-                to: PeerConnectionLifecycle::Connected,
-            });
+    ) -> Result<PeerAdmissionOutcome, PeerRuntimeError> {
+        let outcome = self.admit_peer_id(connection, handshake.peer_id, local_peer_id, now)?;
+        if matches!(outcome, PeerAdmissionOutcome::Admitted { .. }) {
+            self.connection_mut(connection)?.supports_extensions =
+                Some(handshake.supports_extensions());
         }
-        peer.lifecycle = PeerConnectionLifecycle::Connected;
-        peer.lifecycle_changed_at = now;
-        peer.peer_id = Some(handshake.peer_id);
-        peer.supports_extensions = Some(handshake.supports_extensions());
-        Ok(())
+        Ok(outcome)
     }
 
     pub(crate) fn incoming_handshake_completed(
         &mut self,
         connection: ConnectionId,
+        local_peer_id: [u8; 20],
         now: Duration,
-    ) -> Result<(), PeerRuntimeError> {
-        self.transition(
-            connection,
-            PeerConnectionLifecycle::Connected,
-            now,
-            &[PeerConnectionLifecycle::ProtocolHandshaking],
-        )
+    ) -> Result<PeerAdmissionOutcome, PeerRuntimeError> {
+        let peer_id = self
+            .connection_mut(connection)?
+            .peer_id
+            .expect("routed incoming handshakes retain the validated peer ID");
+        self.admit_peer_id(connection, peer_id, local_peer_id, now)
+    }
+
+    fn admit_peer_id(
+        &mut self,
+        connection: ConnectionId,
+        peer_id: [u8; 20],
+        local_peer_id: [u8; 20],
+        now: Duration,
+    ) -> Result<PeerAdmissionOutcome, PeerRuntimeError> {
+        let candidate = self.connection_mut(connection)?;
+        if !matches!(
+            candidate.lifecycle,
+            PeerConnectionLifecycle::TransportConnecting
+                | PeerConnectionLifecycle::ProtocolHandshaking
+        ) {
+            return Err(PeerRuntimeError::InvalidTransition {
+                connection,
+                from: candidate.lifecycle,
+                to: PeerConnectionLifecycle::Connected,
+            });
+        }
+        let candidate_direction = candidate.direction;
+        candidate.peer_id = Some(peer_id);
+        if peer_id == local_peer_id {
+            self.reject(connection, PeerFailure::SelfConnection, now)?;
+            return Ok(PeerAdmissionOutcome::Rejected(
+                PeerAdmissionRejection::SelfConnection,
+            ));
+        }
+        let existing = self.peer_ids.get(&peer_id).copied();
+        if let Some(existing) = existing {
+            let candidate_wins = existing.direction != candidate_direction
+                && candidate_direction == preferred_direction(local_peer_id, peer_id);
+            if !candidate_wins {
+                self.reject(connection, PeerFailure::DuplicatePeerId, now)?;
+                return Ok(PeerAdmissionOutcome::Rejected(
+                    PeerAdmissionRejection::DuplicatePeerId {
+                        winner: existing.connection,
+                    },
+                ));
+            }
+            self.reject(existing.connection, PeerFailure::DuplicatePeerId, now)?;
+        }
+        self.peer_ids.insert(
+            peer_id,
+            PeerIdConnection {
+                connection,
+                direction: candidate_direction,
+            },
+        );
+        let candidate = self.connection_mut(connection)?;
+        candidate.lifecycle = PeerConnectionLifecycle::Connected;
+        candidate.lifecycle_changed_at = now;
+        candidate.peer_id = Some(peer_id);
+        Ok(PeerAdmissionOutcome::Admitted {
+            evicted: existing.map(|existing| existing.connection),
+        })
     }
 
     pub(crate) fn set_sources(
@@ -353,10 +419,19 @@ impl PeerRuntime {
                 to: PeerConnectionLifecycle::Disconnecting,
             });
         }
-        Ok(self
+        let removed = self
             .connections
             .remove(&connection)
-            .expect("connection exists after validation"))
+            .expect("connection exists after validation");
+        if let Some(peer_id) = removed.peer_id
+            && self
+                .peer_ids
+                .get(&peer_id)
+                .is_some_and(|entry| entry.connection == connection)
+        {
+            self.peer_ids.remove(&peer_id);
+        }
+        Ok(removed)
     }
 
     pub(crate) fn observation(
@@ -373,6 +448,11 @@ impl PeerRuntime {
     #[cfg(test)]
     pub(crate) fn is_empty(&self) -> bool {
         self.connections.is_empty()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn peer_id_count(&self) -> usize {
+        self.peer_ids.len()
     }
 
     fn insert(&mut self, peer: PeerConnectionObservation) -> Result<(), PeerRuntimeError> {
@@ -411,6 +491,26 @@ impl PeerRuntime {
             .get_mut(&connection)
             .ok_or(PeerRuntimeError::UnknownConnection(connection))
     }
+
+    fn reject(
+        &mut self,
+        connection: ConnectionId,
+        failure: PeerFailure,
+        now: Duration,
+    ) -> Result<(), PeerRuntimeError> {
+        self.begin_disconnect(connection, Some(failure), now)
+    }
+}
+
+fn preferred_direction(
+    local_peer_id: [u8; 20],
+    remote_peer_id: [u8; 20],
+) -> PeerConnectionDirection {
+    if local_peer_id > remote_peer_id {
+        PeerConnectionDirection::Outgoing
+    } else {
+        PeerConnectionDirection::Incoming
+    }
 }
 
 pub(crate) fn connection_id(attempt: DialAttempt) -> ConnectionId {
@@ -420,8 +520,9 @@ pub(crate) fn connection_id(attempt: DialAttempt) -> ConnectionId {
 #[cfg(test)]
 mod tests {
     use super::{
-        IncomingPeerStart, PeerConnectionDirection, PeerConnectionLifecycle, PeerConnectionRole,
-        PeerRuntime, PeerRuntimeError, PeerTransport, connection_id,
+        IncomingPeerStart, PeerAdmissionOutcome, PeerAdmissionRejection, PeerConnectionDirection,
+        PeerConnectionLifecycle, PeerConnectionRole, PeerRuntime, PeerRuntimeError, PeerTransport,
+        connection_id,
     };
     use crate::peer::{
         PeerEndpoint, PeerObservation, PeerRegistry, PeerRegistryConfig, PeerSelectionContext,
@@ -432,8 +533,11 @@ mod tests {
     use std::time::Duration;
 
     fn attempt() -> crate::peer::DialAttempt {
-        let endpoint =
-            PeerEndpoint::new("127.0.0.1:6881".parse().expect("address")).expect("endpoint");
+        attempt_with(1, "127.0.0.1:6881")
+    }
+
+    fn attempt_with(connection: u64, address: &str) -> crate::peer::DialAttempt {
+        let endpoint = PeerEndpoint::new(address.parse().expect("address")).expect("endpoint");
         let mut registry = PeerRegistry::new(PeerRegistryConfig::default()).expect("registry");
         registry
             .observe(
@@ -445,7 +549,50 @@ mod tests {
             now: Duration::ZERO,
         };
         let candidate = PeerSelector.select(&registry, context).expect("candidate");
-        registry.begin_dial(candidate, context).expect("attempt")
+        registry
+            .begin_dial_with_connection_id(
+                candidate,
+                context,
+                ConnectionId::new(connection).expect("connection ID"),
+            )
+            .expect("attempt")
+    }
+
+    fn begin_outgoing(runtime: &mut PeerRuntime, connection: u64, address: &str) -> ConnectionId {
+        let attempt = attempt_with(connection, address);
+        let id = connection_id(attempt);
+        runtime
+            .begin_outgoing(attempt, PeerConnectionRole::Content, Duration::ZERO)
+            .expect("begin outgoing");
+        runtime
+            .transport_connected(id, Duration::ZERO)
+            .expect("transport connected");
+        id
+    }
+
+    fn begin_incoming(
+        runtime: &mut PeerRuntime,
+        connection: u64,
+        address: &str,
+        peer_id: [u8; 20],
+    ) -> ConnectionId {
+        let id = ConnectionId::new(connection).expect("connection ID");
+        runtime
+            .begin_incoming(
+                id,
+                IncomingPeerStart {
+                    record_id: attempt().record_id(),
+                    endpoint: address.parse().expect("endpoint"),
+                    local_endpoint: "127.0.0.1:6881".parse().expect("local endpoint"),
+                    transport: PeerTransport::Tcp,
+                    role: PeerConnectionRole::Content,
+                    peer_id,
+                    supports_extensions: false,
+                },
+                Duration::ZERO,
+            )
+            .expect("begin incoming");
+        id
     }
 
     #[test]
@@ -464,7 +611,12 @@ mod tests {
             reserved: [0; 8],
         };
         runtime
-            .handshake_completed(connection, &handshake, Duration::from_millis(8))
+            .handshake_completed(
+                connection,
+                &handshake,
+                *b"-RS0001-LOCALPEER001",
+                Duration::from_millis(8),
+            )
             .expect("handshake");
         runtime
             .set_role(connection, PeerConnectionRole::Content)
@@ -534,5 +686,153 @@ mod tests {
             runtime.transport_connected(unknown, Duration::ZERO),
             Err(PeerRuntimeError::UnknownConnection(actual)) if actual == unknown
         ));
+    }
+
+    #[test]
+    fn self_connection_is_rejected_before_admission() {
+        let local = *b"-RS0001-LOCALPEER001";
+        let mut runtime = PeerRuntime::default();
+        let connection = begin_outgoing(&mut runtime, 1, "127.0.0.1:6881");
+        let outcome = runtime
+            .handshake_completed(
+                connection,
+                &Handshake {
+                    peer_id: local,
+                    reserved: [0; 8],
+                },
+                local,
+                Duration::from_millis(1),
+            )
+            .expect("decision");
+        assert_eq!(
+            outcome,
+            PeerAdmissionOutcome::Rejected(PeerAdmissionRejection::SelfConnection)
+        );
+        let peer = runtime.observation(connection).expect("candidate");
+        assert_eq!(peer.lifecycle, PeerConnectionLifecycle::Disconnecting);
+        assert_eq!(
+            peer.close_reason,
+            Some(crate::peer::PeerFailure::SelfConnection)
+        );
+        assert_eq!(runtime.peer_id_count(), 0);
+    }
+
+    #[test]
+    fn same_direction_duplicate_keeps_first_generation() {
+        let local = [b'a'; 20];
+        let remote = [b'z'; 20];
+        let mut runtime = PeerRuntime::default();
+        let first = begin_outgoing(&mut runtime, 1, "127.0.0.1:6881");
+        let second = begin_outgoing(&mut runtime, 2, "127.0.0.1:6882");
+        for (connection, expected) in [
+            (first, PeerAdmissionOutcome::Admitted { evicted: None }),
+            (
+                second,
+                PeerAdmissionOutcome::Rejected(PeerAdmissionRejection::DuplicatePeerId {
+                    winner: first,
+                }),
+            ),
+        ] {
+            assert_eq!(
+                runtime
+                    .handshake_completed(
+                        connection,
+                        &Handshake {
+                            peer_id: remote,
+                            reserved: [0; 8],
+                        },
+                        local,
+                        Duration::from_millis(connection.get()),
+                    )
+                    .expect("decision"),
+                expected
+            );
+        }
+        assert_eq!(runtime.peer_id_count(), 1);
+        assert_eq!(
+            runtime.observation(first).expect("winner").lifecycle,
+            PeerConnectionLifecycle::Connected
+        );
+        assert_eq!(
+            runtime.observation(second).expect("loser").close_reason,
+            Some(crate::peer::PeerFailure::DuplicatePeerId)
+        );
+    }
+
+    #[test]
+    fn crossed_connection_rule_selects_the_same_physical_direction() {
+        let remote = [b'm'; 20];
+        for (local, winner_direction) in [
+            ([b'z'; 20], PeerConnectionDirection::Outgoing),
+            ([b'a'; 20], PeerConnectionDirection::Incoming),
+        ] {
+            let mut runtime = PeerRuntime::default();
+            let first = if winner_direction == PeerConnectionDirection::Outgoing {
+                begin_incoming(&mut runtime, 1, "127.0.0.1:51413", remote)
+            } else {
+                begin_outgoing(&mut runtime, 1, "127.0.0.1:51413")
+            };
+            let first_outcome = match winner_direction {
+                PeerConnectionDirection::Outgoing => {
+                    runtime.incoming_handshake_completed(first, local, Duration::from_millis(1))
+                }
+                PeerConnectionDirection::Incoming => runtime.handshake_completed(
+                    first,
+                    &Handshake {
+                        peer_id: remote,
+                        reserved: [0; 8],
+                    },
+                    local,
+                    Duration::from_millis(1),
+                ),
+            }
+            .expect("first admission");
+            assert_eq!(
+                first_outcome,
+                PeerAdmissionOutcome::Admitted { evicted: None }
+            );
+
+            let winner = if winner_direction == PeerConnectionDirection::Outgoing {
+                begin_outgoing(&mut runtime, 2, "[::1]:51413")
+            } else {
+                begin_incoming(&mut runtime, 2, "[::1]:51413", remote)
+            };
+            let winner_outcome = match winner_direction {
+                PeerConnectionDirection::Outgoing => runtime.handshake_completed(
+                    winner,
+                    &Handshake {
+                        peer_id: remote,
+                        reserved: [0; 8],
+                    },
+                    local,
+                    Duration::from_millis(2),
+                ),
+                PeerConnectionDirection::Incoming => {
+                    runtime.incoming_handshake_completed(winner, local, Duration::from_millis(2))
+                }
+            }
+            .expect("winner admission");
+            assert_eq!(
+                winner_outcome,
+                PeerAdmissionOutcome::Admitted {
+                    evicted: Some(first)
+                }
+            );
+            assert_eq!(
+                runtime.observation(first).expect("old loser").close_reason,
+                Some(crate::peer::PeerFailure::DuplicatePeerId)
+            );
+            assert_eq!(
+                runtime.observation(winner).expect("winner").direction,
+                winner_direction
+            );
+            runtime.remove(first).expect("stale loser cleanup");
+            assert_eq!(runtime.peer_id_count(), 1);
+            runtime
+                .begin_disconnect(winner, None, Duration::from_millis(3))
+                .expect("winner disconnect");
+            runtime.remove(winner).expect("winner cleanup");
+            assert_eq!(runtime.peer_id_count(), 0);
+        }
     }
 }

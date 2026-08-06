@@ -419,9 +419,12 @@ impl IncomingPeerAttachmentGuard {
         }
     }
 
-    fn handshake_completed(&self) -> Result<(), ()> {
+    fn handshake_completed(
+        &self,
+        local_peer_id: [u8; 20],
+    ) -> Result<crate::peer_runtime::PeerAdmissionOutcome, ()> {
         self.peers
-            .incoming_handshake_completed(self.attachment)
+            .incoming_handshake_completed(self.attachment, local_peer_id)
             .map_err(|_| ())
     }
 
@@ -1433,7 +1436,7 @@ async fn run_handshake(
         );
         return;
     }
-    if peer_attachment.handshake_completed().is_err() {
+    if peer_attachment.handshake_completed(shared.peer_id).is_err() {
         shared.reject(
             IncomingRejectionReason::PeerState,
             Some(remote),
