@@ -26,8 +26,8 @@ use crate::network::{NetworkConfig, NetworkPolicy};
 use crate::peer::{PeerEndpoint, PeerObservation, PeerSource};
 use crate::torrent_peer::TorrentPeerHandle;
 use crate::tracker::{
-    TrackerAcceptedOutcome, TrackerAction, TrackerConfig, TrackerEndpoint, TrackerId,
-    TrackerSchedule, TrackerWaitKind,
+    TrackerAcceptedOutcome, TrackerAction, TrackerConfig, TrackerEndpoint,
+    TrackerHttpsAuthentication, TrackerId, TrackerSchedule, TrackerWaitKind,
 };
 
 pub const OUTBOUND_ONLY_TRACKER_PORT: u16 = 1;
@@ -185,6 +185,21 @@ pub struct DiscoveryAdvertisementHandle {
 }
 
 impl DiscoveryAdvertisementHandle {
+    pub async fn replace_https_authentication(
+        &self,
+        authentication: TrackerHttpsAuthentication,
+    ) -> Result<(), DiscoveryAdvertisementError> {
+        let (sender, receiver) = oneshot::channel();
+        self.send(Command::ReplaceHttpsAuthentication {
+            authentication,
+            response: sender,
+        })
+        .await?;
+        receiver
+            .await
+            .map_err(|_| DiscoveryAdvertisementError::OwnerStopped)?
+    }
+
     pub async fn upsert(
         &self,
         registration: DiscoveryAdvertisementRegistration,
@@ -224,6 +239,8 @@ impl DiscoveryAdvertisementHandle {
 #[derive(Debug)]
 pub struct DiscoveryAdvertisementService {
     handle: DiscoveryAdvertisementHandle,
+    initial_https_authentication: Option<TrackerHttpsAuthentication>,
+    initial_https_error: Option<String>,
     task:
         Option<JoinHandle<Result<DiscoveryAdvertisementOwnerCounts, DiscoveryAdvertisementError>>>,
 }
@@ -234,6 +251,37 @@ impl DiscoveryAdvertisementService {
         endpoint: watch::Receiver<PeerAdvertisementEndpoint>,
         dht: DhtHandle,
     ) -> Self {
+        Self::start_with_https_authentication(
+            network,
+            endpoint,
+            dht,
+            TrackerHttpsAuthentication::SystemTrust,
+        )
+        .expect("platform-authenticated HTTP tracker clients construct")
+    }
+
+    pub fn start_with_https_authentication(
+        network: NetworkConfig,
+        endpoint: watch::Receiver<PeerAdvertisementEndpoint>,
+        dht: DhtHandle,
+        https_authentication: TrackerHttpsAuthentication,
+    ) -> Result<Self, DiscoveryAdvertisementError> {
+        let (http_clients, initial_https_authentication, initial_https_error) =
+            match HttpTrackerClients::new_with_authentication(
+                network.policy,
+                https_authentication,
+            ) {
+                Ok(clients) => (clients, Some(https_authentication), None),
+                Err(error) => (
+                    HttpTrackerClients::http_only(network.policy).map_err(|fallback| {
+                        DiscoveryAdvertisementError::HttpClient(format!(
+                            "platform verifier unavailable ({error}); HTTP fallback construction failed ({fallback})"
+                        ))
+                    })?,
+                    None,
+                    Some(error.to_string()),
+                ),
+            };
         let (sender, receiver) = mpsc::channel(DISCOVERY_ADVERTISEMENT_COMMAND_CAPACITY);
         let queued = Arc::new(AtomicU64::new(0));
         let queue_high_water = Arc::new(AtomicU64::new(0));
@@ -243,21 +291,35 @@ impl DiscoveryAdvertisementService {
             queue_high_water: queue_high_water.clone(),
         };
         let task = tokio::spawn(run_service(
-            network,
-            endpoint,
-            dht,
+            DiscoveryAdvertisementRuntime {
+                network,
+                endpoint_receiver: endpoint,
+                dht,
+                http_clients: Arc::new(http_clients),
+                desired_https_authentication: https_authentication,
+            },
             receiver,
             queued,
             queue_high_water,
         ));
-        Self {
+        Ok(Self {
             handle,
+            initial_https_authentication,
+            initial_https_error,
             task: Some(task),
-        }
+        })
     }
 
     pub fn handle(&self) -> DiscoveryAdvertisementHandle {
         self.handle.clone()
+    }
+
+    pub const fn initial_https_authentication(&self) -> Option<TrackerHttpsAuthentication> {
+        self.initial_https_authentication
+    }
+
+    pub fn initial_https_error(&self) -> Option<&str> {
+        self.initial_https_error.as_deref()
     }
 
     pub async fn shutdown(
@@ -325,6 +387,10 @@ enum Command {
         generation: u64,
         response: oneshot::Sender<Result<(), DiscoveryAdvertisementError>>,
     },
+    ReplaceHttpsAuthentication {
+        authentication: TrackerHttpsAuthentication,
+        response: oneshot::Sender<Result<(), DiscoveryAdvertisementError>>,
+    },
     Shutdown(oneshot::Sender<Result<(), DiscoveryAdvertisementError>>),
 }
 
@@ -353,16 +419,26 @@ struct TorrentEntry {
     last_dht_endpoint_generation: u64,
 }
 
+struct DiscoveryAdvertisementRuntime {
+    network: NetworkConfig,
+    endpoint_receiver: watch::Receiver<PeerAdvertisementEndpoint>,
+    dht: DhtHandle,
+    http_clients: Arc<HttpTrackerClients>,
+    desired_https_authentication: TrackerHttpsAuthentication,
+}
+
 impl TorrentEntry {
     fn new(
         registration: DiscoveryAdvertisementRegistration,
+        https_authentication: TrackerHttpsAuthentication,
     ) -> Result<Self, DiscoveryAdvertisementError> {
         let control = DownloadControl::new();
         control.set_activity_sink(registration.activity_sink.clone());
         let mut scheduled_trackers = registration.trackers.clone();
         shuffle_tracker_configs(&mut scheduled_trackers)
             .map_err(|error| DiscoveryAdvertisementError::Entropy(error.to_string()))?;
-        let schedule = TrackerSchedule::from_configs(scheduled_trackers);
+        let mut schedule = TrackerSchedule::from_configs(scheduled_trackers);
+        schedule.set_https_authentication(https_authentication);
         let tracker_key = random_nonzero_u32()
             .map_err(|error| DiscoveryAdvertisementError::Entropy(error.to_string()))?;
         let entry = Self {
@@ -471,15 +547,18 @@ struct DhtOperationResult {
 }
 
 async fn run_service(
-    network: NetworkConfig,
-    mut endpoint_receiver: watch::Receiver<PeerAdvertisementEndpoint>,
-    dht: DhtHandle,
+    runtime: DiscoveryAdvertisementRuntime,
     mut receiver: mpsc::Receiver<Command>,
     queued: Arc<AtomicU64>,
     queue_high_water: Arc<AtomicU64>,
 ) -> Result<DiscoveryAdvertisementOwnerCounts, DiscoveryAdvertisementError> {
-    let http_clients = HttpTrackerClients::new(network.policy)
-        .map_err(|error| DiscoveryAdvertisementError::HttpClient(error.to_string()))?;
+    let DiscoveryAdvertisementRuntime {
+        network,
+        mut endpoint_receiver,
+        dht,
+        mut http_clients,
+        mut desired_https_authentication,
+    } = runtime;
     let mut endpoint = *endpoint_receiver.borrow_and_update();
     let mut entries = BTreeMap::<[u8; 20], TorrentEntry>::new();
     let mut operations = JoinSet::new();
@@ -491,7 +570,11 @@ async fn run_service(
     let mut shutdown_deadline = None;
 
     loop {
-        finish_stopped_entries(&mut entries, shutdown_deadline)?;
+        finish_stopped_entries(
+            &mut entries,
+            shutdown_deadline,
+            desired_https_authentication,
+        )?;
         if shutting_down
             && (entries.is_empty()
                 || shutdown_deadline.is_some_and(|deadline| Instant::now() >= deadline))
@@ -545,7 +628,11 @@ async fn run_service(
                 queued.fetch_sub(1, Ordering::AcqRel);
                 match command {
                     Command::Upsert(registration) => {
-                        let effect = apply_registration(&mut entries, registration)?;
+                        let effect = apply_registration(
+                            &mut entries,
+                            registration,
+                            desired_https_authentication,
+                        )?;
                         if effect.cancel_dht {
                             let _ = dht.cancel_lookup(effect.info_hash).await;
                         }
@@ -564,6 +651,46 @@ async fn run_service(
                             }
                             _ => {
                                 let _ = response.send(Ok(()));
+                            }
+                        }
+                    }
+                    Command::ReplaceHttpsAuthentication {
+                        authentication,
+                        response,
+                    } => {
+                        let previous = http_clients.https_authentication();
+                        let fence_unauthenticated = authentication
+                            == TrackerHttpsAuthentication::SystemTrust
+                            && previous == Some(TrackerHttpsAuthentication::Disabled);
+                        if fence_unauthenticated {
+                            http_clients = Arc::new(http_clients.without_https());
+                        }
+                        match HttpTrackerClients::new_with_authentication(
+                            network.policy,
+                            authentication,
+                        ) {
+                            Ok(clients) => {
+                                http_clients = Arc::new(clients);
+                                desired_https_authentication = authentication;
+                                for entry in entries.values_mut() {
+                                    entry.schedule.set_https_authentication(authentication);
+                                    entry.emit_snapshot(entry.registration.desired_running);
+                                }
+                                let _ = response.send(Ok(()));
+                            }
+                            Err(error) => {
+                                if fence_unauthenticated || previous.is_none() {
+                                    desired_https_authentication = authentication;
+                                    for entry in entries.values_mut() {
+                                        entry.schedule.set_https_authentication(authentication);
+                                        entry.emit_snapshot(entry.registration.desired_running);
+                                    }
+                                }
+                                let _ = response.send(Err(
+                                    DiscoveryAdvertisementError::HttpClient(
+                                        error.to_string(),
+                                    ),
+                                ));
                             }
                         }
                     }
@@ -644,12 +771,16 @@ async fn run_service(
 fn apply_registration(
     entries: &mut BTreeMap<[u8; 20], TorrentEntry>,
     registration: DiscoveryAdvertisementRegistration,
+    https_authentication: TrackerHttpsAuthentication,
 ) -> Result<RegistrationEffect, DiscoveryAdvertisementError> {
     let info_hash = registration.info_hash;
     let private_peers =
         (registration.privacy == TorrentPrivacy::Private).then(|| registration.peers.clone());
     let Some(entry) = entries.get_mut(&registration.info_hash) else {
-        entries.insert(registration.info_hash, TorrentEntry::new(registration)?);
+        entries.insert(
+            registration.info_hash,
+            TorrentEntry::new(registration, https_authentication)?,
+        );
         return Ok(RegistrationEffect {
             info_hash,
             cancel_dht: false,
@@ -701,6 +832,9 @@ fn apply_registration(
         .set_activity_sink(entry.registration.activity_sink.clone());
     if resume {
         entry.schedule = TrackerSchedule::from_configs(entry.registration.trackers.clone());
+        entry
+            .schedule
+            .set_https_authentication(https_authentication);
         entry.token_caches.clear();
         entry.http_tracker_ids.clear();
         entry.schedule_epoch = entry.schedule_epoch.saturating_add(1);
@@ -741,6 +875,7 @@ fn begin_session_shutdown(
 fn finish_stopped_entries(
     entries: &mut BTreeMap<[u8; 20], TorrentEntry>,
     shutdown_deadline: Option<Instant>,
+    https_authentication: TrackerHttpsAuthentication,
 ) -> Result<(), DiscoveryAdvertisementError> {
     let now = Instant::now();
     let finished = entries
@@ -763,7 +898,10 @@ fn finish_stopped_entries(
             if shutdown_deadline.is_none()
                 && let Some(replacement) = entry.pending_replacement.take()
             {
-                entries.insert(info_hash, TorrentEntry::new(replacement)?);
+                entries.insert(
+                    info_hash,
+                    TorrentEntry::new(replacement, https_authentication)?,
+                );
             }
         }
     }
@@ -776,7 +914,7 @@ fn finish_stopped_entries(
 fn fill_tracker_operations(
     entries: &mut BTreeMap<[u8; 20], TorrentEntry>,
     operations: &mut JoinSet<TrackerOperationResult>,
-    http_clients: &HttpTrackerClients,
+    http_clients: &Arc<HttpTrackerClients>,
     network: NetworkConfig,
     endpoint: PeerAdvertisementEndpoint,
 ) -> Option<Duration> {
@@ -1564,10 +1702,20 @@ mod tests {
         registration.peers = peers.clone();
         registration.privacy = TorrentPrivacy::Unknown;
         let mut entries = BTreeMap::new();
-        apply_registration(&mut entries, registration.clone()).expect("unknown registration");
+        apply_registration(
+            &mut entries,
+            registration.clone(),
+            TrackerHttpsAuthentication::SystemTrust,
+        )
+        .expect("unknown registration");
 
         registration.privacy = TorrentPrivacy::Private;
-        let effect = apply_registration(&mut entries, registration).expect("private transition");
+        let effect = apply_registration(
+            &mut entries,
+            registration,
+            TrackerHttpsAuthentication::SystemTrust,
+        )
+        .expect("private transition");
         assert!(effect.cancel_dht);
         effect
             .purge_dht_from
@@ -1597,9 +1745,18 @@ mod tests {
     #[test]
     fn registration_replacement_stops_old_tracker_rows_before_installing_new() {
         let mut entries = BTreeMap::new();
-        apply_registration(&mut entries, test_registration(3, 41001)).expect("first registration");
-        apply_registration(&mut entries, test_registration(4, 41002))
-            .expect("replacement registration");
+        apply_registration(
+            &mut entries,
+            test_registration(3, 41001),
+            TrackerHttpsAuthentication::SystemTrust,
+        )
+        .expect("first registration");
+        apply_registration(
+            &mut entries,
+            test_registration(4, 41002),
+            TrackerHttpsAuthentication::SystemTrust,
+        )
+        .expect("replacement registration");
 
         let stopping = entries.get(&[4; 20]).expect("old entry remains installed");
         assert_eq!(stopping.registration.generation, 3);
@@ -1613,7 +1770,8 @@ mod tests {
             4
         );
 
-        finish_stopped_entries(&mut entries, None).expect("finish replacement");
+        finish_stopped_entries(&mut entries, None, TrackerHttpsAuthentication::SystemTrust)
+            .expect("finish replacement");
         let replacement = entries.get(&[4; 20]).expect("replacement installed");
         assert_eq!(replacement.registration.generation, 4);
         assert!(replacement.removal.is_none());

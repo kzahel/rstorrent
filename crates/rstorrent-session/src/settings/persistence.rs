@@ -3,9 +3,43 @@ use std::fmt;
 
 use rusqlite::{Connection, Transaction, params};
 
-use super::contract::{ClientSettings, ListenerPolicy, PortMappingPolicy};
+use super::contract::{
+    ClientSettings, HttpsServerAuthenticationPolicy, ListenerPolicy, PortMappingPolicy,
+};
 
 const CLIENT_SETTINGS_TABLE_SQL: &str = "CREATE TABLE client_settings (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        listener_mode TEXT NOT NULL CHECK (
+            listener_mode IN (
+                'disabled', 'automatic_loopback', 'fixed_loopback',
+                'automatic_local_network', 'fixed_local_network'
+            )
+        ),
+        listener_port INTEGER,
+        preferred_listen_port INTEGER NOT NULL CHECK (
+            preferred_listen_port BETWEEN 1024 AND 65535
+        ),
+        port_mapping_mode TEXT NOT NULL CHECK (
+            port_mapping_mode IN ('disabled', 'upnp')
+        ),
+        peer_connection_limit INTEGER NOT NULL CHECK (
+            peer_connection_limit BETWEEN 1 AND 2000
+        ),
+        upload_slots INTEGER NOT NULL CHECK (upload_slots BETWEEN 0 AND 50),
+        tracker_https_server_authentication TEXT NOT NULL CHECK (
+            tracker_https_server_authentication IN ('system_trust', 'disabled')
+        ),
+        CHECK (
+            (listener_mode IN ('fixed_loopback', 'fixed_local_network') AND
+             listener_port BETWEEN 1024 AND 65535) OR
+            (listener_mode IN (
+                'disabled', 'automatic_loopback', 'automatic_local_network'
+             ) AND
+             listener_port IS NULL)
+        )
+     );";
+
+const CLIENT_SETTINGS_TABLE_V11_SQL: &str = "CREATE TABLE client_settings (
         singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
         listener_mode TEXT NOT NULL CHECK (
             listener_mode IN (
@@ -99,11 +133,14 @@ pub(crate) fn create_client_settings(
     let settings = ClientSettings::default();
     let (mode, port) = listener_columns(settings.listener);
     let mapping_mode = mapping_column(settings.port_mapping);
+    let tracker_https_authentication =
+        tracker_https_authentication_column(settings.tracker_https_server_authentication);
     transaction.execute(
         "INSERT INTO client_settings(
             singleton, listener_mode, listener_port, preferred_listen_port,
-            port_mapping_mode, peer_connection_limit, upload_slots
-         ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6)",
+            port_mapping_mode, peer_connection_limit, upload_slots,
+            tracker_https_server_authentication
+         ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
             mode,
             port.map(i64::from),
@@ -111,6 +148,7 @@ pub(crate) fn create_client_settings(
             mapping_mode,
             i64::from(settings.peer_connection_limit),
             i64::from(settings.upload_slots),
+            tracker_https_authentication,
         ],
     )?;
     Ok(())
@@ -126,23 +164,31 @@ pub(crate) fn read_client_settings(
             "expected one singleton row, found {count}"
         )));
     }
-    let (mode, port, preferred_listen_port, mapping_mode, peer_connection_limit, upload_slots) =
-        connection.query_row(
-            "SELECT listener_mode, listener_port, preferred_listen_port, port_mapping_mode,
-                peer_connection_limit, upload_slots
+    let (
+        mode,
+        port,
+        preferred_listen_port,
+        mapping_mode,
+        peer_connection_limit,
+        upload_slots,
+        tracker_https_authentication,
+    ) = connection.query_row(
+        "SELECT listener_mode, listener_port, preferred_listen_port, port_mapping_mode,
+                peer_connection_limit, upload_slots, tracker_https_server_authentication
          FROM client_settings WHERE singleton = 1",
-            [],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, Option<i64>>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, i64>(4)?,
-                    row.get::<_, i64>(5)?,
-                ))
-            },
-        )?;
+        [],
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<i64>>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, String>(6)?,
+            ))
+        },
+    )?;
     let listener = match (mode.as_str(), port) {
         ("disabled", None) => ListenerPolicy::Disabled,
         ("automatic_loopback", None) => ListenerPolicy::AutomaticLoopback,
@@ -188,6 +234,15 @@ pub(crate) fn read_client_settings(
         upload_slots: u16::try_from(upload_slots).map_err(|_| {
             SettingsPersistenceError::Corrupt("upload slots cannot be represented".to_owned())
         })?,
+        tracker_https_server_authentication: match tracker_https_authentication.as_str() {
+            "system_trust" => HttpsServerAuthenticationPolicy::SystemTrust,
+            "disabled" => HttpsServerAuthenticationPolicy::Disabled,
+            _ => {
+                return Err(SettingsPersistenceError::Corrupt(
+                    "tracker HTTPS server authentication policy is invalid".to_owned(),
+                ));
+            }
+        },
     };
     settings
         .validate()
@@ -207,11 +262,14 @@ pub(crate) fn replace_client_settings(
     }
     let (mode, port) = listener_columns(settings.listener);
     let mapping_mode = mapping_column(settings.port_mapping);
+    let tracker_https_authentication =
+        tracker_https_authentication_column(settings.tracker_https_server_authentication);
     let changed = transaction.execute(
         "UPDATE client_settings
          SET listener_mode = ?1, listener_port = ?2,
              preferred_listen_port = ?3, port_mapping_mode = ?4,
-             peer_connection_limit = ?5, upload_slots = ?6
+             peer_connection_limit = ?5, upload_slots = ?6,
+             tracker_https_server_authentication = ?7
          WHERE singleton = 1",
         params![
             mode,
@@ -220,6 +278,7 @@ pub(crate) fn replace_client_settings(
             mapping_mode,
             i64::from(settings.peer_connection_limit),
             i64::from(settings.upload_slots),
+            tracker_https_authentication,
         ],
     )?;
     if changed != 1 {
@@ -247,6 +306,13 @@ fn mapping_column(policy: PortMappingPolicy) -> &'static str {
     }
 }
 
+fn tracker_https_authentication_column(policy: HttpsServerAuthenticationPolicy) -> &'static str {
+    match policy {
+        HttpsServerAuthenticationPolicy::SystemTrust => "system_trust",
+        HttpsServerAuthenticationPolicy::Disabled => "disabled",
+    }
+}
+
 pub(crate) fn migrate_client_settings_to_v10(
     transaction: &Transaction<'_>,
 ) -> Result<(), SettingsPersistenceError> {
@@ -268,7 +334,7 @@ pub(crate) fn migrate_client_settings_to_v11(
     transaction: &Transaction<'_>,
 ) -> Result<(), SettingsPersistenceError> {
     transaction.execute_batch("ALTER TABLE client_settings RENAME TO client_settings_v10;")?;
-    transaction.execute_batch(CLIENT_SETTINGS_TABLE_SQL)?;
+    transaction.execute_batch(CLIENT_SETTINGS_TABLE_V11_SQL)?;
     transaction.execute_batch(
         "INSERT INTO client_settings(
             singleton, listener_mode, listener_port, preferred_listen_port,
@@ -277,6 +343,24 @@ pub(crate) fn migrate_client_settings_to_v11(
                   port_mapping_mode, peer_connection_limit, upload_slots
            FROM client_settings_v10;
          DROP TABLE client_settings_v10;",
+    )?;
+    Ok(())
+}
+
+pub(crate) fn migrate_client_settings_to_v12(
+    transaction: &Transaction<'_>,
+) -> Result<(), SettingsPersistenceError> {
+    transaction.execute_batch("ALTER TABLE client_settings RENAME TO client_settings_v11;")?;
+    transaction.execute_batch(CLIENT_SETTINGS_TABLE_SQL)?;
+    transaction.execute_batch(
+        "INSERT INTO client_settings(
+            singleton, listener_mode, listener_port, preferred_listen_port,
+            port_mapping_mode, peer_connection_limit, upload_slots,
+            tracker_https_server_authentication
+         ) SELECT singleton, listener_mode, listener_port, preferred_listen_port,
+                  port_mapping_mode, peer_connection_limit, upload_slots, 'system_trust'
+           FROM client_settings_v11;
+         DROP TABLE client_settings_v11;",
     )?;
     Ok(())
 }

@@ -1,15 +1,29 @@
 use std::io;
 
-use rstorrent_engine::{IncomingTcpBootstrap, PeerBudgetConfig, UploadSchedulerConfig};
+use rstorrent_engine::{
+    IncomingTcpBootstrap, PeerBudgetConfig, TrackerHttpsAuthentication, UploadSchedulerConfig,
+};
 
 use super::contract::{
     AdvertisedPeerEndpointStatus, ClientSettings, ClientSettingsApplicationState,
-    ClientSettingsRuntimeView, EffectiveListenerSettings, ListenerBindFailureReason,
-    ListenerPolicy, ListenerStatus, MAX_RUNTIME_DETAIL_BYTES, PortMappingStatus, SessionUdpStatus,
+    ClientSettingsRuntimeView, EffectiveListenerSettings, HttpsServerAuthenticationPolicy,
+    ListenerBindFailureReason, ListenerPolicy, ListenerStatus, MAX_RUNTIME_DETAIL_BYTES,
+    PortMappingStatus, SessionUdpStatus,
 };
 use crate::reachability::ReachabilityState;
 
 impl ClientSettings {
+    pub(crate) const fn tracker_https_authentication(&self) -> TrackerHttpsAuthentication {
+        match self.tracker_https_server_authentication {
+            super::contract::HttpsServerAuthenticationPolicy::SystemTrust => {
+                TrackerHttpsAuthentication::SystemTrust
+            }
+            super::contract::HttpsServerAuthenticationPolicy::Disabled => {
+                TrackerHttpsAuthentication::Disabled
+            }
+        }
+    }
+
     pub(crate) fn incoming_bootstrap(&self) -> IncomingTcpBootstrap {
         match self.listener {
             ListenerPolicy::Disabled => IncomingTcpBootstrap::Disabled,
@@ -38,6 +52,15 @@ impl ClientSettings {
     }
 }
 
+impl HttpsServerAuthenticationPolicy {
+    pub(crate) const fn from_engine(authentication: TrackerHttpsAuthentication) -> Self {
+        match authentication {
+            TrackerHttpsAuthentication::SystemTrust => Self::SystemTrust,
+            TrackerHttpsAuthentication::Disabled => Self::Disabled,
+        }
+    }
+}
+
 impl ClientSettingsRuntimeView {
     pub(crate) fn from_configured(settings: ClientSettings) -> Self {
         Self {
@@ -45,11 +68,15 @@ impl ClientSettingsRuntimeView {
             effective_port_mapping: settings.port_mapping,
             effective_peer_connection_limit: settings.peer_connection_limit,
             effective_upload_slots: settings.upload_slots,
+            effective_tracker_https_server_authentication: Some(
+                settings.tracker_https_server_authentication,
+            ),
             configured: settings.clone(),
             transport_application: ClientSettingsApplicationState::Applied,
             port_mapping_application: ClientSettingsApplicationState::Applied,
             peer_connections_application: ClientSettingsApplicationState::Applied,
             upload_slots_application: ClientSettingsApplicationState::Applied,
+            tracker_https_authentication_application: ClientSettingsApplicationState::Applied,
             listener_status: ListenerStatus::Disabled,
             session_udp_status: SessionUdpStatus::Unavailable,
             port_mapping_status: PortMappingStatus::Disabled,
@@ -66,6 +93,7 @@ impl ClientSettingsRuntimeView {
         self.port_mapping_application = ClientSettingsApplicationState::Applying;
         self.peer_connections_application = ClientSettingsApplicationState::Applying;
         self.upload_slots_application = ClientSettingsApplicationState::Applying;
+        self.tracker_https_authentication_application = ClientSettingsApplicationState::Applying;
     }
 
     pub(crate) fn from_started(
@@ -91,6 +119,9 @@ impl ClientSettingsRuntimeView {
             effective_port_mapping: active.port_mapping,
             effective_peer_connection_limit,
             effective_upload_slots: active.upload_slots,
+            effective_tracker_https_server_authentication: Some(
+                active.tracker_https_server_authentication,
+            ),
             transport_application: if matches!(listener_status, ListenerStatus::BindFailed { .. }) {
                 ClientSettingsApplicationState::Degraded {
                     reason: super::contract::ClientSettingsDegradedReason::TransportBindFailed,
@@ -105,6 +136,7 @@ impl ClientSettingsRuntimeView {
             port_mapping_application: ClientSettingsApplicationState::Applied,
             peer_connections_application: ClientSettingsApplicationState::Applied,
             upload_slots_application: ClientSettingsApplicationState::Applied,
+            tracker_https_authentication_application: ClientSettingsApplicationState::Applied,
             listener_status,
             session_udp_status,
             port_mapping_status,

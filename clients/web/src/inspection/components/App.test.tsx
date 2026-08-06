@@ -1387,6 +1387,11 @@ describe("inspection application", () => {
         ...liveSnapshot({ roots: [], defaultRoot: null, showAddOptions: true }),
         clientSettings: {
           ...clientSettingsRuntimeFixture(),
+          configured: {
+            ...clientSettingsRuntimeFixture().configured,
+            tracker_https_server_authentication: "disabled",
+          },
+          effective_tracker_https_server_authentication: "disabled",
           effective_peer_connection_limit: 120,
         },
       },
@@ -1452,6 +1457,7 @@ describe("inspection application", () => {
           port_mapping: "upnp",
           peer_connection_limit: 2000,
           upload_slots: 0,
+          tracker_https_server_authentication: "disabled",
         },
       }),
     );
@@ -1465,6 +1471,20 @@ describe("inspection application", () => {
 
     await user.clear(peers);
     await user.type(peers, "1999");
+    application.emitClientSettings({
+      ...clientSettingsRuntimeFixture(),
+      configured: {
+        ...clientSettingsRuntimeFixture().configured,
+        listener: { type: "fixed_local_network", port: 1024 },
+        preferred_listen_port: 6882,
+        port_mapping: "upnp",
+        peer_connection_limit: 2000,
+        upload_slots: 0,
+        tracker_https_server_authentication: "system_trust",
+      },
+      effective_tracker_https_server_authentication: "system_trust",
+    });
+    expect(peers).toHaveValue(1999);
     await user.click(
       within(dialog).getByRole("button", { name: "Cancel changes" }),
     );
@@ -1499,6 +1519,7 @@ describe("inspection application", () => {
       port_mapping: "disabled" as const,
       peer_connection_limit: 200,
       upload_slots: 8,
+      tracker_https_server_authentication: "system_trust" as const,
     };
     const application = new RecordingLiveApplication({
       type: "snapshot",
@@ -1513,6 +1534,7 @@ describe("inspection application", () => {
           effective_port_mapping: "disabled",
           effective_peer_connection_limit: 200,
           effective_upload_slots: 8,
+          effective_tracker_https_server_authentication: "system_trust",
           transport_application: {
             type: "degraded",
             reason: "transport_bind_failed",
@@ -1521,6 +1543,7 @@ describe("inspection application", () => {
           port_mapping_application: { type: "applied" },
           peer_connections_application: { type: "applied" },
           upload_slots_application: { type: "applied" },
+          tracker_https_authentication_application: { type: "applied" },
           listener_status: {
             type: "bind_failed",
             reason: "address_in_use",
@@ -1854,6 +1877,15 @@ class RecordingLiveApplication implements InspectionApplication {
     this.views.push(views);
   }
 
+  emitClientSettings(settings: ClientSettingsRuntimeView): void {
+    this.clientSettings = settings;
+    this.listener?.({
+      type: "patch",
+      revision: 2,
+      clientSettings: settings,
+    });
+  }
+
   async dispatch(command: InspectionCommand): Promise<CommandResult> {
     this.commands.push(command);
     if (
@@ -1923,6 +1955,7 @@ class RecordingLiveApplication implements InspectionApplication {
         port_mapping_application: { type: "applying" },
         peer_connections_application: { type: "applying" },
         upload_slots_application: { type: "applying" },
+        tracker_https_authentication_application: { type: "applying" },
       };
       this.listener?.({
         type: "patch",

@@ -40,6 +40,15 @@ pub enum PortMappingPolicy {
     Upnp,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum HttpsServerAuthenticationPolicy {
+    #[default]
+    SystemTrust,
+    Disabled,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 #[serde(deny_unknown_fields)]
@@ -70,6 +79,7 @@ pub struct ClientSettings {
     pub peer_connection_limit: u32,
     #[schemars(range(min = 0, max = 50))]
     pub upload_slots: u16,
+    pub tracker_https_server_authentication: HttpsServerAuthenticationPolicy,
 }
 
 impl Default for ClientSettings {
@@ -82,6 +92,7 @@ impl Default for ClientSettings {
                 .expect("engine connection default fits the settings contract"),
             upload_slots: u16::try_from(DEFAULT_UNCHOKE_SLOTS)
                 .expect("engine upload-slot default fits the settings contract"),
+            tracker_https_server_authentication: HttpsServerAuthenticationPolicy::SystemTrust,
         }
     }
 }
@@ -332,6 +343,7 @@ pub enum ClientSettingsDegradedReason {
     PortMappingCleanupFailed,
     PeerConnectionConvergenceFailed,
     UploadSlotConvergenceFailed,
+    TrackerHttpsAuthenticationFailed,
     RuntimeStopped,
 }
 
@@ -359,10 +371,13 @@ pub struct ClientSettingsRuntimeView {
     pub effective_port_mapping: PortMappingPolicy,
     pub effective_peer_connection_limit: u32,
     pub effective_upload_slots: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_tracker_https_server_authentication: Option<HttpsServerAuthenticationPolicy>,
     pub transport_application: ClientSettingsApplicationState,
     pub port_mapping_application: ClientSettingsApplicationState,
     pub peer_connections_application: ClientSettingsApplicationState,
     pub upload_slots_application: ClientSettingsApplicationState,
+    pub tracker_https_authentication_application: ClientSettingsApplicationState,
     pub listener_status: ListenerStatus,
     pub session_udp_status: SessionUdpStatus,
     pub port_mapping_status: PortMappingStatus,
@@ -377,11 +392,15 @@ impl Default for ClientSettingsRuntimeView {
             effective_port_mapping: settings.port_mapping,
             effective_peer_connection_limit: settings.peer_connection_limit,
             effective_upload_slots: settings.upload_slots,
+            effective_tracker_https_server_authentication: Some(
+                settings.tracker_https_server_authentication,
+            ),
             configured: settings.clone(),
             transport_application: ClientSettingsApplicationState::Applied,
             port_mapping_application: ClientSettingsApplicationState::Applied,
             peer_connections_application: ClientSettingsApplicationState::Applied,
             upload_slots_application: ClientSettingsApplicationState::Applied,
+            tracker_https_authentication_application: ClientSettingsApplicationState::Applied,
             listener_status: ListenerStatus::Disabled,
             session_udp_status: SessionUdpStatus::Unavailable,
             port_mapping_status: PortMappingStatus::Disabled,

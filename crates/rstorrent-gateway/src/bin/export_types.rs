@@ -18,22 +18,23 @@ use rstorrent_session::{
     DiagnosticRetention, DiagnosticSeverity, DiagnosticSubject, DiagnosticValue,
     DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
     EffectiveListenerSettings, ErrorCode, ErrorResponse, FileCatalogState, FileIndexRange,
-    FilePriority, FileSelectionIntent, FileSelectionView, FileView, IndexRange,
-    ListenerBindFailureReason, ListenerPolicy, ListenerStatus, OpenViewSetOptions,
-    OpenViewSetRequest, OpenViewSetResponse, PeerDirection, PeerDisconnectReason,
-    PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerRequestPhase, PeerRole, PeerSourceView,
-    PeerTransportKind, PeerView, PortMappingFailureStage, PortMappingMechanism, PortMappingPolicy,
-    PortMappingStatus, ProgressAction, ProgressAssessment, ProgressDisposition, ProgressPhase,
-    ProgressReason, RemovalDataPolicy, RemovalState, RequestEnvelope, ResetReason,
-    ResponseEnvelope, ResponseOutcome, ServiceSnapshot, SessionUdpStatus, SpeedCurrentRate,
-    SpeedHistoryView, SpeedMetric, SpeedMetricAvailability, SpeedPersistenceState, SpeedRange,
-    SpeedSeriesView, StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot,
-    StorageState, SubscriptionSpec, SwarmCatalogState, SwarmCountsView, SwarmPeerState,
-    SwarmPeerView, TorrentSnapshot, TorrentState, TorrentView, TrackerAnnounceEventView,
-    TrackerCatalogState, TrackerConnectionFamilyView, TrackerNextActionView, TrackerSecurityView,
-    TrackerSourceView, TrackerStatusView, TrackerTransportView, TrackerView, UpdateBatch,
-    UpdateViewSetRequest, ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector,
-    ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate, ViewUpdatePayload,
+    FilePriority, FileSelectionIntent, FileSelectionView, FileView,
+    HttpsServerAuthenticationPolicy, IndexRange, ListenerBindFailureReason, ListenerPolicy,
+    ListenerStatus, OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
+    PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerRequestPhase,
+    PeerRole, PeerSourceView, PeerTransportKind, PeerView, PortMappingFailureStage,
+    PortMappingMechanism, PortMappingPolicy, PortMappingStatus, ProgressAction, ProgressAssessment,
+    ProgressDisposition, ProgressPhase, ProgressReason, RemovalDataPolicy, RemovalState,
+    RequestEnvelope, ResetReason, ResponseEnvelope, ResponseOutcome, ServiceSnapshot,
+    SessionUdpStatus, SpeedCurrentRate, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,
+    SpeedPersistenceState, SpeedRange, SpeedSeriesView, StorageRootAvailability,
+    StorageRootSnapshot, StorageSettingsSnapshot, StorageState, SubscriptionSpec,
+    SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentSnapshot,
+    TorrentState, TorrentView, TrackerAnnounceEventView, TrackerCatalogState,
+    TrackerConnectionFamilyView, TrackerNextActionView, TrackerSecurityView, TrackerSourceView,
+    TrackerStatusView, TrackerTransportView, TrackerView, UpdateBatch, UpdateViewSetRequest,
+    ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot,
+    ViewSpec, ViewUpdate, ViewUpdatePayload,
 };
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -75,6 +76,7 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<Command>(&mut declarations)?;
     append::<ListenerPolicy>(&mut declarations)?;
     append::<PortMappingPolicy>(&mut declarations)?;
+    append::<HttpsServerAuthenticationPolicy>(&mut declarations)?;
     append::<ClientSettings>(&mut declarations)?;
     append::<EffectiveListenerSettings>(&mut declarations)?;
     append::<ClientSettingsDegradedReason>(&mut declarations)?;

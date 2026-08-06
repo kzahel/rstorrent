@@ -51,9 +51,10 @@ pub use settings::{
     AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
     AdvertisedPeerEndpointUnavailableReason, ClientSettings, ClientSettingsApplicationState,
     ClientSettingsDegradedReason, ClientSettingsError, ClientSettingsRuntimeView,
-    EffectiveListenerSettings, ListenerBindFailureReason, ListenerPolicy, ListenerStatus,
-    PortMappingFailureStage, PortMappingMechanism, PortMappingPolicy, PortMappingStatus,
-    SessionUdpStatus, StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot,
+    EffectiveListenerSettings, HttpsServerAuthenticationPolicy, ListenerBindFailureReason,
+    ListenerPolicy, ListenerStatus, PortMappingFailureStage, PortMappingMechanism,
+    PortMappingPolicy, PortMappingStatus, SessionUdpStatus, StorageRootAvailability,
+    StorageRootSnapshot, StorageSettingsSnapshot,
 };
 pub use speed::{
     SpeedCurrentRate, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,

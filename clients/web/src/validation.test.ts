@@ -76,6 +76,7 @@ describe("client settings validation", () => {
         port_mapping: "disabled",
         peer_connection_limit: 200,
         upload_slots: 8,
+        tracker_https_server_authentication: "system_trust",
       });
     }
 

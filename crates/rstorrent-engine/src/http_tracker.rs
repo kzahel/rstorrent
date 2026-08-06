@@ -19,7 +19,7 @@ use tokio::net::lookup_host;
 
 use crate::network::NetworkPolicy;
 use crate::peer::PeerEndpoint;
-use crate::tracker::TrackerConnectionFamily as AddressFamily;
+use crate::tracker::{TrackerConnectionFamily as AddressFamily, TrackerHttpsAuthentication};
 
 pub(crate) const MAX_HTTP_TRACKER_TARGET_LENGTH: usize = 4 * 1024;
 pub(crate) const MAX_HTTP_TRACKER_BODY_LENGTH: usize = 1024 * 1024;
@@ -113,6 +113,7 @@ pub(crate) enum HttpTrackerError {
     InvalidField(&'static str),
     MalformedPeers(&'static str),
     NetworkDisabled,
+    HttpsAuthenticationUnavailable,
     ResolutionFailed,
     NoPermittedAddress,
     Client(String),
@@ -153,6 +154,9 @@ impl fmt::Display for HttpTrackerError {
                 write!(formatter, "HTTP tracker response has malformed {field}")
             }
             Self::NetworkDisabled => write!(formatter, "network policy is offline"),
+            Self::HttpsAuthenticationUnavailable => {
+                write!(formatter, "HTTPS tracker authentication is unavailable")
+            }
             Self::ResolutionFailed => write!(formatter, "HTTP tracker name resolution failed"),
             Self::NoPermittedAddress => {
                 write!(formatter, "HTTP tracker has no policy-permitted address")
@@ -224,14 +228,52 @@ impl Resolve for TrackerResolver {
 pub(crate) struct HttpTrackerClients {
     ipv4: reqwest::Client,
     ipv6: reqwest::Client,
+    https_authentication: Option<TrackerHttpsAuthentication>,
 }
 
 impl HttpTrackerClients {
+    #[cfg(test)]
     pub(crate) fn new(policy: NetworkPolicy) -> Result<Self, HttpTrackerError> {
+        Self::new_with_authentication(policy, TrackerHttpsAuthentication::SystemTrust)
+    }
+
+    pub(crate) fn new_with_authentication(
+        policy: NetworkPolicy,
+        https_authentication: TrackerHttpsAuthentication,
+    ) -> Result<Self, HttpTrackerError> {
         Ok(Self {
-            ipv4: build_client(policy, AddressFamily::Ipv4)?,
-            ipv6: build_client(policy, AddressFamily::Ipv6)?,
+            ipv4: build_client(policy, AddressFamily::Ipv4, https_authentication)?,
+            ipv6: build_client(policy, AddressFamily::Ipv6, https_authentication)?,
+            https_authentication: Some(https_authentication),
         })
+    }
+
+    pub(crate) fn http_only(policy: NetworkPolicy) -> Result<Self, HttpTrackerError> {
+        Ok(Self {
+            ipv4: build_client(
+                policy,
+                AddressFamily::Ipv4,
+                TrackerHttpsAuthentication::Disabled,
+            )?,
+            ipv6: build_client(
+                policy,
+                AddressFamily::Ipv6,
+                TrackerHttpsAuthentication::Disabled,
+            )?,
+            https_authentication: None,
+        })
+    }
+
+    pub(crate) fn without_https(&self) -> Self {
+        Self {
+            ipv4: self.ipv4.clone(),
+            ipv6: self.ipv6.clone(),
+            https_authentication: None,
+        }
+    }
+
+    pub(crate) const fn https_authentication(&self) -> Option<TrackerHttpsAuthentication> {
+        self.https_authentication
     }
 
     fn get(&self, family: AddressFamily) -> &reqwest::Client {
@@ -245,19 +287,23 @@ impl HttpTrackerClients {
 fn build_client(
     policy: NetworkPolicy,
     family: AddressFamily,
+    https_authentication: TrackerHttpsAuthentication,
 ) -> Result<reqwest::Client, HttpTrackerError> {
-    reqwest::Client::builder()
+    let builder = reqwest::Client::builder()
         .http1_only()
         .no_proxy()
         .connect_timeout(HTTP_TRACKER_CONNECT_TIMEOUT)
         .timeout(HTTP_TRACKER_TIMEOUT)
         .redirect(reqwest::redirect::Policy::none())
         .user_agent("RSTorrent/0.1")
-        .tls_danger_accept_invalid_certs(true)
-        .tls_danger_accept_invalid_hostnames(true)
-        .dns_resolver(TrackerResolver { policy, family })
-        .build()
-        .map_err(redacted_reqwest_error)
+        .dns_resolver(TrackerResolver { policy, family });
+    let builder = match https_authentication {
+        TrackerHttpsAuthentication::SystemTrust => builder,
+        TrackerHttpsAuthentication::Disabled => builder
+            .tls_danger_accept_invalid_certs(true)
+            .tls_danger_accept_invalid_hostnames(true),
+    };
+    builder.build().map_err(redacted_reqwest_error)
 }
 
 pub(crate) async fn announce_http_tracker(
@@ -271,7 +317,14 @@ pub(crate) async fn announce_http_tracker(
     if policy == NetworkPolicy::Offline {
         return Err(HttpTrackerError::NetworkDisabled);
     }
-    let _ = build_announce_target(base_url, announce)?;
+    let target = build_announce_target(base_url, announce)?;
+    if url::Url::parse(&target.url)
+        .ok()
+        .is_some_and(|url| url.scheme() == "https")
+        && clients.https_authentication.is_none()
+    {
+        return Err(HttpTrackerError::HttpsAuthenticationUnavailable);
+    }
     tokio::time::timeout(
         timeout,
         announce_http_tracker_inner(clients, base_url, announce, policy, prefer_ipv6),
@@ -1088,8 +1141,7 @@ mod tests {
         request
     }
 
-    async fn serve_tls_once(listener: TcpListener, response: Vec<u8>) -> String {
-        use tokio_rustls::TlsAcceptor;
+    fn tls_server_config() -> tokio_rustls::rustls::ServerConfig {
         use tokio_rustls::rustls::ServerConfig;
         use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 
@@ -1142,14 +1194,17 @@ mod tests {
         let key = base64::engine::general_purpose::STANDARD
             .decode(key)
             .expect("key DER");
-        let config = ServerConfig::builder()
+        ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(
                 vec![CertificateDer::from(cert)],
                 PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key)),
             )
-            .expect("TLS server config");
-        let acceptor = TlsAcceptor::from(Arc::new(config));
+            .expect("TLS server config")
+    }
+
+    async fn serve_tls_once(listener: TcpListener, response: Vec<u8>) -> String {
+        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tls_server_config()));
         let (stream, _) = listener.accept().await.expect("accept TLS request");
         let mut stream = acceptor.accept(stream).await.expect("TLS handshake");
         let mut request = Vec::new();
@@ -1592,8 +1647,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runtime_https_accepts_untrusted_hostname_mismatched_certificate() {
-        let clients = HttpTrackerClients::new(NetworkPolicy::LoopbackOnly).expect("HTTP clients");
+    async fn runtime_https_accepts_untrusted_hostname_mismatched_certificate_when_disabled() {
+        let clients = HttpTrackerClients::new_with_authentication(
+            NetworkPolicy::LoopbackOnly,
+            TrackerHttpsAuthentication::Disabled,
+        )
+        .expect("HTTP clients");
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("TLS listener");
@@ -1612,6 +1671,44 @@ mod tests {
         assert!(matches!(response, HttpTrackerResponse::Success(_)));
         let request = server.await.expect("TLS server");
         assert!(request.starts_with("GET /announce?info_hash="));
+    }
+
+    #[tokio::test]
+    async fn runtime_system_trust_rejects_untrusted_certificate_before_http() {
+        let clients = HttpTrackerClients::new_with_authentication(
+            NetworkPolicy::LoopbackOnly,
+            TrackerHttpsAuthentication::SystemTrust,
+        )
+        .expect("HTTP clients");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("TLS listener");
+        let url = format!("https://{}/announce", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tls_server_config()));
+            let (stream, _) = listener.accept().await.expect("accept TLS request");
+            acceptor.accept(stream).await
+        });
+        let error = announce_http_tracker(
+            &clients,
+            &url,
+            NetworkPolicy::LoopbackOnly,
+            false,
+            &announce(AnnounceEvent::Started),
+            Duration::from_secs(5),
+        )
+        .await
+        .expect_err("platform trust rejects the synthetic certificate");
+        assert!(matches!(error, HttpTrackerError::Client(_)));
+        assert!(
+            server
+                .await
+                .expect("TLS server task")
+                .expect_err("TLS handshake must not reach HTTP")
+                .to_string()
+                .to_ascii_lowercase()
+                .contains("certificate")
+        );
     }
 
     #[tokio::test]

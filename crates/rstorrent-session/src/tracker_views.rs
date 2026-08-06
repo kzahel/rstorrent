@@ -5,6 +5,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::HttpsServerAuthenticationPolicy;
 use crate::store::{StoredTracker, StoredTrackerSource, StoredTrackerTransport};
 use rstorrent_engine::{
     TrackerAnnounceEvent, TrackerConnectionFamily, TrackerEndpoint, TrackerNextAction,
@@ -35,6 +36,7 @@ pub enum TrackerTransportView {
 #[serde(rename_all = "snake_case")]
 pub enum TrackerSecurityView {
     Unencrypted,
+    EncryptedSystemTrust,
     EncryptedUnauthenticated,
 }
 
@@ -112,7 +114,10 @@ pub struct TrackerView {
 }
 
 impl TrackerView {
-    fn inactive(tracker: &StoredTracker) -> Self {
+    fn inactive(
+        tracker: &StoredTracker,
+        https_authentication: HttpsServerAuthenticationPolicy,
+    ) -> Self {
         Self {
             tracker_id: tracker_id(tracker.tier, tracker.position),
             url: redact_tracker_url(&tracker.url),
@@ -121,7 +126,7 @@ impl TrackerView {
                 StoredTrackerTransport::Http => TrackerTransportView::Http,
                 StoredTrackerTransport::Https => TrackerTransportView::Https,
             },
-            security: tracker_security(tracker.transport),
+            security: tracker_security(tracker.transport, https_authentication),
             source: match tracker.source {
                 StoredTrackerSource::Magnet => TrackerSourceView::Magnet,
                 StoredTrackerSource::Metainfo => TrackerSourceView::Metainfo,
@@ -149,12 +154,22 @@ impl TrackerView {
     }
 }
 
-const fn tracker_security(transport: StoredTrackerTransport) -> TrackerSecurityView {
+const fn tracker_security(
+    transport: StoredTrackerTransport,
+    https_authentication: HttpsServerAuthenticationPolicy,
+) -> TrackerSecurityView {
     match transport {
         StoredTrackerTransport::Udp | StoredTrackerTransport::Http => {
             TrackerSecurityView::Unencrypted
         }
-        StoredTrackerTransport::Https => TrackerSecurityView::EncryptedUnauthenticated,
+        StoredTrackerTransport::Https => match https_authentication {
+            HttpsServerAuthenticationPolicy::SystemTrust => {
+                TrackerSecurityView::EncryptedSystemTrust
+            }
+            HttpsServerAuthenticationPolicy::Disabled => {
+                TrackerSecurityView::EncryptedUnauthenticated
+            }
+        },
     }
 }
 
@@ -190,7 +205,14 @@ impl From<&TrackerRuntimeRecordSnapshot> for TrackerView {
             },
             security: match record.transport {
                 TrackerTransport::Udp | TrackerTransport::Http => TrackerSecurityView::Unencrypted,
-                TrackerTransport::Https => TrackerSecurityView::EncryptedUnauthenticated,
+                TrackerTransport::Https => match record.https_authentication {
+                    Some(rstorrent_engine::TrackerHttpsAuthentication::Disabled) => {
+                        TrackerSecurityView::EncryptedUnauthenticated
+                    }
+                    Some(rstorrent_engine::TrackerHttpsAuthentication::SystemTrust) | None => {
+                        TrackerSecurityView::EncryptedSystemTrust
+                    }
+                },
             },
             source: match record.source {
                 TrackerSource::Magnet => TrackerSourceView::Magnet,
@@ -242,17 +264,32 @@ impl From<&TrackerRuntimeRecordSnapshot> for TrackerView {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct TrackerViewModel {
     catalog: Arc<[StoredTracker]>,
     runtime: BTreeMap<String, TrackerRuntimeRecordSnapshot>,
+    https_authentication: HttpsServerAuthenticationPolicy,
+}
+
+impl Default for TrackerViewModel {
+    fn default() -> Self {
+        Self {
+            catalog: Arc::from([]),
+            runtime: BTreeMap::new(),
+            https_authentication: HttpsServerAuthenticationPolicy::default(),
+        }
+    }
 }
 
 impl TrackerViewModel {
-    pub(crate) fn from_trackers(trackers: &[StoredTracker]) -> Self {
+    pub(crate) fn from_trackers(
+        trackers: &[StoredTracker],
+        https_authentication: HttpsServerAuthenticationPolicy,
+    ) -> Self {
         Self {
             catalog: Arc::from(trackers),
             runtime: BTreeMap::new(),
+            https_authentication,
         }
     }
 
@@ -264,6 +301,7 @@ impl TrackerViewModel {
         let previous = Self {
             catalog: Arc::clone(&self.catalog),
             runtime: std::mem::take(&mut self.runtime),
+            https_authentication: self.https_authentication,
         };
         self.runtime = snapshot
             .records
@@ -295,9 +333,10 @@ impl TrackerViewModel {
             .take(range.len())
             .map(|tracker| {
                 let id = tracker_id(tracker.tier, tracker.position);
-                self.runtime
-                    .get(&id)
-                    .map_or_else(|| TrackerView::inactive(tracker), runtime_view)
+                self.runtime.get(&id).map_or_else(
+                    || TrackerView::inactive(tracker, self.https_authentication),
+                    runtime_view,
+                )
             })
             .collect()
     }
@@ -350,6 +389,7 @@ fn redact_tracker_url(url: &str) -> String {
 mod tests {
     use std::time::Duration;
 
+    use crate::HttpsServerAuthenticationPolicy;
     use crate::store::{StoredTracker, StoredTrackerSource, StoredTrackerTransport};
     use rstorrent_engine::{
         TrackerConnectionFamily, TrackerNextAction, TrackerRuntimeRecordSnapshot,
@@ -363,29 +403,32 @@ mod tests {
 
     #[test]
     fn durable_catalog_redacts_credentials_and_projects_transport_security() {
-        let model = TrackerViewModel::from_trackers(&[
-            StoredTracker {
-                tier: 0,
-                position: 0,
-                url: "udp://tracker.example:6969/private-key".to_owned(),
-                transport: StoredTrackerTransport::Udp,
-                source: StoredTrackerSource::Metainfo,
-            },
-            StoredTracker {
-                tier: 1,
-                position: 0,
-                url: "https://user:secret@tracker.example/announce?passkey=secret".to_owned(),
-                transport: StoredTrackerTransport::Https,
-                source: StoredTrackerSource::Metainfo,
-            },
-            StoredTracker {
-                tier: 2,
-                position: 0,
-                url: "https:///missing-host".to_owned(),
-                transport: StoredTrackerTransport::Https,
-                source: StoredTrackerSource::Metainfo,
-            },
-        ]);
+        let model = TrackerViewModel::from_trackers(
+            &[
+                StoredTracker {
+                    tier: 0,
+                    position: 0,
+                    url: "udp://tracker.example:6969/private-key".to_owned(),
+                    transport: StoredTrackerTransport::Udp,
+                    source: StoredTrackerSource::Metainfo,
+                },
+                StoredTracker {
+                    tier: 1,
+                    position: 0,
+                    url: "https://user:secret@tracker.example/announce?passkey=secret".to_owned(),
+                    transport: StoredTrackerTransport::Https,
+                    source: StoredTrackerSource::Metainfo,
+                },
+                StoredTracker {
+                    tier: 2,
+                    position: 0,
+                    url: "https:///missing-host".to_owned(),
+                    transport: StoredTrackerTransport::Https,
+                    source: StoredTrackerSource::Metainfo,
+                },
+            ],
+            HttpsServerAuthenticationPolicy::Disabled,
+        );
         let rows = model.rows();
         assert_eq!(rows.len(), 3);
         assert_eq!(rows[0].url, "udp://tracker.example:6969");
@@ -412,6 +455,7 @@ mod tests {
                 tier: 0,
                 source: TrackerSource::Magnet,
                 transport: TrackerTransport::Udp,
+                https_authentication: None,
                 status: TrackerRuntimeStatus::RetryWait,
                 announce_event: None,
                 total_attempts: 2,
@@ -453,7 +497,8 @@ mod tests {
                 source: StoredTrackerSource::Metainfo,
             })
             .collect::<Vec<_>>();
-        let model = TrackerViewModel::from_trackers(&trackers);
+        let model =
+            TrackerViewModel::from_trackers(&trackers, HttpsServerAuthenticationPolicy::Disabled);
         let rows = [0..1_024, 1_024..2_048, 2_048..2_050]
             .into_iter()
             .flat_map(|range| model.rows_page(range))

@@ -9,11 +9,11 @@ use std::time::{Duration, Instant};
 
 use rstorrent_engine::dht::{DhtConfig, DhtError, DhtService, DhtSnapshot};
 use rstorrent_engine::{
-    ByteMetricSink, DiscoveryAdvertisementHandle, DiscoveryAdvertisementService,
-    IncomingPeerAcceptor, IncomingPeerError, IncomingPeerHandle, IncomingPeerRuntime,
-    IncomingPeerServiceConfig, IncomingPeerServiceSnapshot, NetworkConfig, PeerBudget,
-    SessionSocketConfig, SessionSocketError, SessionSocketSet, SessionUdpError, SessionUdpHandle,
-    SessionUdpService,
+    ByteMetricSink, DiscoveryAdvertisementError, DiscoveryAdvertisementHandle,
+    DiscoveryAdvertisementService, IncomingPeerAcceptor, IncomingPeerError, IncomingPeerHandle,
+    IncomingPeerRuntime, IncomingPeerServiceConfig, IncomingPeerServiceSnapshot, NetworkConfig,
+    PeerBudget, SessionSocketConfig, SessionSocketError, SessionSocketSet, SessionUdpError,
+    SessionUdpHandle, SessionUdpService,
 };
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -29,9 +29,9 @@ use crate::reachability::{
 use crate::settings::{
     AdvertisedPeerEndpointStatus, ClientSettings, ClientSettingsApplicationState,
     ClientSettingsDegradedReason, ClientSettingsRuntimeView, EffectiveListenerSettings,
-    ListenerBindFailureReason, ListenerPolicy, ListenerStatus, PortMappingPolicy, SessionUdpStatus,
-    SettingsAttempt, SettingsConvergenceModel, SettingsDomain, SettingsDomainGeneration,
-    classify_listener_bind_failure,
+    HttpsServerAuthenticationPolicy, ListenerBindFailureReason, ListenerPolicy, ListenerStatus,
+    PortMappingPolicy, SessionUdpStatus, SettingsAttempt, SettingsConvergenceModel, SettingsDomain,
+    SettingsDomainGeneration, classify_listener_bind_failure,
 };
 use crate::views::{DhtInspectionView, ViewHub};
 
@@ -87,6 +87,7 @@ pub(crate) enum SessionNetworkError {
     Incoming(IncomingPeerError),
     SessionSocket(SessionSocketError),
     SessionUdp(SessionUdpError),
+    Discovery(DiscoveryAdvertisementError),
 }
 
 impl fmt::Display for SessionNetworkError {
@@ -97,6 +98,7 @@ impl fmt::Display for SessionNetworkError {
             Self::Incoming(error) => write!(formatter, "{error}"),
             Self::SessionSocket(error) => write!(formatter, "{error}"),
             Self::SessionUdp(error) => write!(formatter, "{error}"),
+            Self::Discovery(error) => write!(formatter, "{error}"),
         }
     }
 }
@@ -108,6 +110,7 @@ impl Error for SessionNetworkError {
             Self::Incoming(error) => Some(error),
             Self::SessionSocket(error) => Some(error),
             Self::SessionUdp(error) => Some(error),
+            Self::Discovery(error) => Some(error),
             Self::Configuration(_) => None,
         }
     }
@@ -137,6 +140,12 @@ impl From<SessionUdpError> for SessionNetworkError {
     }
 }
 
+impl From<DiscoveryAdvertisementError> for SessionNetworkError {
+    fn from(error: DiscoveryAdvertisementError) -> Self {
+        Self::Discovery(error)
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct SessionNetworkShutdown {
     pub dht_snapshot: Option<DhtSnapshot>,
@@ -163,6 +172,8 @@ pub(crate) struct SessionNetworkRuntime {
     reconciliation_task: Option<JoinHandle<SessionNetworkOwner>>,
     convergence: Arc<Mutex<SettingsConvergenceModel>>,
     initial_mapping_generation: SettingsDomainGeneration,
+    initial_tracker_https_authentication: Option<HttpsServerAuthenticationPolicy>,
+    initial_tracker_https_application: ClientSettingsApplicationState,
     views: Option<ViewHub>,
 }
 
@@ -187,6 +198,7 @@ struct SessionNetworkOwner {
     listener_active: Arc<AtomicBool>,
     uncertain_mapping: Option<UncertainMappingLease>,
     mapping_runtime_error: Option<String>,
+    effective_tracker_https_authentication: Option<HttpsServerAuthenticationPolicy>,
 }
 
 impl SessionNetworkRuntime {
@@ -324,11 +336,24 @@ impl SessionNetworkRuntime {
             }
         };
         let advertised_endpoint = AdvertisedPeerEndpointSelector::new(&listener_status);
-        let discovery_advertisement = DiscoveryAdvertisementService::start(
-            network,
-            advertised_endpoint.subscribe_wire(),
-            dht.handle(),
-        );
+        let discovery_advertisement =
+            DiscoveryAdvertisementService::start_with_https_authentication(
+                network,
+                advertised_endpoint.subscribe_wire(),
+                dht.handle(),
+                settings.tracker_https_authentication(),
+            )?;
+        let initial_tracker_https_authentication = discovery_advertisement
+            .initial_https_authentication()
+            .map(HttpsServerAuthenticationPolicy::from_engine);
+        let initial_tracker_https_application = discovery_advertisement
+            .initial_https_error()
+            .map_or(ClientSettingsApplicationState::Applied, |detail| {
+                ClientSettingsApplicationState::Degraded {
+                    reason: ClientSettingsDegradedReason::TrackerHttpsAuthenticationFailed,
+                    detail: detail.to_owned(),
+                }
+            });
         let discovery_handle = discovery_advertisement.handle();
         let incoming_seeding = IncomingSeeding::new(
             incoming_runtime
@@ -369,6 +394,7 @@ impl SessionNetworkRuntime {
             listener_active: listener_active.clone(),
             uncertain_mapping: None,
             mapping_runtime_error: None,
+            effective_tracker_https_authentication: initial_tracker_https_authentication,
         };
         let mut convergence = SettingsConvergenceModel::default();
         let initial_attempt = convergence
@@ -385,6 +411,10 @@ impl SessionNetworkRuntime {
                 ClientSettingsApplicationState::Applied,
             ));
         }
+        assert!(convergence.apply(
+            initial_attempt.domain(SettingsDomain::TrackerHttpsAuthentication),
+            initial_tracker_https_application.clone(),
+        ));
         let initial_mapping_generation = initial_attempt.domain(SettingsDomain::PortMapping);
         Ok(Self {
             settings,
@@ -404,6 +434,8 @@ impl SessionNetworkRuntime {
             reconciliation_task: None,
             convergence: Arc::new(Mutex::new(convergence)),
             initial_mapping_generation,
+            initial_tracker_https_authentication,
+            initial_tracker_https_application,
             views: None,
         })
     }
@@ -430,14 +462,19 @@ impl SessionNetworkRuntime {
             *address = observed.ip().to_string();
             *port = observed.port();
         }
-        ClientSettingsRuntimeView::from_started(
+        let mut view = ClientSettingsRuntimeView::from_started(
             self.settings.clone(),
             self.settings.clone(),
             self.effective_peer_connection_limit,
             self.listener_status.clone(),
             session_udp_status,
             self.advertised_endpoint.status(Instant::now()),
-        )
+        );
+        view.effective_tracker_https_server_authentication =
+            self.initial_tracker_https_authentication;
+        view.tracker_https_authentication_application =
+            self.initial_tracker_https_application.clone();
+        view
     }
 
     pub(crate) fn attach_views(&mut self, views: ViewHub) {
@@ -497,6 +534,18 @@ impl SessionNetworkRuntime {
                 None,
                 "Incoming listener could not start; settings remain available",
                 &[("reason", reason), ("detail", detail)],
+            );
+        }
+        if self.initial_tracker_https_authentication
+            == Some(HttpsServerAuthenticationPolicy::Disabled)
+        {
+            let _ = views.record_diagnostic(
+                DiagnosticSeverity::Warning,
+                category::TRACKER_ANNOUNCE,
+                "tracker_https_authentication_disabled",
+                None,
+                "HTTPS tracker server authentication is disabled",
+                &[("settings_generation", "startup"), ("policy", "disabled")],
             );
         }
         self.views = Some(views);
@@ -721,6 +770,50 @@ impl SessionNetworkOwner {
         views: &ViewHub,
         cancellation: &CancellationToken,
     ) -> (Option<PendingPeerLimit>, Option<PendingMappingExpiry>) {
+        let tracker_https_generation = attempt.domain(SettingsDomain::TrackerHttpsAuthentication);
+        let tracker_https_state = self
+            .discovery_advertisement
+            .as_ref()
+            .expect("discovery advertisement exists during reconciliation")
+            .handle()
+            .replace_https_authentication(attempt.settings.tracker_https_authentication())
+            .await;
+        match tracker_https_state {
+            Ok(()) => {
+                let effective = attempt.settings.tracker_https_server_authentication;
+                self.effective_settings.tracker_https_server_authentication = effective;
+                self.effective_tracker_https_authentication = Some(effective);
+                publish_tracker_https_authentication(
+                    convergence,
+                    tracker_https_generation,
+                    self.effective_tracker_https_authentication,
+                    ClientSettingsApplicationState::Applied,
+                    views,
+                );
+                if effective == HttpsServerAuthenticationPolicy::Disabled {
+                    let generation = tracker_https_generation.attempt().to_string();
+                    let _ = views.record_diagnostic(
+                        DiagnosticSeverity::Warning,
+                        category::TRACKER_ANNOUNCE,
+                        "tracker_https_authentication_disabled",
+                        None,
+                        "HTTPS tracker server authentication is disabled",
+                        &[("settings_generation", &generation), ("policy", "disabled")],
+                    );
+                }
+            }
+            Err(error) => publish_tracker_https_authentication(
+                convergence,
+                tracker_https_generation,
+                self.effective_tracker_https_authentication,
+                ClientSettingsApplicationState::Degraded {
+                    reason: ClientSettingsDegradedReason::TrackerHttpsAuthenticationFailed,
+                    detail: error.to_string(),
+                },
+                views,
+            ),
+        }
+
         let peer_generation = attempt.domain(SettingsDomain::PeerConnections);
         let peer = self.peer_budget.reconfigure(
             usize::try_from(attempt.settings.peer_connection_limit)
@@ -1334,6 +1427,22 @@ fn publish_mapping(
     let _ = views.update_client_settings_runtime_for(generation, |runtime| {
         runtime.effective_port_mapping = effective_policy;
         runtime.port_mapping_application = state;
+    });
+}
+
+fn publish_tracker_https_authentication(
+    convergence: &Arc<Mutex<SettingsConvergenceModel>>,
+    generation: SettingsDomainGeneration,
+    effective_policy: Option<HttpsServerAuthenticationPolicy>,
+    state: ClientSettingsApplicationState,
+    views: &ViewHub,
+) {
+    let Some(state) = apply_state(convergence, generation, state) else {
+        return;
+    };
+    let _ = views.update_client_settings_runtime_for(generation, |runtime| {
+        runtime.effective_tracker_https_server_authentication = effective_policy;
+        runtime.tracker_https_authentication_application = state;
     });
 }
 

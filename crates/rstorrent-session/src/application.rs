@@ -3857,6 +3857,7 @@ fn durable_view_state(
     ApplicationError,
 > {
     let snapshot = store.snapshot()?;
+    let tracker_https_authentication = store.client_settings()?.tracker_https_server_authentication;
     let mut durable = BTreeMap::new();
     for torrent in &snapshot.torrents {
         let Ok(resume) = store.load_resume(&torrent.torrent_id) else {
@@ -3900,7 +3901,8 @@ fn durable_view_state(
         } else {
             None
         };
-        let trackers = TrackerViewModel::from_trackers(&resume.trackers);
+        let trackers =
+            TrackerViewModel::from_trackers(&resume.trackers, tracker_https_authentication);
         durable.insert(
             torrent.torrent_id.clone(),
             DurableTorrentViewState {
@@ -4074,6 +4076,7 @@ impl From<SessionNetworkError> for ApplicationError {
     fn from(error: SessionNetworkError) -> Self {
         match error {
             SessionNetworkError::Configuration(message) => Self::Configuration(message),
+            SessionNetworkError::Discovery(error) => Self::Configuration(error.to_string()),
             SessionNetworkError::Dht(error) => Self::Dht(error),
             SessionNetworkError::Incoming(error) => Self::Incoming(error),
             SessionNetworkError::SessionSocket(error) => Self::SessionSocket(error),
@@ -4159,15 +4162,15 @@ mod tests {
     use crate::{
         AddTorrentBytesRequest, CONTROL_VERSION, CatalogPageRequest, ClientSettings, Command,
         ConfiguredStorageRoot, DeliveryPolicy, DhtLifecycleView, DiagnosticFilter,
-        DiagnosticProfile, DiagnosticSeverity, FilePriority, ListenerBindFailureReason,
-        ListenerPolicy, ListenerStatus, OpenViewSetOptions, OpenViewSetRequest, PeerDirection,
-        PeerFlagView, PeerLifecycle, PeerRole, PeerSourceView, PeerTransportKind, PeerView,
-        ProgressDisposition, ProgressReason, RemovalDataPolicy, RemovalState, RequestEnvelope,
-        ResponseOutcome, SessionStore, StorageState, SubscriptionSpec, SwarmCatalogState,
-        SwarmPeerState, SwarmPeerView, TorrentState, TrackerConnectionFamilyView,
-        TrackerSecurityView, TrackerView, ViewDeliveryPolicy, ViewPatch, ViewProjection,
-        ViewSelector, ViewSetError, ViewSetOwner, ViewSetUpdate, ViewSnapshot, ViewSpec,
-        ViewUpdatePayload,
+        DiagnosticProfile, DiagnosticSeverity, FilePriority, HttpsServerAuthenticationPolicy,
+        ListenerBindFailureReason, ListenerPolicy, ListenerStatus, OpenViewSetOptions,
+        OpenViewSetRequest, PeerDirection, PeerFlagView, PeerLifecycle, PeerRole, PeerSourceView,
+        PeerTransportKind, PeerView, ProgressDisposition, ProgressReason, RemovalDataPolicy,
+        RemovalState, RequestEnvelope, ResponseOutcome, SessionStore, StorageState,
+        SubscriptionSpec, SwarmCatalogState, SwarmPeerState, SwarmPeerView, TorrentState,
+        TrackerConnectionFamilyView, TrackerSecurityView, TrackerView, ViewDeliveryPolicy,
+        ViewPatch, ViewProjection, ViewSelector, ViewSetError, ViewSetOwner, ViewSetUpdate,
+        ViewSnapshot, ViewSpec, ViewUpdatePayload,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -4672,15 +4675,26 @@ mod tests {
     where
         S: tokio::io::AsyncRead + Unpin,
     {
+        read_http_request_or_closed(stream)
+            .await
+            .expect("HTTP request ended before headers")
+    }
+
+    async fn read_http_request_or_closed<S>(stream: &mut S) -> Option<String>
+    where
+        S: tokio::io::AsyncRead + Unpin,
+    {
         let mut request = Vec::new();
         while !request.windows(4).any(|window| window == b"\r\n\r\n") {
             let mut chunk = [0_u8; 1_024];
             let length = stream.read(&mut chunk).await.expect("read HTTP request");
-            assert_ne!(length, 0, "HTTP request ended before headers");
+            if length == 0 {
+                return None;
+            }
             request.extend_from_slice(&chunk[..length]);
             assert!(request.len() <= 16 * 1_024, "HTTP request is bounded");
         }
-        String::from_utf8(request).expect("HTTP request is ASCII")
+        Some(String::from_utf8(request).expect("HTTP request is ASCII"))
     }
 
     fn untrusted_tls_acceptor() -> tokio_rustls::TlsAcceptor {
@@ -4781,18 +4795,18 @@ mod tests {
         response
     }
 
-    async fn serve_tracker_stream<S>(mut stream: S, peer: SocketAddr) -> (String, bool)
+    async fn serve_tracker_stream<S>(mut stream: S, peer: SocketAddr) -> Option<(String, bool)>
     where
         S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
     {
-        let request = read_http_request(&mut stream).await;
+        let request = read_http_request_or_closed(&mut stream).await?;
         let stopped = request.contains("&event=stopped ");
         stream
             .write_all(&only_peers6_http_response(peer))
             .await
             .expect("write tracker response");
         stream.shutdown().await.expect("close tracker response");
-        (request, stopped)
+        Some((request, stopped))
     }
 
     fn percent_encode_magnet_value(value: &str) -> String {
@@ -4859,11 +4873,14 @@ mod tests {
             let mut requests = Vec::new();
             loop {
                 let (stream, _) = tracker.accept().await.expect("accept tracker announce");
-                let (request, stopped) = if let Some(acceptor) = tls_acceptor.as_ref() {
+                let served = if let Some(acceptor) = tls_acceptor.as_ref() {
                     let stream = acceptor.accept(stream).await.expect("TLS handshake");
                     serve_tracker_stream(stream, peer_address).await
                 } else {
                     serve_tracker_stream(stream, peer_address).await
+                };
+                let Some((request, stopped)) = served else {
+                    continue;
                 };
                 announce_sender
                     .send(request.clone())
@@ -4903,6 +4920,22 @@ mod tests {
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record verified metadata");
+        if https {
+            store
+                .handle_durable(&RequestEnvelope {
+                    version: CONTROL_VERSION,
+                    request_id: "disable-tracker-https-authentication".to_owned(),
+                    expected_revision: None,
+                    command: Command::SetClientSettings {
+                        settings: ClientSettings {
+                            tracker_https_server_authentication:
+                                HttpsServerAuthenticationPolicy::Disabled,
+                            ..ClientSettings::default()
+                        },
+                    },
+                })
+                .expect("persist explicit unauthenticated HTTPS policy");
+        }
         drop(store);
 
         let mut service = ApplicationService::open(configuration)
@@ -4922,6 +4955,11 @@ mod tests {
             .expect("find live listener port during download");
         let live_settings = ClientSettings {
             listener: ListenerPolicy::FixedLoopback { port: live_port },
+            tracker_https_server_authentication: if https {
+                HttpsServerAuthenticationPolicy::Disabled
+            } else {
+                HttpsServerAuthenticationPolicy::SystemTrust
+            },
             ..ClientSettings::default()
         };
         service
@@ -6297,6 +6335,7 @@ mod tests {
             port_mapping: crate::PortMappingPolicy::Disabled,
             peer_connection_limit: 321,
             upload_slots: 3,
+            tracker_https_server_authentication: Default::default(),
         };
         service
             .dispatch(RequestEnvelope {
@@ -8336,6 +8375,7 @@ mod tests {
                 port_mapping: crate::PortMappingPolicy::Disabled,
                 peer_connection_limit: 1,
                 upload_slots: 1,
+                tracker_https_server_authentication: Default::default(),
             },
         );
         fs::create_dir_all(root.join("payload")).expect("create payload root");
@@ -8515,6 +8555,7 @@ mod tests {
             port_mapping: crate::PortMappingPolicy::Disabled,
             peer_connection_limit: 1,
             upload_slots: 1,
+            tracker_https_server_authentication: Default::default(),
         };
         first
             .dispatch(RequestEnvelope {
@@ -8965,6 +9006,7 @@ mod tests {
             port_mapping: crate::PortMappingPolicy::Disabled,
             peer_connection_limit: 321,
             upload_slots: 0,
+            tracker_https_server_authentication: Default::default(),
         };
         let response = conflicted
             .dispatch(RequestEnvelope {

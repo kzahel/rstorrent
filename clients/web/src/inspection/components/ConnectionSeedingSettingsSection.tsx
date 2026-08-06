@@ -96,8 +96,17 @@ export function ConnectionSeedingSettingsSection({
         portMapping,
         peerLimit,
         uploadSlots,
+        configured.tracker_https_server_authentication,
       ),
-    [fixedPort, listenerMode, peerLimit, portMapping, preferredPort, uploadSlots],
+    [
+      configured.tracker_https_server_authentication,
+      fixedPort,
+      listenerMode,
+      peerLimit,
+      portMapping,
+      preferredPort,
+      uploadSlots,
+    ],
   );
   const dirty =
     validation.settings !== null &&
@@ -626,6 +635,7 @@ function validateDraft(
   portMapping: PortMappingPolicy,
   peerLimit: string,
   uploadSlots: string,
+  trackerHttpsServerAuthentication: ClientSettings["tracker_https_server_authentication"],
 ): DraftValidation {
   const preferred = parseBoundedInteger(
     preferredPort,
@@ -696,6 +706,7 @@ function validateDraft(
       port_mapping: portMapping,
       peer_connection_limit: peers as number,
       upload_slots: slots as number,
+      tracker_https_server_authentication: trackerHttpsServerAuthentication,
     },
     preferredPortError: null,
     fixedPortError: null,
@@ -725,7 +736,9 @@ function sameClientSettings(left: ClientSettings, right: ClientSettings): boolea
     left.port_mapping === right.port_mapping &&
     left.preferred_listen_port === right.preferred_listen_port &&
     left.peer_connection_limit === right.peer_connection_limit &&
-    left.upload_slots === right.upload_slots
+    left.upload_slots === right.upload_slots &&
+    left.tracker_https_server_authentication ===
+      right.tracker_https_server_authentication
   );
 }
 

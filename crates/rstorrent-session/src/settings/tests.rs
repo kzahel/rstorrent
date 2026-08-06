@@ -8,9 +8,10 @@ use rusqlite::Connection;
 use super::{
     AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus, ClientSettings,
     ClientSettingsApplicationState, ClientSettingsError, ClientSettingsRuntimeView,
-    EffectiveListenerSettings, ListenerPolicy, ListenerStatus, PortMappingPolicy,
-    PortMappingStatus, SessionUdpStatus, SettingsPersistenceError, classify_listener_bind_failure,
-    create_client_settings, read_client_settings, replace_client_settings,
+    EffectiveListenerSettings, HttpsServerAuthenticationPolicy, ListenerPolicy, ListenerStatus,
+    PortMappingPolicy, PortMappingStatus, SessionUdpStatus, SettingsPersistenceError,
+    classify_listener_bind_failure, create_client_settings, read_client_settings,
+    replace_client_settings,
 };
 
 #[test]
@@ -26,6 +27,10 @@ fn defaults_follow_engine_policy_without_enabling_the_listener() {
     assert_eq!(
         settings.upload_slots,
         u16::try_from(DEFAULT_UNCHOKE_SLOTS).unwrap()
+    );
+    assert_eq!(
+        settings.tracker_https_server_authentication,
+        HttpsServerAuthenticationPolicy::SystemTrust
     );
     assert_eq!(settings.validate(), Ok(()));
 
@@ -160,6 +165,7 @@ fn runtime_view_distinguishes_configured_effective_domains_and_observed_facts() 
         port_mapping: PortMappingPolicy::Disabled,
         peer_connection_limit: 500,
         upload_slots: 1,
+        tracker_https_server_authentication: HttpsServerAuthenticationPolicy::Disabled,
     };
     let view = ClientSettingsRuntimeView {
         configured: configured.clone(),
@@ -170,10 +176,14 @@ fn runtime_view_distinguishes_configured_effective_domains_and_observed_facts() 
         effective_port_mapping: PortMappingPolicy::Disabled,
         effective_peer_connection_limit: 120,
         effective_upload_slots: 8,
+        effective_tracker_https_server_authentication: Some(
+            HttpsServerAuthenticationPolicy::SystemTrust,
+        ),
         transport_application: ClientSettingsApplicationState::Applying,
         port_mapping_application: ClientSettingsApplicationState::Applied,
         peer_connections_application: ClientSettingsApplicationState::Applied,
         upload_slots_application: ClientSettingsApplicationState::Applied,
+        tracker_https_authentication_application: ClientSettingsApplicationState::Applying,
         listener_status: ListenerStatus::Listening {
             address: "127.0.0.1".to_owned(),
             port: 41_000,
@@ -267,6 +277,7 @@ fn typed_persistence_round_trips_one_atomic_group() {
         port_mapping: PortMappingPolicy::Upnp,
         peer_connection_limit: 1,
         upload_slots: 0,
+        tracker_https_server_authentication: HttpsServerAuthenticationPolicy::Disabled,
     };
     assert!(replace_client_settings(&transaction, &configured).unwrap());
     assert!(!replace_client_settings(&transaction, &configured).unwrap());
@@ -293,6 +304,7 @@ fn version_nine_settings_migrate_without_enabling_mapping() {
     let transaction = connection.transaction().unwrap();
     super::migrate_client_settings_to_v10(&transaction).unwrap();
     super::migrate_client_settings_to_v11(&transaction).unwrap();
+    super::migrate_client_settings_to_v12(&transaction).unwrap();
     transaction.commit().unwrap();
     assert_eq!(
         read_client_settings(&connection).unwrap(),
@@ -302,6 +314,7 @@ fn version_nine_settings_migrate_without_enabling_mapping() {
             port_mapping: PortMappingPolicy::Disabled,
             peer_connection_limit: 321,
             upload_slots: 3,
+            tracker_https_server_authentication: HttpsServerAuthenticationPolicy::SystemTrust,
         }
     );
 }
@@ -325,6 +338,7 @@ fn version_ten_settings_migrate_with_the_preferred_port_default() {
         .unwrap();
     let transaction = connection.transaction().unwrap();
     super::migrate_client_settings_to_v11(&transaction).unwrap();
+    super::migrate_client_settings_to_v12(&transaction).unwrap();
     transaction.commit().unwrap();
     assert_eq!(
         read_client_settings(&connection).unwrap(),
@@ -334,7 +348,39 @@ fn version_ten_settings_migrate_with_the_preferred_port_default() {
             port_mapping: PortMappingPolicy::Upnp,
             peer_connection_limit: 444,
             upload_slots: 5,
+            tracker_https_server_authentication: HttpsServerAuthenticationPolicy::SystemTrust,
         }
+    );
+}
+
+#[test]
+fn version_eleven_settings_migrate_to_system_trust() {
+    let mut connection = Connection::open_in_memory().unwrap();
+    connection
+        .execute_batch(
+            "CREATE TABLE client_settings (
+                singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                listener_mode TEXT NOT NULL,
+                listener_port INTEGER,
+                preferred_listen_port INTEGER NOT NULL,
+                port_mapping_mode TEXT NOT NULL,
+                peer_connection_limit INTEGER NOT NULL,
+                upload_slots INTEGER NOT NULL
+             );
+             INSERT INTO client_settings VALUES
+                (1, 'disabled', NULL, 51413, 'disabled', 777, 6);",
+        )
+        .unwrap();
+    let transaction = connection.transaction().unwrap();
+    super::migrate_client_settings_to_v12(&transaction).unwrap();
+    transaction.commit().unwrap();
+    let settings = read_client_settings(&connection).unwrap();
+    assert_eq!(settings.preferred_listen_port, 51_413);
+    assert_eq!(settings.peer_connection_limit, 777);
+    assert_eq!(settings.upload_slots, 6);
+    assert_eq!(
+        settings.tracker_https_server_authentication,
+        HttpsServerAuthenticationPolicy::SystemTrust
     );
 }
 
@@ -371,6 +417,26 @@ fn sqlite_constraints_and_decoder_reject_invalid_durable_shapes() {
     );
     connection
         .pragma_update(None, "ignore_check_constraints", true)
+        .unwrap();
+    connection
+        .execute(
+            "UPDATE client_settings
+             SET tracker_https_server_authentication = 'automatic'
+             WHERE singleton = 1",
+            [],
+        )
+        .unwrap();
+    assert!(matches!(
+        read_client_settings(&connection),
+        Err(SettingsPersistenceError::Corrupt(_))
+    ));
+    connection
+        .execute(
+            "UPDATE client_settings
+             SET tracker_https_server_authentication = 'system_trust'
+             WHERE singleton = 1",
+            [],
+        )
         .unwrap();
     connection
         .execute(

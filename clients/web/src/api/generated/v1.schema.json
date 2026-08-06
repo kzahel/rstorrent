@@ -1179,6 +1179,9 @@
           "minimum": 1024,
           "type": "integer"
         },
+        "tracker_https_server_authentication": {
+          "$ref": "#/$defs/HttpsServerAuthenticationPolicy"
+        },
         "upload_slots": {
           "format": "uint16",
           "maximum": 50,
@@ -1191,7 +1194,8 @@
         "preferred_listen_port",
         "port_mapping",
         "peer_connection_limit",
-        "upload_slots"
+        "upload_slots",
+        "tracker_https_server_authentication"
       ],
       "type": "object"
     },
@@ -1255,6 +1259,7 @@
         "port_mapping_cleanup_failed",
         "peer_connection_convergence_failed",
         "upload_slot_convergence_failed",
+        "tracker_https_authentication_failed",
         "runtime_stopped"
       ],
       "type": "string"
@@ -1286,6 +1291,16 @@
         "effective_port_mapping": {
           "$ref": "#/$defs/PortMappingPolicy"
         },
+        "effective_tracker_https_server_authentication": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HttpsServerAuthenticationPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "effective_upload_slots": {
           "format": "uint16",
           "maximum": 65535,
@@ -1307,6 +1322,9 @@
         "session_udp_status": {
           "$ref": "#/$defs/SessionUdpStatus"
         },
+        "tracker_https_authentication_application": {
+          "$ref": "#/$defs/ClientSettingsApplicationState"
+        },
         "transport_application": {
           "$ref": "#/$defs/ClientSettingsApplicationState"
         },
@@ -1323,6 +1341,7 @@
         "port_mapping_application",
         "peer_connections_application",
         "upload_slots_application",
+        "tracker_https_authentication_application",
         "listener_status",
         "session_udp_status",
         "port_mapping_status",
@@ -2712,6 +2731,13 @@
       ],
       "type": "object"
     },
+    "HttpsServerAuthenticationPolicy": {
+      "enum": [
+        "system_trust",
+        "disabled"
+      ],
+      "type": "string"
+    },
     "IndexRange": {
       "properties": {
         "end_exclusive": {
@@ -3736,6 +3762,7 @@
             "peer_connection_limit": 200,
             "port_mapping": "disabled",
             "preferred_listen_port": 6881,
+            "tracker_https_server_authentication": "system_trust",
             "upload_slots": 8
           }
         },
@@ -4466,6 +4493,7 @@
     "TrackerSecurityView": {
       "enum": [
         "unencrypted",
+        "encrypted_system_trust",
         "encrypted_unauthenticated"
       ],
       "type": "string"
@@ -5142,6 +5170,7 @@
                   "peer_connection_limit": 200,
                   "port_mapping": "disabled",
                   "preferred_listen_port": 6881,
+                  "tracker_https_server_authentication": "system_trust",
                   "upload_slots": 8
                 },
                 "effective_listener": {
@@ -5152,6 +5181,7 @@
                 },
                 "effective_peer_connection_limit": 200,
                 "effective_port_mapping": "disabled",
+                "effective_tracker_https_server_authentication": "system_trust",
                 "effective_upload_slots": 8,
                 "listener_status": {
                   "type": "disabled"
@@ -5167,6 +5197,9 @@
                 },
                 "session_udp_status": {
                   "type": "unavailable"
+                },
+                "tracker_https_authentication_application": {
+                  "type": "applied"
                 },
                 "transport_application": {
                   "type": "applied"

@@ -28,6 +28,13 @@ pub enum TrackerTransport {
     Https,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum TrackerHttpsAuthentication {
+    #[default]
+    SystemTrust,
+    Disabled,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TrackerConnectionFamily {
     Ipv4,
@@ -141,6 +148,7 @@ pub struct TrackerRuntimeRecordSnapshot {
     pub tier: u32,
     pub source: TrackerSource,
     pub transport: TrackerTransport,
+    pub https_authentication: Option<TrackerHttpsAuthentication>,
     pub status: TrackerRuntimeStatus,
     pub announce_event: Option<TrackerAnnounceEvent>,
     pub total_attempts: u32,
@@ -198,6 +206,7 @@ pub(crate) struct TrackerRecord {
     seeders: Option<u32>,
     leechers: Option<u32>,
     last_error: Option<String>,
+    operation_https_authentication: Option<TrackerHttpsAuthentication>,
 }
 
 impl TrackerRecord {
@@ -226,6 +235,7 @@ impl TrackerRecord {
             seeders: None,
             leechers: None,
             last_error: None,
+            operation_https_authentication: None,
         }
     }
 
@@ -291,6 +301,7 @@ pub(crate) struct TrackerSchedule {
     round_tracker: Option<TrackerId>,
     round_wait_kind: Option<TrackerWaitKind>,
     stopping: bool,
+    https_authentication: TrackerHttpsAuthentication,
 }
 
 impl TrackerSchedule {
@@ -327,7 +338,12 @@ impl TrackerSchedule {
             round_tracker: None,
             round_wait_kind: None,
             stopping: false,
+            https_authentication: TrackerHttpsAuthentication::SystemTrust,
         }
+    }
+
+    pub(crate) fn set_https_authentication(&mut self, authentication: TrackerHttpsAuthentication) {
+        self.https_authentication = authentication;
     }
 
     pub(crate) fn request_update(&mut self) {
@@ -410,6 +426,9 @@ impl TrackerSchedule {
                     .expect("priority selection retains its event")
                     .wire_event();
                 record.inflight_event = Some(event);
+                if record.endpoint.transport() == TrackerTransport::Https {
+                    record.operation_https_authentication = Some(self.https_authentication);
+                }
                 return TrackerAction::Announce {
                     id: record.id,
                     url: record.display_url.clone(),
@@ -457,6 +476,9 @@ impl TrackerSchedule {
                     AnnounceEvent::Started
                 };
                 record.inflight_event = Some(event);
+                if record.endpoint.transport() == TrackerTransport::Https {
+                    record.operation_https_authentication = Some(self.https_authentication);
+                }
                 return TrackerAction::Announce {
                     id: record.id,
                     url: record.display_url.clone(),
@@ -640,7 +662,7 @@ impl TrackerSchedule {
             records: self
                 .records
                 .iter()
-                .map(|record| record.snapshot(now, active))
+                .map(|record| record.snapshot(now, active, self.https_authentication))
                 .collect(),
         }
     }
@@ -661,7 +683,12 @@ impl TrackerSchedule {
 }
 
 impl TrackerRecord {
-    fn snapshot(&self, now: Duration, active: bool) -> TrackerRuntimeRecordSnapshot {
+    fn snapshot(
+        &self,
+        now: Duration,
+        active: bool,
+        current_https_authentication: TrackerHttpsAuthentication,
+    ) -> TrackerRuntimeRecordSnapshot {
         let (status, next_action, next_action_in) = if !active {
             (TrackerRuntimeStatus::Inactive, None, None)
         } else if self.updating {
@@ -702,6 +729,10 @@ impl TrackerRecord {
             tier: self.tier,
             source: self.source,
             transport: self.endpoint.transport(),
+            https_authentication: (self.endpoint.transport() == TrackerTransport::Https).then_some(
+                self.operation_https_authentication
+                    .unwrap_or(current_https_authentication),
+            ),
             status,
             announce_event,
             total_attempts: self.total_attempts,

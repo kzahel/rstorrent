@@ -109,6 +109,7 @@ pub(super) fn tracker_snapshot(
             tier: 0,
             source: TrackerSource::Magnet,
             transport: TrackerTransport::Udp,
+            https_authentication: None,
             status,
             announce_event: None,
             total_attempts: attempts,

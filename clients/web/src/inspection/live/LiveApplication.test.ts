@@ -227,6 +227,7 @@ describe("LiveApplication", () => {
       port_mapping: "disabled" as const,
       peer_connection_limit: 2_000,
       upload_slots: 0,
+      tracker_https_server_authentication: "system_trust" as const,
     };
 
     expect(snapshots.at(-1)?.clientSettings).toEqual(

@@ -115,8 +115,8 @@ pub use torrent_peer::{
 };
 pub use tracker::{
     TrackerAnnounceEvent, TrackerConfig, TrackerConnectionFamily, TrackerEndpoint,
-    TrackerNextAction, TrackerRuntimeRecordSnapshot, TrackerRuntimeSnapshot, TrackerRuntimeStatus,
-    TrackerSource, TrackerTransport,
+    TrackerHttpsAuthentication, TrackerNextAction, TrackerRuntimeRecordSnapshot,
+    TrackerRuntimeSnapshot, TrackerRuntimeStatus, TrackerSource, TrackerTransport,
 };
 pub use upload::{
     MAX_QUEUED_UPLOAD_BYTES, MAX_QUEUED_UPLOAD_REQUESTS, UploadAction, UploadCloseReason,

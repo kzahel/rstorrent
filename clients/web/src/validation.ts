@@ -1019,6 +1019,11 @@ function validateClientSettings(value: unknown): void {
     2_000,
   );
   boundedInteger(settings.upload_slots, "upload slots", 0, 50);
+  oneOf(
+    settings.tracker_https_server_authentication,
+    "tracker HTTPS server authentication policy",
+    ["system_trust", "disabled"],
+  );
 }
 
 function validateClientSettingsRuntime(value: unknown): void {
@@ -1060,11 +1065,25 @@ function validateClientSettingsRuntime(value: unknown): void {
     2_000,
   );
   boundedInteger(runtime.effective_upload_slots, "effective upload slots", 0, 50);
+  if (
+    runtime.effective_tracker_https_server_authentication !== undefined &&
+    runtime.effective_tracker_https_server_authentication !== null
+  ) {
+    oneOf(
+      runtime.effective_tracker_https_server_authentication,
+      "effective tracker HTTPS server authentication policy",
+      ["system_trust", "disabled"],
+    );
+  }
   [
     [runtime.transport_application, "transport application"],
     [runtime.port_mapping_application, "port mapping application"],
     [runtime.peer_connections_application, "peer connections application"],
     [runtime.upload_slots_application, "upload slots application"],
+    [
+      runtime.tracker_https_authentication_application,
+      "tracker HTTPS authentication application",
+    ],
   ].forEach(([value, label]) => validateSettingsApplicationState(value, String(label)));
 
   const status = asRecord(runtime.listener_status, "listener status");

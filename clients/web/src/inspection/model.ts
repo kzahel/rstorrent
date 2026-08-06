@@ -275,7 +275,10 @@ export interface TrackerRow {
   readonly torrentId: string;
   readonly url: string;
   readonly transport: "udp" | "http" | "https";
-  readonly security: "unencrypted" | "encrypted_unauthenticated";
+  readonly security:
+    | "unencrypted"
+    | "encrypted_system_trust"
+    | "encrypted_unauthenticated";
   readonly source: "magnet" | "metainfo";
   readonly tier: number;
   readonly status:
