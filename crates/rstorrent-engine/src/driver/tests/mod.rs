@@ -9,6 +9,10 @@ use rstorrent_protocol::dht::{
     DhtEndpoint, DhtIp, Message as DhtMessage, NodeId, Query as DhtQuery, Want,
     decode_message as decode_dht, encode_response as encode_dht_response,
 };
+use rstorrent_protocol::extension::{
+    ExtensionAdvertisement, PexContact, PexEndpoint, PexFlags, PexMessage,
+    encode_extension_handshake as encode_recognized_extension_handshake, encode_pex_message,
+};
 use rstorrent_protocol::magnet::Magnet;
 use rstorrent_protocol::metadata::{
     MetadataMessage, UT_METADATA_LOCAL_ID, encode_extension_handshake, encode_metadata_data,
@@ -1383,6 +1387,105 @@ async fn serve_metadata_then_piece(
             Err(DownloadError::PeerClosed) => break,
             Ok(message) => panic!("unexpected content message {message:?}"),
             Err(error) => panic!("scripted peer failed: {error}"),
+        }
+    }
+}
+
+async fn serve_metadata_then_pex(listener: TcpListener, info: Vec<u8>, useful_peer: SocketAddr) {
+    let (mut stream, _) = listener.accept().await.expect("accept PEX bootstrap");
+    let info_hash: [u8; 20] = Sha1::digest(&info).into();
+    let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
+    stream
+        .read_exact(&mut handshake_bytes)
+        .await
+        .expect("read client handshake");
+    assert!(
+        decode_handshake(&handshake_bytes, info_hash)
+            .expect("client handshake")
+            .supports_extensions()
+    );
+    let mut reserved = [0; 8];
+    reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+    stream
+        .write_all(&encode_handshake_with_reserved(
+            info_hash,
+            scripted_peer_id(&listener, *b"-RS-PEX-BOOTSTRAP000"),
+            reserved,
+        ))
+        .await
+        .expect("send bootstrap handshake");
+    let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(5));
+    assert!(matches!(
+        next_peer_message(&mut peer).await,
+        Ok(PeerMessage::Extended { id: 0, .. })
+    ));
+    send_message(&mut peer, &PeerMessage::Bitfield(vec![0]))
+        .await
+        .expect("send no availability");
+    send_message(
+        &mut peer,
+        &PeerMessage::Extended {
+            id: 0,
+            payload: encode_recognized_extension_handshake(ExtensionAdvertisement {
+                metadata_id: Some(UT_METADATA_LOCAL_ID),
+                pex_id: Some(2),
+                metadata_size: Some(info.len()),
+                listen_port: Some(listener.local_addr().expect("listener").port()),
+            })
+            .expect("extension handshake"),
+        },
+    )
+    .await
+    .expect("send extensions");
+    loop {
+        match next_peer_message(&mut peer).await {
+            Ok(PeerMessage::Extended { id: 1, payload }) => {
+                let MetadataMessage::Request { piece } =
+                    parse_metadata_message(&payload).expect("metadata request")
+                else {
+                    continue;
+                };
+                assert_eq!(piece, 0);
+                send_message(
+                    &mut peer,
+                    &PeerMessage::Extended {
+                        id: 1,
+                        payload: encode_metadata_data(0, info.len(), &info).expect("metadata data"),
+                    },
+                )
+                .await
+                .expect("send metadata");
+            }
+            Ok(PeerMessage::Extended { id: 0, .. }) => {
+                let endpoint = match useful_peer {
+                    SocketAddr::V4(endpoint) => {
+                        PexEndpoint::v4(endpoint.ip().octets(), endpoint.port())
+                    }
+                    SocketAddr::V6(endpoint) => {
+                        PexEndpoint::v6(endpoint.ip().octets(), endpoint.port())
+                    }
+                };
+                send_message(
+                    &mut peer,
+                    &PeerMessage::Extended {
+                        id: 2,
+                        payload: encode_pex_message(&PexMessage {
+                            added: vec![PexContact {
+                                endpoint,
+                                flags: PexFlags::from_bits(PexFlags::OUTGOING),
+                            }],
+                            ..PexMessage::default()
+                        })
+                        .expect("PEX contact"),
+                    },
+                )
+                .await
+                .expect("send PEX contact");
+            }
+            Ok(PeerMessage::Interested | PeerMessage::KeepAlive) => {}
+            Err(DownloadError::PeerClosed | DownloadError::PeerTimedOut { .. }) => break,
+            Ok(message) => panic!("unexpected PEX bootstrap message {message:?}"),
+            Err(error) => panic!("PEX bootstrap failed: {error}"),
         }
     }
 }

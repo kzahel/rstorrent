@@ -487,14 +487,15 @@ fn pex_address_allowed(
 }
 
 fn local_source_allows(source: IpAddr, candidate: IpAddr) -> bool {
+    if source.is_loopback() && candidate.is_loopback() {
+        return true;
+    }
     match (source, candidate) {
         (IpAddr::V4(source), IpAddr::V4(candidate)) => {
-            source.is_loopback() && candidate.is_loopback()
-                || is_local_v4(source) && is_local_v4(candidate)
+            is_local_v4(source) && is_local_v4(candidate)
         }
         (IpAddr::V6(source), IpAddr::V6(candidate)) => {
-            source.is_loopback() && candidate.is_loopback()
-                || is_local_v6(source) && is_local_v6(candidate)
+            is_local_v6(source) && is_local_v6(candidate)
         }
         _ => false,
     }

@@ -1337,6 +1337,60 @@ async fn tracker_peer_discovered_during_content_becomes_useful() {
 }
 
 #[tokio::test]
+async fn pex_is_the_only_source_for_a_useful_second_hop() {
+    let payload = b"PEX-only second-hop payload".to_vec();
+    let info = single_file_info(&payload);
+    let info_hash: [u8; 20] = Sha1::digest(&info).into();
+    let useful_listener = TcpListener::bind("[::1]:0")
+        .await
+        .expect("bind PEX useful peer");
+    let useful_address = useful_listener.local_addr().expect("useful address");
+    let useful_task = tokio::spawn(serve_content_peer(
+        useful_listener,
+        info_hash,
+        Arc::new(vec![payload.clone()]),
+        vec![true],
+    ));
+    let bootstrap_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind PEX bootstrap");
+    let bootstrap_address = bootstrap_listener.local_addr().expect("bootstrap address");
+    let bootstrap_task = tokio::spawn(serve_metadata_then_pex(
+        bootstrap_listener,
+        info,
+        useful_address,
+    ));
+    let output = test_path("pex-second-hop.bin");
+    let report = timeout(
+        Duration::from_secs(3),
+        download_magnet(MagnetDownloadConfig {
+            magnet: format!(
+                "magnet:?xt=urn:btih:{}&x.pe={bootstrap_address}",
+                hex(&info_hash)
+            ),
+            output_path: output.clone(),
+            network: loopback_network(Duration::from_secs(2)),
+            resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
+            skip_files: Vec::new(),
+            materialize_files: Vec::new(),
+            dht: None,
+        }),
+    )
+    .await
+    .expect("bounded PEX topology")
+    .expect("PEX second hop completed");
+    assert_eq!(report.verified_piece_count, 1);
+    assert_eq!(tokio::fs::read(&output).await.expect("output"), payload);
+    for task in [bootstrap_task, useful_task] {
+        timeout(Duration::from_secs(1), task)
+            .await
+            .expect("PEX peer joined")
+            .expect("PEX peer task");
+    }
+    let _ = tokio::fs::remove_file(output).await;
+}
+
+#[tokio::test]
 async fn dht_peer_discovered_during_content_becomes_useful() {
     let payload = b"late DHT peer payload".to_vec();
     let metainfo =
