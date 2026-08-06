@@ -4,6 +4,7 @@
 
 pub mod bencode;
 pub mod dht;
+pub mod extension;
 pub mod magnet;
 pub mod metadata;
 pub mod metainfo;

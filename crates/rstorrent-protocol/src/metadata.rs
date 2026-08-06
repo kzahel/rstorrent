@@ -4,16 +4,18 @@ use std::fmt;
 
 use sha1::{Digest, Sha1};
 
-use crate::bencode::{
-    DictionaryEntry, Limits, Node, ParseError, Value, parse_prefix_with_limits, parse_with_limits,
+use crate::bencode::{DictionaryEntry, Limits, Node, ParseError, Value, parse_prefix_with_limits};
+use crate::extension::{
+    ExtensionAdvertisement, ExtensionError, ExtensionUpdate,
+    encode_extension_handshake as encode_recognized_extension_handshake,
+    parse_extension_handshake as parse_recognized_extension_handshake,
 };
 use crate::peer_wire::MAX_EXTENSION_PAYLOAD_LENGTH;
 
-pub const UT_METADATA_LOCAL_ID: u8 = 1;
+pub use crate::extension::{MAX_TRUSTED_METADATA_HANDSHAKE_LENGTH, UT_METADATA_LOCAL_ID};
 pub const METADATA_BLOCK_LENGTH: usize = 16 * 1024;
 pub const MAX_METADATA_LENGTH: usize = 30 * 1024 * 1024;
 pub const MAX_LOCAL_METADATA_LENGTH: usize = 64 * 1024 * 1024;
-pub const MAX_TRUSTED_METADATA_HANDSHAKE_LENGTH: usize = 4 * 1024 * 1024;
 pub const MAX_METADATA_BLOCKS: usize = MAX_METADATA_LENGTH / METADATA_BLOCK_LENGTH;
 pub const MAX_METADATA_REQUESTS_IN_FLIGHT: usize = 2;
 pub const MAX_DEFERRED_METADATA_UPLOAD_REQUESTS: usize = 1024;
@@ -50,12 +52,7 @@ impl MetadataInstant {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MetadataExtensionUpdate {
-    Unchanged,
-    Disabled,
-    Enabled(u8),
-}
+pub type MetadataExtensionUpdate = ExtensionUpdate;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExtensionHandshake {
@@ -84,6 +81,7 @@ pub enum MetadataMessage<'a> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MetadataError {
     Bencode(ParseError),
+    Extension(ExtensionError),
     RootIsNotDictionary,
     MissingField(&'static str),
     InvalidField(&'static str),
@@ -130,6 +128,7 @@ impl fmt::Display for MetadataError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Bencode(error) => write!(formatter, "invalid metadata bencode: {error}"),
+            Self::Extension(error) => write!(formatter, "invalid extension handshake: {error}"),
             Self::RootIsNotDictionary => write!(formatter, "metadata message is not a dictionary"),
             Self::MissingField(field) => write!(formatter, "metadata message is missing {field}"),
             Self::InvalidField(field) => write!(formatter, "metadata message has invalid {field}"),
@@ -178,6 +177,7 @@ impl Error for MetadataError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Bencode(error) => Some(error),
+            Self::Extension(error) => Some(error),
             _ => None,
         }
     }
@@ -189,35 +189,17 @@ impl From<ParseError> for MetadataError {
     }
 }
 
+impl From<ExtensionError> for MetadataError {
+    fn from(error: ExtensionError) -> Self {
+        Self::Extension(error)
+    }
+}
+
 pub fn parse_extension_handshake(payload: &[u8]) -> Result<ExtensionHandshake, MetadataError> {
-    let root = parse_with_limits(payload, extension_limits())?;
-    let entries = dictionary(&root).ok_or(MetadataError::RootIsNotDictionary)?;
-    let metadata_extension = match field(entries, b"m") {
-        None => MetadataExtensionUpdate::Unchanged,
-        Some(mapping) => {
-            let mapping = dictionary(mapping).ok_or(MetadataError::InvalidField("handshake.m"))?;
-            match field(mapping, b"ut_metadata") {
-                None => MetadataExtensionUpdate::Unchanged,
-                Some(node) => {
-                    let id = integer(node, "handshake.m.ut_metadata")?;
-                    match id {
-                        0 => MetadataExtensionUpdate::Disabled,
-                        1..=255 => MetadataExtensionUpdate::Enabled(id as u8),
-                        _ => {
-                            return Err(MetadataError::InvalidField("handshake.m.ut_metadata"));
-                        }
-                    }
-                }
-            }
-        }
-    };
-    let metadata_size = match field(entries, b"metadata_size") {
-        None => None,
-        Some(node) => trusted_handshake_size(integer(node, "handshake.metadata_size")?)?,
-    };
+    let handshake = parse_recognized_extension_handshake(payload)?;
     Ok(ExtensionHandshake {
-        metadata_extension,
-        metadata_size,
+        metadata_extension: handshake.metadata,
+        metadata_size: handshake.metadata_size,
     })
 }
 
@@ -241,15 +223,12 @@ pub fn encode_extension_handshake_with_id(
             maximum: MAX_LOCAL_METADATA_LENGTH,
         })?)?;
     }
-    let mut encoded = b"d1:md11:ut_metadatai".to_vec();
-    push_integer(&mut encoded, i64::from(local_metadata_id));
-    encoded.push(b'e');
-    if let Some(size) = metadata_size {
-        encoded.extend_from_slice(b"13:metadata_sizei");
-        push_integer(&mut encoded, size as i64);
-    }
-    encoded.push(b'e');
-    Ok(encoded)
+    encode_recognized_extension_handshake(ExtensionAdvertisement {
+        metadata_id: Some(local_metadata_id),
+        metadata_size,
+        ..ExtensionAdvertisement::default()
+    })
+    .map_err(MetadataError::from)
 }
 
 pub fn parse_metadata_message(payload: &[u8]) -> Result<MetadataMessage<'_>, MetadataError> {
@@ -1059,20 +1038,6 @@ fn validate_local_size(size: i64) -> Result<usize, MetadataError> {
             maximum: MAX_LOCAL_METADATA_LENGTH,
         }),
     }
-}
-
-fn trusted_handshake_size(size: i64) -> Result<Option<usize>, MetadataError> {
-    let size = usize::try_from(size).map_err(|_| MetadataError::InvalidSize {
-        size,
-        maximum: MAX_TRUSTED_METADATA_HANDSHAKE_LENGTH,
-    })?;
-    if size == 0 {
-        return Err(MetadataError::InvalidSize {
-            size: 0,
-            maximum: MAX_TRUSTED_METADATA_HANDSHAKE_LENGTH,
-        });
-    }
-    Ok((size <= MAX_TRUSTED_METADATA_HANDSHAKE_LENGTH).then_some(size))
 }
 
 fn valid_piece_number(piece: i64) -> Result<u32, MetadataError> {
