@@ -464,6 +464,11 @@ that scope and its cleanup or compatibility rules explicitly.
   planned with Tactical `097` complete; defaults HTTPS trackers to desktop and
   Android platform trust, adds one hidden live compatibility policy, and
   replaces only the bounded family-specific HTTP client pair.
+- [`099-decimal-and-binary-display-units.md`](099-decimal-and-binary-display-units.md):
+  planned; makes Decimal `kB/MB/GB` the fresh browser-presentation default,
+  retains Binary `KiB/MiB/GiB` as an explicit choice, and persists the setting
+  with the existing browser-local appearance record without changing raw
+  application data or exact technical IEC copy.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

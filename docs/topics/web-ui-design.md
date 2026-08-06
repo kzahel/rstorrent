@@ -440,6 +440,13 @@ live changes. The since-retired direct-DOM UI retained its Dark-only browser
 declaration and did not interpret the React appearance record while both entry
 paths still existed.
 
+Planned Tactical `099` extends that browser-local appearance owner with **Data
+units**. Decimal powers of 1000 with `kB`, `MB`, and `GB` become the fresh and
+migration default; explicit Binary preserves powers of 1024 with `KiB`, `MiB`,
+and `GiB`. The choice affects generic byte and rate formatting only. Raw
+application values, sorting and calculations, and literal IEC text describing
+exact engine or protocol geometry remain unchanged.
+
 Tactical `055` adds a separate versioned navigation preference for the active
 Library, Transfers, or Workbench destination and each destination's local
 filter. Transfers is the fresh and invalid-storage fallback. The preference
