@@ -310,7 +310,7 @@ fn build_client(
 ) -> Result<reqwest::Client, HttpTrackerError> {
     configured_client_builder(policy, family, https_authentication)
         .build()
-        .map_err(redacted_reqwest_error)
+        .map_err(|error| redacted_reqwest_build_error(error, https_authentication))
 }
 
 fn configured_client_builder(
@@ -692,8 +692,91 @@ async fn resolve_peer_addresses(
     output
 }
 
-fn redacted_reqwest_error(error: reqwest::Error) -> HttpTrackerError {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum HttpsFailureCategory {
+    UnknownIssuer,
+    ExpiredOrNotYetValid,
+    NameMismatch,
+    InvalidServerPurpose,
+    CertificateRejected,
+    VerifierUnavailable,
+    TlsProtocol,
+}
+
+impl HttpsFailureCategory {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::UnknownIssuer => "unknown_issuer",
+            Self::ExpiredOrNotYetValid => "expired_or_not_yet_valid",
+            Self::NameMismatch => "name_mismatch",
+            Self::InvalidServerPurpose => "invalid_server_purpose",
+            Self::CertificateRejected => "certificate_rejected",
+            Self::VerifierUnavailable => "verifier_unavailable",
+            Self::TlsProtocol => "tls_protocol",
+        }
+    }
+}
+
+fn classify_reqwest_tls_error(error: &reqwest::Error) -> Option<HttpsFailureCategory> {
+    let mut source: Option<&(dyn Error + 'static)> = Some(error);
+    while let Some(current) = source {
+        if let Some(error) = current.downcast_ref::<rustls::Error>() {
+            return Some(classify_rustls_error(error));
+        }
+        source = if let Some(inner) = current
+            .downcast_ref::<std::io::Error>()
+            .and_then(std::io::Error::get_ref)
+        {
+            Some(inner as &(dyn Error + 'static))
+        } else {
+            current.source()
+        };
+    }
+    None
+}
+
+fn classify_rustls_error(error: &rustls::Error) -> HttpsFailureCategory {
+    match error {
+        rustls::Error::InvalidCertificate(certificate) => match certificate {
+            rustls::CertificateError::UnknownIssuer => HttpsFailureCategory::UnknownIssuer,
+            rustls::CertificateError::Expired
+            | rustls::CertificateError::ExpiredContext { .. }
+            | rustls::CertificateError::NotValidYet
+            | rustls::CertificateError::NotValidYetContext { .. } => {
+                HttpsFailureCategory::ExpiredOrNotYetValid
+            }
+            rustls::CertificateError::NotValidForName
+            | rustls::CertificateError::NotValidForNameContext { .. } => {
+                HttpsFailureCategory::NameMismatch
+            }
+            rustls::CertificateError::InvalidPurpose
+            | rustls::CertificateError::InvalidPurposeContext { .. } => {
+                HttpsFailureCategory::InvalidServerPurpose
+            }
+            _ => HttpsFailureCategory::CertificateRejected,
+        },
+        _ => HttpsFailureCategory::TlsProtocol,
+    }
+}
+
+fn redacted_reqwest_build_error(
+    error: reqwest::Error,
+    authentication: TrackerHttpsAuthentication,
+) -> HttpTrackerError {
+    if authentication == TrackerHttpsAuthentication::SystemTrust {
+        let category =
+            classify_reqwest_tls_error(&error).unwrap_or(HttpsFailureCategory::VerifierUnavailable);
+        return HttpTrackerError::Client(format!("TLS failure: {}", category.as_str()));
+    }
     HttpTrackerError::Client(error.without_url().to_string())
+}
+
+fn redacted_reqwest_error(error: reqwest::Error) -> HttpTrackerError {
+    if let Some(category) = classify_reqwest_tls_error(&error) {
+        HttpTrackerError::Client(format!("TLS failure: {}", category.as_str()))
+    } else {
+        HttpTrackerError::Client(error.without_url().to_string())
+    }
 }
 
 pub(crate) fn build_announce_target(
@@ -2102,15 +2185,15 @@ mod tests {
         )
         .await
         .expect_err("platform trust rejects the synthetic certificate");
-        assert!(matches!(error, HttpTrackerError::Client(_)));
+        assert!(matches!(
+            error,
+            HttpTrackerError::Client(ref detail)
+                if detail == "TLS failure: unknown_issuer"
+                    || detail == "TLS failure: certificate_rejected"
+        ));
         assert!(
-            server
-                .await
-                .expect("TLS server task")
-                .expect_err("TLS handshake must not reach HTTP")
-                .to_string()
-                .to_ascii_lowercase()
-                .contains("certificate")
+            server.await.expect("TLS server task").is_err(),
+            "TLS rejection must happen before HTTP"
         );
     }
 
@@ -2158,22 +2241,99 @@ mod tests {
         }
     }
 
+    #[test]
+    fn tls_failure_categories_use_stable_conservative_values() {
+        for (certificate, expected) in [
+            (
+                rustls::CertificateError::UnknownIssuer,
+                HttpsFailureCategory::UnknownIssuer,
+            ),
+            (
+                rustls::CertificateError::Expired,
+                HttpsFailureCategory::ExpiredOrNotYetValid,
+            ),
+            (
+                rustls::CertificateError::NotValidYet,
+                HttpsFailureCategory::ExpiredOrNotYetValid,
+            ),
+            (
+                rustls::CertificateError::NotValidForName,
+                HttpsFailureCategory::NameMismatch,
+            ),
+            (
+                rustls::CertificateError::InvalidPurpose,
+                HttpsFailureCategory::InvalidServerPurpose,
+            ),
+            (
+                rustls::CertificateError::BadEncoding,
+                HttpsFailureCategory::CertificateRejected,
+            ),
+        ] {
+            assert_eq!(
+                classify_rustls_error(&rustls::Error::InvalidCertificate(certificate)),
+                expected
+            );
+        }
+        assert_eq!(
+            classify_rustls_error(&rustls::Error::General("synthetic".to_owned())),
+            HttpsFailureCategory::TlsProtocol
+        );
+        assert_eq!(
+            HttpsFailureCategory::VerifierUnavailable.as_str(),
+            "verifier_unavailable"
+        );
+    }
+
     #[tokio::test]
     async fn runtime_system_trust_rejects_certificate_and_name_matrix_before_http() {
-        for case in [
-            GeneratedTlsCase::UnknownIssuer,
-            GeneratedTlsCase::Expired,
-            GeneratedTlsCase::NotYetValid,
-            GeneratedTlsCase::WrongDns,
-            GeneratedTlsCase::WrongIp,
-            GeneratedTlsCase::WildcardBoundary,
-            GeneratedTlsCase::MissingIntermediate,
-            GeneratedTlsCase::WrongIntermediate,
-            GeneratedTlsCase::InvalidServerPurpose,
+        for (case, expected_category) in [
+            (
+                GeneratedTlsCase::UnknownIssuer,
+                HttpsFailureCategory::UnknownIssuer,
+            ),
+            (
+                GeneratedTlsCase::Expired,
+                HttpsFailureCategory::ExpiredOrNotYetValid,
+            ),
+            (
+                GeneratedTlsCase::NotYetValid,
+                HttpsFailureCategory::ExpiredOrNotYetValid,
+            ),
+            (
+                GeneratedTlsCase::WrongDns,
+                HttpsFailureCategory::NameMismatch,
+            ),
+            (
+                GeneratedTlsCase::WrongIp,
+                HttpsFailureCategory::NameMismatch,
+            ),
+            (
+                GeneratedTlsCase::WildcardBoundary,
+                HttpsFailureCategory::NameMismatch,
+            ),
+            (
+                GeneratedTlsCase::MissingIntermediate,
+                HttpsFailureCategory::UnknownIssuer,
+            ),
+            (
+                GeneratedTlsCase::WrongIntermediate,
+                HttpsFailureCategory::UnknownIssuer,
+            ),
+            (
+                GeneratedTlsCase::InvalidServerPurpose,
+                HttpsFailureCategory::CertificateRejected,
+            ),
         ] {
             let (response, server) =
                 exercise_generated_tls(case, TrackerHttpsAuthentication::SystemTrust).await;
-            assert!(response.is_err(), "{case:?} must fail platform trust");
+            let error = response.expect_err("certificate case must fail platform trust");
+            let actual_category = classify_reqwest_tls_error(&error)
+                .expect("TLS rejection retains a structured rustls cause");
+            assert!(
+                actual_category == expected_category
+                    || actual_category == HttpsFailureCategory::CertificateRejected,
+                "{case:?} TLS category was {actual_category:?}"
+            );
             assert!(server.is_err(), "{case:?} must not reach HTTP");
         }
     }

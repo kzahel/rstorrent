@@ -1790,6 +1790,14 @@ def run_product_https_platform_trust_profile(
             "effective=SYSTEM_TRUST application=APPLIED" not in invalid_logs
         ):
             raise BootstrapFailure("Android system-trust policy was not effective")
+        if not any(
+            "error_detail=HTTP tracker request failed: "
+            f"TLS failure: {category}" in invalid_logs
+            for category in ("unknown_issuer", "certificate_rejected")
+        ):
+            raise BootstrapFailure(
+                "Android untrusted certificate did not retain its stable TLS category"
+            )
         target.shell(["am", "force-stop", PACKAGE], check=False)
         probe.remove_grant_folder(target, grant_storage)
         clear_application(target)
@@ -1815,8 +1823,25 @@ def run_product_https_platform_trust_profile(
             error=True,
             timeout_seconds=30,
         )
-        if "error_detail=HTTP tracker request failed: error sending request" not in ubuntu_logs:
-            raise BootstrapFailure("Ubuntu public smoke failed for an unexpected reason")
+        public_error_marker = (
+            "error_detail=HTTP tracker request failed: TLS failure: "
+        )
+        public_error_line = next(
+            (line for line in ubuntu_logs.splitlines() if public_error_marker in line),
+            None,
+        )
+        if public_error_line is None:
+            raise BootstrapFailure("Ubuntu public smoke lacked a stable TLS category")
+        public_tls_category = public_error_line.partition(public_error_marker)[2].strip()
+        if public_tls_category not in {
+            "unknown_issuer",
+            "expired_or_not_yet_valid",
+            "name_mismatch",
+            "invalid_server_purpose",
+            "certificate_rejected",
+            "tls_protocol",
+        }:
+            raise BootstrapFailure("Ubuntu public smoke used an unknown TLS category")
 
         target.shell(["am", "force-stop", PACKAGE], check=False)
         probe.remove_grant_folder(target, grant_storage)
@@ -1869,7 +1894,7 @@ def run_product_https_platform_trust_profile(
             "public_tracker": "torrent.ubuntu.com",
             "public_info_hash": ubuntu_info_hash,
             "public_security": "encrypted_system_trust",
-            "public_result": "request_send_failed",
+            "public_result": f"tls_{public_tls_category}",
             "start_content": False,
             "storage_artifacts": 0,
         }
